@@ -553,6 +553,7 @@
       },
       "kindIcon": "{{kind}}成果",
       "loading": "正在載入成果",
+      "loadMore": "載入更多",
       "retry": "重試"
     },
     "fileBadges": {
@@ -1819,6 +1820,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
+      "mentionHint": "搜尋智慧體或聊天…",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",

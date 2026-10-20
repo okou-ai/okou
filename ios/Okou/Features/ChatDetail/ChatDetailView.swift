@@ -4,12 +4,19 @@ import Textual
 
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
+  let supportsAttachments: Bool
+  let topContentInset: CGFloat
   private var thread: ChatThread { conversation.thread }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var scrolling: ConversationScrollCoordinator
+  @State private var composerHeight: CGFloat = 0
 
-  init(conversation: ConversationStore) {
+  init(
+    conversation: ConversationStore, supportsAttachments: Bool = false, topContentInset: CGFloat = 0
+  ) {
     self.conversation = conversation
+    self.supportsAttachments = supportsAttachments
+    self.topContentInset = topContentInset
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -46,12 +53,15 @@ struct ChatDetailView: View {
     let displayedMessages = conversation.visibleMessages
     ConversationCollectionView(
       rows: rows, markdown: conversation.messageMarkdown, measurements: conversation.measurements,
+      contentInsets: EdgeInsets(
+        top: topContentInset, leading: 0, bottom: composerHeight, trailing: 0),
       anchor: scrolling.anchor,
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       refresh: { await conversation.refresh() }, content: rowContent
     )
+    .ignoresSafeArea(.container, edges: .vertical)
     .onAppear { scrolling.activate(reduceMotion: reduceMotion) }
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
     .overlay(alignment: .bottom) {
@@ -76,21 +86,29 @@ struct ChatDetailView: View {
     }
     .onDisappear { scrolling.deactivate() }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
+    .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
         draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
         showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
         error: conversation.error,
         attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+        attachments: conversation.attachmentDraft, supportsAttachments: supportsAttachments,
         submit: {
           if history.canStop
             && conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !conversation.attachmentDraft.hasAttachments
           {
             await conversation.stop()
           } else {
             await conversation.send()
           }
-        }, refresh: { await conversation.refresh() })
+        }, refresh: { await conversation.refresh() }
+      )
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        composerHeight = $0
+      }
     }
     .task(id: thread.id) { await conversation.refresh() }
     .overlay {

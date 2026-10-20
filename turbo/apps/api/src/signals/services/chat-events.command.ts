@@ -85,7 +85,10 @@ import {
   canonicalChatEventError,
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
-import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
+import {
+  pendingChatQueueEventFromRow,
+  pendingChatQueueEventReadPlan,
+} from "./chat-event-queue.service";
 import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
@@ -113,6 +116,10 @@ import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
+import {
+  isOfficialWorkflowThread$,
+  OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
+} from "./official-workflow-policy.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   notifyRunningChatRunOfPendingInput$,
@@ -1608,6 +1615,16 @@ const prepareNormalSend$ = command(
     if ("status" in authorized) {
       return authorized;
     }
+    if (
+      existingThreadId &&
+      (await set(
+        isOfficialWorkflowThread$,
+        { threadId: existingThreadId, orgId: args.orgId, userId: args.userId },
+        signal,
+      ))
+    ) {
+      return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+    }
     const source = await set(
       resolveNormalSendAgentRunSource$,
       {
@@ -2032,6 +2049,17 @@ const recallRejected = Object.freeze({
   message: "Only queued user messages can be recalled",
 } satisfies Extract<AppendEventResult, { readonly ok: false }>);
 
+function existingRecallEventResult(revoker: {
+  readonly eventType: string;
+  readonly content: string | null;
+  readonly createdAt: Date;
+}): AppendEventResult {
+  if (revoker.eventType === "control.revoke" && revoker.content === null) {
+    return { ok: true, createdAt: revoker.createdAt };
+  }
+  return recallRejected;
+}
+
 export const appendRecallChatEvent$ = command(
   async (
     { set },
@@ -2043,10 +2071,19 @@ export const appendRecallChatEvent$ = command(
     signal: AbortSignal,
   ): Promise<AppendEventResult> => {
     const db = set(writeDb$);
-    const pendingTarget = await loadPendingChatQueueEvent(db, {
+    const pendingTargetArgs = {
       chatThreadId: params.threadId,
       eventId: params.revokesEventId,
-    });
+    };
+    const pendingTarget = await (async () => {
+      const plan = pendingChatQueueEventReadPlan(pendingTargetArgs);
+      const [event] = await db
+        .select(plan.columns)
+        .from(chatEvents)
+        .where(plan.condition)
+        .limit(1);
+      return pendingChatQueueEventFromRow(event);
+    })();
     signal.throwIfAborted();
     const wasPending =
       pendingTarget?.eventType === "input.prompt" ||
@@ -2067,13 +2104,7 @@ export const appendRecallChatEvent$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (existingRevoker) {
-      if (
-        existingRevoker.eventType === "control.revoke" &&
-        existingRevoker.content === null
-      ) {
-        return { ok: true, createdAt: existingRevoker.createdAt };
-      }
-      return recallRejected;
+      return existingRecallEventResult(existingRevoker);
     }
     const [target] = await db
       .select({
@@ -2317,12 +2348,14 @@ async function publishChatEventCreated(args: {
 }
 const assertOwnedThread$ = command(
   async (
-    { get },
+    { get, set },
     threadId: string,
     userId: string,
     orgId: string,
     signal: AbortSignal,
-  ): Promise<ReturnType<typeof notFound> | undefined> => {
+  ): Promise<
+    ReturnType<typeof notFound> | ReturnType<typeof forbidden> | undefined
+  > => {
     const db = get(db$);
     const [thread] = await db
       .select({ id: chatThreads.id })
@@ -2336,7 +2369,15 @@ const assertOwnedThread$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return thread ? undefined : notFound("Chat thread not found");
+    if (!thread) {
+      return notFound("Chat thread not found");
+    }
+    if (
+      await set(isOfficialWorkflowThread$, { threadId, orgId, userId }, signal)
+    ) {
+      return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+    }
+    return undefined;
   },
 );
 const handleRecallSend$ = command(
@@ -2432,6 +2473,7 @@ const handleInterruptSend$ = command(
       cancelRun$,
       {
         runId: args.body.interruptsRunId,
+        userRequested: true,
         userId: args.userId,
         orgId: args.orgId,
         runnerCancellationMode: "cooperative",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.26](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.25...guest-storage-apply-v0.25.26) (2026-10-19)
+
+
+### Refactoring
+
+* prepare database-backed agent instructions ([#41393](https://github.com/okou-ai/okou/issues/41393)) ([da0dc9c](https://github.com/okou-ai/okou/commit/da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29))
+
 ## [0.25.25](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.24...guest-storage-apply-v0.25.25) (2026-10-19)
 
 ## [0.25.24](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.25.23...guest-storage-apply-v0.25.24) (2026-10-19)

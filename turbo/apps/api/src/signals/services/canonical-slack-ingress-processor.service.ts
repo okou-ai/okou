@@ -4,7 +4,17 @@ import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  lt,
+  lte,
+  or,
+  sql,
+  type InferColumnsDataTypes,
+} from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../../lib/log";
 import {
@@ -13,7 +23,7 @@ import {
   type SlackFile,
 } from "../../lib/slack-webhook-context";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -155,30 +165,26 @@ function claimableIngress(currentTime: Date) {
   );
 }
 
-async function claimIngress(db: Db, ingressId: string, currentTime: Date) {
-  const [claimed] = await db
-    .update(slackChatIngress)
-    .set({
-      status: "processing",
+function ingressClaimWritePlan(ingressId: string, currentTime: Date) {
+  return {
+    values: {
+      status: "processing" as const,
       processingAttemptCount: sql`${slackChatIngress.processingAttemptCount} + 1`,
       retryAt: null,
       lastErrorClass: null,
       lastError: null,
       updatedAt: currentTime,
-    })
-    .where(
-      and(eq(slackChatIngress.id, ingressId), claimableIngress(currentTime)),
-    )
-    .returning({
-      id: slackChatIngress.id,
-      attemptCount: slackChatIngress.processingAttemptCount,
-    });
-  return claimed;
+    },
+    condition: and(
+      eq(slackChatIngress.id, ingressId),
+      claimableIngress(currentTime),
+    ),
+  };
 }
 
-async function loadClaimedIngress(db: Db, ingressId: string) {
-  const [row] = await db
-    .select({
+function claimedSlackIngressReadPlan(ingressId: string) {
+  return {
+    columns: {
       ingressId: slackChatIngress.id,
       payload: slackChatIngress.payload,
       createdAt: slackChatIngress.createdAt,
@@ -193,36 +199,27 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       orgId: slackOrgInstallations.orgId,
       encryptedBotToken: slackOrgInstallations.encryptedBotToken,
       botUserId: slackOrgInstallations.botUserId,
-    })
-    .from(slackChatIngress)
-    .innerJoin(
-      slackChatThreadRoutes,
-      eq(slackChatIngress.routeId, slackChatThreadRoutes.id),
-    )
-    .innerJoin(
-      slackOrgConnections,
-      eq(slackChatThreadRoutes.connectionId, slackOrgConnections.id),
-    )
-    .innerJoin(
-      slackOrgInstallations,
-      eq(
-        slackOrgConnections.slackWorkspaceId,
-        slackOrgInstallations.slackWorkspaceId,
-      ),
-    )
-    .where(
-      and(
-        eq(slackChatIngress.id, ingressId),
-        eq(slackChatIngress.status, "processing"),
-      ),
-    )
-    .limit(1);
-  return row;
+    },
+    routeJoin: eq(slackChatIngress.routeId, slackChatThreadRoutes.id),
+    connectionJoin: eq(
+      slackChatThreadRoutes.connectionId,
+      slackOrgConnections.id,
+    ),
+    installationJoin: eq(
+      slackOrgConnections.slackWorkspaceId,
+      slackOrgInstallations.slackWorkspaceId,
+    ),
+    condition: and(
+      eq(slackChatIngress.id, ingressId),
+      eq(slackChatIngress.status, "processing"),
+    ),
+    limit: 1,
+  };
 }
 
 function requireMatchingEvent(
   payload: string,
-  route: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
+  route: ClaimedCanonicalSlackIngress,
 ) {
   const parsed = slackEventCallbackSchema.parse(JSON.parse(payload) as unknown);
   const event = parsed.event;
@@ -306,19 +303,18 @@ function retryDelayMs(attemptCount: number): number {
   return RETRY_DELAYS_MS[index] ?? RETRY_DELAYS_MS.at(-1) ?? 0;
 }
 
-async function markIngressFailure(
-  db: Db,
-  args: {
-    readonly ingressId: string;
-    readonly attemptCount: number;
-    readonly error: unknown;
-    readonly currentTime: Date;
-  },
-): Promise<IngressFailureOutcome> {
+function ingressFailureWritePlan(args: {
+  readonly ingressId: string;
+  readonly attemptCount: number;
+  readonly error: unknown;
+  readonly currentTime: Date;
+}) {
   const classification = classifyIngressFailure(args.error);
   const canRetry =
     classification.retryable && args.attemptCount < MAX_PROCESSING_ATTEMPTS;
-  const status = canRetry ? "retryable" : "terminal";
+  const status: IngressFailureOutcome["status"] = canRetry
+    ? "retryable"
+    : "terminal";
   const errorClass =
     classification.retryable && !canRetry
       ? "attempts_exhausted"
@@ -334,28 +330,22 @@ async function markIngressFailure(
     : null;
   const message =
     args.error instanceof Error ? args.error.message : "Unknown error";
-  const [updated] = await db
-    .update(slackChatIngress)
-    .set({
+  return {
+    status,
+    errorClass,
+    retryAt,
+    values: {
       status,
       retryAt,
       lastErrorClass: errorClass,
       lastError: message.slice(0, 4000),
       updatedAt: args.currentTime,
-    })
-    .where(
-      and(
-        eq(slackChatIngress.id, args.ingressId),
-        eq(slackChatIngress.status, "processing"),
-        eq(slackChatIngress.processingAttemptCount, args.attemptCount),
-      ),
-    )
-    .returning({ id: slackChatIngress.id });
-  return {
-    status,
-    errorClass,
-    retryAt,
-    applied: updated !== undefined,
+    },
+    condition: and(
+      eq(slackChatIngress.id, args.ingressId),
+      eq(slackChatIngress.status, "processing"),
+      eq(slackChatIngress.processingAttemptCount, args.attemptCount),
+    ),
   };
 }
 
@@ -372,7 +362,7 @@ interface PersistedCanonicalSlackIngress {
 
 function persistedCanonicalSlackIngress(
   client: SlackClient,
-  ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
+  ingress: ClaimedCanonicalSlackIngress,
   orgId: string,
   threadTs: string,
   chatThreadId: string,
@@ -491,8 +481,8 @@ const settleCanonicalSlackStatusAfterPick$ = command(
   },
 );
 
-type ClaimedCanonicalSlackIngress = NonNullable<
-  Awaited<ReturnType<typeof loadClaimedIngress>>
+type ClaimedCanonicalSlackIngress = InferColumnsDataTypes<
+  ReturnType<typeof claimedSlackIngressReadPlan>["columns"]
 >;
 
 interface CanonicalSlackLaunchContext {
@@ -715,7 +705,18 @@ const persistClaimedCanonicalSlackIngress$ = command(
     signal: AbortSignal,
   ): Promise<PersistedCanonicalSlackIngress | undefined> => {
     const db = set(writeDb$);
-    const ingress = await loadClaimedIngress(db, ingressId);
+    const ingress = await (async () => {
+      const plan = claimedSlackIngressReadPlan(ingressId);
+      const [row] = await db
+        .select(plan.columns)
+        .from(slackChatIngress)
+        .innerJoin(slackChatThreadRoutes, plan.routeJoin)
+        .innerJoin(slackOrgConnections, plan.connectionJoin)
+        .innerJoin(slackOrgInstallations, plan.installationJoin)
+        .where(plan.condition)
+        .limit(plan.limit);
+      return row;
+    })();
     signal.throwIfAborted();
     if (!ingress) {
       return undefined;
@@ -893,7 +894,20 @@ export const processCanonicalSlackIngress$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const claimed = await claimIngress(db, args.ingressId, nowDate());
+    const claimIngressId = args.ingressId;
+    const claimTime = nowDate();
+    const claimed = await (async () => {
+      const plan = ingressClaimWritePlan(claimIngressId, claimTime);
+      const [claimed] = await db
+        .update(slackChatIngress)
+        .set(plan.values)
+        .where(plan.condition)
+        .returning({
+          id: slackChatIngress.id,
+          attemptCount: slackChatIngress.processingAttemptCount,
+        });
+      return claimed;
+    })();
     signal.throwIfAborted();
     if (!claimed) {
       return false;
@@ -939,12 +953,26 @@ export const processCanonicalSlackIngress$ = command(
       return result.value;
     }
 
-    const failure = await markIngressFailure(db, {
+    const failureArgs = {
       ingressId: args.ingressId,
       attemptCount: claimed.attemptCount,
       error: result.error,
       currentTime: nowDate(),
-    });
+    };
+    const failure = await (async (): Promise<IngressFailureOutcome> => {
+      const plan = ingressFailureWritePlan(failureArgs);
+      const [updated] = await db
+        .update(slackChatIngress)
+        .set(plan.values)
+        .where(plan.condition)
+        .returning({ id: slackChatIngress.id });
+      return {
+        status: plan.status,
+        errorClass: plan.errorClass,
+        retryAt: plan.retryAt,
+        applied: updated !== undefined,
+      };
+    })();
     signal.throwIfAborted();
     await tapError(
       (async () => {

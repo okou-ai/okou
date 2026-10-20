@@ -16,11 +16,18 @@ import {
   runUploadedFiles,
   type CanonicalAssetMaterializationStatus,
 } from "@okouai/db/schema/run-uploaded-file";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  isNull,
+  ne,
+  sql,
+  type InferColumnsDataTypes,
+} from "drizzle-orm";
 
 import { discordMessageUrl } from "../../lib/discord-message";
 import { nowDate } from "../../lib/time";
-import { type Db, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { discordClient, type DiscordMessage } from "../external/discord-client";
 import {
   downloadS3BufferWithMaxBytes,
@@ -95,81 +102,6 @@ function invalidFile(message: string): DiscordDeliveryFailure {
       status: 400,
       body: { error: { code: "INVALID_FILE", message } },
     },
-  };
-}
-
-async function loadDelivery(
-  db: Db,
-  args: DiscordDeliveryIdentity,
-  signal: AbortSignal,
-): Promise<DiscordDeliveryRow | undefined> {
-  const [row] = await db
-    .select({
-      id: canonicalAssetDeliveries.id,
-      assetId: runUploadedFiles.id,
-      operationId: canonicalAssetDeliveries.operationId,
-      filename: runUploadedFiles.filename,
-      contentType: runUploadedFiles.contentType,
-      sizeBytes: runUploadedFiles.sizeBytes,
-      checksumSha256: runUploadedFiles.checksumSha256,
-      storageKey: runUploadedFiles.storageKey,
-      metadata: runUploadedFiles.metadata,
-      materializationStatus: runUploadedFiles.materializationStatus,
-      assetUrl: runUploadedFiles.url,
-      status: canonicalAssetDeliveries.status,
-      destination: canonicalAssetDeliveries.destination,
-      providerState: canonicalAssetDeliveries.providerState,
-      externalId: canonicalAssetDeliveries.externalId,
-      deliveryUrl: canonicalAssetDeliveries.url,
-      lastError: canonicalAssetDeliveries.lastError,
-    })
-    .from(canonicalAssetDeliveries)
-    .innerJoin(
-      runUploadedFiles,
-      eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
-    )
-    .where(
-      and(
-        eq(runUploadedFiles.id, args.assetId),
-        eq(runUploadedFiles.userId, args.userId),
-        eq(runUploadedFiles.orgId, args.orgId),
-        args.runId === null
-          ? isNull(runUploadedFiles.runId)
-          : eq(runUploadedFiles.runId, args.runId),
-        eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-        eq(runUploadedFiles.classification, "published-output"),
-        eq(runUploadedFiles.idempotencyKey, args.operationId),
-        eq(canonicalAssetDeliveries.provider, "discord"),
-        eq(canonicalAssetDeliveries.operationId, args.operationId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!row) {
-    return undefined;
-  }
-  if (
-    row.destination.provider !== "discord" ||
-    row.providerState?.provider !== "discord" ||
-    !row.filename ||
-    !row.contentType ||
-    row.sizeBytes === null ||
-    !row.checksumSha256 ||
-    !row.storageKey ||
-    !row.materializationStatus
-  ) {
-    throw new Error("Canonical Discord delivery metadata is incomplete");
-  }
-  return {
-    ...row,
-    destination: row.destination,
-    providerState: row.providerState,
-    filename: row.filename,
-    contentType: row.contentType,
-    sizeBytes: row.sizeBytes,
-    checksumSha256: row.checksumSha256,
-    storageKey: row.storageKey,
-    materializationStatus: row.materializationStatus,
   };
 }
 
@@ -302,7 +234,80 @@ export const materializeCanonicalDiscordAsset$ = command(
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
     const db = set(writeDb$);
-    const row = await loadDelivery(db, args, signal);
+    async function loadDelivery(
+      args: DiscordDeliveryIdentity,
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryRow | undefined> {
+      const [row] = await db
+        .select({
+          id: canonicalAssetDeliveries.id,
+          assetId: runUploadedFiles.id,
+          operationId: canonicalAssetDeliveries.operationId,
+          filename: runUploadedFiles.filename,
+          contentType: runUploadedFiles.contentType,
+          sizeBytes: runUploadedFiles.sizeBytes,
+          checksumSha256: runUploadedFiles.checksumSha256,
+          storageKey: runUploadedFiles.storageKey,
+          metadata: runUploadedFiles.metadata,
+          materializationStatus: runUploadedFiles.materializationStatus,
+          assetUrl: runUploadedFiles.url,
+          status: canonicalAssetDeliveries.status,
+          destination: canonicalAssetDeliveries.destination,
+          providerState: canonicalAssetDeliveries.providerState,
+          externalId: canonicalAssetDeliveries.externalId,
+          deliveryUrl: canonicalAssetDeliveries.url,
+          lastError: canonicalAssetDeliveries.lastError,
+        })
+        .from(canonicalAssetDeliveries)
+        .innerJoin(
+          runUploadedFiles,
+          eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
+        )
+        .where(
+          and(
+            eq(runUploadedFiles.id, args.assetId),
+            eq(runUploadedFiles.userId, args.userId),
+            eq(runUploadedFiles.orgId, args.orgId),
+            args.runId === null
+              ? isNull(runUploadedFiles.runId)
+              : eq(runUploadedFiles.runId, args.runId),
+            eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+            eq(runUploadedFiles.classification, "published-output"),
+            eq(runUploadedFiles.idempotencyKey, args.operationId),
+            eq(canonicalAssetDeliveries.provider, "discord"),
+            eq(canonicalAssetDeliveries.operationId, args.operationId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!row) {
+        return undefined;
+      }
+      if (
+        row.destination.provider !== "discord" ||
+        row.providerState?.provider !== "discord" ||
+        !row.filename ||
+        !row.contentType ||
+        row.sizeBytes === null ||
+        !row.checksumSha256 ||
+        !row.storageKey ||
+        !row.materializationStatus
+      ) {
+        throw new Error("Canonical Discord delivery metadata is incomplete");
+      }
+      return {
+        ...row,
+        destination: row.destination,
+        providerState: row.providerState,
+        filename: row.filename,
+        contentType: row.contentType,
+        sizeBytes: row.sizeBytes,
+        checksumSha256: row.checksumSha256,
+        storageKey: row.storageKey,
+        materializationStatus: row.materializationStatus,
+      };
+    }
+    const row = await loadDelivery(args, signal);
     if (!row) {
       return unavailableDelivery();
     }
@@ -326,7 +331,7 @@ export const materializeCanonicalDiscordAsset$ = command(
         ? unavailableDelivery()
         : invalidFile(materialized.message);
     }
-    const current = await loadDelivery(db, args, signal);
+    const current = await loadDelivery(args, signal);
     return current ? deliveryResult(current) : unavailableDelivery();
   },
 );
@@ -337,29 +342,6 @@ function transitionCondition(row: DiscordDeliveryRow) {
     eq(canonicalAssetDeliveries.providerState, row.providerState),
     ne(canonicalAssetDeliveries.status, "delivered"),
   );
-}
-
-async function currentDeliveryResult(
-  db: Db,
-  args: DiscordDeliveryIdentity,
-  signal: AbortSignal,
-): Promise<DiscordDeliveryResult> {
-  const current = await loadDelivery(db, args, signal);
-  return current ? deliveryResult(current) : unavailableDelivery();
-}
-
-async function markFailed(
-  db: Db,
-  { identity, row }: DiscordDeliveryOperation,
-  failure: CanonicalAssetDeliveryError,
-  signal: AbortSignal,
-): Promise<DiscordDeliveryResult> {
-  await db
-    .update(canonicalAssetDeliveries)
-    .set({ status: "failed", lastError: failure, updatedAt: sql`now()` })
-    .where(transitionCondition(row));
-  signal.throwIfAborted();
-  return await currentDeliveryResult(db, identity, signal);
 }
 
 function deliveryFailure(
@@ -402,6 +384,82 @@ function deliveredAttachment(
     : undefined;
 }
 
+function deliverySelection() {
+  return {
+    id: canonicalAssetDeliveries.id,
+    assetId: runUploadedFiles.id,
+    operationId: canonicalAssetDeliveries.operationId,
+    filename: runUploadedFiles.filename,
+    contentType: runUploadedFiles.contentType,
+    sizeBytes: runUploadedFiles.sizeBytes,
+    checksumSha256: runUploadedFiles.checksumSha256,
+    storageKey: runUploadedFiles.storageKey,
+    metadata: runUploadedFiles.metadata,
+    materializationStatus: runUploadedFiles.materializationStatus,
+    assetUrl: runUploadedFiles.url,
+    status: canonicalAssetDeliveries.status,
+    destination: canonicalAssetDeliveries.destination,
+    providerState: canonicalAssetDeliveries.providerState,
+    externalId: canonicalAssetDeliveries.externalId,
+    deliveryUrl: canonicalAssetDeliveries.url,
+    lastError: canonicalAssetDeliveries.lastError,
+  };
+}
+
+function normalizeDeliveryRow(
+  row: InferColumnsDataTypes<ReturnType<typeof deliverySelection>> | undefined,
+): DiscordDeliveryRow | undefined {
+  if (!row) {
+    return undefined;
+  }
+  if (
+    row.destination.provider !== "discord" ||
+    row.providerState?.provider !== "discord" ||
+    !row.filename ||
+    !row.contentType ||
+    row.sizeBytes === null ||
+    !row.checksumSha256 ||
+    !row.storageKey ||
+    !row.materializationStatus
+  ) {
+    throw new Error("Canonical Discord delivery metadata is incomplete");
+  }
+  return {
+    ...row,
+    destination: row.destination,
+    providerState: row.providerState,
+    filename: row.filename,
+    contentType: row.contentType,
+    sizeBytes: row.sizeBytes,
+    checksumSha256: row.checksumSha256,
+    storageKey: row.storageKey,
+    materializationStatus: row.materializationStatus,
+  };
+}
+
+function deliveredValues(
+  row: DiscordDeliveryRow,
+  message: DiscordMessage,
+  context: { readonly guildId: string | undefined },
+  attachment: NonNullable<ReturnType<typeof deliveredAttachment>>,
+) {
+  return {
+    status: "delivered" as const,
+    externalId: message.id,
+    url: discordMessageUrl({
+      guildId: context.guildId,
+      channelId: message.channel_id,
+      messageId: message.id,
+    }),
+    providerState: {
+      ...row.providerState,
+      attachmentId: attachment.id,
+    },
+    lastError: null,
+    updatedAt: sql`now()`,
+  };
+}
+
 const sendDiscordFile$ = command(
   async (
     { set },
@@ -410,6 +468,44 @@ const sendDiscordFile$ = command(
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
     const db = set(writeDb$);
+
+    async function currentDeliveryResult(
+      args: DiscordDeliveryIdentity,
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryResult> {
+      async function loadDelivery(
+        args: DiscordDeliveryIdentity,
+        signal: AbortSignal,
+      ): Promise<DiscordDeliveryRow | undefined> {
+        const [row] = await db
+          .select(deliverySelection())
+          .from(canonicalAssetDeliveries)
+          .innerJoin(
+            runUploadedFiles,
+            eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
+          )
+          .where(deliveryIdentityCondition(args))
+          .limit(1);
+        signal.throwIfAborted();
+        return normalizeDeliveryRow(row);
+      }
+      const current = await loadDelivery(args, signal);
+      return current ? deliveryResult(current) : unavailableDelivery();
+    }
+
+    async function markFailed(
+      { identity, row }: DiscordDeliveryOperation,
+      failure: CanonicalAssetDeliveryError,
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryResult> {
+      await db
+        .update(canonicalAssetDeliveries)
+        .set({ status: "failed", lastError: failure, updatedAt: sql`now()` })
+        .where(transitionCondition(row));
+      signal.throwIfAborted();
+      return await currentDeliveryResult(identity, signal);
+    }
+
     const { identity: args, row: attemptRow } = operation;
     // Recheck after storage I/O and the durable claim, immediately before send.
     const sendAccess = await set(
@@ -421,7 +517,6 @@ const sendDiscordFile$ = command(
     );
     if (!sendAccess.ok) {
       await markFailed(
-        db,
         operation,
         deliveryFailure(
           "discord-access-denied",
@@ -451,7 +546,7 @@ const sendDiscordFile$ = command(
       signal,
     );
     if (!sent.ok) {
-      return await markFailed(db, operation, unconfirmedDelivery, signal);
+      return await markFailed(operation, unconfirmedDelivery, signal);
     }
     if (sent.value.kind === "ok") {
       async function recordDelivered(
@@ -466,7 +561,6 @@ const sendDiscordFile$ = command(
         const attachment = deliveredAttachment(message, row, context.botUserId);
         if (!attachment) {
           return await markFailed(
-            db,
             { identity, row },
             deliveryFailure(
               "discord-delivery-unverified",
@@ -477,24 +571,10 @@ const sendDiscordFile$ = command(
         }
         await db
           .update(canonicalAssetDeliveries)
-          .set({
-            status: "delivered",
-            externalId: message.id,
-            url: discordMessageUrl({
-              guildId: context.guildId,
-              channelId: message.channel_id,
-              messageId: message.id,
-            }),
-            providerState: {
-              ...row.providerState,
-              attachmentId: attachment.id,
-            },
-            lastError: null,
-            updatedAt: sql`now()`,
-          })
+          .set(deliveredValues(row, message, context, attachment))
           .where(transitionCondition(row));
         signal.throwIfAborted();
-        return await currentDeliveryResult(db, identity, signal);
+        return await currentDeliveryResult(identity, signal);
       }
       return await recordDelivered(
         operation,
@@ -507,13 +587,28 @@ const sendDiscordFile$ = command(
       );
     }
     return await markFailed(
-      db,
       operation,
       discordSendFailure(sent.value.status),
       signal,
     );
   },
 );
+
+function deliveryIdentityCondition(args: DiscordDeliveryIdentity) {
+  return and(
+    eq(runUploadedFiles.id, args.assetId),
+    eq(runUploadedFiles.userId, args.userId),
+    eq(runUploadedFiles.orgId, args.orgId),
+    args.runId === null
+      ? isNull(runUploadedFiles.runId)
+      : eq(runUploadedFiles.runId, args.runId),
+    eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+    eq(runUploadedFiles.classification, "published-output"),
+    eq(runUploadedFiles.idempotencyKey, args.operationId),
+    eq(canonicalAssetDeliveries.provider, "discord"),
+    eq(canonicalAssetDeliveries.operationId, args.operationId),
+  );
+}
 
 /**
  * Fire and forget: each upload operation sends at most once. A repeated
@@ -526,7 +621,31 @@ export const completeCanonicalDiscordDelivery$ = command(
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
     const db = set(writeDb$);
-    const row = await loadDelivery(db, args, signal);
+    async function loadDelivery(
+      args: DiscordDeliveryIdentity,
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryRow | undefined> {
+      const [row] = await db
+        .select(deliverySelection())
+        .from(canonicalAssetDeliveries)
+        .innerJoin(
+          runUploadedFiles,
+          eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
+        )
+        .where(deliveryIdentityCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      return normalizeDeliveryRow(row);
+    }
+    async function currentDeliveryResult(
+      args: DiscordDeliveryIdentity,
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryResult> {
+      const current = await loadDelivery(args, signal);
+      return current ? deliveryResult(current) : unavailableDelivery();
+    }
+
+    const row = await loadDelivery(args, signal);
     if (!row) {
       return unavailableDelivery();
     }
@@ -567,7 +686,7 @@ export const completeCanonicalDiscordDelivery$ = command(
       return claimed ? { ...row, providerState } : undefined;
     })(signal);
     if (!attemptRow) {
-      return await currentDeliveryResult(db, args, signal);
+      return await currentDeliveryResult(args, signal);
     }
     return await set(
       sendDiscordFile$,

@@ -522,42 +522,6 @@ async function cleanupExpiredRunnerJobs(
   return deletedCount;
 }
 
-async function cleanupConnectorDiagnosticRegistrations(
-  db: Db,
-  signal: AbortSignal,
-): Promise<number> {
-  const candidates = db
-    .select({ runId: agentRunConnectorDiagnosticRegistrations.runId })
-    .from(agentRunConnectorDiagnosticRegistrations)
-    .leftJoin(
-      agentRuns,
-      eq(agentRuns.id, agentRunConnectorDiagnosticRegistrations.runId),
-    )
-    .where(
-      or(
-        isNull(agentRuns.id),
-        inArray(agentRuns.status, TERMINAL_RUN_STATUSES),
-      ),
-    )
-    .orderBy(
-      agentRunConnectorDiagnosticRegistrations.createdAt,
-      agentRunConnectorDiagnosticRegistrations.runId,
-    )
-    .limit(CONNECTOR_DIAGNOSTIC_REGISTRATION_CLEANUP_BATCH_SIZE);
-  const deleted = await db
-    .delete(agentRunConnectorDiagnosticRegistrations)
-    .where(inArray(agentRunConnectorDiagnosticRegistrations.runId, candidates))
-    .returning({ runId: agentRunConnectorDiagnosticRegistrations.runId });
-  signal.throwIfAborted();
-
-  if (deleted.length > 0) {
-    L.debug("Cleaned up terminal connector diagnostic registrations", {
-      count: deleted.length,
-    });
-  }
-  return deleted.length;
-}
-
 const cleanupGlobalMaintenance$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     // Release silent terminal runs first so the org pick can admit the
@@ -633,7 +597,40 @@ export const cleanupSandboxes$ = command(
 
     await cleanupExpiredRunnerJobs(db, signal);
     signal.throwIfAborted();
-    await cleanupConnectorDiagnosticRegistrations(db, signal);
+    await (async (signal: AbortSignal): Promise<number> => {
+      const candidates = db
+        .select({ runId: agentRunConnectorDiagnosticRegistrations.runId })
+        .from(agentRunConnectorDiagnosticRegistrations)
+        .leftJoin(
+          agentRuns,
+          eq(agentRuns.id, agentRunConnectorDiagnosticRegistrations.runId),
+        )
+        .where(
+          or(
+            isNull(agentRuns.id),
+            inArray(agentRuns.status, TERMINAL_RUN_STATUSES),
+          ),
+        )
+        .orderBy(
+          agentRunConnectorDiagnosticRegistrations.createdAt,
+          agentRunConnectorDiagnosticRegistrations.runId,
+        )
+        .limit(CONNECTOR_DIAGNOSTIC_REGISTRATION_CLEANUP_BATCH_SIZE);
+      const deleted = await db
+        .delete(agentRunConnectorDiagnosticRegistrations)
+        .where(
+          inArray(agentRunConnectorDiagnosticRegistrations.runId, candidates),
+        )
+        .returning({ runId: agentRunConnectorDiagnosticRegistrations.runId });
+      signal.throwIfAborted();
+
+      if (deleted.length > 0) {
+        L.debug("Cleaned up terminal connector diagnostic registrations", {
+          count: deleted.length,
+        });
+      }
+      return deleted.length;
+    })(signal);
     signal.throwIfAborted();
     await set(cleanupGlobalMaintenance$, signal);
     signal.throwIfAborted();

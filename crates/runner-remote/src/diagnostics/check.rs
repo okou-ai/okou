@@ -1,14 +1,36 @@
 //! Check-only evidence stays outside operational history, including nested consumers.
 
 use super::{
-    Cause, Handle, MAX_REPORT_BYTES, Operation, Protocol, Report, State, Store, trace::Progress,
+    CAPACITY, Cause, Handle, MAX_REPORT_BYTES, Operation, Protocol, Report, Selector, State, Store,
+    trace::Progress,
 };
 use chrono::Utc;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+/// Freeze the final explanation, including check time and cleanup. Later
+/// native lifecycle observations must not rewrite what this check observed.
+#[derive(Clone)]
+pub(super) struct Receipt {
+    pub(super) report: Report,
+    pub(super) message: String,
+}
+
 impl Handle {
+    pub(super) fn select_check(&self, protocol: Protocol, selector: &Selector) -> Option<Receipt> {
+        let state = self.store.state.lock().unwrap_or_else(|p| p.into_inner());
+        if state.assignment != self.assignment {
+            return None;
+        }
+        state
+            .checks
+            .iter()
+            .rev()
+            .find(|receipt| selector.matches(protocol, &receipt.report))
+            .cloned()
+    }
+
     pub(crate) fn check_scope(&self) -> Self {
         let assignment = Uuid::new_v4();
         Self {
@@ -71,9 +93,6 @@ impl Handle {
         }
         state.sequence = state.sequence.saturating_add(1).min((1 << 53) - 1);
         report.sequence = state.sequence;
-        // This slot never replaces either protocol's pinned operational failure.
-        state.last_check = Some(report.clone());
-        drop(state);
         let cleanup = if cleanup == Progress::Passed {
             "passed"
         } else {
@@ -100,9 +119,19 @@ impl Handle {
         let detail = report
             .message_with_budget(MAX_REPORT_BYTES - prefix.len())
             .unwrap_or_else(|| {
-                format!("Detailed check evidence unavailable within the output budget. Run: {}\nAttempt: {}\nConnection: {}\nDo not infer unobserved stages or replay work.", report.run_id, report.attempt_id, report.connection_id)
+                format!("Detailed check evidence unavailable within the output budget. Run: {}\nAttempt: {}\nConnection: {}\nDo not infer unobserved stages or replay work. Helper delivery is unconfirmed. Without an exact Attempt, latest history may identify another check.", report.run_id, report.attempt_id, report.connection_id)
             });
         let message = format!("{prefix}{detail}");
+        // Completion order is serialized with retention. This independent ring
+        // never replaces operational reports or either protocol's failure pin.
+        if state.checks.len() == CAPACITY {
+            state.checks.pop_front();
+        }
+        state.checks.push_back(Receipt {
+            report,
+            message: message.clone(),
+        });
+        drop(state);
         tracing::info!(active_check = %message, "Remote active check completed");
         json!({"type":"active_check","status":status,"message":message})
     }

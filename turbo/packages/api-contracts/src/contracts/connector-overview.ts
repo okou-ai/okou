@@ -46,6 +46,9 @@ export const connectorDefaultAccountBriefSchema =
     externalUsername: true,
     externalEmail: true,
     connectionStatus: true,
+    setupStatus: true,
+    missingRequiredFields: true,
+    configuredFieldKeys: true,
   });
 
 export const connectorAccountBriefSummarySchema = connectorAccountSummarySchema

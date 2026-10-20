@@ -2395,6 +2395,69 @@
       "when": 1792403008286,
       "tag": "1419_official_workflow_hidden_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 1420,
+      "version": "7",
+      "when": 1792404888785,
+      "tag": "1420_prepare_agent_instructions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1421,
+      "version": "7",
+      "when": 1792407015724,
+      "tag": "1421_backfill_billing_run_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1422,
+      "version": "7",
+      "when": 1792408450137,
+      "tag": "1422_retire_provider_scoped_canonical_delivery_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1423,
+      "version": "7",
+      "when": 1792410026374,
+      "tag": "1423_agentphone_contact_card_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 1424,
+      "version": "7",
+      "when": 1792412045257,
+      "tag": "1424_threadless_run_cleanup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1425,
+      "version": "7",
+      "when": 1792412066609,
+      "tag": "1425_artifact_thread_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1426,
+      "version": "7",
+      "when": 1792412083325,
+      "tag": "1426_artifact_projection_owner_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 1427,
+      "version": "7",
+      "when": 1792417169707,
+      "tag": "1427_official_workflow_free_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 1428,
+      "version": "7",
+      "when": 1792421309143,
+      "tag": "1428_retire_workflow_deferred_retry_index",
+      "breakpoints": true
     }
   ]
 }

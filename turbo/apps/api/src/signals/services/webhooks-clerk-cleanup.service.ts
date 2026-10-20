@@ -286,43 +286,6 @@ const stopClerkDeletedOwnerRuns$ = command(
   },
 );
 
-async function cancelLastAdminOrgsStripeSubscriptions(
-  db: Db,
-  userId: string,
-): Promise<void> {
-  const adminOrgs = await db
-    .select({ orgId: orgMembersCache.orgId })
-    .from(orgMembersCache)
-    .where(
-      and(
-        eq(orgMembersCache.userId, userId),
-        eq(orgMembersCache.role, "admin"),
-      ),
-    );
-  for (const { orgId } of adminOrgs) {
-    const [result] = await db
-      .select({ adminCount: count() })
-      .from(orgMembersCache)
-      .where(
-        and(
-          eq(orgMembersCache.orgId, orgId),
-          eq(orgMembersCache.role, "admin"),
-        ),
-      );
-    if ((result?.adminCount ?? 0) <= 1) {
-      await tapError(
-        cancelStripeSubscriptionsForDeletedOrg(db, orgId),
-        (error) => {
-          L.warn(
-            "failed to cancel stripe subscriptions for banned last admin",
-            { userId, orgId, error },
-          );
-        },
-      );
-    }
-  }
-}
-
 interface StripeSubscriptionCleanupTargets {
   readonly cancelNowSubscriptionIds: Set<string>;
   readonly cancelAtPeriodEndSubscriptionIds: Set<string>;
@@ -371,52 +334,6 @@ function queueFallbackStripeSubscriptionCleanup(
     return;
   }
   targets.cancelAtPeriodEndSubscriptionIds.add(subscriptionId);
-}
-
-async function cancelStripeSubscriptionsForDeletedOrg(
-  db: Db,
-  orgId: string,
-): Promise<void> {
-  const [meta] = await db
-    .select({
-      stripeCustomerId: orgMetadata.stripeCustomerId,
-      stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-      subscriptionStatus: orgMetadata.subscriptionStatus,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (!meta?.stripeCustomerId && !meta?.stripeSubscriptionId) {
-    return;
-  }
-  const stripe = getStripeClient();
-  const targets: StripeSubscriptionCleanupTargets = {
-    cancelNowSubscriptionIds: new Set<string>(),
-    cancelAtPeriodEndSubscriptionIds: new Set<string>(),
-    nonRenewingSubscriptionIds: new Set<string>(),
-  };
-  if (meta.stripeCustomerId) {
-    const subscriptions = await listAllStripeSubscriptions(stripe, {
-      customer: meta.stripeCustomerId,
-      status: "all",
-    });
-    for (const subscription of subscriptions) {
-      queueStripeSubscriptionCleanup(targets, subscription);
-    }
-  }
-  queueFallbackStripeSubscriptionCleanup(
-    targets,
-    meta.stripeSubscriptionId,
-    meta.subscriptionStatus,
-  );
-  for (const subscriptionId of targets.cancelNowSubscriptionIds) {
-    await stripe.subscriptions.cancel(subscriptionId);
-  }
-  for (const subscriptionId of targets.cancelAtPeriodEndSubscriptionIds) {
-    await stripe.subscriptions.update(subscriptionId, {
-      cancel_at_period_end: true,
-    });
-  }
 }
 
 export const cleanupClerkDeletedOrg$ = command(
@@ -508,6 +425,79 @@ export const cleanupClerkBannedUser$ = command(
       set(scheduleReleasedSlotPicks$, slots, signal);
     });
     signal.throwIfAborted();
-    await cancelLastAdminOrgsStripeSubscriptions(db, userId);
+    await (async (): Promise<void> => {
+      const adminOrgs = await db
+        .select({ orgId: orgMembersCache.orgId })
+        .from(orgMembersCache)
+        .where(
+          and(
+            eq(orgMembersCache.userId, userId),
+            eq(orgMembersCache.role, "admin"),
+          ),
+        );
+      for (const { orgId } of adminOrgs) {
+        const [result] = await db
+          .select({ adminCount: count() })
+          .from(orgMembersCache)
+          .where(
+            and(
+              eq(orgMembersCache.orgId, orgId),
+              eq(orgMembersCache.role, "admin"),
+            ),
+          );
+        if ((result?.adminCount ?? 0) <= 1) {
+          await tapError(
+            (async (): Promise<void> => {
+              const [meta] = await db
+                .select({
+                  stripeCustomerId: orgMetadata.stripeCustomerId,
+                  stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+                  subscriptionStatus: orgMetadata.subscriptionStatus,
+                })
+                .from(orgMetadata)
+                .where(eq(orgMetadata.orgId, orgId))
+                .limit(1);
+              if (!meta?.stripeCustomerId && !meta?.stripeSubscriptionId) {
+                return;
+              }
+              const stripe = getStripeClient();
+              const targets: StripeSubscriptionCleanupTargets = {
+                cancelNowSubscriptionIds: new Set<string>(),
+                cancelAtPeriodEndSubscriptionIds: new Set<string>(),
+                nonRenewingSubscriptionIds: new Set<string>(),
+              };
+              if (meta.stripeCustomerId) {
+                const subscriptions = await listAllStripeSubscriptions(stripe, {
+                  customer: meta.stripeCustomerId,
+                  status: "all",
+                });
+                for (const subscription of subscriptions) {
+                  queueStripeSubscriptionCleanup(targets, subscription);
+                }
+              }
+              queueFallbackStripeSubscriptionCleanup(
+                targets,
+                meta.stripeSubscriptionId,
+                meta.subscriptionStatus,
+              );
+              for (const subscriptionId of targets.cancelNowSubscriptionIds) {
+                await stripe.subscriptions.cancel(subscriptionId);
+              }
+              for (const subscriptionId of targets.cancelAtPeriodEndSubscriptionIds) {
+                await stripe.subscriptions.update(subscriptionId, {
+                  cancel_at_period_end: true,
+                });
+              }
+            })(),
+            (error) => {
+              L.warn(
+                "failed to cancel stripe subscriptions for banned last admin",
+                { userId, orgId, error },
+              );
+            },
+          );
+        }
+      }
+    })();
   },
 );

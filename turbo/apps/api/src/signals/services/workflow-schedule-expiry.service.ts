@@ -7,7 +7,7 @@ import { db$, writeDb$ } from "../external/db";
 
 import { calculateNextRun } from "./time-automation";
 
-import { SCHEDULE_GRACE_MS, scheduleExpired } from "./schedule-expiry-policy";
+import { scheduleExpired } from "./schedule-expiry-policy";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 
@@ -191,7 +191,7 @@ export const skipExpiredWorkflowSchedule$ = command(
   },
 );
 
-/** Bounded, anchor-scoped retry for an unclaimable but not-yet-expired slot. */
+/** Retry a held expired slot after a minute without blocking its lane. */
 export const deferWorkflowSchedule$ = command(
   async (
     { set },
@@ -199,23 +199,16 @@ export const deferWorkflowSchedule$ = command(
       readonly automationId: string;
       readonly anchor: Date;
       readonly at: Date;
-      readonly reason: "not_fireable" | "unavailable" | "held";
     },
     signal?: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    const expiryAt = args.anchor.getTime() + SCHEDULE_GRACE_MS;
-    const retryAt = new Date(
-      expiryAt < args.at.getTime()
-        ? args.at.getTime() + 60_000
-        : Math.min(args.at.getTime() + 60_000, expiryAt),
-    );
     await db
       .update(workflowAutomations)
       .set({
         deferredAnchorAt: args.anchor,
-        deferredUntil: retryAt,
-        deferredReason: args.reason,
+        deferredUntil: new Date(args.at.getTime() + 60_000),
+        deferredReason: "held",
       })
       .where(
         and(

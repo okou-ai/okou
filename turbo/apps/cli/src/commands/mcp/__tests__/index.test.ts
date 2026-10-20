@@ -267,6 +267,26 @@ describe("okou mcp command", () => {
     await rm(inputDirectory, { recursive: true, force: true });
   });
 
+  it("preserves future account facts without replacing the admitted MCP identity", async () => {
+    const setup = {
+      setupStatus: "invalid" as const,
+      missingRequiredFields: [],
+      configuredFieldKeys: ["token"],
+      connectionStatus: "reconnect-required" as const,
+    };
+    server.use(stubRunMcpConnectors([runMcpConnector(setup)]));
+    await mcpCommand.parseAsync(["node", "okou", "list", "--json"]);
+    expect(JSON.parse(outputText(consoleLog))).toEqual({
+      connectors: [
+        expect.objectContaining({
+          ...setup,
+          connected: true,
+          connectionId: "77777777-7777-4777-8777-777777777777",
+        }),
+      ],
+    });
+  });
+
   it("lists server-authorized MCP definitions with safe JSON fields", async () => {
     const secondId = "55555555-5555-4555-8555-555555555555";
     server.use(

@@ -7,7 +7,7 @@ import {
 import { and, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 
 import type { SlackClient } from "../external/slack-message-client";
-import { type Db, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 
 interface CanonicalSlackDeliveryRow {
@@ -48,6 +48,16 @@ type CanonicalSlackDeliveryResult =
       readonly message: string;
       readonly retryable: boolean;
     };
+
+type SlackDeliveryReadResult = CanonicalSlackDeliveryRow | undefined;
+
+type RawSlackDeliveryRow = Omit<CanonicalSlackDeliveryRow, "destination"> &
+  Pick<typeof canonicalAssetDeliveries.$inferSelect, "destination">;
+
+type SlackDeliveryConflictRow = Pick<
+  CanonicalSlackDeliveryRow,
+  "status" | "externalId" | "deliveryUrl" | "lastError"
+>;
 
 function requiredSlackFileId(externalId: string | null): string {
   if (!externalId) {
@@ -144,20 +154,30 @@ function deliveryTransitionCondition(row: CanonicalSlackDeliveryRow): SQL {
   )!;
 }
 
-async function deliveryResultAfterTransitionConflict(
-  db: Db,
-  row: CanonicalSlackDeliveryRow,
-): Promise<CanonicalSlackDeliveryResult> {
-  const [current] = await db
-    .select({
-      status: canonicalAssetDeliveries.status,
-      externalId: canonicalAssetDeliveries.externalId,
-      deliveryUrl: canonicalAssetDeliveries.url,
-      lastError: canonicalAssetDeliveries.lastError,
-    })
-    .from(canonicalAssetDeliveries)
-    .where(deliveryIdentityCondition(row))
-    .limit(1);
+function validatedSlackDeliveryRow(
+  row: RawSlackDeliveryRow | undefined,
+): SlackDeliveryReadResult {
+  if (!row) {
+    return undefined;
+  }
+  if (row.destination.provider !== undefined) {
+    throw new Error("Slack delivery has a Discord destination");
+  }
+  return { ...row, destination: row.destination };
+}
+
+function slackConflictSelection() {
+  return {
+    status: canonicalAssetDeliveries.status,
+    externalId: canonicalAssetDeliveries.externalId,
+    deliveryUrl: canonicalAssetDeliveries.url,
+    lastError: canonicalAssetDeliveries.lastError,
+  };
+}
+
+function conflictDeliveryResult(
+  current: SlackDeliveryConflictRow | undefined,
+): CanonicalSlackDeliveryResult {
   if (current?.status === "delivered") {
     return {
       status: "delivered",
@@ -210,70 +230,109 @@ function slackDeliverySelection() {
   };
 }
 
-async function completeExistingSlackFile(
-  db: Db,
-  client: SlackClient,
-  row: CanonicalSlackDeliveryRow,
-): Promise<CanonicalSlackDeliveryResult | null> {
-  if (!row.externalId) {
-    return null;
-  }
-  const recordReconciliationFailure = async (
-    error: CanonicalSlackDeliveryFailure,
-  ): Promise<CanonicalSlackDeliveryResult> => {
-    const [failed] = await db
-      .update(canonicalAssetDeliveries)
-      .set({
-        status: "failed",
-        lastError: error,
-        updatedAt: sql`now()`,
-      })
-      .where(deliveryTransitionCondition(row))
-      .returning({ id: canonicalAssetDeliveries.id });
-    return failed
-      ? failedResult(error)
-      : await deliveryResultAfterTransitionConflict(db, row);
+interface PreparedSlackFile {
+  readonly uploadUrl: string;
+  readonly fileId: string;
+}
+
+interface SlackCompletionRequest {
+  readonly fileId: string;
+  readonly channel: string;
+  readonly threadTs?: string;
+  readonly title?: string;
+  readonly initialComment?: string;
+}
+
+function slackDeliveryAssetJoin(): SQL {
+  return eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId);
+}
+
+function failedUpdateFields(error: CanonicalSlackDeliveryFailure): {
+  readonly status: "failed";
+  readonly lastError: CanonicalSlackDeliveryFailure;
+  readonly updatedAt: SQL;
+} {
+  return {
+    status: "failed",
+    lastError: error,
+    updatedAt: sql`now()`,
   };
-  const completed = await client.completeUploadExternal({
-    fileId: row.externalId,
+}
+
+function slackRequestFailure(error: unknown): CanonicalSlackDeliveryFailure {
+  return {
+    code: "slack-request-failed",
+    message: providerFailureMessage(error),
+    retryable: true,
+  };
+}
+
+function missingAssetMetadataFailure(): CanonicalSlackDeliveryFailure {
+  return {
+    code: "asset-metadata-missing",
+    message: "Canonical asset metadata is incomplete",
+    retryable: false,
+  };
+}
+
+function slackProviderFailure(result: {
+  readonly error: string;
+}): CanonicalSlackDeliveryFailure {
+  return {
+    code: result.error,
+    message: `Slack delivery failed: ${result.error}`,
+    retryable: true,
+  };
+}
+
+function isUnuploadedSlackFile(result: { readonly error: string }): boolean {
+  return result.error === "file_not_found" || result.error === "no_file_data";
+}
+
+function slackCompletionRequest(
+  fileId: string,
+  row: Pick<CanonicalSlackDeliveryRow, "destination">,
+): SlackCompletionRequest {
+  return {
+    fileId,
     channel: row.destination.channelId,
     threadTs: row.destination.threadTs,
     title: row.destination.title,
     initialComment: row.destination.initialComment,
-  });
-  if (completed.kind === "slack_error") {
-    if (
-      completed.error === "file_not_found" ||
-      completed.error === "no_file_data"
-    ) {
-      return null;
-    }
-    return await recordReconciliationFailure({
-      code: completed.error,
-      message: `Slack delivery failed: ${completed.error}`,
-      retryable: true,
-    });
-  }
-  const info = await client.getFileInfo(row.externalId);
-  const permalinkResult = resolveSlackFilePermalink(info);
-  if (!permalinkResult.ok) {
-    return await recordReconciliationFailure(permalinkResult.error);
-  }
-  const recordDeliverySuccess = async (
-    permalink: string,
-  ): Promise<CanonicalSlackDeliveryResult> => {
-    const fileId = requiredSlackFileId(row.externalId);
-    const deliveryUrl = requiredSlackPermalink(permalink);
-    const [delivered] = await db
-      .update(canonicalAssetDeliveries)
-      .set(deliveredUpdateFields(deliveryUrl))
-      .where(deliveryTransitionCondition(row))
-      .returning({ id: canonicalAssetDeliveries.id });
-    return delivered
-      ? successfulDeliveryResult(fileId, deliveryUrl)
-      : await deliveryResultAfterTransitionConflict(db, row);
   };
-  return await recordDeliverySuccess(permalinkResult.permalink);
+}
+
+function slackUploadRequest(
+  filename: string,
+  length: number,
+): { readonly filename: string; readonly length: number } {
+  return { filename, length };
+}
+
+function preparedUpdateFields(prepared: PreparedSlackFile): {
+  readonly status: "pending";
+  readonly externalId: string;
+  readonly url: null;
+  readonly lastError: null;
+  readonly updatedAt: SQL;
+} {
+  return {
+    status: "pending",
+    externalId: prepared.fileId,
+    url: null,
+    lastError: null,
+    updatedAt: sql`now()`,
+  };
+}
+
+function pendingDeliveryResult(
+  prepared: PreparedSlackFile,
+): CanonicalSlackDeliveryResult {
+  return {
+    status: "pending",
+    uploadUrl: prepared.uploadUrl,
+    fileId: prepared.fileId,
+  };
 }
 
 interface PrepareCanonicalSlackDeliveryArgs {
@@ -311,25 +370,14 @@ export const prepareCanonicalSlackDelivery$ = command(
     signal: AbortSignal,
   ): Promise<CanonicalSlackDeliveryResult | null> => {
     const db = set(writeDb$);
-    const readDelivery = async (): Promise<
-      CanonicalSlackDeliveryRow | undefined
-    > => {
+    const readDelivery = async (): Promise<SlackDeliveryReadResult> => {
       const [row] = await db
         .select(slackDeliverySelection())
         .from(canonicalAssetDeliveries)
-        .innerJoin(
-          runUploadedFiles,
-          eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
-        )
+        .innerJoin(runUploadedFiles, slackDeliveryAssetJoin())
         .where(slackDeliveryReadCondition(args))
         .limit(1);
-      if (!row) {
-        return undefined;
-      }
-      if (row.destination.provider !== undefined) {
-        throw new Error("Slack delivery has a Discord destination");
-      }
-      return { ...row, destination: row.destination };
+      return validatedSlackDeliveryRow(row);
     };
     const row = await readDelivery();
     signal.throwIfAborted();
@@ -340,94 +388,106 @@ export const prepareCanonicalSlackDelivery$ = command(
       return deliveredResult(row);
     }
 
+    const readConflict = async (): Promise<CanonicalSlackDeliveryResult> => {
+      const [current] = await db
+        .select(slackConflictSelection())
+        .from(canonicalAssetDeliveries)
+        .where(deliveryIdentityCondition(row))
+        .limit(1);
+      return conflictDeliveryResult(current);
+    };
+
     const recordPreparationFailure = async (
       error: CanonicalSlackDeliveryFailure,
     ): Promise<CanonicalSlackDeliveryResult> => {
       const [failed] = await db
         .update(canonicalAssetDeliveries)
-        .set({
-          status: "failed",
-          lastError: error,
-          updatedAt: sql`now()`,
-        })
+        .set(failedUpdateFields(error))
         .where(deliveryTransitionCondition(row))
         .returning({ id: canonicalAssetDeliveries.id });
-      return failed
-        ? failedResult(error)
-        : await deliveryResultAfterTransitionConflict(db, row);
+      return failed ? failedResult(error) : await readConflict();
     };
 
-    const reconciliation = await settle(
-      completeExistingSlackFile(db, args.client, row),
-      signal,
-    );
+    const reconcileExistingSlackFile = async () => {
+      if (!row.externalId) {
+        return null;
+      }
+
+      const completed = await client.completeUploadExternal(
+        slackCompletionRequest(row.externalId, row),
+      );
+      if (completed.kind === "slack_error") {
+        if (isUnuploadedSlackFile(completed)) {
+          return null;
+        }
+        return await recordPreparationFailure(slackProviderFailure(completed));
+      }
+      const info = await client.getFileInfo(row.externalId);
+      const permalinkResult = resolveSlackFilePermalink(info);
+      if (!permalinkResult.ok) {
+        return await recordPreparationFailure(permalinkResult.error);
+      }
+      const recordDeliverySuccess = async (
+        permalink: string,
+      ): Promise<CanonicalSlackDeliveryResult> => {
+        const fileId = requiredSlackFileId(row.externalId);
+        const deliveryUrl = requiredSlackPermalink(permalink);
+        const [delivered] = await db
+          .update(canonicalAssetDeliveries)
+          .set(deliveredUpdateFields(deliveryUrl))
+          .where(deliveryTransitionCondition(row))
+          .returning({ id: canonicalAssetDeliveries.id });
+        return delivered
+          ? successfulDeliveryResult(fileId, deliveryUrl)
+          : await readConflict();
+      };
+      return await recordDeliverySuccess(permalinkResult.permalink);
+    };
+    const client = args.client;
+    const reconciliation = await settle(reconcileExistingSlackFile(), signal);
     signal.throwIfAborted();
     if (!reconciliation.ok) {
-      return await recordPreparationFailure({
-        code: "slack-request-failed",
-        message: providerFailureMessage(reconciliation.error),
-        retryable: true,
-      });
+      return await recordPreparationFailure(
+        slackRequestFailure(reconciliation.error),
+      );
     }
     const reconciled = reconciliation.value;
     if (reconciled) {
       return reconciled;
     }
     if (!row.filename || row.sizeBytes === null) {
-      return await recordPreparationFailure({
-        code: "asset-metadata-missing",
-        message: "Canonical asset metadata is incomplete",
-        retryable: false,
-      });
+      return await recordPreparationFailure(missingAssetMetadataFailure());
     }
 
     const preparation = await settle(
-      args.client.getUploadUrlExternal({
-        filename: row.filename,
-        length: row.sizeBytes,
-      }),
+      args.client.getUploadUrlExternal(
+        slackUploadRequest(row.filename, row.sizeBytes),
+      ),
       signal,
     );
     signal.throwIfAborted();
     if (!preparation.ok) {
-      return await recordPreparationFailure({
-        code: "slack-request-failed",
-        message: providerFailureMessage(preparation.error),
-        retryable: true,
-      });
+      return await recordPreparationFailure(
+        slackRequestFailure(preparation.error),
+      );
     }
     const prepared = preparation.value;
     if (prepared.kind === "slack_error") {
-      return await recordPreparationFailure({
-        code: prepared.error,
-        message: `Slack delivery failed: ${prepared.error}`,
-        retryable: true,
-      });
+      return await recordPreparationFailure(slackProviderFailure(prepared));
     }
 
-    const reservePreparedSlackFile = async (prepared: {
-      readonly uploadUrl: string;
-      readonly fileId: string;
-    }): Promise<CanonicalSlackDeliveryResult> => {
+    const reservePreparedSlackFile = async (
+      prepared: PreparedSlackFile,
+    ): Promise<CanonicalSlackDeliveryResult> => {
       const [reserved] = await db
         .update(canonicalAssetDeliveries)
-        .set({
-          status: "pending",
-          externalId: prepared.fileId,
-          url: null,
-          lastError: null,
-          updatedAt: sql`now()`,
-        })
+        .set(preparedUpdateFields(prepared))
         .where(deliveryTransitionCondition(row))
         .returning({ id: canonicalAssetDeliveries.id });
       if (!reserved) {
-        return await deliveryResultAfterTransitionConflict(db, row);
+        return await readConflict();
       }
-      return {
-        status: "pending",
-        uploadUrl: prepared.uploadUrl,
-        fileId: prepared.fileId,
-      };
+      return pendingDeliveryResult(prepared);
     };
     const result = await reservePreparedSlackFile({
       uploadUrl: prepared.uploadUrl,
@@ -461,9 +521,7 @@ export const completeCanonicalSlackDelivery$ = command(
     (CanonicalSlackDeliveryResult & { readonly channelId: string }) | null
   > => {
     const db = set(writeDb$);
-    const readDelivery = async (): Promise<
-      CanonicalSlackDeliveryRow | undefined
-    > => {
+    const readDelivery = async (): Promise<SlackDeliveryReadResult> => {
       const [row] = await db
         .select(slackDeliverySelection())
         .from(canonicalAssetDeliveries)
@@ -473,19 +531,22 @@ export const completeCanonicalSlackDelivery$ = command(
         )
         .where(slackDeliveryReadCondition(args))
         .limit(1);
-      if (!row) {
-        return undefined;
-      }
-      if (row.destination.provider !== undefined) {
-        throw new Error("Slack delivery has a Discord destination");
-      }
-      return { ...row, destination: row.destination };
+      return validatedSlackDeliveryRow(row);
     };
     const row = await readDelivery();
     signal.throwIfAborted();
     if (!row) {
       return null;
     }
+    const readConflict = async (): Promise<CanonicalSlackDeliveryResult> => {
+      const [current] = await db
+        .select(slackConflictSelection())
+        .from(canonicalAssetDeliveries)
+        .where(deliveryIdentityCondition(row))
+        .limit(1);
+      return conflictDeliveryResult(current);
+    };
+
     const completeDelivery = async (
       deliverySignal: AbortSignal,
     ): Promise<CanonicalSlackDeliveryResult> => {
@@ -501,15 +562,13 @@ export const completeCanonicalSlackDelivery$ = command(
           })
           .where(deliveryTransitionCondition(row))
           .returning({ id: canonicalAssetDeliveries.id });
-        return failed
-          ? failedResult(error)
-          : await deliveryResultAfterTransitionConflict(db, row);
+        return failed ? failedResult(error) : await readConflict();
       };
       if (row.status === "delivered") {
         return deliveredResult(row);
       }
       if (row.externalId !== args.fileId) {
-        return await deliveryResultAfterTransitionConflict(db, row);
+        return await readConflict();
       }
       if (args.uploadError) {
         return await recordDeliveryFailure({
@@ -575,7 +634,7 @@ export const completeCanonicalSlackDelivery$ = command(
           .returning({ id: canonicalAssetDeliveries.id });
         return delivered
           ? successfulDeliveryResult(fileId, deliveryUrl)
-          : await deliveryResultAfterTransitionConflict(db, row);
+          : await readConflict();
       };
       return await recordDeliverySuccess(permalinkResult.permalink);
     };

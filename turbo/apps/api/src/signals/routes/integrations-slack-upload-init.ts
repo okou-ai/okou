@@ -6,12 +6,16 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { createSlackClient } from "../external/slack-message-client";
 import { MAX_SLACK_FILE_SIZE_BYTES } from "../external/slack-file-fetcher";
-import { prepareCanonicalPublishedAsset$ } from "../services/canonical-asset.service";
+import {
+  CanonicalPublicationConflictError,
+  prepareCanonicalPublishedAsset$,
+} from "../services/canonical-asset.service";
 import { slackOrgInstallation } from "../services/slack-data.service";
 import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import type { RouteEntry } from "../route-entry";
+import { settle } from "../utils";
 
 const slackInstallationInput$ = computed(
   (
@@ -55,8 +59,7 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const client = createSlackClient(installation.botToken);
-  const runId =
-    "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
+  const runId = "runId" in auth ? auth.runId : undefined;
   if (body.canonical && runId) {
     if (body.length > MAX_SLACK_FILE_SIZE_BYTES) {
       return badRequestMessage("File too large (max 100 MB)");
@@ -80,31 +83,41 @@ const initInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if ("status" in target) {
       return target;
     }
-    const prepared = await set(
-      prepareCanonicalPublishedAsset$,
-      {
-        provider: "slack",
-        runId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-        operationId: body.canonical.operationId,
-        filename: body.filename,
-        contentType,
-        size: body.length,
-        checksumSha256: body.canonical.checksumSha256,
-        destination: {
-          channelId: target.channelId,
-          ...(body.canonical.threadTs
-            ? { threadTs: body.canonical.threadTs }
-            : {}),
-          ...(body.canonical.title ? { title: body.canonical.title } : {}),
-          ...(body.canonical.initialComment
-            ? { initialComment: body.canonical.initialComment }
-            : {}),
+    const result = await settle(
+      set(
+        prepareCanonicalPublishedAsset$,
+        {
+          provider: "slack",
+          runId,
+          userId: auth.userId,
+          orgId: auth.orgId,
+          operationId: body.canonical.operationId,
+          filename: body.filename,
+          contentType,
+          size: body.length,
+          checksumSha256: body.canonical.checksumSha256,
+          destination: {
+            channelId: target.channelId,
+            ...(body.canonical.threadTs
+              ? { threadTs: body.canonical.threadTs }
+              : {}),
+            ...(body.canonical.title ? { title: body.canonical.title } : {}),
+            ...(body.canonical.initialComment
+              ? { initialComment: body.canonical.initialComment }
+              : {}),
+          },
         },
-      },
+        signal,
+      ),
       signal,
     );
+    if (!result.ok) {
+      if (result.error instanceof CanonicalPublicationConflictError) {
+        return conflict(result.error.message);
+      }
+      throw result.error;
+    }
+    const prepared = result.value;
     if (!prepared) {
       return notFound("Agent run not found");
     }

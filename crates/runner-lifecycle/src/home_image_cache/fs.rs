@@ -246,9 +246,9 @@ async fn path_tree_allocated_bytes(
         return Ok(total);
     }
 
-    // Entry-local GC and checkout can remove discovered descendants even while
-    // publication holds capacity. Missing descendants add no further allocation;
-    // retain already-counted blocks conservatively and propagate other errors.
+    // Concurrent entry-local GC and checkout can remove discovered descendants.
+    // Missing descendants add no further allocation; retain already-counted
+    // blocks conservatively and propagate other errors.
     let mut pending = vec![(path.to_path_buf(), true)];
     while let Some((dir, is_root)) = pending.pop() {
         if !is_root {

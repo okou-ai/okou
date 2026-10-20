@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.20...runner-provider-v0.8.21) (2026-10-19)
+
+
+### Refactoring
+
+* prepare database-backed agent instructions ([#41393](https://github.com/okou-ai/okou/issues/41393)) ([da0dc9c](https://github.com/okou-ai/okou/commit/da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29))
+
 ## [0.8.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.19...runner-provider-v0.8.20) (2026-10-19)
 
 ## [0.8.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.18...runner-provider-v0.8.19) (2026-10-19)

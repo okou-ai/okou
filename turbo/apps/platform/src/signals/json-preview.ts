@@ -1,9 +1,23 @@
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import {
   parseJsonPreview,
   type JsonPreviewNode,
   type JsonPreviewSource,
 } from "../lib/json-preview.ts";
+
+const PAGE_SIZE = 50;
+
+export interface JsonPreviewPageSignals {
+  readonly visible$: Computed<boolean>;
+  readonly nodes$: Computed<readonly JsonPreviewNodeSignals[]>;
+}
+
+export interface JsonPreviewNodeSignals {
+  readonly node: JsonPreviewNode;
+  readonly expanded$: Computed<boolean | undefined>;
+  readonly remaining$: Computed<number | undefined>;
+  readonly pages$: Computed<readonly JsonPreviewPageSignals[]>;
+}
 
 export type JsonPreviewRow =
   | {
@@ -18,6 +32,49 @@ export type JsonPreviewRow =
       readonly depth: number;
       readonly remaining: number;
     };
+
+interface JsonPreviewRowIndex {
+  readonly nodes: ReadonlyMap<
+    number,
+    Extract<JsonPreviewRow, { kind: "node" }>
+  >;
+  readonly more: ReadonlyMap<number, Extract<JsonPreviewRow, { kind: "more" }>>;
+}
+
+function createNodeSignals(
+  node: JsonPreviewNode,
+  rowIndex$: Computed<JsonPreviewRowIndex>,
+): JsonPreviewNodeSignals {
+  return {
+    node,
+    expanded$: computed((get) => {
+      return get(rowIndex$).nodes.get(node.offset)?.expanded;
+    }),
+    remaining$: computed((get) => {
+      return get(rowIndex$).more.get(node.offset)?.remaining;
+    }),
+    pages$: computed(() => {
+      const pages: JsonPreviewPageSignals[] = [];
+      for (const [index, first] of node.children.entries()) {
+        if (index % PAGE_SIZE === 0) {
+          pages.push({
+            visible$: computed((get) => {
+              return get(rowIndex$).nodes.has(first.offset);
+            }),
+            nodes$: computed(() => {
+              return node.children
+                .slice(index, index + PAGE_SIZE)
+                .map((child) => {
+                  return createNodeSignals(child, rowIndex$);
+                });
+            }),
+          });
+        }
+      }
+      return pages;
+    }),
+  };
+}
 
 /** One graph belongs to one memoized, loaded preview source; no keyed cache. */
 export function createJsonPreviewSignals(source: JsonPreviewSource) {
@@ -57,9 +114,9 @@ export function createJsonPreviewSignals(source: JsonPreviewSource) {
       }
       const count = Math.min(
         row.node.children.length,
-        pages.get(row.node.offset) ?? 50,
+        pages.get(row.node.offset) ?? PAGE_SIZE,
       );
-      if (row.node.children.length > 50) {
+      if (row.node.children.length > PAGE_SIZE) {
         stack.push({
           kind: "more",
           node: row.node,
@@ -81,10 +138,32 @@ export function createJsonPreviewSignals(source: JsonPreviewSource) {
     }
     return { rows, limited: stack.length > 0 };
   });
+  const rowIndex$ = computed((get) => {
+    const nodes = new Map<number, Extract<JsonPreviewRow, { kind: "node" }>>();
+    const more = new Map<number, Extract<JsonPreviewRow, { kind: "more" }>>();
+    for (const row of get(rows$).rows) {
+      if (row.kind === "node") {
+        nodes.set(row.node.offset, row);
+      } else {
+        more.set(row.node.offset, row);
+      }
+    }
+    return { nodes, more };
+  });
+
   return {
     source,
     model$,
     rows$,
+    rootNode$: computed((get) => {
+      const model = get(model$);
+      return model.status === "ready"
+        ? createNodeSignals(model.root, rowIndex$)
+        : undefined;
+    }),
+    limited$: computed((get) => {
+      return get(rows$).limited;
+    }),
     sourceMode$: computed((get) => {
       return get(sourceMode$) || get(model$).status !== "ready";
     }),
@@ -97,7 +176,10 @@ export function createJsonPreviewSignals(source: JsonPreviewSource) {
     showMore$: command(({ get, set }, offset: number) => {
       set(
         pages$,
-        new Map(get(pages$)).set(offset, (get(pages$).get(offset) ?? 50) + 50),
+        new Map(get(pages$)).set(
+          offset,
+          (get(pages$).get(offset) ?? PAGE_SIZE) + PAGE_SIZE,
+        ),
       );
     }),
     collapseAll$: command(({ set }) => {

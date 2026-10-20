@@ -2,9 +2,14 @@ import { eq } from "drizzle-orm";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import type { Db } from "../external/db";
-import { resolveRunModelSelection } from "./run-model-selection.service";
+import {
+  runModelSelectionColumns,
+  runModelSelectionCondition,
+  runModelSelectionFromRow,
+} from "./run-model-selection.service";
 
 /** Names the responding agent only when it is not the org default. */
 async function resolveNonDefaultAgentLabel(args: {
@@ -39,7 +44,16 @@ async function resolveModelLabel(args: {
   readonly db: Db;
   readonly runId: string;
 }): Promise<string | undefined> {
-  const runModel = await resolveRunModelSelection(args.db, args.runId);
+  const db = args.db;
+  const runId = args.runId;
+  const runModel = await (async () => {
+    const [row] = await db
+      .select(runModelSelectionColumns())
+      .from(agentRuns)
+      .where(runModelSelectionCondition(runId))
+      .limit(1);
+    return runModelSelectionFromRow(row);
+  })();
   const model = runModel?.selectedModel;
   return model
     ? getRunModelDisplayName(model, runModel?.codexServiceTier)

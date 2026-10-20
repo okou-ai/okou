@@ -46,11 +46,9 @@ mod handoff;
 mod publication;
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
-// Stopped publishers retain their entry and applicable resource lease while
-// waiting. Give contention a short window without changing checkout's lock budget.
-const HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT: Duration = Duration::from_millis(250);
-// Bound queued ownership separately from external flock contention. This is an
-// initial retention policy, not a deadline for started transfer or durable I/O.
+// Bound queued publication IO admission while retaining entry and resource
+// custody. This is an initial retention policy, not a deadline for started
+// transfer or durable I/O.
 const HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct HomeImageLease {
@@ -937,38 +935,32 @@ impl HomeImageCache {
     pub(super) async fn held_home_states_matching_profiles(
         &self,
         profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
-        committed_cache_keys: Option<(&BTreeSet<String>, tokio::time::Instant)>,
+        committed_cache_keys: Option<&BTreeSet<String>>,
         collect_locked_commits: bool,
     ) -> HomeCacheInventory {
         let mut inventory = HomeCacheInventory::default();
-        let mut validated_cache_keys = BTreeSet::new();
-        if let Some((committed_cache_keys, deadline)) = committed_cache_keys {
-            for cache_key in committed_cache_keys {
+        let mut inspected_cache_keys = BTreeSet::new();
+        if let Some(committed_cache_keys) = committed_cache_keys {
+            for cache_key in committed_cache_keys.iter().take(MAX_HELD_HOME_STATES) {
                 if !is_cache_key_name(cache_key) {
                     continue;
                 }
-                let lock = match tokio::time::timeout_at(
-                    deadline,
-                    runner_host::lock::acquire(self.entry_lock_path(cache_key)),
-                )
-                .await
-                {
-                    Ok(Ok(lock)) => lock,
-                    Ok(Err(_)) => continue,
-                    Err(_) => {
-                        info!(
-                            commit_keys = committed_cache_keys.len(),
-                            "home cache commit lock wait timed out"
-                        );
-                        break;
+                // Retain hints whose publisher temporarily has no metadata
+                // for lock-free scope classification. Inspect each hint once.
+                inspected_cache_keys.insert(cache_key.clone());
+                let lock = match self.try_inventory_entry_lock(cache_key).await {
+                    Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
+                    Ok(runner_host::lock::TryLock::Busy) => {
+                        inventory.locked_keys.insert(cache_key.clone());
+                        continue;
                     }
+                    Err(_) => continue,
                 };
                 if let Some(state) = self
                     .publishable_held_home_state(cache_key, profile_image_sizes_bytes, &lock)
                     .await
                 {
                     inventory.insert(cache_key.clone(), state);
-                    validated_cache_keys.insert(cache_key.clone());
                 }
                 drop(lock);
             }
@@ -977,7 +969,7 @@ impl HomeImageCache {
         self.scan_home_cache_inventory(
             profile_image_sizes_bytes,
             collect_locked_commits,
-            &validated_cache_keys,
+            &inspected_cache_keys,
             None,
             &mut inventory,
         )
@@ -1010,7 +1002,7 @@ impl HomeImageCache {
         &self,
         profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
         collect_locked_commits: bool,
-        validated_cache_keys: &BTreeSet<String>,
+        inspected_cache_keys: &BTreeSet<String>,
         groups: Option<&BTreeSet<String>>,
         inventory: &mut HomeCacheInventory,
     ) {
@@ -1058,12 +1050,10 @@ impl HomeImageCache {
             if !is_cache_key_name(cache_key) {
                 continue;
             }
-            if validated_cache_keys.contains(cache_key) {
+            if inspected_cache_keys.contains(cache_key) {
                 continue;
             }
-            let lock = match runner_host::lock::try_acquire_or_busy(self.entry_lock_path(cache_key))
-                .await
-            {
+            let lock = match self.try_inventory_entry_lock(cache_key).await {
                 Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
                 Ok(runner_host::lock::TryLock::Busy) => {
                     if collect_locked_commits && inventory.locked_keys.len() < MAX_HELD_HOME_STATES
@@ -1220,33 +1210,6 @@ impl HomeImageCache {
                 Err(e.into())
             }
         }
-    }
-
-    async fn acquire_promotion_capacity_lock(
-        &self,
-    ) -> runner_host::error::HostResult<runner_host::lock::TryLock> {
-        let path = self.capacity_lock_path();
-        #[cfg(test)]
-        if let Some((entered, release)) = &self.promotion_capacity_lock_test_gate {
-            return runner_host::lock::acquire_shared_with_contention_timeout_for_test(
-                path,
-                HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
-                async {
-                    entered.notify_one();
-                    release
-                        .acquire()
-                        .await
-                        .expect("publication capacity gate closed")
-                        .forget();
-                },
-            )
-            .await;
-        }
-        runner_host::lock::acquire_shared_with_contention_timeout(
-            path,
-            HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
-        )
-        .await
     }
 }
 

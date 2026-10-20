@@ -147,6 +147,23 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-artifact-thread-catalog-migration.ts` replays the actual additive
+  catalog migration over historical file/event/shared-snapshot fixtures. It
+  covers conservative origins, UUID batches, outgoing writer nullability,
+  display/avatar/video fidelity, nonempty JSON-string aliases (shared snapshots
+  stay NULL), preservation of already-written aliases, committed journal-failure
+  retry, and byte-stable catalog preservation on thread deletion. Retain the historical replay through its
+  production rollout and outgoing-writer drain. The permanent validator
+  `scripts/test-artifact-thread-catalog-permanent.ts` protects the nullable
+  catalog read fields, partial composite index, validated SET NULL foreign key,
+  and byte-preserved global catalog rows on both replayed and freshly generated
+  schemas. Frozen outgoing-writer INSERTs followed by actual SQL category reads
+  cover every base kind and shared snapshots with NULL summary fields: storage
+  kind remains visible, shared-thread logical keys retain their classification,
+  and a base video without avatar metadata stays video rather than a fabricated
+  avatar. This permanent nullable-summary contract does not infer a thread or
+  join projection sources; it has no historical migration-tag dependency.
+
 - `scripts/test-run-native-facts-preparation.ts` replays the additive Run fact
   migration against populated Session/Conversation history. It preserves legacy
   row contents, existing blob retains, outgoing SQL and Session constraints and

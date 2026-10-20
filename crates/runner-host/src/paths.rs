@@ -347,10 +347,7 @@ pub fn home_image_cache_lock_path(lock_dir: &Path, cache_key: &str) -> PathBuf {
     lock_dir.join(format!("home-image-cache-{cache_key}.lock"))
 }
 
-pub fn home_image_cache_capacity_lock_path(lock_dir: &Path) -> PathBuf {
-    lock_dir.join("home-image-cache-capacity.lock")
-}
-
+/// Collector singleton and successful routine-maintenance completion marker.
 pub fn home_image_cache_routine_gc_lock_path(lock_dir: &Path) -> PathBuf {
     lock_dir.join("home-image-cache-routine-gc.lock")
 }

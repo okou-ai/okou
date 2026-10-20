@@ -1266,7 +1266,6 @@ mod tests {
                 .revalidate_home_cache_keys(
                     &profile_home_sizes(&profiles),
                     &change.dirty_cache_keys,
-                    tokio::time::Instant::now(),
                 )
                 .await;
             hb.home_cache_snapshot

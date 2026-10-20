@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   builtinConnectorExternalCodeSessionStartResponseSchema,
+  builtinConnectorExternalCodeSessionCompleteResponseSchema,
   builtinConnectorListResponseSchema,
   builtinConnectorOauthDeviceAuthSessionStartResponseSchema,
+  builtinConnectorOauthDeviceAuthSessionPollResponseSchema,
   builtinConnectorResponseSchema,
 } from "../connector-schemas";
 import { builtinConnectorsSlugCallbackContract } from "../connectors-slug-callback";
@@ -20,11 +22,19 @@ import {
   connectorCheckRequestSchema,
   connectorCheckResponseBodySchema,
 } from "../connector-check";
-import { builtinConnectorsSearchContract } from "../connectors";
+import {
+  builtinConnectorsSearchContract,
+  builtinConnectorAutomaticContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+} from "../connectors";
 import {
   customConnectorListResponseSchema,
   customConnectorResponseSchema,
   createCustomConnectorBodySchema,
+  setCustomConnectorValuesResponseSchema,
+  startCustomConnectorOAuth2ResponseSchema,
+  saveCustomConnectorProposalResponseSchema,
 } from "../custom-connectors";
 import {
   applyUserPermissionGrantsRequestSchema,
@@ -110,6 +120,81 @@ const connectorIdentity = {
 } as const;
 
 describe("connector client response contracts", () => {
+  it.each([false, true])(
+    "preserves optional operation identity when present: %s",
+    (prepared) => {
+      const identity = prepared ? { connectionId: connector.id } : {};
+      const manual = { ...connector, ...identity };
+      expect(
+        builtinConnectorManualGrantContract.connect.responses[200].parse(
+          manual,
+        ),
+      ).toStrictEqual(manual);
+      expect(
+        builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
+          manual,
+        ),
+      ).toStrictEqual(manual);
+      const automatic = {
+        result: "connected",
+        connectedAccountId: connector.id,
+        ...identity,
+      };
+      expect(
+        builtinConnectorAutomaticContract.start.responses[200].parse(automatic),
+      ).toStrictEqual(automatic);
+      const authorization = {
+        result: "authorization",
+        authorizationUrl: "https://example.test/authorize",
+        oauthAttemptId: AGENT_ID,
+        ...identity,
+      };
+      expect(
+        builtinConnectorAutomaticContract.start.responses[200].parse(
+          authorization,
+        ),
+      ).toStrictEqual(authorization);
+      const completion = { status: "complete", connector, ...identity };
+      expect(
+        builtinConnectorOauthDeviceAuthSessionPollResponseSchema.parse(
+          completion,
+        ),
+      ).toStrictEqual(completion);
+      expect(
+        builtinConnectorExternalCodeSessionCompleteResponseSchema.parse(
+          completion,
+        ),
+      ).toStrictEqual(completion);
+      const values = { ...customHttpConnectorPayload, ...identity };
+      expect(
+        setCustomConnectorValuesResponseSchema.parse(values),
+      ).toMatchObject(values);
+      const automaticConnector = {
+        ...customHttpConnectorPayloadBase,
+        kind: "mcp",
+        authMode: "automatic",
+        endpoint: "https://mcp.example.test/server",
+        transport: "streamable-http",
+        prefixTemplates: [],
+        fields: [],
+        headerInjections: [],
+        connectedAccountId: connector.id,
+      };
+      expect(
+        startCustomConnectorOAuth2ResponseSchema.parse({
+          ...automatic,
+          connector: automaticConnector,
+        }),
+      ).toMatchObject({ ...automatic, connector: automaticConnector });
+      expect(
+        saveCustomConnectorProposalResponseSchema.parse({
+          connector: customHttpConnectorPayload,
+          ...identity,
+        }),
+      ).toMatchObject({ connector: customHttpConnectorPayload, ...identity });
+    },
+  );
+
   it("parses canonical response payloads", () => {
     expect(builtinConnectorResponseSchema.parse(connector)).toStrictEqual(
       connector,

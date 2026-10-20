@@ -428,7 +428,7 @@ final class WorkspaceStoreTests: XCTestCase {
     await store.refresh()
     XCTAssertEqual(store.list.threads.map(\.title), ["Latest title"])
     releaseCreateResponse.open()
-    await creation.value
+    _ = await creation.value
 
     XCTAssertEqual(store.list.threads.map(\.id), [storeThreadID])
     XCTAssertEqual(store.list.threads.map(\.title), ["Latest title"])

@@ -2,10 +2,8 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { marked } from "marked";
-import type {
-  ChatThreadArtifactFile,
-  ChatThreadArtifactRun,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
+import type { ArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
@@ -80,7 +78,8 @@ export interface ChatResourceLink {
 }
 
 export interface ChatResourceContent {
-  readonly artifacts: readonly ChatThreadArtifactFile[];
+  readonly artifacts: readonly ArtifactSummary[];
+  readonly nextCursor: string | null;
   readonly links: readonly ChatResourceLink[];
 }
 
@@ -125,39 +124,50 @@ export const copyChatResourceLink$ = command(
   },
 );
 
+export const copyChatResourceArtifact$ = command(
+  async (
+    { get, set },
+    catalog: ArtifactCatalogSignals,
+    artifactId: string,
+    signal: AbortSignal,
+  ) => {
+    set(catalog.selectArtifact$, artifactId);
+    const preview = await set(
+      catalog.ensureSelectedArtifactPreview$,
+      artifactId,
+      signal,
+    );
+    signal.throwIfAborted();
+    const url = preview ? await get(preview.shareUrl$) : null;
+    signal.throwIfAborted();
+    if (url === null) {
+      toast.error(
+        i18n.t(($) => {
+          return $.chat.sharing.copyFailed;
+        }),
+      );
+      return;
+    }
+    await set(copyChatResourceLink$, url, signal);
+  },
+);
+
 function createChatResourceContentSignals(
   groups$: Computed<readonly ChatEventGroup[]>,
-  artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
+  catalog: ArtifactCatalogSignals,
   initialEventsReady$: Computed<boolean>,
 ) {
-  const outputs$ = computed(async (get) => {
-    const files = (await get(artifacts$)).flatMap((run) => {
-      return run.files;
-    });
-    const seen = new Set<string>();
-    return files
-      .sort((left, right) => {
-        return right.createdAt.localeCompare(left.createdAt);
-      })
-      .filter((file) => {
-        const key = file.artifactId ?? file.id;
-        if (seen.has(key)) {
-          return false;
-        }
-        seen.add(key);
-        return true;
-      });
-  });
   const links$ = computed(async (get) => {
     // The complete event projection is independent of the transcript render window.
     const groups = get(groups$);
-    const outputs = await get(outputs$);
+    const { artifacts } = await get(catalog.catalog$);
     const seen = new Set(
-      outputs.flatMap((file) => {
-        return [
-          publicAttachmentUrl(file.url),
-          ...(file.aliasUrl ? [file.aliasUrl] : []),
-        ];
+      artifacts.flatMap((artifact) => {
+        // Source/alias URLs are optional metadata: shared snapshots can have
+        // neither. Only known URLs deduplicate links; do not hydrate details.
+        return [artifact.sourceUrl, artifact.aliasUrl].flatMap((url) => {
+          return url ? [publicAttachmentUrl(url)] : [];
+        });
       }),
     );
     const links: ChatResourceLink[] = [];
@@ -189,11 +199,11 @@ function createChatResourceContentSignals(
       if (!get(initialEventsReady$)) {
         return null;
       }
-      const [artifacts, links] = await Promise.all([
-        get(outputs$),
+      const [page, links] = await Promise.all([
+        get(catalog.catalog$),
         get(links$),
       ]);
-      return { artifacts, links };
+      return { artifacts: page.artifacts, nextCursor: page.nextCursor, links };
     },
   );
 
@@ -371,7 +381,7 @@ function createChatResourcePanelSignals() {
 
 export function createChatResourceSignals(
   groups$: Computed<readonly ChatEventGroup[]>,
-  artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
+  catalog: ArtifactCatalogSignals,
   initialEventsReady$: Computed<boolean>,
   closeMessages$: Command<void, []>,
 ) {
@@ -411,11 +421,8 @@ export function createChatResourceSignals(
         });
       },
     ),
-    ...createChatResourceContentSignals(
-      groups$,
-      artifacts$,
-      initialEventsReady$,
-    ),
+    ...createChatResourceContentSignals(groups$, catalog, initialEventsReady$),
+    catalog,
     ...panel,
   };
 }

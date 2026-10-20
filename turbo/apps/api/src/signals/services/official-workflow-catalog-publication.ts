@@ -284,7 +284,7 @@ export function catalogPublicationPlan(
   }
   const hiddenThreadDefinitionNames = input.catalog.source.definitions
     .filter((definition) => {
-      return definition.hiddenThread === true;
+      return definition.lifecycle === "active";
     })
     .map((definition) => {
       return definition.name;

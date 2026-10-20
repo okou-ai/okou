@@ -1,11 +1,17 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { connectorAccountTargetSchema } from "./connector-accounts";
+import {
+  connectorAccountSetupSchema,
+  connectorAccountTargetSchema,
+} from "./connector-accounts";
+import { connectorResponseConnectionStatusSchema } from "./connector-schemas";
 
 const c = initContract();
 
 export const mcpConnectorSchema = z.object({
+  // #41309 requires old-API retirement and client/Runner gates before requiring these facts.
+  ...connectorAccountSetupSchema.partial().shape,
   target: connectorAccountTargetSchema,
   connectionId: z.uuid(),
   slug: z.string().min(1),
@@ -13,6 +19,7 @@ export const mcpConnectorSchema = z.object({
   transport: z.literal("streamable-http"),
   endpoint: z.string().min(1),
   connected: z.boolean(),
+  connectionStatus: connectorResponseConnectionStatusSchema.optional(),
 });
 export type McpConnector = z.infer<typeof mcpConnectorSchema>;
 

@@ -98,6 +98,10 @@ const listCommand = new Command()
           transport: connector.transport,
           endpoint: connector.endpoint,
           connected: connector.connected,
+          connectionStatus: connector.connectionStatus,
+          setupStatus: connector.setupStatus,
+          missingRequiredFields: connector.missingRequiredFields,
+          configuredFieldKeys: connector.configuredFieldKeys,
         };
       });
 

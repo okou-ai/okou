@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
+import {
+  chatThreadArtifactGoogleDriveSyncSchema,
+  type ChatThreadArtifactGoogleDriveSync,
+} from "./chat-threads";
 import { apiErrorSchema, type ApiErrorResponse } from "./errors";
 import type {
   AnyRouteTypeSlots,
@@ -33,6 +37,9 @@ export interface ArtifactSummary {
   kind: ArtifactCatalogKind;
   title: string;
   thumbnail: ArtifactThumbnail | null;
+  /** Lightweight projection URL for resource-link deduplication. */
+  sourceUrl?: string;
+  aliasUrl?: string;
   /** Original video used when the catalog card cannot show a static poster. */
   videoSourceUrl?: string;
   createdAt: string;
@@ -58,43 +65,48 @@ interface ArtifactHostedSite {
   spaFallback: boolean;
 }
 
-interface FileArtifactDetail extends ArtifactSummary {
+interface ArtifactDetailCommon extends ArtifactSummary {
+  googleDriveConnectionId?: string;
+  googleDriveSync?: ChatThreadArtifactGoogleDriveSync;
+}
+
+interface FileArtifactDetail extends ArtifactDetailCommon {
   kind: "file";
   file: ArtifactFile;
 }
 
-interface ImageArtifactDetail extends ArtifactSummary {
+interface ImageArtifactDetail extends ArtifactDetailCommon {
   kind: "image";
   file: ArtifactFile;
   model: string | null;
   provider: string | null;
 }
 
-interface VideoArtifactDetail extends ArtifactSummary {
+interface VideoArtifactDetail extends ArtifactDetailCommon {
   kind: "video";
   file: ArtifactFile;
   model: string | null;
   durationSeconds: number | null;
 }
 
-interface AvatarArtifactDetail extends ArtifactSummary {
+interface AvatarArtifactDetail extends ArtifactDetailCommon {
   kind: "avatar";
   file: ArtifactFile;
   model: string | null;
   durationSeconds: number | null;
 }
 
-interface HostedSiteArtifactDetail extends ArtifactSummary {
+interface HostedSiteArtifactDetail extends ArtifactDetailCommon {
   kind: "hosted-site";
   site: ArtifactHostedSite;
 }
 
-interface PresentationArtifactDetail extends ArtifactSummary {
+interface PresentationArtifactDetail extends ArtifactDetailCommon {
   kind: "presentation";
   site: ArtifactHostedSite;
 }
 
-interface SharedThreadArtifactDetail extends ArtifactSummary {
+interface SharedThreadArtifactDetail extends ArtifactDetailCommon {
   kind: "shared-thread";
   sharedThread: { id: string };
 }
@@ -128,6 +140,16 @@ export interface ArtifactCatalogListClientQuery {
   readonly keyword?: string;
 }
 
+export interface ArtifactCatalogGetQuery {
+  /** Current-view thread account context; does not change artifact ownership. */
+  readonly chatThreadId?: string;
+}
+
+export interface ArtifactCatalogGetClientQuery {
+  /** Current-view thread account context; does not change artifact ownership. */
+  readonly chatThreadId?: string;
+}
+
 export interface ArtifactIdPathParams {
   readonly artifactId: string;
 }
@@ -155,11 +177,13 @@ export interface ArtifactCatalogListClientRequest extends ArtifactCatalogRequest
 export interface ArtifactCatalogGetServerRequest extends ArtifactCatalogRequestOptions {
   readonly headers: ArtifactCatalogAuthHeaders;
   readonly params: ArtifactIdPathParams;
+  readonly query: ArtifactCatalogGetQuery;
 }
 
 export interface ArtifactCatalogGetClientRequest extends ArtifactCatalogRequestOptions {
   readonly headers?: ArtifactCatalogAuthHeaders;
   readonly params: ArtifactIdPathParams;
+  readonly query?: ArtifactCatalogGetClientQuery;
 }
 
 export type ArtifactCatalogApiErrorRouteResponse<TStatus extends number> = {
@@ -210,6 +234,8 @@ const artifactSummarySchema = z.object({
   kind: artifactKindSchema,
   title: z.string(),
   thumbnail: artifactThumbnailSchema.nullable(),
+  sourceUrl: z.string().optional(),
+  aliasUrl: z.string().optional(),
   videoSourceUrl: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -229,6 +255,10 @@ const artifactCatalogListQuerySchema = z.object({
   kind: artifactKindSchema.optional(),
   chatThreadId: z.string().uuid().optional(),
   keyword: z.string().trim().min(1).max(256).optional(),
+});
+
+const artifactCatalogGetQuerySchema = z.object({
+  chatThreadId: z.string().uuid().optional(),
 });
 
 const artifactCatalogListResponseSchema = z.object({
@@ -262,7 +292,11 @@ const artifactHostedSiteSchema = z.object({
   spaFallback: z.boolean(),
 });
 
-const artifactDetailBaseSchema = artifactSummarySchema;
+// Drive metadata is loaded lazily for detail requests with thread context only.
+const artifactDetailBaseSchema = artifactSummarySchema.extend({
+  googleDriveConnectionId: z.string().uuid().optional(),
+  googleDriveSync: chatThreadArtifactGoogleDriveSyncSchema.optional(),
+});
 
 const artifactDetailSchema = z.discriminatedUnion("kind", [
   artifactDetailBaseSchema.extend({
@@ -309,6 +343,10 @@ const artifactCatalogQuerySchema: ZodSchema<
   ArtifactCatalogListQuery,
   ArtifactCatalogListClientQuery
 > = artifactCatalogListQuerySchema;
+const artifactCatalogGetRequestQuerySchema: ZodSchema<
+  ArtifactCatalogGetQuery,
+  ArtifactCatalogGetClientQuery
+> = artifactCatalogGetQuerySchema;
 const artifactCatalogPathParamsSchema: ZodSchema<
   ArtifactIdPathParams,
   ArtifactIdPathParams
@@ -338,6 +376,7 @@ const artifactCatalogRuntimeSpec = {
     path: "/api/artifacts/catalog/:artifactId",
     headers: artifactCatalogAuthHeadersSchema,
     pathParams: artifactCatalogPathParamsSchema,
+    query: artifactCatalogGetRequestQuerySchema,
     responses: {
       200: artifactCatalogDetailResultSchema,
       401: artifactCatalogApiErrorSchema,
@@ -372,6 +411,10 @@ export type ArtifactCatalogGetRoute = AppRoute<ArtifactCatalogGetRouteTypes> & {
     ArtifactCatalogAuthHeaders
   >;
   readonly pathParams: ZodSchema<ArtifactIdPathParams, ArtifactIdPathParams>;
+  readonly query: ZodSchema<
+    ArtifactCatalogGetQuery,
+    ArtifactCatalogGetClientQuery
+  >;
 };
 
 export type ArtifactCatalogContract = {

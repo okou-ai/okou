@@ -1,3 +1,7 @@
+import {
+  officialWorkflowCreditAccess$,
+  officialWorkflowCreditAccessSql,
+} from "./official-workflow-policy.service";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
@@ -38,7 +42,7 @@ import {
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
 export interface ManagedUsageErrorResponse {
-  readonly status: 402 | 503;
+  readonly status: 402 | 403 | 503;
   readonly body: {
     readonly error: {
       readonly message: string;
@@ -49,6 +53,16 @@ export interface ManagedUsageErrorResponse {
 
 function errorBody(message: string, code: string) {
   return { error: { message, code } };
+}
+
+function closedOfficialRun(): ManagedUsageErrorResponse {
+  return {
+    status: 403,
+    body: errorBody(
+      "Official Workflow run is no longer active",
+      "RESOURCE_UNAVAILABLE",
+    ),
+  };
 }
 
 function insufficientCredits(): ManagedUsageErrorResponse {
@@ -89,6 +103,7 @@ function estimatedCredits(
 }
 
 export interface ManagedUsageCreditCheckArgs {
+  readonly runId?: string;
   readonly orgId: string;
   readonly userId: string;
   readonly resource: ManagedUsageResource;
@@ -122,6 +137,7 @@ export async function checkManagedCreditsSnapshotInDb(
   const rows = await writeDb
     .with(expired)
     .select({
+      officialCreditAccess: officialWorkflowCreditAccessSql(args),
       credits: sql`${orgMetadata.credits}`.mapWith(
         nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
       ),
@@ -163,6 +179,12 @@ export async function checkManagedCreditsSnapshotInDb(
   signal.throwIfAborted();
   if (!capabilities || capabilities.status !== "active") {
     return insufficientCredits();
+  }
+  if (row.officialCreditAccess === "closed") {
+    return closedOfficialRun();
+  }
+  if (row.officialCreditAccess === "free") {
+    return null;
   }
   const spendableCredits = credits - row.unsettledExpired;
   const usagePackCredits = BigInt(
@@ -254,6 +276,13 @@ const checkManagedCreditBalance$ = command(
     signal.throwIfAborted();
     if (!capabilities || capabilities.status !== "active") {
       return insufficientCredits();
+    }
+    const access = await set(officialWorkflowCreditAccess$, args, signal);
+    if (access === "closed") {
+      return closedOfficialRun();
+    }
+    if (access === "free") {
+      return null;
     }
     const spendableCredits = credits - row.unsettledExpired;
     const [memberCredits] = await writeDb

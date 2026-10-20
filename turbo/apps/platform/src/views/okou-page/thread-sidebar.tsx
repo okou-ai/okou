@@ -27,7 +27,12 @@ import {
 import { BrowserSessionSidebar } from "./browser-session-sidebar.tsx";
 import { MailDraftPanel } from "./mail-draft-panel.tsx";
 import type { MailDraftSignals } from "../../signals/chat-page/mail-draft.ts";
-import { ArtifactSidebar } from "./artifact-sidebar.tsx";
+import {
+  ArtifactSidebar,
+  ArtifactSidebarContent,
+  artifactSidebarSyncTarget,
+} from "./artifact-sidebar.tsx";
+import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
 
 // ---------------------------------------------------------------------------
@@ -304,6 +309,38 @@ function ThreadArtifactUnavailable({
   );
 }
 
+function ThreadSharedArtifactDetail({
+  title,
+  sharedThreadId,
+  onBack,
+  onClose,
+}: {
+  readonly title: string;
+  readonly sharedThreadId: string;
+  readonly onBack: () => void;
+  readonly onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <aside className="flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0">
+      <ThreadSidebarHeader title={title} onBack={onBack} onClose={onClose} />
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        <a
+          href={`/share/threads/${encodeURIComponent(sharedThreadId)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover"
+        >
+          <ExternalLink size={16} />
+          {t(($) => {
+            return $.artifacts.sidebar.openSharedConversation;
+          })}
+        </a>
+      </div>
+    </aside>
+  );
+}
+
 function ThreadArtifactDetail({
   thread,
   source,
@@ -321,6 +358,9 @@ function ThreadArtifactDetail({
   const pageSignal = useGet(pageSignal$);
   const detailLoadable = useLastLoadable(
     sidebar.artifactCatalog.selectedArtifactDetail$,
+  );
+  const reloadDetail = useSet(
+    sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
   );
 
   const fullscreenState = {
@@ -382,47 +422,52 @@ function ThreadArtifactDetail({
 
   if (detail.kind === "shared-thread") {
     return (
-      <aside className="flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0">
-        <ThreadSidebarHeader
-          title={detail.title}
-          onBack={backToArtifacts}
-          onClose={close}
-        />
-        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-          <a
-            href={`/share/threads/${encodeURIComponent(detail.sharedThread.id)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover"
-          >
-            <ExternalLink size={16} />
-            {t(($) => {
-              return $.artifacts.sidebar.openSharedConversation;
-            })}
-          </a>
-        </div>
-      </aside>
+      <ThreadSharedArtifactDetail
+        title={detail.title}
+        sharedThreadId={detail.sharedThread.id}
+        onBack={backToArtifacts}
+        onClose={close}
+      />
     );
   }
 
   const preview = artifactDetailPreview(detail);
   return (
-    <ArtifactSidebar
-      artifactRef={{
-        url: preview.url,
-        resourceUrl$: sidebar.selectedArtifactResourceUrl$,
-        shareUrl$: sidebar.selectedArtifactShareUrl$,
-        kind: preview.kind,
-        filename: preview.filename,
-      }}
-      thread={thread}
-      text$={sidebar.selectedArtifactText$}
-      markdownTree$={sidebar.selectedArtifactMarkdownTree$}
-      fullscreenState={fullscreenState}
-      onBack={backToArtifacts}
-      onClose={close}
-      onNavigateImage={navigateImage}
-    />
+    <>
+      <ArtifactSidebarContent
+        syncTarget={artifactSidebarSyncTarget({
+          agentId: thread.agentId,
+          file: {
+            artifactId: detail.id,
+            filename: preview.filename,
+            googleDriveConnectionId: detail.googleDriveConnectionId,
+            googleDriveSync: detail.googleDriveSync,
+          },
+          onSyncSuccess: reloadDetail,
+        })}
+        artifactRef={{
+          url: preview.url,
+          resourceUrl$: sidebar.selectedArtifactResourceUrl$,
+          shareUrl$: sidebar.selectedArtifactShareUrl$,
+          kind: preview.kind,
+          filename: preview.filename,
+        }}
+        artifactKind={
+          detail.kind === "presentation"
+            ? "presentation-html"
+            : detail.kind === "hosted-site"
+              ? "hosted-site"
+              : undefined
+        }
+        imageCanvasSignals={sidebar.imageCanvas}
+        text$={sidebar.selectedArtifactText$}
+        markdownTree$={sidebar.selectedArtifactMarkdownTree$}
+        fullscreenState={fullscreenState}
+        onBack={backToArtifacts}
+        onClose={close}
+      />
+      <ArtifactDiagramLightbox signals={sidebar.diagram} />
+    </>
   );
 }
 

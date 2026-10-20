@@ -1,5 +1,43 @@
 # Guarded idle terminal fixture
 
+## Cancelled or panicked speculative restore callbacks
+
+`native_speculative_callback_loss_preserves_uncertain_owner_and_required_saving`
+runs drop/panic cases with fresh and newly matching snapshot factories. The
+original full-lease Guest actually unparks, completes production UTC state
+restoration and verifies its complete private marker, ordinary home and 64 KiB
+payload through Guest RPC. Only then does the borrowed restore callback wait at
+an invocation-owned response gate. Dropping that future or releasing its injected
+unwind must leave the production owner Uncertain and refuse commit, repark and
+reusable inventory. The original capsule stays outside the observed future.
+
+Production covered cleanup must save the entire original home. Held durable
+post-exit IO preserves the full lease/growth allowance while actual observation
+and acknowledged heartbeat progress through held pool/status locks. Joined
+saving releases the original lease; another heartbeat progresses through an
+observed current-status wait before empty regular status and all producer joins.
+The common cache restoration verifies every original payload byte and private
+runtime removal. Failure releases owned gates, joins accepted work and retains
+unresolved resources; intervention cannot produce successful proof.
+
+Use exact committed Host/current Guests, verified owned RootFS and a new matching
+snapshot with unchanged supplied policy/P1 guards. Include exact raw
+`native_speculative_fault_policy_json`, `native_terminal_artifacts` and matching
+`snapshot-preparation.json` in the original collector files:
+
+```sh
+<native-test-binary> native_speculative_callback_loss_preserves_uncertain_owner_and_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/speculative_fault_report.py <p1-directory>
+```
+
+The injected failure is at the callback response boundary after completed actual
+restore/RPC. It does not prove cancellation inside unpark, an in-flight Guest RPC
+or repark, actual API claim arbitration or full Supervisor shutdown. Ordinary
+consumer regressions are separate from opt-in native execution. Complete C/D/P4,
+bootstrap provenance, residency, calibrated RAM relief and OOM/production
+protection remain separate gates.
+
 ## Actual provider claim rejection and guarded rollback
 
 `native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving`
@@ -261,6 +299,11 @@ envelope, physical memory relief or production protection. Other failure familie
 and final measurement acceptance remain in #39998.
 
 ## Current P1 diagnostic contract
+
+The separate [owned charged-memory window tool](charged_windows.md) qualifies
+isolated kernel counters with a bounded disposable workload and strict original
+file replay. Its charge scope and false native/full-residency claims do not
+change P1 or this suite's native acceptance.
 
 New native runs consume `runner-memory-calibration-v2` from the matching
 [owned collector](../../../../.github/scripts/runner-memory-calibrate.md).
@@ -1278,3 +1321,51 @@ This is #40230 under #40173/#39997. #40231 retains Critical bounded-wave optiona
 suppression, startup readers, independent foreground/heartbeat progress and
 Guest/provider/cancellation/late-result integration. #39998 and higher/P4 retain
 full provenance, residency, envelope and activation gates; no parent closes here.
+
+## Two required histories in one physical cache entry
+
+`native_same_entry_replacement_preserves_both_required_histories` selects original
+success and nonzero exit, each in fresh and matching-snapshot factories. Both
+Guests run the real Executor and packaged mock Codex, with distinct committed
+sessions, complete history bytes, ordinary home files, private run files and
+64 KiB home/workspace payloads. The original promotion holds the physical cache
+entry's exclusive lease. Incoming therefore first completes with `LockBusy`;
+its exact Guest and full logical lease remain owned through the existing C6
+replacement, stale-batch refusal, contention and required-saving guards.
+
+Both assignments use an ordinary workspace directory inside the home image.
+The context declares no external workspace artifact, giving the required home
+owner custody of every workspace byte through successful and failed terminals.
+Versioned artifact re-materialization belongs to its separate storage contract.
+
+The fixture restores and saves the complete original generation before allowing
+supersession. It then activates that same incoming Guest through the public idle
+owner and actual Executor reuse dispatch. This acquires the now available same
+physical entry and extends the incoming session. A valid promotion produced by
+that execution must survive guarded retirement, after which an independent
+Executor restores the complete first-plus-continued history and home/workspace
+bytes. Both restoration producers, API peers, physical backings, full logical
+leases, tracker and memory operations must join. Accepted native work remains
+outside the race's observation timeout; failures preserve its owners.
+
+Use the immutable artifact, supplied P2 policy and bounded P1 requirements above,
+including `USE_MOCK_CODEX=true` and the authorized `OKOU_TEST_NATIVE_API_HOST`.
+P1 metadata must contain `native_dual_history_policy_json` with the exact raw
+policy file text and the original `native_terminal_artifacts` manifest.
+
+```sh
+"$OWNED_NATIVE_TEST_BINARY" \
+  native_same_entry_replacement_preserves_both_required_histories \
+  --ignored --exact --nocapture --test-threads=1
+
+python3 crates/runner/tests/guarded_idle_native/dual_history_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+The strict reader requires all four cases, complete canonical byte oracles,
+actual same-entry/generation bindings, private-directory removal and positive
+producer joins in addition to every C6/P1 guard. Ordinary Cargo runs its
+original-file and CLI refusal regressions. Native KVM/NBD execution remains
+opt-in. This phased sequence does not claim simultaneous promotion leases,
+permanent retention of two cache generations, an actual API claim-loss race,
+calibrated physical relief, full residency, bootstrap provenance or production
+activation. Parent aggregate acceptance remains separate.

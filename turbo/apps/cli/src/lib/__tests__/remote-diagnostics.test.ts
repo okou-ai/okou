@@ -145,11 +145,214 @@ it.each(["ssh", "vnc"] as const)(
     expect(process.exitCode).toBe(0);
   },
 );
+it.each(["ssh", "vnc"] as const)(
+  "explains exact-attempt attribution in %s diagnose help without reading history",
+  async (protocol) => {
+    const command = protocol === "ssh" ? sshCommand : createVncCommand();
+    const diagnose = command.commands.find((child) => {
+      return child.name() === "diagnose";
+    });
+    if (!diagnose) throw new Error("Expected the registered diagnose command");
+    const previousOutput = diagnose.configureOutput();
+    let help = "";
+    diagnose.configureOutput({
+      writeOut: (text) => {
+        help += text;
+      },
+    });
+    try {
+      await expect(
+        command.parseAsync(["diagnose", "--help"], { from: "user" }),
+      ).rejects.toThrow("CLI exit");
+    } finally {
+      diagnose.configureOutput(previousOutput);
+    }
+    expect(help).toContain("actual failed operation's Attempt ID");
+    expect(help).toContain(
+      `okou ${protocol} diagnose <connection-id> --attempt-id <attempt-id> --json`,
+    );
+    expect(help).toContain("Add --session-id <id> when known");
+    expect(help).toContain("all supplied selectors must match");
+    expect(help).toContain(
+      "Without --attempt-id, this returns the latest matching retained failure",
+    );
+    expect(help).toContain(
+      "Verify its operation, connection, session, and time",
+    );
+    expect(help).toContain(
+      "If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure",
+    );
+    expect(help).toContain(
+      "--checks selects a separate history of 64 latest completed checks across SSH/VNC with no pins",
+    );
+    expect(help).toContain(
+      "may not identify the original check after response loss",
+    );
+    expect(help).toContain("Passive history only, within this Run");
+    expect(help).toContain("Missing evidence is not a connectivity result");
+    expect(help).toContain(
+      "Never automatically replay uncertain commands, input, or checks",
+    );
+    expect(spawn).not.toHaveBeenCalled();
+  },
+);
+it.each(["ssh", "vnc"] as const)(
+  "keeps a missing exact %s attempt unavailable without querying a latest substitute",
+  async (protocol) => {
+    const missing = {
+      status: "not_retained",
+      message:
+        "The exact attempt is no longer retained; its evidence is unavailable.",
+    };
+    response(missing);
+    await invoke(
+      protocol,
+      connection,
+      "--attempt-id",
+      attempt,
+      "--session-id",
+      session,
+      "--json",
+    );
+    expect(result()).toEqual(missing);
+    expect(
+      helper.requests.map((raw) => {
+        return JSON.parse(raw);
+      }),
+    ).toEqual([
+      {
+        version: 1,
+        method: `${protocol}.diagnose`,
+        params: {
+          connectionId: connection,
+          attemptId: attempt,
+          sessionId: session,
+        },
+      },
+    ]);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBe(1);
+  },
+);
 it("passes arbitrary Runner wording unchanged in human output", async () => {
   response(found("vnc"));
   await invoke("vnc");
   expect(output).toHaveBeenCalledWith(found("vnc").message);
 });
+it.each(["ssh", "vnc"] as const)(
+  "preserves opaque %s authority failure guidance in human and JSON output",
+  async (protocol) => {
+    const query = {
+      status: "authority_unavailable",
+      message:
+        "Diagnostic history could not be read because the authority lookup timed out. Check API availability and the Runner's API connection. Current connectivity has not been checked.",
+    };
+    response(query);
+    await invoke(protocol);
+    expect(output).toHaveBeenLastCalledWith(query.message);
+    expect(process.exitCode).toBe(1);
+    response(query);
+    await invoke(protocol, "--json");
+    expect(result()).toEqual(query);
+    expect(process.exitCode).toBe(1);
+    expect(helper.requests).toHaveLength(2);
+  },
+);
+it.each(["ssh", "vnc"] as const)(
+  "retrieves %s check receipts only with the explicit passive selector",
+  async (protocol) => {
+    const receipt = {
+      status: "found",
+      message:
+        "Active check: failed. Checked at: 2026-10-19T00:00:00Z. Check-owned cleanup: unknown. Helper delivery is not confirmed.",
+    };
+    response(receipt);
+    await invoke(
+      protocol,
+      connection,
+      "--checks",
+      "--attempt-id",
+      attempt,
+      "--json",
+    );
+    expect(result()).toEqual(receipt);
+    expect(
+      helper.requests.map((raw) => {
+        return JSON.parse(raw);
+      }),
+    ).toEqual([
+      {
+        version: 1,
+        method: `${protocol}.diagnose`,
+        params: { checks: true, connectionId: connection, attemptId: attempt },
+      },
+    ]);
+    expect(process.exitCode).toBe(0);
+  },
+);
+it.each(["ssh", "vnc"] as const)(
+  "recovers %s history after an unverified check result without replay",
+  async (protocol) => {
+    token([`${protocol}:write`, `${protocol}:read`]);
+    // The helper loses the terminal newline. The active result cannot be trusted.
+    helper.replies.push({
+      raw: JSON.stringify({
+        type: "result",
+        data: { type: "active_check", status: "passed", message: "unverified" },
+      }),
+      code: 0,
+    });
+    const command = protocol === "ssh" ? sshCommand : createVncCommand();
+    await command.parseAsync(
+      [
+        "check",
+        connection,
+        ...(protocol === "vnc" ? ["--mode", "shared"] : []),
+        "--json",
+      ],
+      { from: "user" },
+    );
+    expect(result()).toMatchObject({ type: "active_check", status: "blocked" });
+    expect(helper.requests).toHaveLength(1);
+    const receipt = {
+      status: "found",
+      message:
+        "Runner retained the check at its original time; latest matching receipt may be a different check. Helper delivery is not confirmed.",
+    };
+    response(receipt);
+    token([`${protocol}:read`]);
+    await invoke(protocol, connection, "--checks", "--json");
+    expect(result()).toEqual(receipt);
+    expect(
+      helper.requests.map((raw) => {
+        return JSON.parse(raw).method;
+      }),
+    ).toEqual([`${protocol}.check`, `${protocol}.diagnose`]);
+    expect(JSON.parse(helper.requests[1]!).params).toEqual({
+      checks: true,
+      connectionId: connection,
+    });
+  },
+);
+it.each(["ssh", "vnc"] as const)(
+  "does not replay a missing %s check or read it without current authority",
+  async (protocol) => {
+    response({
+      status: "not_retained",
+      message:
+        "No completed matching check is retained; cleanup and connectivity are unknown.",
+    });
+    await invoke(protocol, "--checks", "--attempt-id", attempt, "--json");
+    expect(result()).toMatchObject({ status: "not_retained" });
+    expect(process.exitCode).toBe(1);
+    token([`${protocol}:write`]);
+    await expect(invoke(protocol, "--checks", "--json")).rejects.toThrow(
+      "CLI exit",
+    );
+    expect(helper.requests).toHaveLength(1);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  },
+);
 it.each(["no_failure", "not_retained", "authority_unavailable", "unavailable"])(
   "preserves %s and its explanation without inventing connectivity",
   async (status) => {

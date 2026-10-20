@@ -266,12 +266,10 @@ test("Add and optionally name a custom connector account", async () => {
             }
           : candidate;
       });
-      return respond(
-        200,
-        connectors.find((candidate) => {
-          return candidate.id === connector.id;
-        })!,
-      );
+      const connected = connectors.find((candidate) => {
+        return candidate.id === connector.id;
+      })!;
+      return respond(200, { ...connected, connectionId });
     },
   );
   await setupCustomPage();

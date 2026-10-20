@@ -34,7 +34,7 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { connectors } from "@okouai/db/schema/connector";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { ZipArchive } from "archiver";
-import { command, computed, type Command, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
@@ -71,7 +71,10 @@ import {
   connectorRuntimeAuthSelectionReadPlan,
   connectorRuntimeAuthSelectionFromRows,
 } from "./connector-catalog-slug-source.service";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import {
+  loadUserFeatureSwitchContext$,
+  userFeatureSwitchOverrides,
+} from "./feature-switches.service";
 import { resolveArtifactFileReference$ } from "./private-artifact-storage.service";
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import {
@@ -109,6 +112,11 @@ interface DriveSyncResult {
   readonly name: string;
   readonly webViewLink: string | null;
   readonly mimeType?: string;
+}
+
+interface DriveArtifactStatusSource {
+  readonly runId: string | null;
+  readonly fileId: string;
 }
 
 interface DriveSyncStatusResult extends DriveSyncResult {
@@ -373,6 +381,7 @@ async function listArtifactFiles(
   args: {
     readonly accessToken: string;
     readonly threadId: string;
+    readonly source?: DriveArtifactStatusSource;
   },
   signal: AbortSignal,
 ): Promise<DriveListResult> {
@@ -381,7 +390,18 @@ async function listArtifactFiles(
     "q",
     [
       `appProperties has { key='${GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY}' and value='true' }`,
-      `appProperties has { key='${GOOGLE_DRIVE_THREAD_APP_PROPERTY}' and value='${escapeQuery(args.threadId)}' }`,
+      ...(args.source
+        ? [
+            `appProperties has { key='${GOOGLE_DRIVE_FILE_APP_PROPERTY}' and value='${escapeQuery(args.source.fileId)}' }`,
+            ...(args.source.runId
+              ? [
+                  `appProperties has { key='${GOOGLE_DRIVE_RUN_APP_PROPERTY}' and value='${escapeQuery(args.source.runId)}' }`,
+                ]
+              : []),
+          ]
+        : [
+            `appProperties has { key='${GOOGLE_DRIVE_THREAD_APP_PROPERTY}' and value='${escapeQuery(args.threadId)}' }`,
+          ]),
       "trashed = false",
     ].join(" and "),
   );
@@ -415,6 +435,7 @@ const listArtifactFilesWithRefresh$ = command(
       readonly orgId: string;
       readonly tokens: ConnectorTokens;
       readonly threadId: string;
+      readonly source?: DriveArtifactStatusSource;
       readonly userId: string;
     },
     signal: AbortSignal,
@@ -425,6 +446,7 @@ const listArtifactFilesWithRefresh$ = command(
       {
         accessToken: args.tokens.accessToken,
         threadId: args.threadId,
+        source: args.source,
       },
       signal,
     );
@@ -451,6 +473,7 @@ const listArtifactFilesWithRefresh$ = command(
       {
         accessToken: refreshed.accessToken,
         threadId: args.threadId,
+        source: args.source,
       },
       signal,
     );
@@ -468,10 +491,10 @@ function buildStatusMap(
   for (const file of files) {
     const runId = file.appProperties?.[GOOGLE_DRIVE_RUN_APP_PROPERTY];
     const fileId = file.appProperties?.[GOOGLE_DRIVE_FILE_APP_PROPERTY];
-    if (!runId || !fileId) {
+    if (!fileId) {
       continue;
     }
-    const key = artifactKey(runId, fileId);
+    const key = artifactKey(runId ?? "", fileId);
     const existing = map.get(key);
     const originalUploaded =
       existing?.originalUploaded === true ||
@@ -524,27 +547,72 @@ function resolveGoogleDriveArtifactSyncStatus(
     : { status: "not_synced", accountReady: true };
 }
 
-export function applyGoogleDriveArtifactSyncStatuses(
-  runs: readonly ChatThreadArtifactRun[],
+function googleDriveArtifactStatusFields(
   lookup: DriveStatusLookup,
-): ChatThreadArtifactRun[] {
+  source: DriveArtifactStatusSource,
+) {
   const connectionId =
     lookup.connectionId ??
     (lookup.type === "disconnected" && "connectionId" in lookup.recovery
       ? lookup.recovery.connectionId
       : undefined);
+  return {
+    ...(connectionId ? { googleDriveConnectionId: connectionId } : {}),
+    googleDriveSync: resolveGoogleDriveArtifactSyncStatus(
+      lookup,
+      source.runId ?? "",
+      source.fileId,
+    ),
+  };
+}
+
+/** Read status for one independently owned resource using the current view's account. */
+export const googleDriveArtifactDetailStatus$ = command(
+  async (
+    { set },
+    args: {
+      readonly artifactId: string;
+      readonly threadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const artifact = await set(
+      ownedGoogleDriveArtifact$,
+      { ...args, catalogOnly: true },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!artifact) {
+      return {};
+    }
+    // Uploads persist externalId, not the catalog ID or the projection row ID.
+    const source = { runId: artifact.runId, fileId: artifact.externalId };
+    const lookup = await set(
+      googleDriveArtifactStatusLookup$,
+      { ...args, source },
+      signal,
+    );
+    signal.throwIfAborted();
+    return googleDriveArtifactStatusFields(lookup, source);
+  },
+);
+
+export function applyGoogleDriveArtifactSyncStatuses(
+  runs: readonly ChatThreadArtifactRun[],
+  lookup: DriveStatusLookup,
+): ChatThreadArtifactRun[] {
   return runs.map((run) => {
     return {
       ...run,
       files: run.files.map((file) => {
         return {
           ...file,
-          ...(connectionId ? { googleDriveConnectionId: connectionId } : {}),
-          googleDriveSync: resolveGoogleDriveArtifactSyncStatus(
-            lookup,
-            run.runId,
-            file.id,
-          ),
+          ...googleDriveArtifactStatusFields(lookup, {
+            runId: run.runId,
+            fileId: file.id,
+          }),
         };
       }),
     };
@@ -558,27 +626,30 @@ export function applyGoogleDriveArtifactSyncStatuses(
  * access token. A terminal OAuth failure persists reconnect state for the
  * exact credential revision and immediately projects as disconnected.
  */
-export function googleDriveArtifactStatusLookup(args: {
-  readonly threadId: string;
-  readonly orgId: string | undefined;
-  readonly userId: string;
-}): Command<Promise<DriveStatusLookup>, [AbortSignal]> {
-  return command(async ({ get, set }, signal): Promise<DriveStatusLookup> => {
+export const googleDriveArtifactStatusLookup$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly orgId: string | undefined;
+      readonly userId: string;
+      readonly source?: DriveArtifactStatusSource;
+    },
+    signal: AbortSignal,
+  ): Promise<DriveStatusLookup> => {
     if (!args.orgId) {
       return {
         type: "disconnected",
         recovery: { action: "unavailable" },
       };
     }
-    const featureSwitchOverrides = await get(
-      userFeatureSwitchOverrides(args.orgId, args.userId),
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
     );
     signal.throwIfAborted();
-    const featureSwitchContext = {
-      orgId: args.orgId,
-      userId: args.userId,
-      overrides: featureSwitchOverrides,
-    };
     const catalogDb = set(writeDb$);
     const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
       connectorSlugs: ["google-drive"],
@@ -637,6 +708,7 @@ export function googleDriveArtifactStatusLookup(args: {
           orgId: args.orgId,
           tokens,
           threadId: args.threadId,
+          source: args.source,
           userId: args.userId,
         },
         providerSignal,
@@ -660,8 +732,8 @@ export function googleDriveArtifactStatusLookup(args: {
       connectionId: tokens.connection.connectorId,
       syncedByKey: buildStatusMap(files),
     };
-  });
-}
+  },
+);
 
 // =====================================================================
 // Upload-side: sync a single artifact to the user's Google Drive.

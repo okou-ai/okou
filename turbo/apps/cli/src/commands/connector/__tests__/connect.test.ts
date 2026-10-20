@@ -331,34 +331,93 @@ describe("okou connector connect command", () => {
     });
   });
 
-  it("prints JSON output when requested", async () => {
-    server.use(
-      http.post(
-        "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
-        ({ params }) => {
-          return HttpResponse.json(
-            connectorResponse(String(params.connectorSlug)),
-          );
-        },
-      ),
-    );
+  it.each([undefined, DEFAULT_CONNECTION_ID])(
+    "prints JSON with optional builtin operation identity %s",
+    async (connectionId) => {
+      server.use(
+        http.post(
+          "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
+          ({ params }) => {
+            return HttpResponse.json({
+              ...connectorResponse(
+                String(params.connectorSlug),
+                "api-token",
+                DEFAULT_CONNECTION_ID,
+              ),
+              connectionId,
+              accessToken: "secret-must-not-appear",
+            });
+          },
+        ),
+      );
 
-    await connectCommand.parseAsync([
-      "node",
-      "cli",
-      "openai",
-      "--add",
-      "--value",
-      "apiKey=sk-test",
-      "--json",
-    ]);
+      await connectCommand.parseAsync([
+        "node",
+        "cli",
+        "openai",
+        "--add",
+        "--value",
+        "apiKey=sk-test",
+        "--json",
+      ]);
 
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(JSON.parse(output)).toMatchObject({
-      slug: "openai",
-      authMethod: "api-token",
-    });
-  });
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(output)).toMatchObject({
+        slug: "openai",
+        authMethod: "api-token",
+      });
+      expect(JSON.parse(output).connectionId).toBe(connectionId);
+      expect(output).not.toContain("secret-must-not-appear");
+    },
+  );
+
+  it.each([undefined, DEFAULT_CONNECTION_ID])(
+    "preserves optional custom operation identity %s and strips credentials",
+    async (connectionId) => {
+      const connector = customConnector();
+      server.use(
+        stubCustomConnectors([connector]),
+        http.get(
+          `http://localhost:3000/api/custom-connectors/${connector.id}`,
+          () => {
+            return HttpResponse.json(connector);
+          },
+        ),
+        http.put(
+          `http://localhost:3000/api/custom-connectors/${connector.id}/values`,
+          () => {
+            return HttpResponse.json({
+              ...connector,
+              connected: true,
+              connectedAccountId: DEFAULT_CONNECTION_ID,
+              missingRequiredFields: [],
+              configuredFieldKeys: ["apiKey"],
+              connectionId,
+              accessToken: "secret-must-not-appear",
+            });
+          },
+        ),
+      );
+      await connectCommand.parseAsync([
+        "node",
+        "okou",
+        `custom:${connector.id}`,
+        "--add",
+        "--value",
+        "apiKey=secret-input",
+        "--json",
+      ]);
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(output)).toMatchObject({
+        id: connector.id,
+        connected: true,
+        connectedAccountId: DEFAULT_CONNECTION_ID,
+      });
+      expect(JSON.parse(output).connectionId).toBe(connectionId);
+      expect(output).not.toContain("secret-must-not-appear");
+      expect(output).not.toContain("secret-input");
+    },
+  );
 
   it("fails with usage guidance when no values are provided", async () => {
     await expect(

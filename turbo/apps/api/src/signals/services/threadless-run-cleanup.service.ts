@@ -105,13 +105,10 @@ function terminalError(candidate: ThreadlessRunCandidate): string | undefined {
   return "Run failed";
 }
 
-async function loadThreadlessRunCandidates(
-  db: Db,
-  currentTime: Date,
-): Promise<readonly ThreadlessRunCandidate[]> {
+function threadlessRunCandidateReadPlan(currentTime: Date) {
   const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
-  return await db
-    .select({
+  return {
+    selection: {
       runId: agentRuns.id,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
@@ -119,51 +116,38 @@ async function loadThreadlessRunCandidates(
       error: agentRuns.error,
       completedAt: agentRuns.completedAt,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        isNotNull(agentRuns.triggerSource),
-        isNull(agentRuns.chatThreadId),
-        ne(agentRuns.triggerSource, "test"),
-        inArray(agentRuns.status, [
-          ...ACTIVE_RUN_STATUSES,
-          ...TERMINAL_RUN_STATUSES,
-        ]),
-        ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
-          return protection.sweepEligibility({ currentTime });
-        }),
-        or(
-          gte(agentRuns.createdAt, forwardCutoff),
-          exists(
-            db
-              .select({ id: chatThreadEvents.id })
-              .from(agentRunCallbacks)
-              .innerJoin(
-                chatThreadEvents,
-                and(
-                  eq(chatThreadEvents.userId, agentRuns.userId),
-                  eq(chatThreadEvents.orgId, agentRuns.orgId),
-                  eq(chatThreadEvents.kind, "deleted"),
-                  gte(chatThreadEvents.createdAt, forwardCutoff),
-                  eq(
-                    sql`${agentRunCallbacks.payload}->>'threadId'`,
-                    sql`${chatThreadEvents.chatThreadId}::text`,
-                  ),
-                ),
-              )
-              .where(
-                and(
-                  eq(agentRunCallbacks.runId, agentRuns.id),
-                  eq(agentRunCallbacks.internalKind, "chat"),
-                ),
-              ),
-          ),
+    },
+    conditions: [
+      isNotNull(agentRuns.triggerSource),
+      isNull(agentRuns.chatThreadId),
+      ne(agentRuns.triggerSource, "test"),
+      inArray(agentRuns.status, [
+        ...ACTIVE_RUN_STATUSES,
+        ...TERMINAL_RUN_STATUSES,
+      ]),
+      ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
+        return protection.sweepEligibility({ currentTime });
+      }),
+    ],
+    forwardCohort: gte(agentRuns.createdAt, forwardCutoff),
+    deletedThread: {
+      selection: { id: chatThreadEvents.id },
+      join: and(
+        eq(chatThreadEvents.userId, agentRuns.userId),
+        eq(chatThreadEvents.orgId, agentRuns.orgId),
+        eq(chatThreadEvents.kind, "deleted"),
+        gte(chatThreadEvents.createdAt, forwardCutoff),
+        eq(
+          sql`${agentRunCallbacks.payload}->>'threadId'`,
+          sql`${chatThreadEvents.chatThreadId}::text`,
         ),
       ),
-    )
-    .orderBy(asc(agentRuns.createdAt), asc(agentRuns.id))
-    .limit(THREADLESS_RUN_SWEEP_LIMIT);
+      condition: and(
+        eq(agentRunCallbacks.runId, agentRuns.id),
+        eq(agentRunCallbacks.internalKind, "chat"),
+      ),
+    },
+  };
 }
 
 function quietWindowElapsed(
@@ -328,7 +312,31 @@ export const cleanupThreadlessRuns$ = command(
   async ({ set }, signal: AbortSignal): Promise<ThreadlessRunCleanupResult> => {
     const db = set(writeDb$);
     const currentTime = nowDate();
-    const candidates = await loadThreadlessRunCandidates(db, currentTime);
+    const candidates = await (async (): Promise<
+      readonly ThreadlessRunCandidate[]
+    > => {
+      const plan = threadlessRunCandidateReadPlan(currentTime);
+      return await db
+        .select(plan.selection)
+        .from(agentRuns)
+        .where(
+          and(
+            ...plan.conditions,
+            or(
+              plan.forwardCohort,
+              exists(
+                db
+                  .select(plan.deletedThread.selection)
+                  .from(agentRunCallbacks)
+                  .innerJoin(chatThreadEvents, plan.deletedThread.join)
+                  .where(plan.deletedThread.condition),
+              ),
+            ),
+          ),
+        )
+        .orderBy(asc(agentRuns.createdAt), asc(agentRuns.id))
+        .limit(THREADLESS_RUN_SWEEP_LIMIT);
+    })();
     signal.throwIfAborted();
 
     let cancelled = 0;

@@ -303,6 +303,10 @@ import {
   chatThreadRequestSelection,
 } from "./chat-thread-request-facts";
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
+import {
+  OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
+  officialWorkflowThreadCondition,
+} from "./official-workflow-policy.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
@@ -1403,6 +1407,27 @@ export function createThreadClaimRunObjects(
       return event.sourceAutonomyBudget;
     },
   );
+  const isOfficialQueuedPrompt$ = computed(async (get) => {
+    const event = await get(promptQueuedEventQueuedEvent$);
+    if (!event) {
+      return false;
+    }
+    const [row] = await get(db$)
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, event.chatThreadId),
+          officialWorkflowThreadCondition({
+            threadId: event.chatThreadId,
+            orgId: bootstrap.orgId,
+            userId: bootstrap.userId,
+          }),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  });
   const promptQueuedMessageQueuedMessage$ = computed(
     async (get): Promise<QueuedUserMessage | null> => {
       const [event, sourceBudget] = await Promise.all([
@@ -1411,6 +1436,11 @@ export function createThreadClaimRunObjects(
       ]);
       if (!event) {
         return null;
+      }
+      if (await get(isOfficialQueuedPrompt$)) {
+        throw new QueuedPromptLaunchUnavailableError(
+          OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
+        );
       }
       return {
         id: event.id,
@@ -2931,7 +2961,18 @@ export function createThreadClaimRunObjects(
         model: input.selectedModel,
         providerType: input.modelProviderType,
       });
-      if (!input.enforceBuiltInCredits) {
+      const [official, target] = await Promise.all([
+        get(runContextOfficialWorkflow$),
+        get(threadContext.automationTarget$),
+      ]);
+      signal.throwIfAborted();
+      const freeOfficialRun =
+        !isRouteError(official) &&
+        official !== undefined &&
+        target !== null &&
+        target.workflow.officialDefinitionName !== null &&
+        target.automation.officialBlueprintKey !== null;
+      if (!input.enforceBuiltInCredits || freeOfficialRun) {
         return (
           checkOrgPlanRunAdmission({
             ...input,
@@ -3387,6 +3428,7 @@ export function createThreadClaimRunObjects(
         return undefined;
       }
       const piSandbox = args.piSandbox;
+      const officialTarget = await get(threadContext.automationTarget$);
       return measureApiDispatchTiming(
         args.timing,
         "api_dispatch_prepare_pi_launch_resources",
@@ -3397,7 +3439,9 @@ export function createThreadClaimRunObjects(
               modelConfig: piSandbox,
               piLaunchConfig: args.piLaunchConfig,
               memoryRecall,
-              sessionId: args.chatThreadId ?? args.runId,
+              sessionId: officialTarget?.workflow.officialDefinitionName
+                ? args.runId
+                : (args.chatThreadId ?? args.runId),
             }),
           );
         },
@@ -3454,6 +3498,9 @@ export function createThreadClaimRunObjects(
         timing,
         enforceBuiltInCredits:
           args.enforceBuiltInCredits === true &&
+          !(
+            officialWorkflowRun && args.agentRunMetadata?.workflowAutomationId
+          ) &&
           isBuiltInModelProviderType(modelProvider?.type),
         officialWorkflowRun,
         persisted: {
@@ -6403,6 +6450,11 @@ function pendingAtomicLaunchPlan(
     threadId: args.commit.persistence.rows.metadata.chatThreadId,
     status: "pending",
     billingCompletedAt: null,
+    creditChargePolicy:
+      context.rowsArgs.officialWorkflowProvenance &&
+      context.rowsArgs.agentRunMetadata?.workflowAutomationId
+        ? "official_workflow_free"
+        : "standard",
   });
   const attribution = new QueryBuilder()
     .$with("inserted_launch_billing_attribution", {

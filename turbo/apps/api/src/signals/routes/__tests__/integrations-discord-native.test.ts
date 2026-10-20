@@ -831,7 +831,7 @@ describe("Discord native authorization and reads", () => {
     );
   });
 
-  it("enforces default-off and token capabilities for reads and writes", async () => {
+  it("enforces the disabled switch and token capabilities for reads and writes", async () => {
     const f = await fixture({ enabled: false });
     await accept(history(f), [403]);
     await accept(send(f), [403]);

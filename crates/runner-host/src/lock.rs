@@ -308,21 +308,6 @@ pub async fn acquire_with_contention_timeout(
     .await
 }
 
-/// Acquire the canonical shared flock with the same contention-only budget as
-/// the exclusive helper. Existing exclusive holders retain their full window.
-pub async fn acquire_shared_with_contention_timeout(
-    path: PathBuf,
-    contention_timeout: Duration,
-) -> HostResult<TryLock> {
-    acquire_with_contention_timeout_after_busy(
-        path,
-        LockMode::Shared,
-        contention_timeout,
-        std::future::ready(()),
-    )
-    .await
-}
-
 /// Observe actual contention before arming the production retry timeout.
 /// Only owner tests enable this hook; the acquisition and retry loop are unchanged.
 #[cfg(feature = "test-support")]
@@ -334,22 +319,6 @@ pub async fn acquire_with_contention_timeout_for_test(
     acquire_with_contention_timeout_after_busy(
         path,
         LockMode::Exclusive,
-        contention_timeout,
-        after_busy,
-    )
-    .await
-}
-
-/// Synchronize observed shared contention without replacing its production path.
-#[cfg(feature = "test-support")]
-pub async fn acquire_shared_with_contention_timeout_for_test(
-    path: PathBuf,
-    contention_timeout: Duration,
-    after_busy: impl std::future::Future<Output = ()>,
-) -> HostResult<TryLock> {
-    acquire_with_contention_timeout_after_busy(
-        path,
-        LockMode::Shared,
         contention_timeout,
         after_busy,
     )

@@ -123,6 +123,20 @@ export const openThreadAutomations$ = command(
   },
 );
 
+/** Open a directory summary through the existing on-demand detail preview. */
+export const openThreadCatalogArtifact$ = command(
+  async (
+    { set },
+    thread: ChatPanelSignals,
+    artifactId: string,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    set(closeOtherThreadSidebars$, thread);
+    await set(thread.sidebar.openCatalogArtifact$, artifactId, signal);
+  },
+);
+
 /**
  * The card hands over its own signals, which carry the owning thread id, so
  * the sidebar target holds everything its panel renders from — no registry

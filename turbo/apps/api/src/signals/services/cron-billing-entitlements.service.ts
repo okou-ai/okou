@@ -1181,96 +1181,75 @@ async function reconcileConcurrencyCandidate(
   return rows;
 }
 
-async function loadReconcileCandidateRows(
-  db: Db,
-  now: Date,
-  staleBefore: Date,
-): Promise<ReconcileCandidateRows> {
-  const [candidates, atomGrantCandidates, concurrencyCandidates] =
-    await Promise.all([
-      db
-        .select({
-          orgId: orgMetadata.orgId,
-          stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-        })
-        .from(orgMetadata)
-        .where(
-          and(
-            inArray(orgMetadata.tier, PAID_TIERS),
-            isNotNull(orgMetadata.stripeSubscriptionId),
-            inArray(orgMetadata.subscriptionStatus, [
-              ...PAYMENT_FAILED_SUBSCRIPTION_STATUSES,
-            ]),
-            or(
-              isNull(orgMetadata.currentPeriodEnd),
-              lte(orgMetadata.currentPeriodEnd, staleBefore),
-            ),
-          ),
+function reconcileCandidateReadPlans(now: Date, staleBefore: Date) {
+  return {
+    billing: {
+      columns: {
+        orgId: orgMetadata.orgId,
+        stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+      },
+      condition: and(
+        inArray(orgMetadata.tier, PAID_TIERS),
+        isNotNull(orgMetadata.stripeSubscriptionId),
+        inArray(orgMetadata.subscriptionStatus, [
+          ...PAYMENT_FAILED_SUBSCRIPTION_STATUSES,
+        ]),
+        or(
+          isNull(orgMetadata.currentPeriodEnd),
+          lte(orgMetadata.currentPeriodEnd, staleBefore),
         ),
-      db
-        .select({
-          orgId: orgMetadata.orgId,
-        })
-        .from(orgMetadata)
-        .where(
-          and(
-            inArray(orgMetadata.tier, PAID_TIERS),
-            isNull(orgMetadata.stripeSubscriptionId),
-            eq(orgMetadata.subscriptionStatus, ATOM_GRANT_SUBSCRIPTION_STATUS),
-            isNotNull(orgMetadata.currentPeriodEnd),
-            lte(orgMetadata.currentPeriodEnd, now),
-          ),
+      ),
+    },
+    atomGrant: {
+      columns: {
+        orgId: orgMetadata.orgId,
+      },
+      condition: and(
+        inArray(orgMetadata.tier, PAID_TIERS),
+        isNull(orgMetadata.stripeSubscriptionId),
+        eq(orgMetadata.subscriptionStatus, ATOM_GRANT_SUBSCRIPTION_STATUS),
+        isNotNull(orgMetadata.currentPeriodEnd),
+        lte(orgMetadata.currentPeriodEnd, now),
+      ),
+    },
+    concurrency: {
+      columns: {
+        orgId: orgConcurrencySubscriptions.orgId,
+        stripeSubscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
+        rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
+          pgTextDecoder,
         ),
-      db
-        .select({
-          orgId: orgConcurrencySubscriptions.orgId,
-          stripeSubscriptionId:
-            orgConcurrencySubscriptions.stripeSubscriptionId,
-          cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
-          rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
+        updatedAtText:
+          sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
             pgTextDecoder,
           ),
-          updatedAtText:
-            sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
-              pgTextDecoder,
-            ),
-        })
-        .from(orgConcurrencySubscriptions)
-        .where(
+      },
+      condition: and(
+        or(
           and(
+            inArray(orgConcurrencySubscriptions.subscriptionStatus, [
+              ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
+            ]),
             or(
-              and(
-                inArray(orgConcurrencySubscriptions.subscriptionStatus, [
-                  ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
-                ]),
-                or(
-                  isNull(orgConcurrencySubscriptions.currentPeriodEnd),
-                  lte(
-                    orgConcurrencySubscriptions.currentPeriodEnd,
-                    staleBefore,
-                  ),
-                ),
-              ),
-              and(
-                inArray(orgConcurrencySubscriptions.subscriptionStatus, [
-                  "active",
-                  "trialing",
-                  ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
-                ]),
-                // Provider observations can arrive out of order during overlap
-                // with old webhook writers. Repair each live identity daily;
-                // this never creates an invoice, payment or credit grant.
-                sql`(hashtext(${orgConcurrencySubscriptions.stripeSubscriptionId}) & 2147483647) % 24 = ${now.getUTCHours()}`,
-              ),
+              isNull(orgConcurrencySubscriptions.currentPeriodEnd),
+              lte(orgConcurrencySubscriptions.currentPeriodEnd, staleBefore),
             ),
           ),
+          and(
+            inArray(orgConcurrencySubscriptions.subscriptionStatus, [
+              "active",
+              "trialing",
+              ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
+            ]),
+            // Provider observations can arrive out of order during overlap
+            // with old webhook writers. Repair each live identity daily;
+            // this never creates an invoice, payment or credit grant.
+            sql`(hashtext(${orgConcurrencySubscriptions.stripeSubscriptionId}) & 2147483647) % 24 = ${now.getUTCHours()}`,
+          ),
         ),
-    ]);
-
-  return {
-    candidates,
-    atomGrantCandidates,
-    concurrencyCandidates,
+      ),
+    },
   };
 }
 
@@ -1427,11 +1406,25 @@ export const reconcileBillingEntitlements$ = command(
     );
     signal.throwIfAborted();
 
-    const candidateRows = await loadReconcileCandidateRows(
-      db,
-      now,
-      staleBefore,
-    );
+    const candidateRows = await (async (): Promise<ReconcileCandidateRows> => {
+      const plans = reconcileCandidateReadPlans(now, staleBefore);
+      const [candidates, atomGrantCandidates, concurrencyCandidates] =
+        await Promise.all([
+          db
+            .select(plans.billing.columns)
+            .from(orgMetadata)
+            .where(plans.billing.condition),
+          db
+            .select(plans.atomGrant.columns)
+            .from(orgMetadata)
+            .where(plans.atomGrant.condition),
+          db
+            .select(plans.concurrency.columns)
+            .from(orgConcurrencySubscriptions)
+            .where(plans.concurrency.condition),
+        ]);
+      return { candidates, atomGrantCandidates, concurrencyCandidates };
+    })();
     signal.throwIfAborted();
 
     const atomGrantCandidates = await set(

@@ -2,10 +2,9 @@
 //!
 //! Entry locks own checkout, publication, and orphan reclamation. Promotion
 //! retains accepted physical work and phase-aware retry under the original entry
-//! custody. New publishers share the canonical capacity barrier; legacy exclusive
-//! owners still exclude their tree growth and IO. All new collectors own the
-//! routine singleton and only try barrier/entry locks. A barrier owner must never
-//! wait for an entry lock or request another collector.
+//! custody and bounded IO admission. Collectors own the routine singleton and
+//! only try entry locks. The collector lock file also stores successful routine
+//! maintenance cadence; publishers only need their own entry locks.
 //!
 //! A checkout removes the commit before moving its selected immutable image.
 //! Publication syncs a new generation and directories before a single atomic
@@ -98,9 +97,7 @@ pub struct HomeImageCache {
     #[cfg(test)]
     gc_inventory_test_gate: Option<gc::GcInventoryTestGate>,
     #[cfg(test)]
-    promotion_capacity_lock_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
-    #[cfg(test)]
-    publication_capacity_held_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
+    publication_io_held_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     #[cfg(test)]
     publication_sync_test_gate: Option<HomeImageHandoffTestGate>,
     #[cfg(test)]
@@ -199,6 +196,8 @@ struct HomeImageCacheInner {
     gc_root_scan_count: AtomicUsize,
     #[cfg(any(test, feature = "test-support"))]
     held_state_root_scan_count: AtomicUsize,
+    #[cfg(any(test, feature = "test-support"))]
+    inventory_key_probe_count: AtomicUsize,
     #[cfg(any(test, feature = "test-support"))]
     held_state_root_scan_notify: tokio::sync::Notify,
     #[cfg(test)]
@@ -317,6 +316,7 @@ impl HomeImageCache {
                 fs_stats_override: Mutex::new(stats),
                 gc_root_scan_count: AtomicUsize::new(0),
                 held_state_root_scan_count: AtomicUsize::new(0),
+                inventory_key_probe_count: AtomicUsize::new(0),
                 held_state_root_scan_notify: tokio::sync::Notify::new(),
                 #[cfg(test)]
                 publication_fault: AtomicUsize::new(0),
@@ -332,9 +332,7 @@ impl HomeImageCache {
             #[cfg(test)]
             gc_inventory_test_gate: None,
             #[cfg(test)]
-            promotion_capacity_lock_test_gate: None,
-            #[cfg(test)]
-            publication_capacity_held_test_gate: None,
+            publication_io_held_test_gate: None,
             #[cfg(test)]
             publication_sync_test_gate: None,
             #[cfg(test)]
@@ -418,15 +416,6 @@ impl HomeImageCache {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_inventory_test_gate(mut self, gate: HomeImagePrepareLockTestGate) -> Self {
         self.inventory_test_gate = Some(gate);
-        self
-    }
-    #[cfg(test)]
-    fn with_promotion_capacity_lock_test_gate(
-        mut self,
-        entered: Arc<tokio::sync::Notify>,
-        release: Arc<Semaphore>,
-    ) -> Self {
-        self.promotion_capacity_lock_test_gate = Some((entered, release));
         self
     }
     #[cfg(test)]

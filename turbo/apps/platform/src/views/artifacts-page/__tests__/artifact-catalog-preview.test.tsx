@@ -67,7 +67,8 @@ test("An avatar card and its viewer share one private video URL", async () => {
       nextCursor: null,
     });
   });
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+  context.mocks.api(artifactCatalogContract.get, ({ query, respond }) => {
+    expect(query.chatThreadId).toBeUndefined();
     return respond(200, {
       ...artifact({
         kind: "avatar",

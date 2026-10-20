@@ -183,11 +183,8 @@ function MessageRow({
     });
   const content = (
     <>
-      <span className="block whitespace-pre-wrap break-words text-[13px] leading-5.25">
-        {preview}
-      </span>
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>
+      <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="font-medium">
           {t(($) => {
             return message.direction === "sent"
               ? $.chat.relations.sent
@@ -196,12 +193,15 @@ function MessageRow({
         </span>
         <MessageTime value={message.createdAt} />
       </span>
+      <span className="block whitespace-pre-wrap break-words text-[13px] leading-5.25">
+        {preview}
+      </span>
     </>
   );
   return (
     <li>
       {unavailable && message.direction === "sent" ? (
-        <div className="block min-w-0 space-y-1 px-2 py-2 text-muted-foreground">
+        <div className="block min-w-0 space-y-1.5 px-2 py-3 text-muted-foreground">
           {content}
         </div>
       ) : (
@@ -213,7 +213,7 @@ function MessageRow({
               ? `run-${message.targetRunId}`
               : undefined,
           }}
-          className="block min-w-0 space-y-1 rounded-lg px-2 py-2 transition-colors hover:bg-state-hover"
+          className="block min-w-0 space-y-1.5 rounded-lg px-2 py-3 transition-colors hover:bg-state-hover"
         >
           {content}
         </Link>
@@ -303,7 +303,7 @@ function Messages({
     return null;
   }
   return (
-    <div className="mb-2 ml-1 border-l border-divider pl-1">
+    <div className="mb-2 mt-1 max-h-80 overflow-y-auto overscroll-contain rounded-lg bg-gray-50 p-1">
       {data.state === "hasError" ? (
         <div
           role="alert"
@@ -321,7 +321,7 @@ function Messages({
           </Button>
         </div>
       ) : (
-        <ul className="m-0 list-none p-0">
+        <ul className="m-0 list-none divide-y divide-border-on-fill p-0">
           {data.data.items.map((message) => {
             return (
               <MessageRow

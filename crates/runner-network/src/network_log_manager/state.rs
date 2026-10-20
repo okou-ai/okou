@@ -60,14 +60,13 @@ pub(super) struct SourceSnapshot {
 }
 
 pub(super) struct AcceptedAppend {
-    path: Arc<Path>,
     line: String,
     completion: PendingWriteCompletion,
 }
 
 impl AcceptedAppend {
     pub(super) fn path(&self) -> &Arc<Path> {
-        &self.path
+        &self.completion.path
     }
 
     pub(super) fn line(&self) -> &str {
@@ -213,7 +212,6 @@ impl NetworkLogState {
             .or_insert_with(PathState::new);
         path_state.pending += 1;
         Some(AcceptedAppend {
-            path: Arc::clone(&snapshot.path),
             line,
             completion: PendingWriteCompletion {
                 state: Arc::downgrade(self),

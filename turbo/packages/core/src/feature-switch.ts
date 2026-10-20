@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosChatAttachments]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "iOS chat attachments",
+    description:
+      "Choose photos, videos and files in the native iOS chat composer.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.JsonTreePreview]: {
     maintainer: "liangyou@okou.ai",
     displayName: "JSON tree previews",
@@ -112,6 +120,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
+  },
+  [FeatureSwitchKey.ComposerMentionHint]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Mention search hint",
+    description: "Show a search hint after typing @ in the chat composer.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
@@ -414,7 +429,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the verified Discord guild and bot DM integration.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",

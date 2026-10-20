@@ -506,9 +506,8 @@ async fn renewal_timeout_preserves_fatal_failure_limit() {
 }
 
 #[tokio::test]
-async fn fatal_error_cancels_acquisition_before_status_backpressure() {
-    let mut timing = TimingConfig::default();
-    timing.event_channel_capacity = 1;
+async fn fatal_error_cancels_acquisition_with_undrained_events() {
+    let timing = TimingConfig::default();
     let mut harness = RenewalHarness::start(Trigger::ServerAuth, HeldPhase::Exchange, timing).await;
     send_message(
         &mut harness.conn,
@@ -518,7 +517,7 @@ async fn fatal_error_cancels_acquisition_before_status_backpressure() {
     )
     .await
     .unwrap();
-    // Receiving ATTACH proves the preceding MESSAGE filled the event channel.
+    // Receiving ATTACH proves the preceding MESSAGE has been queued.
     send_protocol(
         &mut harness.conn,
         ProtocolMessage {

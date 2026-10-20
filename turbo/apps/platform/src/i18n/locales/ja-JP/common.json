@@ -553,6 +553,7 @@
       },
       "kindIcon": "{{kind}} アーティファクト",
       "loading": "アーティファクトをロードしています",
+      "loadMore": "さらに読み込む",
       "retry": "再試行"
     },
     "fileBadges": {
@@ -1819,6 +1820,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
+      "mentionHint": "エージェントやチャットを検索…",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",

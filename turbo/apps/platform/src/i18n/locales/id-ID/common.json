@@ -553,6 +553,7 @@
       },
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak",
+      "loadMore": "Muat lebih banyak",
       "retry": "Coba lagi"
     },
     "fileBadges": {
@@ -1819,6 +1820,7 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
+      "mentionHint": "Cari agen atau obrolan…",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",

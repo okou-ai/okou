@@ -55,6 +55,7 @@
     "src/signals/services/model-provider-device-session-publication.ts",
     "src/signals/services/model-token-categories.ts",
     "src/signals/services/onboarding-credit-grants.service.ts",
+    "src/signals/services/official-workflow-policy.service.ts",
     "src/signals/services/org-credit-expiration.ts",
     "src/signals/services/org-plan-entitlement-tier-values.ts",
     "src/signals/services/org-plan-entitlements.service.ts",

@@ -4,7 +4,7 @@ import {
 } from "@okouai/db/schema/usage-pack-credit-grant";
 import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
-import { and, desc, eq, gt, inArray, sql, sum } from "drizzle-orm";
+import { and, eq, gt, inArray, sql, sum } from "drizzle-orm";
 
 import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
@@ -190,30 +190,23 @@ export const getSpendableUsagePackCredits$ = command(
   },
 );
 
-export async function hasActiveUsagePackAllocation(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId?: string;
-  },
-): Promise<boolean> {
-  const [allocation] = await db
-    .select({ id: usagePackAllocations.id })
-    .from(usagePackAllocations)
-    .where(
-      and(
-        eq(usagePackAllocations.orgId, args.orgId),
-        args.userId === undefined
-          ? undefined
-          : eq(usagePackAllocations.userId, args.userId),
-        inArray(usagePackAllocations.status, ["active", "pending_invitation"]),
-      ),
-    )
-    .limit(1);
-  return allocation !== undefined;
+export function activeUsagePackAllocationReadPlan(args: {
+  readonly orgId: string;
+  readonly userId?: string;
+}) {
+  return {
+    columns: { id: usagePackAllocations.id },
+    condition: and(
+      eq(usagePackAllocations.orgId, args.orgId),
+      args.userId === undefined
+        ? undefined
+        : eq(usagePackAllocations.userId, args.userId),
+      inArray(usagePackAllocations.status, ["active", "pending_invitation"]),
+    ),
+  };
 }
 
-function usagePackCreditBalanceFromRows(
+export function usagePackCreditBalanceFromRows(
   rows: readonly UsagePackCreditGrantBalanceRow[],
 ): UsagePackCreditBalance {
   const creditsByType: Record<UsagePackCreditGrantType, number> = {
@@ -240,47 +233,35 @@ function usagePackCreditBalanceFromRows(
   };
 }
 
-export async function getUsagePackCreditBalance(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly at?: Date;
-  },
-): Promise<UsagePackCreditBalance> {
-  const at = args.at ?? nowDate();
-  const rows = await db
-    .select({
+export function usagePackCreditBalanceReadPlan(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly at: Date;
+}) {
+  return {
+    columns: {
       id: usagePackCreditGrants.id,
       grantType: usagePackCreditGrants.grantType,
       amount: usagePackCreditGrants.originalAmount,
       remaining: usagePackCreditGrants.remainingAmount,
       createdAt: usagePackCreditGrants.createdAt,
       expiresAt: usagePackCreditGrants.expiresAt,
-    })
-    .from(usagePackCreditGrants)
-    .where(
-      and(
-        eq(usagePackCreditGrants.orgId, args.orgId),
-        eq(usagePackCreditGrants.userId, args.userId),
-        gt(usagePackCreditGrants.remainingAmount, 0),
-        gt(usagePackCreditGrants.expiresAt, at),
-      ),
-    )
-    .orderBy(desc(usagePackCreditGrants.createdAt));
-  return usagePackCreditBalanceFromRows(rows);
+    },
+    condition: and(
+      eq(usagePackCreditGrants.orgId, args.orgId),
+      eq(usagePackCreditGrants.userId, args.userId),
+      gt(usagePackCreditGrants.remainingAmount, 0),
+      gt(usagePackCreditGrants.expiresAt, args.at),
+    ),
+  };
 }
 
-export async function getOrganizationUsagePackCreditBalances(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly at?: Date;
-  },
-): Promise<readonly UsagePackMemberCreditBalance[]> {
-  const at = args.at ?? nowDate();
-  const rows = await db
-    .select({
+export function organizationUsagePackCreditBalancesReadPlan(args: {
+  readonly orgId: string;
+  readonly at: Date;
+}) {
+  return {
+    columns: {
       memberId: usagePackCreditGrants.userId,
       id: usagePackCreditGrants.id,
       grantType: usagePackCreditGrants.grantType,
@@ -288,20 +269,20 @@ export async function getOrganizationUsagePackCreditBalances(
       remaining: usagePackCreditGrants.remainingAmount,
       createdAt: usagePackCreditGrants.createdAt,
       expiresAt: usagePackCreditGrants.expiresAt,
-    })
-    .from(usagePackCreditGrants)
-    .where(
-      and(
-        eq(usagePackCreditGrants.orgId, args.orgId),
-        gt(usagePackCreditGrants.remainingAmount, 0),
-        gt(usagePackCreditGrants.expiresAt, at),
-      ),
-    )
-    .orderBy(
-      usagePackCreditGrants.userId,
-      desc(usagePackCreditGrants.createdAt),
-    );
+    },
+    condition: and(
+      eq(usagePackCreditGrants.orgId, args.orgId),
+      gt(usagePackCreditGrants.remainingAmount, 0),
+      gt(usagePackCreditGrants.expiresAt, args.at),
+    ),
+  };
+}
 
+export function organizationUsagePackCreditBalancesFromRows(
+  rows: readonly (UsagePackCreditGrantBalanceRow & {
+    readonly memberId: string;
+  })[],
+): readonly UsagePackMemberCreditBalance[] {
   const rowsByMember = new Map<string, UsagePackCreditGrantBalanceRow[]>();
   for (const row of rows) {
     const memberRows = rowsByMember.get(row.memberId) ?? [];

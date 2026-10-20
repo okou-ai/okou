@@ -313,8 +313,7 @@ impl HomeImageCache {
                     victim_attempts: attempts,
                 });
             };
-            // All new collectors share the routine owner. Never wait for a
-            // legacy exclusive barrier while retaining collection ownership.
+            // Every collector uses the same try-only routine owner.
             let routine = match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path())
                 .await?
             {
@@ -327,23 +326,6 @@ impl HomeImageCache {
                     .with_progress(initial_available, removed, attempts));
                 }
             };
-            let mut capacity =
-                match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path())
-                    .await?
-                {
-                    runner_host::lock::TryLock::Acquired(lock) => lock,
-                    runner_host::lock::TryLock::Busy => {
-                        return Ok(HomeCacheReclaimOutcome::observed(
-                            HomeCacheReclaimStatus::Contended,
-                            self.fs_stats().await?.available_bytes,
-                        )
-                        .with_progress(
-                            initial_available,
-                            removed,
-                            attempts,
-                        ));
-                    }
-                };
             let current_continuation = match &mut continuation {
                 Some(cursor) => cursor,
                 empty @ None => {
@@ -358,28 +340,14 @@ impl HomeImageCache {
                             stats.available_bytes,
                         ));
                     }
-                    // Discovery owns no mutation authority. Keep only the routine
-                    // owner while reading, then try capacity again before eviction.
-                    drop(capacity);
+                    // Discovery owns no mutation authority. Entry acquisition
+                    // revalidates every candidate before eviction.
                     let Some(candidates) = self.gc_candidates(|| work.required().is_some()).await?
                     else {
                         // Expiry can race a new foreground request. A partial
                         // inventory cannot establish complete LRU/no-progress;
                         // release the owner and restart discovery if still needed.
                         continue;
-                    };
-                    capacity = match runner_host::lock::try_acquire_shared_or_busy(
-                        self.capacity_lock_path(),
-                    )
-                    .await?
-                    {
-                        runner_host::lock::TryLock::Acquired(lock) => lock,
-                        runner_host::lock::TryLock::Busy => {
-                            return Ok(HomeCacheReclaimOutcome::observed(
-                                HomeCacheReclaimStatus::Contended,
-                                self.fs_stats().await?.available_bytes,
-                            ));
-                        }
                     };
                     empty.insert(GcContinuation::new(candidates, 0))
                 }
@@ -402,7 +370,6 @@ impl HomeImageCache {
             initial_available = initial_available.or(outcome.available_before);
             removed = removed.saturating_add(outcome.removed_allocated_bytes);
             attempts += outcome.victim_attempts;
-            drop(capacity);
             drop(routine);
             if outcome.status == HomeCacheReclaimStatus::BudgetExhausted {
                 tracing::info!(

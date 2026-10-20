@@ -1191,6 +1191,10 @@ async fn finalize_sandbox_for_completion_inner(
                 drop(pool);
                 if publishes_exact_sandbox {
                     active_run_reuse.publish_exact_sandbox();
+                } else {
+                    // The generic sandbox is pool-owned now. Wake successors
+                    // before waiting for unrelated replaced-entry cleanup.
+                    active_run_reuse.publish_no_exact_sandbox();
                 }
                 let ownership = OwnershipTransitions::new(status.as_ref());
                 ownership

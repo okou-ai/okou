@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/okou-ai/okou/compare/ios-v0.9.0...ios-v0.9.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **ios:** align sign-in design with pwa ([#41501](https://github.com/okou-ai/okou/issues/41501)) ([24931e4](https://github.com/okou-ai/okou/commit/24931e46160514a1d6b10d4276aab232a5ecf73e))
+* **ios:** align startup animation with pwa ([#41449](https://github.com/okou-ai/okou/issues/41449)) ([5e0ffbe](https://github.com/okou-ai/okou/commit/5e0ffbe2d57a07ff1f1792abd887b0aaf71bfc96))
+
 ## [0.9.0](https://github.com/okou-ai/okou/compare/ios-v0.8.2...ios-v0.9.0) (2026-10-19)
 
 

@@ -8,15 +8,13 @@ import {
   type ChatCommunication,
   type CreatedChatRelation,
 } from "@okouai/api-contracts/contracts/chat-relations";
-import {
-  chatThreadArtifactsContract,
-  type UserMessagePart,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  artifactRun,
+  artifactSummary,
   buttonNamed,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_THREAD_ID as THREAD,
@@ -535,16 +533,10 @@ test.each(["artifacts", "links"] as const)(
           : [prompt()],
       mock: () => {
         if (resource === "artifacts") {
-          context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+          context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
             return respond(200, {
-              runs: [
-                artifactRun({
-                  fileId: EVENT,
-                  filename: "report.pdf",
-                  contentType: "application/pdf",
-                  url: "https://files.example.test/report.pdf",
-                }),
-              ],
+              artifacts: [artifactSummary(EVENT, "file", "report.pdf")],
+              nextCursor: null,
             });
           });
         }

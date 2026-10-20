@@ -21,6 +21,7 @@ import {
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 
 import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
@@ -30,12 +31,18 @@ import { bodyResultOf, queryOf } from "../context/request";
 import {
   downloadFeishuMessageResource$,
   FeishuApiError,
-  replyWithFeishuMessage,
-  sendFeishuMessage,
-  uploadFeishuFile,
+  feishuFileUploadForm,
+  feishuTokenUpdateValues,
+  parseFeishuFileUploadResponse,
+  readFeishuResponseJson,
+  resolveFeishuRequestCredentials,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
+import {
+  deliverFeishuMessage$,
+  type FeishuMessageDelivery,
+} from "../services/feishu-message-delivery.service";
 import {
   downloadS3Buffer,
   generatePresignedPutUrl,
@@ -46,6 +53,10 @@ import {
   materializeUploadedArtifact$,
 } from "../services/uploaded-artifact.service";
 import { feishuOrgCallbackPayloadSchema } from "../services/feishu-org-callback-payload";
+import {
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
+} from "../services/feishu-config";
 import { recordFeishuUploadedFile$ } from "../services/run-uploaded-files.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
@@ -299,46 +310,36 @@ const resolveUserOpenId$ = command(
   },
 );
 
-function deliverUploadedFile(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly body: FeishuUploadCompleteBody;
-    readonly userOpenId: string | undefined;
-    readonly fileKey: string;
-  },
-  signal: AbortSignal,
-): ReturnType<typeof sendFeishuMessage> | null {
+function uploadedFileDelivery(args: {
+  readonly installationId: string;
+  readonly body: FeishuUploadCompleteBody;
+  readonly userOpenId: string | undefined;
+  readonly fileKey: string;
+}): FeishuMessageDelivery | null {
   const message: FeishuOutboundMessage = {
     msgType: "file",
     content: { file_key: args.fileKey },
   };
   if (args.body.replyToMessageId) {
-    return replyWithFeishuMessage(
-      {
-        db: args.db,
-        installationId: args.installationId,
-        messageId: args.body.replyToMessageId,
-        message,
-        replyInThread: args.body.replyInThread,
-      },
-      signal,
-    );
+    return {
+      kind: "reply",
+      installationId: args.installationId,
+      messageId: args.body.replyToMessageId,
+      message,
+      replyInThread: args.body.replyInThread,
+    };
   }
   const receiveId = args.userOpenId ?? args.body.chat;
   if (!receiveId) {
     return null;
   }
-  return sendFeishuMessage(
-    {
-      db: args.db,
-      installationId: args.installationId,
-      receiveIdType: args.userOpenId ? "open_id" : "chat_id",
-      receiveId,
-      message,
-    },
-    signal,
-  );
+  return {
+    kind: "send",
+    installationId: args.installationId,
+    receiveIdType: args.userOpenId ? "open_id" : "chat_id",
+    receiveId,
+    message,
+  };
 }
 
 const download$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -495,6 +496,78 @@ const initUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
+const uploadFeishuFile$ = command(
+  (
+    { set },
+    args: {
+      readonly installationId: string;
+      readonly filename: string;
+      readonly contentType: string;
+      readonly content: Buffer;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    return (async () => {
+      const db = set(writeDb$);
+      const uploadContextArgs = args;
+      const uploadContextSignal = signal;
+      const { token, apiOrigin, providerName } = await (async () => {
+        const [installation] = await db
+          .select()
+          .from(feishuOrgInstallations)
+          .where(
+            eq(feishuOrgInstallations.id, uploadContextArgs.installationId),
+          )
+          .limit(1);
+        uploadContextSignal.throwIfAborted();
+        if (!installation) {
+          throw new Error("Bot installation not found");
+        }
+        if (
+          !(await (async () => {
+            const plan = feishuInstallationAvailabilityReadPlan(installation);
+            if (plan.kind === "resolved") {
+              return plan.enabled;
+            }
+            const rows = await db
+              .select(plan.columns)
+              .from(userFeatureSwitches)
+              .where(plan.condition);
+            return feishuInstallationEnabledFromRows(plan.scope, rows);
+          })())
+        ) {
+          throw new FeishuApiError("Lark integration is not enabled", 403);
+        }
+        const credentials = await resolveFeishuRequestCredentials(
+          installation,
+          uploadContextSignal,
+        );
+        if (credentials.refreshedToken) {
+          await db
+            .update(feishuOrgInstallations)
+            .set(feishuTokenUpdateValues(credentials.refreshedToken))
+            .where(
+              eq(feishuOrgInstallations.id, uploadContextArgs.installationId),
+            );
+          uploadContextSignal.throwIfAborted();
+        }
+        return credentials.context;
+      })();
+      const form = feishuFileUploadForm(args);
+      const response = await fetch(`${apiOrigin}/open-apis/im/v1/files`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+        signal,
+      });
+      return parseFeishuFileUploadResponse(
+        await readFeishuResponseJson(response, providerName),
+        providerName,
+      );
+    })();
+  },
+);
+
 const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const runId =
@@ -507,7 +580,6 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const body = bodyResult.data;
-  const db = set(writeDb$);
   const installation = await set(
     resolveInstallation$,
     {
@@ -561,25 +633,26 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   const content = await get(downloadS3Buffer(object.bucket, object.key));
   signal.throwIfAborted();
   const uploadInput = {
-    db,
     installationId: installation.id,
     filename,
     contentType,
     content,
   };
-  const uploaded = await settle(uploadFeishuFile(uploadInput, signal), signal);
+  const upload = set(uploadFeishuFile$, uploadInput, signal);
+  const uploaded = await settle(upload, signal);
   if (!uploaded.ok) {
     return feishuApiError(uploaded.error, get(feishuRequestPlatform$));
   }
 
-  const deliveryInput = {
-    db,
+  const deliveryInput = uploadedFileDelivery({
     installationId: installation.id,
     body,
     userOpenId: user.openId,
     fileKey: uploaded.value,
-  };
-  const delivery = deliverUploadedFile(deliveryInput, signal);
+  });
+  const delivery = deliveryInput
+    ? set(deliverFeishuMessage$, deliveryInput, signal)
+    : null;
   if (!delivery) {
     return apiError(
       400,

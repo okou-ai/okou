@@ -142,7 +142,7 @@ export interface FeishuOutboundMessage {
   readonly content: Readonly<Record<string, unknown>>;
 }
 
-interface FeishuSentMessage {
+export interface FeishuSentMessage {
   readonly messageId: string;
   readonly chatId: string | null;
 }
@@ -569,56 +569,11 @@ export const downloadFeishuMessageResource$ = command(
   },
 );
 
-export async function uploadFeishuFile(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly filename: string;
-    readonly contentType: string;
-    readonly content: Buffer;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  const uploadContextArgs = args;
-  const uploadContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await uploadContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.id, uploadContextArgs.installationId))
-      .limit(1);
-    uploadContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await uploadContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      uploadContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await uploadContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(eq(feishuOrgInstallations.id, uploadContextArgs.installationId));
-      uploadContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
+export function feishuFileUploadForm(args: {
+  readonly filename: string;
+  readonly contentType: string;
+  readonly content: Buffer;
+}): FormData {
   const form = new FormData();
   form.set("file_type", "stream");
   form.set("file_name", args.filename);
@@ -627,15 +582,14 @@ export async function uploadFeishuFile(
     new Blob([Uint8Array.from(args.content)], { type: args.contentType }),
     args.filename,
   );
-  const response = await fetch(`${apiOrigin}/open-apis/im/v1/files`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}` },
-    body: form,
-    signal,
-  });
-  const parsed = feishuFileResponseSchema.parse(
-    await readJson(response, providerName),
-  );
+  return form;
+}
+
+export function parseFeishuFileUploadResponse(
+  value: unknown,
+  providerName: string,
+): string {
+  const parsed = feishuFileResponseSchema.parse(value);
   if (parsed.code !== 0) {
     throw new FeishuApiError(
       parsed.msg ?? `${providerName} file upload failed`,
@@ -682,77 +636,25 @@ function parseSentMessage(
   };
 }
 
-export async function sendFeishuMessage(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly receiveIdType: "chat_id" | "open_id";
-    readonly receiveId: string;
-    readonly message: FeishuOutboundMessage;
-    readonly idempotencyKey?: string;
-  },
-  signal: AbortSignal,
-): Promise<FeishuSentMessage> {
-  const sendContextArgs = args;
-  const sendContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await sendContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId))
-      .limit(1);
-    sendContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await sendContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      sendContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await sendContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId));
-      sendContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
-  const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
-  url.searchParams.set("receive_id_type", args.receiveIdType);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify({
-      receive_id: args.receiveId,
-      ...messagePayload(args.message),
-      ...(args.idempotencyKey ? { uuid: args.idempotencyKey } : {}),
-    }),
-    signal,
-  });
-  return parseSentMessage(
-    await readJson(response, providerName),
-    `${providerName} message send failed`,
-    providerName,
-  );
+export {
+  messagePayload as feishuMessagePayload,
+  parseSentMessage as parseFeishuSentMessage,
+};
+
+export function feishuMessageSendUrl(apiOrigin: string): URL {
+  return new URL(`${apiOrigin}/open-apis/im/v1/messages`);
+}
+
+export function feishuMessageSendBody(
+  receiveId: string,
+  payload: ReturnType<typeof messagePayload>,
+  idempotencyKey?: string,
+) {
+  return {
+    receive_id: receiveId,
+    ...payload,
+    ...(idempotencyKey ? { uuid: idempotencyKey } : {}),
+  };
 }
 
 export async function replyWithFeishuMessage(
@@ -877,58 +779,14 @@ export function parseFeishuReactionRemovalResponse(
   }
 }
 
-export async function listFeishuMessages(
+export function feishuMessageHistoryUrl(
+  apiOrigin: string,
   args: {
-    readonly db: Db;
-    readonly installationId: string;
     readonly containerType: "chat" | "thread";
     readonly containerId: string;
     readonly pageSize?: number;
   },
-  signal: AbortSignal,
-): Promise<readonly FeishuHistoryMessage[]> {
-  const historyContextArgs = args;
-  const historyContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await historyContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.id, historyContextArgs.installationId))
-      .limit(1);
-    historyContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await historyContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      historyContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await historyContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(
-          eq(feishuOrgInstallations.id, historyContextArgs.installationId),
-        );
-      historyContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
+): URL {
   const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
   url.searchParams.set("container_id_type", args.containerType);
   url.searchParams.set("container_id", args.containerId);
@@ -938,16 +796,14 @@ export async function listFeishuMessages(
   // The rendered card representation can replace Markdown and artifact links
   // with image previews. Read the original schema for conversation context.
   url.searchParams.set("card_msg_content_type", "user_card_content");
-  const response = await fetch(url, {
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json; charset=utf-8",
-    },
-    signal,
-  });
-  const parsed = feishuMessageHistoryResponseSchema.parse(
-    await readJson(response, providerName),
-  );
+  return url;
+}
+
+export function parseFeishuMessageHistoryResponse(
+  value: unknown,
+  providerName: string,
+): readonly FeishuHistoryMessage[] {
+  const parsed = feishuMessageHistoryResponseSchema.parse(value);
   if (parsed.code !== 0) {
     throw new FeishuApiError(
       parsed.msg ?? `${providerName} message history request failed`,

@@ -1,30 +1,22 @@
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { tapError } from "../utils";
 import { requireDiscordBinding$ } from "./discord-access.service";
 import type { DiscordFailureResponse } from "./discord-api-response";
-import {
-  discordDeliveryTargetSchema,
-  type DiscordDeliveryTarget,
-} from "./discord-chat-callback-payload";
-import { findDiscordChatRoute } from "./discord-chat-route-access.service";
+import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
+import { discordChatRouteReadPlan } from "./discord-chat-route-access.service";
 import { resolveDiscordProviderAccess } from "./discord-provider-access";
-import { internalRunCallbackKindForRecord } from "./internal-run-callback";
 
 const L = logger("DiscordRunTyping");
-const discordTypingPayloadSchema = z.object({
-  discordDelivery: discordDeliveryTargetSchema,
-});
 
 /**
  * Discord shows a bot as typing for about ten seconds, so an active run asks
@@ -209,7 +201,15 @@ const currentTypingAccess$ = command(
     readonly accessKey: string;
     readonly channelId: string;
   } | null> => {
-    const route = await findDiscordChatRoute(db, args);
+    const route = await (async () => {
+      const plan = discordChatRouteReadPlan(args);
+      const [route] = await db
+        .select(plan.columns)
+        .from(discordChatThreadRoutes)
+        .where(plan.condition)
+        .limit(plan.limit);
+      return route;
+    })();
     signal.throwIfAborted();
     if (!route) {
       return null;
@@ -364,32 +364,3 @@ export const scheduleDiscordRunTyping$ = command(
     });
   },
 );
-
-/** Whether the Runner heartbeat should use the Discord typing cadence. */
-export async function hasDiscordTypingTargetForRun(
-  db: ReadonlyDb,
-  runId: string,
-): Promise<boolean> {
-  const callbacks = await db
-    .select({
-      url: agentRunCallbacks.url,
-      internalKind: agentRunCallbacks.internalKind,
-      payload: agentRunCallbacks.payload,
-    })
-    .from(agentRunCallbacks)
-    .innerJoin(agentRuns, eq(agentRunCallbacks.runId, agentRuns.id))
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.status, "pending"),
-        eq(agentRuns.triggerSource, "discord"),
-        inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
-      ),
-    );
-  return callbacks.some((callback) => {
-    return (
-      internalRunCallbackKindForRecord(callback) === "chat" &&
-      discordTypingPayloadSchema.safeParse(callback.payload).success
-    );
-  });
-}

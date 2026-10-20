@@ -33,6 +33,7 @@ import {
 } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { createChatResourceSignals } from "./chat-resources.ts";
+import { createArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { createChatRelationSignals } from "./chat-relations.ts";
 import {
   createDraftSignals,
@@ -1437,6 +1438,10 @@ function createLatestEventSignals(
 }
 
 function createArtifacts(threadId: string) {
+  // Resources stay unfiltered even when the utility sidebar changes its kind.
+  const resourceCatalog = createArtifactCatalogSignals({
+    chatThreadId: threadId,
+  });
   const internalArtifactsReload$ = state(0);
   const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(internalArtifactsReload$);
@@ -1446,6 +1451,7 @@ function createArtifacts(threadId: string) {
   });
 
   const reloadArtifacts$ = command(({ set }) => {
+    set(resourceCatalog.reload$);
     set(internalArtifactsReload$, (version) => {
       return version + 1;
     });
@@ -1453,6 +1459,7 @@ function createArtifacts(threadId: string) {
   return {
     artifacts$,
     reloadArtifacts$,
+    resourceCatalog,
   };
 }
 
@@ -3846,7 +3853,7 @@ export function createChatPanelSignals(
     locator,
     resources: createChatResourceSignals(
       messagePipeline.allChatGroups$,
-      artifact.artifacts$,
+      artifact.resourceCatalog,
       messagePipeline.initialEventsReady$,
       relations.closeMessages$,
     ),

@@ -595,6 +595,7 @@ export const projectChatEventSearch$ = command(
     }
     const convergence =
       await (async (): Promise<ChatEventSearchProjectionConvergence> => {
+        // The sequence's cascading thread FK already guarantees a canonical parent.
         const eligibleScope = gt(chatEventSequences.lastSeqId, 0);
         const [stats] = await db
           .select({
@@ -603,15 +604,14 @@ export const projectChatEventSearch$ = command(
               chatEventSearchMessageWatermarks.chatThreadId,
             ),
           })
-          .from(chatThreads)
-          .leftJoin(
-            chatEventSequences,
-            eq(chatEventSequences.chatThreadId, chatThreads.id),
-          )
+          .from(chatEventSequences)
           .leftJoin(
             chatEventSearchMessageWatermarks,
             and(
-              eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
+              eq(
+                chatEventSearchMessageWatermarks.chatThreadId,
+                chatEventSequences.chatThreadId,
+              ),
               gte(
                 chatEventSearchMessageWatermarks.indexedSeqId,
                 chatEventSequences.lastSeqId,

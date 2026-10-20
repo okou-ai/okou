@@ -43,10 +43,9 @@ private struct AppRootView: View {
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
-    Group {
-      if authentication.isLoading || authentication.isSwitchingWorkspace {
-        ProgressView("Loading Okou…")
-      } else if let scopeID = authentication.scopeID,
+    AppStartupContainer(isLoading: authentication.isLoading || authentication.isSwitchingWorkspace)
+    {
+      if let scopeID = authentication.scopeID,
         let workspaceID = authentication.activeWorkspaceID,
         let userID = authentication.userID
       {
@@ -86,6 +85,7 @@ private struct WorkspaceRootView: View {
   @Binding private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  private let headerHeight: CGFloat = 60
 
   init(
     authentication: AuthenticationService, configuration: AppConfiguration,
@@ -132,26 +132,29 @@ private struct WorkspaceRootView: View {
         .allowsHitTesting(isSidebarOpen)
         .accessibilityHidden(!isSidebarOpen)
 
-        VStack(spacing: 0) {
-          mainHeader
-          Group {
-            if let conversation = store.selectedConversation {
-              ChatDetailView(conversation: conversation)
-                .id(conversation.thread.id)
-            } else {
-              newChatHome
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                  ChatComposerView(
-                    draft: $store.newChatDraft, isBusy: store.isCreating,
-                    showsProgress: store.isCreating, canStop: false,
-                    needsUpgrade: store.needsUpgrade,
-                    error: store.error ?? store.list.error, attachmentURL: store.webURL,
-                    submit: { await store.sendNewChat() }, refresh: nil)
-                }
-            }
+        Group {
+          if let conversation = store.selectedConversation {
+            ChatDetailView(
+              conversation: conversation, supportsAttachments: store.list.canAttachFiles,
+              topContentInset: headerHeight
+            )
+            .id(conversation.thread.id)
+          } else {
+            newChatHome
+              .safeAreaBar(edge: .bottom, spacing: 0) {
+                ChatComposerView(
+                  draft: $store.newChatDraft, isBusy: store.isCreating,
+                  showsProgress: store.isCreating, canStop: false,
+                  needsUpgrade: store.needsUpgrade,
+                  error: store.error ?? store.list.error, attachmentURL: store.webURL,
+                  attachments: store.newAttachmentDraft,
+                  supportsAttachments: store.list.canAttachFiles,
+                  submit: { await store.sendNewChat() }, refresh: nil)
+              }
           }
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaBar(edge: .top, spacing: 0) { mainHeader }
         .frame(width: geometry.size.width, height: geometry.size.height)
         .accessibilityHidden(isSidebarOpen)
         .background(alignment: .top) {
@@ -221,6 +224,17 @@ private struct WorkspaceRootView: View {
       store.setForeground(phase == .active)
       if phase == .active { store.requestRefresh() }
     }
+    .alert(
+      "Unable to update chats",
+      isPresented: Binding(
+        get: { store.selectedConversation != nil && store.list.error != nil },
+        set: { if !$0 { store.list.dismissError() } }
+      )
+    ) {
+      Button("OK") { store.list.dismissError() }
+    } message: {
+      Text(store.list.error ?? "")
+    }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
       ContentUnavailableView {
         Label("Update required", systemImage: "arrow.down.app")
@@ -255,12 +269,28 @@ private struct WorkspaceRootView: View {
         .accessibilityLabel("Open sidebar")
         .accessibilityIdentifier("open-sidebar")
         Spacer()
+        if let thread = store.list.threads.first(where: { $0.id == store.selectedThreadID }) {
+          let pinned = thread.pinnedAt != nil
+          let updating = store.list.updatingThreads.contains(thread.id)
+          Button {
+            Task { await store.list.setPinned(thread, pinned: !pinned) }
+          } label: {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+              .font(.system(size: 19, weight: .medium))
+              .frame(width: 32, height: 32)
+          }
+          .buttonStyle(.glass)
+          .buttonBorderShape(.circle)
+          .disabled(updating || store.needsUpgrade)
+          .accessibilityLabel(pinned ? "Unpin chat" : "Pin chat")
+          .accessibilityValue(updating ? "Updating" : (pinned ? "Pinned" : "Not pinned"))
+          .accessibilityIdentifier("toggle-chat-pin")
+        }
       }
     }
     .buttonStyle(.plain)
     .padding(.horizontal, 16)
-    .frame(height: 60)
-    .background(Color(uiColor: .systemBackground))
+    .frame(height: headerHeight)
   }
 
   private var newChatHome: some View {

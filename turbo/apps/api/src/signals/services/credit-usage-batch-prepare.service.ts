@@ -1,4 +1,5 @@
 import { priceUsageEvents } from "./credit-usage-pricing";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
@@ -70,13 +71,54 @@ export const prepareUsageSettlementBatch$ = command(
       .from(usagePricing)
       .where(settlementPricingCondition(pricingKeys));
     signal.throwIfAborted();
+    const runIds = [
+      ...new Set([
+        ...events.flatMap(({ event }) => {
+          return event.billingRunId ? [event.billingRunId] : [];
+        }),
+        ...(job?.billingRunId ? [job.billingRunId] : []),
+      ]),
+    ];
+    const freeRuns =
+      runIds.length === 0
+        ? []
+        : await db
+            .select({
+              runId: billingRunAttribution.runId,
+              userId: billingRunAttribution.userId,
+            })
+            .from(billingRunAttribution)
+            .where(
+              and(
+                eq(billingRunAttribution.orgId, args.orgId),
+                inArray(billingRunAttribution.runId, runIds),
+                eq(
+                  billingRunAttribution.creditChargePolicy,
+                  "official_workflow_free",
+                ),
+              ),
+            );
+    signal.throwIfAborted();
+    const freeOfficialRunOwners = new Map(
+      freeRuns.map((run) => {
+        return [run.runId, run.userId];
+      }),
+    );
     const records = events.map(({ event }) => {
-      return event;
+      return {
+        ...event,
+        creditChargePolicy:
+          event.billingRunId &&
+          freeOfficialRunOwners.get(event.billingRunId) === event.userId
+            ? ("official_workflow_free" as const)
+            : ("standard" as const),
+      };
     });
     const priced = priceUsageEvents(records, prices, args.orgId, false);
     const social = prepareSocialSettlement(job);
     return {
       events,
+      freeOfficialRunOwners,
       social,
       prices,
       records,

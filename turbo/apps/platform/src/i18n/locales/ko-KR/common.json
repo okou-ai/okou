@@ -553,6 +553,7 @@
       },
       "kindIcon": "{{kind}} 아티팩트",
       "loading": "아티팩트 로딩 중",
+      "loadMore": "더 불러오기",
       "retry": "다시 시도"
     },
     "fileBadges": {
@@ -1819,6 +1820,7 @@
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
       },
+      "mentionHint": "에이전트 또는 채팅 검색…",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",

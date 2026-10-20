@@ -169,11 +169,16 @@ type ThreadModelProviderInputSignal = Computed<
 export function createThreadModelSignals(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  creditsWaived$: Computed<Promise<boolean>>,
 ): ThreadModelSignals {
   const dispatchTiming$ = computed(() => {
     return new ApiDispatchTimingCollector();
   });
-  const queuedModel$ = createQueuedModel(bootstrap, pickedEvent$);
+  const queuedModel$ = createQueuedModel(
+    bootstrap,
+    pickedEvent$,
+    creditsWaived$,
+  );
   const selection$ = createModelSelection(
     bootstrap,
     pickedEvent$,
@@ -223,6 +228,7 @@ export function createThreadModelSignals(
 function createQueuedModel(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  creditsWaived$: Computed<Promise<boolean>>,
 ) {
   const memberSnapshot$ = computed(async (get) => {
     const selected = bootstrap;
@@ -263,6 +269,7 @@ function createQueuedModel(
     bootstrap,
     memberRoutes$,
     modelPin$,
+    creditsWaived$,
   );
   const queuedModel$ = computed(async (get): Promise<QueuedModelContext> => {
     const [event] = await Promise.all([
@@ -365,6 +372,7 @@ function createProviderAdmission(
   modelPin$: Computed<
     Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>>
   >,
+  creditsWaived$: Computed<Promise<boolean>>,
 ) {
   const providerAdmission$ = computed(async (get) => {
     const pin = await get(modelPin$);
@@ -393,7 +401,11 @@ function createProviderAdmission(
         providerType: pin.modelProviderType,
       }),
     });
-    if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
+    if (
+      error ||
+      !isBuiltInModelProviderType(effectiveModelProvider) ||
+      (await get(creditsWaived$))
+    ) {
       return {
         effectiveModelProvider,
         cliAgentType,

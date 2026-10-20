@@ -1,3 +1,18 @@
+import {
+  createImageIoTestApp,
+  postFalWebhookEnvelope,
+  tokenRequest,
+} from "./helpers/public-image-run";
+import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
+import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built-in-generation";
+import { imageIoGenerateRoutes } from "../image-io-generate";
+import { builtInGenerationRoutes } from "../built-in-generation";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { chatEventsRoutes } from "../chat-events";
+import { webSearchContract } from "@okouai/api-contracts/contracts/web-search";
+import { webSearchRoutes } from "../web-search";
+import { HttpResponse, http } from "msw";
+import { server } from "../../../mocks/server";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
 import { notificationsRoutes } from "../notifications";
 import { mockClerkUsers } from "./helpers/clerk-users";
@@ -68,6 +83,7 @@ import { proactiveSuggestionsRoutes } from "../proactive-suggestions";
 import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
 import { suggestionsRoutes } from "../suggestions";
 import {
+  chatEventsContract,
   chatThreadsContract,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
@@ -3450,8 +3466,450 @@ describe("Official schedule expiry", () => {
   );
 });
 
+describe("Official Workflow credit policy", () => {
+  async function enabledOfficialWorkflow() {
+    const { actor } = await prepareBriefMember();
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          id: `membership-${actor.userId}-${actor.orgId}`,
+          role: actor.orgRole ?? "org:admin",
+          organization: { id: actor.orgId },
+          publicUserData: { userId: actor.userId },
+        },
+      ],
+    });
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected Official installation");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation) {
+      throw new Error("Expected Official automation");
+    }
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
+    return { actor, installation, automation, runnerGroup };
+  }
+
+  it("rejects direct messages, agent messages, interrupts, cancellation and thread deletion", async () => {
+    const { actor, installation, automation } = await enabledOfficialWorkflow();
+    if (!automation.nextRunAt) {
+      throw new Error("Expected scheduled time");
+    }
+    mockNow(new Date(automation.nextRunAt).getTime());
+    const started = await fireOfficialSchedule(actor, automation);
+    const claim = await runs.claimRunnerJob(started.runId);
+    const before = await allThreadEventRows(actor, started.chatThreadId);
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: installation.agentId,
+        threadId: started.chatThreadId,
+        prompt: "Perform an unrelated task",
+      },
+      [403],
+    );
+    await accept(
+      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+        body: {
+          agentId: installation.agentId,
+          threadId: started.chatThreadId,
+          prompt: "Steer the free Run",
+          hasTextContent: true,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "Steer the free Run" }],
+          },
+        },
+      }),
+      [403],
+    );
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: installation.agentId,
+        threadId: started.chatThreadId,
+        interruptsRunId: started.runId,
+      },
+      [403],
+    );
+    const refused = await runs.requestCancelRun(actor, started.runId, [404]);
+    expect(refused.body).toMatchObject({
+      error: { code: "NOT_FOUND" },
+    });
+    await chat.requestDeleteThread(actor, started.chatThreadId, [404]);
+    await expect(
+      allThreadEventRows(actor, started.chatThreadId),
+    ).resolves.toStrictEqual(before);
+    await expect(
+      runs.nextSteerableInput(claim.sandboxToken, started.runId),
+    ).resolves.toMatchObject({ input: null });
+    expect(claim.piSessionId).toBe(started.runId);
+    await createChatEventsFixture(context).completeChatRunOk(
+      started.runId,
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
+    );
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(actor, started.runId)).status).toBe("completed");
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: installation.agentId,
+        threadId: started.chatThreadId,
+        prompt: "Continue after completion",
+      },
+      [403],
+    );
+  });
+
+  it("settles late Official usage for free while refusing new work from completed Runs", async () => {
+    const { actor, automation } = await enabledOfficialWorkflow();
+    await runs.grantProEntitlement(actor);
+    const creditsBefore = (await runs.readBillingStatus(actor)).credits;
+    expect(creditsBefore).toBeGreaterThan(0);
+    const packBefore = await runs.readUsagePackCredits(actor);
+    const started = await fireOfficialSchedule(actor, automation);
+    const claim = await runs.claimRunnerJob(started.runId);
+    await createChatEventsFixture(context).completeChatRunOk(
+      started.runId,
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
+    );
+    await flushWaitUntilForTest();
+    mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "official-search-provider");
+    await accept(
+      setupApp({ context, routes: webSearchRoutes })(webSearchContract).search({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+        body: { query: "A new task after the Official Run ended", limit: 1 },
+      }),
+      [403],
+    );
+    await accept(
+      setupApp({ context, routes: imageIoGenerateRoutes })(
+        imageIoGenerateContract,
+      ).post({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+        body: { prompt: "A new image after the Official Run ended" },
+      }),
+      [403],
+    );
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: started.runId,
+        events: [
+          {
+            idempotencyKey: randomUUID(),
+            kind: "model",
+            provider: "@preset/okou-1-0",
+            category: "tokens.input",
+            quantity: 100_000,
+          },
+        ],
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await runs.readBillingStatus(actor)).credits).toBe(creditsBefore);
+    expect((await runs.readUsagePackCredits(actor)).totalCredits).toBe(
+      packBefore.totalCredits,
+    );
+  });
+
+  it("starts each Official execution with its own native session and no previous conversation", async () => {
+    const { actor, installation, automation } = await enabledOfficialWorkflow();
+    if (!automation.nextRunAt) {
+      throw new Error("Expected scheduled time");
+    }
+    mockNow(new Date(automation.nextRunAt).getTime());
+    const started = await fireOfficialSchedule(actor, automation);
+    const claim = await runs.claimRunnerJob(started.runId);
+    expect(claim.piSessionId).toBe(started.runId);
+    await createChatEventsFixture(context).completeChatRunOk(
+      started.runId,
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      { cliAgentType: "pi", cliAgentSessionId: claim.piSessionId },
+    );
+    await flushWaitUntilForTest();
+    const [nextAutomation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!nextAutomation) {
+      throw new Error("Expected successor schedule");
+    }
+    const next = await fireOfficialSchedule(actor, nextAutomation);
+    const nextClaim = await runs.claimRunnerJob(next.runId);
+    expect(next.chatThreadId).toBe(started.chatThreadId);
+    expect(nextClaim.piSessionId).toBe(next.runId);
+    expect(nextClaim.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    });
+    await createChatEventsFixture(context).completeChatRunOk(
+      next.runId,
+      { authorization: `Bearer ${nextClaim.sandboxToken}` },
+      { cliAgentType: "pi", cliAgentSessionId: nextClaim.piSessionId },
+    );
+    await flushWaitUntilForTest();
+  });
+
+  it("keeps ordinary Runs on their paid policy alongside free Official automations", async () => {
+    const { actor, installation } = await enabledOfficialWorkflow();
+    const before = await runs.readBillingStatus(actor);
+    const packBefore = await runs.readUsagePackCredits(actor);
+    const started = await runs.createThreadRun(actor, {
+      agentId: installation.agentId,
+      model: null,
+      prompt: "An ordinary paid task beside Official automations",
+    });
+    const claim = await runs.claimRunnerJob(started.runId);
+    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: started.runId,
+        events: [
+          {
+            idempotencyKey: randomUUID(),
+            kind: "model",
+            provider: "@preset/okou-1-0",
+            category: "tokens.input",
+            quantity: 1000,
+          },
+        ],
+      },
+      headers,
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId: started.runId,
+        exitCode: 1,
+        error: "Paid policy fixture finished",
+      },
+      headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await runs.readBillingStatus(actor)).credits).toBe(before.credits);
+    expect((await runs.readUsagePackCredits(actor)).totalCredits).toBe(
+      packBefore.totalCredits - 1,
+    );
+  });
+
+  it("runs models, search and image generation at zero credits and settles retries for free", async () => {
+    const { actor, installation, automation, runnerGroup } =
+      await enabledOfficialWorkflow();
+    const funded = await runs.readBillingStatus(actor);
+    const fundedPack = await runs.readUsagePackCredits(actor);
+    await chat.updateUserModelPreference(actor, null, "gpt-image-1");
+    // Spend the normal onboarding grant through the ordinary Auto Run protocol.
+    const ordinary = await runs.createThreadRun(actor, {
+      agentId: installation.agentId,
+      model: null,
+      prompt: "Spend the ordinary credit grant",
+    });
+    const ordinaryClaim = await runs.claimRunnerJob(ordinary.runId);
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: ordinary.runId,
+        events: [
+          {
+            idempotencyKey: randomUUID(),
+            kind: "model",
+            provider: "@preset/okou-1-0",
+            category: "tokens.input",
+            quantity: (funded.credits + fundedPack.totalCredits) * 1000,
+          },
+        ],
+      },
+      { authorization: `Bearer ${ordinaryClaim.sandboxToken}` },
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      { runId: ordinary.runId, exitCode: 1, error: "Ordinary task finished" },
+      { authorization: `Bearer ${ordinaryClaim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await runs.readBillingStatus(actor)).credits).toBe(0);
+    expect((await runs.readUsagePackCredits(actor)).totalCredits).toBe(0);
+    await expect(
+      runs.readThreadRunRejection(actor, {
+        agentId: installation.agentId,
+        model: null,
+        prompt: "An ordinary task at zero balance",
+      }),
+    ).resolves.toBe("insufficient_credits");
+    await runs.heartbeatRunner(runnerGroup);
+    const started = await fireOfficialSchedule(actor, automation);
+    const claim = await runs.claimRunnerJob(started.runId);
+    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected captured model credentials");
+    }
+    await createFirewallApi(context).requestFirewallAuth(
+      headers,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+        },
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+        firewallBillable: true,
+      },
+      [200],
+    );
+    mockEnv("OKOU_WEB_SEARCH_PERPLEXITY_TOKEN", "official-search-provider");
+    server.use(
+      http.post("https://api.perplexity.ai/search", () => {
+        return HttpResponse.json({
+          results: [
+            {
+              title: "Official search",
+              url: "https://example.com/official",
+              snippet: "Verified task context",
+            },
+          ],
+        });
+      }),
+    );
+    const searched = await accept(
+      setupApp({ context, routes: webSearchRoutes })(webSearchContract).search({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+        body: { query: "Official briefing context", limit: 1 },
+      }),
+      [200],
+    );
+    expect(searched.body).toMatchObject({
+      creditsCharged: 0,
+      results: [{ title: "Official search" }],
+    });
+    context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
+    let imageRequestUrl: string | null = null;
+    server.use(
+      http.post(
+        "https://queue.fal.run/fal-ai/gpt-image-1/text-to-image",
+        ({ request }) => {
+          imageRequestUrl = request.url;
+          return HttpResponse.json({
+            request_id: "official-image",
+            status_url:
+              "https://queue.fal.run/test/requests/official-image/status",
+            response_url:
+              "https://queue.fal.run/test/requests/official-image/response",
+          });
+        },
+      ),
+      http.get("https://fal.media/files/test/official-image.png", () => {
+        return new HttpResponse(Buffer.from("Official image bytes"), {
+          headers: { "Content-Type": "image/png" },
+        });
+      }),
+    );
+    const image = await accept(
+      setupApp({ context, routes: imageIoGenerateRoutes })(
+        imageIoGenerateContract,
+      ).post({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+        body: { prompt: "A chart for the official briefing" },
+      }),
+      [202],
+    );
+    await postFalWebhookEnvelope(
+      createImageIoTestApp(context),
+      imageRequestUrl,
+      {
+        status: "COMPLETED",
+        payload: {
+          images: [
+            {
+              url: "https://fal.media/files/test/official-image.png",
+              width: 1024,
+              height: 1024,
+              content_type: "image/png",
+            },
+          ],
+          prompt: "A chart for the official briefing",
+        },
+      },
+    );
+    await flushWaitUntilForTest();
+    const generated = await accept(
+      setupApp({ context, routes: builtInGenerationRoutes })(
+        builtInGenerationContract,
+      ).get({
+        headers: authHeaders(actor),
+        params: { generationId: image.body.generationId },
+      }),
+      [200],
+    );
+    expect(generated.body).toMatchObject({
+      status: "completed",
+      result: { creditsCharged: 0 },
+    });
+    const usage = {
+      runId: started.runId,
+      events: [
+        {
+          idempotencyKey: randomUUID(),
+          kind: "model" as const,
+          provider: "@preset/okou-1-0",
+          category: "tokens.input",
+          quantity: 500_000,
+        },
+        {
+          idempotencyKey: randomUUID(),
+          kind: "image" as const,
+          provider: "fal-ai/nano-banana-2",
+          category: "output_image",
+          quantity: 2,
+        },
+      ],
+    };
+    await webhooks.requestAgentUsageEvent(usage, headers, [200]);
+    await webhooks.requestAgentUsageEvent(usage, headers, [200]);
+    await webhooks.requestAgentComplete(
+      { runId: started.runId, exitCode: 1, error: "Official task finished" },
+      headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await runs.readBillingStatus(actor)).credits).toBe(0);
+    await expect(
+      allThreadEventRows(actor, started.chatThreadId),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        eventType: "usage.recorded",
+        runId: started.runId,
+        payload: expect.objectContaining({
+          usage: expect.objectContaining({ totalCredits: 0 }),
+        }),
+      }),
+    );
+  });
+});
+
 describe("Official Workflow installations", () => {
-  it("pins Official threads to Auto and follows both directions of the definition visibility policy", async () => {
+  it("keeps Official threads hidden and pinned to Auto across legacy visibility changes", async () => {
     const { actor, createdAt } = await prepareBriefMember({
       catalogAvailable: false,
       bootstrap: false,
@@ -3485,7 +3943,7 @@ describe("Official Workflow installations", () => {
       model: "auto",
       providerType: "built-in",
     });
-    await runs.requestCancelRun(actor, started.runId, [200, 400]);
+    await runs.requestCancelRun(actor, started.runId, [404]);
     const threadId = started.chatThreadId;
     const metadata = () => {
       return setupApp({ context, routes: chatThreadGetRoutes })(
@@ -3519,9 +3977,9 @@ describe("Official Workflow installations", () => {
         hidden: true,
       }),
     );
-    // The same accepted skill can become visible without replacing its thread.
+    // Older catalog writers may still publish visibility metadata; Official threads remain hidden.
     expect((await syncMorningBriefCatalog(false)).body.outcome).toBe(
-      "accepted",
+      "unchanged",
     );
     await accept(
       morningBriefPreferenceClient().update({
@@ -3533,9 +3991,11 @@ describe("Official Workflow installations", () => {
     expect((await accept(metadata(), [200])).body).toMatchObject({
       id: threadId,
       selectedModel: "auto",
-      hidden: false,
+      hidden: true,
     });
-    expect((await syncMorningBriefCatalog(true)).body.outcome).toBe("accepted");
+    expect((await syncMorningBriefCatalog(true)).body.outcome).toBe(
+      "unchanged",
+    );
     await accept(
       morningBriefPreferenceClient().update({
         headers: authHeaders(actor),
@@ -3560,7 +4020,7 @@ describe("Official Workflow installations", () => {
       visibilityEvents.map((event) => {
         return event.hidden;
       }),
-    ).toStrictEqual([false, true]);
+    ).toStrictEqual([]);
   });
 
   it("names a new Morning Brief thread in the default locale", async () => {
@@ -3596,7 +4056,7 @@ describe("Official Workflow installations", () => {
       selectedModel: "auto",
       hidden: true,
     });
-    await runs.requestCancelRun(actor, started.runId, [200, 400]);
+    await runs.requestCancelRun(actor, started.runId, [404]);
   });
 
   it("rejects manual runs and ordinary workflow and automation mutations of an Official installation", async () => {

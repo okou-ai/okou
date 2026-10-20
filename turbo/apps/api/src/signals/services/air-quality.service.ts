@@ -1,3 +1,4 @@
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import {
   AIR_QUALITY_ATTRIBUTION,
   type AirQualityCurrentRequest,
@@ -110,6 +111,7 @@ export const airQualityCurrent$ = command(
     const creditError = await set(
       checkManagedCredits$,
       {
+        runId: creditPolicyRunId(args.auth),
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         resource: {

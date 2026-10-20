@@ -165,6 +165,55 @@ async fn checkout_selects_exact_committed_generation_and_pins_it() {
 }
 
 #[tokio::test]
+async fn inventory_rounds_probe_each_hint_once_and_retain_unclassified_busy_entries() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let f = Fixture::new().await;
+    f.commit("busy", b"busy", "2026-10-19T10:00:00Z").await;
+    f.commit("available", b"available", "2026-10-19T10:00:00Z")
+        .await;
+    let busy_key = f.key("busy");
+    let available_key = f.key("available");
+    let _lock = runner_host::lock::acquire(f.cache.entry_lock_path(&busy_key))
+        .await
+        .unwrap();
+    tokio::fs::remove_file(f.cache.entry_paths(&busy_key).metadata())
+        .await
+        .unwrap();
+    let keys = BTreeSet::from([busy_key.clone(), available_key.clone()]);
+    let profiles = BTreeMap::from([(PROFILE, SIZE)]);
+    for full in [false, true] {
+        f.cache.reset_inventory_key_probe_count();
+        f.cache.reset_held_state_root_scan_count();
+        if full {
+            let inventory = f
+                .cache
+                .home_cache_inventory_after_change(&profiles, &keys)
+                .await;
+            assert!(
+                inventory.locked_keys.contains(&busy_key),
+                "missing metadata under a busy known hint is unresolved, not an authoritative absence"
+            );
+            assert_eq!(inventory.states()[0].reuse_key, "available");
+            assert_eq!(f.cache.held_state_root_scan_count(), 1);
+        } else {
+            let updates = f.cache.revalidate_home_cache_keys(&profiles, &keys).await;
+            assert!(updates.busy_keys.contains(&busy_key));
+            assert_eq!(
+                updates.entries[&available_key].as_ref().unwrap().reuse_key,
+                "available"
+            );
+            assert!(updates.entries[&busy_key].is_none());
+            assert_eq!(f.cache.held_state_root_scan_count(), 0);
+        }
+        assert_eq!(
+            f.cache.inventory_key_probe_count(),
+            2,
+            "full root enumeration must not repeat already inspected hints"
+        );
+    }
+}
+
+#[tokio::test]
 async fn replaced_seed_is_rejected_at_consumption_and_all_image_evidence_is_discarded() {
     let f = Fixture::new().await;
     let committed = f
@@ -250,7 +299,6 @@ async fn unused_selection_release_revalidates_same_generation_without_a_root_sca
         .revalidate_home_cache_keys(
             &std::collections::BTreeMap::from([(PROFILE, SIZE)]),
             &change.dirty_cache_keys,
-            tokio::time::Instant::now(),
         )
         .await
         .entries
@@ -461,11 +509,7 @@ async fn keyed_inventory_validates_current_authority_without_scanning_independen
         f.cache.reset_held_state_root_scan_count();
         let updates = f
             .cache
-            .revalidate_home_cache_keys(
-                &profiles,
-                &change.dirty_cache_keys,
-                tokio::time::Instant::now(),
-            )
+            .revalidate_home_cache_keys(&profiles, &change.dirty_cache_keys)
             .await;
         assert_eq!(updates.busy_keys.contains(&key), scenario == Scenario::Busy);
         let result = snapshot.finish_home_cache_key_updates(token, updates);
@@ -486,11 +530,7 @@ async fn keyed_inventory_validates_current_authority_without_scanning_independen
             drop(lease);
             let updates = f
                 .cache
-                .revalidate_home_cache_keys(
-                    &profiles,
-                    &change.dirty_cache_keys,
-                    tokio::time::Instant::now(),
-                )
+                .revalidate_home_cache_keys(&profiles, &change.dirty_cache_keys)
                 .await;
             assert!(updates.entries.get(&key).unwrap().is_some());
         }
@@ -673,7 +713,7 @@ async fn no_key_unsafe_cwd_and_reserve_pressure_are_safe_nonfatal_misses() {
 }
 
 #[tokio::test]
-async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
+async fn pressured_hit_remains_owned_during_gc() {
     use std::time::Duration;
     let mut f = Fixture::new().await;
     let selected = f
@@ -683,9 +723,6 @@ async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
         .commit("other", b"other-bytes", "2026-10-09T09:00:01Z")
         .await;
     f.cache = f.cache_under_pressure();
-    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
-        .await
-        .unwrap();
     let mut lease = tokio::time::timeout(Duration::from_secs(10), f.lease("selected"))
         .await
         .unwrap();
@@ -698,7 +735,6 @@ async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
     let expected = tokio::fs::read(&source).await.unwrap();
     assert_eq!(&expected[4096..4110], b"selected-bytes");
     assert_eq!(f.cache.gc_root_scan_count(), 0);
-    drop(capacity);
     let cache = f.cache.clone();
     let gc = tokio::spawn(async move { cache.gc(false).await });
     assert!(
@@ -719,16 +755,13 @@ async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
 }
 
 #[tokio::test]
-async fn pressured_miss_does_not_wait_for_capacity_or_start_reclamation() {
+async fn pressured_miss_does_not_start_reclamation() {
     use std::time::Duration;
     let mut f = Fixture::new().await;
     let unrelated = f
         .commit("other", b"keep-other", "2026-10-09T09:00:00Z")
         .await;
     f.cache = f.cache_under_pressure();
-    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
-        .await
-        .unwrap();
     let mut lease = tokio::time::timeout(Duration::from_secs(10), f.lease("missing"))
         .await
         .unwrap();
@@ -738,13 +771,6 @@ async fn pressured_miss_does_not_wait_for_capacity_or_start_reclamation() {
     assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
     assert_eq!(f.cache.gc_root_scan_count(), 0);
     assert!(f.image("other", &unrelated).exists());
-    assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
-            .await
-            .unwrap(),
-        runner_host::lock::TryLock::Busy
-    ));
-    drop(capacity);
 }
 
 #[tokio::test]
@@ -756,9 +782,6 @@ async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retr
         .await;
     f.cache = f.cache_under_pressure();
     let entry = runner_host::lock::acquire(f.cache.entry_lock_path(&f.key("thread")))
-        .await
-        .unwrap();
-    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
         .await
         .unwrap();
     let gate = HomeImagePrepareLockTestGate::default();
@@ -822,5 +845,4 @@ async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retr
             .unwrap(),
         runner_host::lock::TryLock::Acquired(_)
     ));
-    drop(capacity);
 }

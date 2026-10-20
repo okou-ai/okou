@@ -90,6 +90,64 @@ function setupAccountsPage(): Promise<void> {
   });
 }
 
+test("Keep the exact account and current reconnect UI when future setup metadata is present", async () => {
+  mockConnectors(context, [{ connectorSlug: "github" }]);
+  const account = {
+    ...builtinAccount({
+      id: "11111111-1111-4111-8111-111111111111",
+      displayName: "Prepared work account",
+      isDefault: true,
+      externalUsername: "work-user",
+      status: "reconnect-required",
+    }),
+    setupStatus: "complete" as const,
+    missingRequiredFields: [],
+    configuredFieldKeys: ["accessToken"],
+  };
+  const summary = {
+    target: account.target,
+    accountCount: 1,
+    attentionCount: 1,
+    defaultConnection: account,
+  };
+  const overviewResponse = context.mocks.deferred<void>();
+  const accountsResponse = context.mocks.deferred<void>();
+  mockConnectorOverviewAccountSummaries(context, async () => {
+    await overviewResponse.promise;
+    return [summary];
+  });
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, { summaries: [summary] });
+  });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    async ({ respond }) => {
+      await accountsResponse.promise;
+      return respond(200, { connections: [account], nextCursor: null });
+    },
+  );
+
+  await setupAccountsPage();
+  const card = await waitFor(() => {
+    return getConnectorCard("GitHub");
+  });
+  expect(card).toHaveTextContent("Loading accounts…");
+  overviewResponse.resolve();
+  await expect(
+    within(card).findByText("1/1 need attention"),
+  ).resolves.toBeInTheDocument();
+  click(getConnectorAction("button", "Manage GitHub accounts", card));
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  expect(manager).toHaveTextContent("Loading accounts…");
+  accountsResponse.resolve();
+  await expect(
+    within(manager).findByText("Prepared work account"),
+  ).resolves.toBeInTheDocument();
+  expect(getConnectorAction("button", "Reconnect", manager)).toBeEnabled();
+});
+
 test("Show Mercury disclosures while managing its accounts", async () => {
   const [connector] = mockConnectors(context, [
     { connectorSlug: "mercury", externalUsername: "Not A Real Company Inc." },

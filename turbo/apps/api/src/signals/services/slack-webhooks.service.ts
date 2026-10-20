@@ -357,18 +357,6 @@ function buildNotInstalledMessage(detail?: string): unknown[] {
   ];
 }
 
-async function installationForWorkspace(
-  db: Db,
-  workspaceId: string,
-): Promise<SlackInstallation | undefined> {
-  const [installation] = await db
-    .select()
-    .from(slackOrgInstallations)
-    .where(eq(slackOrgInstallations.slackWorkspaceId, workspaceId))
-    .limit(1);
-  return installation;
-}
-
 function buildOfficialSlackHelpMessage(args: {
   readonly installation: SlackInstallation | undefined;
 }): SlackAnyBlock[] {
@@ -393,23 +381,6 @@ async function connectionForSlackUser(
     )
     .limit(1);
   return connection;
-}
-
-async function slackCommandWorkspaceContext(
-  db: Db,
-  payload: SlackCommandPayload,
-  signal: AbortSignal,
-): Promise<{
-  readonly installation: SlackInstallation | undefined;
-  readonly connection: SlackConnection | undefined;
-}> {
-  const installation = await installationForWorkspace(db, payload.team_id);
-  signal.throwIfAborted();
-  const connection = installation
-    ? await connectionForSlackUser(db, payload.team_id, payload.user_id)
-    : undefined;
-  signal.throwIfAborted();
-  return { installation, connection };
 }
 
 function slackPersistentSecretContext(args: {
@@ -690,10 +661,20 @@ const resolveSlackAgentRouteAdmission$ = command(
     args: SlackAgentRouteArgs,
     signal: AbortSignal,
   ): Promise<SlackAgentRouteAdmission> => {
-    const installation = await installationForWorkspace(
-      args.db,
-      args.workspaceId,
-    );
+    const installationDb = args.db;
+    const installationWorkspaceId = args.workspaceId;
+    const installation = await (async (): Promise<
+      SlackInstallation | undefined
+    > => {
+      const [installation] = await installationDb
+        .select()
+        .from(slackOrgInstallations)
+        .where(
+          eq(slackOrgInstallations.slackWorkspaceId, installationWorkspaceId),
+        )
+        .limit(1);
+      return installation;
+    })();
     signal.throwIfAborted();
     const orgId = installation?.orgId;
     if (!installation || !orgId) {
@@ -735,12 +716,6 @@ const resolveSlackAgentRouteAdmission$ = command(
   },
 );
 
-async function disconnect(db: Db, connectionId: string): Promise<void> {
-  await db
-    .delete(slackOrgConnections)
-    .where(eq(slackOrgConnections.id, connectionId));
-}
-
 const cleanupWorkspaceInstallation$ = command(
   async (
     { set },
@@ -748,7 +723,16 @@ const cleanupWorkspaceInstallation$ = command(
     workspaceId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const installation = await installationForWorkspace(db, workspaceId);
+    const installation = await (async (): Promise<
+      SlackInstallation | undefined
+    > => {
+      const [installation] = await db
+        .select()
+        .from(slackOrgInstallations)
+        .where(eq(slackOrgInstallations.slackWorkspaceId, workspaceId))
+        .limit(1);
+      return installation;
+    })();
     signal.throwIfAborted();
     if (!installation) {
       return false;
@@ -855,11 +839,32 @@ export const handleSlackCommands$ = command(
     const db = set(writeDb$);
     const args = payload.text.trim().split(/\s+/);
     const subCommand = args[0]?.toLowerCase() ?? "";
-    const { installation, connection } = await slackCommandWorkspaceContext(
-      db,
-      payload,
-      signal,
-    );
+    const { installation, connection } = await (async (
+      signal: AbortSignal,
+    ): Promise<{
+      readonly installation: SlackInstallation | undefined;
+      readonly connection: SlackConnection | undefined;
+    }> => {
+      const installationWorkspaceId = payload.team_id;
+      const installation = await (async (): Promise<
+        SlackInstallation | undefined
+      > => {
+        const [installation] = await db
+          .select()
+          .from(slackOrgInstallations)
+          .where(
+            eq(slackOrgInstallations.slackWorkspaceId, installationWorkspaceId),
+          )
+          .limit(1);
+        return installation;
+      })();
+      signal.throwIfAborted();
+      const connection = installation
+        ? await connectionForSlackUser(db, payload.team_id, payload.user_id)
+        : undefined;
+      signal.throwIfAborted();
+      return { installation, connection };
+    })(signal);
     if (subCommand === "help" || subCommand === "") {
       return ephemeral(
         buildOfficialSlackHelpMessage({
@@ -904,7 +909,12 @@ export const handleSlackCommands$ = command(
       if (!connection) {
         return ephemeral(buildErrorMessage("You are not connected."));
       }
-      await disconnect(db, connection.id);
+      const connectionId = connection.id;
+      await (async (): Promise<void> => {
+        await db
+          .delete(slackOrgConnections)
+          .where(eq(slackOrgConnections.id, connectionId));
+      })();
       signal.throwIfAborted();
       waitUntil(
         tapError(
@@ -979,7 +989,16 @@ const handleAppHomeOpened$ = command(
     workspaceId: string,
     slackUserId: string,
   ): Promise<void> => {
-    const installation = await installationForWorkspace(db, workspaceId);
+    const installation = await (async (): Promise<
+      SlackInstallation | undefined
+    > => {
+      const [installation] = await db
+        .select()
+        .from(slackOrgInstallations)
+        .where(eq(slackOrgInstallations.slackWorkspaceId, workspaceId))
+        .limit(1);
+      return installation;
+    })();
     if (!installation) {
       return;
     }
@@ -997,10 +1016,20 @@ const handleMessagesTabOpened$ = command(
       readonly channelId: string;
     },
   ): Promise<void> => {
-    const installation = await installationForWorkspace(
-      args.db,
-      args.workspaceId,
-    );
+    const installationDb = args.db;
+    const installationWorkspaceId = args.workspaceId;
+    const installation = await (async (): Promise<
+      SlackInstallation | undefined
+    > => {
+      const [installation] = await installationDb
+        .select()
+        .from(slackOrgInstallations)
+        .where(
+          eq(slackOrgInstallations.slackWorkspaceId, installationWorkspaceId),
+        )
+        .limit(1);
+      return installation;
+    })();
     if (!installation) {
       return;
     }
@@ -1412,8 +1441,25 @@ const handleHomeDisconnect$ = command(
     if (!connection) {
       return;
     }
-    await disconnect(db, connection.id);
-    const installation = await installationForWorkspace(db, payload.team.id);
+    const connectionId = connection.id;
+    await (async (): Promise<void> => {
+      await db
+        .delete(slackOrgConnections)
+        .where(eq(slackOrgConnections.id, connectionId));
+    })();
+    const installationWorkspaceId = payload.team.id;
+    const installation = await (async (): Promise<
+      SlackInstallation | undefined
+    > => {
+      const [installation] = await db
+        .select()
+        .from(slackOrgInstallations)
+        .where(
+          eq(slackOrgInstallations.slackWorkspaceId, installationWorkspaceId),
+        )
+        .limit(1);
+      return installation;
+    })();
     if (!installation) {
       return;
     }

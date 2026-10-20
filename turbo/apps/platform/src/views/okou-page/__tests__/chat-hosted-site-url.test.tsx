@@ -1,17 +1,18 @@
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
   artifactRun,
+  artifactSummary,
   buttonNamed,
+  hostedSiteArtifactDetail,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_RUN_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
@@ -25,20 +26,36 @@ import {
 const deploymentId = "00000000-0000-4000-8000-000000000041";
 const deploymentUrl = `https://dpl-${deploymentId}.okou.app/`;
 const siteId = "00000000-0000-4000-8000-000000000042";
+const artifactId = "00000000-0000-4000-8000-000000000043";
 
 async function setupHostedSite(sidebar: boolean, initialSlug = "launch-site") {
   let currentSlug = initialSlug;
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  const summary = {
+    ...artifactSummary(artifactId, "hosted-site", "launch-site.html"),
+    sourceUrl: deploymentUrl,
+    aliasUrl: `https://${initialSlug}.okou.app`,
+  };
   const run = artifactRun({
+    artifactId,
     filename: "launch-site.html",
     fileId: deploymentId,
     contentType: "text/html",
     url: deploymentUrl,
   });
   mockArtifactConversation(context, {
-    catalog: [],
+    catalog: [summary],
+    getDetail: (requestedArtifactId) => {
+      return requestedArtifactId === artifactId
+        ? hostedSiteArtifactDetail(summary, {
+            siteId,
+            slug: currentSlug,
+            url: `https://${currentSlug}.okou.app`,
+          })
+        : null;
+    },
     artifactRuns: () => {
       return [
         {
@@ -133,22 +150,27 @@ test.each([false, true])(
       expect(buttonNamed(shareLabel, preview)).toBeEnabled();
     });
     click(buttonNamed(shareLabel, preview));
-    await screen.findByText("Published");
+    const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
+    await within(shareMenu).findByText("Published");
     for (const slug of ["renamed-site", "final-site"]) {
       await waitFor(() => {
-        expect(buttonNamed("Customize URL")).toBeEnabled();
+        expect(buttonNamed("Customize URL", shareMenu)).toBeEnabled();
       });
-      click(buttonNamed("Customize URL"));
-      await fill(await screen.findByLabelText("Website URL"), slug);
-      await screen.findByText("Available");
-      click(buttonNamed("Save"));
+      click(buttonNamed("Customize URL", shareMenu));
+      const input = await within(shareMenu).findByLabelText("Website URL");
+      expect(input).toHaveFocus();
+      fireEvent.change(input, { target: { value: slug } });
+      expect(input).toHaveValue(slug);
+      await within(shareMenu).findByText("Available");
+      expect(buttonNamed("Save", shareMenu)).toBeEnabled();
+      click(buttonNamed("Save", shareMenu));
       await waitFor(() => {
         expect(title).toHaveTextContent(`${slug}.okou.app`);
         expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
-        expect(buttonNamed("Copy link")).toBeEnabled();
+        expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
       });
       const clipboard = context.mocks.browser.clipboardWriteText();
-      click(buttonNamed("Copy link"));
+      click(buttonNamed("Copy link", shareMenu));
       await waitFor(() => {
         expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
       });
@@ -161,7 +183,7 @@ test.each([false, true])(
     const clipboard = context.mocks.browser.clipboardWriteText();
     await copyFromResources("final-site");
     await waitFor(() => {
-      expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app/");
+      expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app");
     });
   },
 );

@@ -248,6 +248,45 @@ async fn invalid_header_and_caller_budget_never_connect_or_echo_data() {
 }
 
 #[tokio::test]
+async fn budget_metadata_overflow_never_transmits_the_initial_request() {
+    let base = r#"{"version":1,"method":"fixture.stream","params":{"text":""}}"#;
+    let json = base.replacen(
+        r#""""#,
+        &format!(
+            "\"{}\"",
+            "x".repeat(runner_rpc_proto::MAX_REQUEST_BYTES - base.len())
+        ),
+        1,
+    );
+    let request = runner_rpc_proto::parse_request(json.as_bytes()).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&request).unwrap().len(),
+        runner_rpc_proto::MAX_REQUEST_BYTES
+    );
+    let mut bytes = Vec::new();
+    runner_rpc_proto::write_request(&mut bytes, &request)
+        .await
+        .unwrap();
+    let (client, mut server) = UnixStream::pair().unwrap();
+    let mut output = Vec::new();
+    let helper = runner_rpc_client::stream::run_with_io(bytes.as_slice(), &mut output, || async {
+        Ok(client)
+    });
+    let host = async {
+        let mut received = Vec::new();
+        server.read_to_end(&mut received).await.unwrap();
+        assert!(received.is_empty());
+    };
+    let (success, ()) = tokio::join!(helper, host);
+    assert!(!success.unwrap());
+    assert_error(
+        terminal(&output).await,
+        ErrorCode::InvalidRequest,
+        Delivery::NotDispatched,
+    );
+}
+
+#[tokio::test]
 async fn malformed_upload_closes_connection_without_replay() {
     let mut bytes = input().await;
     bytes.extend_from_slice(&[0, 0, 0, 1, 0]); // Empty Data is not End.

@@ -1136,7 +1136,6 @@ mod tests {
             .revalidate_home_cache_keys(
                 &BTreeMap::from([(TEST_PROFILE_NAME, 1024 * 1024)]),
                 &change.dirty_cache_keys,
-                tokio::time::Instant::now(),
             )
             .await;
         assert!(updates.entries.values().all(Option::is_none));
@@ -1147,7 +1146,6 @@ mod tests {
             .revalidate_home_cache_keys(
                 &BTreeMap::from([(TEST_PROFILE_NAME, 1024 * 1024)]),
                 &oversized,
-                tokio::time::Instant::now(),
             )
             .await;
         assert!(
@@ -1165,7 +1163,7 @@ mod tests {
     }
 
     #[test]
-    fn coalesced_batches_keep_first_deadline_and_report_key_saturation() {
+    fn coalesced_batches_keep_first_observation_and_report_key_saturation() {
         let first_observation = tokio::time::Instant::now();
         let mut change = HomeCacheChange {
             observed_at: first_observation,
@@ -1190,7 +1188,7 @@ mod tests {
         });
         assert_eq!(
             change.observed_at, first_observation,
-            "coalescing cannot renew the original commit-wait deadline"
+            "coalescing must preserve the original observation for latency attribution"
         );
         assert!(change.requires_full_reconcile);
         assert_eq!(change.dirty_cache_keys.len(), MAX_HELD_HOME_STATES);

@@ -78,7 +78,7 @@ approval. Existing read-only authorizations remain usable for permitted reads.
    poll from the run. When the response has autoContinue=true, Okou watches this
    request for up to 30 minutes from creation and sends a continuation message
    to this same chat after approval. The user can continue manually sooner.
-   If autoContinue is absent/false, do not promise an automatic callback.
+   If autoContinue is false, do not promise an automatic callback.
 5. After the user returns or the approval continuation arrives, run okou wallet spend get <id> --json once. The user's
    message or a visited URL is not approval: rely on Link's actual request status.
    Pending means wait; denied/expired/canceled/failed means stop. For

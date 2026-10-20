@@ -7,7 +7,6 @@ import {
   stubConnectorCatalogStatus,
 } from "../../__tests__/helpers/connector-catalog";
 import {
-  customConnector,
   customMcpConnector,
   stubCustomConnectors,
 } from "../../__tests__/helpers/custom-connectors";
@@ -84,27 +83,73 @@ describe("connector oauth start", () => {
     },
   );
 
-  it("starts custom automatic authentication and prints only the account ID when already connected", async () => {
-    const connector = customMcpConnector({
-      authMode: "automatic",
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-    });
+  it.each([undefined, ID])(
+    "prints whitelisted custom automatic identity with optional connectionId %s",
+    async (connectionId) => {
+      const connector = customMcpConnector({
+        authMode: "automatic",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+      });
+      server.use(
+        stubConnectorCatalogStatus([]),
+        stubCustomConnectors([connector]),
+        http.post(
+          `http://localhost:3000/api/custom-connectors/${connector.id}/oauth2/start`,
+          async ({ request }) => {
+            expect(await request.json()).toEqual({
+              account: { intent: "add", displayName: "Work" },
+            });
+            return HttpResponse.json({
+              result: "connected",
+              connector: {
+                ...connector,
+                connected: true,
+                connectedAccountId: ID,
+                clientSecret: SECRET,
+              },
+              connectedAccountId: ID,
+              connectionId,
+              password: SECRET,
+            });
+          },
+        ),
+      );
+      await connectorOAuthCommand.parseAsync([
+        "node",
+        "okou",
+        "start",
+        `custom:${connector.id}`,
+        "--add",
+        "--account-name",
+        "Work",
+        "--json",
+      ]);
+      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
+        result: "connected",
+        connectedAccountId: ID,
+        ...(connectionId ? { connectionId } : {}),
+      });
+    },
+  );
+
+  it("preserves the explicit builtin automatic account ID without changing its legacy identity", async () => {
     server.use(
-      stubConnectorCatalogStatus([]),
-      stubCustomConnectors([connector]),
+      stubConnectorCatalogStatus([
+        catalogStatusItem({
+          connectorSlug: "github",
+          authMethods: [{ ...authCodeMethod("oauth"), grantKind: "automatic" }],
+        }),
+      ]),
       http.post(
-        `http://localhost:3000/api/custom-connectors/${connector.id}/oauth2/start`,
-        async ({ request }) => {
-          expect(await request.json()).toEqual({
-            account: { intent: "add", displayName: "Work" },
-          });
+        "http://localhost:3000/api/connectors/github/automatic/start",
+        () => {
           return HttpResponse.json({
             result: "connected",
-            connector: { ...customConnector(), clientSecret: SECRET },
             connectedAccountId: ID,
-            password: SECRET,
+            connectionId: ID,
+            accessToken: SECRET,
           });
         },
       ),
@@ -113,15 +158,15 @@ describe("connector oauth start", () => {
       "node",
       "okou",
       "start",
-      `custom:${connector.id}`,
-      "--add",
-      "--account-name",
-      "Work",
+      "github",
+      "--reconnect",
+      ID,
       "--json",
     ]);
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
       result: "connected",
       connectedAccountId: ID,
+      connectionId: ID,
     });
   });
 });

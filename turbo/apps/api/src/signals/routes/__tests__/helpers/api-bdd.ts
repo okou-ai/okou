@@ -253,9 +253,19 @@ export function createBddApi(context: TestContext) {
     async completeOnboarding(
       nextUser: ApiTestUser,
       body: { readonly timezone?: string } = {},
+      options: { readonly isolatePg?: true } = {},
     ) {
+      const client = options.isolatePg
+        ? (
+            await setupApp({
+              context,
+              routes: onboardingCompleteRoutes,
+              isolatePg: true,
+            })
+          )(onboardingCompleteContract)
+        : onboardingCompleteClient();
       return await accept(
-        onboardingCompleteClient().complete({
+        client.complete({
           headers: authenticate(nextUser),
           body,
         }),

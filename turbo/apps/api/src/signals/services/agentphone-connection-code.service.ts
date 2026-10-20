@@ -34,6 +34,7 @@ export type AgentPhoneConnectionCodeConsumeResult =
       readonly userId: string;
       readonly orgId: string;
       readonly phoneHandle: string;
+      readonly userLinkId: string;
     };
 
 function generateAgentPhoneConnectionCode(): string {
@@ -175,6 +176,7 @@ export const consumeAgentPhoneConnectionCode$ = command(
       userId: result.userLink.userId,
       orgId: result.userLink.orgId,
       phoneHandle: result.userLink.phoneHandle,
+      userLinkId: result.userLink.id,
     };
   },
 );

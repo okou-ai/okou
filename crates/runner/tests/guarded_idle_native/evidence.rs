@@ -308,8 +308,16 @@ impl Case {
         self.write_event("NATIVE_BATCH_REPLACEMENT_WITNESS ", phase, evidence)
     }
 
+    pub fn dual_history_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_DUAL_HISTORY_WITNESS ", phase, evidence)
+    }
+
     pub fn claim_loss_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_CLAIM_LOSS_WITNESS ", phase, evidence)
+    }
+
+    pub fn speculative_fault_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_SPECULATIVE_FAULT_WITNESS ", phase, evidence)
     }
 
     pub fn require_original_lease_released(&self) -> io::Result<()> {

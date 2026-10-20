@@ -569,6 +569,7 @@
       },
       "kindIcon": "{{kind}} artefacto",
       "loading": "Cargando artefactos",
+      "loadMore": "Cargar más",
       "retry": "Reintentar"
     },
     "fileBadges": {
@@ -1851,6 +1852,7 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} diapositivas"
       },
+      "mentionHint": "Busca agentes o chats…",
       "message": "Mensaje",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Pídeme que automatice flujos de trabajo, gestione tareas...",

@@ -45,7 +45,7 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
     assert_eq!(f.cache.gc_root_scan_count(), 1);
     assert!(!f.image("home", &committed).exists());
     assert_eq!(
-        std::fs::metadata(f.cache.capacity_lock_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         0
@@ -53,7 +53,7 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
 }
 
 #[tokio::test]
-async fn pressure_discovery_releases_capacity_and_rejects_an_intervening_publication() {
+async fn pressure_discovery_rejects_an_intervening_publication() {
     use std::sync::Arc;
     let f = Fixture::new().await;
     f.commit("home", b"previous", "2026-10-09T09:00:00Z").await;
@@ -68,10 +68,6 @@ async fn pressure_discovery_releases_capacity_and_rejects_an_intervening_publica
     tokio::time::timeout(Duration::from_secs(5), entered.notified())
         .await
         .unwrap();
-    let capacity = runner_host::lock::try_acquire(f.cache.capacity_lock_path())
-        .await
-        .unwrap();
-    drop(capacity);
     f.cache.set_fs_stats_for_test(FsStats {
         total_bytes: 100 * GIB,
         available_bytes: 75 * GIB,
@@ -184,9 +180,9 @@ async fn pressure_continuation_bounds_turns_and_keeps_one_complete_lru_inventory
     assert!(turns >= 3);
     f.cache.drain_pressure_reclamation().await;
     assert!(f.cache.held_home_states().await.is_empty());
-    // A pressure-only turn never completes the independent maintenance marker.
+    // A pressure-only turn never marks routine maintenance complete.
     assert_eq!(
-        std::fs::metadata(f.cache.capacity_lock_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         0
@@ -194,7 +190,7 @@ async fn pressure_continuation_bounds_turns_and_keeps_one_complete_lru_inventory
 }
 
 #[tokio::test]
-async fn routine_pressure_turn_releases_both_owners_and_retains_inventory_between_turns() {
+async fn routine_pressure_turn_releases_collector_and_retains_inventory_between_turns() {
     let f = Fixture::new().await;
     for i in 0..33 {
         f.commit(&format!("home-{i:02}"), b"home", "2026-10-09T09:00:00Z")
@@ -208,7 +204,7 @@ async fn routine_pressure_turn_releases_both_owners_and_retains_inventory_betwee
     gate.wait_entered(Duration::from_secs(5)).await;
     assert_eq!(f.cache.gc_root_scan_count(), 1);
     gate.release();
-    // The first turn admitted at most 16 victims. Both global owners are free
+    // The first turn admitted at most 16 victims. The collector owner is free
     // while the accepted routine task retains its remaining inventory.
     gate.wait_entered(Duration::from_secs(5)).await;
     assert!(
@@ -218,12 +214,12 @@ async fn routine_pressure_turn_releases_both_owners_and_retains_inventory_betwee
                 .count()
         )
     );
-    for path in [f.cache.routine_gc_lock_path(), f.cache.capacity_lock_path()] {
-        let lock = runner_host::lock::try_acquire(path).await.unwrap();
-        drop(lock);
-    }
+    let lock = runner_host::lock::try_acquire(f.cache.routine_gc_lock_path())
+        .await
+        .unwrap();
+    drop(lock);
     assert_eq!(
-        std::fs::metadata(f.cache.capacity_lock_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         0
@@ -243,10 +239,64 @@ async fn routine_pressure_turn_releases_both_owners_and_retains_inventory_betwee
     assert_eq!(f.cache.gc_root_scan_count(), 1);
     assert!(f.image("intervening", &published).exists());
     assert_eq!(
-        std::fs::metadata(f.cache.capacity_lock_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         1
+    );
+}
+
+#[tokio::test]
+async fn yielded_routine_turn_honors_another_collectors_completion_marker() {
+    let f = Fixture::new().await;
+    for i in 0..33 {
+        f.commit(&format!("home-{i:02}"), b"home", "2026-10-09T09:00:00Z")
+            .await;
+    }
+    low_space(&f.cache);
+    let gate = HomeImagePrepareLockTestGate::default();
+    let cache = f.cache.clone().with_pressure_turn_test_gate(gate.clone());
+    let worker = tokio::spawn(async move { cache.try_routine_gc(Duration::from_secs(3600)).await });
+    gate.wait_entered(Duration::from_secs(5)).await;
+    gate.release();
+    gate.wait_entered(Duration::from_secs(5)).await;
+
+    let other = HomeImageCache::with_cache_dirs_and_fs_stats(
+        f.paths.clone(),
+        f.cache.inner.cache_dir.clone(),
+        f.cache.inner.lock_dir.clone(),
+        &f.cache.inner.cache_scope,
+        FsStats {
+            total_bytes: 2000 * GIB,
+            available_bytes: 1000 * GIB,
+            ..FsStats::default()
+        },
+    );
+    assert!(
+        other
+            .try_routine_gc(Duration::ZERO)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let remaining = std::fs::read_dir(f.cache.home_image_cache_dir())
+        .unwrap()
+        .count();
+    assert!((17..=33).contains(&remaining));
+    gate.release();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        std::fs::read_dir(f.cache.home_image_cache_dir())
+            .unwrap()
+            .count(),
+        remaining
     );
 }
 
@@ -290,7 +340,7 @@ async fn policy_uses_the_callers_remaining_deadline_and_retains_accepted_work() 
 
     assert!(f.image("home", &committed).exists());
     assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+        runner_host::lock::try_acquire_or_busy(f.cache.routine_gc_lock_path())
             .await
             .unwrap(),
         runner_host::lock::TryLock::Busy
@@ -307,7 +357,7 @@ async fn policy_uses_the_callers_remaining_deadline_and_retains_accepted_work() 
     assert!(expired, "policy restarted or ignored the caller's deadline");
     assert!(!f.image("home", &committed).exists());
     assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+        runner_host::lock::try_acquire_or_busy(f.cache.routine_gc_lock_path())
             .await
             .unwrap(),
         runner_host::lock::TryLock::Acquired(_)
@@ -343,7 +393,7 @@ async fn demand_timeout_keeps_accepted_lock_custody_and_shutdown_joins_the_worke
     assert!(observed.available_after.is_none());
     assert!(f.image("home", &committed).exists());
     assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+        runner_host::lock::try_acquire_or_busy(f.cache.routine_gc_lock_path())
             .await
             .unwrap(),
         runner_host::lock::TryLock::Busy
@@ -355,7 +405,7 @@ async fn demand_timeout_keeps_accepted_lock_custody_and_shutdown_joins_the_worke
     drain.await;
     assert!(!f.image("home", &committed).exists());
     assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+        runner_host::lock::try_acquire_or_busy(f.cache.routine_gc_lock_path())
             .await
             .unwrap(),
         runner_host::lock::TryLock::Acquired(_)
@@ -382,7 +432,7 @@ async fn cancelled_observer_does_not_cancel_accepted_reclamation() {
     observer.abort();
     assert!(observer.await.unwrap_err().is_cancelled());
     assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+        runner_host::lock::try_acquire_or_busy(f.cache.routine_gc_lock_path())
             .await
             .unwrap(),
         runner_host::lock::TryLock::Busy
@@ -400,17 +450,17 @@ async fn demand_contention_preserves_entries_and_a_later_request_can_reclaim() {
     let device = std::fs::metadata(f.cache.home_image_cache_dir())
         .unwrap()
         .dev();
-    for path in [f.cache.routine_gc_lock_path(), f.cache.capacity_lock_path()] {
-        let lock = runner_host::lock::acquire(path).await.unwrap();
-        let outcome = f
-            .cache
-            .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
-            .await
-            .unwrap();
-        assert_eq!(outcome.status, HomeCacheReclaimStatus::Contended);
-        assert!(f.image("home", &committed).exists());
-        drop(lock);
-    }
+    let lock = runner_host::lock::acquire(f.cache.routine_gc_lock_path())
+        .await
+        .unwrap();
+    let outcome = f
+        .cache
+        .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
+        .await
+        .unwrap();
+    assert_eq!(outcome.status, HomeCacheReclaimStatus::Contended);
+    assert!(f.image("home", &committed).exists());
+    drop(lock);
     let outcome = f
         .cache
         .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())

@@ -14,6 +14,41 @@ pub(crate) struct Authority {
     token: Zeroizing<String>,
 }
 
+/// Only finite query-failure categories may cross the history boundary.
+enum AuthorityFailure {
+    Denied,
+    Timeout,
+    Transport,
+    Service,
+    InvalidResponse,
+}
+
+impl AuthorityFailure {
+    fn query(self) -> Query {
+        let message = match self {
+            Self::Denied => {
+                "Diagnostic history could not be read because the authority API denied the read request. Check this Run's read permissions. Current connectivity has not been checked."
+            }
+            Self::Timeout => {
+                "Diagnostic history could not be read because the authority lookup timed out. Check API availability and the Runner's API connection. Current connectivity has not been checked."
+            }
+            Self::Transport => {
+                "Diagnostic history could not be read because the authority API request or response could not be transferred. Check the Runner's API connection. Current connectivity has not been checked."
+            }
+            Self::Service => {
+                "Diagnostic history could not be read because the authority API reported a service failure or rate limit. Check API health before trying the history query again. Current connectivity has not been checked."
+            }
+            Self::InvalidResponse => {
+                "Diagnostic history could not be read because the authority API returned an invalid or oversized inventory response. Check API compatibility and response validity. Current connectivity has not been checked."
+            }
+        };
+        Query {
+            status: Status::AuthorityUnavailable,
+            message: message.into(),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct Inventory {
     hosts: Vec<Host>,
@@ -76,7 +111,7 @@ impl Authority {
             token: Zeroizing::new(token.to_owned()),
         }
     }
-    async fn hosts(&self, protocol: Protocol) -> Result<Vec<HostIdentity>, ()> {
+    async fn hosts(&self, protocol: Protocol) -> Result<Vec<HostIdentity>, AuthorityFailure> {
         let route = api_contracts::Route::new(
             api_contracts::Method::Get,
             match protocol {
@@ -90,25 +125,50 @@ impl Authority {
                 .request_route(route, &self.token)
                 .send("remote_diagnostics_authority")
                 .await
-                .map_err(|_| ())?;
-            if response.status() != reqwest::StatusCode::OK {
-                return Err(());
+                .map_err(|error| match error {
+                    runner_provider::ProviderError::ApiTransport(error)
+                        if error.failure_kind == runner_provider::ApiFailureKind::Timeout =>
+                    {
+                        AuthorityFailure::Timeout
+                    }
+                    _ => AuthorityFailure::Transport,
+                })?;
+            match response.status() {
+                reqwest::StatusCode::OK => {}
+                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+                    return Err(AuthorityFailure::Denied);
+                }
+                reqwest::StatusCode::REQUEST_TIMEOUT => return Err(AuthorityFailure::Timeout),
+                status
+                    if status.is_server_error()
+                        || status == reqwest::StatusCode::TOO_MANY_REQUESTS =>
+                {
+                    return Err(AuthorityFailure::Service);
+                }
+                _ => return Err(AuthorityFailure::InvalidResponse),
             }
             const MAX_BYTES: usize = 512 * 1024;
             if response
                 .content_length()
                 .is_some_and(|n| n > MAX_BYTES as u64)
             {
-                return Err(());
+                return Err(AuthorityFailure::InvalidResponse);
             }
             let mut bytes = Vec::new();
-            while let Some(chunk) = response.chunk().await.map_err(|_| ())? {
+            while let Some(chunk) = response.chunk().await.map_err(|error| {
+                if error.is_timeout() {
+                    AuthorityFailure::Timeout
+                } else {
+                    AuthorityFailure::Transport
+                }
+            })? {
                 if chunk.len() > MAX_BYTES - bytes.len() {
-                    return Err(());
+                    return Err(AuthorityFailure::InvalidResponse);
                 }
                 bytes.extend_from_slice(&chunk);
             }
-            let inventory: Inventory = serde_json::from_slice(&bytes).map_err(|_| ())?;
+            let inventory: Inventory =
+                serde_json::from_slice(&bytes).map_err(|_| AuthorityFailure::InvalidResponse)?;
             let count = inventory.hosts.len();
             let mut visible = inventory
                 .hosts
@@ -123,13 +183,13 @@ impl Authority {
                         || host.generation > i64::from(i32::MAX)
                 })
             {
-                return Err(());
+                return Err(AuthorityFailure::InvalidResponse);
             }
             Ok(inventory.identities)
         };
         tokio::time::timeout(Duration::from_secs(5), work)
             .await
-            .map_err(|_| ())?
+            .map_err(|_| AuthorityFailure::Timeout)?
     }
 }
 
@@ -204,8 +264,9 @@ impl Handle {
         };
         query.status = Status::AuthorityUnavailable;
         query.message = "Diagnostic history is unavailable under current Run, host or dependency read authority. Check permissions and API availability. Current connectivity has not been checked.".into();
-        let Ok(hosts) = authority.hosts(protocol).await else {
-            return query;
+        let hosts = match authority.hosts(protocol).await {
+            Ok(hosts) => hosts,
+            Err(failure) => return failure.query(),
         };
         if selector
             .connection_id
@@ -213,7 +274,16 @@ impl Handle {
         {
             return query;
         }
-        let report = self.select(protocol, &selector);
+        let check = if selector.checks {
+            self.select_check(protocol, &selector)
+        } else {
+            None
+        };
+        let report = if selector.checks {
+            check.as_ref().map(|receipt| receipt.report.clone())
+        } else {
+            self.select(protocol, &selector)
+        };
         if let Some(report) = &report {
             if !permits(
                 &hosts,
@@ -230,8 +300,9 @@ impl Handle {
                 return query;
             }
             if !report.dependencies.is_empty() {
-                let Ok(ssh) = authority.hosts(Protocol::Ssh).await else {
-                    return query;
+                let ssh = match authority.hosts(Protocol::Ssh).await {
+                    Ok(hosts) => hosts,
+                    Err(failure) => return failure.query(),
                 };
                 if report.dependencies.iter().any(|d| {
                     !permits(&ssh, d.connection_id, d.configuration_created_at)
@@ -251,7 +322,8 @@ impl Handle {
         }
         query.status = if report.is_some() {
             Status::Found
-        } else if selector.connection_id.is_some()
+        } else if selector.checks
+            || selector.connection_id.is_some()
             || selector.attempt_id.is_some()
             || selector.session_id.is_some()
         {
@@ -259,12 +331,17 @@ impl Handle {
         } else {
             Status::NoFailure
         };
-        let message = report.as_ref().and_then(super::Report::message);
+        let message = if selector.checks {
+            check.map(|receipt| receipt.message)
+        } else {
+            report.as_ref().and_then(super::Report::message)
+        };
         if report.is_some() && message.is_none() {
             query.status = Status::Unavailable;
         }
         query.message = message.unwrap_or_else(|| match query.status {
             Status::NoFailure => "No operational failure was recorded in this Run. Current connectivity has not been checked.".into(),
+            Status::NotRetained if selector.checks => "No matching completed check is retained in this Run's bounded check history (64 latest completions across SSH/VNC, no pins). The original attempt may be unknown, unfinished or evicted. Missing evidence proves neither connectivity nor cleanup; no check has been replayed.".into(),
             Status::NotRetained => "No matching failure is retained in this Run's bounded history (64 detailed reports, latest failures pinned). Current connectivity has not been checked.".into(),
             _ => "Diagnostic detail is unavailable. Current connectivity has not been checked.".into(),
         });

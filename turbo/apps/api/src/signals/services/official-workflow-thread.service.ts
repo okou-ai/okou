@@ -1,4 +1,4 @@
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -7,7 +7,17 @@ import {
 } from "@okouai/db/schema/workflow";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { command } from "ccstate";
-import { and, eq, exists, isNotNull, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  notExists,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishThreadListChangedSafely } from "../external/realtime";
@@ -15,6 +25,64 @@ import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { metadataCommitWithEventsSql } from "./chat-thread-metadata-write-plan";
 import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
 import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatEventReplacementInsertSql } from "./chat-event.service";
+
+/** Old user inputs must not reach a new free execution through the queue. */
+const revokeOfficialThreadUserInputs$ = command(
+  async ({ set }, threadId: string, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    for (;;) {
+      const revoker = alias(chatEvents, "official_input_revoker");
+      const sources = await db
+        .select({
+          id: chatEvents.id,
+          chatThreadId: chatEvents.chatThreadId,
+          createdAt: chatEvents.createdAt,
+          eventType: chatEvents.eventType,
+          contextType: chatEvents.contextType,
+          contextId: chatEvents.contextId,
+          modelSelection: chatEvents.modelSelection,
+        })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.chatThreadId, threadId),
+            eq(chatEvents.eventType, "input.prompt"),
+            isNull(chatEvents.runId),
+            notExists(
+              new QueryBuilder()
+                .select({ id: revoker.id })
+                .from(revoker)
+                .where(eq(revoker.revokesEventId, chatEvents.id)),
+            ),
+          ),
+        )
+        .limit(100);
+      signal.throwIfAborted();
+      if (sources.length === 0) {
+        return;
+      }
+      for (const source of sources) {
+        await db.execute(
+          chatEventReplacementInsertSql(
+            {
+              id: source.id,
+              chatThreadId: source.chatThreadId,
+              createdAt: source.createdAt,
+              eventType: source.eventType,
+              contextType: source.contextType,
+              contextId: source.contextId,
+              modelSelection: source.modelSelection,
+            },
+            { chatThreadId: threadId, eventType: "control.revoke" },
+          ),
+        );
+        signal.throwIfAborted();
+      }
+    }
+  },
+);
 
 function officialThreadSettingsCondition(
   owner: OfficialWorkflowThreadOwner,
@@ -117,6 +185,7 @@ export const synchronizeOfficialWorkflowThread$ = command(
     if (!thread?.definitionName || !thread.agentId) {
       return false;
     }
+    await set(revokeOfficialThreadUserInputs$, thread.id, signal);
     const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
     if (
       !catalog ||
@@ -126,9 +195,7 @@ export const synchronizeOfficialWorkflowThread$ = command(
     ) {
       throw new OfficialWorkflowRunAdmissionError();
     }
-    const hidden = catalog.hiddenThreadDefinitionNames.includes(
-      thread.definitionName,
-    );
+    const hidden = true;
     const visibilityChanged = thread.hidden !== hidden;
     const modelChanged =
       thread.selectedModel !== AUTO_SELECTED_MODEL ||

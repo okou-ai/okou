@@ -175,7 +175,7 @@ async fn pressured_copy_upgrade_obeys_the_existing_admission_deadline() {
         .unwrap();
     let notified = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
-    f.cache.publication_capacity_held_test_gate = Some((notified.clone(), release.clone()));
+    f.cache.publication_io_held_test_gate = Some((notified.clone(), release.clone()));
     let owned = context(&f, "pressure-deadline").await;
     let active = f.paths.active_home_image(&owned.sandbox_id());
     let original = tokio::fs::read(&active).await.unwrap();

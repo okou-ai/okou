@@ -554,6 +554,7 @@
       },
       "kindIcon": "{{kind}} Artefakt",
       "loading": "Artefakte werden geladen",
+      "loadMore": "Mehr laden",
       "retry": "Erneut versuchen"
     },
     "fileBadges": {
@@ -1822,6 +1823,7 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
+      "mentionHint": "Agenten oder Chats suchen…",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",

@@ -158,13 +158,12 @@ pub struct HomeCacheKeyUpdates {
 }
 
 impl HomeImageCache {
-    /// Hints select keys, never positive state. All waiting shares the batch's
-    /// original deadline; independent keys are inspected before busy retries.
+    /// Inspect each hint once. The observer owns retries, so one busy entry
+    /// never delays publishing independently validated keys.
     pub async fn revalidate_home_cache_keys(
         &self,
         profiles: &BTreeMap<&str, u64>,
         keys: &BTreeSet<String>,
-        deadline: tokio::time::Instant,
     ) -> HomeCacheKeyUpdates {
         let mut updates = HomeCacheKeyUpdates {
             incomplete: keys.len() > MAX_HELD_HOME_STATES,
@@ -178,7 +177,7 @@ impl HomeImageCache {
             if !is_cache_key_name(key) {
                 continue;
             }
-            match runner_host::lock::try_acquire_or_busy(self.entry_lock_path(key)).await {
+            match self.try_inventory_entry_lock(key).await {
                 Ok(runner_host::lock::TryLock::Acquired(lock)) => {
                     let state = self
                         .publishable_held_home_state(key, Some(profiles), &lock)
@@ -191,24 +190,32 @@ impl HomeImageCache {
                 Err(_) => {}
             }
         }
-        for key in updates.busy_keys.clone() {
-            if tokio::time::Instant::now() >= deadline {
-                break;
-            }
-            if let Ok(Ok(lock)) = tokio::time::timeout_at(
-                deadline,
-                runner_host::lock::acquire(self.entry_lock_path(&key)),
-            )
-            .await
-            {
-                let state = self
-                    .publishable_held_home_state(&key, Some(profiles), &lock)
-                    .await;
-                updates.entries.insert(key.clone(), state);
-                updates.busy_keys.remove(&key);
-            }
-        }
         updates
+    }
+
+    pub(super) async fn try_inventory_entry_lock(
+        &self,
+        key: &str,
+    ) -> runner_host::error::HostResult<runner_host::lock::TryLock> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.inner
+            .inventory_key_probe_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        runner_host::lock::try_acquire_or_busy(self.entry_lock_path(key)).await
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn inventory_key_probe_count(&self) -> usize {
+        self.inner
+            .inventory_key_probe_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn reset_inventory_key_probe_count(&self) {
+        self.inner
+            .inventory_key_probe_count
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub async fn home_cache_inventory_for_profiles(
@@ -223,9 +230,8 @@ impl HomeImageCache {
         &self,
         profiles: &BTreeMap<&str, u64>,
         keys: &BTreeSet<String>,
-        deadline: tokio::time::Instant,
     ) -> HomeCacheInventory {
-        self.held_home_states_matching_profiles(Some(profiles), Some((keys, deadline)), true)
+        self.held_home_states_matching_profiles(Some(profiles), Some(keys), true)
             .await
     }
 }

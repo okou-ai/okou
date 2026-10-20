@@ -162,6 +162,33 @@ impl Report {
                     words(step.stage)?,
                     words(step.status)?
                 ));
+                match step.elapsed_ms {
+                    Some(elapsed) if step.status == super::trace::Progress::Reused => {
+                        text.push_str(&format!("  Elapsed: {elapsed} ms (original setup).\n"));
+                    }
+                    Some(elapsed) => text.push_str(&format!("  Elapsed: {elapsed} ms.\n")),
+                    None if step.status != super::trace::Progress::NotReached => {
+                        text.push_str("  Timing unavailable.\n");
+                    }
+                    None => {}
+                }
+            }
+            if vnc.steps.iter().any(|step| step.elapsed_ms.is_some()) {
+                text.push_str("VNC elapsed times are frozen local observations; pending/unknown values cover only the observed interval.\n");
+                if vnc.steps.iter().any(|step| {
+                    step.status == super::trace::Progress::Reused && step.elapsed_ms.is_some()
+                }) {
+                    text.push_str("Reused timing describes original setup; those stages were not checked again.\n");
+                }
+                if vnc.steps.iter().any(|step| {
+                    matches!(
+                        step.stage,
+                        crate::vnc::evidence::Stage::KdcTransport
+                            | crate::vnc::evidence::Stage::KdcExchange
+                    ) && step.elapsed_ms.is_some()
+                }) {
+                    text.push_str("Authentication includes nested KDC work; these stage times are not additive.\n");
+                }
             }
             text.push_str(&format!("- VNC RFB error: {}; authentication stage: {}; Apple DH check: {}; generator: {}; key bytes: {}.\n",
                 observed(vnc.rfb_error_code), observed(vnc.authentication_stage), observed(vnc.dh_check), observed(vnc.dh_generator), observed(vnc.dh_key_bytes)));
@@ -211,12 +238,15 @@ impl Report {
             )?;
         }
         let boundary = if self.operation == super::Operation::ActiveCheck {
-            "This active check verifies only newly passed connection stages at the recorded time. SSH authentication or VNC initialization does not establish later command, framebuffer or input health."
+            "Passed stages verify check-time setup only, not later command/framebuffer/input health. Helper delivery is unconfirmed. Without an exact Attempt, latest history may identify another check."
         } else {
             "These facts were captured with the operation; no additional connectivity check was performed."
         };
         if self.truncated {
             text.push_str("\nDetail omitted to retain the incident and critical path within the report budget.\n");
+            if self.vnc.is_some() {
+                text.push_str("Noncritical VNC stages and timing may be omitted.\n");
+            }
         }
         text.push_str(&format!(
             "\nUnknown: Pending means still waiting at observation, not a proven remote cause. Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",

@@ -100,31 +100,47 @@ class DiagnosticReader implements RunnerRpcResponseReader<Query | Unavailable> {
 export function createDiagnoseCommand(protocol: Protocol) {
   return new Command("diagnose")
     .description(
-      `Read this Run's retained ${protocol.toUpperCase()} failure without connecting to the host`,
+      `Read this Run's retained ${protocol.toUpperCase()} failure or check receipt without connecting to the host`,
     )
     .argument(
       "[connection-id]",
-      "Exact host ID; omit selectors for this protocol's last failure",
+      "Exact host ID; omit UUID selectors for the selected history's latest match",
     )
-    .option("--attempt-id <id>", "Exact retained diagnostic attempt UUID")
+    .option(
+      "--attempt-id <id>",
+      "Prefer the Attempt ID from the actual failed operation",
+    )
     .option("--session-id <id>", "Exact SSH/VNC session UUID")
+    .option(
+      "--checks",
+      "Read completed check receipts instead of operational failures",
+    )
     .option("--json", "Print query status and Runner-authored explanation text")
     .addHelpText(
       "after",
-      "\nPassive history only, within this Run. Current read permission and host/chat visibility are required. Latest SSH/VNC failures are pinned; other details are limited to 64 reports. Missing evidence is not a connectivity result. This command never retries commands or input.",
+      `\nPrefer the actual failed operation's Attempt ID: okou ${protocol} diagnose <connection-id> --attempt-id <attempt-id> --json. Add --session-id <id> when known; all supplied selectors must match.
+Without --attempt-id, this returns the latest matching retained failure by default. Verify its operation, connection, session, and time before attributing it to a particular operation. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure.
+--checks selects a separate history of 64 latest completed checks across SSH/VNC with no pins. Filters intersect; without --attempt-id this returns the latest matching receipt, which may not identify the original check after response loss. Receipts preserve Runner observations, not helper delivery confirmation or current connectivity.
+Passive history only, within this Run. Current read permission and host/chat visibility are required. Latest SSH/VNC failures are pinned; other details are limited to 64 reports. Missing evidence is not a connectivity result and does not prove cleanup. This command never connects, acquires tickets, retries checks, commands or input. Never automatically replay uncertain commands, input, or checks.`,
     )
     .action(
       withErrorHandler(
         async (
           connectionId: string | undefined,
-          options: { attemptId?: string; sessionId?: string; json?: boolean },
+          options: {
+            attemptId?: string;
+            sessionId?: string;
+            checks?: boolean;
+            json?: boolean;
+          },
         ) => {
           const token = decodeSandboxTokenPayload();
           if (!token?.capabilities.includes(`${protocol}:read`))
             throw new Error(
               `This command requires a Run token with ${protocol}:read.`,
             );
-          const selector: Record<string, string> = {};
+          const selector: Record<string, string | boolean> = {};
+          if (options.checks) selector.checks = true;
           for (const [key, value] of Object.entries({
             connectionId,
             attemptId: options.attemptId,

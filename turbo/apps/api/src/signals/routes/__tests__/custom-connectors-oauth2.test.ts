@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectorOverviewRoutes } from "../connector-overview";
+import { createRouteMocks } from "./helpers/route-test";
 import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -114,6 +118,81 @@ describe("Custom connector OAuth callbacks", () => {
       );
       await flushWaitUntilForTest();
     }
+  });
+
+  it("preserves editable OAuth configuration in the list and returns only connected overview briefs", async () => {
+    const provider = mockCustomConnectorOAuth2Provider(context, {
+      initialScope: "read",
+    });
+    const actor = createBddApi(context).user({ orgRole: "org:admin" });
+    const input = customOAuthConnectorBody(provider);
+    if (input.authMode !== "oauth" || !input.oauthConfig) {
+      throw new Error("Expected an OAuth definition");
+    }
+    const oauthConfig = {
+      ...input.oauthConfig,
+      authorizationParams: {
+        audience: "https://resource.example.test",
+        prompt: "consent",
+      },
+    };
+    const connector = await connectors.createCustomConnector(actor, {
+      ...input,
+      oauthConfig,
+    });
+    ownedConnectors.push({ actor, connectorId: connector.id });
+    const listed = await connectors.listCustomConnectors(actor);
+    const listedConnector = listed.find((item) => {
+      return item.id === connector.id;
+    });
+    expect(listedConnector).toStrictEqual(
+      await connectors.readCustomConnector(actor, connector.id),
+    );
+    expect(listedConnector).toHaveProperty("oauthConfig", {
+      providerAdapter: oauthConfig.providerAdapter,
+      clientId: oauthConfig.clientId,
+      authorizationUrl: oauthConfig.authorizationUrl,
+      tokenUrl: oauthConfig.tokenUrl,
+      tokenEndpointAuthMethod: oauthConfig.tokenEndpointAuthMethod,
+      pkceMethod: oauthConfig.pkceMethod,
+      scopes: oauthConfig.scopes,
+      authorizationParams: oauthConfig.authorizationParams,
+    });
+    expect(JSON.stringify(listed)).not.toContain(oauthConfig.clientSecret);
+
+    const overviewClient = setupApp({
+      context,
+      routes: connectorOverviewRoutes,
+    })(connectorOverviewContract);
+    const headers = { authorization: "Bearer clerk-session" };
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    const disconnected = await accept(
+      overviewClient.overview({ headers }),
+      [200],
+    );
+    expect(disconnected.body.customConnectors).toStrictEqual([]);
+
+    await connectCustomOAuthConnector(actor, connector.id);
+    const connected = await accept(overviewClient.overview({ headers }), [200]);
+    expect(connected.body.customConnectors).toStrictEqual([
+      {
+        id: connector.id,
+        slug: connector.slug,
+        displayName: connector.displayName,
+        permissionBundleRef: null,
+        integrationManaged: false,
+      },
+    ]);
+    expect(connected.body.accountSummaries).toContainEqual(
+      expect.objectContaining({
+        target: { kind: "custom", customConnectorId: connector.id },
+        accountCount: 1,
+      }),
+    );
   });
 
   it("uses the configured Okou App callback for authorization and token exchange", async () => {

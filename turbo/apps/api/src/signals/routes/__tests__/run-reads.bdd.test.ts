@@ -2794,6 +2794,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     ]);
     expect(listed.body.filters.agents).toContain(agentOne.agentId);
     expect(listed.body.filters.agents).toContain(agentTwo.agentId);
+    expect([...listed.body.filters.agents].sort()).toStrictEqual(
+      [agentOne.agentId, agentTwo.agentId, automationCompose.agentId].sort(),
+    );
   });
 
   it("pages run logs and falls back from malformed cursors", async () => {

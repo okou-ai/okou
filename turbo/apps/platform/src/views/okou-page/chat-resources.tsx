@@ -4,6 +4,7 @@ import {
   useLastResolved,
   useSet,
 } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -15,12 +16,13 @@ import {
   PopoverTrigger,
   surfaceVariants,
 } from "@okouai/ui";
-import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
-import { openArtifactSidebar$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -28,8 +30,7 @@ import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
-import { artifactTitleLink } from "./artifact-display.ts";
-import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
+import { hostedSiteLink } from "./artifact-display.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
@@ -194,45 +195,46 @@ function ChatResourcesButtonInner({
 }
 
 function ResourceOutputRow({
-  file,
-  threadId,
+  artifact,
+  thread,
 }: {
-  readonly file: ChatThreadArtifactFile;
-  readonly threadId: string;
+  readonly artifact: ArtifactSummary;
+  readonly thread: ChatPanelSignals;
 }) {
-  const openArtifact = useSet(openArtifactSidebar$);
+  const openArtifact = useSet(openThreadCatalogArtifact$);
+  const pageSignal = useGet(pageSignal$);
   const changes = useGet(hostedSiteUrlChanges$);
-  const titleLink = artifactTitleLink(classifyChatAttachment(file), {
-    ...file,
-    aliasUrl: file.aliasUrl
-      ? currentHostedSiteUrl(file.aliasUrl, changes)
-      : undefined,
-  });
+  const titleLink =
+    artifact.kind === "hosted-site"
+      ? hostedSiteLink(
+          artifact.aliasUrl
+            ? currentHostedSiteUrl(artifact.aliasUrl, changes)
+            : undefined,
+        )
+      : null;
   return (
     <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
         variant="quiet"
         className="h-8.5 min-w-0 flex-1 justify-start gap-2.5 px-1 text-[13px] leading-5 font-normal text-foreground hover:bg-gray-50 focus-visible:bg-gray-50"
         onClick={() => {
-          openArtifact(
-            {
-              url: file.url,
-              filename: file.filename,
-              contentType: file.contentType,
-            },
-            threadId,
+          detach(
+            openArtifact(thread, artifact.id, pageSignal),
+            Reason.DomCallback,
           );
         }}
       >
         <FilePreviewIcon
-          filename={file.filename}
-          contentType={file.contentType}
+          filename={artifact.title}
           size="sm"
           className="shrink-0"
         />
-        <HoverScrollTitle title={titleLink?.label ?? file.filename} />
+        <HoverScrollTitle title={titleLink?.label ?? artifact.title} />
       </Button>
-      <CopyResourceLink url={file.aliasUrl ?? file.url} />
+      <CopyResourceLink
+        artifactId={artifact.id}
+        catalog={thread.resources.catalog}
+      />
     </li>
   );
 }
@@ -242,7 +244,9 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const content = useLastLoadable(thread.resources.content$);
   const data = useLastResolved(thread.resources.content$);
-  const reload = useSet(thread.reloadArtifacts$);
+  const reload = useSet(thread.resources.catalog.reload$);
+  const [paging, loadMore] = useLoadableSet(thread.resources.catalog.loadMore$);
+  const pageSignal = useGet(pageSignal$);
   const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
   return (
@@ -271,17 +275,18 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
                   0,
                   expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT,
                 )
-                .map((file) => {
+                .map((artifact) => {
                   return (
                     <ResourceOutputRow
-                      key={file.id}
-                      file={file}
-                      threadId={thread.threadId}
+                      key={artifact.id}
+                      artifact={artifact}
+                      thread={thread}
                     />
                   );
                 })}
             </ul>
-            {data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
+            {(data.artifacts.length > RESOURCE_PREVIEW_LIMIT ||
+              data.nextCursor) && (
               <ChatResourceSectionToggle
                 expanded={expanded.artifacts}
                 controls={artifactsId}
@@ -289,6 +294,22 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
                   toggleSection("artifacts", trigger);
                 }}
               />
+            )}
+            {expanded.artifacts && data.nextCursor && (
+              <Button
+                variant="quiet"
+                size="xs"
+                disabled={paging.state === "loading"}
+                onClick={() => {
+                  detach(loadMore(pageSignal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return paging.state === "hasError"
+                    ? $.chat.resources.retry
+                    : $.artifacts.catalog.loadMore;
+                })}
+              </Button>
             )}
           </section>
         )}

@@ -6,7 +6,16 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
 import { command } from "ccstate";
-import { and, eq, inArray, notExists, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+  notInArray,
+  notExists,
+  or,
+  type SQL,
+} from "drizzle-orm";
 
 import { notFound, runNotCancellable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
@@ -39,6 +48,7 @@ interface CancelRunArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly runnerCancellationMode: RunnerCancellationMode;
+  readonly userRequested?: true;
   /** Cleanup retries must not turn an already-cancelled Run into a new hard request. */
   readonly preserveExistingCancellation?: true;
   readonly apiStartTime?: number;
@@ -125,12 +135,21 @@ function cancellableRunCondition(
 
 function cancellationOwnerCondition(
   runId: string,
-  owner: Pick<CancelRunArgs, "userId" | "orgId">,
+  owner: Pick<CancelRunArgs, "userId" | "orgId" | "userRequested">,
 ) {
   return and(
     eq(agentRuns.id, runId),
     eq(agentRuns.userId, owner.userId),
     eq(agentRuns.orgId, owner.orgId),
+    owner.userRequested
+      ? or(
+          isNull(agentRuns.officialWorkflowProvenance),
+          notInArray(agentRuns.triggerSource, [
+            "automation-schedule",
+            "automation-event",
+          ]),
+        )
+      : undefined,
   );
 }
 

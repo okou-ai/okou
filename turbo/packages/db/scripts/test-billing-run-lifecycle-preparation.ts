@@ -91,6 +91,9 @@ try {
       run_completed_at: null,
     },
   ]);
+  // Historical SQL is verified above; current Drizzle writers require the
+  // complete current schema, including later additive billing columns.
+  await applyPendingMigrations(migrationClient);
   await validateBillingRunLifecycle(url.toString());
   console.log(
     "Billing lifecycle preparation preserves outgoing SQL and independent completion facts",

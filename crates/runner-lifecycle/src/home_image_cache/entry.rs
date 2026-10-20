@@ -1,8 +1,7 @@
 use super::metadata::HomeCacheMetadata;
 use super::{HOME_DRIVE_LAYOUT, HomeImageCache};
 use runner_host::paths::{
-    home_image_cache_capacity_lock_path, home_image_cache_lock_path,
-    home_image_cache_routine_gc_lock_path, scoped_home_image_cache_key,
+    home_image_cache_lock_path, home_image_cache_routine_gc_lock_path, scoped_home_image_cache_key,
 };
 use runner_types::ids::RunId;
 use std::path::{Path, PathBuf};
@@ -93,9 +92,6 @@ impl HomeImageCache {
     }
     pub(super) fn entry_lock_path(&self, cache_key: &str) -> PathBuf {
         CacheEntryPaths::lock_path(&self.inner.lock_dir, cache_key)
-    }
-    pub(super) fn capacity_lock_path(&self) -> PathBuf {
-        home_image_cache_capacity_lock_path(&self.inner.lock_dir)
     }
     pub(super) fn routine_gc_lock_path(&self) -> PathBuf {
         home_image_cache_routine_gc_lock_path(&self.inner.lock_dir)

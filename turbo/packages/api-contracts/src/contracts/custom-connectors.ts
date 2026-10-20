@@ -525,10 +525,12 @@ const startCustomConnectorOAuth2AuthorizationResponseSchema = z.object({
   oauthAttemptId: z.uuid(),
 });
 
+// Optional operation IDs cover current/rollback APIs until #41309's API/client/Runner gates.
 const startCustomConnectorOAuth2ConnectedResponseSchema = z.object({
   result: z.literal("connected"),
   connector: customConnectorResponseSchema,
   connectedAccountId: z.uuid(),
+  connectionId: z.uuid().optional(),
 });
 
 export const startCustomConnectorOAuth2ResponseSchema = z.preprocess(
@@ -566,8 +568,10 @@ export type SetCustomConnectorValuesBody = z.infer<
   typeof setCustomConnectorValuesBodySchema
 >;
 
+// Optional operation IDs cover current/rollback APIs until #41309's API/client/Runner gates.
 const connectedAccountResponseShape = {
   connectedAccountId: z.uuid().optional(),
+  connectionId: z.uuid().optional(),
 };
 
 export const setCustomConnectorValuesResponseSchema =
@@ -596,8 +600,10 @@ export type SaveCustomConnectorProposalBody = z.infer<
   typeof saveCustomConnectorProposalBodySchema
 >;
 
+// Optional operation IDs cover current/rollback APIs until #41309's API/client/Runner gates.
 export const saveCustomConnectorProposalResponseSchema = z.object({
   connector: customConnectorResponseSchema,
+  connectionId: z.uuid().optional(),
   authorizedAgentId: z.string().uuid().optional(),
 });
 export type SaveCustomConnectorProposalResponse = z.infer<

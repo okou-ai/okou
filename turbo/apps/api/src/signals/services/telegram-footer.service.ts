@@ -2,11 +2,15 @@ import { computed, type Computed } from "ccstate";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
 import { escapeHtml } from "../../lib/telegram-format";
-import { resolveRunModelSelection } from "./run-model-selection.service";
+import {
+  runModelSelectionColumns,
+  runModelSelectionCondition,
+  runModelSelectionFromRow,
+} from "./run-model-selection.service";
 
 function displayLabel(row: {
   agentDisplayName: string | null;
@@ -28,7 +32,16 @@ export async function resolveTelegramAgentReplyFooterText(args: {
 }): Promise<string | undefined> {
   // The official shared bot has no per-bot default agent, so replies never
   // carry a "Responded by" label; only the model label is shown.
-  const runModel = await resolveRunModelSelection(args.db, args.runId);
+  const db = args.db;
+  const runId = args.runId;
+  const runModel = await (async () => {
+    const [row] = await db
+      .select(runModelSelectionColumns())
+      .from(agentRuns)
+      .where(runModelSelectionCondition(runId))
+      .limit(1);
+    return runModelSelectionFromRow(row);
+  })();
   const model = runModel?.selectedModel;
   const modelLabel = model
     ? getRunModelDisplayName(model, runModel?.codexServiceTier)
@@ -49,7 +62,7 @@ export function telegramMessageSendFooterText(args: {
   readonly authRunId: string | undefined;
   readonly botId: string;
 }): Computed<Promise<string | undefined>> {
-  type ModelRead = Awaited<ReturnType<typeof resolveRunModelSelection>>;
+  type ModelRead = ReturnType<typeof runModelSelectionFromRow>;
 
   return computed(async (get): Promise<string | undefined> => {
     if (!args.authRunId) {
@@ -75,26 +88,11 @@ export function telegramMessageSendFooterText(args: {
         const modelRunId = args.authRunId;
         return (async (): Promise<ModelRead> => {
           const [row] = await db
-            .select({
-              selectedModel: agentRuns.selectedModel,
-              codexServiceTier: agentRuns.codexServiceTier,
-            })
+            .select(runModelSelectionColumns())
             .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.id, modelRunId),
-                isNotNull(agentRuns.triggerSource),
-              ),
-            )
+            .where(runModelSelectionCondition(modelRunId))
             .limit(1);
-          if (!row) {
-            return undefined;
-          }
-          // A historical run's retired Ultrafast tier reads as Standard.
-          return {
-            selectedModel: row.selectedModel,
-            codexServiceTier: row.codexServiceTier === "fast" ? "fast" : null,
-          };
+          return runModelSelectionFromRow(row);
         })();
       })(),
     ]);

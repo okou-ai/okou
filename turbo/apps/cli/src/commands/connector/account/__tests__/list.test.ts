@@ -88,6 +88,42 @@ describe("okou connector account list command", () => {
     vi.unstubAllEnvs();
   });
 
+  it.each(["builtin", "custom"] as const)(
+    "preserves future %s account setup metadata in JSON",
+    async (kind) => {
+      const target =
+        kind === "builtin"
+          ? { kind, connectorSlug: "github" }
+          : { kind, customConnectorId: CUSTOM_CONNECTOR_ID };
+      const setup = {
+        setupStatus: "incomplete" as const,
+        missingRequiredFields: ["apiKey"],
+        configuredFieldKeys: [],
+      };
+      server.use(
+        stubCustomConnectors([customConnector()]),
+        stubAccounts([connectorAccount({ target, ...setup })]),
+      );
+      await listConnectorAccountsCommand.parseAsync([
+        "node",
+        "okou",
+        kind === "builtin" ? "github" : `custom:${CUSTOM_CONNECTOR_ID}`,
+        "--json",
+      ]);
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject({
+        accounts: [
+          {
+            connectionId: FIRST_CONNECTION_ID,
+            connectionStatus: "connected",
+            ...setup,
+          },
+        ],
+      });
+    },
+  );
+
   it.each([
     ["Shared Name", "Shared Name", "builtin:Shared Name", "builtin"],
     ["Shared Name", "Shared Name", "custom:Shared Name", "custom"],

@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-proto"
-version = "0.22.22"
+version = "0.22.23"
 edition.workspace = true
 description = "Vsock binary protocol for host-guest communication"
 

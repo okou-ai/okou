@@ -346,6 +346,7 @@ jobs:
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
             crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
+            .github/scripts/tests/release-r2-credential-mask-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \
             .github/scripts/tests/provision-runner-kvm-test.sh \
@@ -401,6 +402,9 @@ jobs:
 
       - name: Test owned Runner memory calibration collector
         run: python3 .github/scripts/tests/runner-memory-calibrate-test.py
+
+      - name: Test owned charged-memory window evidence
+        run: python3 -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'charged_windows_test.py'
 
       - name: Run actionlint
         run: ./actionlint

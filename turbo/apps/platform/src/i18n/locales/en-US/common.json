@@ -554,6 +554,7 @@
       },
       "kindIcon": "{{kind}} artifact",
       "loading": "Loading artifacts",
+      "loadMore": "Load more",
       "retry": "Try again"
     },
     "fileBadges": {
@@ -1822,6 +1823,7 @@
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
       },
+      "mentionHint": "Search agents or chats…",
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",

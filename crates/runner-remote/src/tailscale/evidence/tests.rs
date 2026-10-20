@@ -302,7 +302,7 @@ fn large_report(
     ] {
         access.set(stage, crate::diagnostics::trace::Progress::Passed);
     }
-    let vnc = crate::vnc::evidence::Snapshot {
+    let mut vnc = crate::vnc::evidence::Snapshot {
         route: "cloudflare_access",
         kdc_route: Some("tailscale"),
         rfb_carrier: Some(Box::new(crate::vnc::evidence::Carrier {
@@ -329,6 +329,25 @@ fn large_report(
         })),
         ..Default::default()
     };
+    for step in &mut vnc.steps {
+        use crate::diagnostics::trace::Progress as P;
+        use crate::vnc::evidence::Stage as V;
+        match step.stage {
+            V::Admission | V::Credential | V::Destination | V::Transport => {
+                step.status = P::Passed;
+                step.elapsed_ms = Some(123);
+            }
+            V::Authentication => {
+                step.status = P::Pending;
+                step.elapsed_ms = Some(10_000);
+            }
+            V::KdcTransport => {
+                step.status = P::Pending;
+                step.elapsed_ms = Some(9000);
+            }
+            _ => {}
+        }
+    }
     let report = handle
         .record(Record {
             effects: None,
@@ -389,6 +408,16 @@ fn active_checks_retain_near_limit_detail_for_both_protocols_in_the_final_budget
             "Detail omitted",
         ] {
             assert!(text.contains(fact), "{protocol:?}: lost {fact} in {text}");
+        }
+        if protocol == Protocol::Vnc {
+            for fact in [
+                "VNC authentication: pending.\n  Elapsed: 10000 ms.",
+                "VNC kdc transport: pending.\n  Elapsed: 9000 ms.",
+                "VNC initialization: not reached.",
+                "Noncritical VNC stages and timing may be omitted.",
+            ] {
+                assert!(text.contains(fact), "lost {fact} in {text}");
+            }
         }
     }
 }

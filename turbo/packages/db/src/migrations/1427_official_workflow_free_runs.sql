@@ -1,0 +1,2 @@
+ALTER TABLE "billing_run_attribution" ADD COLUMN "credit_charge_policy" text DEFAULT 'standard' NOT NULL;--> statement-breakpoint
+ALTER TABLE "billing_run_attribution" ADD CONSTRAINT "billing_run_attribution_credit_policy_check" CHECK ("billing_run_attribution"."credit_charge_policy" IN ('standard', 'official_workflow_free'));

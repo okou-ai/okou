@@ -569,6 +569,7 @@
       },
       "kindIcon": "Artéfact {{kind}}",
       "loading": "Chargement des artéfacts",
+      "loadMore": "Charger plus",
       "retry": "Réessayer"
     },
     "fileBadges": {
@@ -1851,6 +1852,7 @@
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
+      "mentionHint": "Rechercher des agents ou des discussions…",
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",

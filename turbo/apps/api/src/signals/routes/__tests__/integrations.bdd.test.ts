@@ -4214,7 +4214,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    const { teamId } = await integrations.installSlackWorkspace(actor);
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      isolatePg: true,
+    });
     const slackUserId = uniqueSlackUserId();
     integrations.clearSlackCallHistory();
 
@@ -4336,6 +4338,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const bareSlackUserId = uniqueSlackUserId();
     const bareInstall = await integrations.installSlackWorkspace(bare, {
       installerSlackUserId: bareSlackUserId,
+      isolatePg: true,
     });
     integrations.clearSlackCallHistory();
     await integrations.postSlackEvent(bareInstall.teamId, {
@@ -4381,6 +4384,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.configureSlackAppMocks();
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Default Agent",
+      isolatePg: true,
     });
     const status = await bdd.readOnboardingStatus(actor);
     const defaultAgentId = status.defaultAgentId;
@@ -4515,6 +4519,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
+    await bdd.readMe(actor, { isolatePg: true });
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();

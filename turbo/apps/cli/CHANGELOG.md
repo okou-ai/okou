@@ -1,5 +1,33 @@
 # Changelog
 
+## [9.404.0](https://github.com/okou-ai/okou/compare/cli-v9.403.0...cli-v9.404.0) (2026-10-19)
+
+
+### Features
+
+* **remote:** retrieve active-check receipts without replay ([#41486](https://github.com/okou-ai/okou/issues/41486)) ([3b33c59](https://github.com/okou-ai/okou/commit/3b33c594658cd1639c943cb3cf0c5446ab82389f))
+
+
+### Bug Fixes
+
+* **cli:** unify member connector account status ([#41432](https://github.com/okou-ai/okou/issues/41432)) ([6763f33](https://github.com/okou-ai/okou/commit/6763f338f260bbb6f95f38ac3965b27c82002cb2))
+* **remote:** distinguish diagnostic authority lookup failures ([#41488](https://github.com/okou-ai/okou/issues/41488)) ([fbfa1bc](https://github.com/okou-ai/okou/commit/fbfa1bcf6e20cd36be763c3e1119b27bf22194c6))
+* **remote:** prefer exact attempts in ssh and vnc diagnostic guidance ([#41479](https://github.com/okou-ai/okou/issues/41479)) ([81b763d](https://github.com/okou-ai/okou/commit/81b763de04dd2b1d9b34b15007fa147bd254f221))
+
+
+### Refactoring
+
+* prepare connector account status readers ([#41472](https://github.com/okou-ai/okou/issues/41472)) ([3af754b](https://github.com/okou-ai/okou/commit/3af754bd4086b0c8fbf7bcf7e1633b1eed1e3947))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.577.0
+    * @okouai/core bumped to 8.771.0
+    * @okouai/pi-agent-runtime bumped to 1.50.27
+
 ## [9.403.0](https://github.com/okou-ai/okou/compare/cli-v9.402.1...cli-v9.403.0) (2026-10-19)
 
 

@@ -296,6 +296,7 @@ async function uploadFile(args: {
   readonly contentType: string;
   readonly sizeBytes?: number;
   readonly fileId?: string;
+  readonly threadId?: string;
   readonly objectStorage?: ReturnType<
     typeof chatCallbacks.acceptChatObjectStorage
   >;
@@ -307,6 +308,7 @@ async function uploadFile(args: {
   const run = await sendChatRun(args.owner.actor, {
     agentId: args.owner.agentId,
     prompt: args.prompt,
+    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
   const { claim, sandboxHeaders } = await claimChatRun(
     args.owner.runnerGroup,
@@ -405,6 +407,7 @@ describe("GET /api/artifacts/catalog", () => {
         id: expect.any(String),
         kind: "file",
         title: "quarterly-report.txt",
+        sourceUrl: uploaded.url,
         thumbnail: null,
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
@@ -475,6 +478,16 @@ describe("GET /api/artifacts/catalog", () => {
       chatThreadId: first.threadId,
     });
     expect(outsiderCatalog.artifacts).toStrictEqual([]);
+    // Check each ownership dimension independently, not only a caller whose
+    // user and organization both differ.
+    for (const caller of [
+      bdd.user({ orgId: owner.actor.orgId }),
+      bdd.user({ userId: owner.actor.userId }),
+    ]) {
+      await expect(
+        chat.listArtifactCatalog(caller, { chatThreadId: first.threadId }),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    }
   });
 
   it("catalogues an artifact upload but never a chat attachment", async () => {
@@ -697,18 +710,27 @@ describe("GET /api/artifacts/catalog", () => {
     180_000,
   );
 
-  it("keeps one catalog entry for a redeployed hosted site", async () => {
+  it("keeps original thread ownership and current projection across redeploy and thread deletion", async () => {
     const owner = await catalogActor(
       "Artifact catalog hosted owner",
       bdd.user(),
     );
     const site = `catalog-site-${randomUUID().slice(0, 8)}`;
     const hosted = await publishHostedSite({ owner, site });
+    const initialCatalog = await chat.listArtifactCatalog(owner.actor, {
+      chatThreadId: hosted.threadId,
+    });
+    const initialArtifact = initialCatalog.artifacts[0];
+    if (!initialArtifact) {
+      throw new Error(
+        "Expected the original thread to own the hosted artifact",
+      );
+    }
     const second = await publishHostedSite({
       owner,
       site,
-      threadId: hosted.threadId,
     });
+    expect(second.threadId).not.toBe(hosted.threadId);
     // Redeploying keeps one site; each publication stays its own artifact.
     expect(second.siteId).toBe(hosted.siteId);
     expect(second.publicSlug).toBe(site);
@@ -731,6 +753,7 @@ describe("GET /api/artifacts/catalog", () => {
     if (detail.kind !== "hosted-site") {
       throw new Error("Expected a hosted site to be catalogued as hosted-site");
     }
+    expect(entry.id).toBe(initialArtifact.id);
     // The entry follows the site's newest publication.
     expect(detail.site).toMatchObject({
       id: hosted.siteId,
@@ -739,6 +762,72 @@ describe("GET /api/artifacts/catalog", () => {
       entrypoint: "/index.html",
       spaFallback: false,
     });
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { chatThreadId: hosted.threadId }),
+    ).resolves.toStrictEqual(catalog);
+    // The latest projection belongs to the second run, but the logical
+    // artifact must not follow that file into the second thread.
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+
+    await chat.deleteThread(owner.actor, hosted.threadId);
+
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { chatThreadId: hosted.threadId }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
+      catalog,
+    );
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, entry.id),
+    ).resolves.toStrictEqual(detail);
+
+    // A real later publication must not reattach the artifact after deletion
+    // cleared its original thread, even when the projection stays in B.
+    const third = await publishHostedSite({
+      owner,
+      site,
+      threadId: second.threadId,
+    });
+    expect(third.threadId).toBe(second.threadId);
+    expect(third.siteId).toBe(hosted.siteId);
+    expect(third.deploymentId).not.toBe(second.deploymentId);
+    expect(third.deploymentVersion).toBe(3);
+
+    const republishedCatalog = await chat.listArtifactCatalog(owner.actor);
+    expect(republishedCatalog.nextCursor).toBeNull();
+    expect(republishedCatalog.artifacts).toStrictEqual([
+      expect.objectContaining({
+        id: initialArtifact.id,
+        kind: "hosted-site",
+        title: site,
+      }),
+    ]);
+    const republishedDetail = await chat.getArtifactCatalogEntry(
+      owner.actor,
+      entry.id,
+    );
+    if (republishedDetail.kind !== "hosted-site") {
+      throw new Error(
+        "Expected the republished artifact to remain hosted-site",
+      );
+    }
+    expect(republishedDetail.site).toMatchObject({
+      id: hosted.siteId,
+      slug: site,
+      deploymentVersion: 3,
+      entrypoint: "/index.html",
+      spaFallback: false,
+    });
+    for (const threadId of [hosted.threadId, second.threadId]) {
+      await expect(
+        chat.listArtifactCatalog(owner.actor, { chatThreadId: threadId }),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    }
   }, 180_000);
 
   it("queries and republishes one hosted site across chats and Clerk sessions", async () => {
@@ -955,6 +1044,11 @@ describe("GET /api/artifacts/catalog", () => {
     const sites = await chat.listArtifactCatalog(owner.actor, {
       kind: "hosted-site",
     });
+    for (const kind of ["avatar", "video", "shared-thread"] as const) {
+      await expect(
+        chat.listArtifactCatalog(owner.actor, { kind }),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    }
 
     expect(
       files.artifacts.map((artifact) => {
@@ -1003,18 +1097,30 @@ describe("GET /api/artifacts/catalog", () => {
     ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
   }, 180_000);
 
-  it("walks the whole catalog through the cursor without repeats or gaps", async () => {
+  it("paginates a thread and kind filtered catalog without repeats or foreign-thread entries", async () => {
     const owner = await catalogActor("Artifact catalog paging owner");
     const created: string[] = [];
+    let threadId: string | undefined;
     for (const label of ["one", "two", "three"]) {
       const uploaded = await uploadFile({
         owner,
         prompt: `upload ${label}`,
         filename: `page-${label}.txt`,
         contentType: "text/plain",
+        threadId,
       });
+      threadId = uploaded.threadId;
       created.push(uploaded.fileId);
     }
+    if (!threadId) {
+      throw new Error("Expected a thread for paginated artifacts");
+    }
+    await uploadFile({
+      owner,
+      prompt: "Publish outside the paginated thread",
+      filename: "page-other-thread.txt",
+      contentType: "text/plain",
+    });
 
     const collected: string[] = [];
     let cursor: string | undefined;
@@ -1023,6 +1129,8 @@ describe("GET /api/artifacts/catalog", () => {
       const page = await chat.listArtifactCatalog(owner.actor, {
         limit: 1,
         cursor,
+        chatThreadId: threadId,
+        kind: "file",
       });
       expect(page.artifacts.length).toBeLessThanOrEqual(1);
       collected.push(
@@ -1043,13 +1151,16 @@ describe("GET /api/artifacts/catalog", () => {
     expect(new Set(collected).size).toBe(created.length);
   }, 180_000);
 
-  it("keeps a Runner-uploaded artifact under the owning Okou user", async () => {
+  it("keeps a Runner output associated with its owning prompt when the run is interrupted", async () => {
     const owner = await catalogActor("Artifact catalog workflow owner");
     const run = await sendChatRun(owner.actor, {
       agentId: owner.agentId,
       prompt: "Upload an artifact through the Runner protocol",
     });
-    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
+    const { claim, sandboxHeaders } = await claimChatRun(
+      owner.runnerGroup,
+      run.runId,
+    );
     const fileId = randomUUID();
     stageUploadObject(
       `artifacts/${owner.actor.userId}/${fileId}/workflow-output.txt`,
@@ -1061,14 +1172,57 @@ describe("GET /api/artifacts/catalog", () => {
       [200],
     );
 
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-
+    const interruptId = randomUUID();
+    await chat.requestSendEvent(
+      owner.actor,
+      {
+        agentId: owner.agentId,
+        threadId: run.threadId,
+        interruptsRunId: run.runId,
+        clientEventId: interruptId,
+      },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    await webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 1 },
+      sandboxHeaders,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(owner.actor, run.threadId);
+    expect(events).toContainEqual(
+      expect.objectContaining({ eventType: "input.prompt", runId: run.runId }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        id: interruptId,
+        eventType: "control.interrupt",
+        interruptsRunId: run.runId,
+      }),
+    );
+    const threadArtifacts = await chat.listThreadArtifacts(
+      owner.actor,
+      run.threadId,
+    );
+    expect(threadArtifacts.runs).toStrictEqual([
+      {
+        runId: run.runId,
+        files: [expect.objectContaining({ filename: "workflow-output.txt" })],
+      },
+    ]);
+    const catalog = await chat.listArtifactCatalog(owner.actor, {
+      chatThreadId: run.threadId,
+    });
     expect(catalog.artifacts).toStrictEqual([
       expect.objectContaining({
         kind: "file",
         title: "workflow-output.txt",
       }),
     ]);
+    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
+      catalog,
+    );
   }, 180_000);
 
   it("hides an artifact owned by another caller behind a 404", async () => {
@@ -1269,6 +1423,47 @@ describe("shared thread routes", () => {
     }
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
     expect(detail.kind).toBe("shared-thread");
+    // Neither selected message contains a file. The source-thread association
+    // must exist independently of uploaded-file projections.
+    const firstPage = await chat.listArtifactCatalog(owner.actor, {
+      kind: "shared-thread",
+      chatThreadId: run.threadId,
+      limit: 1,
+    });
+    expect(firstPage.artifacts).toHaveLength(1);
+    if (!firstPage.nextCursor) {
+      throw new Error("Expected a second shared-thread artifact page");
+    }
+    const secondPage = await chat.listArtifactCatalog(owner.actor, {
+      kind: "shared-thread",
+      chatThreadId: run.threadId,
+      limit: 1,
+      cursor: firstPage.nextCursor,
+    });
+    expect(secondPage.artifacts).toHaveLength(1);
+    expect(secondPage.nextCursor).toBeNull();
+    expect([...firstPage.artifacts, ...secondPage.artifacts]).toStrictEqual(
+      catalog.artifacts,
+    );
+    for (const query of [
+      { kind: "file" as const, chatThreadId: run.threadId },
+      { kind: "shared-thread" as const, chatThreadId: otherRun.threadId },
+    ]) {
+      await expect(
+        chat.listArtifactCatalog(owner.actor, query),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    }
+    for (const caller of [
+      bdd.user({ orgId: owner.actor.orgId }),
+      bdd.user({ userId: owner.actor.userId }),
+    ]) {
+      await expect(
+        chat.listArtifactCatalog(caller, {
+          kind: "shared-thread",
+          chatThreadId: run.threadId,
+        }),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    }
 
     const directCatalogResponse = await sharedThreadTestApp().request(
       "/api/artifacts/catalog",
@@ -1292,6 +1487,18 @@ describe("shared thread routes", () => {
     await chat.deleteThread(owner.actor, run.threadId);
     const afterSourceDeletion = await readSharedThreadSnapshot(first.id);
     expect(afterSourceDeletion.body).toStrictEqual(publicSnapshot.body);
+    await expect(
+      chat.listArtifactCatalog(owner.actor, {
+        kind: "shared-thread",
+        chatThreadId: run.threadId,
+      }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { kind: "shared-thread" }),
+    ).resolves.toStrictEqual(catalog);
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.toStrictEqual(detail);
 
     webhooks.configureClerkWebhookSecret();
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
