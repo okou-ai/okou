@@ -680,11 +680,27 @@ const resolveSlackAgentRouteAdmission$ = command(
     if (!installation || !orgId) {
       return { kind: "ignored" };
     }
-    const connection = await connectionForSlackUser(
-      args.db,
-      args.workspaceId,
-      args.slackUserId,
-    );
+    const connectionLookupDb = args.db;
+    const connectionLookupWorkspaceId = args.workspaceId;
+    const connectionLookupSlackUserId = args.slackUserId;
+    const connection = await (async (): Promise<
+      SlackConnection | undefined
+    > => {
+      const [connection] = await connectionLookupDb
+        .select()
+        .from(slackOrgConnections)
+        .where(
+          and(
+            eq(slackOrgConnections.slackUserId, connectionLookupSlackUserId),
+            eq(
+              slackOrgConnections.slackWorkspaceId,
+              connectionLookupWorkspaceId,
+            ),
+          ),
+        )
+        .limit(1);
+      return connection;
+    })();
     signal.throwIfAborted();
     if (!connection) {
       if (!args.isRetry) {
@@ -764,11 +780,27 @@ const refreshOrgAppHome$ = command(
     slackUserId: string,
   ): Promise<void> => {
     const workspaceId = installation.slackWorkspaceId;
-    const connection = await connectionForSlackUser(
-      db,
-      workspaceId,
-      slackUserId,
-    );
+    const connectionLookupDb = db;
+    const connectionLookupWorkspaceId = workspaceId;
+    const connectionLookupSlackUserId = slackUserId;
+    const connection = await (async (): Promise<
+      SlackConnection | undefined
+    > => {
+      const [connection] = await connectionLookupDb
+        .select()
+        .from(slackOrgConnections)
+        .where(
+          and(
+            eq(slackOrgConnections.slackUserId, connectionLookupSlackUserId),
+            eq(
+              slackOrgConnections.slackWorkspaceId,
+              connectionLookupWorkspaceId,
+            ),
+          ),
+        )
+        .limit(1);
+      return connection;
+    })();
     const botToken = await get(
       decryptSlackBotToken({
         installation,
@@ -1433,11 +1465,27 @@ export const handleSlackEvents$ = command(
 
 const handleHomeDisconnect$ = command(
   async ({ set }, db: Db, payload: SlackInteractivePayload): Promise<void> => {
-    const connection = await connectionForSlackUser(
-      db,
-      payload.team.id,
-      payload.user.id,
-    );
+    const connectionLookupDb = db;
+    const connectionLookupWorkspaceId = payload.team.id;
+    const connectionLookupSlackUserId = payload.user.id;
+    const connection = await (async (): Promise<
+      SlackConnection | undefined
+    > => {
+      const [connection] = await connectionLookupDb
+        .select()
+        .from(slackOrgConnections)
+        .where(
+          and(
+            eq(slackOrgConnections.slackUserId, connectionLookupSlackUserId),
+            eq(
+              slackOrgConnections.slackWorkspaceId,
+              connectionLookupWorkspaceId,
+            ),
+          ),
+        )
+        .limit(1);
+      return connection;
+    })();
     if (!connection) {
       return;
     }
