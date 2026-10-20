@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { ChevronDown, MessageCircle } from "lucide-react";
 import type { OrgMember } from "@okouai/api-contracts/contracts/org-members";
 import type {
@@ -379,7 +380,7 @@ function UsageRecordSummary({
 
 function UsageRecordList({ data }: { data: UsageRecordResponse }) {
   const { t } = useTranslation();
-  const loadMore = useSet(loadMoreUsageRecord$);
+  const [paging, loadMore] = useLoadableSet(loadMoreUsageRecord$);
   const pageSignal = useGet(pageSignal$);
   const maxCredits = Math.max(
     1,
@@ -408,6 +409,7 @@ function UsageRecordList({ data }: { data: UsageRecordResponse }) {
           <Button
             type="button"
             variant="ghost"
+            disabled={paging.state === "loading"}
             size="sm"
             className="h-9 rounded-lg text-muted-foreground hover:bg-state-hover hover:text-foreground"
             onClick={() => {

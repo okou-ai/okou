@@ -41,7 +41,7 @@ import {
   type DraftSignals,
 } from "../okou-page/chat-draft.ts";
 import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { onRejection, resetSignal, settle } from "../utils.ts";
+import { resetSignal, settle } from "../utils.ts";
 import {
   chatEventDebugSummaries,
   chatEventTraceTime,
@@ -526,7 +526,6 @@ function createComputerUseHostSelection(
         kind: "set";
         computerUseHostId: string | null;
         cloudBrowserEnabled: boolean;
-        dirty: boolean;
       }
   >({ kind: "unset" });
 
@@ -548,7 +547,7 @@ function createComputerUseHostSelection(
 
   const computerUseHostIdExplicit$ = computed((get): boolean => {
     const user = get(internalUserOverride$);
-    return user.kind === "set" && user.dirty;
+    return user.kind === "set";
   });
 
   const setComputerAccess$ = command(
@@ -560,11 +559,12 @@ function createComputerUseHostSelection(
       },
       signal: AbortSignal,
     ) => {
-      set(internalUserOverride$, {
-        kind: "set",
+      signal.throwIfAborted();
+      const draft = {
+        kind: "set" as const,
         ...selection,
-        dirty: true,
-      });
+      };
+      set(internalUserOverride$, draft);
       if (get(optimisticCreateUnsettled$)) {
         L.debug(
           "setComputerUseHostId$ optimistic thread create unsettled, skip",
@@ -573,26 +573,15 @@ function createComputerUseHostSelection(
         return;
       }
 
-      await onRejection(
-        set(
-          patchChatThreadComputerUseHost$,
-          { threadId, ...selection },
-          signal,
-        ),
-        () => {
-          if (!signal.aborted) {
-            set(internalUserOverride$, {
-              kind: "set",
-              ...selection,
-              dirty: false,
-            });
-          }
-        },
+      await set(
+        patchChatThreadComputerUseHost$,
+        { threadId, ...selection },
+        signal,
       );
       signal.throwIfAborted();
-      set(internalUserOverride$, {
-        kind: "unset",
-      });
+      if (get(internalUserOverride$) === draft) {
+        set(internalUserOverride$, { kind: "unset" });
+      }
     },
   );
 
@@ -632,7 +621,7 @@ function createComputerUseHostSelection(
 
   const clearComputerUseHostIdOverride$ = command(({ get, set }) => {
     const user = get(internalUserOverride$);
-    if (user.kind === "set" && user.dirty) {
+    if (user.kind === "set") {
       set(internalUserOverride$, { kind: "unset" });
     }
   });

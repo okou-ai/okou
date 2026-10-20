@@ -1,7 +1,8 @@
 import {
   bestEffort,
   createDeferredPromise,
-  onRejection,
+  detach,
+  Reason,
   withCleanup,
 } from "../utils";
 
@@ -83,13 +84,12 @@ registerProcessor(
 `;
 
 interface VoiceDraftPcmCapture {
-  readonly cancel: () => void;
+  readonly completed: Promise<void>;
   readonly finish: (signal: AbortSignal) => Promise<void>;
 }
 
 export interface VoiceDraftPcmPersistence {
   readonly append: (samples: Float32Array, sequence: number) => Promise<void>;
-  readonly fail: (error: unknown) => void;
 }
 
 function writeAscii(bytes: Uint8Array, offset: number, value: string): void {
@@ -188,52 +188,21 @@ export function decodeVoiceDraftPcmWav(
   return samples;
 }
 
-function disconnectCaptureGraph(
-  source: MediaStreamAudioSourceNode,
-  worklet: AudioWorkletNode,
-): void {
-  source.disconnect(worklet);
-}
-
-function createVoiceDraftSampleWriter(
+async function persistVoiceDraftSamples(
+  samples: ReadableStream<Float32Array>,
   persistence: VoiceDraftPcmPersistence,
   signal: AbortSignal,
-) {
+): Promise<void> {
+  const reader = samples.getReader();
   let sequence = 0;
-  let pendingWrite = Promise.allSettled([Promise.resolve()]);
-  let writeFailed = false;
-  return {
-    append(batch: Float32Array): void {
-      const previous = pendingWrite;
-      const chunkSequence = sequence++;
-      pendingWrite = Promise.allSettled([
-        (async () => {
-          const [written] = await previous;
-          if (written?.status === "rejected") {
-            throw written.reason;
-          }
-          signal.throwIfAborted();
-          await onRejection(
-            persistence.append(batch, chunkSequence),
-            (error) => {
-              signal.throwIfAborted();
-              if (!writeFailed) {
-                writeFailed = true;
-                persistence.fail(error);
-              }
-            },
-          );
-        })(),
-      ]);
-    },
-    async finish(): Promise<void> {
-      const [written] = await pendingWrite;
-      if (written?.status === "rejected") {
-        throw written.reason;
-      }
-      signal.throwIfAborted();
-    },
-  };
+  while (true) {
+    const next = await reader.read();
+    signal.throwIfAborted();
+    if (next.done) {
+      return;
+    }
+    await persistence.append(next.value, sequence++);
+  }
 }
 
 export async function startVoiceDraftPcmCapture(
@@ -245,109 +214,95 @@ export async function startVoiceDraftPcmCapture(
   const audioContext = new AudioContext({
     sampleRate: VOICE_DRAFT_PCM_SAMPLE_RATE,
   });
-  let closePromise: Promise<void> | undefined;
-
-  const closeAudioContext = (): Promise<void> => {
-    closePromise ??= bestEffort(audioContext.close());
-    return closePromise;
-  };
-
-  return await onRejection(
-    (async (): Promise<VoiceDraftPcmCapture> => {
-      const moduleUrl = URL.createObjectURL(
-        new Blob([PCM_WORKLET_SOURCE], { type: "text/javascript" }),
+  signal.addEventListener(
+    "abort",
+    () => {
+      detach(
+        bestEffort(audioContext.close()),
+        Reason.DomCallback,
+        "close voice draft audio context",
       );
-      await withCleanup(
-        (async () => {
-          await audioContext.audioWorklet.addModule(moduleUrl);
-        })(),
+    },
+    { once: true },
+  );
+  const moduleUrl = URL.createObjectURL(
+    new Blob([PCM_WORKLET_SOURCE], { type: "text/javascript" }),
+  );
+  await withCleanup(audioContext.audioWorklet.addModule(moduleUrl), () => {
+    URL.revokeObjectURL(moduleUrl);
+  });
+  signal.throwIfAborted();
+
+  await audioContext.resume();
+  signal.throwIfAborted();
+  const source = audioContext.createMediaStreamSource(stream);
+  signal.addEventListener(
+    "abort",
+    () => {
+      source.disconnect();
+    },
+    { once: true },
+  );
+  const worklet = new AudioWorkletNode(
+    audioContext,
+    PCM_WORKLET_PROCESSOR_NAME,
+    {
+      numberOfInputs: 1,
+      numberOfOutputs: 0,
+      channelCount: 1,
+      channelCountMode: "explicit",
+    },
+  );
+  signal.addEventListener(
+    "abort",
+    () => {
+      worklet.port.close();
+    },
+    { once: true },
+  );
+  const firstBatch = createDeferredPromise<void>(signal);
+  const samples = new ReadableStream<Float32Array>({
+    start(controller) {
+      signal.addEventListener(
+        "abort",
         () => {
-          URL.revokeObjectURL(moduleUrl);
+          controller.error(signal.reason);
         },
+        { once: true },
       );
-      signal.throwIfAborted();
-
-      await audioContext.resume();
-      signal.throwIfAborted();
-      const source = audioContext.createMediaStreamSource(stream);
-      const worklet = new AudioWorkletNode(
-        audioContext,
-        PCM_WORKLET_PROCESSOR_NAME,
-        {
-          numberOfInputs: 1,
-          numberOfOutputs: 0,
-          channelCount: 1,
-          channelCountMode: "explicit",
-        },
-      );
-      const finished = createDeferredPromise<void>(signal);
-      const firstBatch = createDeferredPromise<void>(signal);
-      const samples = createVoiceDraftSampleWriter(persistence, signal);
-      let stopped = false;
       worklet.port.addEventListener(
         "message",
         (event: MessageEvent<unknown>) => {
           if (event.data instanceof ArrayBuffer) {
             const batch = new Float32Array(event.data);
-            if (batch.length > 0 && !signal.aborted) {
-              samples.append(batch);
+            if (batch.length > 0) {
+              controller.enqueue(batch);
               if (!firstBatch.settled()) {
                 firstBatch.resolve();
               }
             }
-          } else if (event.data === "done" && !finished.settled()) {
-            finished.resolve();
+          } else if (event.data === "done") {
+            controller.close();
           }
         },
+        { signal },
       );
-      worklet.port.start();
-
-      const capture: VoiceDraftPcmCapture = {
-        cancel(): void {
-          if (stopped) {
-            return;
-          }
-          stopped = true;
-          worklet.port.postMessage("stop");
-          disconnectCaptureGraph(source, worklet);
-          worklet.port.close();
-          closePromise = closeAudioContext();
-        },
-        async finish(finishSignal: AbortSignal): Promise<void> {
-          if (stopped) {
-            throw new Error("Voice draft PCM capture has already stopped");
-          }
-          stopped = true;
-          return await withCleanup(
-            (async () => {
-              worklet.port.postMessage("stop");
-              await finished.promise;
-              finishSignal.throwIfAborted();
-              return await samples.finish();
-            })(),
-            async () => {
-              disconnectCaptureGraph(source, worklet);
-              worklet.port.close();
-              await closeAudioContext();
-            },
-          );
-        },
-      };
-      signal.addEventListener("abort", capture.cancel, { once: true });
-      return await onRejection(
-        (async () => {
-          source.connect(worklet);
-          // Connected nodes do not prove the microphone is supplying samples.
-          // Keep every batch in the normal write queue, including startup silence.
-          await firstBatch.promise;
-          signal.throwIfAborted();
-          return capture;
-        })(),
-        capture.cancel,
-      );
-    })(),
-    async () => {
-      await closeAudioContext();
     },
-  );
+  });
+  worklet.port.start();
+  source.connect(worklet);
+  const completed = persistVoiceDraftSamples(samples, persistence, signal);
+  // Capture readiness and persistence share one session. A failed write
+  // rejects this session immediately, including before the first batch.
+  await Promise.race([firstBatch.promise, completed]);
+  signal.throwIfAborted();
+  return {
+    completed,
+    async finish(finishSignal: AbortSignal): Promise<void> {
+      signal.throwIfAborted();
+      worklet.port.postMessage("stop");
+      await completed;
+      finishSignal.throwIfAborted();
+    },
+  };
 }
