@@ -10,6 +10,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { now } from "../../../lib/time.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
@@ -17,6 +18,8 @@ const ID = "10000000-0000-4000-8000-000000000001";
 const THREAD_ID = "20000000-0000-4000-8000-000000000001";
 const PATH = `/computer-use/shell/authorize/${ID}`;
 const URL = `https://app.okou.ai${PATH}`;
+const SHELL_TOPIC = "desktopShellAuthorizationChanged";
+const USER_CHANNEL = "user:test-user-123";
 
 function findButton(card: HTMLElement, name: string) {
   return queryAllByRoleFast("button", card).find((element) => {
@@ -43,7 +46,7 @@ function authorization(
     computerName: "Work Mac",
     reason: "Run the project tests",
     status: "pending",
-    requestExpiresAt: "2099-10-20T11:00:00.000Z",
+    requestExpiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
     approvedAt: null,
     grantExpiresAt: null,
     approvalBlockedReason: null,
@@ -52,7 +55,10 @@ function authorization(
   };
 }
 
-async function setupChat(content: string) {
+async function setupChat(
+  content: string,
+  sharedWorkerTestTransport?: "message-port",
+) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Shell approval",
@@ -70,6 +76,7 @@ async function setupChat(content: string) {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    sharedWorkerTestTransport,
   });
 }
 
@@ -85,8 +92,8 @@ test("A trusted link becomes a persistent card and approval only uses the explic
     approvals++;
     current = authorization({
       status: "approved",
-      approvedAt: "2099-10-20T10:00:00.000Z",
-      grantExpiresAt: "2099-10-20T11:00:00.000Z",
+      approvedAt: new Date(now()).toISOString(),
+      grantExpiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
     });
     return respond(200, current);
   });
@@ -102,13 +109,13 @@ test("A trusted link becomes a persistent card and approval only uses the explic
   expect(within(card).getByText("Work Mac")).toBeVisible();
   expect(within(card).getByText("Run the project tests")).toBeVisible();
   expect(approvals).toBe(0);
-  await click(button(card, "Allow for 1 hour"));
+  click(button(card, "Allow for 1 hour"));
   await waitFor(() => {
     return expect(button(card, "Revoke access")).toBeEnabled();
   });
   expect(screen.getByTestId("desktop-shell-authorization-card")).toBe(card);
   expect(approvals).toBe(1);
-  await click(button(card, "Revoke access"));
+  click(button(card, "Revoke access"));
   await waitFor(() => {
     return expect(within(card).getByText("Shell access revoked")).toBeVisible();
   });
@@ -126,11 +133,207 @@ test("The direct page waits for the requesting Run to end and never approves on 
     return expect(button(card, "Allow for 1 hour")).toBeDisabled();
   });
   current = authorization();
-  await click(button(card, "Refresh"));
+  click(button(card, "Refresh"));
   await waitFor(() => {
     return expect(button(card, "Allow for 1 hour")).toBeEnabled();
   });
   expect(screen.getByTestId("desktop-shell-authorization-card")).toBe(card);
+});
+
+test("Attaching realtime does not refetch a shell card, but a shell event updates its status", async () => {
+  let current = authorization();
+  const attach = context.mocks.ably.deferSubscribeOnChannel(
+    USER_CHANNEL,
+    SHELL_TOPIC,
+  );
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, current);
+  });
+  await setupChat(URL, "message-port");
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeEnabled();
+  });
+  await attach.started;
+  current = authorization({
+    status: "approved",
+    approvedAt: new Date(now()).toISOString(),
+    grantExpiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
+  });
+  attach.attach();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(USER_CHANNEL, SHELL_TOPIC),
+    ).toBeTruthy();
+  });
+  expect(button(card, "Allow for 1 hour")).toBeEnabled();
+  expect(
+    within(card).queryByText("Shell access allowed"),
+  ).not.toBeInTheDocument();
+
+  context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
+  await waitFor(() => {
+    expect(button(card, "Revoke access")).toBeEnabled();
+  });
+  expect(within(card).getByText("Shell access allowed")).toBeInTheDocument();
+
+  current = { ...current, status: "revoked" };
+  context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
+  await expect(
+    within(card).findByText("Shell access revoked"),
+  ).resolves.toBeInTheDocument();
+  expect(findButton(card, "Revoke access")).toBeUndefined();
+});
+
+test("The direct page automatically removes and restores the approval blocker on shell events", async () => {
+  let current = authorization({ approvalBlockedReason: "run_active" });
+  const attach = context.mocks.ably.deferSubscribeOnChannel(
+    USER_CHANNEL,
+    SHELL_TOPIC,
+  );
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, current);
+  });
+  await setupPage({
+    context,
+    path: PATH,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeDisabled();
+  });
+  await attach.started;
+  attach.attach();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(USER_CHANNEL, SHELL_TOPIC),
+    ).toBeTruthy();
+  });
+
+  current = authorization();
+  context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeEnabled();
+  });
+  expect(findButton(card, "Refresh")).toBeUndefined();
+
+  current = authorization({ approvalBlockedReason: "run_active" });
+  context.mocks.ably.triggerOnChannel(USER_CHANNEL, SHELL_TOPIC);
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeDisabled();
+  });
+  expect(button(card, "Refresh")).toBeEnabled();
+});
+
+test("A host change makes an unavailable authorization stop offering approval", async () => {
+  let available = true;
+  context.mocks.api(contract.get, ({ respond }) => {
+    return available
+      ? respond(200, authorization())
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Authorization unavailable" },
+        });
+  });
+  await setupChat(URL, "message-port");
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeEnabled();
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        USER_CHANNEL,
+        "computerUseHostsChanged",
+      ),
+    ).toBeTruthy();
+  });
+  available = false;
+  context.mocks.ably.triggerOnChannel(USER_CHANNEL, "computerUseHostsChanged");
+  await expect(
+    within(card).findByText("Authorization unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(findButton(card, "Allow for 1 hour")).toBeUndefined();
+});
+
+test("Refreshing a pending request rearms its deadline and expires it without an event", async () => {
+  let current = authorization({ approvalBlockedReason: "run_active" });
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, current);
+  });
+  await setupPage({ context, path: PATH, host: "app.okou.ai" });
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Refresh")).toBeEnabled();
+  });
+  current = authorization({
+    reason: "This request is about to expire",
+    requestExpiresAt: new Date(now() + 250).toISOString(),
+  });
+  click(button(card, "Refresh"));
+  await expect(
+    within(card).findByText("This request is about to expire"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    within(card).findByText("Authorization expired"),
+  ).resolves.toBeInTheDocument();
+  expect(findButton(card, "Allow for 1 hour")).toBeUndefined();
+  expect(findButton(card, "Deny")).toBeUndefined();
+});
+
+test("Approving a request arms the grant deadline and removes revoke when access expires", async () => {
+  let current = authorization();
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, current);
+  });
+  context.mocks.api(contract.approve, ({ respond }) => {
+    current = authorization({
+      status: "approved",
+      reason: "This grant is about to expire",
+      approvedAt: new Date(now()).toISOString(),
+      grantExpiresAt: new Date(now() + 250).toISOString(),
+    });
+    return respond(200, current);
+  });
+  await setupChat(URL);
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeEnabled();
+  });
+  click(button(card, "Allow for 1 hour"));
+  await waitFor(() => {
+    expect(button(card, "Revoke access")).toBeEnabled();
+  });
+  await expect(
+    within(card).findByText("Authorization expired"),
+  ).resolves.toBeInTheDocument();
+  expect(findButton(card, "Revoke access")).toBeUndefined();
+  expect(findButton(card, "Allow for 1 hour")).toBeUndefined();
+});
+
+test("A shell event rearms the deadline for an approved grant", async () => {
+  let current = authorization();
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, current);
+  });
+  await setupChat(URL);
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeEnabled();
+    expect(context.mocks.ably.hasSubscription(SHELL_TOPIC)).toBeTruthy();
+  });
+  current = authorization({
+    status: "approved",
+    approvedAt: new Date(now()).toISOString(),
+    grantExpiresAt: new Date(now() + 250).toISOString(),
+  });
+  context.mocks.ably.trigger(SHELL_TOPIC);
+  await waitFor(() => {
+    expect(button(card, "Revoke access")).toBeEnabled();
+  });
+  await expect(
+    within(card).findByText("Authorization expired"),
+  ).resolves.toBeInTheDocument();
+  expect(findButton(card, "Revoke access")).toBeUndefined();
 });
 
 test("A request for another chat stays unavailable in this transcript", async () => {

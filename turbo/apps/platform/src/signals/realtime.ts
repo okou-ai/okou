@@ -167,6 +167,7 @@ interface RealtimeSubscribeOptions {
   readonly onError?: (error: unknown) => void;
   /** Observe a continuity gap in addition to the loop's own recovery. */
   readonly onResync?: () => void;
+  /** Payload baselines run by default; false skips only the initial read. */
   readonly runOnSubscribe?: boolean;
 }
 
@@ -406,8 +407,8 @@ const runWithChannel$ = command(
 );
 
 /**
- * Read the subscription's baseline state. Runs once when the subscription goes
- * live, and again after every continuity gap Ably could not replay. Resolves
+ * Read the subscription's baseline state. Runs when the subscription goes live
+ * unless opted out, and after every continuity gap Ably could not replay. Resolves
  * true when the subscription is finished and its loop should stop.
  */
 const runSubscriptionBaseline$ = command(
@@ -548,6 +549,7 @@ const runWithChannelPayload$ = command(
         run: async () => {
           options?.onSubscribed?.();
           if (
+            options?.runOnSubscribe !== false &&
             initializeCommand$ &&
             (await set(runSubscriptionBaseline$, initializeCommand$, signal))
           ) {

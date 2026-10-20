@@ -118,15 +118,20 @@ function createWalletConnectSignals(
     set(callbackFailed$, false);
     await withCleanup(
       (async () => {
-        await set(
-          waitAblyPayloadLoopUntil$,
-          {
-            topic: "wallet:changed",
-            loopCommand$: onWalletChanged$,
-            initializeCommand$: refreshCompletion$,
-          },
-          signal,
-        );
+        const initialStatus = await get(status$);
+        signal.throwIfAborted();
+        if (initialStatus.status === "pending") {
+          await set(
+            waitAblyPayloadLoopUntil$,
+            {
+              topic: "wallet:changed",
+              loopCommand$: onWalletChanged$,
+              initializeCommand$: refreshCompletion$,
+              options: { runOnSubscribe: false },
+            },
+            signal,
+          );
+        }
         const status = await get(status$);
         signal.throwIfAborted();
         if (status.status !== "authorized") {
@@ -225,6 +230,7 @@ function createWalletApprovalSignals(
             topic: "wallet:changed",
             loopCommand$: changed$,
             initializeCommand$: refresh$,
+            options: { runOnSubscribe: false },
           },
           signal,
         );

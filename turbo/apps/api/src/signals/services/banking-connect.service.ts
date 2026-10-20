@@ -32,6 +32,7 @@ import {
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { safeJsonParse } from "../utils";
 import {
   fetchFinicityJson,
@@ -311,6 +312,7 @@ const replacePendingConnectSession$ = command(
         "The banking connection changed while the request was starting",
       );
     }
+    await publishUserSignal([args.owner.userId], "bankingAccessChanged");
     return result.session;
   },
 );
@@ -396,6 +398,8 @@ export const startBankingConnectSession$ = command(
         .set({ status: "failed", completedAt: nowDate(), updatedAt: nowDate() })
         .where(eq(bankingConnectSessions.id, session.id));
       signal.throwIfAborted();
+      await publishUserSignal([args.owner.userId], "bankingAccessChanged");
+      signal.throwIfAborted();
       return providerBody;
     }
     const providerResult = await fetchFinicityJson(
@@ -412,6 +416,8 @@ export const startBankingConnectSession$ = command(
         .set({ status: "failed", completedAt: nowDate(), updatedAt: nowDate() })
         .where(eq(bankingConnectSessions.id, session.id));
       signal.throwIfAborted();
+      await publishUserSignal([args.owner.userId], "bankingAccessChanged");
+      signal.throwIfAborted();
       return providerResponseError(providerResult);
     }
     const url = finicityConnectUrl(providerResult);
@@ -420,6 +426,8 @@ export const startBankingConnectSession$ = command(
         .update(bankingConnectSessions)
         .set({ status: "failed", completedAt: nowDate(), updatedAt: nowDate() })
         .where(eq(bankingConnectSessions.id, session.id));
+      signal.throwIfAborted();
+      await publishUserSignal([args.owner.userId], "bankingAccessChanged");
       signal.throwIfAborted();
       return userError(
         502,
@@ -525,6 +533,7 @@ export const saveBankingAgentGrant$ = command(
         },
       });
 
+    await publishUserSignal([args.owner.userId], "bankingAccessChanged");
     const status = await set(
       bankingManagementStatusBody$,
       args.owner,
@@ -544,7 +553,7 @@ export const revokeBankingAgentGrant$ = command(
     const db = set(writeDb$);
     const connection = await set(findBankingConnection$, args.owner);
     if (connection) {
-      await db
+      const revoked = await db
         .update(bankingAgentEnablements)
         .set({ revokedAt: nowDate(), updatedAt: nowDate() })
         .where(
@@ -555,7 +564,11 @@ export const revokeBankingAgentGrant$ = command(
             eq(bankingAgentEnablements.connectionId, connection.id),
             isNull(bankingAgentEnablements.revokedAt),
           ),
-        );
+        )
+        .returning({ id: bankingAgentEnablements.id });
+      if (revoked.length > 0) {
+        await publishUserSignal([args.owner.userId], "bankingAccessChanged");
+      }
     }
     const status = await set(
       bankingManagementStatusBody$,
@@ -970,6 +983,9 @@ export const handleFinicityWebhook$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (eventType === "added" || eventType === "done") {
+      await publishUserSignal([row.session.userId], "bankingAccessChanged");
+    }
 
     return { kind: "ok" };
   },

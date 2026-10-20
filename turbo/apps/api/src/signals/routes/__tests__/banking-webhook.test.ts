@@ -11,6 +11,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -122,7 +123,14 @@ async function pendingConnect(isolatePg = false) {
       },
     };
   };
-  return { client, agentId: agent.agentId, accountsUrl, status, event };
+  return {
+    client,
+    agentId: agent.agentId,
+    userId: actor.userId,
+    accountsUrl,
+    status,
+    event,
+  };
 }
 
 async function postWebhook(body: Record<string, unknown>) {
@@ -148,6 +156,118 @@ beforeEach(() => {
 });
 
 describe("Finicity webhook outcomes", () => {
+  it("notifies only the owner after connect, signed webhook updates, and grant changes", async () => {
+    const fixture = await pendingConnect();
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    const expectNotification = async () => {
+      await flushWaitUntilForTest();
+      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+        ["bankingAccessChanged", null],
+      ]);
+      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+        [`user:${fixture.userId}`],
+      ]);
+      context.mocks.ably.publish.mockClear();
+      context.mocks.ably.channelGet.mockClear();
+    };
+
+    const session = await accept(
+      fixture.client.createConnectSession({
+        headers,
+        body: { agentId: fixture.agentId, mode: "connect" },
+      }),
+      [200],
+    );
+    await expectNotification();
+    expect((await fixture.status()).body.session).toMatchObject({
+      id: session.body.sessionId,
+      status: "pending",
+    });
+
+    const added = fixture.event("added", session.body.sessionId);
+    expect((await postWebhook(added)).status).toBe(200);
+    await expectNotification();
+    const connected = await fixture.status();
+    expect(connected.body.connection?.accounts).toHaveLength(1);
+    const accountId = connected.body.connection?.accounts[0]?.id;
+    if (!accountId) {
+      throw new Error("Expected a publicly connected account");
+    }
+    const done = fixture.event("done", session.body.sessionId);
+    expect((await postWebhook(done)).status).toBe(200);
+    await expectNotification();
+    expect((await fixture.status()).body.session?.status).toBe("completed");
+    expect((await postWebhook(done)).status).toBe(200);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+
+    const grantBody = {
+      agentId: fixture.agentId,
+      accountIds: [accountId],
+      duration: "7d" as const,
+      purpose: "Review checking account",
+    };
+    const granted = await accept(
+      fixture.client.saveAgentGrant({ headers, body: grantBody }),
+      [200],
+    );
+    await expectNotification();
+    expect(granted.body.grant?.status).toBe("active");
+    const revoked = await accept(
+      fixture.client.revokeAgentGrant({
+        headers,
+        body: { agentId: fixture.agentId },
+      }),
+      [200],
+    );
+    await expectNotification();
+    expect(revoked.body.grant?.status).toBe("revoked");
+
+    context.mocks.ably.publish.mockRejectedValue(new Error("Ably unavailable"));
+    await accept(
+      fixture.client.saveAgentGrant({ headers, body: grantBody }),
+      [200],
+    );
+    await expectNotification();
+    expect((await fixture.status()).body.grant?.status).toBe("active");
+  });
+
+  it.each(["unavailable", "invalid-response"] as const)(
+    "notifies the owner after a connect session fails with %s",
+    async (outcome) => {
+      const fixture = await pendingConnect();
+      await flushWaitUntilForTest();
+      context.mocks.ably.publish.mockClear();
+      context.mocks.ably.channelGet.mockClear();
+      server.use(
+        http.post(`${baseUrl}/connect/v2/generate`, () => {
+          return outcome === "unavailable"
+            ? HttpResponse.json({ message: "Unavailable" }, { status: 503 })
+            : HttpResponse.json({});
+        }),
+      );
+      await accept(
+        fixture.client.createConnectSession({
+          headers,
+          body: { agentId: fixture.agentId, mode: "connect" },
+        }),
+        [502],
+      );
+      await flushWaitUntilForTest();
+      expect((await fixture.status()).body.session?.status).toBe("failed");
+      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+        ["bankingAccessChanged", null],
+        ["bankingAccessChanged", null],
+      ]);
+      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+        [`user:${fixture.userId}`],
+        [`user:${fixture.userId}`],
+      ]);
+    },
+  );
+
   it.each(["success", "failure"] as const)(
     "preserves a replacement while an older connect provider response ends in %s",
     async (outcome) => {
@@ -364,16 +484,28 @@ describe("Finicity webhook outcomes", () => {
       }),
     );
     expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
     expect((await postWebhook(fixture.event("done"))).status).toBe(200);
     const cancelled = await fixture.status();
     expect(cancelled.body.session?.status).toBe("cancelled");
     expect(cancelled.body.connection?.accounts).toStrictEqual([
       expect.objectContaining({ repairRequired: true }),
     ]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+      ["bankingAccessChanged", null],
+    ]);
+    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+      [`user:${fixture.userId}`],
+    ]);
   });
 
   it("allows retry after provider failure without consuming the event", async () => {
     const fixture = await pendingConnect();
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
     const added = fixture.event("added");
     server.use(
       http.get(fixture.accountsUrl, () => {
@@ -387,6 +519,8 @@ describe("Finicity webhook outcomes", () => {
     const failed = await fixture.status();
     expect(failed.body.session?.status).toBe("pending");
     expect(failed.body.connection?.accounts).toStrictEqual([]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     server.use(
       http.get(fixture.accountsUrl, () => {
         return HttpResponse.json({ accounts: [account("bank")] });
@@ -517,6 +651,9 @@ describe("Finicity webhook outcomes", () => {
     });
 
     const repaired = await startFix();
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
     server.use(
       http.get(fixture.accountsUrl, () => {
         return HttpResponse.json({
@@ -535,6 +672,13 @@ describe("Finicity webhook outcomes", () => {
       status: "completed",
     });
     expect(completed.body.connection?.repairInstitutions).toStrictEqual([]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+      ["bankingAccessChanged", null],
+    ]);
+    expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+      [`user:${fixture.userId}`],
+    ]);
   });
 
   it("rejects malformed signed events and ignores wrong customer correlation", async () => {

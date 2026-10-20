@@ -20,6 +20,7 @@ import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
+  publishDesktopShellAuthorizationChangedSafely,
 } from "../external/realtime";
 import { tapError } from "../utils";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
@@ -630,6 +631,18 @@ export const dispatchCompleteSideEffectsCore$ = command(
     input: DispatchCompleteSideEffectsInput,
     signal: AbortSignal,
   ): Promise<void> => {
+    // Both the requesting Run's terminal status and the released chat slot
+    // participate in shell approval eligibility, even without appended events.
+    const shellOwnerId =
+      input.kind === "terminal"
+        ? input.deliveryNotification?.userId
+        : input.chatThreadId !== null
+          ? input.userId
+          : undefined;
+    if (shellOwnerId !== undefined) {
+      await publishDesktopShellAuthorizationChangedSafely(shellOwnerId);
+      signal.throwIfAborted();
+    }
     if (input.kind === "cancellation-recovery") {
       if (input.chatThreadId !== null) {
         await publishChatThreadDetailChangedSafely(

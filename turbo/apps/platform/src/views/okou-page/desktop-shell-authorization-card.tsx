@@ -190,12 +190,10 @@ export function DesktopShellAuthorizationCard({
 }) {
   const { t } = useTranslation();
   const request = useLoadable(signals.request$);
-  const ref = useSet(signals.ref$);
   const data = request.state === "hasData" ? request.data : null;
   const loading = request.state === "loading";
   return (
     <ChatCard
-      ref={ref}
       data-testid="desktop-shell-authorization-card"
       className={
         standalone

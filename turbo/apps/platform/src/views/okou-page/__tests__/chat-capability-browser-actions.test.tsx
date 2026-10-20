@@ -249,8 +249,11 @@ function buttonsByName(
   });
 }
 
-async function openManagedBrowserChat() {
+async function openManagedBrowserChat(
+  sharedWorkerTestTransport: "direct" | "message-port" = "direct",
+) {
   const sessionReady = context.mocks.deferred<void>();
+  let sessionReads = 0;
   let browser = managedBrowserSession({
     status: "active",
     screenshotUrl: INITIAL_SCREENSHOT_URL,
@@ -270,6 +273,7 @@ async function openManagedBrowserChat() {
   });
   context.mocks.api(browserContract.get, async ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
+    sessionReads += 1;
     await sessionReady.promise;
     return respond(200, { browser });
   });
@@ -282,18 +286,31 @@ async function openManagedBrowserChat() {
     return respond(200, { browser });
   });
 
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport,
+  });
 
   await readyChat();
   return {
     sessionReady,
+    get sessionReads() {
+      return sessionReads;
+    },
     foreignBrowserUrl,
     untrustedBrowserUrl,
-    updateBrowser(next: ReturnType<typeof managedBrowserSession>) {
+    updateBrowser(
+      next: ReturnType<typeof managedBrowserSession>,
+      notify = true,
+    ) {
       browser = next;
-      context.mocks.ably.trigger("browserSessionChanged", {
-        threadId: RUN_THREAD_ID,
-      });
+      if (notify) {
+        context.mocks.ably.trigger("browserSessionChanged", {
+          threadId: RUN_THREAD_ID,
+        });
+      }
     },
   };
 }
@@ -321,6 +338,54 @@ test("Render a managed browser card from loading to live", async () => {
     "src",
     INITIAL_SCREENSHOT_URL,
   );
+});
+
+test("Browser cards skip attach refresh but refresh on events and continuity gaps", async () => {
+  const browser = await openManagedBrowserChat("message-port");
+  browser.sessionReady.resolve();
+  const card = await findButton("Open Research browser");
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("browserSessionChanged"),
+    ).toBeTruthy();
+  });
+  expect(card).toHaveTextContent("Live");
+  expect(browser.sessionReads).toBe(1);
+
+  browser.updateBrowser(
+    managedBrowserSession({
+      status: "suspended",
+      screenshotUrl: SUSPENDED_SCREENSHOT_URL,
+      liveUrl: null,
+    }),
+  );
+  await waitFor(() => {
+    expect(card).toHaveTextContent("Stopped");
+  });
+  expect(screen.getByTestId("browser-session-thumbnail")).toHaveAttribute(
+    "src",
+    SUSPENDED_SCREENSHOT_URL,
+  );
+  expect(browser.sessionReads).toBe(2);
+
+  context.mocks.ably.triggerConnectionState("suspended");
+  browser.updateBrowser(
+    managedBrowserSession({
+      status: "active",
+      screenshotUrl: INITIAL_SCREENSHOT_URL,
+      liveUrl: RESUMED_BROWSER_URL,
+    }),
+    false,
+  );
+  context.mocks.ably.triggerConnectionState("connected");
+  await waitFor(() => {
+    expect(card).toHaveTextContent("Live");
+  });
+  expect(screen.getByTestId("browser-session-thumbnail")).toHaveAttribute(
+    "src",
+    INITIAL_SCREENSHOT_URL,
+  );
+  expect(browser.sessionReads).toBe(3);
 });
 
 test("A browser card uses a private screenshot thumbnail while its panel keeps the original", async () => {

@@ -22,6 +22,7 @@ const pageAuthorization$ = computed((get) => {
 export const setupDesktopShellAuthorizationPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const signals = get(pageAuthorization$);
+    set(signals.subscribe$, signal);
     set(
       updatePage$,
       createElement(

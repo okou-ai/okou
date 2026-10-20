@@ -519,41 +519,55 @@ test("A background subscription reports a terminal channel failure after returni
   expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
 });
 
-test("A continuity gap re-reads the subscription baseline", async () => {
-  mockSignedInUser();
-  const topic = "connectorPermissionUpdated";
-  let baselineReads = 0;
-  const initialize$ = command((_ctx, _signal: AbortSignal) => {
-    baselineReads += 1;
-    return false;
-  });
+test.each([undefined, true, false])(
+  "Payload initialization with runOnSubscribe=%s retains events and gap recovery",
+  async (runOnSubscribe) => {
+    mockSignedInUser();
+    const topic = "connectorPermissionUpdated";
+    const subscribed = context.mocks.deferred<void>();
+    const handled = context.mocks.deferred<void>();
+    let baselineReads = 0;
+    const initialize$ = command((_ctx, _signal: AbortSignal) => {
+      baselineReads += 1;
+      return false;
+    });
+    const loop$ = command((_ctx, _payload: unknown, _signal: AbortSignal) => {
+      handled.resolve();
+      return false;
+    });
 
-  await setupAuthAndRealtime();
-  context.store.set(
-    setAblyPayloadLoop$,
-    {
-      topic,
-      loopCommand$: keepAlivePayloadLoop$,
-      initializeCommand$: initialize$,
-    },
-    context.signal,
-  );
-  await waitFor(() => {
-    expect(baselineReads).toBe(1);
-  });
+    await setupAuthAndRealtime();
+    context.store.set(
+      setAblyPayloadLoop$,
+      {
+        topic,
+        loopCommand$: loop$,
+        initializeCommand$: initialize$,
+        options: {
+          onSubscribed: subscribed.resolve,
+          ...(runOnSubscribe === undefined ? {} : { runOnSubscribe }),
+        },
+      },
+      context.signal,
+    );
+    await subscribed.promise;
+    context.mocks.ably.trigger(topic, { connectorSlug: "gmail" });
+    await handled.promise;
+    const initialReads = runOnSubscribe === false ? 0 : 1;
+    expect(baselineReads).toBe(initialReads);
 
-  // Ably could not replay this reattach, so the subscription has to read its
-  // baseline again; without it the tab keeps whatever it had before the gap.
-  context.mocks.ably.triggerConnectionState("suspended", {
-    code: 80_003,
-    message: "Unable to connect (network unreachable)",
-  });
-  context.mocks.ably.triggerConnectionState("connected");
+    // Opting out of attach-time work must not skip continuity-gap recovery.
+    context.mocks.ably.triggerConnectionState("suspended", {
+      code: 80_003,
+      message: "Unable to connect (network unreachable)",
+    });
+    context.mocks.ably.triggerConnectionState("connected");
 
-  await waitFor(() => {
-    expect(baselineReads).toBe(2);
-  });
-});
+    await waitFor(() => {
+      expect(baselineReads).toBe(initialReads + 1);
+    });
+  },
+);
 
 test("A continuity gap pokes a topic loop", async () => {
   mockSignedInUser();

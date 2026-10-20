@@ -1,11 +1,12 @@
 import { command, computed, state } from "ccstate";
 import { z } from "zod";
+import { timeout } from "signal-timers";
 import { desktopShellAuthorizationContract } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { onRef, setLoop } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 
@@ -30,7 +31,7 @@ export function createDesktopShellAuthorizationSignals(
   threadId?: string,
 ) {
   const revision$ = state(0);
-  const request$ = computed(async (get) => {
+  const response$ = computed(async (get) => {
     get(revision$);
     const client = get(apiClient$)(desktopShellAuthorizationContract);
     const result = await accept(
@@ -44,10 +45,60 @@ export function createDesktopShellAuthorizationSignals(
       ? result.body
       : null;
   });
-  const refresh$ = command(({ set }) => {
+  const deadlineRevision$ = state(0);
+  const request$ = computed(async (get) => {
+    get(deadlineRevision$);
+    const response = await get(response$);
+    const deadline =
+      response?.status === "pending"
+        ? response.requestExpiresAt
+        : response?.status === "approved"
+          ? response.grantExpiresAt
+          : null;
+    return response && deadline && Date.parse(deadline) <= now()
+      ? { ...response, status: "expired" as const }
+      : response;
+  });
+  const deadlineOwner$ = state<{ readonly rearm: () => void } | null>(null);
+  const resetDeadline$ = resetSignal();
+  const armDeadline$ = command(async ({ get, set }, owner: AbortSignal) => {
+    const signal = set(resetDeadline$, owner);
+    signal.throwIfAborted();
+    const response = await get(response$);
+    signal.throwIfAborted();
+    const deadline =
+      response?.status === "pending"
+        ? response.requestExpiresAt
+        : response?.status === "approved"
+          ? response.grantExpiresAt
+          : null;
+    if (!deadline) {
+      return;
+    }
+    const remaining = Date.parse(deadline) - now();
+    if (remaining <= 0) {
+      set(deadlineRevision$, (value) => {
+        return value + 1;
+      });
+      return;
+    }
+    // Expiry changes only the effective local status, not the HTTP response.
+    // A refresh/action replaces this one-shot deadline under the same owner.
+    timeout(
+      () => {
+        set(deadlineRevision$, (value) => {
+          return value + 1;
+        });
+      },
+      remaining,
+      { signal },
+    );
+  });
+  const refresh$ = command(({ get, set }) => {
     set(revision$, (value) => {
       return value + 1;
     });
+    get(deadlineOwner$)?.rearm();
   });
   const act$ = command(
     async (
@@ -78,47 +129,23 @@ export function createDesktopShellAuthorizationSignals(
     set(refresh$);
     return false;
   });
-  const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const request = await get(request$);
+  const subscribe$ = command(({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (!request || !["pending", "approved"].includes(request.status)) {
-      return true;
+    const rearm = () => {
+      if (!signal.aborted) {
+        detach(set(armDeadline$, signal), Reason.Daemon);
+      }
+    };
+    set(deadlineOwner$, { rearm });
+    rearm();
+    for (const topic of [
+      "desktopShellAuthorizationChanged",
+      "computerUseHostsChanged",
+    ]) {
+      set(setAblyLoop$, { topic, loopCommand$: invalidate$ }, signal);
     }
-    if (
-      request.status === "pending" ||
-      (request.grantExpiresAt !== null &&
-        Date.parse(request.grantExpiresAt) <= now())
-    ) {
-      set(refresh$);
-    }
-    return false;
   });
-  const ref$ = onRef(
-    command(
-      ({ set }, _element: HTMLElement | SVGSVGElement, signal: AbortSignal) => {
-        set(
-          setAblyLoop$,
-          {
-            topic: "desktopShellAuthorizationChanged",
-            loopCommand$: invalidate$,
-            options: { runOnSubscribe: true },
-          },
-          signal,
-        );
-        setLoop(
-          () => {
-            return set(poll$, signal);
-          },
-          3000,
-          signal,
-          {
-            testIntervalMs: 3000,
-          },
-        );
-      },
-    ),
-  );
-  return { ...descriptor, request$, refresh$, act$, ref$ };
+  return { ...descriptor, request$, refresh$, act$, subscribe$ };
 }
 
 export type DesktopShellAuthorizationSignals = ReturnType<
@@ -134,6 +161,9 @@ export function createDesktopShellAuthorizationCardSignalsRegistry(
     },
     (descriptor) => {
       return createDesktopShellAuthorizationSignals(descriptor, threadId);
+    },
+    (signals) => {
+      return signals.subscribe$;
     },
   );
 }

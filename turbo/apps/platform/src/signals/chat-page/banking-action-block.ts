@@ -8,7 +8,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { onRef, setLoop } from "../utils.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
@@ -72,10 +72,7 @@ export interface BankingSignals extends BankingActionDescriptor {
     [AbortSignal]
   >;
   readonly continue$: Command<Promise<void>, [AbortSignal]>;
-  readonly pendingSessionPollerRef$: Command<
-    void | (() => void),
-    [HTMLElement | null]
-  >;
+  readonly subscribe$: Command<void, [AbortSignal]>;
   readonly uiState$: Computed<BankingCardUiState>;
   readonly startRequest$: Command<boolean, [Exclude<BankingBusyAction, null>]>;
   readonly updateUiState$: Command<void, [Partial<BankingCardUiState>]>;
@@ -247,29 +244,20 @@ function createBankingContinueSignal(
   });
 }
 
-function createPendingSessionPoller(
-  status$: BankingSignals["status$"],
+function createBankingSubscription(
   refresh$: BankingSignals["refresh$"],
-): BankingSignals["pendingSessionPollerRef$"] {
-  const pollPendingSession$ = command(
-    ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      setLoop(
-        async () => {
-          const status = await get(status$);
-          signal.throwIfAborted();
-          if (status.session?.status !== "pending") {
-            return true;
-          }
-          set(refresh$);
-          return false;
-        },
-        2000,
-        signal,
-        { retryTransientErrors: true, logTransientErrors: false },
-      );
-    },
-  );
-  return onRef(pollPendingSession$);
+): BankingSignals["subscribe$"] {
+  const invalidate$ = command(({ set }) => {
+    set(refresh$);
+    return false;
+  });
+  return command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyLoop$,
+      { topic: "bankingAccessChanged", loopCommand$: invalidate$ },
+      signal,
+    );
+  });
 }
 
 function initialBankingCardUiState(): BankingCardUiState {
@@ -327,10 +315,7 @@ function createBankingSignals(
     ...mutationSignals,
     ...uiSignals,
     continue$: createBankingContinueSignal(descriptor),
-    pendingSessionPollerRef$: createPendingSessionPoller(
-      statusSignals.status$,
-      statusSignals.refresh$,
-    ),
+    subscribe$: createBankingSubscription(statusSignals.refresh$),
   };
 }
 
@@ -338,5 +323,8 @@ export function createBankingCardSignalsRegistry(): BankingCardSignalsRegistry {
   return createCardSignalsRegistry(
     bankingActionResourceKey,
     createBankingSignals,
+    (signals) => {
+      return signals.subscribe$;
+    },
   );
 }

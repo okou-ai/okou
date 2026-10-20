@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
@@ -44,7 +45,13 @@ async function approveAndResume(
     "Inspect the project in Terminal",
   );
   expect(repeated.body).toMatchObject({ id: request.id });
+  context.mocks.ably.publish.mockClear();
   await scenario.cancelRun(actor, initial.runId);
+  await scenario.run(flushWaitUntilForTest);
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+    "desktopShellAuthorizationChanged",
+    null,
+  );
   mockNow(now() + 1000);
   const decisions = await Promise.all([
     api.actDesktopShellAccess(actor, request.id, "approve", [200, 409]),
@@ -97,6 +104,125 @@ async function approveAndResume(
 }
 
 describe("Desktop Shell command pipeline", () => {
+  it.each(["immediate", "queued"] as const)(
+    "publishes committed chat_busy authorization when the %s pick acquires the chat slot",
+    { timeout: 30_000 },
+    async (pick) => {
+      const scenario = createPublicComputerUseScenario(context);
+      await scenario.run(async () => {
+        const actor = scenario.user();
+        const api = scenario.computerUse;
+        const chat = createChatFilesBddApi(context);
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          desktopShell: true,
+        });
+        const host = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        const source = await scenario.claim(actor, host.hostId);
+        const requested = await api.requestDesktopShellAccess(
+          { bearer: source.token },
+          "Inspect the project in Terminal",
+        );
+        if (requested.status !== 200) {
+          throw new Error("Expected pending Shell access");
+        }
+        await scenario.cancelRun(actor, source.runId);
+        await scenario.run(flushWaitUntilForTest);
+        expect(
+          (await api.readDesktopShellAccess(actor, requested.body.id)).body,
+        ).toMatchObject({ status: "pending", approvalBlockedReason: null });
+
+        const { agentId } = await scenario.prepareActor(actor);
+        const send = async (clientEventId: string) => {
+          await chat.requestSendEvent(
+            actor,
+            {
+              agentId,
+              threadId: source.threadId,
+              prompt: "Continue working in this chat",
+              clientEventId,
+            },
+            [201],
+          );
+          await scenario.run(flushWaitUntilForTest);
+        };
+        const launchedRun = async (clientEventId: string) => {
+          const { events } = await chat.listThreadEvents(
+            actor,
+            source.threadId,
+          );
+          return events.find((event) => {
+            return (
+              event.eventType === "input.prompt" &&
+              event.revokesEventId === clientEventId
+            );
+          })?.runId;
+        };
+        let blockingRunId: string | undefined;
+        if (pick === "queued") {
+          const blockingEventId = randomUUID();
+          await send(blockingEventId);
+          blockingRunId = await launchedRun(blockingEventId);
+          if (!blockingRunId) {
+            throw new Error("Expected a blocking Run in the chat");
+          }
+        }
+        const nextEventId = randomUUID();
+        if (pick === "queued") {
+          await send(nextEventId);
+          await expect(launchedRun(nextEventId)).resolves.toBeUndefined();
+        }
+
+        // Observe eligibility through HTTP at the notification boundary, so a
+        // slot-release wakeup alone cannot satisfy the queued-pick regression.
+        const notifiedReasons: (string | null)[] = [];
+        context.mocks.ably.publish.mockClear();
+        context.mocks.ably.publish.mockImplementation(async (topic) => {
+          if (topic === "desktopShellAuthorizationChanged") {
+            const current = await api.readDesktopShellAccess(
+              actor,
+              requested.body.id,
+            );
+            if (current.status !== 200) {
+              throw new Error("Expected the pending Shell authorization");
+            }
+            notifiedReasons.push(current.body.approvalBlockedReason);
+          }
+        });
+        if (blockingRunId) {
+          await scenario.cancelRun(actor, blockingRunId);
+          await scenario.run(flushWaitUntilForTest);
+        } else {
+          await send(nextEventId);
+        }
+        const nextRunId = await launchedRun(nextEventId);
+        expect(nextRunId).toBeDefined();
+        expect(notifiedReasons).toContain("chat_busy");
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+          "desktopShellAuthorizationChanged",
+          null,
+        );
+        expect(
+          (await api.readDesktopShellAccess(actor, requested.body.id)).body,
+        ).toMatchObject({
+          status: "pending",
+          approvalBlockedReason: "chat_busy",
+        });
+        await api.actDesktopShellAccess(
+          actor,
+          requested.body.id,
+          "approve",
+          [409],
+        );
+        context.mocks.ably.publish.mockResolvedValue(undefined);
+        if (nextRunId) {
+          await scenario.cancelRun(actor, nextRunId);
+        }
+      });
+    },
+  );
+
   it(
     "scopes approval to the owning chat and computer, and only accepts human decisions",
     { timeout: 30_000 },
@@ -163,10 +289,15 @@ describe("Desktop Shell command pipeline", () => {
         const secondHost = await api.startComputerUseHost(actor, {
           supportedCapabilities: capabilities,
         });
+        context.mocks.ably.publish.mockClear();
         await createChatFilesBddApi(context).updateThreadComputerUseHost(
           actor,
           differentChat.threadId,
           secondHost.hostId,
+        );
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+          "desktopShellAuthorizationChanged",
+          null,
         );
         const changed = await api.readDesktopShellAccess(
           actor,

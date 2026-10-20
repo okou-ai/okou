@@ -7,7 +7,10 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-import { publishThreadListChanged } from "../external/realtime";
+import {
+  publishDesktopShellAuthorizationChangedSafely,
+  publishThreadListChanged,
+} from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
@@ -150,6 +153,8 @@ const updateComputerUseHostInner$ = command(
     }
 
     await publishThreadListChanged({ userId: auth.userId, orgId: auth.orgId });
+    signal.throwIfAborted();
+    await publishDesktopShellAuthorizationChangedSafely(auth.userId);
     signal.throwIfAborted();
 
     return { status: 204 as const, body: undefined };
