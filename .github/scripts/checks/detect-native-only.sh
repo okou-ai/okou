@@ -39,9 +39,6 @@ crates_only=true
 while IFS= read -r -d '' path; do
   has_changes=true
   case "$path" in
-    # This native-owned corpus is also consumed by api-contracts TypeScript tests.
-    crates/guest-contracts/tests/fixtures/sandbox-channel.json)
-      ios_only=false; crates_only=false ;;
     ios/*) crates_only=false ;;
     crates/*) ios_only=false ;;
     *) ios_only=false; crates_only=false ;;

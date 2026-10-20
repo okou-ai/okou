@@ -6,7 +6,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
-import { runnerState } from "../src/runtime/runner-state";
+import { runnerState } from "../src/schema/runner-state";
 import { outgoingRunnerState } from "./fixtures/runner-state-before-hostname";
 import { applyPendingMigrations } from "./migration-runner";
 

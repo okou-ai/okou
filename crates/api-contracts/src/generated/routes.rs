@@ -479,16 +479,6 @@ pub mod runners {
             }
         }
     }
-
-    /// Generated route bindings under `runners::wss`.
-    pub mod wss {
-        /// Atomically redeem a WSS ticket from an official Runner.
-        /// Route contract: `POST /api/runners/wss/tickets/consume`.
-        pub const CONSUME: crate::Route = crate::Route {
-            method: crate::Method::Post,
-            path: "/api/runners/wss/tickets/consume",
-        };
-    }
 }
 
 /// Generated route bindings under `webhooks`.

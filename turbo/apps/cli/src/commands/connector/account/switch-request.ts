@@ -6,7 +6,7 @@ import { Command, Option } from "commander";
 
 import {
   inspectConnectorAccounts,
-  listConnectorCatalogStatus,
+  listConnectorCatalog,
   listCustomConnectors,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
@@ -128,7 +128,7 @@ Notes:
         }
         const [{ connectors }, customConnectors, agentContext] =
           await Promise.all([
-            listConnectorCatalogStatus(),
+            listConnectorCatalog(),
             listCustomConnectors(),
             resolveConnectorDiscoveryAgentContext(agentId),
           ]);

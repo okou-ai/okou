@@ -10,6 +10,7 @@ struct ChatDetailView: View {
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
+  @State private var messageToSelect: ChatMessage?
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0
@@ -46,6 +47,9 @@ struct ChatDetailView: View {
             isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory)
         )
       }
+    }
+    if let source = history.recommendedFollowups, conversation.pending.isEmpty {
+      result.append(.followups(source, finishedAt: history.latestRunFinishAt))
     }
     result.append(.footer(history.executionState, hasMessages: !items.isEmpty))
     return result
@@ -101,6 +105,9 @@ struct ChatDetailView: View {
     ) {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
     }
+    .sheet(item: $messageToSelect) { message in
+      MessageTextSelectionSheet(text: message.copyText)
+    }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
@@ -137,6 +144,12 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .followups(let source, let finishedAt):
+      RecommendedFollowupList(
+        source: source, finishedAt: finishedAt,
+        select: conversation.composer.editor.selectOrAppendText
+      )
+      .padding(EdgeInsets(top: 24, leading: 26, bottom: 0, trailing: 20))
     case .earlier(let isLoading):
       Button {
         scrolling.loadEarlierMessages()
@@ -230,6 +243,7 @@ struct ChatDetailView: View {
     .contextMenu {
       if !message.copyText.isEmpty {
         Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
+        Button("Select Text", systemImage: "text.cursor") { messageToSelect = message }
       }
     }
   }

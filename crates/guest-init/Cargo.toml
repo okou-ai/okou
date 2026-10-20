@@ -10,7 +10,6 @@ guest-home-mount.workspace = true
 libc = { workspace = true, features = ["std"] }
 nix = { workspace = true, features = ["mount", "signal"] }
 guest-control-server.workspace = true
-guest-channel-server.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true, features = ["getrandom"] }

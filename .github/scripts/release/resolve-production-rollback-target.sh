@@ -16,9 +16,10 @@ readonly STRUCTURED_DISK_TELEMETRY_READER_COMMIT=e01702c7d762b5d2a76d557db77ccaf
 # Final receiving cleanup must not restart a Runner whose embedded Guest still
 # emits the retired disk pair. Check the selected Runner tag independently.
 readonly PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT=625c4607ccdcd2d46a5c7227f61419928035e13f
-# Completion now accepts only storageOutputs. The selected Runner must embed
-# #41742's Guest writer even when its paired API still accepts the old field.
-readonly GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT=2eff576ad75d328676834643c1380ff35c2297e2
+# Source-only finalizing readers require an API that always emits the UUID.
+readonly FINALIZING_SOURCE_API_WRITER_COMMIT=968063848aea8cf54acd6f56facdf7cdcbd79051
+# Runner is selected independently and must understand the source-bearing wire shape.
+readonly FINALIZING_SOURCE_RUNNER_READER_COMMIT=b610ff61043274157618e3925b13a66dc56ef84b
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -99,6 +100,9 @@ readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-onl
 readonly CONNECTOR_RESOURCE_SPLIT_PATH=.github/rollback-floors/connector-resource-split
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
+# Completion now accepts only storageOutputs. The selected Runner must embed
+# #41742's Guest writer even when its paired API still accepts the old field.
+readonly GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT=2eff576ad75d328676834643c1380ff35c2297e2
 readonly VNC_CANONICAL_METADATA_PATH=.github/rollback-floors/vnc-native-networks-canonical-metadata
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
@@ -161,6 +165,10 @@ fi
 
 if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the structured-only disk telemetry reader: ${STRUCTURED_DISK_TELEMETRY_READER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$FINALIZING_SOURCE_API_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the independent finalizing source writer: ${FINALIZING_SOURCE_API_WRITER_COMMIT}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
@@ -785,6 +793,10 @@ if ! git merge-base --is-ancestor "$PAIR_FREE_DISK_TELEMETRY_WRITER_COMMIT" "$ru
 fi
 if ! git merge-base --is-ancestor "$GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the Guest Storage-output completion writer: ${GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$FINALIZING_SOURCE_RUNNER_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the independent finalizing source reader: ${FINALIZING_SOURCE_RUNNER_READER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT" "$runner_tag_commit"; then

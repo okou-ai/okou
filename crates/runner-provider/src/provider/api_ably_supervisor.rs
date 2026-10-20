@@ -2227,10 +2227,9 @@ mod tests {
             .expect("canonical preference telemetry");
         assert!(matches!(
             telemetry.runner_preference,
-            RunnerPreference::Preference {
-                tier: RunnerPreferenceTier::ReusableSandbox,
-                ..
-            }
+            RunnerPreference::Preference(
+                crate::provider::RunnerPreferenceDecision::ReusableSandbox { .. }
+            )
         ));
         assert_eq!(
             telemetry.state,

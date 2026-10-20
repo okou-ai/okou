@@ -159,27 +159,29 @@ export function stubConnectorCatalog(
   });
 }
 
-export function catalogStatusMetadata(
-  overrides: Parameters<typeof catalogStatusItem>[0],
-): PublicConnectorCatalogStatusReaderItem {
-  const item: PublicConnectorCatalogStatusReaderItem =
-    catalogStatusItem(overrides);
-  delete item.connected;
-  delete item.connectionStatus;
-  delete item.connection;
-  delete item.scopeMismatch;
-  delete item.authMethodSupportsRefresh;
-  delete item.tokenExpiresAt;
-  return item;
-}
-
-export function stubConnectorCatalogStatus(
+export function stubConnectorCatalogDetail(
   connectors: readonly PublicConnectorCatalogStatusReaderItem[],
   origin = "http://localhost:3000",
 ) {
-  return http.get(`${origin}/api/connector-catalog/status`, () => {
-    return HttpResponse.json({ connectors });
-  });
+  return http.get(
+    `${origin}/api/connector-catalog/:connectorSlug`,
+    ({ params }) => {
+      const connector = connectors.find((item) => {
+        return item.slug === params.connectorSlug;
+      });
+      return connector
+        ? HttpResponse.json({ connector })
+        : HttpResponse.json(
+            {
+              error: {
+                code: "NOT_FOUND",
+                message: "Connector catalog item not found",
+              },
+            },
+            { status: 404 },
+          );
+    },
+  );
 }
 
 export function stubConnectorCatalogPermissions(

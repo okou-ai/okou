@@ -1,12 +1,13 @@
 import {
-  connectorAccountTargetKey,
-  type ConnectorAccountSummary,
+  type ConnectorAccountConnection,
+  type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import { readBuiltinConnectorAccountFacts } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { type CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
-  listConnectorAccountSummaries,
+  listConnectorAccountConnections,
+  type ConnectorAccountConnectionsResult,
   type ConnectorCatalogStatus,
 } from "../../lib/api/domains/connectors";
 import { connectorAccountCliInventoryLabel } from "./account-label";
@@ -14,6 +15,7 @@ import { connectorAccountCliInventoryLabel } from "./account-label";
 export type MemberConnector = ConnectorCatalogStatus | CustomConnectorResponse;
 
 type MemberConnectionStatus =
+  | "unavailable"
   | "not-connected"
   | "default-required"
   | "reconnect-required"
@@ -24,31 +26,51 @@ type MemberConnectionStatus =
 export interface MemberConnectorFacts {
   readonly scopeMismatch?: boolean;
   readonly integrationManaged: boolean;
-  readonly accountSummary: ConnectorAccountSummary | null;
+  readonly accountSummary: {
+    readonly target: ConnectorAccountTarget;
+    readonly accountCount: number;
+    readonly attentionCount: number;
+    readonly defaultConnection: ConnectorAccountConnection | null;
+  } | null;
   readonly connectionId: string | null;
   readonly memberStatus: MemberConnectionStatus;
 }
 
-/** Managed-only and empty inventories do not consume ordinary account facts. */
-export async function customMemberAccountSummaries(
-  connectors: readonly CustomConnectorResponse[],
-): Promise<ReadonlyMap<string, ConnectorAccountSummary>> {
-  return connectors.some((connector) => {
-    return !isIntegrationManagedCustomConnector(connector);
-  })
-    ? listConnectorAccountSummaries()
-    : new Map();
+/** Preserve target status output from the complete, unfiltered target inventory. */
+export function memberAccountSummary(
+  target: ConnectorAccountTarget,
+  accounts: ConnectorAccountConnectionsResult | null,
+): MemberConnectorFacts["accountSummary"] {
+  if (
+    !accounts ||
+    accounts.state === "unavailable" ||
+    accounts.connections.length === 0
+  ) {
+    return null;
+  }
+  return {
+    target,
+    accountCount: accounts.connections.length,
+    attentionCount: accounts.connections.filter((account) => {
+      return (
+        account.connectionStatus === "reconnect-required" ||
+        account.setupStatus !== "complete"
+      );
+    }).length,
+    defaultConnection: accounts.defaultConnection,
+  };
 }
 
 export function memberAccountStatus(
-  summary: ConnectorAccountSummary | null,
+  accounts: ConnectorAccountConnectionsResult | null,
 ): MemberConnectionStatus {
-  if (!summary || summary.accountCount === 0) {
-    return "not-connected";
-  }
-  const account = summary.defaultConnection;
+  if (accounts?.state === "unavailable") return "unavailable";
+  if (!accounts) return "not-connected";
+  const account = accounts.defaultConnection;
   if (!account) {
-    return "default-required";
+    return accounts.connections.length === 0
+      ? "not-connected"
+      : "default-required";
   }
   if (account.connectionStatus === "reconnect-required") {
     return "reconnect-required";
@@ -61,10 +83,9 @@ export function memberAccountStatus(
 }
 
 /** Current-member management facts; never an admitted Run account projection. */
-export function memberConnectorFacts(
+export async function readMemberConnectorFacts(
   connector: MemberConnector,
-  summaries: ReadonlyMap<string, ConnectorAccountSummary>,
-): MemberConnectorFacts {
+): Promise<MemberConnectorFacts> {
   if ("kind" in connector && isIntegrationManagedCustomConnector(connector)) {
     return {
       integrationManaged: true,
@@ -77,16 +98,16 @@ export function memberConnectorFacts(
     "kind" in connector
       ? { kind: "custom" as const, customConnectorId: connector.id }
       : { kind: "builtin" as const, connectorSlug: connector.slug };
-  // This map is a successfully read complete response. Request failures never
-  // reach this projection, so a missing target establishes no saved account.
-  const accountSummary =
-    summaries.get(connectorAccountTargetKey(target)) ?? null;
+  const accounts = await listConnectorAccountConnections(target, undefined, {
+    includeScopeMismatch: target.kind === "builtin",
+  });
+  const accountSummary = memberAccountSummary(target, accounts);
   const account = accountSummary?.defaultConnection;
   const scopeMismatch =
     !("kind" in connector) && account
       ? readBuiltinConnectorAccountFacts(connector, account).scopeMismatch
       : undefined;
-  const memberStatus = memberAccountStatus(accountSummary);
+  const memberStatus = memberAccountStatus(accounts);
   return {
     integrationManaged: false,
     accountSummary,
@@ -103,6 +124,8 @@ export function memberConnectorFacts(
 
 export function memberConnectorStatusText(facts: MemberConnectorFacts): string {
   switch (facts.memberStatus) {
+    case "unavailable":
+      return "account status unavailable";
     case "not-connected":
       return "not connected";
     case "default-required":
@@ -124,7 +147,7 @@ export function memberConnectorAccountText(
   connector: MemberConnector,
   facts: MemberConnectorFacts,
 ): string {
-  if (facts.integrationManaged) {
+  if (facts.integrationManaged || facts.memberStatus === "unavailable") {
     return memberConnectorStatusText(facts);
   }
   const summary = facts.accountSummary;
