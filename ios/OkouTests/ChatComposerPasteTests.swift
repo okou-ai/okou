@@ -64,13 +64,22 @@ final class ChatComposerPasteTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     input.becomeFirstResponder()
+    // Drive the system paste only after native focus and SwiftUI expansion settle,
+    // as the real editing-menu action does. A laid-out compact view is not ready yet.
+    try await eventually {
+      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    }
     UIPasteboard.general.setItems(
       [[UTType.png.identifier: imageData()]], options: [.localOnly: true])
     defer { UIPasteboard.general.items = [] }
     XCTAssertTrue(
       input.canPerformAction(#selector(UIResponderStandardEditActions.paste(_:)), withSender: nil))
     input.paste(nil)
-    try await eventually {
+    try await eventually(
+      message: "Image paste not ready: importing=\(conversation.attachmentDraft.importingCount), "
+        + "items=\(conversation.attachmentDraft.items.count), "
+        + "error=\(String(describing: conversation.attachmentDraft.error))"
+    ) {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
     }
     XCTAssertEqual(conversation.draft, "")
