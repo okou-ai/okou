@@ -6,11 +6,7 @@ import { BrowserUserActionPage } from "../../views/browser-user-action/browser-u
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import { detach, Reason } from "../utils.ts";
-import {
-  browserUserActionPageDescriptor$,
-  browserUserActionPageSignals$,
-} from "./browser-user-action-page-state.ts";
+import { browserUserActionPageDescriptor$ } from "./browser-user-action-page-state.ts";
 
 export const setupBrowserUserActionPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -30,9 +26,5 @@ export const setupBrowserUserActionPage$ = command(
     );
     await set(hideAppSkeleton$, signal);
     signal.throwIfAborted();
-    const signals = get(browserUserActionPageSignals$);
-    if (signals) {
-      detach(set(signals.startStandaloneEntry$, signal), Reason.Entrance);
-    }
   },
 );

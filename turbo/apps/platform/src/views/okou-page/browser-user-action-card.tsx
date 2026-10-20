@@ -16,7 +16,7 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
-import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
@@ -47,11 +47,11 @@ export type BrowserUserActionCardVariant = "inline" | "standalone";
 
 function BrowserActionSurface({
   children,
-  resumeRef,
+  subscriptionRef,
   variant,
 }: {
   readonly children: ReactNode;
-  readonly resumeRef?: Ref<HTMLDivElement>;
+  readonly subscriptionRef?: Ref<HTMLDivElement>;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   return (
@@ -64,7 +64,7 @@ function BrowserActionSurface({
     >
       <ChatCard
         data-testid="browser-user-action-card"
-        ref={resumeRef}
+        ref={subscriptionRef}
         className={
           variant === "standalone"
             ? "w-full p-5 sm:p-6"
@@ -1802,6 +1802,21 @@ function PendingFormWithCheck({
   );
 }
 
+function PendingStandaloneAction({
+  signals,
+  request,
+}: {
+  readonly signals: BrowserUserActionSignals;
+  readonly request: PendingBrowserInputRequest;
+}) {
+  const entryRef = useSet(signals.standaloneEntryRef$);
+  return (
+    <div ref={entryRef} className="contents">
+      <PendingFormWithCheck signals={signals} request={request} />
+    </div>
+  );
+}
+
 function PendingInlineAction({
   signals,
   request,
@@ -1812,7 +1827,6 @@ function PendingInlineAction({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const beginEntry = useSet(signals.beginEntry$);
-  const dialogRef = useSet(signals.dialogRef$);
   const title =
     request.action.title ??
     t(($) => {
@@ -1838,7 +1852,7 @@ function PendingInlineAction({
               </Button>
             }
           />
-          <DialogContent ref={dialogRef}>
+          <DialogContent>
             <DialogHeader>
               <DialogTitle className="break-words">{title}</DialogTitle>
               {request.action.reason !== undefined && (
@@ -1859,28 +1873,23 @@ function PendingInlineAction({
   );
 }
 
-function RecoveryState({
-  signals,
+function ApplyingState({
   variant,
 }: {
-  readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
-  const recoveryRef = useSet(signals.recoveryRef$);
   return (
-    <div ref={recoveryRef} className="contents">
-      <ActionState
-        icon={<Loader2 size={20} className="animate-spin" />}
-        title={t(($) => {
-          return $.chat.browserInput.checkingOutcome;
-        })}
-        description={t(($) => {
-          return $.chat.browserInput.checkingOutcomeDescription;
-        })}
-        variant={variant}
-      />
-    </div>
+    <ActionState
+      icon={<Loader2 size={20} className="animate-spin" />}
+      title={t(($) => {
+        return $.chat.browserInput.checkingOutcome;
+      })}
+      description={t(($) => {
+        return $.chat.browserInput.checkingOutcomeDescription;
+      })}
+      variant={variant}
+    />
   );
 }
 
@@ -1889,7 +1898,6 @@ function BrowserUserActionCardContent({
   callbackFailed,
   continuing,
   onContinue,
-  refresh,
   requestLoadable,
   signals,
   variant,
@@ -1898,21 +1906,18 @@ function BrowserUserActionCardContent({
   readonly callbackFailed: boolean;
   readonly continuing: boolean;
   readonly onContinue: () => void;
-  readonly refresh: () => void;
   readonly requestLoadable: Loadable<BrowserUserActionRequestState>;
   readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
-  const recoveryState = useGet(signals.recoveryState$);
   let content: ReactNode;
   if (
-    recoveryState !== "idle" ||
-    (requestLoadable.state === "hasData" &&
-      requestLoadable.data.kind === "action" &&
-      requestLoadable.data.action.state === "applying")
+    requestLoadable.state === "hasData" &&
+    requestLoadable.data.kind === "action" &&
+    requestLoadable.data.action.state === "applying"
   ) {
-    content = <RecoveryState signals={signals} variant={variant} />;
+    content = <ApplyingState variant={variant} />;
   } else if (requestLoadable.state === "loading") {
     content = (
       <ActionState
@@ -1933,13 +1938,6 @@ function BrowserUserActionCardContent({
         description={t(($) => {
           return $.chat.browserInput.loadFailedDescription;
         })}
-        action={
-          <Button type="button" size="sm" variant="outline" onClick={refresh}>
-            {t(($) => {
-              return $.chat.browserInput.retry;
-            })}
-          </Button>
-        }
         variant={variant}
       />
     );
@@ -1956,7 +1954,7 @@ function BrowserUserActionCardContent({
       variant === "inline" ? (
         <PendingInlineAction signals={signals} request={pendingRequest} />
       ) : (
-        <PendingFormWithCheck signals={signals} request={pendingRequest} />
+        <PendingStandaloneAction signals={signals} request={pendingRequest} />
       );
   } else {
     content = (
@@ -1983,14 +1981,13 @@ export function BrowserUserActionCard({
   readonly variant?: BrowserUserActionCardVariant;
 }) {
   const pageSignal = useGet(pageSignal$);
-  const requestLoadable = useLoadable(signals.request$);
-  const refresh = useSet(signals.refresh$);
-  const retryStandaloneRequest = useSet(signals.retryStandaloneRequest$);
-  const resumeRef = useSet(signals.resumeRef$);
+  // Keep the settled state while a notification re-reads it, so an open
+  // dialog is not remounted by an unrelated change in the same thread.
+  const requestLoadable = useLastLoadable(signals.request$);
+  const subscriptionRef = useSet(signals.subscriptionRef$);
   const locallyDelivered = useGet(signals.callbackDelivered$);
   const callbackFailed = useGet(signals.callbackFailed$);
   const busy = useGet(signals.busy$);
-  const recoveryState = useGet(signals.recoveryState$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
   const action =
     requestLoadable.state === "hasData" &&
@@ -1999,38 +1996,17 @@ export function BrowserUserActionCard({
       : undefined;
   const callbackDelivered =
     locallyDelivered || action?.callbackDelivered === true;
-  const needsReturnRefresh =
-    recoveryState !== "idle" ||
-    (action !== undefined &&
-      ((variant === "inline" &&
-        action.kind === "input" &&
-        action.state === "pending") ||
-        ((action.state === "succeeded" || action.state === "cancelled") &&
-          !callbackDelivered) ||
-        action.state === "applying"));
   const continuing = busy || continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
   };
-  const onRefresh = () => {
-    if (variant === "standalone") {
-      detach(retryStandaloneRequest(pageSignal), Reason.DomCallback);
-    } else {
-      refresh();
-    }
-  };
-
   return (
-    <BrowserActionSurface
-      variant={variant}
-      resumeRef={needsReturnRefresh ? resumeRef : undefined}
-    >
+    <BrowserActionSurface variant={variant} subscriptionRef={subscriptionRef}>
       <BrowserUserActionCardContent
         callbackDelivered={callbackDelivered}
         callbackFailed={callbackFailed}
         continuing={continuing}
         onContinue={onContinue}
-        refresh={onRefresh}
         requestLoadable={requestLoadable}
         signals={signals}
         variant={variant}

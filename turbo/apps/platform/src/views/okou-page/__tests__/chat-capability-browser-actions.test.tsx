@@ -57,6 +57,7 @@ const BROWSER_INPUT_SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001105";
 const BROWSER_INPUT_CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001106";
 const BROWSER_INPUT_CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001107";
 const BROWSER_INPUT_CALLBACK = "Continue after browser input";
+const BROWSER_USER_ACTION_TOPIC = `browserUserActionChanged:${RUN_THREAD_ID}`;
 
 function browserInputAction(
   state: BrowserUserActionResponse["state"],
@@ -246,6 +247,14 @@ function buttonsByName(
       candidate.getAttribute("aria-label") === name ||
       candidate.textContent?.replace(/\s+/gu, " ").trim() === name
     );
+  });
+}
+
+async function browserUserActionSubscribed() {
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription(BROWSER_USER_ACTION_TOPIC),
+    ).toBeTruthy();
   });
 }
 
@@ -656,11 +665,14 @@ test.each([true, false])(
     );
     expect(window.location.href).toBe(currentUrl);
     expect(preflights).toBe(1);
-    const readsBeforeFocus = reads;
-    window.dispatchEvent(new Event("focus"));
+    await browserUserActionSubscribed();
+    const readsBeforeSignal = reads;
+    context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
+    await waitFor(() => {
+      expect(reads).toBe(readsBeforeSignal + 1);
+    });
     expect(dialog).toBeVisible();
     expect(within(dialog).getByLabelText("Notes")).toHaveValue("Draft");
-    expect(reads).toBe(readsBeforeFocus);
 
     const closeButton = buttonsByName("Close", dialog)[0];
     if (!closeButton) {
@@ -732,16 +744,6 @@ test("Closing an inline form clears password and code drafts while preserving or
   );
   await fill(within(dialog).getByLabelText("Password"), "synthetic-password");
   await fill(within(dialog).getByLabelText("Verification code"), "123456");
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  expect(within(dialog).getByLabelText("Password")).toHaveValue(
-    "synthetic-password",
-  );
-  expect(within(dialog).getByLabelText("Verification code")).toHaveValue(
-    "123456",
-  );
 
   const close = buttonsByName("Close", dialog)[0];
   if (!close) {
@@ -1399,16 +1401,17 @@ test("A pending transcript card becomes consumed when the standalone form comple
   });
   await readyChat();
   await findButton("Enter information");
+  await browserUserActionSubscribed();
 
   state = "succeeded";
-  window.dispatchEvent(new Event("focus"));
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test.each(["apply", "cancel"] as const)(
-  "An inline dialog reconciles a lost %s response without replaying the write",
+  "An inline dialog reconciles a lost %s response from a thread change signal",
   async (operation) => {
     let current: BrowserUserActionResponse["state"] = "pending";
     installCapabilityChat({
@@ -1451,6 +1454,7 @@ test.each(["apply", "cancel"] as const)(
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     await readyChat();
+    await browserUserActionSubscribed();
     click(await findButton("Enter information"));
     const dialog = await screen.findByRole("dialog", {
       name: "Sign in to download invoices",
@@ -1463,6 +1467,10 @@ test.each(["apply", "cancel"] as const)(
     click(
       await findButton(operation === "apply" ? "Add to browser" : "Cancel"),
     );
+    await waitFor(() => {
+      expect(current).not.toBe("pending");
+    });
+    context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
     await expect(
       screen.findByText(
@@ -1495,70 +1503,21 @@ test("Duplicate initially applying cards recover after a thread change signal", 
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
-
-  const topic = `browserUserActionChanged:${RUN_THREAD_ID}`;
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
-  });
+  await browserUserActionSubscribed();
   expect(screen.getAllByText("Checking browser status")).toHaveLength(2);
 
   actionState = "uncertain";
-  context.mocks.ably.trigger(topic);
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
   await waitFor(() => {
     expect(screen.getAllByText("Check the browser")).toHaveLength(2);
   });
-});
-
-test("Closing the input dialog refreshes an action completed in another tab", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...browserInputAction(state),
-      callbackDelivered: state === "succeeded",
-    });
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, browserInputAction("pending"));
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
-  click(await findButton("Enter information"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  await expect(
-    within(dialog).findByLabelText("Account email"),
-  ).resolves.toBeVisible();
-
-  state = "succeeded";
-  window.dispatchEvent(new Event("focus"));
-  expect(dialog).toBeVisible();
-
-  const closeButton = buttonsByName("Close", dialog)[0];
-  if (!closeButton) {
-    throw new Error("Browser input dialog close button was not visible");
-  }
-  click(closeButton);
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
 test.each([
   { label: "Password", value: "synthetic-password" },
   { label: "Verification code", value: "123456" },
 ])(
-  "Leaving an open dialog clears the $label draft and discards its deferred return refresh",
+  "Leaving an open dialog clears the $label draft",
   async ({ label, value }) => {
     installCapabilityChat({
       events: completedConversation(`[Enter details](${browserInputUrl()})`),
@@ -1568,12 +1527,7 @@ test.each([
     context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
       return respond(200, { connectors: [], totalConnectorCount: 0 });
     });
-    // An abandoned refresh has no page result. Observe the actual HTTP
-    // boundary, then assert route ownership in the test body rather than
-    // throwing inside a handler that MSW could turn into a 500 response.
-    const readRoutes: string[] = [];
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      readRoutes.push(window.location.pathname);
       return respond(200, browserInputAction("pending"));
     });
     context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
@@ -1598,10 +1552,6 @@ test.each([
     const input = within(dialog).getByLabelText(label);
     await fill(input, value);
     expect(input).toHaveValue(value);
-    expect(readRoutes).toContain(RUN_PATH);
-    act(() => {
-      window.dispatchEvent(new Event("focus"));
-    });
     act(() => {
       window.history.back();
     });
@@ -1625,7 +1575,6 @@ test.each([
     expect(within(reopened).getByLabelText("Verification code")).toHaveValue(
       "",
     );
-    expect(readRoutes).not.toContain("/connectors");
   },
 );
 
@@ -1653,36 +1602,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
-test("A mounted transcript card rechecks callback delivery on page return", async () => {
-  let delivered = false;
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...browserInputAction("succeeded"),
-      callbackDelivered: delivered,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-  await findButton("Notify agent");
-
-  delivered = true;
-  window.dispatchEvent(new Event("focus"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Notify agent")).toHaveLength(0);
-});
-
 test("Absolute and relative Browser input URLs both render dialog cards", async () => {
-  let reads = 0;
   installCapabilityChat({
     events: completedConversation(
       [
@@ -1692,7 +1612,6 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
     ),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
     return respond(200, browserInputAction("pending"));
   });
   context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
@@ -1723,10 +1642,6 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
   await expect(
     within(dialog).findByLabelText("Account email"),
   ).resolves.toBeVisible();
-  const readsBeforeFocus = reads;
-  window.dispatchEvent(new Event("focus"));
-  expect(dialog).toBeVisible();
-  expect(reads).toBe(readsBeforeFocus);
 });
 
 test("Keep feature-disabled and foreign Browser actions inert without hiding the ordinary Browser card", async () => {

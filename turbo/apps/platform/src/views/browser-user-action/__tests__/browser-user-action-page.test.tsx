@@ -397,6 +397,16 @@ function route(args: { readonly threadId?: string } = {}): string {
   return `/browser/actions/${REQUEST_TOKEN}?${params.toString()}`;
 }
 
+const BROWSER_USER_ACTION_TOPIC = `browserUserActionChanged:${THREAD_ID}`;
+
+async function browserUserActionSubscribed() {
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription(BROWSER_USER_ACTION_TOPIC),
+    ).toBeTruthy();
+  });
+}
+
 function button(name: string): HTMLElement {
   const result = queryAllByRoleFast("button").find((candidate) => {
     return candidate.textContent?.trim() === name;
@@ -2206,37 +2216,6 @@ test("Changed site constraints require a fresh preflight without losing ordinary
   expect(within(form).getByLabelText(/Remembered answer/u)).toHaveValue("abcd");
 });
 
-test("Tab return keeps password and code drafts in an active standalone form", async () => {
-  const pending = sensitiveAction("pending");
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, pending);
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, pending);
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  const password = await screen.findByLabelText("Password");
-  await fill(password, "temporary-secret");
-  await fill(screen.getByLabelText("Verification code"), "012345");
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
-  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
-  act(() => {
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
-  expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
-});
-
 test("Leaving and returning to a standalone form clears password and code drafts", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, sensitiveAction("pending"));
@@ -2352,44 +2331,8 @@ test("Standalone preflight makes a confirmed changed target stale before showing
   ).toBeVisible();
 });
 
-test("Retry after a failed standalone request also runs preflight", async () => {
-  let reads = 0;
-  let checks = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
-    return reads === 1
-      ? respond(503, {
-          error: {
-            code: "BROWSER_UNAVAILABLE",
-            message: "Browser unavailable",
-          },
-        })
-      : respond(200, action("pending"));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    checks += 1;
-    return respond(200, action("pending"));
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await waitFor(() => {
-    expect(button("Retry")).toBeVisible();
-  });
-  expect(checks).toBe(0);
-  click(button("Retry"));
-  await screen.findByRole("form", { name: "Sign in to download invoices" });
-  expect(reads).toBe(2);
-  expect(checks).toBe(1);
-});
-
 test.each(["apply", "cancel"] as const)(
-  "Reconciles a lost %s response before offering a stable callback retry",
+  "Reconciles a lost %s response from a thread change signal before a stable callback retry",
   async (operation) => {
     let current: BrowserUserActionResponse["state"] = "pending";
     let notificationFailed = false;
@@ -2440,7 +2383,12 @@ test.each(["apply", "cancel"] as const)(
     await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
     await fill(within(form).getByLabelText("Password"), "synthetic-password");
     await fill(within(form).getByLabelText("Verification code"), "012345");
+    await browserUserActionSubscribed();
     click(button(operation === "apply" ? "Add to browser" : "Cancel"));
+    await waitFor(() => {
+      expect(current).not.toBe("pending");
+    });
+    context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
     await expect(
       screen.findByText(
@@ -2511,23 +2459,13 @@ test.each([
   },
 );
 
-test("An authoritative pending recovery rechecks the form before an explicit retry", async () => {
+test("A lost apply response keeps the draft for an explicit retry", async () => {
   let responseLost = false;
   let current: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action(current));
   });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    const pending = action("pending");
-    return respond(200, {
-      ...pending,
-      fields: pending.fields.map((field) => {
-        return responseLost && field.key === "email"
-          ? { ...field, label: "Confirmed email" }
-          : field;
-      }),
-    });
-  });
+  mockPendingPreflight();
   context.mocks.http.post(
     `*${browserUserActionsContract.apply.path.replace(":requestToken", REQUEST_TOKEN)}`,
     () => {
@@ -2559,12 +2497,13 @@ test("An authoritative pending recovery rechecks the form before an explicit ret
   click(button("Add to browser"));
 
   await expect(
-    screen.findByLabelText(/Confirmed email/u),
+    screen.findByText(
+      "Couldn't add the information. Your entries are still here. Try again.",
+    ),
   ).resolves.toBeInTheDocument();
   expect(screen.getByLabelText("Remembered answer")).toHaveValue(
     "Keep this draft",
   );
-  expect(screen.queryByText("Information added")).toBeNull();
   click(button("Add to browser"));
   await expect(
     screen.findByText("Agent notified"),
@@ -2598,7 +2537,7 @@ test.each([
   },
 );
 
-test("An unresolved applying action stops waiting and offers a read-only check", async () => {
+test("An applying action settles when the thread signals a change", async () => {
   let current: BrowserUserActionResponse["state"] = "applying";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action(current));
@@ -2611,64 +2550,18 @@ test("An unresolved applying action stops waiting and offers a read-only check",
   });
 
   await expect(
-    screen.findByText("Outcome not confirmed"),
+    screen.findByText("Checking browser status"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("form")).toBeNull();
+  await browserUserActionSubscribed();
   current = "uncertain";
-  click(button("Check status"));
+  context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
   await expect(
     screen.findByText("Check the browser"),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("form")).toBeNull();
 });
 
-test(
-  "A stalled recovery read reaches its deadline and permits another status check",
-  // This verifies the real 90-second owner deadline without replacing the clock.
-  { timeout: 120_000 },
-  async () => {
-    const started = createDeferredPromise<AbortSignal>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    let initial = true;
-    let available = false;
-    context.mocks.api(
-      browserUserActionsContract.get,
-      async ({ request, respond }) => {
-        if (initial) {
-          initial = false;
-          return respond(200, action("applying"));
-        }
-        if (!available) {
-          started.resolve(request.signal);
-          await release.promise;
-        }
-        return respond(200, action("uncertain"));
-      },
-    );
-    await setupPage({
-      context,
-      path: route(),
-      host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-    });
-    const readSignal = await started.promise;
-    await expect(
-      screen.findByText("Outcome not confirmed", {}, { timeout: 100_000 }),
-    ).resolves.toBeInTheDocument();
-    expect(readSignal.aborted).toBeTruthy();
-    available = true;
-    await act(async () => {
-      release.resolve(undefined);
-      await release.promise;
-    });
-    click(button("Check status"));
-    await expect(
-      screen.findByText("Check the browser"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByRole("form")).toBeNull();
-  },
-);
-
-test("A recovery read is cancelled when the route changes and its late result stays stale", async () => {
+test("A status read is cancelled when the route changes and its late result stays stale", async () => {
   const nextToken = `vm0_browser_user_action_${"c".repeat(43)}`;
   const started = createDeferredPromise<AbortSignal>(context.signal);
   const release = createDeferredPromise<void>(context.signal);

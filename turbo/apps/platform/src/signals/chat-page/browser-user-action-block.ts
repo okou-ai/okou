@@ -26,14 +26,8 @@ import { fetchResource } from "../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { waitAblyLoopUntil$ } from "../realtime.ts";
-import {
-  onRef,
-  onRejection,
-  resetSignal,
-  settle,
-  waitForOperation,
-} from "../utils.ts";
+import { setAblyLoop$ } from "../realtime.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -133,12 +127,11 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly entryAction$: Computed<BrowserInputAction | null>;
   readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
   readonly invalidateEntry$: Command<void, []>;
-  readonly startStandaloneEntry$: Command<Promise<void>, [AbortSignal]>;
-  readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
-  readonly refresh$: Command<void, [signal?: AbortSignal]>;
-  readonly recoveryState$: Computed<"idle" | "checking">;
-  readonly recover$: Command<void, []>;
-  readonly recoveryRef$: Command<
+  readonly standaloneEntryRef$: Command<
+    (() => void) | undefined,
+    [HTMLDivElement | null]
+  >;
+  readonly subscriptionRef$: Command<
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
@@ -158,14 +151,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
-  readonly resumeRef$: Command<
-    (() => void) | undefined,
-    [HTMLDivElement | null]
-  >;
-  readonly dialogRef$: Command<
-    (() => void) | undefined,
-    [HTMLDivElement | null]
-  >;
   readonly formRef$: Command<
     (() => void) | undefined,
     [HTMLFormElement | null]
@@ -177,7 +162,9 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
-  refresh$: BrowserUserActionSignals["refresh$"],
+  showSettledState$: ReturnType<
+    typeof createRequestSignals
+  >["showSettledState$"],
 ): Pick<
   BrowserUserActionSignals,
   "entryState$" | "entryAction$" | "beginEntry$" | "invalidateEntry$"
@@ -221,8 +208,18 @@ function createEntrySignals(
     }
     set(internalState$, "unavailable");
     const status: number = checked.value.status;
+    // An unavailable browser leaves the request itself unchanged.
     if (status !== 502 && status !== 503) {
-      set(refresh$);
+      set(
+        showSettledState$,
+        settledRequestState(
+          checked.value.status,
+          checked.value.status === 200 &&
+            actionMatches(checked.value.body, descriptor)
+            ? checked.value.body
+            : null,
+        ),
+      );
     }
   });
   const invalidateEntry$ = command(({ set }) => {
@@ -242,36 +239,15 @@ function createEntrySignals(
 }
 
 function createStandaloneEntrySignals(
-  request$: BrowserUserActionSignals["request$"],
-  refresh$: BrowserUserActionSignals["refresh$"],
   beginEntry$: BrowserUserActionSignals["beginEntry$"],
-): Pick<
-  BrowserUserActionSignals,
-  "startStandaloneEntry$" | "retryStandaloneRequest$"
-> {
-  const startStandaloneEntry$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const loaded = await settle(get(request$), signal);
-      if (!loaded.ok) {
-        return;
-      }
-      const request = loaded.value;
-      if (
-        request.kind === "action" &&
-        request.action.kind === "input" &&
-        request.action.state === "pending"
-      ) {
-        await set(beginEntry$, signal);
-      }
-    },
+): Pick<BrowserUserActionSignals, "standaloneEntryRef$"> {
+  // A standalone form checks the website whenever a pending state is shown.
+  const standaloneEntryRef$ = onRef(
+    command(async ({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      await set(beginEntry$, signal);
+    }),
   );
-  const retryStandaloneRequest$ = command(
-    async ({ set }, signal: AbortSignal) => {
-      set(refresh$, signal);
-      await set(startStandaloneEntry$, signal);
-    },
-  );
-  return { startStandaloneEntry$, retryStandaloneRequest$ };
+  return { standaloneEntryRef$ };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -397,6 +373,20 @@ function actionMatches(
   );
 }
 
+/** A conflict yields null: the change behind it has its own notification. */
+function settledRequestState(
+  status: number,
+  action: BrowserUserAction | null,
+): BrowserUserActionRequestState | null {
+  if (status === 410) {
+    return { kind: "expired" };
+  }
+  if (action) {
+    return { kind: "action", action };
+  }
+  return status === 409 ? null : { kind: "unavailable" };
+}
+
 async function readBrowserUserAction(
   client: ApiClientFactory,
   descriptor: BrowserUserActionDescriptor,
@@ -413,14 +403,14 @@ async function readBrowserUserAction(
     { showErrorToast: false },
   );
   signal?.throwIfAborted();
-  const status: number = result.status;
-  if (status === 410) {
-    return { kind: "expired" };
-  }
-  if (status !== 200 || !actionMatches(result.body, descriptor)) {
-    return { kind: "unavailable" };
-  }
-  return { kind: "action", action: result.body };
+  return (
+    settledRequestState(
+      result.status,
+      result.status === 200 && actionMatches(result.body, descriptor)
+        ? result.body
+        : null,
+    ) ?? { kind: "unavailable" }
+  );
 }
 
 function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
@@ -437,8 +427,8 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
         readBrowserUserAction(get(apiClient$), descriptor));
     },
   );
-  const refresh$ = command(({ get, set }, parentSignal?: AbortSignal) => {
-    const signal = set(resetRead$, parentSignal ?? get(pageSignal$));
+  const refresh$ = command(({ get, set }) => {
+    const signal = set(resetRead$, get(pageSignal$));
     signal.throwIfAborted();
     if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
       return;
@@ -448,100 +438,41 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
       readBrowserUserAction(get(apiClient$), descriptor, signal),
     );
   });
-  return { request$, refresh$ };
-}
-
-function createRecoverySignals(
-  threadId: string,
-  request$: BrowserUserActionSignals["request$"],
-  refresh$: BrowserUserActionSignals["refresh$"],
-  beginEntry$: BrowserUserActionSignals["beginEntry$"],
-) {
-  const internalState$ = state<"idle" | "checking">("idle");
-  const ownerCount$ = state(0);
-  const resetRecovery$ = resetSignal();
-  const recoveryState$ = computed((get) => {
-    return get(internalState$);
-  });
-  const recover$ = command(({ set }) => {
-    set(internalState$, "checking");
-  });
-  const reconcile$ = command(
-    async ({ get, set }, recoverySignal: AbortSignal): Promise<boolean> => {
-      set(refresh$, recoverySignal);
-      const result = await settle(
-        waitForOperation(get(request$), recoverySignal),
-        recoverySignal,
-      );
-      if (!result.ok) {
-        return true;
+  // A response settles the state it reports without another read.
+  const showSettledState$ = command(
+    ({ get, set }, next: BrowserUserActionRequestState | null) => {
+      if (!next) {
+        return;
       }
-      if (
-        result.value.kind === "action" &&
-        result.value.action.state === "applying"
-      ) {
-        return false;
-      }
-      if (
-        result.value.kind === "action" &&
-        result.value.action.state === "pending"
-      ) {
-        await set(beginEntry$, recoverySignal);
-        recoverySignal.throwIfAborted();
-      }
-      return true;
+      set(resetRead$, get(pageSignal$));
+      set(refreshedRequest$, Promise.resolve(next));
     },
   );
-  const recoveryRef$ = onRef(
-    command(
-      async (
-        { get, set },
-        _element: HTMLDivElement,
-        ownerSignal: AbortSignal,
-      ) => {
-        ownerSignal.throwIfAborted();
-        set(ownerCount$, (count) => {
-          return count + 1;
-        });
-        ownerSignal.addEventListener(
-          "abort",
-          () => {
-            set(ownerCount$, (count) => {
-              return Math.max(0, count - 1);
-            });
-            if (get(ownerCount$) === 0) {
-              set(resetRecovery$);
-            }
-          },
-          { once: true },
-        );
-        if (get(ownerCount$) > 1) {
-          return;
-        }
-        // Duplicate cards share one loop, cancelled when their last owner leaves.
-        const signal = set(resetRecovery$, get(pageSignal$));
-        set(internalState$, "checking");
-        await onRejection(
-          set(
-            waitAblyLoopUntil$,
-            {
-              topic: `browserUserActionChanged:${threadId}`,
-              loopCommand$: reconcile$,
-              options: { runOnSubscribe: true },
-            },
-            signal,
-          ),
-          () => {
-            signal.throwIfAborted();
-            set(internalState$, "idle");
-          },
-        );
-        signal.throwIfAborted();
-        set(internalState$, "idle");
-      },
-    ),
+  return { request$, refresh$, showSettledState$ };
+}
+
+function createSubscriptionSignals(
+  threadId: string,
+  refresh$: ReturnType<typeof createRequestSignals>["refresh$"],
+) {
+  const invalidate$ = command(({ set }) => {
+    set(refresh$);
+    return false;
+  });
+  const subscriptionRef$ = onRef(
+    command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      set(
+        setAblyLoop$,
+        {
+          topic: `browserUserActionChanged:${threadId}`,
+          loopCommand$: invalidate$,
+          options: { runOnSubscribe: true },
+        },
+        signal,
+      );
+    }),
   );
-  return { recoveryState$, recover$, recoveryRef$ };
+  return { subscriptionRef$ };
 }
 
 function createCheckboxDraftSignals() {
@@ -888,8 +819,6 @@ function callbackArgs(
 interface BrowserUserActionMutationContext {
   readonly descriptor: BrowserUserActionDescriptor;
   readonly request$: BrowserUserActionSignals["request$"];
-  readonly refresh$: BrowserUserActionSignals["refresh$"];
-  readonly recover$: BrowserUserActionSignals["recover$"];
   readonly busy$: BrowserUserActionSignals["busy$"];
   readonly write$: ReturnType<typeof createBrowserMutationSignal>;
   readonly draft$: BrowserUserActionSignals["draft$"];
@@ -1442,7 +1371,9 @@ function browserInputSubmissionError(error: unknown): Error {
 function createBrowserMutationSignal(
   descriptor: BrowserUserActionDescriptor,
   activeMutation$: State<boolean>,
-  recover$: BrowserUserActionSignals["recover$"],
+  showSettledState$: ReturnType<
+    typeof createRequestSignals
+  >["showSettledState$"],
 ) {
   return command(
     async (
@@ -1464,15 +1395,24 @@ function createBrowserMutationSignal(
         mutation.kind === "apply"
           ? client.apply({ ...options, body: { values: mutation.values } })
           : client.cancel({ ...options, body: {} });
-      return await onRejection(
-        accept(request, [200, 403, 404, 409, 410], signal),
-        () => {
-          signal.throwIfAborted();
-          set(recover$);
-        },
+      const result = await accept(
+        request,
+        [200, 403, 404, 409, 410],
+        signal,
       ).finally(() => {
         set(activeMutation$, false);
       });
+      signal.throwIfAborted();
+      set(
+        showSettledState$,
+        settledRequestState(
+          result.status,
+          result.status === 200 && actionMatches(result.body, descriptor)
+            ? result.body
+            : null,
+        ),
+      );
+      return result;
     },
   );
 }
@@ -1480,7 +1420,6 @@ function createBrowserMutationSignal(
 function createSubmitSignal({
   descriptor,
   request$,
-  refresh$,
   busy$,
   write$,
   draft$,
@@ -1570,7 +1509,6 @@ function createSubmitSignal({
     }
     if (status !== 200) {
       set(clearDraft$);
-      set(refresh$);
       return;
     }
     if (
@@ -1578,7 +1516,6 @@ function createSubmitSignal({
       result.body.kind !== "input"
     ) {
       set(clearDraft$);
-      set(refresh$);
       return;
     }
     if (result.body.state !== "pending") {
@@ -1593,21 +1530,15 @@ function createSubmitSignal({
         signal,
       ).finally(() => {
         set(activeMutation$, false);
-        if (!signal.aborted) {
-          set(refresh$, signal);
-        }
       });
       signal.throwIfAborted();
-      return;
     }
-    set(refresh$);
   });
 }
 
 function createCancelSignal({
   descriptor,
   request$,
-  refresh$,
   busy$,
   write$,
   clearDraft$,
@@ -1645,21 +1576,15 @@ function createCancelSignal({
         signal,
       ).finally(() => {
         set(activeMutation$, false);
-        if (!signal.aborted) {
-          set(refresh$, signal);
-        }
       });
       signal.throwIfAborted();
-      return;
     }
-    set(refresh$);
   });
 }
 
 function createContinueSignal({
   descriptor,
   request$,
-  refresh$,
   busy$,
   activeMutation$,
   deliverCallback$,
@@ -1692,24 +1617,18 @@ function createContinueSignal({
       return;
     }
     set(activeMutation$, true);
-    await onRejection(
-      set(deliverCallback$, callback.prompt, callback.ids, signal),
+    await set(deliverCallback$, callback.prompt, callback.ids, signal).finally(
       () => {
-        signal.throwIfAborted();
-        set(refresh$, signal);
+        set(activeMutation$, false);
       },
-    ).finally(() => {
-      set(activeMutation$, false);
-    });
+    );
   });
 }
 
 function createMutationSignals({
   descriptor,
   request$,
-  refresh$,
-  recoveryState$,
-  recover$,
+  showSettledState$,
   draft$,
   choiceDraft$,
   checkboxDraft$,
@@ -1725,8 +1644,6 @@ function createMutationSignals({
   BrowserUserActionMutationContext,
   | "descriptor"
   | "request$"
-  | "refresh$"
-  | "recover$"
   | "draft$"
   | "choiceDraft$"
   | "checkboxDraft$"
@@ -1738,8 +1655,11 @@ function createMutationSignals({
   | "entryAction$"
   | "entryState$"
   | "invalidateEntry$"
-> &
-  Pick<BrowserUserActionSignals, "recoveryState$">): Pick<
+> & {
+  readonly showSettledState$: ReturnType<
+    typeof createRequestSignals
+  >["showSettledState$"];
+}): Pick<
   BrowserUserActionSignals,
   | "callbackDelivered$"
   | "callbackFailed$"
@@ -1752,12 +1672,12 @@ function createMutationSignals({
   const callbackFailedState$ = state(false);
   const activeMutation$ = state(false);
   const busy$ = computed((get) => {
-    return get(activeMutation$) || get(recoveryState$) !== "idle";
+    return get(activeMutation$);
   });
   const write$ = createBrowserMutationSignal(
     descriptor,
     activeMutation$,
-    recover$,
+    showSettledState$,
   );
   const deliverCallback$ = command(
     async (
@@ -1784,8 +1704,6 @@ function createMutationSignals({
   const context: BrowserUserActionMutationContext = {
     descriptor,
     request$,
-    refresh$,
-    recover$,
     busy$,
     write$,
     draft$,
@@ -1821,78 +1739,22 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
-  const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
-  const recoverySignals = createRecoverySignals(
+  const entrySignals = createEntrySignals(
+    descriptor,
+    requestSignals.showSettledState$,
+  );
+  const subscriptionSignals = createSubscriptionSignals(
     descriptor.threadId,
-    requestSignals.request$,
     requestSignals.refresh$,
-    entrySignals.beginEntry$,
-  );
-  const openDialogCount$ = state(0);
-  const pendingReturnRefresh$ = state(false);
-  const dialogRef$ = onRef(
-    command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
-      const pageSignal = get(pageSignal$);
-      set(openDialogCount$, (count) => {
-        return count + 1;
-      });
-      signal.addEventListener(
-        "abort",
-        () => {
-          set(openDialogCount$, (count) => {
-            return Math.max(0, count - 1);
-          });
-          if (get(openDialogCount$) === 0 && get(pendingReturnRefresh$)) {
-            set(pendingReturnRefresh$, false);
-            if (!pageSignal.aborted) {
-              set(requestSignals.refresh$, pageSignal);
-            }
-          }
-        },
-        { once: true },
-      );
-    }),
-  );
-  const resumeRef$ = onRef(
-    command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
-      const pageSignal = get(pageSignal$);
-      const refresh = () => {
-        if (pageSignal.aborted) {
-          return;
-        }
-        if (get(recoverySignals.recoveryState$) === "checking") {
-          return;
-        }
-        if (get(openDialogCount$) > 0) {
-          set(pendingReturnRefresh$, true);
-          return;
-        }
-        set(requestSignals.refresh$, pageSignal);
-      };
-      window.addEventListener("focus", refresh, { signal });
-      document.addEventListener(
-        "visibilitychange",
-        () => {
-          if (document.visibilityState === "visible") {
-            refresh();
-          }
-        },
-        { signal },
-      );
-    }),
   );
   const standaloneEntrySignals = createStandaloneEntrySignals(
-    requestSignals.request$,
-    requestSignals.refresh$,
     entrySignals.beginEntry$,
   );
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals({
     descriptor,
     request$: requestSignals.request$,
-    refresh$: requestSignals.refresh$,
-    recoveryState$: recoverySignals.recoveryState$,
-    recover$: recoverySignals.recover$,
+    showSettledState$: requestSignals.showSettledState$,
     draft$: draftSignals.draft$,
     choiceDraft$: draftSignals.choiceDraft$,
     checkboxDraft$: draftSignals.checkboxDraft$,
@@ -1907,10 +1769,8 @@ export function createBrowserUserActionSignals(
   });
   return {
     ...descriptor,
-    ...requestSignals,
-    ...recoverySignals,
-    resumeRef$,
-    dialogRef$,
+    request$: requestSignals.request$,
+    ...subscriptionSignals,
     ...entrySignals,
     ...standaloneEntrySignals,
     ...draftSignals,
