@@ -554,7 +554,6 @@
       },
       "kindIcon": "{{kind}} Artefakt",
       "loading": "Artefakte werden geladen",
-      "loadMore": "Mehr laden",
       "retry": "Erneut versuchen"
     },
     "fileBadges": {

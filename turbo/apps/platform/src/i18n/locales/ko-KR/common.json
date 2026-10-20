@@ -553,7 +553,6 @@
       },
       "kindIcon": "{{kind}} 아티팩트",
       "loading": "아티팩트 로딩 중",
-      "loadMore": "더 불러오기",
       "retry": "다시 시도"
     },
     "fileBadges": {

@@ -553,7 +553,6 @@
       },
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak",
-      "loadMore": "Muat lebih banyak",
       "retry": "Coba lagi"
     },
     "fileBadges": {
