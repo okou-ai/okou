@@ -23,7 +23,7 @@ import {
   privateHostedDeploymentColumns,
 } from "../src/columns/hosted-site";
 import type { HostedSiteManifest } from "../src/jsonb-contracts/hosted-site";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // Runtime mapping at the 1173 frontier. A later migration renamed
 // `public_brand` to `link_layout_segment`; this frontier keeps the old name.
@@ -107,7 +107,7 @@ async function apply() {
   const sql = postgres(fixtureUrl.toString(), { max: 1, onnotice: () => {} });
   process.chdir(fixture);
   try {
-    await applyPendingMigrations(sql);
+    await applyFixtureMigrations(sql);
   } finally {
     process.chdir(originalDirectory);
     await sql.end();

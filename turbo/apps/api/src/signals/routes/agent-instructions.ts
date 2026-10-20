@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import { and, eq, or, sql } from "drizzle-orm";
 import { command, computed } from "ccstate";
 import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
@@ -13,13 +11,8 @@ import { writeDb$ } from "../external/db";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import { agentResponse } from "../services/agent-data.service";
 import { agentInstructions } from "../services/agent-instructions.service";
-import {
-  AGENT_INSTRUCTIONS_PUBLICATION_KEY,
-  beginPublicationCtesSql,
-} from "../services/storage-publication-fence.service";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -64,17 +57,6 @@ const instructionResponseColumns = Object.freeze({
   visibility: agents.visibility,
 });
 
-const instructionUpdateRowSchema = z.object({
-  agentId: z.string(),
-  owner: z.string(),
-  displayName: z.string().nullable(),
-  description: z.string().nullable(),
-  sound: z.string().nullable(),
-  avatarUrl: z.string().nullable(),
-  visibility: z.enum(["public", "private"]),
-  defaultAgentId: z.string().nullable(),
-});
-
 const updateAgentInstructionsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -88,7 +70,7 @@ const updateAgentInstructionsInner$ = command(
     const db = set(writeDb$);
     const updatedAt = nowDate();
     // Authorization is part of the write predicate, including concurrent visibility changes.
-    const updatedAgent = db
+    const [updated] = await db
       .update(agents)
       .set({ instructions: body.data.content, updatedAt })
       .where(
@@ -110,26 +92,6 @@ const updateAgentInstructionsInner$ = command(
             .mapWith(orgMetadata.defaultAgentId)
             .as("default_agent_id"),
       });
-    // Keep the outgoing bridge's Agent-before-scope/token order. UPSERT must
-    // replace even a reservation committed after this statement's snapshot
-    // while its Agent UPDATE waited. A DELETE-only barrier cannot do that.
-    // This bounded token remains until replaced, Agent deletion or release-3 cleanup.
-    const [updated] = parseRawRows(
-      instructionUpdateRowSchema,
-      await db.execute(sql`
-      WITH updated_agent AS (${updatedAgent.getSQL()}),
-      ${beginPublicationCtesSql(
-        { orgId: auth.orgId, agentId: params.id },
-        AGENT_INSTRUCTIONS_PUBLICATION_KEY,
-        randomUUID(),
-        updatedAt,
-        sql`updated_agent`,
-      )}
-      SELECT id AS "agentId", owner, display_name AS "displayName", description,
-        sound, avatar_url AS "avatarUrl", visibility, default_agent_id AS "defaultAgentId"
-      FROM updated_agent
-    `),
-    );
     signal.throwIfAborted();
     if (updated) {
       return { status: 200 as const, body: agentResponse(updated) };

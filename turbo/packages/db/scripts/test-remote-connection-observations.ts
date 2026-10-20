@@ -5,7 +5,7 @@ import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const journal = z
   .object({
@@ -62,7 +62,7 @@ try {
   await admin.query(`CREATE DATABASE "${name}"`);
   created = true;
   await client.connect();
-  await applyPendingMigrations(migrationSql, { beforeMillis: migration.when });
+  await applyFixtureMigrations(migrationSql, { beforeMillis: migration.when });
   await client.query(
     `INSERT INTO ssh_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
      VALUES ($1,'org-observation','owner','Login','deploy','password','synthetic-ciphertext')`,
@@ -84,11 +84,11 @@ try {
     [ssh],
   );
   const retainedInventory = await inventory();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: migration.when + 1,
   });
   assert.deepEqual(await inventory(), retainedInventory);
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
   assert.deepEqual(
     (
       await client.query(

@@ -223,24 +223,7 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
     let archive_url = server.url("/reused-archive.tar.gz");
     let mut context = context_with_remote_storage(&archive_url, body.len());
     if with_instructions {
-        let instructions_dir = home.storage_cache_dir("instructions", "v1");
-        std::fs::create_dir_all(&instructions_dir).unwrap();
-        std::fs::write(instructions_dir.join("archive.tar.gz"), &body).unwrap();
-        drop(
-            runner_host::lock::acquire(home.storage_lock("instructions", "v1"))
-                .await
-                .unwrap(),
-        );
-        let manifest = context.storage_manifest.as_mut().unwrap();
-        manifest.storages[0].mount_path = "/home/user/.claude/skills/workflow".into();
-        let mut instructions = api_storage(
-            "instructions",
-            "/home/user/.claude",
-            "v1",
-            &server.url("/instructions.tar.gz"),
-        );
-        instructions.instructions_target_filename = Some("CLAUDE.md".into());
-        manifest.storages.push(instructions);
+        context.agent_instructions = Some("current inline instructions".into());
     }
 
     let task = tokio::spawn(async move {
@@ -261,8 +244,14 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
 
     assert_eq!(outcome.exit_code(), 0, "error={:?}", outcome.error());
     full_get.assert_calls_async(0).await;
-    let writes = overrides.write_files_calls();
-    assert_eq!(writes.len(), usize::from(with_instructions));
+    assert!(overrides.write_files_calls().is_empty());
+    let writes = overrides.private_write_files_calls();
+    let instruction_files: Vec<_> = writes
+        .iter()
+        .flat_map(|call| &call.files)
+        .filter(|file| file.path.ends_with("/agent-instructions"))
+        .collect();
+    assert_eq!(instruction_files.len(), usize::from(with_instructions));
     let manifests = overrides.storage_manifest_calls();
     assert_eq!(manifests.len(), 1);
     let (json, payload) =
@@ -278,18 +267,9 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
         Some(archive_url.as_str())
     );
     if with_instructions {
-        assert_eq!(manifest.storages.len(), 2);
-        assert_eq!(
-            manifest.storages[1].instructions_target_filename.as_deref(),
-            Some("CLAUDE.md")
-        );
-        assert!(manifest.storages[1].extract_path.is_some());
-        assert_eq!(writes[0].files.len(), 1);
-        assert_eq!(writes[0].files[0].content, body);
-        assert_eq!(
-            manifest.storages[1].archive_url.as_deref(),
-            Some(format!("file://{}", writes[0].files[0].path).as_str())
-        );
+        assert_eq!(manifest.storages.len(), 1);
+        assert_eq!(instruction_files[0].content, b"current inline instructions");
+        assert!(instruction_files[0].path.ends_with("/agent-instructions"));
     }
     assert_no_telemetry_action(&telemetry, "storage_cache_fresh_delivery_single_request");
     assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);

@@ -79,7 +79,7 @@ pub struct ExecutionContext {
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
-    /// Absent for captured Storage instructions; empty explicitly replaces the managed file.
+    /// Absent for agentless jobs; empty explicitly replaces the managed file.
     #[serde(
         default,
         deserialize_with = "deserialize_agent_instructions",
@@ -2018,8 +2018,8 @@ mod tests {
             "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "codex",
             "platformEnvironment": {}, "connectorRuntimeTargets": []
         });
-        let legacy: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
-        assert_eq!(legacy.agent_instructions, None);
+        let agentless: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
+        assert_eq!(agentless.agent_instructions, None);
         for body in ["", "  指令\n\n"] {
             let mut current = claim.clone();
             current["agentInstructions"] = json!(body);
@@ -2526,12 +2526,11 @@ mod tests {
         let json = execution_context_with_storage_manifest(json!({
             "storageMounts": [
                 {
-                    "name": "instructions",
+                    "name": "workflow",
                     "storageId": "storage-read-only",
                     "versionId": "version-1",
-                    "mountPath": "/home/user/.claude",
-                    "archiveUrl": "https://example.com/instructions.tar.gz",
-                    "instructionsTargetFilename": "CLAUDE.md",
+                    "mountPath": "/home/user/.claude/skills/workflow",
+                    "archiveUrl": "https://example.com/workflow.tar.gz",
                     "futureMountField": true
                 },
                 {
@@ -2551,8 +2550,8 @@ mod tests {
         let manifest = context.storage_manifest.unwrap();
 
         assert_eq!(manifest.storages.len(), 1);
-        assert_eq!(manifest.storages[0].name, "instructions");
-        assert_eq!(manifest.storages[0].vas_storage_name, "instructions");
+        assert_eq!(manifest.storages[0].name, "workflow");
+        assert_eq!(manifest.storages[0].vas_storage_name, "workflow");
         assert_eq!(manifest.storages[0].vas_version_id, "version-1");
         assert_eq!(manifest.artifacts.len(), 1);
         assert_eq!(manifest.artifacts[0].vas_storage_name, "memory");
@@ -2627,15 +2626,6 @@ mod tests {
                 "mountPath": "/read-only-missing-root-policy",
                 "archiveUrl": "https://example.com/read-only.tar.gz",
                 "missingRootPolicy": "preserveParentVersion"
-            }),
-            json!({
-                "name": "writeback-instructions",
-                "storageId": "storage-4",
-                "versionId": "version-4",
-                "mountPath": "/writeback-instructions",
-                "archiveUrl": "https://example.com/instructions.tar.gz",
-                "instructionsTargetFilename": "AGENTS.md",
-                "writeback": true
             }),
             json!({
                 "name": "writeback-without-archive",

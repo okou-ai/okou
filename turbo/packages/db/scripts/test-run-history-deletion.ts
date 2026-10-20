@@ -5,7 +5,7 @@ import { Client } from "pg";
 import postgres from "postgres";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { agentRuns } from "../src/runtime/agent-run";
 import {
   agentRunDeletionMembership,
@@ -98,7 +98,7 @@ try {
     return entry.tag.endsWith("_retire_session_conversation_runtime");
   });
   assert.ok(cutover);
-  await applyPendingMigrations(migrationClient, { beforeMillis: cutover.when });
+  await applyFixtureMigrations(migrationClient, { beforeMillis: cutover.when });
   await client.connect();
   await writer.connect();
   const [writerBackend] = z

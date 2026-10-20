@@ -93,7 +93,6 @@ interface ResolvedVolume {
   readonly mountPath: string;
   readonly vasStorageName: string;
   readonly vasVersion: string;
-  readonly instructionsTargetFilename?: string;
   readonly optional?: boolean;
   readonly system?: boolean;
 }
@@ -168,7 +167,6 @@ interface ResolvedManifestStorageInput {
   readonly name: string;
   readonly mountPath: string;
   readonly vasStorageName: string;
-  readonly instructionsTargetFilename?: string;
   readonly optional?: boolean;
   readonly resolved: StorageResolution;
 }
@@ -579,7 +577,6 @@ function resolveComposeStorageInput(args: {
     name: args.volume.name,
     mountPath: args.volume.mountPath,
     vasStorageName: args.volume.vasStorageName,
-    instructionsTargetFilename: args.volume.instructionsTargetFilename,
     optional: args.volume.optional,
     resolved: resolvedResult.ok,
   };
@@ -774,11 +771,6 @@ function readOnlyStorageEntryMetadata(args: {
       versionId: args.plan.resolved.versionId,
       mountPath: args.plan.mountPath,
       ...(archiveSize === undefined ? {} : { archiveSize }),
-      ...(args.plan.instructionsTargetFilename
-        ? {
-            instructionsTargetFilename: args.plan.instructionsTargetFilename,
-          }
-        : {}),
     },
     persistedMount: {
       orgId: args.plan.resolved.resolvedOrgId,
@@ -790,11 +782,6 @@ function readOnlyStorageEntryMetadata(args: {
       ...(args.plan.optional === undefined
         ? {}
         : { optional: args.plan.optional }),
-      ...(args.plan.instructionsTargetFilename === undefined
-        ? {}
-        : {
-            instructionsTargetFilename: args.plan.instructionsTargetFilename,
-          }),
     },
     runContextVolume: {
       name: args.plan.name,
@@ -1223,11 +1210,6 @@ function resolvePersistedStorageMounts(args: {
       vasStorageName: mount.name,
       mountPath: mount.mountPath,
       ...(mount.optional === undefined ? {} : { optional: mount.optional }),
-      ...(mount.instructionsTargetFilename === undefined
-        ? {}
-        : {
-            instructionsTargetFilename: mount.instructionsTargetFilename,
-          }),
       resolved,
       entryKind: "additional",
       source: "unknown",
@@ -2323,8 +2305,5 @@ export function storedMountFromPrepared(
     ...identity,
     archiveUrl: prepared.archiveUrl,
     ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
-    ...(prepared.instructionsTargetFilename === undefined
-      ? {}
-      : { instructionsTargetFilename: prepared.instructionsTargetFilename }),
   };
 }

@@ -7,7 +7,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { deleteRunHistoriesSql } from "../src/operations/run-history-deletion";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -37,7 +37,7 @@ assert.ok(migration);
 await admin.query(`CREATE DATABASE "${databaseName}"`);
 const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
 try {
-  await applyPendingMigrations(sql, { beforeMillis: migration.folderMillis });
+  await applyFixtureMigrations(sql, { beforeMillis: migration.folderMillis });
   const agentId = randomUUID();
   const threadId = randomUUID();
   const sessionId = randomUUID();
@@ -59,7 +59,7 @@ try {
     await sql`SELECT id, user_id, org_id, session_id, status, prompt, result, created_at FROM agent_runs ORDER BY id`;
   await sql`UPDATE agent_runs SET user_id = 'different-owner' WHERE id = ${runId}`;
   await assert.rejects(
-    applyPendingMigrations(sql, { beforeMillis: migration.folderMillis + 1 }),
+    applyFixtureMigrations(sql, { beforeMillis: migration.folderMillis + 1 }),
     /Run\/Session ownership is inconsistent/,
   );
   assert.equal(
@@ -71,7 +71,7 @@ try {
   await sql`UPDATE agent_runs SET user_id = 'user-native' WHERE id = ${runId}`;
   await sql`UPDATE agent_runs SET framework = 'pi', framework_session_id = ${threadId}, legacy_conversation_history_hash = NULL WHERE id = ${runId}`;
   await assert.rejects(
-    applyPendingMigrations(sql, { beforeMillis: migration.folderMillis + 1 }),
+    applyFixtureMigrations(sql, { beforeMillis: migration.folderMillis + 1 }),
     /Prepared native output mirrors diverged/,
   );
   await sql`UPDATE agent_runs SET framework = NULL, framework_session_id = NULL WHERE id = ${runId}`;
@@ -94,7 +94,7 @@ try {
     VALUES (${privateRunId}, 'user-native', 'org-native', ${privateSessionId}, 'cancelled', 'Private maintenance', 'web', 32, ${sql.json({ schemaVersion: 3, framework: "pi", runnerProfile: "test" })}, ${sql.json(privateReceipt)}, false)`;
   await sql`INSERT INTO conversations (id, run_id, cli_agent_type, cli_agent_session_id) VALUES (${privateConversationId}, ${privateRunId}, 'pi', ${privateRunId})`;
   await sql`UPDATE agent_sessions SET conversation_id = ${privateConversationId} WHERE id = ${privateSessionId}`;
-  await applyPendingMigrations(sql, {
+  await applyFixtureMigrations(sql, {
     beforeMillis: migration.folderMillis + 1,
   });
   assert.deepEqual(

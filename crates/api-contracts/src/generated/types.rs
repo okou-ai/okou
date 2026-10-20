@@ -1436,9 +1436,6 @@ pub mod runners {
             /// Whether the resolved Storage version is explicitly empty.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub empty: Option<bool>,
-            /// Optional filename used when Storage instructions are normalized.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub instructions_target_filename: Option<String>,
             /// Optional behavior when a writeback mount root is missing.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,

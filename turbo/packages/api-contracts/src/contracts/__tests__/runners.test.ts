@@ -895,23 +895,7 @@ describe("runner storage manifest contract", () => {
     );
   });
 
-  it("distinguishes current-Agent claims from retained captured instruction mounts", () => {
-    const legacy = {
-      ...storedContext,
-      storageMounts: [
-        {
-          name: "instructions-agent",
-          storageId: "instruction-storage",
-          versionId: "captured-version",
-          orgId: "org",
-          userId: "__org__",
-          mountPath: "/home/user/.codex",
-          archiveUrl: "https://storage.example/instructions.tar.gz",
-          instructionsTargetFilename: "AGENTS.md",
-        },
-      ],
-    };
-    expect(storedExecutionContextSchema.parse(legacy)).toEqual(legacy);
+  it("preserves the current-Agent marker for supported API rollback readers", () => {
     expect(
       storedExecutionContextSchema.parse({
         ...storedContext,
@@ -1005,14 +989,6 @@ describe("runner storage manifest contract", () => {
         ...base,
         archiveUrl: "https://storage.example/workspace.tar.gz",
         missingRootPolicy: "fail",
-      }).success,
-    ).toBe(false);
-    expect(
-      storageMountEntrySchema.safeParse({
-        ...base,
-        archiveUrl: "https://storage.example/workspace.tar.gz",
-        instructionsTargetFilename: "AGENTS.md",
-        writeback: true,
       }).success,
     ).toBe(false);
   });

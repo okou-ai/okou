@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 // DDL, catalog corruption and journal failures are infrastructure boundaries.
 // Each case owns a database at the actual pre-1132 migration frontier.
@@ -72,7 +72,7 @@ async function apply(
   const sql = postgres(url, { max: 1, onnotice: () => {}, ...options });
   process.chdir(fixture);
   try {
-    await applyPendingMigrations(sql);
+    await applyFixtureMigrations(sql);
   } finally {
     process.chdir(originalDirectory);
     await sql.end();

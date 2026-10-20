@@ -1,7 +1,7 @@
 use super::{BinaryLoggingFixture, assert_action_types_present};
 use crate::support::{TcpTestServer, create_tar_gz, read_http_request_path, write_manifest};
 use httpmock::prelude::*;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::io::{self, Write as _};
 use std::sync::mpsc;
 use std::thread;
@@ -133,7 +133,6 @@ fn binary_records_download_scheduler_attribution() {
             "artifact_download_file_body_read",
             "artifact_download_file_extract_outside_body_read",
             "guest_storage_apply_archive_scheduler",
-            "guest_storage_apply_instruction_normalize",
             "download_total",
         ],
     );
@@ -160,7 +159,6 @@ fn binary_records_download_scheduler_attribution() {
         "guest_storage_apply_cleanup",
         "guest_storage_apply_target_prepare",
         "guest_storage_apply_archive_scheduler",
-        "guest_storage_apply_instruction_normalize",
     ] {
         let entry = operation(&ops, phase).unwrap_or_else(|| panic!("missing {phase} in {ops:?}"));
         assert_eq!(entry["success"], true, "unexpected {phase}: {entry:?}");
@@ -253,17 +251,9 @@ fn binary_records_download_scheduler_attribution() {
         action_precedes(
             &actions,
             "guest_storage_apply_archive_scheduler",
-            "guest_storage_apply_instruction_normalize"
-        ),
-        "expected scheduler total before instruction normalization in {actions:?}"
-    );
-    assert!(
-        action_precedes(
-            &actions,
-            "guest_storage_apply_instruction_normalize",
             "download_total"
         ),
-        "expected instruction normalization before run total in {actions:?}"
+        "expected scheduler total before run total in {actions:?}"
     );
     assert!(
         !actions
@@ -326,10 +316,6 @@ fn binary_records_scheduler_attribution_for_failed_download() {
         .unwrap_or_else(|| panic!("missing scheduler total in {ops:?}"));
     assert_eq!(scheduler["success"], false);
     assert!(scheduler.get("error").is_none());
-    assert!(
-        operation(&ops, "guest_storage_apply_instruction_normalize").is_none(),
-        "failed download normalized instructions: {ops:?}"
-    );
     let conflict = ops
         .iter()
         .find(|entry| entry["action_type"] == "guest_storage_apply_mount_conflict_deferral_count_1")
@@ -436,10 +422,7 @@ fn binary_records_redacted_target_preparation_failure() {
             .any(|action| action.starts_with("guest_storage_apply_task_count_")),
         "target preparation failure reached scheduler attribution: {actions:?}"
     );
-    for absent in [
-        "guest_storage_apply_archive_scheduler",
-        "guest_storage_apply_instruction_normalize",
-    ] {
+    for absent in ["guest_storage_apply_archive_scheduler"] {
         assert!(
             !actions.iter().any(|action| action == absent),
             "unexpected {absent} in {actions:?}"
@@ -689,54 +672,4 @@ fn binary_omits_local_extraction_attribution_when_file_open_fails() {
             "unexpected {action}: {ops:?}"
         );
     }
-}
-
-#[test]
-fn binary_records_framework_home_instructions_role() {
-    let fixture = BinaryLoggingFixture::new("framework-home-instructions-role").unwrap();
-    let archive = create_tar_gz(&[("AGENTS.md", b"runtime instructions")]).unwrap();
-    assert!(archive.len() < 65_536);
-    let archive_path = fixture.dir.path().join("instructions.tar.gz");
-    std::fs::write(&archive_path, archive).unwrap();
-
-    let framework_home = fixture.dir.path().join(".codex");
-    let extract_path = fixture.dir.path().join("instructions-stage");
-    let manifest_path = fixture.dir.path().join("instructions-manifest.json");
-    let manifest = json!({
-        "storageMounts": [{
-            "mountPath": framework_home,
-            "extractPath": extract_path,
-            "archiveUrl": format!("file://{}", archive_path.display()),
-            "instructionsTargetFilename": "AGENTS.md"
-        }]
-    });
-    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
-
-    let output = fixture.run_manifest_path(&manifest_path).unwrap();
-
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        std::fs::read_to_string(framework_home.join("AGENTS.md")).unwrap(),
-        "runtime instructions"
-    );
-    assert!(!extract_path.exists());
-    let ops = fixture.ops_entries().unwrap();
-    let task = operation_with_dimensions(
-        &ops,
-        "storage_download",
-        "file_lt_64_kib",
-        "framework_home_instructions",
-    )
-    .unwrap();
-    assert_eq!(task["success"], true);
-    assert!(task.get("error").is_none());
-    assert_eq!(
-        operation(&ops, "guest_storage_apply_instruction_normalize").unwrap()["success"],
-        true
-    );
-    assert_eq!(operation(&ops, "download_total").unwrap()["success"], true);
 }

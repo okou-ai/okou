@@ -12,8 +12,7 @@
 //! `writeback: true` is an artifact; `writeback: false` or an absent `writeback` identifies a
 //! read-only storage.
 //!
-//! During deserialization, writeback mounts cannot contain `extractPath` or
-//! `instructionsTargetFilename`, while read-only mounts cannot set `empty: true` or contain
+//! During deserialization, read-only mounts cannot set `empty: true` or contain
 //! `missingRootPolicy`. Duplicate `mountPath` values are rejected across the complete canonical
 //! array. These checks validate incoming wire data; directly constructing and serializing a
 //! [`Manifest`] does not run the same validation.
@@ -124,12 +123,6 @@ impl Manifest {
 
         for mount in storage_mounts {
             if mount.writeback {
-                if mount.extract_path.is_some() || mount.instructions_target_filename.is_some() {
-                    return Err(
-                        "writeback storage mount cannot contain instruction normalization fields"
-                            .to_string(),
-                    );
-                }
                 artifacts.push(ArtifactEntry {
                     mount_path: mount.mount_path,
                     archive_url: mount.archive_url,
@@ -151,9 +144,7 @@ impl Manifest {
             }
             storages.push(StorageEntry {
                 mount_path: mount.mount_path,
-                extract_path: mount.extract_path,
                 archive_url: mount.archive_url,
-                instructions_target_filename: mount.instructions_target_filename,
                 cached: mount.cached,
                 vas_storage_name: mount.name,
                 vas_version_id: mount.version_id,
@@ -188,15 +179,9 @@ fn validate_unique_mount_paths(storage_mounts: &[StorageMountEntry]) -> Result<(
 pub struct StorageEntry {
     /// Guest filesystem path where the storage is mounted.
     pub mount_path: String,
-    /// Optional staging path used before instruction normalization.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extract_path: Option<String>,
     /// Archive URL, or `None` when existing contents are reused.
     #[serde(default)]
     pub archive_url: Option<String>,
-    /// Optional filename used when normalizing instruction storage.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub instructions_target_filename: Option<String>,
     /// Whether existing contents match the current fingerprint.
     #[serde(default)]
     pub cached: bool,
@@ -259,15 +244,9 @@ pub struct StorageMountEntry {
     pub version_id: Option<String>,
     /// Guest filesystem path where the Storage is mounted.
     pub mount_path: String,
-    /// Optional staging path used before instruction normalization.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extract_path: Option<String>,
     /// Archive URL, or `None` when existing contents are reused or explicitly empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive_url: Option<String>,
-    /// Optional filename used when normalizing instruction Storage.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub instructions_target_filename: Option<String>,
     /// Whether existing contents match the current fingerprint.
     #[serde(default)]
     pub cached: bool,
@@ -289,9 +268,7 @@ impl StorageMountEntry {
             storage_id: None,
             version_id: entry.vas_version_id.clone(),
             mount_path: entry.mount_path.clone(),
-            extract_path: entry.extract_path.clone(),
             archive_url: entry.archive_url.clone(),
-            instructions_target_filename: entry.instructions_target_filename.clone(),
             cached: entry.cached,
             empty: false,
             missing_root_policy: None,
@@ -305,9 +282,7 @@ impl StorageMountEntry {
             storage_id: entry.vas_storage_id.clone(),
             version_id: entry.vas_version_id.clone(),
             mount_path: entry.mount_path.clone(),
-            extract_path: None,
             archive_url: entry.archive_url.clone(),
-            instructions_target_filename: None,
             cached: entry.cached,
             empty: entry.empty,
             missing_root_policy: entry.missing_root_policy.clone(),
@@ -342,9 +317,7 @@ mod tests {
         let manifest = Manifest {
             storages: vec![StorageEntry {
                 mount_path: "/home/user/.codex".into(),
-                extract_path: Some("/run/storage-instructions/0".into()),
                 archive_url: Some("https://example.com/storage.tar.gz".into()),
-                instructions_target_filename: Some("AGENTS.md".into()),
                 cached: false,
                 vas_storage_name: Some("instructions".into()),
                 vas_version_id: Some("storage-v1".into()),
@@ -374,9 +347,7 @@ mod tests {
                         "name": "instructions",
                         "versionId": "storage-v1",
                         "mountPath": "/home/user/.codex",
-                        "extractPath": "/run/storage-instructions/0",
                         "archiveUrl": "https://example.com/storage.tar.gz",
-                        "instructionsTargetFilename": "AGENTS.md",
                         "cached": false,
                         "writeback": false
                     },
@@ -445,32 +416,6 @@ mod tests {
     #[test]
     fn manifest_rejects_fields_for_wrong_mount_category() {
         for (name, invalid_mount, expected_error, valid_mount) in [
-            (
-                "writeback extractPath",
-                json!({
-                    "mountPath": "/workspace",
-                    "extractPath": "/run/storage-instructions/0",
-                    "writeback": true
-                }),
-                "writeback storage mount cannot contain instruction normalization fields",
-                json!({
-                    "mountPath": "/data",
-                    "extractPath": "/run/storage-instructions/0"
-                }),
-            ),
-            (
-                "writeback instructionsTargetFilename",
-                json!({
-                    "mountPath": "/workspace",
-                    "instructionsTargetFilename": "AGENTS.md",
-                    "writeback": true
-                }),
-                "writeback storage mount cannot contain instruction normalization fields",
-                json!({
-                    "mountPath": "/data",
-                    "instructionsTargetFilename": "AGENTS.md"
-                }),
-            ),
             (
                 "read-only empty",
                 json!({

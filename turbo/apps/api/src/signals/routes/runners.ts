@@ -2047,6 +2047,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly db: Db;
     readonly runId: string;
     readonly orgId: string;
+    readonly agentId: string | null;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
     readonly nativeContinuationSupported: boolean;
@@ -2081,7 +2082,7 @@ async function resolveStoredExecutionContextForClaim(
   }
   // Release #41438 shipped the prepared inline reader in Runner 0.234.18.
   if (
-    storedContextResult.data.agentInstructionsSource === "agent" &&
+    args.agentId !== null &&
     (args.runnerVersion === undefined ||
       (compareAppVersions(args.runnerVersion, "0.234.18") ?? -1) < 0)
   ) {
@@ -2153,6 +2154,7 @@ const claimAuthorizedJob$ = command(
         db,
         runId,
         orgId: run.orgId,
+        agentId: run.agentId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
         nativeContinuationSupported: args.nativeContinuationSupported,
@@ -2181,7 +2183,7 @@ const claimAuthorizedJob$ = command(
     );
     signal.throwIfAborted();
 
-    if (storedContext.agentInstructionsSource === "agent") {
+    if (run.agentId !== null) {
       const instructions = await set(
         readAgentInstructionsForClaim$,
         {

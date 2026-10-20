@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import postgres from "postgres";
 
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -103,7 +103,7 @@ CREATE TABLE chat_output_materializations (
   );
   await writeJournal([oldEntry]);
   process.chdir(fixtureDirectory);
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
 
   const runId = randomUUID();
   await client.query("INSERT INTO agent_runs (id) VALUES ($1)", [runId]);
@@ -113,7 +113,7 @@ CREATE TABLE chat_output_materializations (
   );
 
   await writeJournal([oldEntry, citationEntry]);
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
   await client.query(
     "UPDATE chat_output_materializations SET latest_output_text = 'old writer after migration' WHERE run_id = $1",
     [runId],
@@ -133,7 +133,7 @@ CREATE TABLE chat_output_materializations (
     ],
   );
   await writeJournal([oldEntry, citationEntry, legacyBufferEntry]);
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
   await client.query(
     "UPDATE chat_output_materializations SET latest_output_text = 'old writer after buffer migration' WHERE run_id = $1",
     [runId],

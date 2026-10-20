@@ -8,19 +8,12 @@ use super::build_storage_plan;
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
 
-fn storage(
-    mount_path: &Path,
-    name: &str,
-    version: &str,
-    archive_url: String,
-    instructions_target_filename: Option<&str>,
-) -> StorageEntry {
+fn storage(mount_path: &Path, name: &str, version: &str, archive_url: String) -> StorageEntry {
     StorageEntry {
         name: name.into(),
         mount_path: mount_path.to_string_lossy().into_owned(),
         vas_storage_name: name.into(),
         vas_version_id: version.into(),
-        instructions_target_filename: instructions_target_filename.map(str::to_string),
         archive_url,
         archive_size: None,
     }
@@ -82,7 +75,7 @@ fn canonical_home_state_roundtrip_rematerializes_changed_removed_tainted_and_emp
     empty_entry.archive_url = None;
     empty_entry.empty = Some(true);
     let current = StorageManifest {
-        storages: vec![storage(&changed, "current", "v2", archive, None)],
+        storages: vec![storage(&changed, "current", "v2", archive)],
         artifacts: vec![empty_entry],
     };
     let previous = StorageFingerprints {
@@ -106,12 +99,7 @@ fn canonical_home_state_roundtrip_rematerializes_changed_removed_tainted_and_emp
     let canonical: StorageFingerprints =
         serde_json::from_slice(&serde_json::to_vec(&tainted).unwrap()).unwrap();
     assert_eq!(canonical, tainted);
-    let plan = build_storage_plan(
-        &current,
-        dir.path().join("runtime").to_string_lossy().as_ref(),
-        Some(&canonical),
-    )
-    .unwrap();
+    let plan = build_storage_plan(&current, Some(&canonical)).unwrap();
     run_plan(plan);
     assert!(!changed.join("stale.txt").exists());
     assert_eq!(
@@ -132,16 +120,11 @@ fn reused_empty_fingerprints_replace_stale_storage_contents() {
     fs::write(mount.join("stale.txt"), "stale").unwrap();
     let archive_url = write_archive(dir.path(), "storage.tar.gz", &[("current.txt", b"current")]);
     let manifest = StorageManifest {
-        storages: vec![storage(&mount, "data", "v1", archive_url, None)],
+        storages: vec![storage(&mount, "data", "v1", archive_url)],
         artifacts: Vec::new(),
     };
 
-    let plan = build_storage_plan(
-        &manifest,
-        dir.path().join("runtime").to_string_lossy().as_ref(),
-        Some(&StorageFingerprints::default()),
-    )
-    .unwrap();
+    let plan = build_storage_plan(&manifest, Some(&StorageFingerprints::default())).unwrap();
     run_plan(plan);
 
     assert!(!mount.join("stale.txt").exists());
@@ -189,12 +172,7 @@ fn cached_artifacts_preserve_existing_root_and_repair_missing_root() {
         ]),
     };
 
-    let plan = build_storage_plan(
-        &manifest,
-        dir.path().join("runtime").to_string_lossy().as_ref(),
-        Some(&previous),
-    )
-    .unwrap();
+    let plan = build_storage_plan(&manifest, Some(&previous)).unwrap();
     run_plan(plan);
 
     assert_eq!(
@@ -206,221 +184,6 @@ fn cached_artifacts_preserve_existing_root_and_repair_missing_root() {
         fs::read_to_string(missing_mount.join("repaired.txt")).unwrap(),
         "repaired"
     );
-}
-
-#[test]
-fn changed_instructions_promote_without_removing_cached_child() {
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path().join(".codex");
-    let child = home.join("skills/workflow");
-    fs::create_dir_all(&child).unwrap();
-    fs::write(home.join("AGENTS.md"), "stale instructions").unwrap();
-    fs::write(child.join("SKILL.md"), "cached skill").unwrap();
-    let instructions_url = write_archive(
-        dir.path(),
-        "instructions.tar.gz",
-        &[
-            ("AGENTS.md", b"current instructions"),
-            ("skills/untracked/SKILL.md", b"must not escape staging"),
-        ],
-    );
-    let child_url = format!(
-        "file://{}",
-        dir.path().join("unused-child.tar.gz").display()
-    );
-    let manifest = StorageManifest {
-        storages: vec![
-            storage(
-                &home,
-                "agent-instructions@test",
-                "v2",
-                instructions_url,
-                Some("AGENTS.md"),
-            ),
-            storage(&child, "workflow", "v1", child_url, None),
-        ],
-        artifacts: Vec::new(),
-    };
-    let previous = StorageFingerprints {
-        storages: HashMap::from([
-            (
-                home.to_string_lossy().into_owned(),
-                StorageFingerprint::new("agent-instructions@test", "v1"),
-            ),
-            (
-                child.to_string_lossy().into_owned(),
-                StorageFingerprint::new("workflow", "v1"),
-            ),
-        ]),
-        artifacts: HashMap::new(),
-    };
-    let runtime_dir = dir.path().join("runtime");
-
-    let plan = build_storage_plan(
-        &manifest,
-        runtime_dir.to_string_lossy().as_ref(),
-        Some(&previous),
-    )
-    .unwrap();
-    run_plan(plan);
-
-    assert_eq!(
-        fs::read_to_string(home.join("AGENTS.md")).unwrap(),
-        "current instructions"
-    );
-    assert_eq!(
-        fs::read_to_string(child.join("SKILL.md")).unwrap(),
-        "cached skill"
-    );
-    assert!(!home.join("skills/untracked").exists());
-    assert!(!runtime_dir.join("storage-instructions/0").exists());
-}
-
-#[test]
-fn cached_instructions_allow_official_and_ordinary_skill_reuse_without_losing_user_files() {
-    for decoded in [false, true] {
-        for (framework_home, filename) in [
-            (".claude", "CLAUDE.md"),
-            (".codex", "AGENTS.md"),
-            (".pi/agent", "AGENTS.md"),
-        ] {
-            let dir = tempfile::tempdir().unwrap();
-            let home = dir.path().join(framework_home);
-            let changed = home.join("skills/changed");
-            let removed = home.join("skills/removed");
-            let retained = home.join("skills/retained");
-            let runtime = dir.path().join("runtime");
-            let mut manifest = StorageManifest {
-                storages: vec![
-                    storage(
-                        &home,
-                        "agent-instructions@test",
-                        "v1",
-                        write_archive(
-                            dir.path(),
-                            "instructions.tar.gz",
-                            &[(filename, b"instructions")],
-                        ),
-                        Some(filename),
-                    ),
-                    storage(
-                        &changed,
-                        "custom-skill@ordinary-workflow",
-                        "v1",
-                        write_archive(dir.path(), "changed-v1.tar.gz", &[("stale", b"old skill")]),
-                        None,
-                    ),
-                    storage(
-                        &removed,
-                        "removed",
-                        "v1",
-                        write_archive(
-                            dir.path(),
-                            "removed.tar.gz",
-                            &[("SKILL.md", b"removed skill")],
-                        ),
-                        None,
-                    ),
-                    storage(
-                        &retained,
-                        "retained",
-                        "v1",
-                        write_archive(
-                            dir.path(),
-                            "retained.tar.gz",
-                            &[("SKILL.md", b"retained skill")],
-                        ),
-                        None,
-                    ),
-                ],
-                artifacts: Vec::new(),
-            };
-            run_plan(build_storage_plan(&manifest, runtime.to_str().unwrap(), None).unwrap());
-            assert!(changed.join("stale").exists());
-            assert!(removed.join("SKILL.md").exists());
-            let history = home.join("sessions/continuation.jsonl");
-            let nested = retained.join("custom/removed/SKILL.md");
-            let user_file = dir.path().join("user-notes.txt");
-            fs::create_dir_all(history.parent().unwrap()).unwrap();
-            fs::create_dir_all(nested.parent().unwrap()).unwrap();
-            fs::write(&history, b"native session history").unwrap();
-            fs::write(&nested, b"user-owned nested skill").unwrap();
-            fs::write(&user_file, b"user notes").unwrap();
-
-            for (identity, current, stale, contents) in [
-                (
-                    "official-workflow@changed",
-                    "official",
-                    "stale",
-                    b"official skill".as_slice(),
-                ),
-                (
-                    "custom-skill@ordinary-workflow",
-                    "ordinary",
-                    "official",
-                    b"ordinary skill".as_slice(),
-                ),
-            ] {
-                let previous = StorageFingerprints::from_manifest(&manifest);
-                manifest
-                    .storages
-                    .retain(|entry| entry.vas_storage_name != "removed");
-                let changed_entry = manifest
-                    .storages
-                    .iter_mut()
-                    .find(|entry| entry.mount_path == changed.to_string_lossy())
-                    .unwrap();
-                changed_entry.name = identity.into();
-                changed_entry.vas_storage_name = identity.into();
-                // The return to ordinary changes identity with the same version.
-                changed_entry.vas_version_id = "v2".into();
-                changed_entry.archive_url = write_archive(
-                    dir.path(),
-                    &format!("{current}.tar.gz"),
-                    &[(current, contents)],
-                );
-                let plan =
-                    build_storage_plan(&manifest, runtime.to_str().unwrap(), Some(&previous))
-                        .unwrap();
-                if decoded {
-                    let candidate = plan
-                        .cache_candidates()
-                        .into_iter()
-                        .find(|candidate| candidate.name == identity)
-                        .unwrap();
-                    let mount = plan
-                        .decoded_mount(candidate.handle)
-                        .expect("changed skill must admit decoded delivery")
-                        .to_owned();
-                    let bytes = serde_json::to_vec(&plan.into_guest_manifest()).unwrap();
-                    let files = vec![guest_contracts::storage_files::StorageFile {
-                        path: current.into(),
-                        mode: 0o644,
-                        mtime: 1234567890,
-                        content: contents.to_vec(),
-                    }];
-                    let input =
-                        guest_contracts::storage_files::encode_input(&bytes, &[(&mount, &files)])
-                            .unwrap();
-                    assert!(guest_storage_apply::run_storage_files_bytes(&input));
-                } else {
-                    run_plan(plan);
-                }
-
-                assert!(!changed.join(stale).exists(), "{framework_home}");
-                assert!(!removed.exists(), "{framework_home}");
-                assert_eq!(fs::read(changed.join(current)).unwrap(), contents);
-                assert_eq!(fs::read(home.join(filename)).unwrap(), b"instructions");
-                assert_eq!(fs::read(&history).unwrap(), b"native session history");
-                assert_eq!(fs::read(&nested).unwrap(), b"user-owned nested skill");
-                assert_eq!(fs::read(&user_file).unwrap(), b"user notes");
-                assert_eq!(
-                    fs::read(retained.join("SKILL.md")).unwrap(),
-                    b"retained skill"
-                );
-            }
-        }
-    }
 }
 
 #[test]
@@ -451,21 +214,10 @@ fn omitted_mount_prunes_managed_skill_and_preserves_nested_user_skills() {
         artifacts: HashMap::new(),
     };
     let manifest = StorageManifest {
-        storages: vec![storage(
-            &retained,
-            "workflow",
-            "v1",
-            "file:///unused-cached-archive".into(),
-            None,
-        )],
+        storages: vec![storage(&retained, "workflow", "v1", String::new())],
         artifacts: Vec::new(),
     };
-    let plan = build_storage_plan(
-        &manifest,
-        dir.path().join("runtime").to_str().unwrap(),
-        Some(&previous),
-    )
-    .unwrap();
+    let plan = build_storage_plan(&manifest, Some(&previous)).unwrap();
     run_plan(plan);
     assert!(!removed.exists());
     assert_eq!(

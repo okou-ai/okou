@@ -109,67 +109,6 @@ fn file_scheme_malicious_entries_are_skipped_while_safe_entries_extract() {
     assert!(!mount.join("evil_hardlink").exists());
 }
 
-#[test]
-fn file_scheme_staged_instructions_promote_without_touching_skill_child() {
-    let instructions_tar_gz = create_tar_gz(&[
-        ("AGENTS.md", b"runtime instructions"),
-        ("CLAUDE.md", b"old alternate from archive"),
-        ("extra.txt", b"ignored"),
-        ("skills/evil/SKILL.md", b"ignored staged skill"),
-    ])
-    .unwrap();
-    let skill_tar_gz = create_tar_gz(&[("SKILL.md", b"workflow skill")]).unwrap();
-
-    let dir = tempfile::tempdir().unwrap();
-    let instructions_archive = dir.path().join("instructions.tar.gz");
-    let skill_archive = dir.path().join("skill.tar.gz");
-    std::fs::write(&instructions_archive, &instructions_tar_gz).unwrap();
-    std::fs::write(&skill_archive, &skill_tar_gz).unwrap();
-
-    let final_home = dir.path().join(".codex");
-    let extract_path = dir
-        .path()
-        .join("runtime")
-        .join("storage-instructions")
-        .join("0");
-    let skill_mount = final_home.join("skills").join("workflow");
-    std::fs::create_dir_all(&final_home).unwrap();
-    std::fs::write(final_home.join("CLAUDE.md"), "stale alternate").unwrap();
-
-    let manifest_path = dir.path().join("manifest.json");
-    let manifest = json!({
-        "storageMounts": [
-            {
-                "mountPath": final_home,
-                "extractPath": extract_path,
-                "archiveUrl": format!("file://{}", instructions_archive.display()),
-                "instructionsTargetFilename": "AGENTS.md"
-            },
-            {
-                "mountPath": skill_mount,
-                "archiveUrl": format!("file://{}", skill_archive.display())
-            }
-        ]
-    });
-    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
-
-    let result = run_guest_storage_apply(manifest_path.to_str().unwrap());
-
-    assert!(result);
-    assert_eq!(
-        std::fs::read_to_string(final_home.join("AGENTS.md")).unwrap(),
-        "runtime instructions"
-    );
-    assert_eq!(
-        std::fs::read_to_string(skill_mount.join("SKILL.md")).unwrap(),
-        "workflow skill"
-    );
-    assert!(!final_home.join("CLAUDE.md").exists());
-    assert!(!final_home.join("extra.txt").exists());
-    assert!(!final_home.join("skills").join("evil").exists());
-    assert!(!extract_path.exists());
-}
-
 // Security regression: this exercises the ancestor symlink guard directly. The
 // archive does not create the symlink; it is already present in the target.
 #[test]

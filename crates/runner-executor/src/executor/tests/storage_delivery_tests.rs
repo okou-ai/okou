@@ -10,7 +10,7 @@ use tracing::instrument::WithSubscriber;
 use tracing_subscriber::layer::SubscriberExt;
 
 use super::super::storage::download_storages_with_files;
-use super::super::{ExecutorConfig, RunnerResult, guest_runtime_dir};
+use super::super::{ExecutorConfig, RunnerResult};
 use super::support::{
     CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, api_artifact, api_storage,
     create_overridden_sandbox, minimal_context, spawn_run_in_sandbox_test, test_executor_config,
@@ -147,8 +147,7 @@ impl DeliveryFixture {
 
     async fn prepare(&self, sandbox: &MockSandbox) -> (Manifest, Vec<(String, Arc<CachedFiles>)>) {
         let context = minimal_context();
-        let runtime = guest_runtime_dir(context.run_id).unwrap();
-        let mut plan = build_storage_plan(&self.manifest, &runtime, None).unwrap();
+        let mut plan = build_storage_plan(&self.manifest, None).unwrap();
         let mut telemetry = test_telemetry(&self.config, &context);
         let cancel = tokio_util::sync::CancellationToken::new();
         let mut fresh = prepare_fresh_archive_delivery(
@@ -505,6 +504,7 @@ async fn oversized_artifact_manifest_uses_preencoded_decoded_batches() {
         assert!(batch.storages.is_empty());
         assert_eq!(batch.artifacts.len(), 1);
         assert!(batch.cleanup_paths.is_empty());
+        assert!(batch.instruction_cleanups.is_empty());
     }
     assert_binary_calls(&sandbox, 3);
     fixture.shutdown().await;
@@ -519,9 +519,7 @@ async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
     let prefix = "http://127.0.0.1:9/storage?signature=";
     manifest.storages.push(StorageEntry {
         mount_path: storage_mount.to_str().unwrap().into(),
-        extract_path: None,
         archive_url: Some(format!("{prefix}{}", "x".repeat(35_000 - prefix.len()))),
-        instructions_target_filename: None,
         cached: false,
         vas_storage_name: Some("mixed-storage".into()),
         vas_version_id: Some("v1".into()),
@@ -539,6 +537,7 @@ async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
         let batch: Manifest = serde_json::from_slice(json).unwrap();
         assert_eq!(batch.storages.len() + batch.artifacts.len(), 1);
         assert!(batch.cleanup_paths.is_empty());
+        assert!(batch.instruction_cleanups.is_empty());
         storage_entries += batch.storages.len();
         artifact_entries += batch.artifacts.len();
     }
@@ -556,9 +555,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
     let storage_mount = fixture.root.path().join("guest/storage-boundary");
     let mut storage = StorageEntry {
         mount_path: storage_mount.to_str().unwrap().into(),
-        extract_path: None,
         archive_url: Some("https://archive.invalid/storage?signature=".into()),
-        instructions_target_filename: None,
         cached: false,
         vas_storage_name: Some("boundary-storage".into()),
         vas_version_id: Some("v1".into()),
@@ -596,9 +593,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
             .to_str()
             .unwrap()
             .into(),
-        extract_path: None,
         archive_url: Some(format!("https://archive.invalid/{}", "o".repeat(70_000))),
-        instructions_target_filename: None,
         cached: false,
         vas_storage_name: Some("ordinary".into()),
         vas_version_id: Some("v1".into()),
@@ -722,6 +717,24 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
     let preserved = guest_root.join("preserved");
     std::fs::create_dir_all(&preserved).unwrap();
     std::fs::write(preserved.join("keep"), b"keep").unwrap();
+    // Restored home metadata may still select only the retired managed files.
+    let framework_home = preserved.join(".codex");
+    std::fs::create_dir_all(framework_home.join("sessions")).unwrap();
+    std::fs::create_dir_all(framework_home.join("skills/custom")).unwrap();
+    std::fs::write(framework_home.join("AGENTS.md"), b"old instructions").unwrap();
+    std::fs::write(framework_home.join("CLAUDE.md"), b"old alternate").unwrap();
+    std::fs::write(
+        framework_home.join("sessions/history.jsonl"),
+        b"native history",
+    )
+    .unwrap();
+    std::fs::write(framework_home.join("skills/custom/SKILL.md"), b"user skill").unwrap();
+    manifest.instruction_cleanups.push(
+        guest_contracts::storage_manifest::InstructionCleanupEntry {
+            mount_path: framework_home.to_string_lossy().into_owned(),
+            target_filename: None,
+        },
+    );
     std::fs::write(guest_root.join("stale"), b"stale").unwrap();
     manifest
         .cleanup_paths
@@ -729,8 +742,6 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
     manifest.storages.push(StorageEntry {
         mount_path: preserved.to_str().unwrap().into(),
         archive_url: None,
-        extract_path: None,
-        instructions_target_filename: None,
         cached: true,
         vas_storage_name: Some("preserved".into()),
         vas_version_id: Some("v1".into()),
@@ -768,6 +779,16 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
         assert_eq!(metadata.mtime(), 1234);
     }
     assert_binary_calls(&sandbox, 3);
+    assert!(!framework_home.join("AGENTS.md").exists());
+    assert!(!framework_home.join("CLAUDE.md").exists());
+    assert_eq!(
+        std::fs::read(framework_home.join("sessions/history.jsonl")).unwrap(),
+        b"native history"
+    );
+    assert_eq!(
+        std::fs::read(framework_home.join("skills/custom/SKILL.md")).unwrap(),
+        b"user skill"
+    );
     fixture.shutdown().await;
 }
 
@@ -807,13 +828,7 @@ async fn split_decoded_delivery_stops_after_the_first_failed_helper() {
 #[tokio::test]
 async fn split_delivery_rejects_cross_batch_ownership_conflicts_before_guest_work() {
     let fixture = DeliveryFixture::new(2, 2, 35_000).await;
-    for conflict in [
-        "ordinary",
-        "reused",
-        "instructions",
-        "artifact",
-        "duplicate",
-    ] {
+    for conflict in ["ordinary", "reused", "artifact", "duplicate"] {
         let sandbox = MockSandbox::new("decoded-conflict");
         let (mut manifest, files) = fixture.prepare(&sandbox).await;
         let mount = format!("{}/child", files[0].0);
@@ -837,9 +852,6 @@ async fn split_delivery_rejects_cross_batch_ownership_conflicts_before_guest_wor
                 mount_path: mount,
                 archive_url: (conflict != "reused")
                     .then(|| "https://archive.invalid/source".into()),
-                extract_path: None,
-                instructions_target_filename: (conflict == "instructions")
-                    .then(|| "AGENTS.md".into()),
                 cached: conflict == "reused",
                 vas_storage_name: None,
                 vas_version_id: None,
@@ -881,8 +893,6 @@ async fn oversized_ordinary_manifest_keeps_file_transport_before_decoded_batches
             .unwrap()
             .into(),
         archive_url: Some(format!("https://archive.invalid/{}", "x".repeat(70_000))),
-        extract_path: None,
-        instructions_target_filename: None,
         cached: false,
         vas_storage_name: None,
         vas_version_id: None,
@@ -934,7 +944,7 @@ async fn decoded_entry_admission_obeys_exact_canonical_json_boundary() {
             storages: vec![entry.clone()],
             artifacts: Vec::new(),
         };
-        let single_wire = build_storage_plan(&single, "/tmp/runtime", None)
+        let single_wire = build_storage_plan(&single, None)
             .unwrap()
             .into_guest_manifest();
         let original_bytes = serde_json::to_vec(&single_wire).unwrap().len();
