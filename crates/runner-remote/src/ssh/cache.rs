@@ -41,6 +41,16 @@ struct Entry {
 }
 
 impl Entry {
+    fn new(slot: Option<OwnedSemaphorePermit>) -> Self {
+        Self {
+            value: OnceCell::new(),
+            native: Mutex::new(None),
+            diagnostic_active: Arc::new(AtomicBool::new(true)),
+            cancelled: CancellationToken::new(),
+            _slot: slot,
+        }
+    }
+
     fn invalidate(&self) {
         self.diagnostic_active.store(false, Ordering::Release);
         let mut retained = self.native.lock().unwrap_or_else(|p| p.into_inner());
@@ -163,13 +173,7 @@ impl Registration {
         let entry = if let Some(entry) = run.entries.get(&connection) {
             Some(Arc::clone(entry))
         } else if let Ok(slot) = Arc::clone(&self.cache.capacity).try_acquire_owned() {
-            let entry = Arc::new(Entry {
-                value: OnceCell::new(),
-                native: Mutex::new(None),
-                diagnostic_active: Arc::new(AtomicBool::new(true)),
-                cancelled: CancellationToken::new(),
-                _slot: Some(slot),
-            });
+            let entry = Arc::new(Entry::new(Some(slot)));
             run.entries.insert(connection, Arc::clone(&entry));
             Some(entry)
         } else {
@@ -177,13 +181,7 @@ impl Registration {
         };
         let cached = entry.is_some();
         let entry = entry.unwrap_or_else(|| {
-            let entry = Arc::new(Entry {
-                value: OnceCell::new(),
-                native: Mutex::new(None),
-                diagnostic_active: Arc::new(AtomicBool::new(true)),
-                cancelled: CancellationToken::new(),
-                _slot: None,
-            });
+            let entry = Arc::new(Entry::new(None));
             // Track overflow before resolution under the same Run identity lock.
             // Weak watchers own no credentials; live operations and idle transports bound them.
             run.sessions.retain(|(_, entry)| entry.strong_count() > 0);
@@ -278,16 +276,7 @@ impl Access {
                 _ => FailureReason::AuthorityFailure,
             })?;
         self.check()?;
-        let identity = self
-            .entry
-            .value
-            .get()
-            .map(|credential| crate::diagnostics::Identity {
-                created_at: Some(credential.created_at),
-                generation: credential.trust.lock().ok().map(|trust| trust.generation),
-                session: None,
-            })
-            .unwrap_or_default();
+        let identity = self.diagnostic_identity();
         let (configuration, generation) = key.diagnostic_identity();
         if let Some(watch) = self.diagnostics().watch(
             self.connection,

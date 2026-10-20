@@ -29,6 +29,7 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import { variables } from "@okouai/db/schema/variable";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import {
   officialWorkflowAutomationIdentities,
@@ -141,6 +142,7 @@ export type ReconcileOfficialWorkflowInstallationArgs =
 export type { OfficialWorkflowReconciliationResult };
 
 interface ReconciliationContext {
+  readonly catalog: AcceptedOfficialWorkflowCatalog;
   readonly definition: OfficialWorkflowAcceptedDefinition;
   readonly blueprints: readonly OfficialWorkflowAcceptedBlueprint[];
   readonly automations: readonly OfficialAutomationRow[];
@@ -390,7 +392,10 @@ const loadReconciliationContext$ = command(
       return null;
     }
     const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    const definition = catalog?.payload.definitions.find((candidate) => {
+    if (!catalog) {
+      return null;
+    }
+    const definition = catalog.payload.definitions.find((candidate) => {
       return candidate.name === workflow.definitionName;
     });
     if (!definition) {
@@ -426,11 +431,263 @@ const loadReconciliationContext$ = command(
     ]);
     signal.throwIfAborted();
     return {
+      catalog,
       definition,
       blueprints: revision.definition.blueprints,
       automations,
       identities,
     };
+  },
+);
+
+const persistMorningBriefScheduleRecovery$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly context: ReconciliationContext;
+      readonly automation: OfficialAutomationRow;
+      readonly patch: OfficialAutomationPatch;
+      readonly userTimezone: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const { context, automation, patch } = args;
+    const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
+    const revisionPlan = acceptedOfficialWorkflowRevisionReadPlan(
+      context.definition,
+    );
+    const timezoneQuery = db
+      .select({ userId: orgMembersMetadata.userId })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, args.orgId),
+          eq(orgMembersMetadata.userId, args.userId),
+          args.userTimezone === null
+            ? isNotNull(orgMembersMetadata.timezone)
+            : eq(orgMembersMetadata.timezone, args.userTimezone),
+        ),
+      );
+    const [updated] = await db
+      .update(workflowAutomations)
+      .set({
+        ...patch,
+        officialReconciliationStatus: "current",
+        nextRunAt: reconciledScheduleAnchor(
+          automation,
+          keepSkippedMorningBriefOccurrence(automation, patch, patch.updatedAt),
+        ),
+      })
+      .where(
+        and(
+          observedWorkflowAutomationCondition(automation),
+          exists(
+            db
+              .select({ id: workflows.id })
+              .from(workflows)
+              .where(
+                installedWorkflowCondition(
+                  { ...args, definitionName: context.definition.name },
+                  automation.workflowId,
+                ),
+              ),
+          ),
+          exists(
+            db
+              .select({ id: officialWorkflowAutomationIdentities.id })
+              .from(officialWorkflowAutomationIdentities)
+              .where(
+                and(
+                  eq(
+                    officialWorkflowAutomationIdentities.workflowId,
+                    automation.workflowId,
+                  ),
+                  eq(
+                    officialWorkflowAutomationIdentities.blueprintKey,
+                    MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+                  ),
+                  eq(
+                    officialWorkflowAutomationIdentities.automationId,
+                    automation.id,
+                  ),
+                  eq(officialWorkflowAutomationIdentities.state, "active"),
+                ),
+              ),
+          ),
+          exists(
+            db
+              .select(catalogPlan.columns)
+              .from(officialWorkflowCatalogState)
+              .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
+              .where(
+                and(
+                  catalogPlan.condition,
+                  eq(
+                    officialWorkflowCatalogState.acceptedReleaseId,
+                    context.catalog.releaseId,
+                  ),
+                ),
+              ),
+          ),
+          exists(
+            db
+              .select(revisionPlan.columns)
+              .from(officialWorkflowDefinitionRevisions)
+              .innerJoin(storages, revisionPlan.storageJoin)
+              .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+              .where(revisionPlan.condition),
+          ),
+          args.userTimezone === null
+            ? notExists(timezoneQuery)
+            : exists(timezoneQuery),
+          notExists(
+            db
+              .select({ userId: morningBriefEnrollments.userId })
+              .from(morningBriefEnrollments)
+              .where(
+                and(
+                  eq(morningBriefEnrollments.orgId, args.orgId),
+                  eq(morningBriefEnrollments.userId, args.userId),
+                  eq(morningBriefEnrollments.state, "departed"),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: workflowAutomations.id });
+    signal.throwIfAborted();
+    return updated !== undefined;
+  },
+);
+
+function morningBriefScheduleRecoveryTarget(
+  context: ReconciliationContext | null,
+) {
+  if (!context || !isMorningBriefDefinitionName(context.definition.name)) {
+    return null;
+  }
+  const automation = context.automations.find((row) => {
+    return row.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY;
+  });
+  const blueprint = context.blueprints.find((row) => {
+    return row.key === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY;
+  });
+  if (
+    !automation ||
+    automation.kind !== "schedule" ||
+    automation.scheduleType !== "cron" ||
+    automation.officialIntendedEnabled === null ||
+    automation.officialParameterBindings === null ||
+    (automation.officialReconciliationStatus !== "current" &&
+      automation.officialReconciliationStatus !== "needs_reconfiguration") ||
+    !blueprint ||
+    !context.identities.some((identity) => {
+      return (
+        identity.automationId === automation.id && identity.state === "active"
+      );
+    })
+  ) {
+    return null;
+  }
+  return {
+    context,
+    automation,
+    blueprint,
+    intendedEnabled: automation.officialIntendedEnabled,
+    bindings: automation.officialParameterBindings,
+  };
+}
+
+/** Recover only the existing cron row; no installation or event lifecycle writes. */
+export const reconcileOfficialMorningBriefSchedule$ = command(
+  async (
+    { get, set },
+    args: ReconcileOfficialWorkflowInstallationArgs,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const target = morningBriefScheduleRecoveryTarget(
+      await set(
+        loadReconciliationContext$,
+        { ...args, activeDefinitionOnly: true },
+        signal,
+      ),
+    );
+    if (!target) {
+      return retryReconciliation(args.workflowId);
+    }
+    const { context, automation, blueprint, intendedEnabled, bindings } =
+      target;
+    const [metadata] = await get(db$)
+      .select({ timezone: orgMembersMetadata.timezone })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, args.orgId),
+          eq(orgMembersMetadata.userId, args.member.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const userTimezone = metadata?.timezone ?? null;
+    const resolved = resolveOfficialWorkflowBlueprintForReconciliation(
+      blueprint,
+      withMorningBriefCronBinding({
+        definitionName: context.definition.name,
+        blueprint,
+        owner: { orgId: args.orgId, userId: args.member.userId },
+        bindings,
+      }),
+      userTimezone,
+    );
+    if (
+      !resolved.ok ||
+      !("schedule" in resolved.resolved.createRequest) ||
+      resolved.resolved.createRequest.schedule.type !== "cron"
+    ) {
+      return needsReconfigurationResult(args.workflowId, blueprint.key);
+    }
+    const built = buildOfficialAutomationPatch(
+      { ...automation, enabled: intendedEnabled },
+      resolved.resolved,
+      undefined,
+      nowDate(),
+    );
+    if (!built.ok) {
+      return needsReconfigurationResult(args.workflowId, blueprint.key);
+    }
+    const patch = built.patch;
+    if (
+      automation.officialReconciliationStatus === "current" &&
+      automation.officialAppliedFingerprint ===
+        patch.officialAppliedFingerprint &&
+      automation.cronExpression === patch.cronExpression &&
+      automation.timezone === patch.timezone &&
+      automation.enabled === patch.enabled &&
+      isDeepStrictEqual(
+        automation.officialParameterBindings,
+        patch.officialParameterBindings,
+      )
+    ) {
+      return { kind: "current", workflowId: args.workflowId };
+    }
+    const persisted = await set(
+      persistMorningBriefScheduleRecovery$,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        context,
+        automation,
+        patch,
+        userTimezone,
+      },
+      signal,
+    );
+    return persisted
+      ? { kind: "current", workflowId: args.workflowId }
+      : retryReconciliation(args.workflowId);
   },
 );
 
