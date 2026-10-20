@@ -3943,6 +3943,26 @@
       "connected": "{{connector}} terhubung"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Tidak dapat memperbarui otorisasi. Muat ulang dan coba lagi.",
+    "allow": "Izinkan selama 1 jam",
+    "approved": "Akses Shell diizinkan",
+    "deadline": "Berakhir {{date}}",
+    "denied": "Permintaan ditolak",
+    "deny": "Tolak",
+    "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
+    "details": "Buka detail",
+    "expired": "Otorisasi kedaluwarsa",
+    "loading": "Memuat otorisasi…",
+    "pending": "Siap disetujui",
+    "refresh": "Muat ulang",
+    "revoke": "Cabut akses",
+    "revoked": "Akses Shell dicabut",
+    "scope": "Hanya chat dan komputer ini. Terminal yang ada tetap terbuka saat akses berakhir.",
+    "title": "Akses Desktop Shell",
+    "unavailable": "Otorisasi tidak tersedia",
+    "waiting": "Persetujuan tidak tersedia saat Run aktif atau komputer yang dipilih telah berubah."
+  },
   "documentTemplates": {
     "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
     "categories": {

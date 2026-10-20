@@ -5,6 +5,15 @@ import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { desktopVersionIsSupported } from "../../lib/desktop-version";
 
 import { command, computed, type Computed } from "ccstate";
+import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { desktopShellAuthorizations } from "@okouai/db/schema/desktop-shell-authorization";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  computerUseCommandHasShellGrant,
+  queuedShellCommandCondition,
+  queuedShellGrantDeniedValues,
+} from "./desktop-shell-grant";
 import {
   and,
   asc,
@@ -14,6 +23,8 @@ import {
   inArray,
   isNotNull,
   isNull,
+  not,
+  or,
   sql,
 } from "drizzle-orm";
 import {
@@ -125,7 +136,8 @@ type CreateComputerUseCommandResult =
   | { readonly status: "no_host" }
   | { readonly status: "host_ambiguous" }
   | { readonly status: "host_offline" }
-  | { readonly status: "host_unsupported" };
+  | { readonly status: "host_unsupported" }
+  | { readonly status: "shell_authorization_required" };
 
 type ResolveComputerUseCommandTargetsResult =
   | {
@@ -1263,23 +1275,44 @@ export const createComputerUseCommand$ = command(
       }
       payload.shellPermissionId = permission;
     }
-    const [row] = await db
-      .insert(computerUseCommands)
-      .values({
-        orgId: params.orgId,
-        userId: params.userId,
-        runId: params.runId ?? null,
-        hostId: target.targetHostId,
-        kind: params.kind,
-        status: "queued",
-        payload,
-        timeoutMs: params.timeoutMs,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning({ id: computerUseCommands.id });
+    const [row] = params.kind.startsWith("shell.")
+      ? parseRawRows(
+          z.object({ id: z.uuid() }),
+          await db.execute(sql`
+          INSERT INTO ${computerUseCommands} (org_id, user_id, run_id, host_id, kind, payload, timeout_ms, shell_authorization_id, created_at, updated_at)
+          SELECT ${params.orgId}, ${params.userId}, ${params.runId ?? null}, ${target.targetHostId}::uuid, ${params.kind}, ${JSON.stringify(payload)}::jsonb, ${params.timeoutMs}, ${desktopShellAuthorizations.id}, ${now.toISOString()}::timestamp, ${now.toISOString()}::timestamp
+          FROM ${desktopShellAuthorizations}
+          JOIN ${agentRuns} ON ${agentRuns.chatThreadId} = ${desktopShellAuthorizations.chatThreadId}
+          WHERE ${agentRuns.id} = ${params.runId ?? null}::uuid
+            AND ${agentRuns.orgId} = ${params.orgId} AND ${agentRuns.userId} = ${params.userId}
+            AND ${desktopShellAuthorizations.orgId} = ${params.orgId}
+            AND ${desktopShellAuthorizations.userId} = ${params.userId}
+            AND ${desktopShellAuthorizations.computerUseHostId} = ${target.targetHostId}::uuid
+            AND ${desktopShellAuthorizations.status} = 'approved'
+            AND ${desktopShellAuthorizations.grantExpiresAt} > ${now.toISOString()}::timestamp
+          RETURNING id
+        `),
+        )
+      : await db
+          .insert(computerUseCommands)
+          .values({
+            orgId: params.orgId,
+            userId: params.userId,
+            runId: params.runId ?? null,
+            hostId: target.targetHostId,
+            kind: params.kind,
+            status: "queued",
+            payload,
+            timeoutMs: params.timeoutMs,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: computerUseCommands.id });
     signal.throwIfAborted();
     if (!row) {
+      if (params.kind.startsWith("shell.")) {
+        return { status: "shell_authorization_required" };
+      }
       throw new Error("Failed to create computer-use command");
     }
     // Schedule only after the INSERT commits. A failed or missed publish is
@@ -1301,6 +1334,39 @@ export const createComputerUseCommand$ = command(
   },
 );
 
+const failUnauthorizedQueuedShellCommands$ = command(
+  async (
+    { set },
+    owner: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly commandId?: string;
+      readonly hostId?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const now = nowDate();
+    await set(writeDb$)
+      .update(computerUseCommands)
+      .set(queuedShellGrantDeniedValues(now))
+      .where(
+        and(
+          eq(computerUseCommands.orgId, owner.orgId),
+          eq(computerUseCommands.userId, owner.userId),
+          queuedShellCommandCondition(),
+          not(computerUseCommandHasShellGrant(now)),
+          ...(owner.commandId
+            ? [eq(computerUseCommands.id, owner.commandId)]
+            : []),
+          ...(owner.hostId
+            ? [eq(computerUseCommands.hostId, owner.hostId)]
+            : []),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 /**
  * Command status reads are polled while an agent waits for a result, so they
  * run without a transaction or locks: one bounded read of the command, a
@@ -1319,6 +1385,7 @@ export const getComputerUseCommand$ = command(
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
+    await set(failUnauthorizedQueuedShellCommands$, params, signal);
     const db = get(db$);
     const [row] = await db
       .select()
@@ -1447,6 +1514,35 @@ const hostHasRunningComputerUseCommand$ = command(
   },
 );
 
+const refreshComputerUseClaimAdvertisement$ = command(
+  async (
+    { set },
+    params: ComputerUseHostAuthority,
+    host: ComputerUseHostRow,
+    capabilities: readonly string[],
+    signal: AbortSignal,
+  ) => {
+    const now = nowDate();
+    // Only rewrite the host row when its capabilities changed or its liveness
+    // stamp is getting stale.
+    if (
+      !sameStringArray(host.supportedCapabilities, capabilities) ||
+      !computerUseHostLivenessIsFresh(host, now)
+    ) {
+      await set(writeDb$)
+        .update(computerUseHosts)
+        .set({
+          supportedCapabilities: [...capabilities],
+          status: "online",
+          lastSeenAt: now,
+          updatedAt: now,
+        })
+        .where(computerUseHostAuthorityCondition(params));
+      signal.throwIfAborted();
+    }
+  },
+);
+
 /**
  * Claim polls run every 0.5–5s per host, so they hold no transaction and no
  * lock. Everything is read up front with plain bounded queries, then each
@@ -1480,23 +1576,19 @@ export const claimNextComputerUseHostCommand$ = command(
 
     const now = nowDate();
 
-    // Only rewrite the host row when its capabilities changed or its liveness
-    // stamp is getting stale.
-    if (
-      !sameStringArray(host.supportedCapabilities, capabilities) ||
-      !computerUseHostLivenessIsFresh(host, now)
-    ) {
-      await db
-        .update(computerUseHosts)
-        .set({
-          supportedCapabilities: capabilities,
-          status: "online",
-          lastSeenAt: now,
-          updatedAt: now,
-        })
-        .where(computerUseHostAuthorityCondition(params));
-      signal.throwIfAborted();
-    }
+    await set(
+      refreshComputerUseClaimAdvertisement$,
+      params,
+      host,
+      capabilities,
+      signal,
+    );
+
+    await set(
+      failUnauthorizedQueuedShellCommands$,
+      { orgId: host.orgId, userId: host.userId, hostId: host.id },
+      signal,
+    );
 
     if (await set(hostHasRunningComputerUseCommand$, host.id, now, signal)) {
       return { status: "idle" };
@@ -1564,6 +1656,10 @@ export const claimNextComputerUseHostCommand$ = command(
           and(
             eq(computerUseCommands.id, row.id),
             eq(computerUseCommands.status, "queued"),
+            or(
+              sql`${computerUseCommands.kind} NOT LIKE 'shell.%'`,
+              computerUseCommandHasShellGrant(nowDate()),
+            ),
             exists(
               db
                 .select({ id: computerUseHosts.id })

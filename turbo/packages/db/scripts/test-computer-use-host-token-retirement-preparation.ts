@@ -11,12 +11,12 @@ import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { schema } from "../src/index";
 import { computerUseHosts } from "../src/runtime/computer-use-host";
 import { chatThreads } from "./fixtures/chat-thread-pre-native";
-import {
-  computerUseCommands,
-  computerUseCommandAuditEvents,
-} from "../src/schema/computer-use-host";
+import { computerUseCommandAuditEvents } from "../src/schema/computer-use-host";
 import { applyPendingMigrations } from "./migration-runner";
-import { outgoingHosts } from "./fixtures/computer-use-host-token-outgoing";
+import {
+  outgoingHosts,
+  outgoingCommands as computerUseCommands,
+} from "./fixtures/computer-use-host-token-outgoing";
 
 const journal = z
   .object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })

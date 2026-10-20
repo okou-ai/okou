@@ -4020,6 +4020,26 @@
       "connected": "{{connector}} conectado"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Não foi possível atualizar a autorização. Atualize e tente novamente.",
+    "allow": "Permitir por 1 hora",
+    "approved": "Acesso ao Shell permitido",
+    "deadline": "Expira em {{date}}",
+    "denied": "Solicitação negada",
+    "deny": "Negar",
+    "description": "O agente precisa de permissão para usar o Shell no seu computador.",
+    "details": "Abrir detalhes",
+    "expired": "Autorização expirada",
+    "loading": "Carregando autorização…",
+    "pending": "Pronta para aprovação",
+    "refresh": "Atualizar",
+    "revoke": "Revogar acesso",
+    "revoked": "Acesso ao Shell revogado",
+    "scope": "Somente este chat e computador. Os terminais existentes permanecem abertos quando o acesso termina.",
+    "title": "Acesso ao Desktop Shell",
+    "unavailable": "Autorização indisponível",
+    "waiting": "Não é possível aprovar enquanto houver um Run ativo ou se o computador selecionado tiver mudado."
+  },
   "documentTemplates": {
     "agreementNote": "Um ponto de partida para seu acordo. Revise os termos do projeto e da jurisdição aplicável antes de assinar.",
     "categories": {
