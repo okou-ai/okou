@@ -2,13 +2,22 @@ import {
   CHAT_THREAD_USAGE_RUN_LIMIT,
   type ChatEventUsagePayload,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, notExists, or, sql, sum } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+  max,
+  notExists,
+  or,
+  sql,
+  sum,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
@@ -45,8 +54,8 @@ function settledRunUsageQuery(args: RunUsageScope) {
         .mapWith(pgInt8ToSafeIntegerDecoder)
         .as("credits"),
       settledAt:
-        sql`COALESCE(MAX(${agentRuns.completedAt}), MAX(${billingRunAttribution.runStartedAt}), MAX(${agentRuns.createdAt}), MAX(${usage.processedHour}))`
-          .mapWith(agentRuns.createdAt)
+        sql`COALESCE(${max(billingRunAttribution.runCompletedAt)}, ${max(billingRunAttribution.runStartedAt)})`
+          .mapWith(billingRunAttribution.runStartedAt)
           .as("settled_at"),
     })
     .from(usage)
@@ -57,10 +66,6 @@ function settledRunUsageQuery(args: RunUsageScope) {
         eq(billingRunAttribution.orgId, usage.orgId),
         eq(billingRunAttribution.userId, usage.userId),
       ),
-    )
-    .leftJoin(
-      agentRuns,
-      and(eq(agentRuns.id, usage.runId), eq(agentRuns.orgId, usage.orgId)),
     )
     .innerJoin(
       chatThreads,
@@ -90,8 +95,14 @@ function settledRunUsageQuery(args: RunUsageScope) {
           ? undefined
           : eq(chatThreads.userId, args.userId),
         or(
-          isNull(agentRuns.id),
-          inArray(agentRuns.status, [...TERMINAL_RUN_STATUSES]),
+          // Historical unavailable lifecycle keeps the former absent-Run behavior.
+          eq(billingRunAttribution.runLifecycleContext, "legacy_unavailable"),
+          and(
+            eq(billingRunAttribution.runLifecycleContext, "captured"),
+            inArray(billingRunAttribution.runTerminalStatus, [
+              ...TERMINAL_RUN_STATUSES,
+            ]),
+          ),
         ),
         notExists(
           query
