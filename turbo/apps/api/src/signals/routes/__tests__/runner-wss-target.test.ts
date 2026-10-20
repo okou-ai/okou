@@ -112,7 +112,7 @@ describe("WSS bootstrap target eligibility", () => {
     await claimRun(f, run.runId, {
       runnerId,
       hostname: inventoryHostname,
-      version: "0.214.2",
+      version: "0.234.18",
     });
 
     await heartbeat(f, runnerId, "running", 1);
@@ -214,7 +214,7 @@ describe("WSS bootstrap target eligibility", () => {
     await claimRun(f, run.runId, {
       runnerId,
       hostname: inventoryHostname,
-      version: "0.214.2",
+      version: "0.234.18",
     });
 
     expect((await bootstrapTarget(f, run.runId, 404)).body).toStrictEqual(
@@ -290,35 +290,25 @@ describe("WSS bootstrap target eligibility", () => {
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 
-  it("does not infer listener support from a claim version, but needs a hostname", async () => {
+  it("requires an official Runner hostname for WSS access", async () => {
     const f = await setup();
     const runnerId = randomUUID();
     await heartbeat(f, runnerId, "running", 1);
-    const oldRun = await createOwnedRun(f);
-    await claimRun(f, oldRun.runId, {
-      runnerId,
-      hostname: inventoryHostname,
-      version: "0.213.99",
-    });
-
-    expect((await bootstrapTarget(f, oldRun.runId, 200)).body).toMatchObject({
-      wssUrl: `${publicOrigin}/ws/${runnerId}`,
-    });
-    const historical = await createOwnedRun(f);
-    await claimRun(f, historical.runId, { runnerId });
+    const withoutHostname = await createOwnedRun(f);
+    await claimRun(f, withoutHostname.runId, { runnerId });
 
     expect(
-      (await bootstrapTarget(f, historical.runId, 404)).body,
+      (await bootstrapTarget(f, withoutHostname.runId, 404)).body,
     ).toStrictEqual(unavailableTarget());
-    const noVersion = await createOwnedRun(f);
-    await claimRun(f, noVersion.runId, {
+    const withHostname = await createOwnedRun(f);
+    await claimRun(f, withHostname.runId, {
       runnerId,
       hostname: inventoryHostname,
     });
 
-    expect((await bootstrapTarget(f, noVersion.runId, 200)).body).toMatchObject(
-      { wssUrl: `${publicOrigin}/ws/${runnerId}` },
-    );
+    expect(
+      (await bootstrapTarget(f, withHostname.runId, 200)).body,
+    ).toMatchObject({ wssUrl: `${publicOrigin}/ws/${runnerId}` });
   });
 
   it("rejects a browser-normalized IP hostname in an otherwise eligible official claim", async () => {
@@ -328,7 +318,7 @@ describe("WSS bootstrap target eligibility", () => {
     await claimRun(f, run.runId, {
       runnerId,
       hostname: "127.1",
-      version: "0.214.9",
+      version: "0.234.18",
     });
 
     await heartbeat(f, runnerId, "running", 1);
