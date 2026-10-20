@@ -9,7 +9,13 @@ cd "$repo_root"
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-cp "$resolved" "$build_root/Package.resolved.before"
+# CI overlaps simulator startup with build, then runs the same built products.
+# With no phase argument, supported manual callers still build and run everything.
+ios_test_phase=${1:-all}
+case "$ios_test_phase" in
+  all | build | run) ;;
+  *) echo "usage: ci-test.sh [all|build|run]" >&2; exit 2 ;;
+esac
 
 xcode_args=(
   -project ios/Okou.xcodeproj
@@ -30,21 +36,28 @@ xcode_args=(
   CLERK_PUBLISHABLE_KEY=
 )
 
-# Core/data tests use real decoding, HTTP and SQLite without booting the App.
-for ios_package in ChatDomain ChatData; do
-  ios_package_path="ios/Packages/$ios_package"
-  xcrun swift-format lint --strict --recursive "$ios_package_path/Package.swift" \
-    "$ios_package_path/Sources" "$ios_package_path/Tests"
-  swift test --package-path "$ios_package_path" --scratch-path "$build_root/$ios_package"
-done
+if [[ "$ios_test_phase" != run ]]; then
+  cp "$resolved" "$build_root/Package.resolved.before"
+  # Core/data tests use real decoding, HTTP and SQLite without booting the App.
+  for ios_package in ChatDomain ChatData; do
+    ios_package_path="ios/Packages/$ios_package"
+    xcrun swift-format lint --strict --recursive "$ios_package_path/Package.swift" \
+      "$ios_package_path/Sources" "$ios_package_path/Tests"
+    swift test --package-path "$ios_package_path" --scratch-path "$build_root/$ios_package"
+  done
 
-xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
-cmp "$resolved" "$build_root/Package.resolved.before"
+  xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
+  cmp "$resolved" "$build_root/Package.resolved.before"
+  xcodebuild "${xcode_args[@]}" build-for-testing
+  cmp "$resolved" "$build_root/Package.resolved.before"
+fi
 
-xcodebuild "${xcode_args[@]}" \
-  -parallel-testing-enabled NO \
-  -maximum-concurrent-test-simulator-destinations 1 \
-  -resultBundlePath "$build_root/Tests.xcresult" \
-  test
-
-cmp "$resolved" "$build_root/Package.resolved.before"
+if [[ "$ios_test_phase" != build ]]; then
+  cmp "$resolved" "$build_root/Package.resolved.before"
+  xcodebuild "${xcode_args[@]}" \
+    -parallel-testing-enabled NO \
+    -maximum-concurrent-test-simulator-destinations 1 \
+    -resultBundlePath "$build_root/Tests.xcresult" \
+    test-without-building
+  cmp "$resolved" "$build_root/Package.resolved.before"
+fi

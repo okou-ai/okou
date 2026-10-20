@@ -38,15 +38,19 @@ Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output and tool cards are not rendered. Sharing, Cloud Browser,
-Computer Use, artifact controls, and connector selection are outside this local UI. The composer uses a combined send/stop
+Computer Use, artifact controls, and the global connector picker are outside this local UI.
+Trusted connector action links in assistant messages render as native cards, including
+exact-account reconnect and conversation account confirmation. Credential forms remain
+native; external authorization uses system Safari and verifies owned server receipts
+before continuing the conversation. The composer uses a combined send/stop
 control: a nonempty draft can be sent while work is active, and the empty-draft
 control can stop active work.
 
-Before sending in an existing conversation, the app clears thread-level connector
-overrides and disables Cloud Browser and Computer Use through existing APIs,
+Before sending in an existing conversation, the app preserves confirmed connector
+account selections and disables Cloud Browser and Computer Use through existing APIs,
 then reads the settings back. These are shared conversation settings: the same
-conversation on the web will also reflect the changes. The agent's default
-connectors remain in use.
+conversation on the web will also reflect the changes. Existing Agent connector
+authorizations and confirmed chat account choices remain in use.
 
 ## Local setup
 
@@ -282,7 +286,11 @@ Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
-server contract verification. To run the same CI build locally:
+server contract verification. CI starts its configured simulator while package
+checks and `build-for-testing` compile the test products, waits for both to
+succeed, then executes every native test with `test-without-building`. Failed or
+cancelled preparation still blocks the required gate. The standalone command
+builds and runs every suite with an explicit local simulator:
 
 ```sh
 RUNNER_TEMP="$(mktemp -d)" \

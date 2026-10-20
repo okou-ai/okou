@@ -814,7 +814,7 @@ final class ChatClientTests: XCTestCase {
       ])
   }
 
-  func testSendResetsSharedOverridesAndUsesOriginalAgentWithoutModelOverride() async throws {
+  func testSendPreservesConnectorSelectionsAndDisablesBrowserWithoutModelOverride() async throws {
     struct State: Sendable {
       var overridden = true
       var browserEnabled = true
@@ -867,7 +867,7 @@ final class ChatClientTests: XCTestCase {
     XCTAssertFalse(sent.hasModelOverride)
     XCTAssertTrue(sent.hostIsExplicitNull)
     XCTAssertFalse(sent.cloudBrowserEnabled)
-    XCTAssertFalse(state.withLock { $0.overridden })
+    XCTAssertTrue(state.withLock { $0.overridden })
   }
 
   func testAmbiguousSendIsNotResubmittedAndExplicitRetryReusesIdentity() async throws {

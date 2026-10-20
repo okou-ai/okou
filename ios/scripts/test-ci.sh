@@ -54,7 +54,15 @@ echo main-change > ios/App.swift
 commit main-advanced
 git switch --quiet -c pull-merge
 git merge --quiet --no-ff unrelated-pr -m merge
+# A shallow PR merge ref has both parents even when its original base is absent.
+git clone --quiet --depth=2 --branch pull-merge "file://$repo" "$test_root/shallow-pr"
+cd "$test_root/shallow-pr"
+if git cat-file -e "${base}^{commit}" 2>/dev/null; then
+  echo "Expected the original PR base to be outside the shallow checkout" >&2
+  exit 1
+fi
 expect false EVENT_NAME=pull_request CHECKOUT_REF=refs/pull/1/merge PULL_REQUEST_BASE_SHA="$base"
+cd "$repo"
 
 # A direct PR head still uses the supplied PR base and its merge base.
 git switch --quiet --detach "$pr_head"
@@ -75,9 +83,13 @@ expect true EVENT_NAME=workflow_dispatch HEAD_REF=release-please--branches--main
 # An iOS change earlier in a multi-entry merge group/main push must not disappear.
 echo later > turbo/app.ts
 commit later-unrelated-change
+# Preserve every entry's changes with only the group's bounded ancestry present.
+git clone --quiet --depth=3 --branch ios-pr "file://$repo" "$test_root/shallow-group"
+cd "$test_root/shallow-group"
 expect true EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$base"
 expect true EVENT_NAME=push PUSH_BEFORE_SHA="$base"
 expect false EVENT_NAME=push PUSH_BEFORE_SHA="$(git rev-parse HEAD^)"
+cd "$repo"
 expect true EVENT_NAME=workflow_dispatch
 
 # Deletions and renames across the iOS boundary also select checks.

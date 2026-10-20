@@ -52,7 +52,11 @@ final class ConversationWorkHistoryTests: XCTestCase {
       try row(1, type: "input.prompt", text: "Review the release"),
       try row(
         2, text: "Collected the requirements.\n\n" + String(repeating: "Earlier work. ", count: 60)),
-      try row(3, text: "Checked the release checks."),
+      try row(
+        3,
+        text:
+          "Checked the release checks.\n\n[Connect](/connectors/slack/connect?agentId=\(ConversationHistoryFixture.agentID))"
+      ),
       try row(
         4, text: "## Result\n\n" + String(repeating: "The result remains visible.\n\n", count: 30)),
     ])
