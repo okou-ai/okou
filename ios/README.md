@@ -290,9 +290,10 @@ Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
-server contract verification. CI starts its configured simulator while
-`build-for-testing` compiles the App test products, waits for system boot readiness
-and compilation to succeed, then executes every native test with
+server contract verification. CI starts its configured simulator while resolving
+locked dependencies, then waits for system boot readiness before asset and App
+compilation. This keeps cold system-service startup out of asset-tool discovery.
+After `build-for-testing` succeeds, CI executes every native test with
 `test-without-building`. Failed or
 cancelled preparation still blocks the required gate. The standalone command
 builds and runs every suite sequentially with an explicit local simulator:

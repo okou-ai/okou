@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Start the explicit CI simulator while source compilation proceeds.
+"""Start the explicit CI simulator while locked dependencies resolve.
 
 IOS_TEST_DESTINATION must specify platform=iOS Simulator, name and OS.
-Wait for system boot readiness while compilation proceeds, rather than deferring
+Wait for system boot readiness before compilation, rather than deferring
 first-boot preparation to test launch. Missing/ambiguous devices and boot or
 readiness failures fail CI.
 """

@@ -9,13 +9,14 @@ cd "$repo_root"
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-# CI overlaps simulator startup with build, then runs the same built products.
-# Build/run phases belong to the simulator job; package CI has its own runner.
+# CI overlaps simulator startup with dependency resolution, then compiles and runs.
+# Prepare/compile/run phases belong to CI; build retains the combined build entry.
+# Package CI has its own runner.
 # With no phase argument, supported manual callers still run every suite.
 ios_test_phase=${1:-all}
 case "$ios_test_phase" in
-  all | build | run) ;;
-  *) echo "usage: ci-test.sh [all|build|run]" >&2; exit 2 ;;
+  all | build | prepare | compile | run) ;;
+  *) echo "usage: ci-test.sh [all|build|prepare|compile|run]" >&2; exit 2 ;;
 esac
 
 xcode_args=(
@@ -41,15 +42,19 @@ if [[ "$ios_test_phase" == all ]]; then
   bash ios/scripts/ci-package-test.sh
 fi
 
-if [[ "$ios_test_phase" != run ]]; then
+if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
   cp "$resolved" "$build_root/Package.resolved.before"
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
+  cmp "$resolved" "$build_root/Package.resolved.before"
+fi
+
+if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   cmp "$resolved" "$build_root/Package.resolved.before"
   xcodebuild "${xcode_args[@]}" build-for-testing
   cmp "$resolved" "$build_root/Package.resolved.before"
 fi
 
-if [[ "$ios_test_phase" != build ]]; then
+if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
   cmp "$resolved" "$build_root/Package.resolved.before"
   xcodebuild "${xcode_args[@]}" \
     -parallel-testing-enabled NO \
