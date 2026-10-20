@@ -118,7 +118,8 @@ def _install_early_response_completion() -> None:
 
     def send_response(self: HttpStream, already_streamed: bool = False):
         body = managed_request_body.get(self.flow)
-        unfinished = body is not None and not body.validated
+        # Validation may finish before H2's buffered tail reaches the provider.
+        unfinished = body is not None and (not body.validated or not body.writable.is_set())
         native = current(self, already_streamed=already_streamed)
         try:
             for command in native:
