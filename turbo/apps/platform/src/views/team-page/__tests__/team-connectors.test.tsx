@@ -14,6 +14,7 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { expect, test } from "vitest";
 
@@ -456,7 +457,7 @@ test("An unconfigured custom connector is not offered to an agent", async () => 
 function savedCustomSummary(
   connector: CustomConnectorResponse,
   expired: boolean,
-): ConnectorAccountBriefSummary {
+) {
   return {
     target: { kind: "custom", customConnectorId: connector.id },
     accountCount: 2,
@@ -469,26 +470,23 @@ function savedCustomSummary(
       externalUsername: null,
       externalEmail: null,
       connectionStatus: expired ? "reconnect-required" : "connected",
+      setupStatus: "complete",
+      missingRequiredFields: [],
+      configuredFieldKeys: ["apiKey"],
     },
-  };
+  } satisfies ConnectorAccountBriefSummary;
 }
 
 test.each([
-  { expired: true, definitionReady: false, matchingDefault: true },
-  { expired: false, definitionReady: false, matchingDefault: true },
-  { expired: true, definitionReady: true, matchingDefault: true },
-  { expired: false, definitionReady: true, matchingDefault: false },
+  { expired: true, setupStatus: "complete" as const },
+  { expired: false, setupStatus: "incomplete" as const },
+  { expired: false, setupStatus: "invalid" as const },
+  { expired: false, setupStatus: undefined },
 ])(
-  "An agent can repair a saved custom connector without gaining access (expired: $expired, definition ready: $definitionReady, matching default: $matchingDefault)",
-  async ({ expired, definitionReady, matchingDefault }) => {
+  "An agent can repair an unusable canonical default without gaining access (expired: $expired, setup: $setupStatus)",
+  async ({ expired, setupStatus }) => {
     const connector = acmeConnectorFixture({
       slug: "_acme-search",
-      connected: definitionReady,
-      connectedAccountId: definitionReady
-        ? matchingDefault
-          ? "30000000-0000-4000-8000-000000000001"
-          : "30000000-0000-4000-8000-000000000003"
-        : undefined,
       fields: [
         { key: "apiKey", label: "API key", kind: "secret", required: true },
       ],
@@ -498,14 +496,28 @@ test.each([
           valueTemplate: "Bearer {{secrets.apiKey}}",
         },
       ],
-      missingRequiredFields: definitionReady ? [] : ["apiKey"],
-      configuredFieldKeys: definitionReady ? ["apiKey"] : [],
+      missingRequiredFields: [],
+      configuredFieldKeys: ["apiKey"],
       permissionBundleRef: "builtin:acme-search@1",
     });
     const saves: unknown[] = [];
+    const summary = savedCustomSummary(connector, expired);
+    const needsAttention =
+      expired || setupStatus === "incomplete" || setupStatus === "invalid";
     mockConnectorSurface(context, {
       customConnectors: [connector],
-      accountSummaries: [savedCustomSummary(connector, expired)],
+      accountSummaries: [
+        {
+          ...summary,
+          attentionCount: needsAttention ? 1 : 0,
+          defaultConnection: {
+            ...summary.defaultConnection,
+            setupStatus,
+            missingRequiredFields:
+              setupStatus === "incomplete" ? ["apiKey"] : [],
+          },
+        },
+      ],
       onCustomSave: (args) => {
         saves.push(args);
       },
@@ -516,10 +528,12 @@ test.each([
     });
 
     await screen.findByText("Acme Search");
-    await screen.findByText(expired ? "1/2 need attention" : "2 accounts");
-    expect(
-      screen.getByText(expired ? "1/2 need attention" : /Reconnect required/),
-    ).toBeVisible();
+    await screen.findByText(
+      needsAttention ? "1/2 need attention" : "2 accounts",
+    );
+    expect(screen.queryAllByText(/Reconnect required/)).toHaveLength(
+      needsAttention ? 0 : 1,
+    );
     expect(screen.queryByText(/No connected services yet/i)).toBeNull();
     const access = connectorAccessSwitch("Grant Acme Search access");
     expect(access).toHaveAttribute("aria-disabled", "true");
@@ -537,33 +551,49 @@ test.each([
   },
 );
 
-test("An agent can grant access through a healthy configured default while a sibling needs attention", async () => {
-  const connector = acmeConnectorFixture();
-  const saves: unknown[] = [];
-  mockConnectorSurface(context, {
-    customConnectors: [connector],
-    accountSummaries: [
-      { ...savedCustomSummary(connector, false), attentionCount: 1 },
-    ],
-    onCustomSave: (args) => {
-      saves.push(args);
-    },
-  });
-  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
-  await screen.findByText("Acme Search");
-  expect(screen.getByText("1/2 need attention")).toBeVisible();
-  const grant = connectorAccessSwitch("Grant Acme Search access");
-  expect(grant).not.toHaveAttribute("aria-disabled", "true");
-  click(grant);
-  await screen.findByText("Custom connectors saved");
-  expect(saves).toStrictEqual([
-    {
-      agentId: RESEARCH_AGENT_ID,
-      grants: [{ customConnectorId: connector.id, permissionNames: [] }],
-      operation: "add",
-    },
-  ]);
-});
+test.each(["current", "canonical"] as const)(
+  "An agent can grant access through a healthy default with $0 definition metadata while a sibling needs attention",
+  async (shape) => {
+    const connector = acmeConnectorFixture();
+    const saves: unknown[] = [];
+    mockConnectorSurface(context, {
+      customConnectors: [connector],
+      accountSummaries: [
+        { ...savedCustomSummary(connector, false), attentionCount: 1 },
+      ],
+      onCustomSave: (args) => {
+        saves.push(args);
+      },
+    });
+    if (shape === "canonical") {
+      const {
+        connected: _connected,
+        connectedAccountId: _connectedAccountId,
+        connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
+        missingRequiredFields: _missingRequiredFields,
+        configuredFieldKeys: _configuredFieldKeys,
+        ...definition
+      } = connector;
+      context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+        return respond(200, { connectors: [definition] });
+      });
+    }
+    await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+    await screen.findByText("Acme Search");
+    expect(screen.getByText("1/2 need attention")).toBeVisible();
+    const grant = connectorAccessSwitch("Grant Acme Search access");
+    expect(grant).not.toHaveAttribute("aria-disabled", "true");
+    click(grant);
+    await screen.findByText("Custom connectors saved");
+    expect(saves).toStrictEqual([
+      {
+        agentId: RESEARCH_AGENT_ID,
+        grants: [{ customConnectorId: connector.id, permissionNames: [] }],
+        operation: "add",
+      },
+    ]);
+  },
+);
 
 test("An open permission drawer cannot apply access after its saved default expires", async () => {
   const connector = acmeConnectorFixture({

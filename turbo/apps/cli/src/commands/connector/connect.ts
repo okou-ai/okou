@@ -97,11 +97,8 @@ async function connectCustom(
     account,
     values: inputValues,
   });
-  const connectionId = result.connectionId ?? result.connectedAccountId;
-  if (
-    !connectionId ||
-    (account.intent === "reconnect" && connectionId !== account.connectionId)
-  )
+  const connectionId = result.connectionId;
+  if (account.intent === "reconnect" && connectionId !== account.connectionId)
     throw new Error("Connector account response identity mismatch.");
   const connectedAccount = await showConnectorAccount({
     target: { kind: "custom", customConnectorId: id },

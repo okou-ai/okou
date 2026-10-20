@@ -1,4 +1,4 @@
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 
 export function customConnectorTarget(
   connector: CustomConnectorResponse,

@@ -21,7 +21,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorAutomaticContract,
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorOpenIdStartContract,
@@ -29,6 +28,10 @@ import {
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
+  builtinConnectorAutomaticReaderResponseSchema,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type {
   InitClientArgs,
@@ -43,6 +46,7 @@ import type {
 import {
   connectorCatalogItemForSlug,
   relatedConnectorCatalog,
+  withMemberAccountStatus,
   reloadBuiltinConnectors$,
 } from "../../external/connectors.ts";
 import { replaceSearchParams$, searchParams$ } from "../../route.ts";
@@ -544,6 +548,9 @@ export const relatedCatalogItems$ = computed(async (get) => {
     return items;
   }
   const summaries = read.value;
+  const memberItems = items.map((item) => {
+    return withMemberAccountStatus(item, summaries);
+  });
   const hasAccounts = (slug: ConnectorSlug) => {
     return (
       (summaries.get(
@@ -553,14 +560,14 @@ export const relatedCatalogItems$ = computed(async (get) => {
   };
 
   // Sort connected connectors to the top of the list
-  items.sort((a, b) => {
+  memberItems.sort((a, b) => {
     if (hasAccounts(a.slug) === hasAccounts(b.slug)) {
       return 0;
     }
     return hasAccounts(a.slug) ? -1 : 1;
   });
 
-  return items;
+  return memberItems;
 });
 
 export const filteredConnectorCatalogItems$ = computed(async (get) => {
@@ -2494,7 +2501,7 @@ const startConnectorBrowserAuthorization$ = command(
       body,
     };
     if (args.method.grantKind === "automatic") {
-      return await accept(
+      const result = await accept(
         get(apiClient$)(builtinConnectorAutomaticContract, {
           apiBase: "api",
         }).start({
@@ -2503,6 +2510,11 @@ const startConnectorBrowserAuthorization$ = command(
         }),
         [200],
       );
+      signal.throwIfAborted();
+      return {
+        ...result,
+        body: builtinConnectorAutomaticReaderResponseSchema.parse(result.body),
+      };
     }
     if (args.method.grantKind === "openid-auth") {
       return await accept(
@@ -2617,9 +2629,7 @@ const openConnectorOAuthAuthCodeWindow$ = command(
           return {
             kind: "connected" as const,
             options,
-            connectionId:
-              startResult.body.connectionId ??
-              startResult.body.connectedAccountId,
+            connectionId: startResult.body.connectionId,
           };
         }
 

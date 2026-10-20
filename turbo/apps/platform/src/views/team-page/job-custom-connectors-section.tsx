@@ -9,10 +9,11 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorManagedStatusSchema,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
@@ -47,13 +48,12 @@ function canAddAgentAccess(
   summary: ConnectorAccountBriefSummary | undefined,
 ): boolean {
   if (isIntegrationManagedCustomConnector(connector)) {
-    return connector.connected;
+    return customConnectorManagedStatusSchema.parse(connector).connected;
   }
   const defaultConnection = summary?.defaultConnection;
   return (
-    connector.connected &&
     defaultConnection?.connectionStatus === "connected" &&
-    connector.connectedAccountId === defaultConnection.id
+    defaultConnection.setupStatus === "complete"
   );
 }
 

@@ -8,10 +8,8 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PublicConnectorCatalogAuthMethodDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
-import type {
-  CustomConnectorResponse,
-  CustomConnectorSlug,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorSlug } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { Input } from "@okouai/ui/components/ui/input";
 import {
@@ -39,6 +37,7 @@ import {
   connectDirectedConnector$,
   directedConnectSlug$,
   directedConnectCustomSlug$,
+  directedConnectCustomConnected$,
   directedConnectAccountTarget$,
   directedConnectCatalogItem$,
   directedConnectExactAccount$,
@@ -762,6 +761,7 @@ function CustomDirectedConnectCard({
   const agentId = useGet(directedConnectAgentId$);
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
   const connectorsLoadable = useLastLoadable(customConnectors$);
+  const connectedLoadable = useLastLoadable(directedConnectCustomConnected$);
   const dialogKey = useGet(directedConnectCustomDialogKey$);
   const setDialogKey = useSet(setDirectedConnectCustomDialogKey$);
   const resetConnectInput = useSet(resetCustomConnectorConnectInput$);
@@ -812,10 +812,17 @@ function CustomDirectedConnectCard({
         connectorLabel={connector?.displayName ?? connectorSlug}
         connectorDescription={connector ? customConnectorTarget(connector) : ""}
         agentName={agentName}
-        isLoading={connectorsLoadable.state === "loading"}
-        isConnected={connector?.connected ?? false}
+        isLoading={
+          connectorsLoadable.state === "loading" ||
+          connectedLoadable.state === "loading"
+        }
+        isConnected={
+          connectedLoadable.state === "hasData" && connectedLoadable.data
+        }
         isConnecting={false}
-        canConnect={connection !== null}
+        canConnect={
+          connection !== null && connectedLoadable.state === "hasData"
+        }
         onConnect={() => {
           if (!connection) {
             return;
@@ -824,6 +831,7 @@ function CustomDirectedConnectCard({
           setDialogOpen(true);
         }}
       />
+      <DirectedActionError loadable={connectedLoadable} />
       <CustomDirectedConnectorDialog
         connection={connection}
         open={dialogOpen}
