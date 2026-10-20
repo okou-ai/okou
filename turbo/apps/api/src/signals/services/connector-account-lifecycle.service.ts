@@ -855,7 +855,7 @@ export function connectorAccountsForTarget(
         row,
         snapshot,
         now,
-        true,
+        args.includeScopeMismatch === true,
         markers.get(connectorAccountSetupMarkerKey(row)),
       );
       return connection ? [connection] : [];

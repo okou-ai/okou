@@ -412,10 +412,6 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
-    expect(defaultAccount.body.connectionId).toBe(
-      defaultAccount.body.connectionId,
-    );
-    expect(healthy.body.connectionId).toBe(healthy.body.connectionId);
     if (!defaultAccount.body.connectionId || !healthy.body.connectionId) {
       throw new Error("Expected exact operated account IDs");
     }
@@ -877,6 +873,55 @@ describe("connector account lifecycle routes", () => {
       }
       expect(JSON.stringify(listed.body)).not.toContain("token-Primary-");
       expect(JSON.stringify(listed.body)).not.toContain("token-Separate-");
+    }
+  });
+
+  it("enriches the requested page and off-page default only when scope facts are requested", async () => {
+    await seedFixture();
+    const accountIds: string[] = [];
+    for (const displayName of ["Default", "Sibling"]) {
+      const connected = await accept(
+        connectorClient().connect({
+          headers: authHeaders(),
+          params: { connectorSlug: "openai" },
+          body: {
+            authMethod: "api-token",
+            account: { intent: "add", displayName },
+            values: { apiKey: "scope-projection-test-token" },
+          },
+        }),
+        [200],
+      );
+      accountIds.push(connected.body.connectionId);
+    }
+    for (const enriched of [false, true]) {
+      const page = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "openai",
+            limit: 1,
+            search: "Sibling",
+            ...(enriched ? { includeScopeMismatch: "true" as const } : {}),
+          },
+        }),
+        [200],
+      );
+      expect(page.body).toMatchObject({
+        connections: [{ id: accountIds[1], isDefault: false }],
+        defaultConnection: { id: accountIds[0], isDefault: true },
+      });
+      for (const account of [
+        ...page.body.connections,
+        page.body.defaultConnection,
+      ]) {
+        if (enriched) {
+          expect(account).toHaveProperty("scopeMismatch", false);
+        } else {
+          expect(account).not.toHaveProperty("scopeMismatch");
+        }
+      }
     }
   });
 
