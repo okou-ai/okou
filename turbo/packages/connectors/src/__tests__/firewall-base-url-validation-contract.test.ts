@@ -197,14 +197,36 @@ describe("firewall base URL template resolution contract", () => {
 
 describe("credentialed split hostname escapes", () => {
   it.each([
-    ["https://%6${{ vars.SUFFIX }}.example.com", "1"],
-    ["https://%${{ vars.SUFFIX }}.example.com", "61"],
+    [
+      "https://%6${{ vars.SUFFIX }}.example.com",
+      "1",
+      "https://a.example.com",
+      "2",
+    ],
+    [
+      "https://%${{ vars.SUFFIX }}.example.com",
+      "61",
+      "https://a.example.com",
+      "62",
+    ],
+    [
+      "https://%c3%${{ vars.SUFFIX }}.example.com",
+      "bc",
+      "https://xn--tda.example.com",
+      "bd",
+    ],
+    [
+      "https://%c3%b${{ vars.SUFFIX }}.example.com",
+      "c",
+      "https://xn--tda.example.com",
+      "d",
+    ],
   ])(
     "preserves execution variables and enforces ownership for %s",
-    (base, suffix) => {
+    (base, suffix, expectedBase, unownedSuffix) => {
       const hostPolicy = {
         kind: "providerOwned" as const,
-        exactHosts: ["a.example.com"],
+        exactHosts: [new URL(expectedBase).hostname],
       };
       const firewalls = firewallsSchema.parse([
         {
@@ -232,12 +254,12 @@ describe("credentialed split hostname escapes", () => {
           credentialed: true,
           hostPolicy,
         }),
-      ).toBe("https://a.example.com");
+      ).toBe(expectedBase);
       expect(() => {
         return resolveFirewallBaseUrlTemplate({
           serviceName: "contract",
           base,
-          vars: { SUFFIX: suffix === "1" ? "2" : "62" },
+          vars: { SUFFIX: unownedSuffix },
           credentialed: true,
           hostPolicy,
         });

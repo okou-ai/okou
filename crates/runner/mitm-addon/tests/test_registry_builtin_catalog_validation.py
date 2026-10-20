@@ -299,23 +299,30 @@ class TestRegistryBuiltinCatalogValidation:
         assert sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://acme.example.com"
 
     @pytest.mark.parametrize(
-        ("escape_prefix", "suffix", "expected_error"),
+        ("escape_prefix", "suffix", "expected_error", "expected_base"),
         [
-            pytest.param("%6", "1", None, id="one-hex-digit"),
-            pytest.param("%", "61", None, id="two-hex-digits"),
-            pytest.param("%6", "z", "resolved base URL is invalid", id="non-hex"),
-            pytest.param("%", "6", "resolved base URL is invalid", id="incomplete"),
-            pytest.param("%", "ff", "resolved base URL is invalid", id="invalid-utf8"),
-            pytest.param("%", "2f", "resolved base URL is invalid", id="encoded-slash"),
-            pytest.param("%", "2e", "resolved base URL is invalid", id="encoded-dot"),
-            pytest.param("%", "25", "resolved base URL is invalid", id="encoded-percent"),
-            pytest.param("%", "00", "resolved base URL is invalid", id="encoded-control"),
-            pytest.param("%", "7b", "resolved base URL is invalid", id="encoded-parameter"),
-            pytest.param("%6", "2", "host policy does not allow resolved host", id="unowned-host"),
+            pytest.param("%6", "1", None, "https://a.example.com", id="one-hex-digit"),
+            pytest.param("%", "61", None, "https://a.example.com", id="two-hex-digits"),
+            pytest.param("%c3%", "bc", None, "https://xn--tda.example.com", id="utf8-byte"),
+            pytest.param("%c3%b", "c", None, "https://xn--tda.example.com", id="utf8-nibble"),
+            pytest.param("%6", "z", "resolved base URL is invalid", None, id="non-hex"),
+            pytest.param("%", "6", "resolved base URL is invalid", None, id="incomplete"),
+            pytest.param("%", "ff", "resolved base URL is invalid", None, id="invalid-utf8"),
+            pytest.param(
+                "%c3%", "ff", "resolved base URL is invalid", None, id="invalid-utf8-tail"
+            ),
+            pytest.param("%", "2f", "resolved base URL is invalid", None, id="encoded-slash"),
+            pytest.param("%", "2e", "resolved base URL is invalid", None, id="encoded-dot"),
+            pytest.param("%", "25", "resolved base URL is invalid", None, id="encoded-percent"),
+            pytest.param("%", "00", "resolved base URL is invalid", None, id="encoded-control"),
+            pytest.param("%", "7b", "resolved base URL is invalid", None, id="encoded-parameter"),
+            pytest.param(
+                "%6", "2", "host policy does not allow resolved host", None, id="unowned-host"
+            ),
         ],
     )
     def test_split_hostname_escape_preserves_unrelated_catalog_connector(
-        self, tmp_path, mitm_ctx, escape_prefix, suffix, expected_error
+        self, tmp_path, mitm_ctx, escape_prefix, suffix, expected_error, expected_base
     ):
         base = "https://" + escape_prefix + "${{ vars.SUFFIX }}.example.com"
         registry_path, cache_path = write_registry_with_cache(
@@ -332,7 +339,7 @@ class TestRegistryBuiltinCatalogValidation:
                             "base": base,
                             "hostPolicy": {
                                 "kind": "providerOwned",
-                                "exactHosts": ["a.example.com"],
+                                "exactHosts": ["a.example.com", "xn--tda.example.com"],
                             },
                             "auth": {"headers": {"Authorization": "Bearer ${{ secrets.TOKEN }}"}},
                             "permissions": [{"name": "read", "rules": ["GET /items"]}],
@@ -380,9 +387,11 @@ class TestRegistryBuiltinCatalogValidation:
         assert set(state.sandboxes) == {"10.200.0.1", "10.200.0.2"}
         assert template_context is not None
         template_info, template_firewalls, _ = template_context
-        assert template_info["firewalls"][0]["apis"][0]["base"] == "https://%61.example.com"
+        assert template_info["firewalls"][0]["apis"][0]["base"] == (
+            "https://" + escape_prefix + suffix + ".example.com"
+        )
         allowed = matching.match_compiled_firewall_request(
-            "https://a.example.com/items",
+            expected_base + "/items",
             "GET",
             template_firewalls,
             {"templated": {"allow": ["read"], "unknownPolicy": "deny"}},
