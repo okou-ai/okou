@@ -128,15 +128,15 @@ fn maintenance_publication_guard(
     }))
 }
 
-/// Build an artifact snapshot using the type generated from the canonical
+/// Build a Storage output using the type generated from the canonical
 /// completion webhook contract.
 fn build_artifact_snapshot_entry(
     name: &str,
     version: &str,
     mount_path: &str,
     missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
-) -> complete::RequestCompletionArtifactSnapshot {
-    complete::RequestCompletionArtifactSnapshot {
+) -> complete::RequestCompletionStorageOutput {
+    complete::RequestCompletionStorageOutput {
         name: name.to_string(),
         version: version.to_string(),
         mount_path: mount_path.to_string(),
@@ -203,7 +203,7 @@ async fn snapshot_artifact_plan(
     run_id: &str,
     plan: ArtifactSnapshotPlan<'_>,
     maintenance_attestation: Option<vas::PiMemoryPhase2PublicationAttestation>,
-) -> Result<complete::RequestCompletionArtifactSnapshot, AgentError> {
+) -> Result<complete::RequestCompletionStorageOutput, AgentError> {
     let (entry, files) = match plan {
         ArtifactSnapshotPlan::Snapshot { entry, files } => (entry, files),
         ArtifactSnapshotPlan::PreserveParentVersion { entry } => {
@@ -320,7 +320,7 @@ pub(super) async fn snapshot_artifact_entries(
     mode: FinalizationMode,
     pi_launch_config: &str,
     pi_launch_payload_file: &str,
-) -> Result<Option<Vec<complete::RequestCompletionArtifactSnapshot>>, AgentError> {
+) -> Result<Option<Vec<complete::RequestCompletionStorageOutput>>, AgentError> {
     if entries.is_empty() {
         log_info!(
             LOG_TAG,
@@ -434,7 +434,7 @@ async fn snapshot_artifact_entries_for_test(
     http: &HttpClient,
     run_id: &str,
     entries: &[env::ArtifactEnv],
-) -> Result<Option<Vec<complete::RequestCompletionArtifactSnapshot>>, AgentError> {
+) -> Result<Option<Vec<complete::RequestCompletionStorageOutput>>, AgentError> {
     snapshot_artifact_entries(http, run_id, entries, FinalizationMode::Success, "", "").await
 }
 
