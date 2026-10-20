@@ -6,13 +6,21 @@ use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 const WAIT: Duration = Duration::from_secs(10);
 
 fn peer_candidate(run_id: RunId, key: &str) -> runner_provider::JobCandidate {
-    ranked_candidate(
-        run_id,
-        Some(key),
-        RunnerPreferenceTier::PeerFinalizingPredecessor,
-        TEST_RUNNER_ID,
-        TEST_HEARTBEAT_GENERATION,
-    )
+    // Exercise the activated API/Ably wire reader before entering the actual
+    // two-reactor claim/publication/locked-checkout lifecycle below.
+    let preference = runner_provider::parse_runner_preference(Some(serde_json::json!({
+        "kind": "preference",
+        "tier": "peerFinalizingPredecessor",
+        "runnerIdentity": {
+            "runnerId": TEST_RUNNER_ID,
+            "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
+        },
+        "expiresAt": (chrono::Utc::now() + chrono::Duration::seconds(30)).to_rfc3339(),
+    })))
+    .unwrap();
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
+        .with_reuse_key(Some(key.into()))
+        .with_parsed_runner_preference_context(preference)
 }
 
 async fn wait_owned_peer(env: &MockRunEnv, run_id: RunId) {
