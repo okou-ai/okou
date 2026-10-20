@@ -8,20 +8,45 @@ import {
 } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useLastLoadable, useSet } from "ccstate-react";
-import { Check, CreditCard, ExternalLink } from "lucide-react";
+import { CreditCard, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { platformStaticAssetUrl } from "../../../../lib/static-assets.ts";
 import {
   refreshWalletCards$,
   walletCards$,
 } from "../../../../signals/okou-page/settings/wallet.ts";
 
+const CARD_BRAND_ICONS: ReadonlyMap<string, string> = new Map([
+  ["visa", "visa-8d837bb887be.svg"],
+  ["mastercard", "mastercard-1c8f56fb410e.svg"],
+  ["amex", "amex-c9e69fc83a30.svg"],
+  ["discover", "discover-8ef8d5002bc7.svg"],
+  ["diners", "diners-3fff05e537bf.svg"],
+  ["jcb", "jcb-5feacae1824b.svg"],
+  ["unionpay", "unionpay-9352f48b6796.svg"],
+]);
+
 function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
   const { t } = useTranslation();
   const card = method.card;
+  const icon = card && CARD_BRAND_ICONS.get(card.brand.toLowerCase());
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4">
-      <div className="flex h-9 w-12 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-gray-50 text-muted-foreground">
+      <div className="relative flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-surface-border bg-gray-50 text-muted-foreground">
         <CreditCard size={20} aria-hidden="true" />
+        {icon && (
+          <img
+            key={icon}
+            src={platformStaticAssetUrl(
+              `views/okou-page/components/settings/card-brands/${icon}`,
+            )}
+            alt=""
+            className="absolute inset-0 h-full w-full bg-[#ffffff] object-contain"
+            onError={(event) => {
+              event.currentTarget.hidden = true;
+            }}
+          />
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -30,7 +55,6 @@ function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
           </span>
           {method.isDefault && (
             <Badge className="text-xs text-muted-foreground">
-              <Check aria-hidden="true" />
               {t(($) => {
                 return $.settings.wallet.cards.default;
               })}
