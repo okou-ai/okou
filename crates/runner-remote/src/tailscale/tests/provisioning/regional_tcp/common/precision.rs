@@ -91,6 +91,16 @@ async fn exercise(scenario: Scenario) {
     h.enable_diagnostics().await;
     let api = Api::secure(None).await;
     let home = Server::secure().await;
+    if matches!(scenario, Scenario::RelayWritePending) {
+        // An unauthenticated disconnect must not consume the fixture's one
+        // genuine DERP session. Observe its server-side retirement before startup.
+        let mut abandoned = bounded(tokio::net::TcpStream::connect(home.address))
+            .await
+            .unwrap();
+        bounded(abandoned.shutdown()).await.unwrap();
+        let mut byte = [0];
+        assert_eq!(bounded(abandoned.read(&mut byte)).await.unwrap(), 0);
+    }
     let mut other = if matches!(
         scenario,
         Scenario::RelayPending | Scenario::RelayFailure | Scenario::RelayMove
