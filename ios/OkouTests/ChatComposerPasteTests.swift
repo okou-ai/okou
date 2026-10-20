@@ -344,6 +344,24 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.preparations.isEmpty })
   }
 
+  func testFocusedEditorCreatedBeforeMountingAcquiresKeyboardWhenAttached() async throws {
+    let input = ComposerTextView()
+    input.frame = CGRect(x: 0, y: 0, width: 390, height: 116)
+    input.setFocused(true)
+    XCTAssertNil(input.window)
+    XCTAssertFalse(input.isFirstResponder)
+    let host = UIViewController()
+    host.view.addSubview(input)
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    defer { unmount(window) }
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    try await eventually { input.isFirstResponder }
+    input.setFocused(false)
+    XCTAssertFalse(input.isFirstResponder)
+  }
+
   func testRetiredNativeEditorCannotChangeAClearedDraftBeforeDismantling() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
@@ -354,10 +372,15 @@ final class ChatComposerPasteTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     input.becomeFirstResponder()
+    try await eventually { input.isFirstResponder }
     conversation.composer.clear()
     input.insertText("stale callback")
     XCTAssertEqual(conversation.draft, "")
     XCTAssertTrue(input.text.contains("stale callback"))
+    try await eventually {
+      guard let replacement = self.textView(in: host.view) else { return false }
+      return replacement !== input && replacement.isFirstResponder && replacement.text.isEmpty
+    }
   }
 
   func testRemoteHydrationCannotCancelAnImagePasteBeforeItsFileArrives() async throws {
