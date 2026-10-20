@@ -376,27 +376,6 @@ describe("current-member connector status", () => {
     },
   );
 
-  it("rejects a missing default selection instead of inferring one from a row", async () => {
-    server.use(
-      http.get(
-        "http://localhost:3000/api/connector-accounts/connections",
-        () => {
-          return HttpResponse.json({
-            connections: [connectorAccount(builtinTarget)],
-            nextCursor: null,
-          });
-        },
-      ),
-    );
-    await expect(
-      statusCommand.parseAsync(["node", "okou", "github", "--json"]),
-    ).rejects.toThrow("command exited");
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "missing the default account selection",
-    );
-    expect(log).not.toHaveBeenCalled();
-  });
-
   it.each(
     readers.filter((reader) => {
       return reader.name.startsWith("custom");

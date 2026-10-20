@@ -137,21 +137,7 @@ async function fetchConnectorAccountPage(
   if (result.status === 404) {
     return emptyConnectorAccountPage();
   }
-  return { ...requireConnectorAccountDefault(result.body), available: true };
-}
-
-/** This App ships after the API that supplies the target's canonical default. */
-export function requireConnectorAccountDefault<
-  T extends { readonly defaultConnection?: ConnectorAccountConnection | null },
->(
-  page: T,
-): T & { readonly defaultConnection: ConnectorAccountConnection | null } {
-  if (page.defaultConnection === undefined) {
-    throw new Error(
-      "Connector account default information is unavailable. Refresh and try again.",
-    );
-  }
-  return { ...page, defaultConnection: page.defaultConnection };
+  return { ...result.body, available: true };
 }
 
 interface ConnectorAccountQuery {
