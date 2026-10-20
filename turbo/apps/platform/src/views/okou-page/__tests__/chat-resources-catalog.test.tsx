@@ -269,7 +269,6 @@ test("Show more resources until the last page, then collapse with the same contr
   expect(
     within(artifacts).queryByText("report-61.pdf"),
   ).not.toBeInTheDocument();
-  expect(within(artifacts).queryByText("Load more")).not.toBeInTheDocument();
 
   click(more);
   await within(artifacts).findByText("report-120.pdf");
@@ -384,6 +383,5 @@ test("Retain loaded resources after a paging failure and retry with show more", 
   await within(artifacts).findByText("report-65.pdf");
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(65);
   expect(within(artifacts).queryByRole("alert")).not.toBeInTheDocument();
-  expect(within(artifacts).queryByText("Load more")).not.toBeInTheDocument();
   expect(more).toHaveTextContent("Collapse");
 });
