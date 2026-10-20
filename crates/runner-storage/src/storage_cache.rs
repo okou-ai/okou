@@ -2286,19 +2286,16 @@ async fn stage_joined_processed_group(
         processed,
     } = task;
     metrics.record_to(stage.telemetry);
-    let processed = match processed {
-        Ok(processed) => processed,
-        Err(error) => {
-            abort_pending_processed_groups(groups).await;
-            return Err(error);
+    let result = match processed {
+        Ok(processed) => {
+            stage_processed_group(group, processed, outcomes, stage_batch, stage).await
         }
+        Err(error) => Err(error),
     };
-    if let Err(error) = stage_processed_group(group, processed, outcomes, stage_batch, stage).await
-    {
+    if result.is_err() {
         abort_pending_processed_groups(groups).await;
-        return Err(error);
     }
-    Ok(())
+    result
 }
 
 /// Test-only wrapper for [`populate_cache_with_fresh_delivery`] without fresh
@@ -4374,6 +4371,7 @@ mod tests {
     mod cache_publication;
     mod decoded_observation;
     mod fresh_staging;
+    mod group_failures;
     mod http_reuse;
     mod large_selection;
     mod phase_diagnostics;
