@@ -183,7 +183,9 @@ function SshConnectionName({
       <Input
         name="displayName"
         placeholder={t(($) => {
-          return $.ssh.placeholders.displayName;
+          return guided
+            ? $.remoteControlSetup.namePlaceholder
+            : $.ssh.placeholders.displayName;
         })}
         required
         pattern=".*\S.*"
@@ -518,14 +520,19 @@ function SshAuthenticationFields({
             id="ssh-password"
             name="password"
             placeholder={
-              connectionLogin && credential
+              connectionLogin &&
+              credential &&
+              editor.method === credential.authMethod
                 ? t(($) => {
                     return $.remoteControlSetup.keepSavedSecret;
                   })
                 : t(($) => {
-                    return $.ssh.placeholders.password;
+                    return guided
+                      ? $.remoteControlSetup.passwordPlaceholder
+                      : $.ssh.placeholders.password;
                   })
             }
+            aria-describedby={guided ? "ssh-password-help" : undefined}
             required={
               !credential ||
               !connectionLogin ||
@@ -534,6 +541,13 @@ function SshAuthenticationFields({
             maxLength={SSH_PASSWORD_MAX_LENGTH}
             autoComplete="new-password"
           />
+          {guided && (
+            <p id="ssh-password-help" className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.passwordHelp;
+              })}
+            </p>
+          )}
         </div>
       ) : (
         <PrivateKeyFields

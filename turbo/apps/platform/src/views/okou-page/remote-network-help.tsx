@@ -564,7 +564,7 @@ export function RemoteNetworkCredentialHelp({
         <Button
           type="button"
           variant="outline"
-          className="h-auto justify-self-start whitespace-normal text-left"
+          className="h-auto min-h-9 justify-self-start whitespace-normal text-left"
           onClick={(event) => {
             const field = event.currentTarget
               .closest("form")

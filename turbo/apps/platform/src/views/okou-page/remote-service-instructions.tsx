@@ -44,7 +44,10 @@ export function RemoteServiceInstructions({
             return $.remoteServiceGuide.macRemoteLogin;
           }),
           t(($) => {
-            return $.remoteServiceGuide.macAllowedUsers;
+            return $.remoteServiceGuide.macRemoteLoginUsers;
+          }),
+          t(($) => {
+            return $.remoteServiceGuide.macRemoteLoginAddUser;
           }),
         ]
       : os === "windows"

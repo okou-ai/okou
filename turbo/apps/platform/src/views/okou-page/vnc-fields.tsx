@@ -166,7 +166,9 @@ export function VncDisplayNameField({
         maxLength={VNC_DISPLAY_NAME_MAX_LENGTH}
         defaultValue={connection?.displayName ?? ""}
         placeholder={t(($) => {
-          return $.vnc.displayNameHint;
+          return guided
+            ? $.remoteControlSetup.namePlaceholder
+            : $.vnc.displayNameHint;
         })}
       />
       {guided && (
