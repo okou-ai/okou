@@ -139,7 +139,6 @@ final class ComposerTextView: UITextView {
   var pasteImages: ([NSItemProvider]) -> Void = { _ in }
   let placeholder = UILabel()
   private var wantsFocus = false
-  private var focusTask: Task<Void, Never>?
 
   init() {
     super.init(frame: .zero, textContainer: nil)
@@ -155,29 +154,12 @@ final class ComposerTextView: UITextView {
 
   func setFocused(_ focused: Bool) {
     wantsFocus = focused
-    if focused {
-      scheduleFocus()
-    } else {
-      focusTask?.cancel()
-      reconcileFocus()
-    }
+    reconcileFocus()
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    // UIKit accepts the responder handoff while attaching the view, before the
-    // new window becomes key. Keep that lifecycle event synchronous.
     reconcileFocus()
-  }
-
-  private func scheduleFocus() {
-    focusTask?.cancel()
-    // Responder callbacks can publish SwiftUI bindings. Run the handoff after
-    // the representable update, when the destination editor has been mounted.
-    focusTask = Task { @MainActor [weak self] in
-      guard !Task.isCancelled else { return }
-      self?.reconcileFocus()
-    }
   }
 
   private func reconcileFocus() {

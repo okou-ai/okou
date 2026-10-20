@@ -81,6 +81,21 @@ final class QuotedFollowupTests: XCTestCase {
     XCTAssertEqual(
       conversation.composer.editorBlocks.filter(\.isFeedback).map(\.content.text), ["拼音"])
     XCTAssertEqual(conversation.draft, "Keep the ordinary draft.")
+    let remaining = try XCTUnwrap(conversation.composer.editorBlocks.first(where: \.isFeedback))
+    conversation.composer.removeFeedback(remaining.id)
+    try await eventually {
+      !conversation.composer.document.hasFeedback
+        && self.textViews(in: host.view).contains {
+          $0.accessibilityIdentifier == "message-input" && $0.isFirstResponder
+            && $0.text == "Keep the ordinary draft."
+        }
+    }
+    let plain = try XCTUnwrap(
+      textViews(in: host.view).first { $0.accessibilityIdentifier == "message-input" })
+    plain.insertText(" Continue here.")
+    try await eventually { conversation.draft.contains("Continue here.") }
+    XCTAssertEqual(conversation.composer.document.parts.count, 1)
+    XCTAssertFalse(conversation.composer.document.hasFeedback)
   }
 
   func testQuoteWithoutNoteSendsStructuredContentAndRetriesTheSameEvent() async throws {
@@ -275,7 +290,7 @@ final class QuotedFollowupTests: XCTestCase {
     buttons[1].sendActions(for: .touchUpInside)
     try await eventually(
       message:
-        "focus: \(last.isFirstResponder), visible: \(self.isVisibleInComposer(last)), text: \(last.text ?? ""), frame: \(last.convert(last.bounds, to: window))"
+        "focus: \(last.isFirstResponder), visible: \(self.isVisibleInComposer(last)), text: \(last.text ?? ""), frame: \(last.convert(last.bounds, to: window)), viewport: \(self.composerViewport(last))"
     ) {
       last.isFirstResponder && self.isVisibleInComposer(last)
         && conversation.composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
@@ -319,6 +334,18 @@ final class QuotedFollowupTests: XCTestCase {
   private func recommendationRail(in view: UIView) -> RecommendedFollowupRailView? {
     if let rail = view as? RecommendedFollowupRailView, enclosingCell(rail) != nil { return rail }
     return view.subviews.lazy.compactMap { self.recommendationRail(in: $0) }.first
+  }
+
+  private func composerViewport(_ input: UITextView) -> String {
+    var parent = input.superview
+    while let view = parent {
+      if let scroll = view as? UIScrollView {
+        return
+          "input=\(input.convert(input.bounds, to: scroll)), bounds=\(scroll.bounds), inset=\(scroll.adjustedContentInset), content=\(scroll.contentSize)"
+      }
+      parent = view.superview
+    }
+    return "<missing>"
   }
 
   private func isVisibleInComposer(_ input: UITextView) -> Bool {

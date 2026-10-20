@@ -95,20 +95,35 @@ struct ChatComposerView: View {
       }
 
       let inputID = attachments.inputID
+      let generation = draftState?.editorGeneration
       Group {
-        if let state = draftState {
+        if let state = draftState, state.document.hasFeedback {
           ChatFeedbackComposer(
             state: state, inputID: inputID, isFocused: $isFocused,
-            acceptsImages: !isBusy && !needsUpgrade)
+            acceptsImages: !isBusy && !needsUpgrade
+          )
+          .id(inputID)
         } else {
           ChatComposerTextInput(
             text: $draft, isFocused: $isFocused,
             acceptsImages: !isBusy && !needsUpgrade,
-            isCurrent: { attachments.inputID == inputID },
-            pasteImages: attachments.importPastedImages)
+            isCurrent: {
+              attachments.inputID == inputID && draftState?.editorGeneration == generation
+            },
+            pasteImages: attachments.importPastedImages,
+            editor: draftState?.editor,
+            searchableRanges: draftState == nil
+              ? nil : { draftState?.editorBlocks.first?.searchableRanges ?? [] }
+          )
+          .id(inputID)
+          .disabled(draftState?.document.isSupported == false)
+          .onAppear {
+            guard let state = draftState, let request = state.focusRequest else { return }
+            isFocused = true
+            state.consumeFocusRequest(request)
+          }
         }
       }
-      .id(inputID)
       .accessibilityIdentifier("message-input")
       .padding(.leading, expandsInput ? 18 : 58)
       .padding(.trailing, expandsInput ? 18 : 58)
