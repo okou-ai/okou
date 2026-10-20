@@ -320,7 +320,14 @@ final class ChatComposerPasteTests: XCTestCase {
     let handle = try FileHandle(forWritingTo: file)
     try handle.truncate(atOffset: UInt64(ChatAttachment.maximumSize + 1))
     try handle.close()
-    input.paste(itemProviders: [try XCTUnwrap(NSItemProvider(contentsOf: file))])
+    let provider = NSItemProvider()
+    provider.registerFileRepresentation(
+      forTypeIdentifier: UTType.png.identifier, fileOptions: .openInPlace, visibility: .all
+    ) { callback in
+      callback(file, true, nil)
+      return Progress(totalUnitCount: 1)
+    }
+    input.paste(itemProviders: [provider])
     try await eventually { conversation.attachmentDraft.error?.contains("1 GB") == true }
     XCTAssertEqual(conversation.draft, "Keep selected text")
     XCTAssertEqual(input.selectedRange, NSRange(location: 5, length: 8))

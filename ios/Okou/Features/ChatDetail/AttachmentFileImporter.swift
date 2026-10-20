@@ -56,7 +56,8 @@ actor AttachmentFileImporter {
           }?.resume(throwing: CancellationError())
           return
         }
-        let loading = provider.loadFileRepresentation(forTypeIdentifier: identifier) { url, error in
+        let loading = provider.loadInPlaceFileRepresentation(forTypeIdentifier: identifier) {
+          url, _, error in
           // Cancellation can race a successful provider callback. Claim the
           // result before copying so neither files nor continuations are duplicated.
           guard
@@ -68,11 +69,14 @@ actor AttachmentFileImporter {
           do {
             if let error { throw error }
             guard let url else { throw CocoaError(.fileReadUnknown) }
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
             guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size <= ChatAttachment.maximumSize
             else { throw ChatError.invalidContract("File too large (max 1 GB).") }
-            // The provider's URL expires when this callback returns. Keep the original
-            // encoded bytes and orientation; only the small preview is decoded.
+            // Validate in place before making our private copy. Provider-owned URLs
+            // are valid during this callback. Preserve encoded bytes and orientation;
+            // only the small preview is decoded.
             let source = CGImageSourceCreateWithURL(url as CFURL, nil)
             let type = source.flatMap { CGImageSourceGetType($0) }.flatMap { UTType($0 as String) }
             guard let type, type.conforms(to: .image) else {
