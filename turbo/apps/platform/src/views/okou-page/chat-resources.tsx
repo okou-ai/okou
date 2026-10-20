@@ -93,13 +93,13 @@ function ChatResourcesButtonInner({
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
   const visible = open && boundary !== null;
+  const copyLabel = t(($) => {
+    return $.chat.resources.copyLink;
+  });
+  const copyGlyph = <Copy size={14} />;
   const copyTooltip = (
     <TooltipContent>
-      <p className="text-xs">
-        {t(($) => {
-          return $.chat.resources.copyLink;
-        })}
-      </p>
+      <p className="text-xs">{copyLabel}</p>
     </TooltipContent>
   );
 
@@ -154,7 +154,12 @@ function ChatResourcesButtonInner({
         })}
       >
         {visible ? (
-          <ChatResourcesBody thread={thread} copyTooltip={copyTooltip} />
+          <ChatResourcesBody
+            thread={thread}
+            copyLabel={copyLabel}
+            copyGlyph={copyGlyph}
+            copyTooltip={copyTooltip}
+          />
         ) : null}
       </PopoverContent>
     </Popover>
@@ -217,26 +222,19 @@ function ChatResourcesTrigger({
 
 function ResourceOutputRow({
   artifact,
-  thread,
+  onOpen,
+  onCopy,
+  copyLabel,
+  copyGlyph,
   copyTooltip,
 }: {
   readonly artifact: ArtifactSummary;
-  readonly thread: ChatPanelSignals;
+  readonly onOpen: (artifactId: string) => void;
+  readonly onCopy: (artifactId: string) => void;
+  readonly copyLabel: string;
+  readonly copyGlyph: ReactNode;
   readonly copyTooltip: ReactNode;
 }) {
-  const { t } = useTranslation();
-  const openArtifact = useSet(openThreadCatalogArtifact$);
-  const copyArtifact = useSet(copyChatResourceArtifact$);
-  const pageSignal = useGet(pageSignal$);
-  const changes = useGet(hostedSiteUrlChanges$);
-  const titleLink =
-    artifact.kind === "hosted-site"
-      ? hostedSiteLink(
-          artifact.aliasUrl
-            ? currentHostedSiteUrl(artifact.aliasUrl, changes)
-            : undefined,
-        )
-      : null;
   return (
     <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
@@ -246,16 +244,17 @@ function ResourceOutputRow({
           "justify-start font-normal text-foreground",
         )}
         onClick={() => {
-          detach(
-            openArtifact(thread, artifact.id, pageSignal),
-            Reason.DomCallback,
-          );
+          onOpen(artifact.id);
         }}
       >
         <span className={RESOURCE_GLYPH_CLASS}>
           <FilePreviewIcon filename={artifact.title} size="sm" />
         </span>
-        <HoverScrollTitle title={titleLink?.label ?? artifact.title} />
+        {artifact.kind === "hosted-site" ? (
+          <HostedSiteResourceTitle artifact={artifact} />
+        ) : (
+          <HoverScrollTitle title={artifact.title} />
+        )}
       </Button>
       <TooltipProvider delay={200}>
         <Tooltip>
@@ -264,22 +263,13 @@ function ResourceOutputRow({
               <Button
                 variant="quiet"
                 size="icon-xs"
-                aria-label={t(($) => {
-                  return $.chat.resources.copyLink;
-                })}
+                aria-label={copyLabel}
                 className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
                 onClick={() => {
-                  return detach(
-                    copyArtifact(
-                      thread.resources.catalog,
-                      artifact.id,
-                      pageSignal,
-                    ),
-                    Reason.DomCallback,
-                  );
+                  onCopy(artifact.id);
                 }}
               >
-                <Copy size={14} />
+                {copyGlyph}
               </Button>
             }
           />
@@ -288,6 +278,20 @@ function ResourceOutputRow({
       </TooltipProvider>
     </li>
   );
+}
+
+function HostedSiteResourceTitle({
+  artifact,
+}: {
+  readonly artifact: ArtifactSummary;
+}) {
+  const changes = useGet(hostedSiteUrlChanges$);
+  const titleLink = hostedSiteLink(
+    artifact.aliasUrl
+      ? currentHostedSiteUrl(artifact.aliasUrl, changes)
+      : undefined,
+  );
+  return <HoverScrollTitle title={titleLink?.label ?? artifact.title} />;
 }
 
 function ChatResourcesStatus({
@@ -429,14 +433,30 @@ function ChatResourceArtifacts({
 
 function ChatResourcesBody({
   thread,
+  copyLabel,
+  copyGlyph,
   copyTooltip,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly copyLabel: string;
+  readonly copyGlyph: ReactNode;
   readonly copyTooltip: ReactNode;
 }) {
   const artifactsId = `${thread.threadId}-resource-artifacts`;
   const data = useLastResolved(thread.resources.content$);
   const expanded = useGet(thread.resources.expandedSections$);
+  const openArtifact = useSet(openThreadCatalogArtifact$);
+  const copyArtifact = useSet(copyChatResourceArtifact$);
+  const pageSignal = useGet(pageSignal$);
+  const onOpen = (artifactId: string) => {
+    detach(openArtifact(thread, artifactId, pageSignal), Reason.DomCallback);
+  };
+  const onCopy = (artifactId: string) => {
+    detach(
+      copyArtifact(thread.resources.catalog, artifactId, pageSignal),
+      Reason.DomCallback,
+    );
+  };
   return (
     <div
       data-resource-scroll
@@ -460,7 +480,10 @@ function ChatResourcesBody({
                   <ResourceOutputRow
                     key={artifact.id}
                     artifact={artifact}
-                    thread={thread}
+                    onOpen={onOpen}
+                    onCopy={onCopy}
+                    copyLabel={copyLabel}
+                    copyGlyph={copyGlyph}
                     copyTooltip={copyTooltip}
                   />
                 );
