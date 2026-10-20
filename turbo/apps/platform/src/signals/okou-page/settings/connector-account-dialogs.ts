@@ -62,7 +62,7 @@ export interface CustomConnectorAccountMutationOptions {
 export function defaultBuiltinConnectorAccountOptions(
   connector: PlatformConnectorCatalogConnectItem | undefined,
 ): DefaultConnectorAccountMutationOptions | null {
-  if (!connector || connector.accountProjectionConflict === true) {
+  if (!connector) {
     return null;
   }
   const connection = connector.connection;
