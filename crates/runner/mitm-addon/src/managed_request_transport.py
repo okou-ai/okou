@@ -55,14 +55,19 @@ def _observe_response(
         if body.early_response_bytes > managed_request_body.CHUNK_BYTES:
             body.failure = "upstream_response_buffer"
             body.close()
+            return True
     return False
 
 
 def _observe_commands(native, observe) -> layer.CommandGenerator[None]:
+    """Delegate native commands, or finish with an observer's abort continuation."""
     try:
         command = next(native)
         while True:
-            observe(command)
+            interruption = observe(command)
+            if interruption is not None:
+                yield from interruption
+                return
             try:
                 completion = yield command
             except GeneratorExit:
@@ -100,9 +105,21 @@ def _install_http1_upload_progress() -> None:
             yield commands.CloseConnection(self.conn)
             return
         if isinstance(body, managed_request_body.TemporaryBody) and not body.closed:
-            yield from _observe_commands(
-                current(self, event), lambda command: _observe_response(body, command)
-            )
+
+            def observe(command):
+                _observe_response(body, command)
+                if body.failure == "upstream_response_buffer" and isinstance(command, ReceiveHttp):
+                    return current(
+                        self,
+                        RequestProtocolError(
+                            command.event.stream_id,
+                            "upstream response exceeded managed upload buffer",
+                            ErrorCode.CANCEL,
+                        ),
+                    )
+                return None
+
+            yield from _observe_commands(current(self, event), observe)
         else:
             yield from current(self, event)
 

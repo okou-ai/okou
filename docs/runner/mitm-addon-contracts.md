@@ -771,7 +771,9 @@ protocol implementation. The complete provider response still follows the native
 response path. A read queued behind filesystem work may resume after the upload
 was stopped; its abandoned read must not replace that response with a local
 storage failure. Unexpected response data queued before upload completion is
-bounded to one chunk; exceeding that bound terminates the flow. Normal response
+bounded to one chunk; exceeding that bound aborts the native upstream connection
+or HTTP/2 stream immediately, even while a file read remains blocked. The file
+still stays open until its accepted operation is joined. Normal response
 streaming after upload has no new response-size limit.
 
 Storage releases after upload or abandonment, independently of response/SSE
@@ -803,6 +805,8 @@ not live-provider or production-load acceptance.
 including an upstream disconnect during auth. Real in-memory TLS peers verify
 both upstream HTTP versions, exact body bytes and the provider response; wrong
 hostnames and untrusted certificates fail before HTTP credentials or body bytes.
+`test_managed_request_early_response_limit.py` verifies the native close/reset
+before releasing a blocked real-file read, then checks physical storage cleanup.
 
 ## Header-phase credential-resolution failures
 
