@@ -146,46 +146,46 @@ function replacementTarget(source: ActiveInputSourceRow) {
  * the meantime, so the anchor is the position of the input it revoked. Two
  * bounded reads: the run's latest replacement, then its source by primary key.
  */
-async function steeringAnchorSeqId(
-  db: Db,
-  scope: ActiveInputRunThread,
-): Promise<number> {
-  const [ownInput] = await db
-    .select({
-      seqId: chatEvents.seqId,
-      revokesEventId: chatEvents.revokesEventId,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, scope.chatThreadId),
-        eq(chatEvents.runId, scope.runId),
-        inArray(chatEvents.eventType, [...RUN_QUEUE_INPUT_EVENT_TYPES]),
-      ),
-    )
-    .orderBy(desc(chatEvents.seqId))
-    .limit(1);
-  if (!ownInput) {
-    return 0;
-  }
-  if (ownInput.revokesEventId === null) {
-    return ownInput.seqId;
-  }
-  const [source] = await db
-    .select({ seqId: chatEvents.seqId })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, scope.chatThreadId),
-        eq(chatEvents.id, ownInput.revokesEventId),
-      ),
-    )
-    .limit(1);
-  if (!source) {
-    throw new Error("Consumed run input source is missing from its thread");
-  }
-  return source.seqId;
-}
+const steeringAnchorSeqId$ = command(
+  async ({ get }, scope: ActiveInputRunThread): Promise<number> => {
+    const db = get(db$);
+    const [ownInput] = await db
+      .select({
+        seqId: chatEvents.seqId,
+        revokesEventId: chatEvents.revokesEventId,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, scope.chatThreadId),
+          eq(chatEvents.runId, scope.runId),
+          inArray(chatEvents.eventType, [...RUN_QUEUE_INPUT_EVENT_TYPES]),
+        ),
+      )
+      .orderBy(desc(chatEvents.seqId))
+      .limit(1);
+    if (!ownInput) {
+      return 0;
+    }
+    if (ownInput.revokesEventId === null) {
+      return ownInput.seqId;
+    }
+    const [source] = await db
+      .select({ seqId: chatEvents.seqId })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, scope.chatThreadId),
+          eq(chatEvents.id, ownInput.revokesEventId),
+        ),
+      )
+      .limit(1);
+    if (!source) {
+      throw new Error("Consumed run input source is missing from its thread");
+    }
+    return source.seqId;
+  },
+);
 
 /**
  * The next run-less, unrevoked prompt or budget a running sandbox may steer.
@@ -215,7 +215,7 @@ export const loadNextSteerableInput$ = command(
     if (scope.status !== "running") {
       return { outcome: "found", input: null };
     }
-    const afterSeqId = await steeringAnchorSeqId(db, scope);
+    const afterSeqId = await set(steeringAnchorSeqId$, scope);
     signal.throwIfAborted();
     const [next] = await listPendingChatInputs(db, {
       chatThreadId: scope.chatThreadId,
