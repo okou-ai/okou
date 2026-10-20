@@ -23,7 +23,7 @@ import {
   createSlackClient,
   type SlackClient,
 } from "../external/slack-message-client";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
@@ -49,73 +49,82 @@ function buildSlackConnectUrl(
   return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.slack}?${params.toString()}`;
 }
 
-async function refreshSlackAppHome(args: {
-  readonly db: Db;
-  readonly clerkClient: ReturnType<typeof clerk$.read>;
-  readonly client: SlackClient;
-  readonly installation: SlackInstallation;
-  readonly slackUserId: string;
-}): Promise<void> {
-  const [connection] = await args.db
-    .select()
-    .from(slackOrgConnections)
-    .where(
-      and(
-        eq(slackOrgConnections.slackUserId, args.slackUserId),
-        eq(
-          slackOrgConnections.slackWorkspaceId,
-          args.installation.slackWorkspaceId,
-        ),
-      ),
-    )
-    .limit(1);
+const refreshSlackAppHome$ = command(
+  async (
+    { get },
+    args: {
+      readonly clerkClient: ReturnType<typeof clerk$.read>;
+      readonly client: SlackClient;
+      readonly installation: SlackInstallation;
+      readonly slackUserId: string;
+    },
+  ): Promise<void> => {
+    const db = get(db$);
 
-  if (!connection) {
+    const [connection] = await db
+      .select()
+      .from(slackOrgConnections)
+      .where(
+        and(
+          eq(slackOrgConnections.slackUserId, args.slackUserId),
+          eq(
+            slackOrgConnections.slackWorkspaceId,
+            args.installation.slackWorkspaceId,
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (!connection) {
+      await args.client.publishAppHome(
+        args.slackUserId,
+        buildAppHomeView({
+          botUserId: args.installation.botUserId,
+          appUrl: env("APP_URL"),
+          isLinked: false,
+          loginUrl: buildSlackConnectUrl(
+            args.installation.slackWorkspaceId,
+            args.slackUserId,
+          ),
+        }),
+      );
+      return;
+    }
+
+    let agentName: string | undefined;
+    if (args.installation.orgId) {
+      const [metadata] = await db
+        .select({ defaultAgentId: orgMetadata.defaultAgentId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, args.installation.orgId))
+        .limit(1);
+      const defaultAgentId = metadata?.defaultAgentId ?? null;
+      if (defaultAgentId) {
+        const [agent] = await db
+          .select({ name: agents.name, displayName: agents.displayName })
+          .from(agents)
+          .where(eq(agents.id, defaultAgentId))
+          .limit(1);
+        agentName = agent?.displayName ?? agent?.name;
+      }
+    }
+
     await args.client.publishAppHome(
       args.slackUserId,
       buildAppHomeView({
         botUserId: args.installation.botUserId,
         appUrl: env("APP_URL"),
-        isLinked: false,
-        loginUrl: buildSlackConnectUrl(
-          args.installation.slackWorkspaceId,
-          args.slackUserId,
+        isLinked: true,
+        userId: connection.userId,
+        userEmail: await getPrimaryUserEmail(
+          args.clerkClient,
+          connection.userId,
         ),
+        agentName,
       }),
     );
-    return;
-  }
-
-  let agentName: string | undefined;
-  if (args.installation.orgId) {
-    const [metadata] = await args.db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.installation.orgId))
-      .limit(1);
-    const defaultAgentId = metadata?.defaultAgentId ?? null;
-    if (defaultAgentId) {
-      const [agent] = await args.db
-        .select({ name: agents.name, displayName: agents.displayName })
-        .from(agents)
-        .where(eq(agents.id, defaultAgentId))
-        .limit(1);
-      agentName = agent?.displayName ?? agent?.name;
-    }
-  }
-
-  await args.client.publishAppHome(
-    args.slackUserId,
-    buildAppHomeView({
-      botUserId: args.installation.botUserId,
-      appUrl: env("APP_URL"),
-      isLinked: true,
-      userId: connection.userId,
-      userEmail: await getPrimaryUserEmail(args.clerkClient, connection.userId),
-      agentName,
-    }),
-  );
-}
+  },
+);
 
 function slackConnectLinkStatus(
   args: {
@@ -436,8 +445,7 @@ export const notifySlackConnect$ = command(
     }
 
     for (const replacedSlackUserId of args.replacedSlackUserIds ?? []) {
-      await refreshSlackAppHome({
-        db: writeDb,
+      await set(refreshSlackAppHome$, {
         clerkClient: get(clerk$),
         client,
         installation: args.installation,
@@ -446,8 +454,7 @@ export const notifySlackConnect$ = command(
       signal.throwIfAborted();
     }
 
-    await refreshSlackAppHome({
-      db: writeDb,
+    await set(refreshSlackAppHome$, {
       clerkClient: get(clerk$),
       client,
       installation: args.installation,
