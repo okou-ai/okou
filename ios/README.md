@@ -121,7 +121,7 @@ swift test --package-path ios/Packages/ChatData
 They retain real HTTP decoding, loopback snapshot transfers, and temporary SQLite
 files. ChatDataTestSupport shares the existing HTTP fixture with App integration
 tests and is linked only by test targets. Store and UI tests remain in
-`OkouTests`. The CI script runs both package suites and the App suite.
+`OkouTests`. CI requires both package suites and the App suite.
 
 The project uses synchronized folders: adding Swift files beneath `Okou/` or
 `OkouTests/` adds them to the corresponding target. `Resources/Info.plist` is
@@ -264,10 +264,13 @@ build, standalone ChatDomain/ChatData tests, and the simulator tests on macOS 26
 with Xcode 26.3 and iOS 26.2. Formatting includes both package manifests, sources,
 and tests. Swift
 packages must match `Package.resolved`; CI checks that it remains unchanged.
+Standalone package tests run on a separate macOS runner from the App build and
+simulator suite, so package compilation does not consume the simulator job's
+15-minute budget. Both jobs are required by the gate.
 
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or
 after change detection confirms they are unnecessary. Detection failures,
-cancelled builds, and unexpectedly skipped builds fail the gate. Register this
+cancelled jobs, and unexpectedly skipped jobs fail the gate. Register this
 check alongside the existing required checks after the workflow is on main.
 Pure `ios/` pull requests and merge groups skip Turbo TypeScript lint, types,
 formatting, Knip, App/API/CLI and other JavaScript tests, benchmarks, and App/CLI
@@ -287,11 +290,11 @@ Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
-server contract verification. CI starts its configured simulator while package
-checks and `build-for-testing` compile the test products, waits for both to
+server contract verification. CI starts its configured simulator while
+`build-for-testing` compiles the App test products, waits for both to
 succeed, then executes every native test with `test-without-building`. Failed or
 cancelled preparation still blocks the required gate. The standalone command
-builds and runs every suite with an explicit local simulator:
+builds and runs every suite sequentially with an explicit local simulator:
 
 ```sh
 RUNNER_TEMP="$(mktemp -d)" \

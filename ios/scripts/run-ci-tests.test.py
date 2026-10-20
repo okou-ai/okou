@@ -46,6 +46,8 @@ if command == 'xcrun':
 elif command == 'swift':
     with (state / 'packages').open('a') as output:
         output.write(args[args.index('--package-path') + 1] + '\n')
+    if scenario == 'package-failure':
+        sys.exit(19)
 elif command == 'xcodebuild':
     if '-resolvePackageDependencies' in args:
         sys.exit(0)
@@ -84,7 +86,12 @@ class CIProcessTests(unittest.TestCase):
         subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
         scripts = self.repo / "ios/scripts"
         scripts.mkdir(parents=True)
-        for name in ("ci-test.sh", "preboot-simulator.py", "run-ci-tests.sh"):
+        for name in (
+            "ci-test.sh",
+            "ci-package-test.sh",
+            "preboot-simulator.py",
+            "run-ci-tests.sh",
+        ):
             shutil.copy2(SCRIPTS / name, scripts / name)
         resolved = (
             self.repo
@@ -137,10 +144,17 @@ class CIProcessTests(unittest.TestCase):
         self.assertTrue((self.state / "tests-ran").exists())
 
     def test_boot_and_build_overlap_before_the_complete_test_suite(self):
+        packages = self.invoke("ci-package-test.sh")
+        self.assertEqual(packages.returncode, 0, packages.stderr)
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.state / "boot-finished").exists())
         self.assert_complete_suite()
+
+    def test_package_failure_reaches_its_independent_job(self):
+        self.env["CI_PROCESS_SCENARIO"] = "package-failure"
+        result = self.invoke("ci-package-test.sh")
+        self.assertEqual(result.returncode, 19, result.stderr)
 
     def test_build_failure_stops_owned_boot_process_and_blocks_native_tests(self):
         self.env["CI_PROCESS_SCENARIO"] = "build-failure"

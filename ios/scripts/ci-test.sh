@@ -10,7 +10,8 @@ build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 # CI overlaps simulator startup with build, then runs the same built products.
-# With no phase argument, supported manual callers still build and run everything.
+# Build/run phases belong to the simulator job; package CI has its own runner.
+# With no phase argument, supported manual callers still run every suite.
 ios_test_phase=${1:-all}
 case "$ios_test_phase" in
   all | build | run) ;;
@@ -36,16 +37,12 @@ xcode_args=(
   CLERK_PUBLISHABLE_KEY=
 )
 
+if [[ "$ios_test_phase" == all ]]; then
+  bash ios/scripts/ci-package-test.sh
+fi
+
 if [[ "$ios_test_phase" != run ]]; then
   cp "$resolved" "$build_root/Package.resolved.before"
-  # Core/data tests use real decoding, HTTP and SQLite without booting the App.
-  for ios_package in ChatDomain ChatData; do
-    ios_package_path="ios/Packages/$ios_package"
-    xcrun swift-format lint --strict --recursive "$ios_package_path/Package.swift" \
-      "$ios_package_path/Sources" "$ios_package_path/Tests"
-    swift test --package-path "$ios_package_path" --scratch-path "$build_root/$ios_package"
-  done
-
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
   xcodebuild "${xcode_args[@]}" build-for-testing

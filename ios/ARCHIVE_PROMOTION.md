@@ -9,23 +9,25 @@ runs simulator tests to recover a missing archive.
 `.github/workflows/ios.yml` runs simulator checks on ordinary PRs and dispatches.
 A main merge group with changed iOS inputs also builds an **unsigned device
 Release archive**, with locked Swift packages and no production credentials.
-Simulator validation and device compilation run in **parallel macOS jobs**, each
-with a 15-minute limit, rather than serializing them past the live merge queue's
-15-minute check-response window. The simulator checkout retains bounded queue
-ancestry (32 commits; the current squash queue merges at most five entries); the
+Standalone Swift package tests, simulator validation, and device compilation run
+in **parallel macOS jobs**, each with a 15-minute limit, rather than serializing
+them past the live merge queue's 15-minute check-response window. The simulator
+checkout retains bounded queue ancestry (32 commits; the current squash queue
+merges at most five entries); the
 archive builder needs only its own commit. Only release-only groups install an
 R2 client on macOS to resolve potential prior evidence.
 
-Both native jobs must succeed before the Ubuntu publisher writes canonical
+All three native jobs must succeed before the Ubuntu publisher writes canonical
 objects. The publisher compares their independently captured **complete input
-fingerprints and toolchains**, rejecting a missing or mismatched simulator
+fingerprints and toolchains**, rejecting a missing or mismatched package/simulator
 record. It verifies the tar checksum produced on macOS before transfer and
 checks archive provenance against `build-archive` and test provenance against
-`build-test`, using each producer's exact run attempt. The required `ci-gate-ios` includes
-both native jobs and publication, not just compilation.
+`build-test` and `test-packages`, using each producer's exact run attempt. The
+required `ci-gate-ios` includes all three native jobs and publication.
 
 A release-only merge group can omit simulator tests only when an existing test
-record matches its complete test input fingerprint. The classifier examines the
+record matches its complete test input fingerprint. Standalone package tests
+still run on every selected merge group. The classifier examines the
 **whole group's diff**, not its branch name or last commit. Its conservative
 allowlist accepts release manifest versions, configured package changelogs,
 simple version files, package.json top-level versions, Cargo package versions and
@@ -44,9 +46,9 @@ Dirty or untracked promotion inputs and `Local.xcconfig` are rejected.
 
 Test records preserve repository, builder commit, run ID, and **run attempt**.
 Readers consult GitHub's exact run-attempt API and require the iOS workflow's
-`build-test` job and actual simulator test step to have succeeded in a main
-merge group. They fetch the builder commit when necessary and recompute its
-fingerprint; claimed JSON hashes alone are insufficient. Missing test evidence
+`build-test` and `test-packages` jobs and their actual test steps to have succeeded
+in a main merge group. They fetch the builder commit when necessary and recompute
+its fingerprint; claimed JSON hashes alone are insufficient. Missing test evidence
 selects full tests; corrupt evidence, permission errors, or unverifiable
 provenance stop the pipeline rather than masquerading as a cache miss.
 

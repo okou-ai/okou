@@ -56,6 +56,32 @@ jobs:
           needed=$(bash ios/scripts/ci-changed.sh)
           echo "needed=$needed" >> "$GITHUB_OUTPUT"
 
+  test-packages:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run isolated Swift package tests
+        run: bash ios/scripts/ci-package-test.sh
+      - name: Capture package test inputs
+        if: github.event_name == 'merge_group'
+        run: |
+          python3 ios/scripts/archive-promotion.py toolchain "$RUNNER_TEMP/package-toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$RUNNER_TEMP/package-toolchain.json" --output "$RUNNER_TEMP/package-inputs.json"
+      - name: Transfer package test inputs
+        if: github.event_name == 'merge_group'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/package-inputs.json
+          if-no-files-found: error
+          retention-days: 7
+
   build-test:
     needs: detect
     # Main pushes consume previously built archives in release-please; never rebuild/test.
@@ -170,7 +196,7 @@ jobs:
           retention-days: 7
 
   publish-archive:
-    needs: [detect, build-test, build-archive]
+    needs: [detect, test-packages, build-test, build-archive]
     if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -195,6 +221,10 @@ jobs:
         with:
           name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/okou-ios-promotion
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/okou-ios-promotion
       - name: Publish immutable archive and readiness
         run: |
           aws --version
@@ -203,7 +233,7 @@ jobs:
           python3 ios/scripts/archive-promotion.py publish "$RUNNER_TEMP/okou-ios-promotion"
 
   ci-gate-ios:
-    needs: [detect, build-test, build-archive, publish-archive]
+    needs: [detect, test-packages, build-test, build-archive, publish-archive]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -214,6 +244,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DETECT_RESULT: ${{ needs.detect.result }}
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
+          PACKAGES_RESULT: ${{ needs.test-packages.result }}
           BUILD_RESULT: ${{ needs.build-test.result }}
           ARCHIVE_RESULT: ${{ needs.build-archive.result }}
           PUBLISH_RESULT: ${{ needs.publish-archive.result }}
