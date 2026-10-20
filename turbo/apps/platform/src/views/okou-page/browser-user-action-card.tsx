@@ -1860,53 +1860,24 @@ function PendingInlineAction({
 }
 
 function RecoveryState({
-  checking,
   signals,
   variant,
 }: {
-  readonly checking: boolean;
   readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
   const recoveryRef = useSet(signals.recoveryRef$);
-  const recover = useSet(signals.recover$);
   return (
-    <div ref={checking ? recoveryRef : undefined} className="contents">
+    <div ref={recoveryRef} className="contents">
       <ActionState
-        icon={
-          checking ? (
-            <Loader2 size={20} className="animate-spin" />
-          ) : (
-            <AlertCircle size={20} />
-          )
-        }
+        icon={<Loader2 size={20} className="animate-spin" />}
         title={t(($) => {
-          return checking
-            ? $.chat.browserInput.checkingOutcome
-            : $.chat.browserInput.outcomeNotConfirmed;
+          return $.chat.browserInput.checkingOutcome;
         })}
         description={t(($) => {
-          return checking
-            ? $.chat.browserInput.checkingOutcomeDescription
-            : $.chat.browserInput.outcomeNotConfirmedDescription;
+          return $.chat.browserInput.checkingOutcomeDescription;
         })}
-        action={
-          checking ? undefined : (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                recover();
-              }}
-            >
-              {t(($) => {
-                return $.chat.browserInput.checkStatus;
-              })}
-            </Button>
-          )
-        }
         variant={variant}
       />
     </div>
@@ -1941,13 +1912,7 @@ function BrowserUserActionCardContent({
       requestLoadable.data.kind === "action" &&
       requestLoadable.data.action.state === "applying")
   ) {
-    content = (
-      <RecoveryState
-        checking={recoveryState !== "exhausted"}
-        signals={signals}
-        variant={variant}
-      />
-    );
+    content = <RecoveryState signals={signals} variant={variant} />;
   } else if (requestLoadable.state === "loading") {
     content = (
       <ActionState

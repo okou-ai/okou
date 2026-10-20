@@ -33,7 +33,6 @@ import {
   resetSignal,
   settle,
   waitForOperation,
-  withAbortAfter,
 } from "../utils.ts";
 import {
   runChatActionCallback$,
@@ -51,7 +50,6 @@ import {
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 
 const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
-const RECOVERY_DEADLINE_MS = 90_000;
 export const BROWSER_INPUT_CANCELLATION_PROMPT =
   "The user cancelled the browser input request.";
 
@@ -138,7 +136,7 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly startStandaloneEntry$: Command<Promise<void>, [AbortSignal]>;
   readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
   readonly refresh$: Command<void, [signal?: AbortSignal]>;
-  readonly recoveryState$: Computed<"idle" | "checking" | "exhausted">;
+  readonly recoveryState$: Computed<"idle" | "checking">;
   readonly recover$: Command<void, []>;
   readonly recoveryRef$: Command<
     (() => void) | undefined,
@@ -459,9 +457,8 @@ function createRecoverySignals(
   refresh$: BrowserUserActionSignals["refresh$"],
   beginEntry$: BrowserUserActionSignals["beginEntry$"],
 ) {
-  const internalState$ = state<"idle" | "checking" | "exhausted">("idle");
+  const internalState$ = state<"idle" | "checking">("idle");
   const ownerCount$ = state(0);
-  const reconciled$ = state(false);
   const resetRecovery$ = resetSignal();
   const recoveryState$ = computed((get) => {
     return get(internalState$);
@@ -469,7 +466,7 @@ function createRecoverySignals(
   const recover$ = command(({ set }) => {
     set(internalState$, "checking");
   });
-  const checkStatus$ = command(
+  const reconcile$ = command(
     async ({ get, set }, recoverySignal: AbortSignal): Promise<boolean> => {
       set(refresh$, recoverySignal);
       const result = await settle(
@@ -492,7 +489,6 @@ function createRecoverySignals(
         await set(beginEntry$, recoverySignal);
         recoverySignal.throwIfAborted();
       }
-      set(reconciled$, true);
       return true;
     },
   );
@@ -525,32 +521,23 @@ function createRecoverySignals(
         // Duplicate cards share one loop, cancelled when their last owner leaves.
         const signal = set(resetRecovery$, get(pageSignal$));
         set(internalState$, "checking");
-        set(reconciled$, false);
-        await withAbortAfter(
-          RECOVERY_DEADLINE_MS,
-          signal,
-          async (recoverySignal) => {
-            await onRejection(
-              set(
-                waitAblyLoopUntil$,
-                {
-                  topic: `browserUserActionChanged:${threadId}`,
-                  loopCommand$: checkStatus$,
-                  options: { runOnSubscribe: true },
-                },
-                recoverySignal,
-              ),
-              () => {
-                // The deadline can reject with TimeoutError or a wrapped AbortError.
-                signal.throwIfAborted();
-                set(internalState$, "exhausted");
-              },
-            );
+        await onRejection(
+          set(
+            waitAblyLoopUntil$,
+            {
+              topic: `browserUserActionChanged:${threadId}`,
+              loopCommand$: reconcile$,
+              options: { runOnSubscribe: true },
+            },
+            signal,
+          ),
+          () => {
+            signal.throwIfAborted();
+            set(internalState$, "idle");
           },
-          new DOMException("The operation timed out", "TimeoutError"),
         );
         signal.throwIfAborted();
-        set(internalState$, get(reconciled$) ? "idle" : "exhausted");
+        set(internalState$, "idle");
       },
     ),
   );
@@ -1874,10 +1861,6 @@ export function createBrowserUserActionSignals(
           return;
         }
         if (get(recoverySignals.recoveryState$) === "checking") {
-          return;
-        }
-        if (get(recoverySignals.recoveryState$) === "exhausted") {
-          set(recoverySignals.recover$);
           return;
         }
         if (get(openDialogCount$) > 0) {

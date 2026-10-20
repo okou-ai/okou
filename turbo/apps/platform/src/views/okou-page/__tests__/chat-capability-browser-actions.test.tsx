@@ -1480,14 +1480,12 @@ test.each(["apply", "cancel"] as const)(
 
 test("Duplicate initially applying cards recover after a thread change signal", async () => {
   let actionState: BrowserUserActionResponse["state"] = "applying";
-  let reads = 0;
   installCapabilityChat({
     events: completedConversation(
       `[First input](${browserInputUrl()})\n\n[Same input](${browserInputRelativeUrl()})`,
     ),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    reads += 1;
     return respond(200, browserInputAction(actionState));
   });
   await setupPage({
@@ -1500,7 +1498,6 @@ test("Duplicate initially applying cards recover after a thread change signal", 
 
   const topic = `browserUserActionChanged:${RUN_THREAD_ID}`;
   await waitFor(() => {
-    expect(reads).toBe(2);
     expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
   });
   expect(screen.getAllByText("Checking browser status")).toHaveLength(2);
@@ -1510,45 +1507,6 @@ test("Duplicate initially applying cards recover after a thread change signal", 
   await waitFor(() => {
     expect(screen.getAllByText("Check the browser")).toHaveLength(2);
   });
-  expect(reads).toBe(3);
-  expect(buttonsByName("Enter information")).toHaveLength(0);
-});
-
-test("An inline recovery read failure offers a check instead of write retry", async () => {
-  let initial = true;
-  let available = false;
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.http.get(
-    `*${browserUserActionsContract.get.path.replace(":requestToken", BROWSER_INPUT_TOKEN)}`,
-    () => {
-      if (initial) {
-        initial = false;
-        return HttpResponse.json(browserInputAction("applying"));
-      }
-      return available
-        ? HttpResponse.json(browserInputAction("succeeded"))
-        : HttpResponse.error();
-    },
-  );
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
-  await expect(
-    screen.findByText("Outcome not confirmed"),
-  ).resolves.toBeInTheDocument();
-  expect(buttonsByName("Enter information")).toHaveLength(0);
-  available = true;
-  click(await findButton("Check status"));
-  await expect(
-    screen.findByText("Information added"),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Closing the input dialog refreshes an action completed in another tab", async () => {
