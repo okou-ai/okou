@@ -18,13 +18,16 @@ import { recordBootstrapThreadMetadataTiming$ } from "../../lib/posthog.ts";
 const resolveLeftThreadMeta$ = createThreadMetaLookup();
 const resolveRightThreadMeta$ = createThreadMetaLookup();
 
-const CHAT_EVENT_HASH_PREFIX = "#event-";
-
 function chatEventIdFromHash(hash: string): string | null {
-  if (!hash.startsWith(CHAT_EVENT_HASH_PREFIX)) {
+  // Run admission gives the launch input the run ID, so both links use the
+  // same event positioning path, including history outside the render window.
+  const prefix = ["#event-", "#run-"].find((candidate) => {
+    return hash.startsWith(candidate);
+  });
+  if (!prefix) {
     return null;
   }
-  const encodedEventId = hash.slice(CHAT_EVENT_HASH_PREFIX.length);
+  const encodedEventId = hash.slice(prefix.length);
   if (encodedEventId.length === 0) {
     return null;
   }
