@@ -94,6 +94,56 @@ def test_budgets_keep_independent_capacity() -> None:
     second.release(second_lease)
 
 
+def test_scoped_counts_share_byte_capacity_and_preserve_resize_accounting() -> None:
+    budget = _budget("admission")
+    first = budget.reserve(2, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="first")
+    second = budget.reserve(
+        2, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="second"
+    )
+    with pytest.raises(request_body_admission.RequestBodyAdmissionCountSaturatedError):
+        budget.reserve(0, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="first")
+    with pytest.raises(request_body_admission.RequestBodyAdmissionByteSaturatedError):
+        budget.reserve(1, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="third")
+    assert budget.state_for_tests() == (2, 4)
+
+    budget.resize(first, 1, max_admitted_body_bytes=4, already_released_message="already released")
+    third = budget.reserve(1, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="third")
+    assert budget.state_for_tests() == (3, 4)
+    budget.release(first)
+    budget.release(first)
+    replacement = budget.reserve(
+        1, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="first"
+    )
+    with pytest.raises(request_body_admission.RequestBodyAdmissionCountSaturatedError):
+        budget.reserve(0, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="second")
+    for lease in (replacement, second, third):
+        budget.release(lease)
+    assert budget.state_for_tests() == (0, 0)
+
+
+def test_flow_release_uses_the_lease_scope_after_connection_changes(real_flow) -> None:
+    budget = _budget("admission")
+    flow = real_flow(with_response=False, client_ip="10.200.0.5")
+    lease = budget.reserve(
+        2, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="10.200.0.5"
+    )
+    other = budget.reserve(
+        2, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="10.200.0.6"
+    )
+    budget.attach_to_flow(flow, lease)
+    flow.client_conn.peername = ("10.200.0.6", 12345)
+    budget.release_from_flow(flow)
+    budget.release_from_flow(flow)
+    replacement = budget.reserve(
+        2, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="10.200.0.5"
+    )
+    with pytest.raises(request_body_admission.RequestBodyAdmissionCountSaturatedError):
+        budget.reserve(0, max_admitted_count=1, max_admitted_body_bytes=4, count_scope="10.200.0.6")
+    budget.release(replacement)
+    budget.release(other)
+    assert budget.state_for_tests() == (0, 0)
+
+
 def test_resize_and_duplicate_release_preserve_accounting() -> None:
     budget = _budget("admission")
     lease = budget.reserve(

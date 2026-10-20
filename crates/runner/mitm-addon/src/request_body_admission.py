@@ -18,16 +18,19 @@ class RequestBodyAdmissionByteSaturatedError(Exception):
 class RequestBodyAdmissionLease:
     """Opaque reservation owned by one request-body admission budget."""
 
-    __slots__ = ("_body_bytes", "_budget", "_released")
+    __slots__ = ("_body_bytes", "_budget", "_count_scope", "_released")
 
-    def __init__(self, budget: RequestBodyAdmissionBudget, body_bytes: int) -> None:
+    def __init__(
+        self, budget: RequestBodyAdmissionBudget, body_bytes: int, count_scope: str | None
+    ) -> None:
         self._budget = budget
         self._body_bytes = body_bytes
+        self._count_scope = count_scope
         self._released = False
 
 
 class RequestBodyAdmissionBudget:
-    """Own independent count and byte totals for one request-body policy."""
+    """Own scoped request counts and one aggregate byte total for a body policy."""
 
     def __init__(
         self,
@@ -40,7 +43,7 @@ class RequestBodyAdmissionBudget:
         self._negative_size_message = negative_size_message
         self._already_attached_message = already_attached_message
         self._lock = threading.Lock()
-        self._admitted_count = 0
+        self._admitted_counts: dict[str | None, int] = {}
         self._admitted_body_bytes = 0
 
     def reserve(
@@ -49,18 +52,20 @@ class RequestBodyAdmissionBudget:
         *,
         max_admitted_count: int,
         max_admitted_body_bytes: int,
+        count_scope: str | None = None,
     ) -> RequestBodyAdmissionLease:
-        """Reserve count and byte capacity atomically."""
+        """Reserve a scoped count and shared bytes atomically; default count is global."""
         self._validate_body_size(body_bytes)
 
         with self._lock:
-            if self._admitted_count + 1 > max_admitted_count:
+            count = self._admitted_counts.get(count_scope, 0)
+            if count + 1 > max_admitted_count:
                 raise RequestBodyAdmissionCountSaturatedError
             if self._admitted_body_bytes + body_bytes > max_admitted_body_bytes:
                 raise RequestBodyAdmissionByteSaturatedError
-            self._admitted_count += 1
+            self._admitted_counts[count_scope] = count + 1
             self._admitted_body_bytes += body_bytes
-            return RequestBodyAdmissionLease(self, body_bytes)
+            return RequestBodyAdmissionLease(self, body_bytes, count_scope)
 
     def resize(
         self,
@@ -91,7 +96,11 @@ class RequestBodyAdmissionBudget:
             if admission._released:
                 return
             admission._released = True
-            self._admitted_count -= 1
+            remaining = self._admitted_counts[admission._count_scope] - 1
+            if remaining:
+                self._admitted_counts[admission._count_scope] = remaining
+            else:
+                del self._admitted_counts[admission._count_scope]
             self._admitted_body_bytes -= admission._body_bytes
 
     def attach_to_flow(
@@ -124,12 +133,12 @@ class RequestBodyAdmissionBudget:
     def state_for_tests(self) -> tuple[int, int]:
         """Return admitted count and body bytes for tests."""
         with self._lock:
-            return self._admitted_count, self._admitted_body_bytes
+            return sum(self._admitted_counts.values()), self._admitted_body_bytes
 
     def reset_for_tests(self) -> None:
         """Reset aggregate admission between tests."""
         with self._lock:
-            self._admitted_count = 0
+            self._admitted_counts.clear()
             self._admitted_body_bytes = 0
 
     def _validate_body_size(self, body_bytes: int) -> None:

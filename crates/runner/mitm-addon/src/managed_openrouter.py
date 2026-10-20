@@ -11,6 +11,9 @@ model-list, provider, plugin and server-tool routing overrides are rejected.
 The response remains eligible for the ordinary SSE streaming path. Runner and
 this private registry reader ship together; old Runner artifacts must drain for
 enforcement. No API writer or persisted-context generation changes are needed.
+
+Request counts are scoped to the host-assigned sandbox source IP used by the
+private registry. All sandboxes still share the retained-body byte budget.
 """
 
 import json
@@ -20,6 +23,7 @@ from dataclasses import dataclass
 
 from mitmproxy import http
 
+import connection_endpoints
 import content_length
 import flow_metadata_keys as metadata_keys
 import request_body_admission
@@ -215,12 +219,16 @@ def admit_request(flow: http.HTTPFlow, sandbox: dict) -> None:
     if policy is None:
         raise RequestRejectedError("captured_policy")
     length = _validate_headers(flow, policy)
+    peer = connection_endpoints.client_peername(flow.client_conn)
+    if peer is None or not peer[0]:
+        raise RequestRejectedError("sandbox_identity")
     release_from_flow(flow)
     try:
         admission = _budget.reserve(
             length,
             max_admitted_count=MAX_ADMITTED_REQUESTS,
             max_admitted_body_bytes=MAX_ADMITTED_BODY_BYTES,
+            count_scope=peer[0],
         )
     except (
         request_body_admission.RequestBodyAdmissionCountSaturatedError,

@@ -53,6 +53,21 @@ def sandbox(tmp_path: Path, dialect: str = "openai-completions", preset: str = P
     )
 
 
+def write_sandbox_registry(tmp_path: Path, dialect: str, client_ips: tuple[str, ...]) -> Path:
+    registrations = {
+        ip: {
+            **sandbox(tmp_path, dialect),
+            "runId": f"run-sandbox-{index}",
+            "networkLogPath": str(tmp_path / f"network-{index}.jsonl"),
+            "proxyLogPath": str(tmp_path / f"proxy-{index}.jsonl"),
+        }
+        for index, ip in enumerate(client_ips)
+    }
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps({"sandboxes": registrations}))
+    return path
+
+
 def payload(dialect: str = "openai-completions", preset: str = PRESET) -> dict:
     return {
         "model": preset,
