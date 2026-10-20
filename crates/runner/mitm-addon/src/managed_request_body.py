@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 from typing import BinaryIO, TypeVar
 
-from mitmproxy import http
+from mitmproxy import connection, http
 
 import flow_metadata_keys as metadata_keys
 from body_limits import BODY_CAPTURE_LIMIT
@@ -69,11 +69,31 @@ class _StorageBudget:
         body.waiter = future
         self.wake()
         try:
-            return await future
-        except BaseException:
-            if future.done() and not future.cancelled():
-                future.result().close()
-            raise
+            if (
+                not future.done()
+                and body.ingress is not None
+                and any(
+                    other is not body
+                    and other.ingress is body.ingress
+                    and (
+                        other.lease is not None
+                        or (other.waiter is not None and not other.waiter.cancelled())
+                    )
+                    and not other.input_complete
+                    and not other.closed
+                    for other in _active
+                )
+            ):
+                # Waiting would pause the reader needed by an earlier retained
+                # or queued upload to finish and release capacity.
+                future.cancel()
+                raise BodyError("body_storage_busy")
+            try:
+                return await future
+            except BaseException:
+                if future.done() and not future.cancelled():
+                    future.result().close()
+                raise
         finally:
             body.waiter = None
             if entry in self.waiters:
@@ -128,6 +148,8 @@ class TemporaryBody:
         self.validated = False
         self.closed = False
         self.failure: str | None = None
+        self.ingress: connection.Client | None = None
+        self.input_complete = False
         # The native continuation, including its final replay hook, owns this
         # checkpoint. Storage closure alone does not finish transport progress.
         self.upload_done = asyncio.Event()
@@ -205,6 +227,7 @@ class TemporaryBody:
             self.capture.extend(chunk[: max(0, BODY_CAPTURE_LIMIT - len(self.capture))])
 
     async def finish(self, *, trailers: bool = False) -> None:
+        self.input_complete = True
         if trailers:
             raise BodyError("trailers")
         if self.closed or self.received != self.length or self.file is None:
@@ -257,6 +280,7 @@ class TemporaryBody:
 
     def close(self) -> None:
         self.closed = True
+        self.ingress = None
         self.validator = None
         self.capture = None
         self.chunk = b""
@@ -281,6 +305,7 @@ class TemporaryBody:
 
 def attach(flow: http.HTTPFlow, body: TemporaryBody) -> None:
     release(flow)
+    body.ingress = flow.client_conn
     flow.metadata[_BODY_KEY] = body
 
 

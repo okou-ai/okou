@@ -33,6 +33,7 @@ _REQUEST_HOOK_RESUMED = "_managed_request_hook_resumed"
 _BODY_EVENT_ATTRIBUTE = "_managed_request_upload"
 _HTTP2_UPLOADS = "_managed_request_uploads"
 _HTTP1_UPLOAD = "_managed_request_upload"
+_INPUT_COMPLETE = "_managed_request_input_complete"
 
 
 def _observe_response(
@@ -129,6 +130,25 @@ def _install_http1_upload_progress() -> None:
 
 def request_hook_resumed(hook: HttpRequestHook) -> bool:
     return getattr(hook, _REQUEST_HOOK_RESUMED, False) is True
+
+
+def _install_input_completion() -> None:
+    current = HttpStream.handle_event
+    if hasattr(current, _BRIDGE):
+        return
+
+    def handle_event(self: HttpStream, event: events.Event) -> layer.CommandGenerator[None]:
+        if isinstance(event, RequestEndOfMessage):
+            # EOF can be queued behind an active receive/headers hook. Its
+            # file can now finish without another read, even before validation.
+            setattr(self, _INPUT_COMPLETE, True)
+            body = managed_request_body.get(self.flow)
+            if body is not None:
+                body.input_complete = True
+        yield from current(self, event)
+
+    setattr(handle_event, _BRIDGE, True)
+    HttpStream.handle_event = handle_event
 
 
 class _Http2Uploads:
@@ -230,6 +250,7 @@ class ManagedRequestBodyHook(commands.StartHook):
 
 
 def install(register: Callable[[ManagedRequestBodyHook], None]) -> None:
+    _install_input_completion()
     _install_http1_upload_progress()
     _install_http2_upload_progress()
     current = HttpStream.state_consume_request_body
@@ -244,6 +265,8 @@ def install(register: Callable[[ManagedRequestBodyHook], None]) -> None:
         if body is None:
             yield from current(self, event)
             return
+        if getattr(self, _INPUT_COMPLETE, False) is True:
+            body.input_complete = True
 
         def checkpoint(stage: Literal["receive", "finish", "replay"], data: bytes = b""):
             hook = ManagedRequestBodyHook(self.flow, stage, data)

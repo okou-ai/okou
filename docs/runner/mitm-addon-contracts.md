@@ -748,7 +748,15 @@ killed flow. Other requests retain the original native body state.
 Anonymous files use the Runner-owned launch TMPDIR. A process-local FIFO budget
 atomically reserves complete declared lengths against half the filesystem's
 available space at the beginning of an active epoch; the snapshot refreshes when
-idle. Competing uploads wait with reader backpressure. A request that cannot fit
+idle. Competing uploads wait FIFO with reader backpressure. If an older retained
+or queued body on the same connection still needs input, a new capacity wait
+would block the reader needed to finish that body and release space. That wait
+gets a temporary `body_storage_busy` 503 before credentials; the connection and
+later uploads can continue. Native EOF is observed before the stream queues it
+behind a paused hook, so a body with complete queued input can still free its
+reservation independently and allows normal FIFO waiting. EOF observation does
+not establish JSON/policy validation or authorize forwarding.
+A request that cannot fit
 that storage capacity, or a receive-side filesystem failure, gets a local 503
 after body completion without resolving credentials. Replay failures terminate
 the upload. Invalid headers still terminate before
@@ -819,6 +827,10 @@ before releasing a blocked real-file read, then checks physical storage cleanup.
 hook dispatcher, real sockets and native framing for both managed dialects under
 ordinary and eager task scheduling. A blocked first real-file write verifies
 that headers completion cannot leave later native reads accumulating body bytes.
+`test_managed_request_shared_capacity.py` covers shared HTTP/2 ingress with
+already-reserved and queued capacity, incomplete versus complete queued input,
+ordinary/eager scheduling, original upstream bytes, temporary 503 privacy and
+successful reuse after space is released. Files and pending peers are joined.
 
 ## Header-phase credential-resolution failures
 
