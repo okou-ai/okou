@@ -1,6 +1,7 @@
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -422,6 +423,7 @@ function connectedShelfCatalog() {
       ? {
           ...connector,
           connected: true,
+          setupStatus: "complete" as const,
           connectionStatus: "connected" as const,
           connection: {
             authMethod: "oauth" as const,
@@ -434,11 +436,32 @@ function connectedShelfCatalog() {
   });
 }
 
+function mockSavedShelfConnectors(slugs: readonly string[]) {
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: connectedShelfCatalog()
+        .filter((connector) => {
+          return slugs.includes(connector.slug);
+        })
+        .map((connector) => {
+          return {
+            slug: connector.slug,
+            label: connector.label,
+            icon: connector.icon,
+            hasPermissions: connector.permissionSummary.hasPermissions,
+          };
+        }),
+      customConnectors: [],
+    });
+  });
+}
+
 test("Land on Discover, then switch to the connectors this workspace has", async () => {
   mockConnectors(context, [
     { connectorSlug: "mail-0" as ConnectorSlug },
     { connectorSlug: "mail-1" as ConnectorSlug },
   ]);
+  mockSavedShelfConnectors(["mail-0", "mail-1"]);
   mockPublicConnectorStatus(context, connectedShelfCatalog(), {
     "communication-collaboration": 327,
     "ai-voice-audio": 50,
@@ -494,7 +517,7 @@ test("Land on Discover, then switch to the connectors this workspace has", async
   expect(options).toContain("All agents");
 });
 
-test("Warn on the scope control when a connection this workspace owns needs a reconnect", async () => {
+test("Keep a saved connector in Connected when its account needs a reconnect", async () => {
   mockConnectors(context, [
     {
       connectorSlug: "mail-0" as ConnectorSlug,
@@ -502,6 +525,7 @@ test("Warn on the scope control when a connection this workspace owns needs a re
       reconnectReason: "authorization_expired_or_revoked",
     },
   ]);
+  mockSavedShelfConnectors(["mail-0"]);
   mockPublicConnectorStatus(context, connectedShelfCatalog(), {
     "communication-collaboration": 327,
     "ai-voice-audio": 50,
@@ -511,11 +535,13 @@ test("Warn on the scope control when a connection this workspace owns needs a re
     path: "/connectors",
   });
 
-  // The list is behind a control, so the control has to carry the one thing a
-  // count cannot say: something in there stopped working.
-  await expect(
-    screen.findByLabelText("Needs attention"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByTestId("connectors-scope-connected")).toHaveTextContent(
+      "Connected1",
+    );
+    expect(getConnectorAction("button", "Manage Gmail accounts")).toBeEnabled();
+  });
+  expect(screen.queryByLabelText("Needs attention")).not.toBeInTheDocument();
 });
 
 test("Find the connectors no agent is using", async () => {
@@ -524,6 +550,7 @@ test("Find the connectors no agent is using", async () => {
     { connectorSlug: "mail-0" as ConnectorSlug },
     { connectorSlug: "mail-1" as ConnectorSlug },
   ]);
+  mockSavedShelfConnectors(["mail-0", "mail-1"]);
   context.mocks.data.agents([listAgent(researchId, "Research", "preset:0")]);
   context.mocks.api(
     userBuiltinConnectorsContract.get,
@@ -568,6 +595,7 @@ test("Find the connectors no agent is using", async () => {
 
 test("Reach the connectors this workspace built from their own segment", async () => {
   mockConnectors(context, [{ connectorSlug: "mail-0" as ConnectorSlug }]);
+  mockSavedShelfConnectors(["mail-0"]);
   mockPublicConnectorStatus(context, connectedShelfCatalog(), {
     "communication-collaboration": 327,
     "ai-voice-audio": 50,

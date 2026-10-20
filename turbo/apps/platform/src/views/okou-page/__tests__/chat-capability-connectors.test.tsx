@@ -120,7 +120,6 @@ function sentPrompts(sends: readonly CapturedChatSend[]): string[] {
 function installCatalogLookup(
   lookup: (slug: ConnectorSlug) => ReturnType<typeof catalogConnector> | null,
 ): void {
-  const slugs = new Set<ConnectorSlug>();
   const accountFor = (
     slug: ConnectorSlug,
   ): ConnectorAccountConnection | null => {
@@ -163,26 +162,19 @@ function installCatalogLookup(
           });
     },
   );
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [...slugs].flatMap((slug) => {
-        const account = accountFor(slug);
-        return account
-          ? [
-              {
-                target: account.target,
-                accountCount: 1,
-                attentionCount:
-                  account.connectionStatus === "reconnect-required" ? 1 : 0,
-                defaultConnection: account,
-              },
-            ]
-          : [];
-      }),
-    });
-  });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    ({ query, respond }) => {
+      const account =
+        query.kind === "builtin" ? accountFor(query.connectorSlug) : null;
+      return respond(200, {
+        connections: account ? [account] : [],
+        defaultConnection: account,
+        nextCursor: null,
+      });
+    },
+  );
   context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    slugs.add(params.connectorSlug);
     const connector = lookup(params.connectorSlug);
     return connector
       ? respond(200, { connector })
@@ -217,19 +209,12 @@ function installCustomConnectorApi(args: {
           });
     },
   );
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     const current = account();
     return respond(200, {
-      summaries: current
-        ? [
-            {
-              target: current.target,
-              accountCount: 1,
-              attentionCount: 0,
-              defaultConnection: current,
-            },
-          ]
-        : [],
+      connections: current ? [current] : [],
+      defaultConnection: current,
+      nextCursor: null,
     });
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
@@ -677,25 +662,21 @@ async function attemptCustomMcpConnection(
     connectionStatus: "reconnect-required",
     reconnectReason: "authorization_expired_or_revoked",
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    const current =
+      hasSavedAccount || connected
+        ? {
+            ...account,
+            connectionStatus: connected
+              ? ("connected" as const)
+              : ("reconnect-required" as const),
+            reconnectReason: connected ? null : account.reconnectReason,
+          }
+        : null;
     return respond(200, {
-      summaries:
-        hasSavedAccount || connected
-          ? [
-              {
-                target: account.target,
-                accountCount: 2,
-                attentionCount: connected ? 0 : 1,
-                defaultConnection: {
-                  ...account,
-                  connectionStatus: connected
-                    ? "connected"
-                    : "reconnect-required",
-                  reconnectReason: connected ? null : account.reconnectReason,
-                },
-              },
-            ]
-          : [],
+      connections: current ? [current] : [],
+      defaultConnection: current,
+      nextCursor: null,
     });
   });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {

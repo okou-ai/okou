@@ -114,8 +114,6 @@ import {
   type ComposerSignals,
   type ComposerSubmission,
 } from "../okou-page/composer-signals.ts";
-import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
-import { connectorOverview$ } from "../okou-page/connector-overview.ts";
 import {
   createComposerConnectorSignals,
   type ComposerConnectorSignals,
@@ -2485,7 +2483,6 @@ interface RunTrackingDeps {
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
-  reloadConnectorAccounts$: Command<void, []>;
   reloadConnectorAccountPreference$: Command<void, []>;
 }
 
@@ -2894,18 +2891,13 @@ function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
   cancellationRecovery,
-  reloadConnectorAccounts$,
 }: Pick<
   RunTrackingDeps,
-  | "threadId"
-  | "catchUpChatEvents$"
-  | "cancellationRecovery"
-  | "reloadConnectorAccounts$"
+  "threadId" | "catchUpChatEvents$" | "cancellationRecovery"
 >): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
     set(cancellationRecovery.reload$);
-    set(reloadConnectorAccounts$);
     await Promise.all([
       get(cancellationRecovery.pending$),
       set(reloadMountedComposerWorkflows$, signal),
@@ -2932,14 +2924,12 @@ function createRunTracking({
   subscribeThinkingSummaries$,
   automationSignals,
   cancellationRecovery,
-  reloadConnectorAccounts$,
   reloadConnectorAccountPreference$,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$,
     cancellationRecovery,
-    reloadConnectorAccounts$,
   });
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
@@ -3543,10 +3533,9 @@ function createThreadSubmitMessageSignal(
       signal: AbortSignal,
     ): Promise<boolean> => {
       const explicit = get(computerUseHostSelection.computerUseHostIdExplicit$);
-      const storedHostId = get(computerUseHostSelection.computerUseHostId$);
-      const hosts = (await get(connectorOverview$)).computerUseHosts;
-      signal.throwIfAborted();
-      const computerUseHostId = selectedComputerUseHostId(hosts, storedHostId);
+      const computerUseHostId = get(
+        computerUseHostSelection.computerUseHostId$,
+      );
       const cloudBrowserEnabled = get(
         computerUseHostSelection.cloudBrowserEnabled$,
       );
@@ -3818,7 +3807,6 @@ export function createChatPanelSignals(
     subscribeSessionOutput$: sessionOutput.subscribe$,
     automationSignals: threadOwned,
     cancellationRecovery,
-    reloadConnectorAccounts$: composer.connector.accounts.reload$,
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
   });

@@ -1911,7 +1911,6 @@
       "back": "Back",
       "configurePermissions": "Configure {{connectorName}} permissions",
       "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
-      "defaultAccountFor": "{{connector}} · Using default account: {{account}}",
       "directory": {
         "allCategories": "All",
         "askAdmin": "Ask an admin to enable",
@@ -1928,8 +1927,6 @@
         "emptyCustomTitle": "No custom connectors yet",
         "matchCount_one": "{{count}} match",
         "matchCount_other": "{{count}} matches",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Needs attention",
         "nextCategories": "Next categories",
         "noResultsBody": "Try a product name, or build your own from an API or MCP server.",
@@ -1946,6 +1943,7 @@
       },
       "fallsBackTo": "Falls back to {{account}}",
       "find": "Find connectors...",
+      "loadFailed": "Couldn't load connectors.",
       "noUsableAccount": "No usable account",
       "remove": "Remove {{connectorName}}",
       "selectedAccountFor": "{{connector}} · Selected account: {{account}}",
@@ -3095,10 +3093,7 @@
       "rename": "Rename",
       "setupIncomplete": "Setup incomplete",
       "setupUnavailable": "Account status unavailable",
-      "skipName": "Skip",
-      "summaryMany": "{{value}} accounts",
-      "summaryOne": "{{value}} account",
-      "summaryWithAttention": "{{value}}/{{total}} need attention"
+      "skipName": "Skip"
     },
     "actions": {
       "apply": "Apply",
@@ -3263,7 +3258,6 @@
       },
       "scope": {
         "aria": "Connector scope",
-        "attention": "Needs attention",
         "connected": "Connected",
         "custom": "Custom",
         "discover": "Discover",

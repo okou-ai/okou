@@ -1,9 +1,10 @@
 import { command } from "ccstate";
+import { onRef } from "../../utils.ts";
+import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
-  type ConnectorAccountSummary,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
@@ -14,27 +15,23 @@ import type { CustomConnectorAccountMutationIntent } from "./connector-account-d
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
-  reloadConnectorAccountSummaries$,
 } from "../connector-accounts.ts";
 
-async function readConnectorAccountSummary(
+/** Read one target only when an account surface or mutation needs its facts. */
+export async function readConnectorAccountPage(
   createClient: ApiClientFactory,
   target: ConnectorAccountTarget,
   signal: AbortSignal,
-): Promise<ConnectorAccountSummary | undefined> {
+) {
   const result = await accept(
-    createClient(connectorAccountsContract).summaries({
+    createClient(connectorAccountsContract).connections({
+      query: { ...target, limit: 50 },
       fetchOptions: { signal },
     }),
     [200],
     signal,
   );
-  return result.body.summaries.find((summary) => {
-    return (
-      connectorAccountTargetKey(summary.target) ===
-      connectorAccountTargetKey(target)
-    );
-  });
+  return result.body;
 }
 
 export async function readConnectorAccountCount(
@@ -42,10 +39,8 @@ export async function readConnectorAccountCount(
   target: ConnectorAccountTarget,
   signal: AbortSignal,
 ): Promise<number> {
-  return (
-    (await readConnectorAccountSummary(createClient, target, signal))
-      ?.accountCount ?? 0
-  );
+  const page = await readConnectorAccountPage(createClient, target, signal);
+  return page.connections.length;
 }
 
 /** Completion requires facts for the operated account, including on old API responses. */
@@ -92,19 +87,19 @@ export async function resolveCustomConnectorAccountMutation(
   if (account.intent !== "default") {
     return account;
   }
-  const summary = await readConnectorAccountSummary(
+  const page = await readConnectorAccountPage(
     createClient,
     { kind: "custom", customConnectorId },
     signal,
   );
   signal.throwIfAborted();
-  if (summary?.defaultConnection) {
+  if (page.defaultConnection) {
     return {
       intent: "reconnect",
-      connectionId: summary.defaultConnection.id,
+      connectionId: page.defaultConnection.id,
     };
   }
-  if (summary && summary.accountCount > 0) {
+  if (page.connections.length > 0) {
     throw new Error(
       "This connector has saved accounts but no default. Choose an account in Connectors settings.",
     );
@@ -142,7 +137,6 @@ export const settingsConnectorAccounts = createConnectorAccountListSignals({
 });
 
 const invalidateConnectorAccounts$ = command(({ set }, signal: AbortSignal) => {
-  set(reloadConnectorAccountSummaries$);
   set(settingsConnectorAccounts.reload$, signal);
 });
 
@@ -254,6 +248,25 @@ export const deleteConnectorAccount$ = command(
     );
     signal.throwIfAborted();
     set(invalidateConnectorAccounts$, signal);
+    set(reloadUserConnectedConnectors$);
     return result.body;
   },
+);
+
+export const connectorAccountSetup = createConnectorAccountListSignals();
+export const connectorAccountSetupRef$ = onRef(
+  command(({ set }, element: HTMLDivElement, signal: AbortSignal) => {
+    const customConnectorId = element.dataset.accountSetupCustomId;
+    if (!customConnectorId) {
+      return;
+    }
+    set(
+      connectorAccountSetup.setTarget$,
+      { kind: "custom", customConnectorId },
+      signal,
+    );
+    signal.addEventListener("abort", () => {
+      set(connectorAccountSetup.clearTarget$);
+    });
+  }),
 );

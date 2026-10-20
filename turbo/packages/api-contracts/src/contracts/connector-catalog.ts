@@ -121,6 +121,10 @@ const publicConnectorCatalogStatusItemSchema =
     connection: publicConnectorCatalogConnectionSchema.nullable(),
     connected: z.boolean(),
     connectionStatus: publicConnectorCatalogConnectionStatusSchema,
+    setupStatus: z
+      .enum(["complete", "incomplete", "invalid"])
+      .nullable()
+      .optional(),
     scopeMismatch: z.boolean(),
     authMethodSupportsRefresh: z.boolean(),
     tokenExpiresAt: z.string().nullable(),
@@ -145,6 +149,7 @@ export const publicConnectorCatalogConnectItemSchema =
     connection: true,
     connected: true,
     connectionStatus: true,
+    setupStatus: true,
     scopeMismatch: true,
     authMethodSupportsRefresh: true,
     tokenExpiresAt: true,

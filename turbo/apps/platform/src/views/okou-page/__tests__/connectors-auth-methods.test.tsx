@@ -11,6 +11,7 @@ import {
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -116,6 +117,27 @@ function storeConnectedConnector(
   return connector;
 }
 
+function mockConnectedCatalogTarget(
+  connector: ReturnType<typeof publicStatusItem>,
+  hasSavedAccount: () => boolean,
+) {
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: hasSavedAccount()
+        ? [
+            {
+              slug: connector.slug,
+              label: connector.label,
+              icon: connector.icon,
+              hasPermissions: connector.permissionSummary.hasPermissions,
+            },
+          ]
+        : [],
+      customConnectors: [],
+    });
+  });
+}
+
 function mockAgentConnectorAccess(
   connectorSlug: ConnectorSlug,
   completion?: Promise<void>,
@@ -183,22 +205,25 @@ test.each(["none", "oauth"] as const)(
       listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
     ]);
     mockAgentConnectorAccess(slug);
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({
-        connectorSlug: slug,
-        label: "Partner Tools",
-        authMethods: [
-          {
-            id: methodId,
-            label: "Connect",
-            description: null,
-            grantKind: "automatic",
-            manualFields: [],
-            startOptions: [],
-          },
-        ],
-      }),
-    ]);
+    const catalogItem = publicStatusItem({
+      connectorSlug: slug,
+      label: "Partner Tools",
+      authMethods: [
+        {
+          id: methodId,
+          label: "Connect",
+          description: null,
+          grantKind: "automatic",
+          manualFields: [],
+          startOptions: [],
+        },
+      ],
+    });
+    mockPublicConnectorStatus(context, [catalogItem]);
+    let savedAccount: BuiltinConnectorResponse | undefined;
+    mockConnectedCatalogTarget(catalogItem, () => {
+      return savedAccount !== undefined;
+    });
     const completedAttempts = mockOAuthCompletions(context);
     if (resolution === "none") {
       context.mocks.api(connectorAccountsContract.oauthCompletion, () => {
@@ -209,8 +234,8 @@ test.each(["none", "oauth"] as const)(
       if (href !== authorizationUrl) {
         return;
       }
-      const connected = storeConnectedConnector(slug, methodId);
-      completedAttempts.set(oauthAttemptId, connected.id);
+      savedAccount = storeConnectedConnector(slug, methodId);
+      completedAttempts.set(oauthAttemptId, savedAccount.id);
       context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
     });
     context.mocks.browser.open(authWindow);
@@ -222,10 +247,10 @@ test.each(["none", "oauth"] as const)(
           account: { intent: "add" },
         });
         if (resolution === "none") {
-          const connected = storeConnectedConnector(slug, methodId);
+          savedAccount = storeConnectedConnector(slug, methodId);
           return respond(200, {
             result: "connected",
-            connectedAccountId: connected.id,
+            connectedAccountId: savedAccount.id,
           });
         }
         return respond(200, {
@@ -448,7 +473,7 @@ test("Add an AWS account with an external code", async () => {
 
   const awsCard = getConnectorCard("AWS");
   await expect(
-    within(awsCard).findByText("arn:aws:iam::000000000000:user/mock-aws"),
+    within(awsCard).findByText("Connected"),
   ).resolves.toBeInTheDocument();
   expect(
     getConnectorAction("button", "Manage AWS access", awsCard),
@@ -468,33 +493,36 @@ test("Add an account through OpenID", async () => {
     listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
   ]);
   mockAgentConnectorAccess(slug);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: slug,
-      label: "Partner Steam",
-      icon: {
-        url: "https://icons.example.test/partner-steam.svg",
-        invertInDarkMode: false,
+  const catalogItem = publicStatusItem({
+    connectorSlug: slug,
+    label: "Partner Steam",
+    icon: {
+      url: "https://icons.example.test/partner-steam.svg",
+      invertInDarkMode: false,
+    },
+    authMethods: [
+      {
+        id: "partner-openid",
+        label: "Partner OpenID",
+        description: null,
+        grantKind: "openid-auth",
+        manualFields: [],
+        startOptions: [],
       },
-      authMethods: [
-        {
-          id: "partner-openid",
-          label: "Partner OpenID",
-          description: null,
-          grantKind: "openid-auth",
-          manualFields: [],
-          startOptions: [],
-        },
-      ],
-    }),
-  ]);
+    ],
+  });
+  mockPublicConnectorStatus(context, [catalogItem]);
+  let savedAccount: BuiltinConnectorResponse | undefined;
+  mockConnectedCatalogTarget(catalogItem, () => {
+    return savedAccount !== undefined;
+  });
   const authorizationUrl = "https://openid.test/partner-steam/authorize";
   const authWindow = createAuthWindow((href) => {
     if (href !== authorizationUrl) {
       return;
     }
-    const connected = storeConnectedConnector(slug, "partner-openid");
-    completedAttempts.set(oauthAttemptId, connected.id);
+    savedAccount = storeConnectedConnector(slug, "partner-openid");
+    completedAttempts.set(oauthAttemptId, savedAccount.id);
     context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
   });
   context.mocks.browser.open(authWindow);
@@ -575,7 +603,7 @@ test("Choose a credential-free method among multiple connection methods", async 
   await waitFor(() => {
     expect(selectedMethod).toBe("api");
     expect(
-      within(getConnectorCard("Public Stripe")).getByText("API key"),
+      within(getConnectorCard("Public Stripe")).getByText("Connected"),
     ).toBeInTheDocument();
   });
 });
@@ -635,7 +663,7 @@ test("Authorize visible agents only for the first manual account", async () => {
   click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {
     expect(
-      within(getConnectorCard("Public Axiom")).getByText("API token"),
+      within(getConnectorCard("Public Axiom")).getByText("Connected"),
     ).toBeInTheDocument();
     expect(
       getConnectorAction(
@@ -791,7 +819,7 @@ test.each(["verification page"])(
     click(getConnectorAction("button", "Skip", naming));
     await waitFor(() => {
       expect(
-        within(getConnectorCard("Base44")).getByText("mock-base44"),
+        within(getConnectorCard("Base44")).getByText("Connected"),
       ).toBeInTheDocument();
       expect(
         getConnectorAction("button", "Manage Base44 access"),
@@ -972,7 +1000,7 @@ test("Enable a connector that needs no credentials", async () => {
   click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {
     expect(
-      within(getConnectorCard("Public Stripe")).getByText("API key"),
+      within(getConnectorCard("Public Stripe")).getByText("Connected"),
     ).toBeInTheDocument();
     expect(
       getConnectorAction(
@@ -1137,7 +1165,7 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
   await waitFor(() => {
     expect(screen.queryByRole("dialog", { name: "Public Stripe" })).toBeNull();
     expect(
-      within(getConnectorCard("Public Stripe")).getByText("Unnamed account"),
+      within(getConnectorCard("Public Stripe")).getByText("Connected"),
     ).toBeInTheDocument();
   });
   const naming = await screen.findByRole("dialog", {
@@ -1441,7 +1469,7 @@ test("Submit credentials only for the chosen manual method", async () => {
     expect(submittedMethod).toBe("api");
     expect(submittedValues).toStrictEqual({ apiKey: "api-key-test" });
     expect(
-      within(getConnectorCard("Public Axiom")).getByText("API key"),
+      within(getConnectorCard("Public Axiom")).getByText("Connected"),
     ).toBeInTheDocument();
   });
 });

@@ -1911,7 +1911,6 @@
       "back": "Zurück",
       "configurePermissions": "Konfigurieren Sie {{connectorName}}-Berechtigungen",
       "customAuthorizeDescription": "Prüfen und verbinden Sie diese benutzerdefinierte Integration und autorisieren Sie sie für den Agenten.",
-      "defaultAccountFor": "{{connector}} · Standardkonto wird verwendet: {{account}}",
       "directory": {
         "allCategories": "Alle",
         "askAdmin": "Lassen Sie diese Integration von einem Admin freischalten",
@@ -1928,8 +1927,6 @@
         "emptyCustomTitle": "Noch keine eigenen Integrationen",
         "matchCount_one": "{{count}} Treffer",
         "matchCount_other": "{{count}} Treffer",
-        "moreAccounts_one": "+{{count}}",
-        "moreAccounts_other": "+{{count}}",
         "needsAttention": "Braucht Aufmerksamkeit",
         "nextCategories": "Nächste Kategorien",
         "noResultsBody": "Versuchen Sie einen Produktnamen oder erstellen Sie eine eigene aus einer API oder einem MCP-Server.",
@@ -1946,6 +1943,7 @@
       },
       "fallsBackTo": "Wechselt zu {{account}} zurück",
       "find": "Integrationen suchen...",
+      "loadFailed": "Integrationen konnten nicht geladen werden.",
       "noUsableAccount": "Kein verwendbares Konto",
       "remove": "{{connectorName}} entfernen",
       "selectedAccountFor": "{{connector}} · Ausgewähltes Konto: {{account}}",
@@ -3097,16 +3095,7 @@
       "rename": "Umbenennen",
       "setupIncomplete": "Einrichtung unvollständig",
       "setupUnavailable": "Kontostatus nicht verfügbar",
-      "skipName": "Überspringen",
-      "summaryMany": "{{value}} Konten",
-      "summaryMany_one": "",
-      "summaryMany_other": "",
-      "summaryOne": "{{value}} Konto",
-      "summaryOne_one": "",
-      "summaryOne_other": "",
-      "summaryWithAttention": "{{value}}/{{total}} erfordern Aufmerksamkeit",
-      "summaryWithAttention_one": "",
-      "summaryWithAttention_other": ""
+      "skipName": "Überspringen"
     },
     "actions": {
       "apply": "Anwenden",
@@ -3271,7 +3260,6 @@
       },
       "scope": {
         "aria": "Connector-Bereich",
-        "attention": "Benötigt Aufmerksamkeit",
         "connected": "Verbunden",
         "custom": "Eigene",
         "discover": "Entdecken",

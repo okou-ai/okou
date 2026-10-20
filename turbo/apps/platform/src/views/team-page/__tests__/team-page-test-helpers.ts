@@ -1,3 +1,4 @@
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -16,10 +17,6 @@ import type {
   PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  connectorOverviewContract,
-  type ConnectorAccountBriefSummary,
-} from "@okouai/api-contracts/contracts/connector-overview";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -96,6 +93,7 @@ export function catalogConnectorFixture(
       reconnectReason: null,
     },
     connected: true,
+    setupStatus: "complete",
     connectionStatus: "connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: true,
@@ -105,81 +103,22 @@ export function catalogConnectorFixture(
   };
 }
 
-/** Serves the connected ones among `connectors` as the user's connector overview. */
+/** Serves saved connector membership independently of default-account readiness. */
 export function mockConnectorOverview(
   testContextValue: TestContext,
   connectors: readonly PublicConnectorCatalogStatusItem[],
   options: {
     readonly customConnectors?: readonly CustomConnectorResponse[];
-    readonly accountSummaries?: readonly ConnectorAccountBriefSummary[];
+    readonly connectedCustomConnectorIds?: readonly string[];
   } = {},
 ): void {
-  const connected = connectors.filter((connector) => {
-    return connector.connection !== null;
-  });
-  const summaries: readonly ConnectorAccountBriefSummary[] =
-    options.accountSummaries ?? [
-      ...connected.map((connector) => {
-        return {
-          target: { kind: "builtin" as const, connectorSlug: connector.slug },
-          accountCount: 1,
-          attentionCount:
-            connector.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: connector.connection
-            ? {
-                id: connector.connection.id ?? crypto.randomUUID(),
-                authMethod: connector.connection.authMethod,
-                displayName: null,
-                externalId: null,
-                externalUsername: connector.connection.externalUsername,
-                externalEmail: connector.connection.externalEmail,
-                connectionStatus:
-                  connector.connectionStatus === "reconnect-required"
-                    ? ("reconnect-required" as const)
-                    : ("connected" as const),
-              }
-            : null,
-        };
-      }),
-      ...(options.customConnectors ?? []).flatMap((connector) => {
-        return connector.connectedAccountId &&
-          !isIntegrationManagedCustomConnector(connector)
-          ? [
-              {
-                target: {
-                  kind: "custom" as const,
-                  customConnectorId: connector.id,
-                },
-                accountCount: 1,
-                attentionCount: 0,
-                defaultConnection: {
-                  id: connector.connectedAccountId,
-                  authMethod:
-                    connector.authMode === "manual" ? "manual" : "oauth",
-                  displayName: "Work",
-                  externalId: null,
-                  externalUsername: null,
-                  externalEmail: null,
-                  connectionStatus: "connected" as const,
-                },
-              },
-            ]
-          : [];
-      }),
-    ];
   testContextValue.mocks.api(
-    connectorOverviewContract.overview,
+    connectedConnectorsContract.list,
     ({ respond }) => {
       return respond(200, {
         builtinConnectors: connectors
           .filter((connector) => {
-            return summaries.some((summary) => {
-              return (
-                summary.target.kind === "builtin" &&
-                summary.target.connectorSlug === connector.slug &&
-                summary.accountCount > 0
-              );
-            });
+            return connector.connection !== null;
           })
           .map((connector) => {
             return {
@@ -191,16 +130,9 @@ export function mockConnectorOverview(
           }),
         customConnectors: (options.customConnectors ?? [])
           .filter((connector) => {
-            return (
-              connector.connected ||
-              summaries.some((summary) => {
-                return (
-                  summary.target.kind === "custom" &&
-                  summary.target.customConnectorId === connector.id &&
-                  summary.accountCount > 0
-                );
-              })
-            );
+            return options.connectedCustomConnectorIds
+              ? options.connectedCustomConnectorIds.includes(connector.id)
+              : connector.connected;
           })
           .map((connector) => {
             return {
@@ -212,9 +144,6 @@ export function mockConnectorOverview(
                 isIntegrationManagedCustomConnector(connector),
             };
           }),
-        accountSummaries: [...summaries],
-        computerUseHosts: [],
-        cloudBrowserEnabledByDefault: true,
       });
     },
   );

@@ -33,13 +33,12 @@ import {
   connectorAgentAccessStatus,
 } from "./connector-agent-access-button.tsx";
 import { customConnectorTarget } from "./custom-connector-display.ts";
-import { connectorOverviewAccountSummaryByTarget$ } from "../../../../signals/okou-page/connector-accounts.ts";
+import { connectedConnectorTargetKeys$ } from "../../../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountManagerDialog } from "./connector-account-manager-dialog.tsx";
 import {
-  ConnectorAccountSummaryText,
-  connectorAccountSummaryStatus,
-  type ConnectorAccountDisplaySummary,
-  type ConnectorAccountSummaryStatus,
+  ConnectorMembershipText,
+  connectorInventoryStatus,
+  type ConnectorInventoryStatus,
 } from "./connector-card.tsx";
 import {
   closeCustomAccountConnectDialog$,
@@ -66,8 +65,8 @@ interface CustomConnectorRowProps {
   readonly onEdit: () => void;
   readonly onManageAccess: () => void;
   readonly onDelete: () => void;
-  readonly accountSummary?: ConnectorAccountDisplaySummary;
-  readonly accountSummaryStatus: ConnectorAccountSummaryStatus;
+  readonly hasAccounts: boolean;
+  readonly inventoryStatus: ConnectorInventoryStatus;
   readonly onManageAccounts: () => void;
 }
 
@@ -104,8 +103,8 @@ interface CustomConnectorCardContentProps {
   readonly hasActions: boolean;
   readonly allowAccessIncrease: boolean;
   readonly onManageAccess: () => void;
-  readonly accountSummary?: ConnectorAccountDisplaySummary;
-  readonly accountSummaryStatus: ConnectorAccountSummaryStatus;
+  readonly hasAccounts: boolean;
+  readonly inventoryStatus: ConnectorInventoryStatus;
 }
 
 function CustomConnectorHeaderContent({
@@ -164,8 +163,8 @@ function CustomConnectorCardFooter({
   hasActions,
   allowAccessIncrease,
   onManageAccess,
-  accountSummary,
-  accountSummaryStatus,
+  hasAccounts,
+  inventoryStatus,
 }: CustomConnectorCardContentProps) {
   return (
     <div
@@ -173,10 +172,9 @@ function CustomConnectorCardFooter({
         hasActions ? "pr-12" : "pr-2"
       }`}
     >
-      <ConnectorAccountSummaryText
-        summary={accountSummary}
-        status={accountSummaryStatus}
-        className="min-w-0 flex-1 text-xs text-muted-foreground"
+      <ConnectorMembershipText
+        connected={hasAccounts}
+        status={inventoryStatus}
       />
       <div className="relative z-20 min-w-0 max-w-full">
         <CustomConnectorAgentAccess
@@ -309,26 +307,25 @@ function CustomConnectorRow({
   onEdit,
   onManageAccess,
   onDelete,
-  accountSummary,
-  accountSummaryStatus,
+  hasAccounts,
+  inventoryStatus,
   onManageAccounts,
 }: CustomConnectorRowProps) {
   const focusCreated = useSet(focusCreatedDirectoryConnector$);
   const connecting = useGet(connectorConnectionPending$);
   const adminCanDelete = isAdmin;
-  const accountCount = accountSummary?.accountCount ?? 0;
-  const canActivate = accountSummaryStatus === "ready";
-  const activate = accountCount > 0 ? onManageAccounts : onConnect;
-  const managesAccounts = accountCount > 0;
+  const canActivate = inventoryStatus === "ready";
+  const activate = hasAccounts ? onManageAccounts : onConnect;
+  const managesAccounts = hasAccounts;
   const hasActions = adminCanDelete;
   const cardContent = (
     <CustomConnectorCardContent
       connector={connector}
       hasActions={hasActions}
-      allowAccessIncrease={accountCount > 0}
+      allowAccessIncrease={hasAccounts}
       onManageAccess={onManageAccess}
-      accountSummary={accountSummary}
-      accountSummaryStatus={accountSummaryStatus}
+      hasAccounts={hasAccounts}
+      inventoryStatus={inventoryStatus}
     />
   );
 
@@ -368,17 +365,17 @@ function CustomConnectorDialogs({
 }) {
   const dialog = useGet(customConnectorDialog$);
   const closeDialog = useSet(closeCustomConnectorDialog$);
-  const accountSummariesLoadable = useLastLoadable(
-    connectorOverviewAccountSummaryByTarget$,
+  const connectedTargetsLoadable = useLastLoadable(
+    connectedConnectorTargetKeys$,
   );
-  const accessAccountSummary =
-    dialog.kind === "access" && accountSummariesLoadable.state === "hasData"
-      ? accountSummariesLoadable.data.get(`custom:${dialog.connector.id}`)
+  const hasAccessAccount =
+    dialog.kind === "access" && connectedTargetsLoadable.state === "hasData"
+      ? connectedTargetsLoadable.data.has(`custom:${dialog.connector.id}`)
       : undefined;
   const allowAccessIncrease =
     dialog.kind === "access" &&
-    accountSummariesLoadable.state === "hasData" &&
-    (accessAccountSummary?.accountCount ?? 0) > 0;
+    connectedTargetsLoadable.state === "hasData" &&
+    hasAccessAccount === true;
   return (
     <>
       {dialog.kind === "create" && (
@@ -417,11 +414,11 @@ export function CustomConnectorGrid({
    */
   readonly className?: string;
 }) {
-  const accountSummariesLoadable = useLastLoadable(
-    connectorOverviewAccountSummaryByTarget$,
+  const connectedTargetsLoadable = useLastLoadable(
+    connectedConnectorTargetKeys$,
   );
-  const accountSummaryStatus = connectorAccountSummaryStatus(
-    accountSummariesLoadable.state,
+  const inventoryStatus = connectorInventoryStatus(
+    connectedTargetsLoadable.state,
   );
   const openEdit = useSet(openCustomConnectorEditDialog$);
   const openAccess = useSet(openCustomConnectorAccessDialog$);
@@ -474,9 +471,9 @@ export function CustomConnectorGrid({
   return (
     <div className={className}>
       {connectors.map((connector) => {
-        const accountSummary =
-          accountSummariesLoadable.state === "hasData"
-            ? accountSummariesLoadable.data.get(`custom:${connector.id}`)
+        const hasAccount =
+          connectedTargetsLoadable.state === "hasData"
+            ? connectedTargetsLoadable.data.has(`custom:${connector.id}`)
             : undefined;
         return (
           <CustomConnectorRow
@@ -495,8 +492,8 @@ export function CustomConnectorGrid({
             onDelete={() => {
               return openDelete(connector);
             }}
-            accountSummary={accountSummary}
-            accountSummaryStatus={accountSummaryStatus}
+            hasAccounts={hasAccount === true}
+            inventoryStatus={inventoryStatus}
             onManageAccounts={() => {
               return openAccountManager(connector, signal);
             }}

@@ -196,7 +196,6 @@ import {
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
   connectorAccountTargetKey,
 } from "../../signals/okou-page/connector-accounts.ts";
-import { connectorOverview$ } from "../../signals/okou-page/connector-overview.ts";
 import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
 import { resolveTemplatePickerCategory } from "../../signals/okou-page/chat-composer.ts";
 import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
@@ -365,6 +364,9 @@ interface ComposerTemplatePicker {
 interface ComposerComputerUse {
   readonly hosts: readonly ComposerComputerUseHost[];
   readonly loading: boolean;
+  readonly failed: boolean;
+  readonly retry: () => void;
+  readonly cloudBrowserAvailable: boolean;
   readonly selectedHostId: string | null;
   readonly onChange: (hostId: string | null) => void;
   readonly cloudBrowserEnabled: boolean;
@@ -5803,6 +5805,7 @@ function ComputerUseConnectorMenuSection({
         <span className="flex shrink-0 items-center">
           <LoadingSwitch
             checked={computerUse.cloudBrowserEnabled}
+            disabled={!computerUse.cloudBrowserAvailable}
             onCheckedChange={onDomEventFn((enabled) => {
               computerUse.onCloudBrowserChange(enabled);
             })}
@@ -5818,7 +5821,23 @@ function ComputerUseConnectorMenuSection({
           return $.chat.computerUse.yourComputer;
         })}
       </div>
-      {computerUse.loading ? (
+      {computerUse.failed ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 p-2 text-sm text-destructive"
+        >
+          <span>
+            {t(($) => {
+              return $.chat.remoteAccess.loadFailed;
+            })}
+          </span>
+          <Button variant="outline" size="sm" onClick={computerUse.retry}>
+            {t(($) => {
+              return $.chat.remoteAccess.retry;
+            })}
+          </Button>
+        </div>
+      ) : computerUse.loading ? (
         <div className="flex flex-col animate-pulse">
           {Array.from({ length: 2 }, (_, i) => {
             return (
@@ -5917,6 +5936,8 @@ function ComposerRemoteAccessMenu({
     <ThreadRemoteAccessSection
       threadId={signals.threadId}
       remoteAccess$={signals.remoteAccess$}
+      defaults$={signals.connector.resources.remoteHostDefaults$}
+      reloadRemotes$={signals.connector.resources.reloadRemotes$}
       pendingRemoteAccess={signals.pendingRemoteAccess}
       open={remoteMenuOpen}
       onOpenChange={onRemoteMenuOpenChange}
@@ -6086,7 +6107,6 @@ function ComposerConnectorAccountMenu({
   target,
   connectorLabel,
   selectedConnection,
-  defaultConnection,
   explicit,
 }: {
   readonly signals: ComposerSignals;
@@ -6094,7 +6114,6 @@ function ComposerConnectorAccountMenu({
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
   readonly selectedConnection: ConnectorAccountConnection | undefined;
-  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
   readonly explicit: boolean;
 }) {
   const { t } = useTranslation();
@@ -6108,12 +6127,12 @@ function ComposerConnectorAccountMenu({
     menuTarget &&
     connectorAccountTargetKey(menuTarget) === connectorAccountTargetKey(target),
   );
-  const effectiveConnection = explicit ? selectedConnection : defaultConnection;
+  const effectiveConnection = selectedConnection;
   const resolveAccountLabel = useConnectorAccountLabel();
   const accountLabel = effectiveConnection
     ? resolveAccountLabel(effectiveConnection)
     : t(($) => {
-        return $.chat.connectors.noUsableAccount;
+        return $.chat.connectors.useDefault;
       });
   const accessibleLabel = explicit
     ? t(
@@ -6122,12 +6141,9 @@ function ComposerConnectorAccountMenu({
         },
         { connector: connectorLabel, account: accountLabel },
       )
-    : t(
-        ($) => {
-          return $.chat.connectors.defaultAccountFor;
-        },
-        { connector: connectorLabel, account: accountLabel },
-      );
+    : `${connectorLabel} · ${t(($) => {
+        return $.chat.connectors.accountForThread;
+      })}`;
   return (
     <Popover
       open={open}
@@ -6169,12 +6185,14 @@ function ComposerConnectorAccountMenu({
           return $.chat.connectors.accountForThread;
         })}
       >
-        <ComposerConnectorAccountMenuContent
-          signals={signals}
-          actions={actions}
-          target={target}
-          connectorLabel={connectorLabel}
-        />
+        {open && (
+          <ComposerConnectorAccountMenuContent
+            signals={signals}
+            actions={actions}
+            target={target}
+            connectorLabel={connectorLabel}
+          />
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -6358,9 +6376,6 @@ function ComposerConnectorAccountMenuContent({
   const preferenceLoadable = useLastLoadable(
     signals.connector.accounts.preferenceState$,
   );
-  const summariesLoadable = useLastLoadable(
-    signals.connector.accounts.summaryByTarget$,
-  );
   const accountsLoadable = useLastLoadable(
     signals.connector.accounts.accounts$,
   );
@@ -6385,15 +6400,21 @@ function ComposerConnectorAccountMenuContent({
         return connection.id === selection.connectionId;
       })
     : undefined;
-  const summary =
-    summariesLoadable.state === "hasData"
-      ? summariesLoadable.data.get(targetKey)
-      : undefined;
-  const defaultConnection = summary ? summary.defaultConnection : null;
   const accountList =
     accountsLoadable.state === "hasData"
       ? accountsLoadable.data
-      : { connections: [], nextCursor: null, available: true };
+      : {
+          connections: [],
+          nextCursor: null,
+          available: true,
+          defaultConnection: null,
+        };
+  const defaultConnection =
+    accountList.defaultConnection !== undefined
+      ? accountList.defaultConnection
+      : (accountList.connections.find((connection) => {
+          return connection.isDefault;
+        }) ?? null);
   const connections = selectedConnection
     ? [
         selectedConnection,
@@ -6404,7 +6425,8 @@ function ComposerConnectorAccountMenuContent({
     : accountList.connections;
   const showSearch =
     search.length > 0 ||
-    (summary?.accountCount ?? 0) > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
+    accountList.connections.length > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
+    accountList.hasMultiplePages === true ||
     accountList.nextCursor !== null;
   const saving = actions.savingAccount;
   return (
@@ -6499,7 +6521,7 @@ function ComposerConnectorAccountMenuContent({
             resultCount: accountList.connections.length,
             search,
           })}
-          loadingAccountCount={summary?.accountCount ?? 0}
+          loadingAccountCount={2}
         />
         {accountList.nextCursor ? (
           <div className="shrink-0 border-t border-border/50 p-2">
@@ -6590,17 +6612,11 @@ function ComposerConnectorAccountAction({
   const preference = useLastResolved(
     signals.connector.accounts.preferenceState$,
   );
-  const summaries = useLastResolved(
-    signals.connector.accounts.summaryByTarget$,
-  );
   const target = composerPopoverConnectorTarget(item);
   const targetKey = connectorAccountTargetKey(target);
-  const summary = summaries?.get(targetKey);
   if (
     !item.connector.authorized ||
-    (item.kind === "custom" && item.connector.integrationManaged) ||
-    !summary ||
-    summary.accountCount <= 1
+    (item.kind === "custom" && item.connector.integrationManaged)
   ) {
     return null;
   }
@@ -6621,7 +6637,6 @@ function ComposerConnectorAccountAction({
       selectedConnection={preference?.selectedConnections.find((connection) => {
         return connection.id === selection?.connectionId;
       })}
-      defaultConnection={summary.defaultConnection}
     />
   );
 }
@@ -6683,19 +6698,16 @@ function resolveComposerAgentConnectors(
 function ConnectorsPopoverButton({
   signals,
   actions,
-  computerUse,
   onOpenAddDialog,
 }: {
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
-  computerUse: ComposerComputerUse | undefined;
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const remoteMenuOpen = useGet(
-    signals.connector.connectorUiState$,
-  ).remoteMenuOpen;
+  const connectorUi = useGet(signals.connector.connectorUiState$);
+  const remoteMenuOpen = connectorUi.remoteMenuOpen;
   const setRemoteMenuOpen = (open: boolean) => {
     updateConnectorUi({ remoteMenuOpen: open });
   };
@@ -6709,7 +6721,7 @@ function ConnectorsPopoverButton({
   );
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      updateConnectorUi({ popoverOpen: true, popoverHasOpened: true });
+      updateConnectorUi({ popoverOpen: true });
     } else {
       updateConnectorUi({
         popoverOpen: false,
@@ -6723,6 +6735,7 @@ function ConnectorsPopoverButton({
 
   return (
     <Popover
+      open={connectorUi.popoverOpen}
       onOpenChange={(open, eventDetails) => {
         if (!open && eventDetails.reason === "outside-press") {
           if (accountMenuOpen) {
@@ -6778,23 +6791,26 @@ function ConnectorsPopoverButton({
         collisionAvoidance={{ fallbackAxisSide: "none" }}
         className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
       >
-        <ComposerConnectorsPopoverBody
-          signals={signals}
-          actions={actions}
-          computerUse={computerUse}
-          remoteMenuOpen={remoteMenuOpen}
-          onRemoteMenuOpenChange={setRemoteMenuOpen}
-          onOpenAddDialog={onOpenAddDialog}
-          onOpenDownloadDialog={() => {
-            setDownloadDialogOpen(true);
-          }}
-        />
+        {connectorUi.popoverOpen && (
+          <ComposerConnectorsPopoverBody
+            signals={signals}
+            actions={actions}
+            remoteMenuOpen={remoteMenuOpen}
+            onRemoteMenuOpenChange={setRemoteMenuOpen}
+            onOpenAddDialog={onOpenAddDialog}
+            onOpenDownloadDialog={() => {
+              setDownloadDialogOpen(true);
+            }}
+          />
+        )}
       </PopoverContent>
-      <OptionalComputerUseDownloadDialog
-        computerUse={computerUse}
-        open={downloadDialogOpen}
-        onOpenChange={setDownloadDialogOpen}
-      />
+      {downloadDialogOpen && (
+        <ComputerUseDownloadDialog
+          downloadUrl={OKOU_DESKTOP_DOWNLOAD_URL}
+          open={downloadDialogOpen}
+          onOpenChange={setDownloadDialogOpen}
+        />
+      )}
     </Popover>
   );
 }
@@ -6819,7 +6835,6 @@ function focusComposerConnectorSearch(element: HTMLElement | null) {
 function ComposerConnectorsPopoverBody({
   signals,
   actions,
-  computerUse,
   remoteMenuOpen,
   onRemoteMenuOpenChange,
   onOpenAddDialog,
@@ -6827,7 +6842,6 @@ function ComposerConnectorsPopoverBody({
 }: {
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
-  computerUse: ComposerComputerUse | undefined;
   remoteMenuOpen: boolean;
   onRemoteMenuOpenChange: (open: boolean) => void;
   onOpenAddDialog: () => void;
@@ -6835,8 +6849,18 @@ function ComposerConnectorsPopoverBody({
 }) {
   const { t } = useTranslation();
   const agentId = signals.agentId;
-  const connectorData = useLastResolved(signals.connector.data$);
-  const connectorsLoading = connectorData === undefined;
+  const computerUse = useComposerComputerUse(signals);
+  const connectorState = useLoadable(signals.connector.data$);
+  const previousConnectorData = useLastResolved(signals.connector.data$);
+  const connectorData =
+    connectorState.state === "hasData"
+      ? connectorState.data
+      : connectorState.state === "loading"
+        ? previousConnectorData
+        : undefined;
+  const connectorsLoading =
+    connectorState.state === "loading" && connectorData === undefined;
+  const retryConnectors = useSet(signals.connector.resources.reloadConnected$);
   const { agentConnectors, agentCustomConnectors } =
     resolveComposerAgentConnectors(connectorData);
   const connectorUi = useGet(signals.connector.connectorUiState$);
@@ -6908,6 +6932,23 @@ function ComposerConnectorsPopoverBody({
         showSearch && "h-100",
       )}
     >
+      {connectorState.state === "hasError" && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 p-3 text-sm text-destructive"
+        >
+          <span>
+            {t(($) => {
+              return $.chat.connectors.loadFailed;
+            })}
+          </span>
+          <Button variant="outline" size="sm" onClick={retryConnectors}>
+            {t(($) => {
+              return $.chat.remoteAccess.retry;
+            })}
+          </Button>
+        </div>
+      )}
       {(connectorItems.length > 0 || connectorsLoading) && (
         <div className="flex min-h-0 flex-1 flex-col">
           {showSearch && (
@@ -7041,6 +7082,7 @@ function ComposerConnectorsPopoverBody({
                                   onClick={() => {
                                     updateConnectorUi({
                                       permissionConnectorSlug: connector.slug,
+                                      permissionConnector: connector,
                                     });
                                   }}
                                   aria-label={t(
@@ -7126,8 +7168,8 @@ function ComposerConnectorsPopoverBody({
 }
 
 /**
- * The permission dialog a connector row opens. It outlives the popover that
- * opened it, so it reads the agent's connectors itself.
+ * The permission dialog retains its selected brief and loads only the target's
+ * permission metadata and agent grants after the resource menu closes.
  */
 function ComposerConnectorPermissionDialogSlot({
   signals,
@@ -7138,13 +7180,10 @@ function ComposerConnectorPermissionDialogSlot({
 }) {
   const agentId = signals.agentId;
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const connectorData = useLastResolved(signals.connector.data$);
+  const connectorUi = useGet(signals.connector.connectorUiState$);
   const agents = useLastResolved(agents$) ?? [];
-  const { agentConnectors } = resolveComposerAgentConnectors(connectorData);
-  const permissionConnector = agentConnectors.find((connector) => {
-    return connector.slug === connectorSlug;
-  });
-  if (!permissionConnector) {
+  const permissionConnector = connectorUi.permissionConnector;
+  if (!permissionConnector || permissionConnector.slug !== connectorSlug) {
     return null;
   }
   return (
@@ -7156,30 +7195,15 @@ function ComposerConnectorPermissionDialogSlot({
           return agent.agentId === agentId;
         })?.displayName ?? ""
       }
-      connector={permissionConnector}
+      connector={{ ...permissionConnector, authorized: true }}
       onClose={() => {
-        updateConnectorUi({ permissionConnectorSlug: null });
+        updateConnectorUi({
+          permissionConnectorSlug: null,
+          permissionConnector: null,
+        });
       }}
     />
   );
-}
-
-function OptionalComputerUseDownloadDialog({
-  computerUse,
-  open,
-  onOpenChange,
-}: {
-  computerUse: ComposerComputerUse | undefined;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return computerUse ? (
-    <ComputerUseDownloadDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      downloadUrl={computerUse.downloadUrl}
-    />
-  ) : null;
 }
 
 function ComputerUseDownloadDialog({
@@ -8509,20 +8533,19 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   const cloudBrowserEnabled =
     cloudBrowserState.state === "hasData"
       ? cloudBrowserState.data
-      : (lastCloudBrowserEnabled ?? true);
+      : lastCloudBrowserEnabled;
   const setComputerUseHostId = useSet(signals.computer.setComputerUseHostId$);
   const setCloudBrowserEnabled = useSet(
     signals.computer.setCloudBrowserEnabled$,
   );
-  const computerUseHostsState = useLastLoadable(connectorOverview$);
-  const lastComputerUseHosts =
-    useLastResolved(connectorOverview$)?.computerUseHosts ?? [];
+  const computerUseHostsState = useLoadable(
+    signals.connector.resources.remotes$,
+  );
+  const retry = useSet(signals.connector.resources.reloadRemotes$);
   const computerUseHosts =
     computerUseHostsState.state === "hasData"
       ? computerUseHostsState.data.computerUseHosts
-      : computerUseHostsState.state === "hasError"
-        ? []
-        : lastComputerUseHosts;
+      : [];
   const resolvedComputerUseHostId = selectedComputerUseHostId(
     computerUseHosts,
     storedComputerUseHostId,
@@ -8540,7 +8563,15 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
         Reason.DomCallback,
       );
     },
-    cloudBrowserEnabled,
+    failed: computerUseHostsState.state === "hasError",
+    retry,
+    cloudBrowserAvailable:
+      computerUseHostsState.state === "hasData" &&
+      computerUseHostsState.data.cloudBrowserAvailable,
+    cloudBrowserEnabled:
+      cloudBrowserEnabled ??
+      (computerUseHostsState.state === "hasData" &&
+        computerUseHostsState.data.cloudBrowserEnabledByDefault),
     cloudBrowserLoading:
       cloudBrowserState.state === "loading" &&
       lastCloudBrowserEnabled === undefined,
@@ -8571,7 +8602,6 @@ function ComposerConnectorsSlot({
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
 }) {
-  const computerUse = useComposerComputerUse(signals);
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
@@ -8585,7 +8615,6 @@ function ComposerConnectorsSlot({
       <ConnectorsPopoverButton
         signals={signals}
         actions={actions}
-        computerUse={computerUse}
         onOpenAddDialog={openAddConnectorsDialog}
       />
       {connectorUi.permissionConnectorSlug !== null && (
@@ -8613,10 +8642,12 @@ function ComposerConnectorDialogsSlot({
   actions: ComposerConnectorActions;
 }) {
   const { t } = useTranslation();
-  const lastConnectorData = useLastResolved(signals.connector.data$);
-  const connectorData =
-    lastConnectorData?.authorization.agentId === signals.agentId
-      ? lastConnectorData
+  const lastAuthorization = useLastResolved(
+    signals.connector.connectorAuthorization$,
+  );
+  const authorization =
+    lastAuthorization?.agentId === signals.agentId
+      ? lastAuthorization
       : undefined;
   const addDialogCatalog = useLastResolved(signals.connector.addDialogCatalog$);
   const addDialogBrowseCatalog = useLastResolved(
@@ -8656,8 +8687,7 @@ function ComposerConnectorDialogsSlot({
     resolveComposerConnectorCollections({
       addDialogCatalogItems,
       addDialogCustomConnectors,
-      authorizedConnectorSlugs:
-        connectorData?.authorization.enabledConnectorSlugs ?? null,
+      authorizedConnectorSlugs: authorization?.enabledConnectorSlugs ?? null,
       selectedCustomConnectorId,
     });
   const selectedConnector = connectorUi.selectedConnector ?? undefined;
@@ -8690,7 +8720,7 @@ function ComposerConnectorDialogsSlot({
   ): Promise<void> => {
     const newlyAuthorized = await completeAddition(
       connectorSlug,
-      connectorData?.authorization.agentId === agentRecordId &&
+      authorization?.agentId === agentRecordId &&
         authorizedSet.has(connectorSlug),
       signal,
     );
@@ -8818,9 +8848,21 @@ function ComposerConnectorDialogsSlot({
             });
           }}
           onConfigurePermissions={(connectorSlug) => {
+            const connector = addDialogCatalogItems.find((item) => {
+              return item.slug === connectorSlug;
+            });
+            if (!connector) {
+              return;
+            }
             updateConnectorUi({
               showAddDialog: false,
               permissionConnectorSlug: connectorSlug,
+              permissionConnector: {
+                slug: connector.slug,
+                label: connector.label,
+                icon: connector.icon,
+                hasPermissions: connector.permissionSummary.hasPermissions,
+              },
             });
           }}
           onClose={() => {

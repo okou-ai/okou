@@ -2912,19 +2912,6 @@ function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
   ]);
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: healthyAccount.target,
-          accountCount: 2,
-          attentionCount:
-            reconnectAccount.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: healthyAccount,
-        },
-      ],
-    });
-  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {

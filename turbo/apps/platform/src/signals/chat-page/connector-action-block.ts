@@ -13,7 +13,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   customConnectorSlugSchema,
-  isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -39,10 +38,6 @@ import { resolvePlatformOriginForTarget } from "../api-base.ts";
 import { authorizeConnector$ as authorizeDirectedConnector$ } from "../connectors-page/directed-authorize-slug.ts";
 import { isAgentConnectorAuthorized } from "../okou-page/agent-connector-authorizations.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../okou-page/settings/connector-account-dialogs.ts";
-import {
-  connectorAccountSummaryByTarget$,
-  connectorAccountTargetKey,
-} from "../okou-page/connector-accounts.ts";
 import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
@@ -514,25 +509,7 @@ function createCustomConnectorSignals(
     if (!connector) {
       return false;
     }
-    if (isIntegrationManagedCustomConnector(connector)) {
-      return connector.connected;
-    }
-    const summaries = await get(connectorAccountSummaryByTarget$);
-    const account = summaries.get(
-      connectorAccountTargetKey({
-        kind: "custom",
-        customConnectorId: connector.id,
-      }),
-    )?.defaultConnection;
-    if (account && account.setupStatus === undefined) {
-      throw new Error(
-        "Connector account setup information is unavailable. Refresh and try again.",
-      );
-    }
-    return (
-      account?.connectionStatus === "connected" &&
-      account.setupStatus === "complete"
-    );
+    return connector.connected;
   });
 
   const authorized$ = computed(async (get): Promise<boolean> => {

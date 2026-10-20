@@ -113,10 +113,8 @@ test("Keep the exact account and current reconnect UI when future setup metadata
     attentionCount: 1,
     defaultConnection: account,
   };
-  const overviewResponse = context.mocks.deferred<void>();
   const accountsResponse = context.mocks.deferred<void>();
-  mockConnectorOverviewAccountSummaries(context, async () => {
-    await overviewResponse.promise;
+  mockConnectorOverviewAccountSummaries(context, () => {
     return [summary];
   });
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
@@ -134,10 +132,8 @@ test("Keep the exact account and current reconnect UI when future setup metadata
   const card = await waitFor(() => {
     return getConnectorCard("GitHub");
   });
-  expect(card).toHaveTextContent("Loading accounts…");
-  overviewResponse.resolve();
   await expect(
-    within(card).findByText("1/1 need attention"),
+    within(card).findByText("Connected"),
   ).resolves.toBeInTheDocument();
   click(getConnectorAction("button", "Manage GitHub accounts", card));
   const manager = await screen.findByRole("dialog", {
@@ -180,17 +176,15 @@ test("Show Mercury disclosures while managing its accounts", async () => {
       },
     }),
   ]);
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        },
-      ],
-    });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [
+      {
+        target: account.target,
+        accountCount: 1,
+        attentionCount: 0,
+        defaultConnection: account,
+      },
+    ];
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, { connections: [account], nextCursor: null });
@@ -204,7 +198,11 @@ test("Show Mercury disclosures while managing its accounts", async () => {
     getConnectorAction("link", "Powered by Mercury", card),
   ).toHaveAttribute("href", "https://mercury.com");
 
-  click(getConnectorAction("button", "Manage Mercury accounts", card));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Manage Mercury accounts", card);
+    }),
+  );
   const manager = await screen.findByRole("dialog", {
     name: "Manage Mercury accounts",
   });
@@ -462,7 +460,7 @@ test.each(["pointer", "Space", "ArrowDown"] as const)(
       "true",
     );
     expect(within(manager).getAllByText("Work")).toHaveLength(1);
-    expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
+    expect(getConnectorCard("GitHub")).toHaveTextContent("Connected");
 
     await user.click(accountRadio(manager, "Personal"));
     await user.keyboard(" ");
@@ -952,7 +950,7 @@ test("Manage connector accounts and agent access independently", async () => {
   const card = await waitFor(() => {
     return getConnectorCard("GitHub");
   });
-  expect(card).toHaveTextContent("1/7 need attention");
+  expect(card).toHaveTextContent("Connected");
   const manageAccounts = getConnectorAction(
     "button",
     "Manage GitHub accounts",
@@ -1088,53 +1086,52 @@ test("Prevent account additions when a connector target is unavailable", async (
   expect(within(manager).queryByRole("group", { name: "Default" })).toBeNull();
 });
 
-test("Keep connector account summaries while a realtime refresh loads", async () => {
+test("Read accounts only inside the manager and refresh them each time it opens", async () => {
   const [connector] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "work" },
   ]);
   if (!connector) {
     throw new Error("Expected GitHub connector");
   }
-  const work = builtinAccount({
+  let work = builtinAccount({
     id: connector.id,
     displayName: "Work",
     isDefault: true,
     externalUsername: "work",
   });
-  const refreshStarted = context.mocks.deferred<void>();
-  const releaseRefresh = context.mocks.deferred<void>();
-  let overviewRequests = 0;
-  mockConnectorOverviewAccountSummaries(context, async () => {
-    overviewRequests += 1;
-    if (overviewRequests > 1) {
-      refreshStarted.resolve();
-      await releaseRefresh.promise;
-    }
-    return [
-      {
-        target: work.target,
-        accountCount: 2,
-        attentionCount: 0,
-        defaultConnection: work,
-      },
-    ];
+  context.mocks.api(connectorAccountsContract.summaries, () => {
+    throw new Error("The directory must not request global account summaries");
+  });
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(200, {
+      connections: [work],
+      defaultConnection: work,
+      nextCursor: null,
+    });
   });
   await setupAccountsPage();
   await waitFor(() => {
-    expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
+    expect(getConnectorCard("GitHub")).toHaveTextContent("Connected");
   });
-
-  act(() => {
-    context.mocks.ably.trigger("computerUseHostsChanged");
+  expect(screen.queryByText("Work")).not.toBeInTheDocument();
+  click(getConnectorAction("button", "Manage GitHub accounts"));
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
   });
-  await refreshStarted.promise;
-
-  const card = getConnectorCard("GitHub");
-  expect(card).toHaveTextContent("2 accounts");
-  expect(within(card).queryByText("Loading accounts…")).toBeNull();
-
-  releaseRefresh.resolve();
+  await within(manager).findByText("Work");
+  click(getConnectorAction("button", "Close", manager));
   await waitFor(() => {
-    expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Manage GitHub accounts",
+      }),
+    ).not.toBeInTheDocument();
   });
+  work = { ...work, displayName: "Updated elsewhere" };
+  click(getConnectorAction("button", "Manage GitHub accounts"));
+  const reopened = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  await within(reopened).findByText("Updated elsewhere");
+  expect(within(reopened).queryByText("Work")).not.toBeInTheDocument();
 });

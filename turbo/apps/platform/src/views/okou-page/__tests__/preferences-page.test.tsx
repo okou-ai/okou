@@ -7,7 +7,7 @@ import {
   userModelPreferenceContract,
   type UpdateUserModelPreferenceRequest,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -48,11 +48,11 @@ function mockPreferences(
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, preferences);
   });
-  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
-      builtinConnectors: [],
-      customConnectors: [],
-      accountSummaries: [],
+      cloudBrowserAvailable: true,
+      sshHosts: [],
+      vncHosts: [],
       computerUseHosts: [],
       cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
     });

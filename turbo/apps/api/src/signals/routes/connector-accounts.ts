@@ -183,9 +183,7 @@ const connectionsInner$ = computed(async (get) => {
     body: {
       connections: [...result.connections],
       nextCursor: result.nextCursor,
-      ...(result.defaultConnection !== undefined
-        ? { defaultConnection: result.defaultConnection }
-        : {}),
+      defaultConnection: result.defaultConnection,
     },
   };
 });

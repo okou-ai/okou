@@ -3,7 +3,6 @@ import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
@@ -49,53 +48,11 @@ export interface ConnectorDirectoryModel {
   readonly categoryLabelOf: (category: string) => string | undefined;
 }
 
-export function currentDirectoryAccountSummaries(
-  connectors: readonly PlatformConnectorCatalogStatusItem[],
-  summaries: ReadonlyMap<string, ConnectorAccountSummary> | undefined,
-): ReadonlyMap<string, ConnectorAccountSummary> | undefined {
-  if (!summaries) {
-    return undefined;
-  }
-  const current = new Map(summaries);
-  for (const connector of connectors) {
-    const key = `builtin:${connector.slug}`;
-    const summary = summaries.get(key);
-    if (!summary?.defaultConnection) {
-      continue;
-    }
-    const account = summary.defaultConnection;
-    if (
-      account.connectionStatus !== "connected" ||
-      account.authMethod !== connector.connection?.authMethod
-    ) {
-      continue;
-    }
-    const status = builtinConnectorCurrentConnectionStatus({
-      ...connector,
-      connectionStatus: account.connectionStatus,
-      tokenExpiresAt: account.tokenExpiresAt,
-    });
-    if (status === "reconnect-required") {
-      current.set(key, {
-        ...summary,
-        attentionCount: summary.attentionCount + 1,
-        defaultConnection: { ...account, connectionStatus: status },
-      });
-    }
-  }
-  return current;
-}
-
 function needsAttention(
   connector: PlatformConnectorCatalogStatusItem,
-  summary: ConnectorAccountSummary | undefined,
 ): boolean {
   const status = builtinConnectorCurrentConnectionStatus(connector);
-  return (
-    (summary?.attentionCount ?? 0) > 0 ||
-    summary?.defaultConnection === null ||
-    status === "scope-mismatch"
-  );
+  return status === "scope-mismatch" || status === "reconnect-required";
 }
 
 function matchesCustomConnectorSearch(
@@ -117,17 +74,13 @@ function matchesCustomConnectorSearch(
 
 function customConnectorGroups(
   connectors: readonly CustomConnectorResponse[],
-  summaries: ReadonlyMap<string, ConnectorAccountSummary> | undefined,
+  connectedTargets: ReadonlySet<string> | undefined,
 ) {
   const customAttention = connectors.filter((connector) => {
-    const summary = summaries?.get(`custom:${connector.id}`);
     return (
       !isIntegrationManagedCustomConnector(connector) &&
-      summary !== undefined &&
-      summary.accountCount > 0 &&
-      (summary.attentionCount > 0 ||
-        summary.defaultConnection === null ||
-        !connector.connected)
+      connectedTargets?.has(`custom:${connector.id}`) === true &&
+      !connector.connected
     );
   });
   const attentionIds = new Set(
@@ -151,7 +104,7 @@ function customConnectorGroups(
 export function buildConnectorDirectoryModel({
   connectors,
   customConnectors,
-  accountSummaries,
+  connectedTargets,
   chipCatalog,
   search,
   category,
@@ -162,8 +115,7 @@ export function buildConnectorDirectoryModel({
   readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
   readonly customConnectors: readonly CustomConnectorResponse[];
   /** Undefined means account metadata is not currently available, not zero. */
-  readonly accountSummaries:
-    ReadonlyMap<string, ConnectorAccountSummary> | undefined;
+  readonly connectedTargets: ReadonlySet<string> | undefined;
   /** Every connector the browse response carried, for the chip row. */
   readonly chipCatalog: readonly PlatformConnectorCatalogStatusItem[];
   readonly search: string;
@@ -173,36 +125,28 @@ export function buildConnectorDirectoryModel({
   readonly headShelfLabel: string;
 }): ConnectorDirectoryModel {
   const connected = connectors.filter((connector) => {
-    return (
-      (accountSummaries?.get(`builtin:${connector.slug}`)?.accountCount ?? 0) >
-      0
-    );
+    return connectedTargets?.has(`builtin:${connector.slug}`) === true;
   });
   const unconnected = connectors.filter((connector) => {
     return (
-      accountSummaries !== undefined &&
-      (accountSummaries.get(`builtin:${connector.slug}`)?.accountCount ?? 0) ===
-        0
+      connectedTargets !== undefined &&
+      !connectedTargets.has(`builtin:${connector.slug}`)
     );
   });
   const connectedCustom = customConnectors.filter((connector) => {
     return isIntegrationManagedCustomConnector(connector)
       ? connector.connected
-      : (accountSummaries?.get(`custom:${connector.id}`)?.accountCount ?? 0) >
-          0;
+      : connectedTargets?.has(`custom:${connector.id}`) === true;
   });
   const unconnectedCustom = customConnectors.filter((connector) => {
     return (
       !isIntegrationManagedCustomConnector(connector) &&
-      accountSummaries !== undefined &&
-      (accountSummaries.get(`custom:${connector.id}`)?.accountCount ?? 0) === 0
+      connectedTargets !== undefined &&
+      !connectedTargets.has(`custom:${connector.id}`)
     );
   });
   const requiresAttention = (connector: PlatformConnectorCatalogStatusItem) => {
-    return needsAttention(
-      connector,
-      accountSummaries?.get(`builtin:${connector.slug}`),
-    );
+    return needsAttention(connector);
   };
   const matchedConnected = connected.filter((connector) => {
     return matchesConnectorDirectorySearch(search, connector);
@@ -224,7 +168,7 @@ export function buildConnectorDirectoryModel({
   );
   const { custom, customAttention } = customConnectorGroups(
     matchedCustom,
-    accountSummaries,
+    connectedTargets,
   );
   const categoryMetadata = connectorCategoryLabels(
     [...unconnected, ...chipCatalog].map((connector) => {

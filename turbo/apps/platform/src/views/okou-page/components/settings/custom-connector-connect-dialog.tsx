@@ -16,9 +16,9 @@ import {
 import { Input } from "@okouai/ui/components/ui/input";
 import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import {
-  connectorAccountSummaryByTarget$,
-  connectorAccountTargetKey,
-} from "../../../../signals/okou-page/connector-accounts.ts";
+  connectorAccountSetup,
+  connectorAccountSetupRef$,
+} from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 
@@ -308,25 +308,21 @@ function useCustomConnectorAccountSetup(
   connector: CustomConnectorResponse,
   accountMode: CustomConnectorConnectDialogProps["accountMode"],
 ) {
-  const summaries = useLastLoadable(connectorAccountSummaryByTarget$);
+  const accounts = useLastLoadable(connectorAccountSetup.accounts$);
   const account =
     accountMode?.kind === "reconnect"
       ? accountMode.account
       : accountMode?.kind === "add"
         ? undefined
-        : summaries.state === "hasData"
-          ? summaries.data.get(
-              connectorAccountTargetKey({
-                kind: "custom",
-                customConnectorId: connector.id,
-              }),
-            )?.defaultConnection
+        : accounts.state === "hasData"
+          ? accounts.data.defaultConnection
           : undefined;
   const setupAvailable =
     accountMode?.kind === "add" ||
     (accountMode?.kind === "reconnect"
       ? account?.setupStatus !== undefined
-      : summaries.state === "hasData" &&
+      : accounts.state === "hasData" &&
+        accounts.data.available &&
         (account === null ||
           account === undefined ||
           account.setupStatus !== undefined));
@@ -350,7 +346,17 @@ function CustomConnectorValuesConnectDialog(
     props.connector,
     props.accountMode,
   );
-  return <CustomConnectorConnectDialogContent {...props} {...setup} />;
+  const setupRef = useSet(connectorAccountSetupRef$);
+  return (
+    <div
+      ref={setupRef}
+      data-account-setup-custom-id={
+        props.accountMode ? undefined : props.connector.id
+      }
+    >
+      <CustomConnectorConnectDialogContent {...props} {...setup} />
+    </div>
+  );
 }
 
 export function CustomConnectorConnectDialog(
