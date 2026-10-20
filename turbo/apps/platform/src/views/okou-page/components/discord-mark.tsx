@@ -4,7 +4,7 @@ export function DiscordMark({ size }: { size: number }) {
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="currentColor"
+      fill="#5865F2"
       className="shrink-0"
       aria-hidden="true"
     >
