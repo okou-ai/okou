@@ -17,6 +17,7 @@ use crate::sandbox::SandboxState;
 pub(crate) struct GuestOperationStartGate {
     guest: Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>,
     coordinator: ParkCoordinator,
+    terminal_unpark: Option<uuid::Uuid>,
 }
 
 impl GuestOperationStartGate {
@@ -24,7 +25,16 @@ impl GuestOperationStartGate {
         guest: Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>,
         coordinator: ParkCoordinator,
     ) -> Self {
-        Self { guest, coordinator }
+        Self {
+            guest,
+            coordinator,
+            terminal_unpark: None,
+        }
+    }
+
+    pub(crate) fn for_terminal_unpark(mut self, attempt: uuid::Uuid) -> Self {
+        self.terminal_unpark = Some(attempt);
+        self
     }
 
     pub(crate) async fn begin_sandbox_operation(
@@ -68,14 +78,16 @@ impl GuestOperationStartGate {
         self.coordinator.ensure_run_control_matches(expected_run_id)
     }
 
-    fn ensure_policy_open(&self) -> Result<(), GuestOperationStartError> {
-        self.coordinator
-            .ensure_operation_start_allowed()
-            .map_err(|error| match error {
-                OperationStartRejection::GateClosed { state } => {
-                    GuestOperationStartError::GateClosed { state }
-                }
-            })
+    pub(crate) fn ensure_policy_open(&self) -> Result<(), GuestOperationStartError> {
+        let admission = match self.terminal_unpark {
+            Some(attempt) => self.coordinator.ensure_terminal_unpark_allowed(attempt),
+            None => self.coordinator.ensure_operation_start_allowed(),
+        };
+        admission.map_err(|error| match error {
+            OperationStartRejection::GateClosed { state } => {
+                GuestOperationStartError::GateClosed { state }
+            }
+        })
     }
 }
 

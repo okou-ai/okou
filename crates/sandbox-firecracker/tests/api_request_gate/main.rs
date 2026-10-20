@@ -2,6 +2,7 @@
 
 //! Real ApiClient/Unix transport contracts; no KVM or Guest completion claim.
 
+mod response;
 mod routing;
 
 use std::io;
