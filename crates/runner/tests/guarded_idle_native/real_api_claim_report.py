@@ -281,6 +281,10 @@ def validate(directory):
                     or observed[0].get("laterClaimStatus") != 404):
                 raise ValueError("public winner attribution or terminal state is unproven")
             unavailable(observed[0].get("laterClaimBody"))
+            poll = observed[0].get("laterPollBody")
+            if (observed[0].get("laterPollStatus") != 200 or not isinstance(poll, dict)
+                    or "job" not in poll or poll["job"] is not None):
+                raise ValueError("completed target remains in eligible public polling")
         summaries[order] = result
     return {"format": "native-real-api-claim-report-v1", "source_sha": source,
             "native_real_api_arbitration_complete": True, "scenarios": 6,

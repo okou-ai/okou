@@ -56,6 +56,7 @@ class RealApiClaimReportTests(unittest.TestCase):
                 winner = b if order == "b" else a
                 api["publicObservations"].append({"runId": run, "runner": {"runnerId": winner},
                     "run": {"status": "completed"}, "laterClaimStatus": 404,
+                    "laterPollStatus": 200, "laterPollBody": {"job": None},
                     "laterClaimBody": {"error": {"code": "NOT_FOUND", "message": "Job not found in queue"}}})
                 for role, runner in zip(("a", "b"), (a, b)):
                     at = lambda n: 10_000_000_000 * (index + 1) + int(n * 1_000_000) + (100 if role == "b" else 0)
@@ -166,6 +167,8 @@ class RealApiClaimReportTests(unittest.TestCase):
             lambda i, a, e, w, s: a["claims"][0].update(runId=str(uuid.uuid4())),
             lambda i, a, e, w, s: a.update(apiJoined=False),
             lambda i, a, e, w, s: a["publicObservations"].clear(),
+            lambda i, a, e, w, s: a["publicObservations"][0].update(laterPollBody={"job": {"runId": i["cases"]["fresh"]["claim_run_id"]}}),
+            lambda i, a, e, w, s: a["publicObservations"][0].update(laterPollStatus=500),
             lambda i, a, e, w, s: w.pop(),
             lambda i, a, e, w, s: w.insert(0, copy.deepcopy(w[0])),
             lambda i, a, e, w, s: w[1]["evidence"].update(completion_authority_sha256="0"*64),

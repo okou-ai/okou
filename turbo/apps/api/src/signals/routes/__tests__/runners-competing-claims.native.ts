@@ -214,12 +214,23 @@ it("composes actual PostgreSQL claim arbitration with both native Guest owners",
             entry.run.runId,
             [404],
           );
+          const laterPoll = await api.requestPollRunner(
+            true,
+            {
+              group: owned.runnerGroup,
+              supportedProfiles: ["vm0/default"],
+            },
+            [200],
+          );
+          expect(laterPoll.body).toMatchObject({ job: null });
           publicObservations.push({
             runId: entry.run.runId,
             runner: attribution.body,
             run: completed,
             laterClaimStatus: unavailable.status,
             laterClaimBody: unavailable.body,
+            laterPollStatus: laterPoll.status,
+            laterPollBody: laterPoll.body,
           });
         }
       });
