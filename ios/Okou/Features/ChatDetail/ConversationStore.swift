@@ -64,7 +64,7 @@ final class ConversationStore {
   private let sync: ChatSync
   private let commands: ChatCommands
   private let isVisible: @MainActor () -> Bool
-  private let didMarkRead: @MainActor () -> Void
+  private let didMarkRead: @MainActor (Date?) -> Void
   private let didSend: @MainActor () -> Void
   private let didFail: @MainActor (Error) -> Void
   private let didSettle: @MainActor () -> Void
@@ -77,12 +77,15 @@ final class ConversationStore {
   private var items: [ConversationItem] = []
   private var expandedWorkSections: Set<String> = []
   private var closed = false
+  private var suppressAutomaticRead = false
+  private var manualUnreadThrough: Date?
+  private var locallyReadThrough: Date?
 
   init(
     thread: ChatThread, sync: ChatSync, commands: ChatCommands,
     webURL: URL, messageMarkdown: MessageMarkdownCache,
     isVisible: @escaping @MainActor () -> Bool,
-    didMarkRead: @escaping @MainActor () -> Void,
+    didMarkRead: @escaping @MainActor (Date?) -> Void,
     didSend: @escaping @MainActor () -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     didSettle: @escaping @MainActor () -> Void,
@@ -162,11 +165,27 @@ final class ConversationStore {
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
           if !pending.contains(where: \.needsRetry) { error = nil }
-          if isVisible(), thread.indicator == .unread {
-            try await commands.markRead(threadID: thread.id)
+          let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
+          if suppressAutomaticRead, let unreadThrough {
+            if let manualUnreadThrough {
+              // Preserve the explicitly unread delivery; a later delivery can be read normally.
+              if unreadThrough > manualUnreadThrough { suppressAutomaticRead = false }
+            } else {
+              manualUnreadThrough = unreadThrough
+            }
+          }
+          if isVisible(), !suppressAutomaticRead, let unreadThrough,
+            locallyReadThrough.map({ $0 < unreadThrough }) ?? true
+          {
+            let watermark = try await commands.markRead(threadID: thread.id)
             guard !closed, !Task.isCancelled else { return }
-            thread.indicator = nil
-            didMarkRead()
+            if let watermark {
+              locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
+              if suppressAutomaticRead {
+                manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
+              }
+            }
+            if !suppressAutomaticRead { didMarkRead(watermark) }
           }
         } catch is CancellationError {
           return
@@ -177,6 +196,18 @@ final class ConversationStore {
     }
     refreshTask = task
     await task.value
+  }
+
+  func setAutomaticReadSuppressed(_ suppressed: Bool, resetReadWatermark: Bool = false) {
+    guard !closed else { return }
+    if suppressed {
+      manualUnreadThrough = [history?.latestRunFinishAt, thread.unreadAt, locallyReadThrough]
+        .compactMap { $0 }.max()
+    } else {
+      if resetReadWatermark { locallyReadThrough = nil }
+      manualUnreadThrough = nil
+    }
+    suppressAutomaticRead = suppressed
   }
 
   /// A first send carries the selection acknowledged by thread creation. It must not

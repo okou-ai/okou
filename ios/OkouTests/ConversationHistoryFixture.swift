@@ -83,7 +83,7 @@ final class ConversationHistoryFixture: Sendable {
         updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { true }, didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {})
+      isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }
 
   static func id(_ sequence: Int) -> String {

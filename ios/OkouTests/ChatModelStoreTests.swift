@@ -117,7 +117,7 @@ final class ChatModelStoreTests: XCTestCase {
       return ConversationStore(
         thread: thread(), sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
         webURL: fixture.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL),
-        isVisible: { false }, didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {},
+        isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
         modelSelection: selection, draftRepository: ChatDraftRepository(client: fixture.client),
         draftStorage: storage)
     }
@@ -278,7 +278,8 @@ final class ChatModelStoreTests: XCTestCase {
       thread: thread(), sync: sync,
       commands: ChatCommands(client: fixture.client, sync: sync), webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: { false },
-      didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {}, modelSelection: selection)
+      didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
+      modelSelection: selection)
     defer { conversation.close() }
     conversation.draft = "Keep this draft until model settings are confirmed"
     await conversation.send()

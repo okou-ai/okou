@@ -306,7 +306,8 @@ private final class ActivityScenario: Sendable {
             """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators": return ChatHTTPResponse(body: "{\"threads\":{}}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
       case path + "/activity-summary":
         state.requests.withLock { $0 += 1 }
         if let wait = state.hold.withLock({ $0 }) { await wait() }
@@ -369,7 +370,7 @@ private final class ActivityScenario: Sendable {
       sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
       webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: visible,
-      didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {},
+      didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       activitySleep: { try await clock.sleep($0) })
     return conversation
   }

@@ -64,13 +64,22 @@ final class ChatComposerPasteTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     input.becomeFirstResponder()
+    // Drive the system paste only after native focus and SwiftUI expansion settle,
+    // as the real editing-menu action does. A laid-out compact view is not ready yet.
+    try await eventually {
+      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    }
     UIPasteboard.general.setItems(
       [[UTType.png.identifier: imageData()]], options: [.localOnly: true])
     defer { UIPasteboard.general.items = [] }
     XCTAssertTrue(
       input.canPerformAction(#selector(UIResponderStandardEditActions.paste(_:)), withSender: nil))
     input.paste(nil)
-    try await eventually {
+    try await eventually(
+      message: "Image paste not ready: importing=\(conversation.attachmentDraft.importingCount), "
+        + "items=\(conversation.attachmentDraft.items.count), "
+        + "error=\(String(describing: conversation.attachmentDraft.error))"
+    ) {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
     }
     XCTAssertEqual(conversation.draft, "")
@@ -344,6 +353,24 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.preparations.isEmpty })
   }
 
+  func testFocusedEditorCreatedBeforeMountingAcquiresKeyboardWhenAttached() async throws {
+    let input = ComposerTextView()
+    input.frame = CGRect(x: 0, y: 0, width: 390, height: 116)
+    input.setFocused(true)
+    XCTAssertNil(input.window)
+    XCTAssertFalse(input.isFirstResponder)
+    let host = UIViewController()
+    host.view.addSubview(input)
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    let window = UIWindow(windowScene: scene)
+    defer { unmount(window) }
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    try await eventually { input.isFirstResponder }
+    input.setFocused(false)
+    XCTAssertFalse(input.isFirstResponder)
+  }
+
   func testRetiredNativeEditorCannotChangeAClearedDraftBeforeDismantling() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
@@ -354,10 +381,15 @@ final class ChatComposerPasteTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     input.becomeFirstResponder()
+    try await eventually { input.isFirstResponder }
     conversation.composer.clear()
     input.insertText("stale callback")
     XCTAssertEqual(conversation.draft, "")
     XCTAssertTrue(input.text.contains("stale callback"))
+    try await eventually {
+      guard let replacement = self.textView(in: host.view) else { return false }
+      return replacement !== input && replacement.isFirstResponder && replacement.text.isEmpty
+    }
   }
 
   func testRemoteHydrationCannotCancelAnImagePasteBeforeItsFileArrives() async throws {

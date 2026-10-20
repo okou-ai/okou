@@ -412,7 +412,7 @@ final class AttachmentFlowFixture: Sendable {
         createdAt: .now, updatedAt: .now, sortAt: .now),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync), webURL: http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { false }, didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {},
+      isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       draftRepository: storage.map { _ in ChatDraftRepository(client: http.client) },
       draftStorage: storage)
   }

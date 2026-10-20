@@ -48,8 +48,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
         view.acceptsImages
         ? [UTType.plainText.identifier, UTType.image.identifier] : [UTType.plainText.identifier])
     view.placeholder.isHidden = !view.text.isEmpty
-    if isFocused && !view.isFirstResponder { view.becomeFirstResponder() }
-    if !isFocused && view.isFirstResponder { view.resignFirstResponder() }
+    view.setFocused(isFocused)
   }
 
   func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context)
@@ -65,6 +64,8 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.delegate = nil
     view.pasteDelegate = nil
     view.pasteImages = { _ in }
+    // A retired editor must not reclaim the keyboard if UIKit reattaches it.
+    view.setFocused(false)
   }
 
   final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
@@ -113,6 +114,7 @@ final class ComposerTextView: UITextView {
   var acceptsImages = false
   var pasteImages: ([NSItemProvider]) -> Void = { _ in }
   let placeholder = UILabel()
+  private var wantsFocus = false
 
   init() {
     super.init(frame: .zero, textContainer: nil)
@@ -125,6 +127,23 @@ final class ComposerTextView: UITextView {
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func setFocused(_ focused: Bool) {
+    wantsFocus = focused
+    reconcileFocus()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    reconcileFocus()
+  }
+
+  private func reconcileFocus() {
+    // SwiftUI can prepare the replacement editor before it has a window.
+    guard window != nil else { return }
+    if wantsFocus && !isFirstResponder { becomeFirstResponder() }
+    if !wantsFocus && isFirstResponder { resignFirstResponder() }
+  }
 
   override func layoutSubviews() {
     super.layoutSubviews()

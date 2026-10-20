@@ -241,7 +241,8 @@ private final class SnapshotLoopbackServer: Sendable {
       contentHeaders = "Content-Type: application/json\r\n"
     case "/api/indicators":
       body = Data(
-        "{\"agents\":{},\"threads\":{\"\(Self.threadID)\":\"unread\"},\"unreadAt\":{}}".utf8)
+        "{\"agents\":{},\"unreadAt\":{},\"threads\":{\"\(Self.threadID)\":\"unread\"},\"unreadAt\":{}}"
+          .utf8)
       contentHeaders = "Content-Type: application/json\r\n"
     case "/api/chat-threads/\(Self.threadID)/event-snapshot":
       body = Data(

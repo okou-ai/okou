@@ -112,7 +112,8 @@ public enum ChatEventProjection {
       messages: work.messages, executionState: state,
       activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
       activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
-      persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections)
+      persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections,
+      latestRunFinishAt: rows.filter { $0.eventType.isTerminal }.map(\.createdAt).max())
   }
 
   /// Raw history may contain historical private memory-citation envelopes.
