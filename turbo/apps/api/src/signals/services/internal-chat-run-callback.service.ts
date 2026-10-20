@@ -679,10 +679,6 @@ export function buildQueuedRunCommand(
     ...(input.builtInModelRuntimeRoute
       ? { builtInModelRuntimeRoute: input.builtInModelRuntimeRoute }
       : {}),
-    threadSessionRoute: {
-      selectedModel: input.modelPin.selectedModel,
-      cliAgentType: input.cliAgentType,
-    },
     body: {
       agentId: input.agentId,
       ...(input.effectiveModelProvider
