@@ -35,7 +35,7 @@ async function completeSession(actor: ApiTestUser, session: Session) {
   if (completed.status !== "complete") {
     throw new Error(`Expected completed device session: ${completed.status}`);
   }
-  expect(completed.connector).toMatchObject({
+  expect(completed.account).toMatchObject({
     authMethod: "oauth",
     connectionStatus: "connected",
   });
@@ -71,7 +71,7 @@ async function createAccountPair(actor: ApiTestUser) {
     "oauth",
   );
   const siblingAccount = await completeSession(actor, second);
-  expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+  expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
   return { defaultAccount, siblingAccount };
 }
 
@@ -144,15 +144,15 @@ describe("Builtin device-auth terminal claim outcomes", () => {
         const { defaultAccount, siblingAccount } =
           await createAccountPair(actor);
         const expected = [
-          { id: defaultAccount.connector.id, isDefault: true },
-          { id: siblingAccount.connector.id, isDefault: false },
+          { id: defaultAccount.connectionId, isDefault: true },
+          { id: siblingAccount.connectionId, isDefault: false },
         ];
         const old = await connectors.startDeviceAuth(
           actor,
           "test-oauth-device",
           "oauth",
           undefined,
-          { intent: "reconnect", connectionId: siblingAccount.connector.id },
+          { intent: "reconnect", connectionId: siblingAccount.connectionId },
         );
         const held = holdTerminalResponse(providerError);
         release = held.release;
@@ -175,12 +175,12 @@ describe("Builtin device-auth terminal claim outcomes", () => {
           "test-oauth-device",
           "oauth",
           undefined,
-          { intent: "reconnect", connectionId: siblingAccount.connector.id },
+          { intent: "reconnect", connectionId: siblingAccount.connectionId },
         );
         expect(replacement.sessionId).not.toBe(old.sessionId);
         const completed = await completeSession(actor, replacement);
-        expect(completed.connector.id).toBe(siblingAccount.connector.id);
-        expect(completed.connector.oauthScopes).toStrictEqual([
+        expect(completed.connectionId).toBe(siblingAccount.connectionId);
+        expect(completed.account.oauthScopes).toStrictEqual([
           "read",
           "replacement",
         ]);
@@ -192,7 +192,7 @@ describe("Builtin device-auth terminal claim outcomes", () => {
         await expect(
           completeSession(actor, replacement),
         ).resolves.toStrictEqual(completed);
-        await expectAccounts(actor, expected, defaultAccount.connector.id);
+        await expectAccounts(actor, expected, defaultAccount.connectionId);
       });
     },
   );
@@ -220,8 +220,8 @@ describe("Builtin device-auth terminal claim outcomes", () => {
       });
       const { defaultAccount, siblingAccount } = await createAccountPair(actor);
       const expected = [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ];
       const startedAt = now();
       mockNow(startedAt);
@@ -231,7 +231,7 @@ describe("Builtin device-auth terminal claim outcomes", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       mockNow(startedAt + 3000);
       const oldProvider = holdTerminalResponse("access_denied");
@@ -270,20 +270,20 @@ describe("Builtin device-auth terminal claim outcomes", () => {
         status: "pending",
         interval: 3,
       });
-      await expectAccounts(actor, expected, defaultAccount.connector.id);
+      await expectAccounts(actor, expected, defaultAccount.connectionId);
       winnerProvider.release();
       const completed = await winningPoll;
       expect(completed).toMatchObject({
         status: "complete",
-        connector: {
-          id: siblingAccount.connector.id,
+        account: {
+          id: siblingAccount.connectionId,
           connectionStatus: "connected",
         },
       });
       await expect(completeSession(actor, session)).resolves.toStrictEqual(
         completed,
       );
-      await expectAccounts(actor, expected, defaultAccount.connector.id);
+      await expectAccounts(actor, expected, defaultAccount.connectionId);
     });
   });
 
@@ -303,12 +303,12 @@ describe("Builtin device-auth terminal claim outcomes", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "test-oauth-device",
-        siblingAccount.connector.id,
+        siblingAccount.connectionId,
       );
       const rejected = {
         status: "error",
@@ -323,8 +323,8 @@ describe("Builtin device-auth terminal claim outcomes", () => {
       );
       await expectAccounts(
         actor,
-        [{ id: defaultAccount.connector.id, isDefault: true }],
-        defaultAccount.connector.id,
+        [{ id: defaultAccount.connectionId, isDefault: true }],
+        defaultAccount.connectionId,
       );
       const recovery = await connectors.startDeviceAuth(
         actor,
@@ -332,18 +332,18 @@ describe("Builtin device-auth terminal claim outcomes", () => {
         "oauth",
       );
       const recovered = await completeSession(actor, recovery);
-      expect(recovered.connector.id).not.toBe(siblingAccount.connector.id);
-      expect(recovered.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(recovered.connectionId).not.toBe(siblingAccount.connectionId);
+      expect(recovered.connectionId).not.toBe(defaultAccount.connectionId);
       await expect(pollSession(actor, reconnect)).resolves.toStrictEqual(
         rejected,
       );
       await expectAccounts(
         actor,
         [
-          { id: defaultAccount.connector.id, isDefault: true },
-          { id: recovered.connector.id, isDefault: false },
+          { id: defaultAccount.connectionId, isDefault: true },
+          { id: recovered.connectionId, isDefault: false },
         ],
-        defaultAccount.connector.id,
+        defaultAccount.connectionId,
       );
     });
   });

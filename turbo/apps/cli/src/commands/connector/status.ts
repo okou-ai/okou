@@ -93,11 +93,7 @@ async function printAgentAction(
       `The ${connectorSlug} connector is connected but needs to be reconnected before agent ${agentLabel} can use it.`,
     );
     console.log(`Reconnect it at: [Reconnect ${connectorSlug}](${url})`);
-  } else if (
-    !isConnected &&
-    (facts.memberStatus !== "not-connected" ||
-      (connector.connection !== undefined && connector.connection !== null))
-  ) {
+  } else if (!isConnected && facts.memberStatus !== "not-connected") {
     const origin = await getPlatformOrigin();
     const url = connectorActionUrl({
       origin,
@@ -172,10 +168,7 @@ async function printStandaloneAction(
       `The ${connectorSlug} connector is connected but needs to be reconnected.`,
     );
     console.log(`Reconnect it at: [Reconnect ${connectorSlug}](${url})`);
-  } else if (
-    facts.memberStatus !== "not-connected" ||
-    (connector.connection !== undefined && connector.connection !== null)
-  ) {
+  } else if (facts.memberStatus !== "not-connected") {
     console.log(
       `Review the ${connectorSlug} accounts: [Manage ${connectorSlug} accounts](${origin}/connectors)`,
     );

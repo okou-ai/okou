@@ -66,7 +66,7 @@ async function connectAutomaticRuntime(args: {
     [200],
   );
   if (started.body.result === "connected") {
-    return started.body.connectedAccountId;
+    return started.body.connectionId;
   }
   const state = new URL(started.body.authorizationUrl).searchParams.get(
     "state",

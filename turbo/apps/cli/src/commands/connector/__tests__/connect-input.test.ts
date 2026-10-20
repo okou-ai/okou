@@ -74,7 +74,7 @@ describe("connector connect safe input and custom member accounts", () => {
             values: { apiKey: SECRET },
           });
           return HttpResponse.json({
-            id: ID,
+            connectionId: ID,
             slug: "openai",
             authMethod: "api-token",
             externalId: null,
@@ -131,7 +131,7 @@ describe("connector connect safe input and custom member accounts", () => {
           return HttpResponse.json({
             ...connector,
             connected: true,
-            connectedAccountId: ID,
+            connectionId: ID,
           });
         },
       ),
@@ -173,7 +173,7 @@ describe("connector connect safe input and custom member accounts", () => {
             return HttpResponse.json({
               ...connector,
               connected: true,
-              connectedAccountId: ID,
+              connectionId: ID,
               values: [{ key: "apiKey", value: SECRET }],
               password: SECRET,
             });
@@ -192,7 +192,7 @@ describe("connector connect safe input and custom member accounts", () => {
       ]);
       const output = log.mock.calls.flat().join("\n");
       expect(JSON.parse(output)).toMatchObject({
-        connectedAccountId: ID,
+        connectionId: ID,
         kind: connector.kind,
       });
       expect(output).not.toContain(SECRET);
@@ -221,7 +221,7 @@ describe("connector connect safe input and custom member accounts", () => {
           return HttpResponse.json({
             ...connector,
             connected: true,
-            connectedAccountId: ID,
+            connectionId: ID,
           });
         },
       ),
@@ -234,7 +234,7 @@ describe("connector connect safe input and custom member accounts", () => {
       "--json",
     ]);
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
-      connected: true,
+      connectionId: ID,
     });
   });
 });

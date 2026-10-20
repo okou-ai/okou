@@ -12,7 +12,7 @@ import {
 } from "../../../__tests__/helpers/custom-connectors";
 import { customConnectorCommand } from "../index";
 import {
-  customAccountConnections,
+  connectorAccount,
   stubConnectorAccounts,
   stubConnectedConnectors,
 } from "../../../__tests__/helpers/connector-accounts";
@@ -76,7 +76,6 @@ describe("okou connector custom readers", () => {
           connectorType: "custom-http",
           target: { kind: "custom", customConnectorId: connector.id },
           hasSavedAccounts: true,
-          connected: false,
           authorized: true,
         },
         {
@@ -106,31 +105,17 @@ describe("okou connector custom readers", () => {
     "uses canonical member accounts when the $kind definition omits old projections",
     async (definition) => {
       const accountId = "55555555-5555-4555-8555-555555555555";
-      const accountDefinition = {
-        ...definition,
-        connected: true,
-        connectedAccountId: accountId,
-        missingRequiredFields: [],
-        configuredFieldKeys: ["apiKey"],
+      const target = {
+        kind: "custom" as const,
+        customConnectorId: definition.id,
       };
-      const projections = new Set([
-        "connected",
-        "connectedAccountId",
-        "connectedAccountUpdatedAt",
-        "missingRequiredFields",
-        "configuredFieldKeys",
-      ]);
-      const canonical = Object.fromEntries(
-        Object.entries(definition).filter(([key]) => {
-          return !projections.has(key);
-        }),
-      );
       server.use(
-        stubConnectorAccounts(customAccountConnections([accountDefinition])),
+        stubConnectorAccounts([connectorAccount(target, { id: accountId })]),
+        stubCustomConnectors([definition]),
         http.get(
           `http://localhost:3000/api/custom-connectors/${definition.id}`,
           () => {
-            return HttpResponse.json(canonical);
+            return HttpResponse.json(definition);
           },
         ),
       );
@@ -407,9 +392,7 @@ describe("okou connector custom readers", () => {
       authMode: "manual",
       permissionBundleRef: null,
       storageVersion: 1,
-      connected: true,
-      missingRequiredFields: [],
-      configuredFieldKeys: ["secret"],
+
       createdAt: "2026-08-10T00:00:00.000Z",
       updatedAt: "2026-08-10T00:00:00.000Z",
     } satisfies CustomConnectorMcpResponse;

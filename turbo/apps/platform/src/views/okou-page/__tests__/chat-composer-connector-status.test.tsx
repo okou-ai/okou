@@ -1,9 +1,9 @@
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";

@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@okouai/ui";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   closeCustomConnectorDialog$,
   connectCustomConnectorAuthorizationWithDialog$,

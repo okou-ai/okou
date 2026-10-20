@@ -116,10 +116,10 @@ async function createRunForAgent(
 function requireConnectedAccountId(
   connector: Awaited<ReturnType<typeof connectors.setCustomConnectorValues>>,
 ): string {
-  if (!connector.connectedAccountId) {
+  if (!connector.connectionId) {
     throw new Error("Expected a connected Custom connector account");
   }
-  return connector.connectedAccountId;
+  return connector.connectionId;
 }
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -198,7 +198,6 @@ describe("GET /api/mcp-connectors", () => {
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
           runtimeAvailable: true,
-          connected: true,
           connectionStatus: "connected",
           setupStatus: "complete",
           missingRequiredFields: [],
@@ -261,7 +260,6 @@ describe("GET /api/mcp-connectors", () => {
             transport: "streamable-http",
             endpoint: "https://selected-mcp.example.test/server",
             runtimeAvailable: false,
-            connected: false,
             connectionStatus: "reconnect-required",
             setupStatus: "invalid",
             missingRequiredFields: ["secret"],
@@ -299,7 +297,6 @@ describe("GET /api/mcp-connectors", () => {
           transport: "streamable-http",
           endpoint: "https://selected-mcp.example.test/server",
           runtimeAvailable: true,
-          connected: true,
           connectionStatus: "connected",
           setupStatus: "complete",
           missingRequiredFields: [],
@@ -356,7 +353,6 @@ describe("GET /api/mcp-connectors", () => {
           transport: body.transport,
           endpoint: body.endpoint,
           runtimeAvailable: true,
-          connected: true,
           connectionStatus: "reconnect-required",
           setupStatus: "invalid",
           missingRequiredFields: [],
@@ -417,7 +413,6 @@ describe("GET /api/mcp-connectors", () => {
         expect.objectContaining({
           target: { kind: "custom", customConnectorId: selected.id },
           runtimeAvailable: false,
-          connected: false,
         }),
       ]);
     });
@@ -757,7 +752,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       expect.objectContaining({
         target: { kind: "custom", customConnectorId: connector.id },
         runtimeAvailable: true,
-        connected: true,
       }),
     ]);
 

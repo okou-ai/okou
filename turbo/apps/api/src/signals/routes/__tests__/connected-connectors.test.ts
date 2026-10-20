@@ -317,7 +317,7 @@ test("returns only saved connector briefs, independently of account defaults and
   await accept(
     accounts.rename({
       headers,
-      params: { connectionId: second.body.id },
+      params: { connectionId: second.body.connectionId },
       body: { target, displayName: "Work" },
     }),
     [200],
@@ -325,7 +325,7 @@ test("returns only saved connector briefs, independently of account defaults and
   await accept(
     accounts.setDefault({
       headers,
-      params: { connectionId: second.body.id },
+      params: { connectionId: second.body.connectionId },
       body: { target },
     }),
     [200],
@@ -348,7 +348,7 @@ test("returns only saved connector briefs, independently of account defaults and
   await accept(
     accounts.delete({
       headers,
-      params: { connectionId: first.body.id },
+      params: { connectionId: first.body.connectionId },
       body: { target },
     }),
     [200],
@@ -359,7 +359,7 @@ test("returns only saved connector briefs, independently of account defaults and
   await accept(
     accounts.delete({
       headers,
-      params: { connectionId: second.body.id },
+      params: { connectionId: second.body.connectionId },
       body: { target },
     }),
     [200],

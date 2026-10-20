@@ -1,7 +1,7 @@
 import { readManagementInput } from "../../../lib/management-input";
 import { customConnectorMetadata } from "../management";
 
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import chalk from "chalk";
 import { Command } from "commander";
 

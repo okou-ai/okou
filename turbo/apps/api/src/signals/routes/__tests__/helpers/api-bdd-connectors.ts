@@ -2236,6 +2236,25 @@ export function createConnectorBddApi(context: TestContext) {
       return response.body.connections;
     },
 
+    async readBuiltinConnectorAccount(
+      actor: ApiTestUser,
+      connectorSlug: ConnectorSlug,
+      connectionId: string,
+    ): Promise<ConnectorAccountConnection> {
+      const client = setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      );
+      const response = await accept(
+        client.connection({
+          headers: authenticate(actor),
+          params: { connectionId },
+          query: { kind: "builtin", connectorSlug },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
     async setDefaultBuiltinConnectorAccount(
       actor: ApiTestUser,
       connectorSlug: ConnectorSlug,
@@ -2370,7 +2389,12 @@ export function createConnectorBddApi(context: TestContext) {
         { statuses: [200], agentId, authorizeAgent: true, account },
       );
       expectStatus(response, 200);
-      return response.body;
+      const accountMetadata = await api.readBuiltinConnectorAccount(
+        actor,
+        connectorSlug,
+        response.body.connectionId,
+      );
+      return { ...accountMetadata, slug: connectorSlug };
     },
 
     async requestOauthStart(
@@ -2650,7 +2674,16 @@ export function createConnectorBddApi(context: TestContext) {
       connectorSlug: ConnectorSlug,
       sessionId: string,
       sessionToken: string,
-    ): Promise<BuiltinConnectorOauthDeviceAuthSessionPollResponse> {
+    ): Promise<
+      | Exclude<
+          BuiltinConnectorOauthDeviceAuthSessionPollResponse,
+          { status: "complete" }
+        >
+      | (Extract<
+          BuiltinConnectorOauthDeviceAuthSessionPollResponse,
+          { status: "complete" }
+        > & { account: ConnectorAccountConnection })
+    > {
       const response = await api.requestDeviceAuthPoll(
         actor,
         connectorSlug,
@@ -2659,6 +2692,16 @@ export function createConnectorBddApi(context: TestContext) {
         [200],
       );
       expectStatus(response, 200);
+      if (response.body.status === "complete") {
+        return {
+          ...response.body,
+          account: await api.readBuiltinConnectorAccount(
+            actor,
+            connectorSlug,
+            response.body.connectionId,
+          ),
+        };
+      }
       return response.body;
     },
 
@@ -2732,7 +2775,11 @@ export function createConnectorBddApi(context: TestContext) {
         readonly sessionToken: string;
         readonly code: string;
       },
-    ): Promise<BuiltinConnectorExternalCodeSessionCompleteResponse> {
+    ): Promise<
+      BuiltinConnectorExternalCodeSessionCompleteResponse & {
+        account: ConnectorAccountConnection;
+      }
+    > {
       const response = await api.requestExternalCodeComplete(
         actor,
         connectorSlug,
@@ -2740,7 +2787,14 @@ export function createConnectorBddApi(context: TestContext) {
         [200],
       );
       expectStatus(response, 200);
-      return response.body;
+      return {
+        ...response.body,
+        account: await api.readBuiltinConnectorAccount(
+          actor,
+          connectorSlug,
+          response.body.connectionId,
+        ),
+      };
     },
 
     async updateFeatureSwitches(
@@ -3023,7 +3077,7 @@ export function createConnectorBddApi(context: TestContext) {
       connectorId: string,
       values: readonly CustomConnectorValueInput[],
       account?: ConnectorAccountMutationIntent,
-    ): Promise<CustomConnectorResponse> {
+    ): Promise<CustomConnectorResponse & { connectionId: string }> {
       const response = await api.requestSetCustomConnectorValues(
         actor,
         connectorId,

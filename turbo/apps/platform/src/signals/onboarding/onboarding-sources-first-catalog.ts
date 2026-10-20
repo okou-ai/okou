@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { onboardingSourcesReaderContract as onboardingSourcesContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboarding";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import {

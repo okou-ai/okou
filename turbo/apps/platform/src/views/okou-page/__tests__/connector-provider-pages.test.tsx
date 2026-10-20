@@ -1,8 +1,8 @@
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import {

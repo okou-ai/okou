@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
+import { connectorCompletedOperationResponseSchema } from "./connector-schemas";
 import { connectorAccountMutationIntentSchema } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
 
@@ -174,13 +175,17 @@ const customConnectorResponseBaseSchema = z.object({
     .optional(),
   skillMarkdown: customConnectorSkillMarkdownSchema.nullable().optional(),
   storageVersion: z.number().int().positive(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+/** Integration-owned status for managed Feishu/Lark, never ordinary account defaults. */
+export const customConnectorManagedStatusSchema = z.object({
   connected: z.boolean(),
   connectedAccountId: z.uuid().optional(),
   connectedAccountUpdatedAt: z.string().optional(),
   missingRequiredFields: z.array(z.string()),
   configuredFieldKeys: z.array(z.string()),
-  createdAt: z.string(),
-  updatedAt: z.string(),
 });
 
 type CustomConnectorNonOAuthAuthResponse<
@@ -214,7 +219,9 @@ const customConnectorCustomOAuthResponseSchema = z
   .object({
     authMode: z.literal("oauth"),
     oauthSetup: z.never().optional(),
-    oauthConfig: customConnectorOAuthConfigSchema,
+    oauthConfig: customConnectorOAuthConfigSchema.extend({
+      providerAdapter: z.literal("standard"),
+    }),
   })
   .transform((value) => {
     return {
@@ -222,6 +229,15 @@ const customConnectorCustomOAuthResponseSchema = z
       oauthConfig: value.oauthConfig,
     };
   });
+
+const customConnectorManagedOAuthResponseSchema = z.object({
+  authMode: z.literal("oauth"),
+  oauthSetup: z.never().optional(),
+  oauthConfig: customConnectorOAuthConfigSchema.extend({
+    providerAdapter: z.literal("feishu"),
+  }),
+  ...customConnectorManagedStatusSchema.shape,
+});
 
 const customConnectorAutomaticResponseSchema = z
   .object({
@@ -237,6 +253,7 @@ export const customConnectorHttpAuthResponseSchema = z.union([
   customConnectorNoAuthResponseSchema,
   customConnectorManualAuthResponseSchema,
   customConnectorCustomOAuthResponseSchema,
+  customConnectorManagedOAuthResponseSchema,
 ]);
 
 export const customConnectorHttpResponseCoreSchema =
@@ -264,6 +281,7 @@ export const customConnectorMcpAuthResponseSchema = z.union([
   customConnectorNoAuthResponseSchema,
   customConnectorManualAuthResponseSchema,
   customConnectorCustomOAuthResponseSchema,
+  customConnectorManagedOAuthResponseSchema,
   customConnectorAutomaticResponseSchema,
 ]);
 export const customConnectorMcpResponseSchema = z.intersection(
@@ -282,6 +300,22 @@ export type CustomConnectorResponse = z.infer<
   typeof customConnectorResponseSchema
 >;
 
+export type IntegrationManagedCustomConnectorResponse =
+  CustomConnectorResponse &
+    z.infer<typeof customConnectorManagedStatusSchema> & {
+      readonly oauthConfig: CustomConnectorOAuthConfig & {
+        readonly providerAdapter: "feishu";
+      };
+    };
+
+export function isIntegrationManagedCustomConnector(
+  connector: CustomConnectorResponse,
+): connector is IntegrationManagedCustomConnectorResponse;
+export function isIntegrationManagedCustomConnector(connector: {
+  readonly oauthConfig?: {
+    readonly providerAdapter: CustomConnectorOAuthProviderAdapter;
+  } | null;
+}): boolean;
 export function isIntegrationManagedCustomConnector(connector: {
   readonly oauthConfig?: {
     readonly providerAdapter: CustomConnectorOAuthProviderAdapter;
@@ -526,30 +560,18 @@ const startCustomConnectorOAuth2AuthorizationResponseSchema = z.object({
   oauthAttemptId: z.uuid(),
 });
 
-// Optional operation IDs cover current/rollback APIs until #41309's API/client/Runner gates.
 const startCustomConnectorOAuth2ConnectedResponseSchema = z.object({
   result: z.literal("connected"),
   connector: customConnectorResponseSchema,
-  connectedAccountId: z.uuid(),
-  connectionId: z.uuid().optional(),
+  connectionId: z.uuid(),
 });
 
-export const startCustomConnectorOAuth2ResponseSchema = z.preprocess(
-  (value) => {
-    if (
-      typeof value === "object" &&
-      value !== null &&
-      !("result" in value) &&
-      "authorizationUrl" in value
-    ) {
-      return { ...value, result: "authorization" };
-    }
-    return value;
-  },
-  z.discriminatedUnion("result", [
+export const startCustomConnectorOAuth2ResponseSchema = z.discriminatedUnion(
+  "result",
+  [
     startCustomConnectorOAuth2AuthorizationResponseSchema,
     startCustomConnectorOAuth2ConnectedResponseSchema,
-  ]),
+  ],
 );
 
 export const customConnectorValueInputSchema = z.object({
@@ -569,14 +591,8 @@ export type SetCustomConnectorValuesBody = z.infer<
   typeof setCustomConnectorValuesBodySchema
 >;
 
-// Optional operation IDs cover current/rollback APIs until #41309's API/client/Runner gates.
-const connectedAccountResponseShape = {
-  connectedAccountId: z.uuid().optional(),
-  connectionId: z.uuid().optional(),
-};
-
 export const setCustomConnectorValuesResponseSchema =
-  customConnectorResponseSchema.and(z.object(connectedAccountResponseShape));
+  customConnectorResponseSchema.and(connectorCompletedOperationResponseSchema);
 
 export const customConnectorProposalSchema = z.object({
   operation: z.enum(["create", "update"]),
@@ -601,7 +617,6 @@ export type SaveCustomConnectorProposalBody = z.infer<
   typeof saveCustomConnectorProposalBodySchema
 >;
 
-// Optional operation IDs cover current/rollback APIs until #41309's API/client/Runner gates.
 export const saveCustomConnectorProposalResponseSchema = z.object({
   connector: customConnectorResponseSchema,
   connectionId: z.uuid().optional(),

@@ -6,14 +6,14 @@ import {
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogPermissionDetail,
+  PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 
 import {
   CAPABILITY_AGENT_ID,

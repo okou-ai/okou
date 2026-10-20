@@ -1,8 +1,8 @@
-import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-  customConnectorsReaderContract as customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+  CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
+  customConnectorOAuth2Contract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 

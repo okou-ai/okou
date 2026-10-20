@@ -4,7 +4,10 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Command, InvalidArgumentError, Option } from "commander";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   listConnectorCatalog,
   listCustomConnectors,
@@ -139,8 +142,14 @@ export function customConnectorMetadata(connector: CustomConnectorResponse) {
         return value !== null;
       }),
     permissionBundleRef: connector.permissionBundleRef ?? null,
-    connected: connector.connected,
-    connectedAccountId: connector.connectedAccountId ?? null,
+    ...(isIntegrationManagedCustomConnector(connector)
+      ? {
+          connected: connector.connected,
+          connectedAccountId: connector.connectedAccountId ?? null,
+          configuredFieldKeys: connector.configuredFieldKeys,
+          missingRequiredFields: connector.missingRequiredFields,
+        }
+      : {}),
     fields: connector.fields.map((field) => {
       return {
         key: field.key,
@@ -148,8 +157,6 @@ export function customConnectorMetadata(connector: CustomConnectorResponse) {
         required: field.required,
       };
     }),
-    configuredFieldKeys: connector.configuredFieldKeys,
-    missingRequiredFields: connector.missingRequiredFields,
     storageVersion: connector.storageVersion,
     createdAt: connector.createdAt,
     updatedAt: connector.updatedAt,

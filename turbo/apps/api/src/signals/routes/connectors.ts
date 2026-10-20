@@ -344,7 +344,7 @@ const connectManualGrantBuiltinConnectorInner$ = command(
 
     return {
       status: 200 as const,
-      body: { ...result.connector, connectionId: result.connector.id },
+      body: { connectionId: result.connector.id },
     };
   },
 );
@@ -427,7 +427,7 @@ const connectNoAuthBuiltinConnectorInner$ = command(
 
     return {
       status: 200 as const,
-      body: { ...result.connector, connectionId: result.connector.id },
+      body: { connectionId: result.connector.id },
     };
   },
 );

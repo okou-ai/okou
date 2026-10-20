@@ -905,8 +905,6 @@ export {
   type PublicConnectorCatalogDetail,
   type PublicConnectorCatalogDetailResponse,
   type PublicConnectorCatalogDiscoveryResponse,
-  type PublicConnectorCatalogConnection,
-  type PublicConnectorCatalogConnectionStatus,
   type PublicConnectorCatalogItem,
   type PublicConnectorCatalogIcon,
   type PublicConnectorCatalogListResponse,

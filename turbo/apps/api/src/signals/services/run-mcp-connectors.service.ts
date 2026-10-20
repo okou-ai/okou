@@ -20,8 +20,17 @@ import { currentCustomConnectorStoredValues } from "./custom-connector-credentia
 import { connectorAccountsByIds } from "./connector-account-lifecycle.service";
 import {
   normaliseCustomConnectorRow,
-  serialiseCustomConnector,
+  customConnectorIsConnected,
+  customConnectorMissingRequiredFieldKeys,
 } from "./custom-connector.service";
+
+type McpRuntimeConnector = Omit<
+  McpConnector,
+  | "connectionStatus"
+  | "setupStatus"
+  | "missingRequiredFields"
+  | "configuredFieldKeys"
+>;
 
 interface RunMcpConnectorScope {
   readonly orgId: string;
@@ -33,7 +42,7 @@ interface RunMcpConnectorScope {
 
 function builtinMcpConnectors(
   scope$: Computed<Promise<RunMcpConnectorScope>>,
-): Computed<Promise<readonly McpConnector[]>> {
+): Computed<Promise<readonly McpRuntimeConnector[]>> {
   const admitted$ = computed(async (get) => {
     const args = await get(scope$);
     const sourceIds = args.builtinConnectorSourceIds ?? {};
@@ -92,7 +101,7 @@ function builtinMcpConnectors(
     const admitted = await get(admitted$);
     // An admitted account whose connector left the catalog is omitted below,
     // as if it had never been authorized.
-    return admitted.flatMap((row): McpConnector[] => {
+    return admitted.flatMap((row): McpRuntimeConnector[] => {
       const connector = getConnectorRuntimeConnector(snapshot, row.slug);
       const mcp = connector?.catalogConnector.mcp;
       const runtimeMethod = connector?.methods.get(row.authMethod);
@@ -128,7 +137,6 @@ function builtinMcpConnectors(
           transport: mcp.transport,
           endpoint: mcp.endpoint,
           runtimeAvailable,
-          connected: runtimeAvailable,
         },
       ];
     });
@@ -160,7 +168,7 @@ function runMcpAccountMetadata(
 }
 
 function withAccountMetadata(
-  connector: McpConnector,
+  connector: McpRuntimeConnector,
   account: ConnectorAccountConnection | undefined,
 ): McpConnector {
   // A successful exact-ID read can establish deletion. Keep the Run's
@@ -268,7 +276,7 @@ export function runMcpConnectorList(
   return computed(async (get): Promise<readonly McpConnector[]> => {
     const builtin = await get(builtin$);
     const accounts = await get(enrich$);
-    const enrich = (connector: McpConnector): McpConnector => {
+    const enrich = (connector: McpRuntimeConnector): McpConnector => {
       return withAccountMetadata(
         connector,
         accounts.get(connector.connectionId),
@@ -281,7 +289,7 @@ export function runMcpConnectorList(
     }
     const rows = await get(customDefinitions$);
     const storage = await get(storage$);
-    const custom = rows.map(({ connector }): McpConnector => {
+    const custom = rows.map(({ connector }): McpRuntimeConnector => {
       const connectionId = memberConnectorIdsByCustomConnectorId.get(
         connector.id,
       );
@@ -305,28 +313,31 @@ export function runMcpConnectorList(
             ]
           : [];
       });
-      const response = serialiseCustomConnector({
-        row: normaliseCustomConnectorRow(connector),
-        valueMarkers,
+      const definition = normaliseCustomConnectorRow(connector);
+      if (definition.kind !== "mcp") {
+        throw new Error("Run MCP connector query returned a non-MCP connector");
+      }
+      const runtimeAvailable = customConnectorIsConnected({
+        row: definition,
         connectedAccountId:
           connector.authMode === "none"
             ? connectionId
             : access?.kind === "current" && access.connected
               ? access.memberConnectorId
               : null,
+        missingRequiredFields: customConnectorMissingRequiredFieldKeys({
+          fields: definition.fields,
+          markers: valueMarkers,
+        }),
       });
-      if (response.kind !== "mcp") {
-        throw new Error("Run MCP connector query returned a non-MCP connector");
-      }
       return {
-        target: { kind: "custom", customConnectorId: response.id },
+        target: { kind: "custom", customConnectorId: definition.id },
         connectionId,
-        slug: response.slug,
-        displayName: response.displayName,
-        transport: response.transport,
-        endpoint: response.endpoint,
-        runtimeAvailable: response.connected,
-        connected: response.connected,
+        slug: definition.slug,
+        displayName: definition.displayName,
+        transport: definition.transport,
+        endpoint: definition.endpoint,
+        runtimeAvailable,
       };
     });
     return [...builtin, ...custom].map(enrich);

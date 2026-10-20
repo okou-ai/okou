@@ -71,7 +71,7 @@ async function completeSession(
   if (completed.status !== "complete") {
     throw new Error(`Expected completed device session: ${completed.status}`);
   }
-  expect(completed.connector.connectionStatus).toBe("connected");
+  expect(completed.account.connectionStatus).toBe("connected");
   const serialized = JSON.stringify(completed);
   expect(serialized).not.toContain(session.sessionToken);
   expect(serialized).not.toContain("test-device-access:");
@@ -120,10 +120,10 @@ describe("Builtin device-auth owned-session reads", () => {
     ).resolves.toStrictEqual([]);
 
     const completed = await completeSession(actor, session);
-    expect(completed.connector.authMethod).toBe("oauth");
+    expect(completed.account.authMethod).toBe("oauth");
     await expect(
       connectorsApi.readConnectorBySlug(actor, "test-oauth-device"),
-    ).resolves.toMatchObject({ id: completed.connector.id });
+    ).resolves.toMatchObject({ id: completed.connectionId });
 
     for (const candidate of rejectionCases) {
       await expectMissingSession(
@@ -134,7 +134,7 @@ describe("Builtin device-auth owned-session reads", () => {
       );
     }
     await expect(completeSession(actor, session)).resolves.toMatchObject({
-      connector: { id: completed.connector.id, authMethod: "oauth" },
+      connector: { id: completed.connectionId, authMethod: "oauth" },
     });
   });
 
@@ -170,14 +170,14 @@ describe("Builtin device-auth owned-session reads", () => {
 
     const apiCompleted = await completeSession(actor, api);
     const oauthCompleted = await completeSession(actor, oauth);
-    expect(apiCompleted.connector.authMethod).toBe("api");
-    expect(oauthCompleted.connector.authMethod).toBe("oauth");
-    expect(apiCompleted.connector.id).not.toBe(oauthCompleted.connector.id);
+    expect(apiCompleted.account.authMethod).toBe("api");
+    expect(oauthCompleted.account.authMethod).toBe("oauth");
+    expect(apiCompleted.connectionId).not.toBe(oauthCompleted.connectionId);
     await expect(completeSession(actor, api)).resolves.toMatchObject({
-      connector: { id: apiCompleted.connector.id, authMethod: "api" },
+      connector: { id: apiCompleted.connectionId, authMethod: "api" },
     });
     await expect(completeSession(actor, oauth)).resolves.toMatchObject({
-      connector: { id: oauthCompleted.connector.id, authMethod: "oauth" },
+      connector: { id: oauthCompleted.connectionId, authMethod: "oauth" },
     });
     const accounts = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
@@ -190,7 +190,7 @@ describe("Builtin device-auth owned-session reads", () => {
         })
         .sort(),
     ).toStrictEqual(
-      [apiCompleted.connector.id, oauthCompleted.connector.id].sort(),
+      [apiCompleted.connectionId, oauthCompleted.connectionId].sort(),
     );
     await expectMissingSession(
       actor,

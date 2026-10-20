@@ -1,37 +1,18 @@
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { z } from "zod";
 import {
-  connectorCatalogReaderContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  publicConnectorCatalogStatusItemSchema,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import {
+  customConnectorHttpResponseSchema,
+  customConnectorMcpResponseSchema,
   isIntegrationManagedCustomConnector,
+  type CustomConnectorHttpResponse,
+  type CustomConnectorMcpResponse,
+  type CustomConnectorResponse,
   type CustomConnectorOAuthConfig,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  customConnectorReaderResponseSchema,
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
-
-type CustomConnectorHttpResponse = Extract<
-  CustomConnectorResponse,
-  { kind: "http" }
->;
-type CustomConnectorMcpResponse = Extract<
-  CustomConnectorResponse,
-  { kind: "mcp" }
->;
-
-const catalogMetadataSchema =
-  connectorCatalogReaderContract.get.responses[200].shape.connector.omit({
-    connected: true,
-    connection: true,
-    connectionStatus: true,
-    setupStatus: true,
-    scopeMismatch: true,
-    authMethodSupportsRefresh: true,
-    tokenExpiresAt: true,
-  });
 
 /** Account scenarios stay outside catalog/definition HTTP response fixtures. */
 const accounts = new WeakMap<object, ConnectorAccountConnection>();
@@ -119,7 +100,7 @@ function accountBase() {
 export function catalogFixture(
   input: PublicConnectorCatalogStatusItem & BuiltinFixtureAccount,
 ): PublicConnectorCatalogStatusItem {
-  const metadata = catalogMetadataSchema.parse(input);
+  const metadata = publicConnectorCatalogStatusItemSchema.parse(input);
   if (input.connection || input.connected) {
     accounts.set(metadata, {
       ...accountBase(),
@@ -173,10 +154,7 @@ const customFixtureAccountSchema = z.object({
 export function httpConnectorFixture(
   input: unknown,
 ): CustomConnectorHttpResponse {
-  const definition = customDefinitionFixture(input);
-  if (definition.kind !== "http") {
-    throw new Error("Expected an HTTP connector fixture");
-  }
+  const definition = customConnectorHttpResponseSchema.parse(input);
   rememberCustomAccount(definition, customFixtureAccountSchema.parse(input));
   return definition;
 }
@@ -184,26 +162,7 @@ export function httpConnectorFixture(
 export function mcpConnectorFixture(
   input: unknown,
 ): CustomConnectorMcpResponse {
-  const definition = customDefinitionFixture(input);
-  if (definition.kind !== "mcp") {
-    throw new Error("Expected an MCP connector fixture");
-  }
+  const definition = customConnectorMcpResponseSchema.parse(input);
   rememberCustomAccount(definition, customFixtureAccountSchema.parse(input));
   return definition;
-}
-
-function customDefinitionFixture(input: unknown): CustomConnectorResponse {
-  const definition = customConnectorReaderResponseSchema.parse(input);
-  if (isIntegrationManagedCustomConnector(definition)) {
-    return definition;
-  }
-  const {
-    connected: _connected,
-    connectedAccountId: _connectedAccountId,
-    connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
-    missingRequiredFields: _missingRequiredFields,
-    configuredFieldKeys: _configuredFieldKeys,
-    ...metadata
-  } = definition;
-  return metadata;
 }

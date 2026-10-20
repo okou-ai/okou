@@ -380,7 +380,7 @@ describe("builtin Automatic account and consent ownership", () => {
     if (connected.body.result !== "connected") {
       throw new Error("Expected immediate no-auth connection");
     }
-    const accountId = connected.body.connectedAccountId;
+    const accountId = connected.body.connectionId;
     for (const actor of [
       { userId: `user_${randomUUID()}`, orgId: f.orgId },
       { userId: f.userId, orgId: `org_${randomUUID()}` },

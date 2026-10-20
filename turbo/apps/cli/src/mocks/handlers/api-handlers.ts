@@ -34,6 +34,7 @@ function authCodeMethod(): PublicConnectorCatalogAuthMethodDetail {
     label: "OAuth",
     description: "Sign in to grant access.",
     grantKind: "auth-code",
+    supportsRefresh: true,
     manualFields: [],
     startOptions: [],
   };
@@ -47,6 +48,7 @@ function manualMethod(
     label: "API Token",
     description: "Enter API credentials.",
     grantKind: "manual",
+    supportsRefresh: false,
     manualFields: fields,
     startOptions: [],
   };
@@ -72,12 +74,6 @@ function defaultPublicCatalogStatusItem(args: {
     tags: [...(args.tags ?? [])],
     authMethods: [...(args.authMethods ?? [authCodeMethod()])],
     permissionSummary: defaultPermissionSummary(),
-    connection: null,
-    connected: false,
-    connectionStatus: "not-connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: null,
     connectNotice: null,
   };
@@ -184,6 +180,7 @@ function defaultPublicCatalog(): PublicConnectorCatalogItem[] {
           label: authMethod.label,
           description: authMethod.description,
           grantKind: authMethod.grantKind,
+          supportsRefresh: true,
         };
       }),
       permissionSummary: item.permissionSummary,

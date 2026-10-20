@@ -141,7 +141,7 @@ describe("builtin MCP account surfaces", () => {
       }),
       [200],
     );
-    const connectionId = connected.body.id;
+    const connectionId = connected.body.connectionId;
     createdAccounts.push(connectionId);
     const list = await accept(
       setupApp({ context, routes })(builtinConnectorsMainContract).list({
@@ -346,7 +346,7 @@ describe("builtin MCP account surfaces", () => {
       }),
       [200],
     );
-    const connectionId = connected.body.id;
+    const connectionId = connected.body.connectionId;
     createdAccounts.push(connectionId);
     const selection = { target, connectionId };
     const threads = setupApp({ context, routes: chatThreadRoutes })(

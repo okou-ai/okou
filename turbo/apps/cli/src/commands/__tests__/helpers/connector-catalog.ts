@@ -1,5 +1,3 @@
-import { http, HttpResponse } from "msw";
-import type { PublicConnectorCatalogStatusReaderItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogAuthMethodSummary,
@@ -8,6 +6,34 @@ import type {
   PublicConnectorCatalogPermissionDetail,
   PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { http, HttpResponse } from "msw";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
+
+export interface CatalogFixtureAccount {
+  readonly connection?:
+    | (Partial<Pick<ConnectorAccountConnection, "id">> &
+        Pick<
+          ConnectorAccountConnection,
+          | "authMethod"
+          | "externalUsername"
+          | "externalEmail"
+          | "reconnectReason"
+        >)
+    | null;
+  readonly connectionStatus?:
+    "connected" | "not-connected" | "scope-mismatch" | "reconnect-required";
+  readonly connected?: boolean;
+  readonly scopeMismatch?: boolean;
+  readonly authMethodSupportsRefresh?: boolean;
+  readonly tokenExpiresAt?: string | null;
+}
+const catalogFixtureAccounts = new WeakMap<
+  PublicConnectorCatalogStatusItem,
+  CatalogFixtureAccount
+>();
+export function catalogFixtureAccount(item: PublicConnectorCatalogStatusItem) {
+  return catalogFixtureAccounts.get(item);
+}
 
 function permissionSummary(): PublicConnectorCatalogStatusItem["permissionSummary"] {
   return {
@@ -42,6 +68,7 @@ export function manualAuthMethod(
     label: id,
     description: null,
     grantKind: "manual",
+    supportsRefresh: false,
     manualFields: [...fields],
     startOptions: [],
   };
@@ -55,6 +82,7 @@ export function authCodeMethod(
     label: id,
     description: null,
     grantKind: "auth-code",
+    supportsRefresh: true,
     manualFields: [],
     startOptions: [],
   };
@@ -68,6 +96,7 @@ function authMethodSummary(
     label: method.label,
     description: method.description,
     grantKind: method.grantKind,
+    supportsRefresh: method.supportsRefresh,
   };
 }
 
@@ -94,14 +123,12 @@ export function catalogItem(
 }
 
 export function catalogStatusItem(
-  overrides: Partial<PublicConnectorCatalogStatusItem> & {
-    readonly connectorSlug: string;
-  },
+  overrides: Partial<PublicConnectorCatalogStatusItem> &
+    CatalogFixtureAccount & {
+      readonly connectorSlug: string;
+    },
 ): PublicConnectorCatalogStatusItem {
-  const connection = overrides.connection ?? null;
-  const connectionStatus =
-    overrides.connectionStatus ?? (connection ? "connected" : "not-connected");
-  return {
+  const item: PublicConnectorCatalogStatusItem = {
     slug: overrides.connectorSlug,
     label: overrides.label ?? overrides.connectorSlug,
     description:
@@ -115,16 +142,11 @@ export function catalogStatusItem(
     tags: overrides.tags ?? [],
     authMethods: overrides.authMethods ?? [],
     permissionSummary: overrides.permissionSummary ?? permissionSummary(),
-    connection,
-    connected: overrides.connected ?? connection !== null,
-    connectionStatus,
-    scopeMismatch:
-      overrides.scopeMismatch ?? connectionStatus === "scope-mismatch",
-    authMethodSupportsRefresh: overrides.authMethodSupportsRefresh ?? false,
-    tokenExpiresAt: overrides.tokenExpiresAt ?? null,
     singleAuthCodeAuthMethodId: overrides.singleAuthCodeAuthMethodId ?? null,
     connectNotice: overrides.connectNotice ?? null,
   };
+  catalogFixtureAccounts.set(item, overrides);
+  return item;
 }
 
 export function catalogPermissionDetail(
@@ -160,7 +182,7 @@ export function stubConnectorCatalog(
 }
 
 export function stubConnectorCatalogDetail(
-  connectors: readonly PublicConnectorCatalogStatusReaderItem[],
+  connectors: readonly PublicConnectorCatalogStatusItem[],
   origin = "http://localhost:3000",
 ) {
   return http.get(

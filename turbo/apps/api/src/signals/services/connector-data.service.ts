@@ -64,10 +64,7 @@ import {
   resolveStoredBuiltinConnectorRuntimeMethod,
   type BuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-access.service";
-import {
-  connectorAccountsByIds,
-  prepareConnectorAccountDeletionWithTargetLocked,
-} from "./connector-account-lifecycle.service";
+import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import {
   connectorAccountResolutionReadPlan,
   connectorAccountResolutionsFromRows,
@@ -75,7 +72,6 @@ import {
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import { reconcileConnectorAccountState } from "./connector-account-state.service";
-import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import { searchExternalConnectorCatalog } from "./connector-catalog-external-reader.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
@@ -617,15 +613,11 @@ async function encryptManualGrantSecrets(
   return encryptedSecrets;
 }
 
-interface BuiltinConnectorListState {
-  readonly response: BuiltinConnectorListResponse;
-  readonly catalogConnections: readonly ConnectorCatalogConnection[];
-}
-function builtinConnectorListState(args: {
+export function builtinConnectorList(args: {
   readonly orgId: string;
   readonly userId: string;
-}): Computed<Promise<BuiltinConnectorListState>> {
-  return computed(async (get): Promise<BuiltinConnectorListState> => {
+}): Computed<Promise<BuiltinConnectorListResponse>> {
+  return computed(async (get): Promise<BuiltinConnectorListResponse> => {
     const db = get(db$);
     const storedRows = await db
       .select({
@@ -686,64 +678,12 @@ function builtinConnectorListState(args: {
             snapshot,
           );
     return {
-      response: {
-        connectors: storedConnectors.map((connector) => {
-          return connector.response;
-        }),
-        connectorProvidedBindings,
-      },
-      catalogConnections: storedConnectors.map((connector) => {
-        return {
-          response: connector.response,
-          oauthRequestedScopes: connector.oauthRequestedScopes,
-        };
+      connectors: storedConnectors.map((connector) => {
+        return connector.response;
       }),
+      connectorProvidedBindings,
     };
   });
-}
-
-export function builtinConnectorList(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<BuiltinConnectorListResponse>> {
-  return computed(async (get): Promise<BuiltinConnectorListResponse> => {
-    return (await get(builtinConnectorListState(args))).response;
-  });
-}
-
-export function builtinConnectorCatalogConnectionList(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<readonly ConnectorCatalogConnection[]>> {
-  const list$ = builtinConnectorListState(args);
-  // Catalog completion belongs to its visible default accounts. Reuse the
-  // exact-account setup projection without loading account summaries or counts.
-  const accountScope$ = computed(async (get) => {
-    const list = await get(list$);
-    return {
-      ...args,
-      connectionIds: list.catalogConnections.map((connection) => {
-        return connection.response.id;
-      }),
-    };
-  });
-  const accounts$ = connectorAccountsByIds(accountScope$);
-  return computed(
-    async (get): Promise<readonly ConnectorCatalogConnection[]> => {
-      const [list, accounts] = await Promise.all([get(list$), get(accounts$)]);
-      const byId = new Map(
-        accounts.map((account) => {
-          return [account.id, account];
-        }),
-      );
-      return list.catalogConnections.map((connection) => {
-        return {
-          ...connection,
-          setupStatus: byId.get(connection.response.id)?.setupStatus,
-        };
-      });
-    },
-  );
 }
 
 function builtinConnectorProvidedBindingsForStoredConnectors(

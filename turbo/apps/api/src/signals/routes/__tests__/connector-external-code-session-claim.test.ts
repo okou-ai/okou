@@ -137,9 +137,9 @@ async function expectReplay(
   );
   expect(replay).toMatchObject({
     status: "complete",
-    connector: {
+    account: {
       id: connectionId,
-      slug: "aws",
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       connectionStatus: "connected",
     },
@@ -181,10 +181,10 @@ describe("external-code session claim ownership", () => {
       );
     });
     await run(expectConnectorChanged);
-    expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+    expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
     const expected = [
-      { id: defaultAccount.connector.id, isDefault: true },
-      { id: siblingAccount.connector.id, isDefault: false },
+      { id: defaultAccount.connectionId, isDefault: true },
+      { id: siblingAccount.connectionId, isDefault: false },
     ];
     await run(() => {
       return expectAccounts(actor, expected);
@@ -192,7 +192,7 @@ describe("external-code session claim ownership", () => {
     const reconnect = await run(() => {
       return connectors.startExternalCode(actor, "aws", "cli", {
         intent: "reconnect",
-        connectionId: siblingAccount.connector.id,
+        connectionId: siblingAccount.connectionId,
       });
     });
 
@@ -203,7 +203,7 @@ describe("external-code session claim ownership", () => {
       return expectAccounts(actor, expected);
     });
     await run(() => {
-      return expectDefault(actor, defaultAccount.connector.id);
+      return expectDefault(actor, defaultAccount.connectionId);
     });
     const retried = await run(() => {
       return connectors.completeExternalCode(
@@ -215,22 +215,22 @@ describe("external-code session claim ownership", () => {
     await run(expectConnectorChanged);
     expect(retried).toMatchObject({
       status: "complete",
-      connector: {
-        id: siblingAccount.connector.id,
-        slug: "aws",
+      account: {
+        id: siblingAccount.connectionId,
+        target: { kind: "builtin", connectorSlug: "aws" },
         authMethod: "cli",
         connectionStatus: "connected",
       },
     });
     expectNoSecrets(retried, reconnect.sessionToken);
     await run(() => {
-      return expectReplay(actor, reconnect, siblingAccount.connector.id);
+      return expectReplay(actor, reconnect, siblingAccount.connectionId);
     });
     await run(() => {
       return expectAccounts(actor, expected);
     });
     await run(() => {
-      return expectDefault(actor, defaultAccount.connector.id);
+      return expectDefault(actor, defaultAccount.connectionId);
     });
   });
 
@@ -325,19 +325,19 @@ describe("external-code session claim ownership", () => {
     await run(expectConnectorChanged);
     expect(completed).toMatchObject({
       status: "complete",
-      connector: {
-        slug: "aws",
+      account: {
+        target: { kind: "builtin", connectorSlug: "aws" },
         authMethod: "cli",
         connectionStatus: "connected",
       },
     });
     expectNoSecrets(completed, session.sessionToken);
     await run(() => {
-      return expectReplay(actor, session, completed.connector.id);
+      return expectReplay(actor, session, completed.connectionId);
     });
     await run(() => {
       return expectAccounts(actor, [
-        { id: completed.connector.id, isDefault: true },
+        { id: completed.connectionId, isDefault: true },
       ]);
     });
   });

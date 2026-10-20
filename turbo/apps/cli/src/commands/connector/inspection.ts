@@ -1,5 +1,5 @@
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 
 export function connectorInspectionType(
   target: ConnectorAccountTarget,

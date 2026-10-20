@@ -17,22 +17,22 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-  connectorCatalogReaderContract as connectorCatalogContract,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  type PublicConnectorCatalogStatusItem,
+  connectorCatalogContract,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  type CreateCustomConnectorBody,
+  type CustomConnectorHttpResponse,
+  type CustomConnectorMcpResponse,
+  customConnectorByIdContract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  type CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
-  type CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
-  customConnectorByIdReaderContract as customConnectorByIdContract,
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-  customConnectorsReaderContract as customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, within } from "@testing-library/react";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";

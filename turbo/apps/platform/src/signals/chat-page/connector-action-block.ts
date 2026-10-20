@@ -15,11 +15,9 @@ import {
   customConnectorSlugSchema,
   isIntegrationManagedCustomConnector,
   type CustomConnectorSlug,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import {
   connectorCatalogItemBySlug,

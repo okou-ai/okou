@@ -6,6 +6,7 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { http, HttpResponse } from "msw";
+import { catalogFixtureAccount } from "./connector-catalog";
 import type { PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   isIntegrationManagedCustomConnector,
@@ -124,42 +125,22 @@ export function catalogAccountConnections(
   connectors: readonly PublicConnectorCatalogStatusItem[],
 ): readonly ConnectorAccountConnection[] {
   return connectors.flatMap((connector) => {
-    if (!connector.connection) return [];
+    const fixture = catalogFixtureAccount(connector);
+    if (!fixture?.connection) return [];
     const target = { kind: "builtin", connectorSlug: connector.slug } as const;
     return [
       connectorAccount(target, {
-        id: connector.connection.id ?? crypto.randomUUID(),
-        authMethod: connector.connection.authMethod,
-        externalUsername: connector.connection.externalUsername,
-        externalEmail: connector.connection.externalEmail,
+        id: fixture.connection.id ?? crypto.randomUUID(),
+        authMethod: fixture.connection.authMethod,
+        externalUsername: fixture.connection.externalUsername,
+        externalEmail: fixture.connection.externalEmail,
         connectionStatus:
-          connector.connectionStatus === "reconnect-required"
+          fixture.connectionStatus === "reconnect-required"
             ? "reconnect-required"
             : "connected",
-        reconnectReason: connector.connection.reconnectReason,
-        scopeMismatch: connector.scopeMismatch,
-        tokenExpiresAt: connector.tokenExpiresAt,
-      }),
-    ];
-  });
-}
-
-export function customAccountConnections(
-  connectors: readonly CustomConnectorResponse[],
-): readonly ConnectorAccountConnection[] {
-  return connectors.flatMap((connector) => {
-    if (
-      isIntegrationManagedCustomConnector(connector) ||
-      !connector.connectedAccountId
-    )
-      return [];
-    const target = { kind: "custom", customConnectorId: connector.id } as const;
-    return [
-      connectorAccount(target, {
-        id: connector.connectedAccountId,
-        authMethod: connector.authMode,
-        externalId: null,
-        externalUsername: null,
+        reconnectReason: fixture.connection.reconnectReason,
+        scopeMismatch: fixture.scopeMismatch ?? false,
+        tokenExpiresAt: fixture.tokenExpiresAt ?? null,
       }),
     ];
   });

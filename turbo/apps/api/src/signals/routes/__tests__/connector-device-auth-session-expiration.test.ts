@@ -40,7 +40,7 @@ async function completeSession(
   if (completed.status !== "complete") {
     throw new Error(`Expected completed device session: ${completed.status}`);
   }
-  expect(completed.connector).toMatchObject({
+  expect(completed.account).toMatchObject({
     authMethod: "oauth",
     connectionStatus: "connected",
   });
@@ -99,10 +99,10 @@ describe("Builtin device-auth session expiration", () => {
         "oauth",
       );
       const siblingAccount = await completeSession(actor, siblingSession);
-      expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
       const expected = accountIdentities([
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
 
       mockTestOAuthDeviceConnectorProvider({
@@ -115,7 +115,7 @@ describe("Builtin device-auth session expiration", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       expect(reconnect.expiresIn).toBe(60);
       const deadline = startedAt + reconnect.expiresIn * 1000;
@@ -139,17 +139,17 @@ describe("Builtin device-auth session expiration", () => {
       expect(accountIdentities(afterExpiration)).toStrictEqual(expected);
       await expect(
         connectors.readConnectorBySlug(actor, "test-oauth-device"),
-      ).resolves.toMatchObject({ id: defaultAccount.connector.id });
+      ).resolves.toMatchObject({ id: defaultAccount.connectionId });
 
       const recovery = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       await expect(completeSession(actor, recovery)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connector: { id: siblingAccount.connectionId },
       });
       await expectExpiredSession(actor, reconnect);
       const afterRecovery = await connectors.listBuiltinConnectorAccounts(
@@ -159,7 +159,7 @@ describe("Builtin device-auth session expiration", () => {
       expect(accountIdentities(afterRecovery)).toStrictEqual(expected);
       await expect(
         connectors.readConnectorBySlug(actor, "test-oauth-device"),
-      ).resolves.toMatchObject({ id: defaultAccount.connector.id });
+      ).resolves.toMatchObject({ id: defaultAccount.connectionId });
     });
   });
 

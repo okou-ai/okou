@@ -121,10 +121,6 @@ describe("Custom connector no-auth contracts", () => {
       queryInjections: [],
       authMode: "none",
       storageVersion: 1,
-      connected: true,
-      connectedAccountId: "44444444-4444-4444-8444-444444444444",
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     } as const;
@@ -184,10 +180,6 @@ describe("Custom connector Automatic auth contracts", () => {
       queryInjections: [],
       authMode: "automatic",
       storageVersion: 1,
-      connected: true,
-      connectedAccountId: "44444444-4444-4444-8444-444444444444",
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
       kind: "mcp",
@@ -207,19 +199,9 @@ describe("Custom connector Automatic auth contracts", () => {
     ).toMatchObject({ result: "authorization" });
     expect(
       startCustomConnectorOAuth2ResponseSchema.parse({
-        authorizationUrl: "https://issuer.example.com/authorize",
-        oauthAttemptId: "44444444-4444-4444-8444-444444444444",
-      }),
-    ).toStrictEqual({
-      result: "authorization",
-      authorizationUrl: "https://issuer.example.com/authorize",
-      oauthAttemptId: "44444444-4444-4444-8444-444444444444",
-    });
-    expect(
-      startCustomConnectorOAuth2ResponseSchema.parse({
         result: "connected",
         connector,
-        connectedAccountId: "44444444-4444-4444-8444-444444444444",
+        connectionId: "44444444-4444-4444-8444-444444444444",
       }),
     ).toMatchObject({ result: "connected" });
   });

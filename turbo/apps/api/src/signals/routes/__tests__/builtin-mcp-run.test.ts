@@ -59,7 +59,7 @@ async function connectPublic(actor: ApiTestUser, agentId: string) {
     }),
     [200],
   );
-  return response.body.id;
+  return response.body.connectionId;
 }
 
 describe("builtin MCP Run admission", () => {
@@ -201,13 +201,11 @@ describe("builtin MCP Run admission", () => {
           target: { kind: "builtin", connectorSlug: "manual-mcp" },
           connectionId: admittedAccount.id,
           runtimeAvailable: true,
-          connected: true,
         }),
         expect.objectContaining({
           target: { kind: "builtin", connectorSlug: "public-mcp" },
           connectionId: publicAccountId,
           runtimeAvailable: true,
-          connected: true,
         }),
       ]),
     );

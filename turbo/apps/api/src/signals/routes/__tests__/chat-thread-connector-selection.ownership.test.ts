@@ -61,7 +61,7 @@ describe("chat-thread connector account ownership", () => {
       definition.id,
       [{ key: "secret", kind: "secret", value: "ownership-custom-key" }],
     );
-    if (!custom.connectedAccountId) {
+    if (!custom.connectionId) {
       throw new Error("Expected the API-created custom connector account");
     }
     await connectors.updateAgentCustomConnectors(owner, agent.agentId, [
@@ -92,7 +92,7 @@ describe("chat-thread connector account ownership", () => {
     };
     const requested = [
       { connectionId: builtin.id, target: builtinTarget },
-      { connectionId: custom.connectedAccountId, target: customTarget },
+      { connectionId: custom.connectionId, target: customTarget },
     ];
     const createBody = {
       agentId: agent.agentId,
@@ -135,7 +135,7 @@ describe("chat-thread connector account ownership", () => {
       { connectionId: sameOrg.id, target: builtinTarget },
       { connectionId: sameUser.id, target: builtinTarget },
       { connectionId: builtin.id, target: customTarget },
-      { connectionId: custom.connectedAccountId, target: builtinTarget },
+      { connectionId: custom.connectionId, target: builtinTarget },
     ];
     const mismatch = {
       error: {
@@ -239,11 +239,9 @@ describe("chat-thread connector account ownership", () => {
     expect(deleted.body.deletedConnectionId).toBe(builtin.id);
     const remaining = await accept(selections.get({ headers, params }), [200]);
     expect(remaining.body).toStrictEqual({
-      selections: [
-        { connectionId: custom.connectedAccountId, target: customTarget },
-      ],
+      selections: [{ connectionId: custom.connectionId, target: customTarget }],
       selectedConnections: accountResponses.filter((account) => {
-        return account.id === custom.connectedAccountId;
+        return account.id === custom.connectionId;
       }),
     });
   });

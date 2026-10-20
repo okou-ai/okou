@@ -69,8 +69,8 @@ async function completeSession(
   );
   expect(completed).toMatchObject({
     status: "complete",
-    connector: {
-      slug: "aws",
+    account: {
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       connectionStatus: "connected",
     },
@@ -122,7 +122,7 @@ describe("Builtin external-code completed replay", () => {
         "cli",
       );
       const siblingAccount = await completeSession(actor, siblingSession);
-      expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
 
       mockNow(startedAt + siblingSession.expiresIn * 1000 + 1);
       const reconnect = await connectors.startExternalCode(
@@ -131,16 +131,16 @@ describe("Builtin external-code completed replay", () => {
         "cli",
         {
           intent: "reconnect",
-          connectionId: siblingAccount.connector.id,
+          connectionId: siblingAccount.connectionId,
         },
       );
       const reconnected = await completeSession(actor, reconnect);
-      expect(reconnected.connector.id).toBe(siblingAccount.connector.id);
-      expect(reconnected.connector.updatedAt).not.toBe(
-        siblingAccount.connector.updatedAt,
+      expect(reconnected.connectionId).toBe(siblingAccount.connectionId);
+      expect(reconnected.account.updatedAt).not.toBe(
+        siblingAccount.account.updatedAt,
       );
-      expect(reconnected.connector.tokenExpiresAt).not.toBe(
-        siblingAccount.connector.tokenExpiresAt,
+      expect(reconnected.account.tokenExpiresAt).not.toBe(
+        siblingAccount.account.tokenExpiresAt,
       );
       server.use(
         http.post("https://us-east-1.signin.aws.amazon.com/v1/token", () => {
@@ -154,13 +154,13 @@ describe("Builtin external-code completed replay", () => {
         completeSession(actor, siblingSession),
       ).resolves.toStrictEqual(reconnected);
       await expectAccounts(actor, [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
       await expect(
         connectors.readConnectorBySlug(actor, "aws"),
       ).resolves.toMatchObject({
-        id: defaultAccount.connector.id,
+        id: defaultAccount.connectionId,
       });
     });
   });
@@ -183,11 +183,11 @@ describe("Builtin external-code completed replay", () => {
         "cli",
       );
       const siblingAccount = await completeSession(actor, siblingSession);
-      expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "aws",
-        siblingAccount.connector.id,
+        siblingAccount.connectionId,
       );
 
       const replay = await connectors.requestExternalCodeComplete(
@@ -199,12 +199,12 @@ describe("Builtin external-code completed replay", () => {
       expect(replay.body).toStrictEqual({ error: "Internal server error" });
       expectNoSecrets(replay.body, siblingSession.sessionToken);
       await expectAccounts(actor, [
-        { id: defaultAccount.connector.id, isDefault: true },
+        { id: defaultAccount.connectionId, isDefault: true },
       ]);
       await expect(
         connectors.readConnectorBySlug(actor, "aws"),
       ).resolves.toMatchObject({
-        id: defaultAccount.connector.id,
+        id: defaultAccount.connectionId,
       });
     });
   });
@@ -266,12 +266,12 @@ describe("Builtin external-code completed replay", () => {
       });
       expectNoSecrets(replay.body, started.body.sessionToken);
       await expectAccounts(actor, [
-        { id: completed.connector.id, isDefault: true },
+        { id: completed.connectionId, isDefault: true },
       ]);
       await expect(
         connectors.readConnectorBySlug(actor, "aws"),
       ).resolves.toMatchObject({
-        id: completed.connector.id,
+        id: completed.connectionId,
       });
       const agents = await bdd.listAgents(actor);
       expect(

@@ -14,11 +14,20 @@ import {
 import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
-  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
+  type CustomConnectorHttpResponse,
+  type CustomConnectorMcpResponse,
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   connectorAccountTargetKey,
@@ -30,19 +39,8 @@ import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
-  type CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
-  type CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-  customConnectorsReaderContract as customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
 
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 

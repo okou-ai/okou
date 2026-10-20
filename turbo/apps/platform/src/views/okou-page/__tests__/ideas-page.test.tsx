@@ -1,10 +1,10 @@
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-  type PublicConnectorCatalogStatusReaderResponse as PublicConnectorCatalogStatusResponse,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+  type PublicConnectorCatalogStatusResponse,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

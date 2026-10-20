@@ -66,8 +66,8 @@ async function completeSession(
   );
   expect(completed).toMatchObject({
     status: "complete",
-    connector: {
-      slug: "aws",
+    account: {
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       connectionStatus: "connected",
     },
@@ -181,10 +181,10 @@ describe("Builtin external-code claimed completion", () => {
         { intent: "add" },
       );
       const siblingAccount = await completeSession(actor, siblingSession);
-      expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
       const expected = [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ];
       const reconnect = await connectors.startExternalCode(
         actor,
@@ -192,7 +192,7 @@ describe("Builtin external-code claimed completion", () => {
         "cli",
         {
           intent: "reconnect",
-          connectionId: siblingAccount.connector.id,
+          connectionId: siblingAccount.connectionId,
         },
       );
       const rejected = await connectors.requestExternalCodeComplete(
@@ -219,14 +219,14 @@ describe("Builtin external-code claimed completion", () => {
         await expectAccounts(actor, expected);
       }
       const completed = await completeSession(actor, reconnect);
-      expect(completed.connector.id).toBe(siblingAccount.connector.id);
+      expect(completed.connectionId).toBe(siblingAccount.connectionId);
       await expect(completeSession(actor, reconnect)).resolves.toStrictEqual(
         completed,
       );
       await expectAccounts(actor, expected);
       await expect(
         connectors.readConnectorBySlug(actor, "aws"),
-      ).resolves.toMatchObject({ id: defaultAccount.connector.id });
+      ).resolves.toMatchObject({ id: defaultAccount.connectionId });
     });
   });
 
@@ -272,7 +272,7 @@ describe("Builtin external-code claimed completion", () => {
       const recovery = await connectors.startExternalCode(actor, "aws", "cli");
       const completed = await completeSession(actor, recovery);
       await expectAccounts(actor, [
-        { id: completed.connector.id, isDefault: true },
+        { id: completed.connectionId, isDefault: true },
       ]);
       await expect(completeSession(actor, recovery)).resolves.toStrictEqual(
         completed,

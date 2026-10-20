@@ -6,17 +6,17 @@ import {
 } from "@okouai/core/google-workspace-conversion";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import type { ArtifactDetail } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  builtinConnectorOauthStartContract,
+  builtinConnectorsMainContract,
+} from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import {
-  builtinConnectorOauthStartContract,
-  builtinConnectorsMainContract,
-} from "@okouai/api-contracts/contracts/connectors";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import {
   userBuiltinConnectorsContract,

@@ -3,11 +3,13 @@ import {
   connectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-  onboardingSourcesReaderContract as onboardingSourcesContract,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/contracts/onboarding";
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  onboardingSourcesContract,
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+} from "@okouai/api-contracts/contracts/onboarding";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 
 import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";

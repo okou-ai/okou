@@ -11,7 +11,10 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
-import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
+import {
+  createConnectorBddApi,
+  manualHttpCustomConnectorCreateBody,
+} from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
@@ -32,6 +35,7 @@ const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
 const bdd = createBddApi(context);
 const runsApi = createRunsApi(context);
+const connectors = createConnectorBddApi(context);
 const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
 
@@ -941,7 +945,14 @@ describe("AGENT-01 and AGENT-02", () => {
       },
     );
     expect(listedConnector).toBeDefined();
-    expect(listedConnector?.connected).toBeTruthy();
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        connectionStatus: "connected",
+        setupStatus: "complete",
+      }),
+    ]);
     expect(JSON.stringify(builtinConnectorList)).not.toContain(
       "custom-connector-secret",
     );
@@ -985,10 +996,13 @@ describe("AGENT-01 and AGENT-02", () => {
     await api.deleteDefaultCustomConnectorAccount(admin, connector.id);
     const afterDisconnect = await api.listCustomConnectors(admin);
     expect(
-      afterDisconnect.connectors.find((candidate) => {
+      afterDisconnect.connectors.some((candidate) => {
         return candidate.id === connector.id;
-      })?.connected,
-    ).toBeFalsy();
+      }),
+    ).toBeTruthy();
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toStrictEqual([]);
     await api.deleteCustomConnector(admin, connector.id);
     const afterDelete = await api.listCustomConnectors(admin);
     expect(

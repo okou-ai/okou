@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorCatalogItem } from "../../lib/api/domains/connectors";
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";

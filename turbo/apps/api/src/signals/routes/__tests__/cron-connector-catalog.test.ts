@@ -1224,12 +1224,6 @@ describe("connector catalog valid lifecycle", () => {
     expect(status.body.connectors).toHaveLength(1);
     expect(status.body.connectors[0]).toMatchObject({
       slug: release.connectorSlug,
-      connected: false,
-      connection: null,
-      connectionStatus: "not-connected",
-      scopeMismatch: false,
-      authMethodSupportsRefresh: false,
-      tokenExpiresAt: null,
       singleAuthCodeAuthMethodId: null,
       connectNotice: null,
     });
@@ -1840,8 +1834,8 @@ describe("connector catalog valid lifecycle", () => {
       sessionToken: session.sessionToken,
       code: awsVerificationCode(session.authorizationUrl),
     });
-    expect(completed.connector).toMatchObject({
-      slug: "aws",
+    expect(completed.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       externalId: "123456789012",
       oauthScopes: ["openid"],

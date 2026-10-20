@@ -225,7 +225,7 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
         `Expected complete Stripe CLI auth, got ${polled.status}`,
       );
     }
-    expect(polled.connector.authMethod).toBe("cli");
+    expect(polled.account.authMethod).toBe("cli");
 
     const rejected = await accept(
       createStripeAutomationRequest(scenario),

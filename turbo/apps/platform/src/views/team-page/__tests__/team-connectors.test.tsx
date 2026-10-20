@@ -1,13 +1,13 @@
 import { connectorFixtureAccount } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
-import type { PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  customConnectorsReaderContract as customConnectorsContract,
-  customConnectorByIdReaderContract as customConnectorByIdContract,
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+  customConnectorsContract,
+  customConnectorByIdContract,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,

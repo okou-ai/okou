@@ -655,7 +655,7 @@ function completedDeviceAuthResponse(
 ): PollSuccess {
   return {
     status: 200,
-    body: { status: "complete", connector, connectionId: connector.id },
+    body: { status: "complete", connectionId: connector.id },
   };
 }
 

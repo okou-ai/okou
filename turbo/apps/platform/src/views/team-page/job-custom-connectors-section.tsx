@@ -9,11 +9,11 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   customConnectors$,

@@ -38,13 +38,13 @@ import type {
   ConnectorAccountSelection,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   BuiltinConnectorBrief,
   CustomConnectorBrief,
 } from "@okouai/api-contracts/contracts/connected-connectors";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type {
   UserTemplateCatalogEntry,
   UserTemplateKind,

@@ -8,11 +8,11 @@ import {
   getStartedContract,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
-import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  connectorCatalogContract,
+  isOneClickConnectorGrantKind,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
@@ -889,53 +889,27 @@ test("The connector intro closes and reopens with its content", async () => {
   await within(reopened).findByTestId("quest-connector-picker");
 });
 
-test.each(["current", "metadata-only"] as const)(
-  "The connector picker puts an existing healthy default in its connected group (%s API)",
-  async (api) => {
-    configureQuestPage(context, "admin");
-    const gmail = catalogItem("gmail", "Gmail", "auth-code", true);
-    context.mocks.data.connectors([
-      { ...requireConnectorFixtureAccount(gmail), slug: gmail.slug },
-    ]);
-    const items = [gmail, catalogItem("notion", "Notion", "auth-code")];
-    mockOneClickCatalog(items);
-    if (api === "current") {
-      const account = requireConnectorFixtureAccount(gmail);
-      context.mocks.api(connectorCatalogContract.oneClick, ({ respond }) => {
-        return respond(200, {
-          connectors: items.map((item) => {
-            const connected = item.slug === gmail.slug;
-            return {
-              ...connectorCatalogConnectItem(item),
-              connected,
-              connection: connected ? account : null,
-              connectionStatus: connected
-                ? ("connected" as const)
-                : ("not-connected" as const),
-              setupStatus: connected ? account.setupStatus : null,
-              scopeMismatch: false,
-              authMethodSupportsRefresh: true,
-              tokenExpiresAt: null,
-            };
-          }),
-        });
-      });
-    }
-    await setupPage({ context, path: questChatPath() });
+test("The connector picker puts an existing healthy default in its connected group", async () => {
+  configureQuestPage(context, "admin");
+  const gmail = catalogItem("gmail", "Gmail", "auth-code", true);
+  context.mocks.data.connectors([
+    { ...requireConnectorFixtureAccount(gmail), slug: gmail.slug },
+  ]);
+  mockOneClickCatalog([gmail, catalogItem("notion", "Notion", "auth-code")]);
+  await setupPage({ context, path: questChatPath() });
 
-    await openQuestPanel();
-    click(screen.getByTestId("get-started-quest-connector"));
-    const picker = await screen.findByTestId("quest-connector-picker");
-    const connected = within(picker).getByRole("region", {
-      name: "Connected",
-    });
-    expect(within(connected).getByText("Gmail")).toBeInTheDocument();
-    const disconnected = within(picker).getByRole("region", {
-      name: "Not connected",
-    });
-    expect(within(disconnected).getByText("Notion")).toBeInTheDocument();
-  },
-);
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const picker = await screen.findByTestId("quest-connector-picker");
+  const connected = within(picker).getByRole("region", {
+    name: "Connected",
+  });
+  expect(within(connected).getByText("Gmail")).toBeInTheDocument();
+  const disconnected = within(picker).getByRole("region", {
+    name: "Not connected",
+  });
+  expect(within(disconnected).getByText("Notion")).toBeInTheDocument();
+});
 
 test("The connector picker keeps valid tools when a saved target becomes unavailable", async () => {
   configureQuestPage(context, "admin");

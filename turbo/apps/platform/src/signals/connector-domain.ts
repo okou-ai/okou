@@ -2,11 +2,11 @@ import type {
   ConnectorAccountConnection,
   ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import type {
-  PublicConnectorCatalogConnectReaderItem as PublicConnectorCatalogConnectItem,
-  PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  PublicConnectorCatalogConnectItem,
+  PublicConnectorCatalogStatusItem,
+  PublicConnectorCatalogPermissionDetail,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 
 export type PlatformConnectorConnectionStatus =

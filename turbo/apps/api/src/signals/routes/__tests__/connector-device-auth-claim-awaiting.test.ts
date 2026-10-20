@@ -43,7 +43,7 @@ async function completeSession(
   if (completed.status !== "complete") {
     throw new Error(`Expected completed device session: ${completed.status}`);
   }
-  expect(completed.connector).toMatchObject({
+  expect(completed.account).toMatchObject({
     authMethod: "oauth",
     connectionStatus: "connected",
   });
@@ -129,10 +129,10 @@ describe("Builtin device-auth awaiting restoration", () => {
         "oauth",
       );
       const siblingAccount = await completeSession(actor, siblingSession);
-      expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
       const expected = accountIdentities([
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
       mockTestOAuthDeviceConnectorProvider({ interval: 2 });
       const reconnect = await connectors.startDeviceAuth(
@@ -140,7 +140,7 @@ describe("Builtin device-auth awaiting restoration", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       const poll = () => {
         return connectors.pollDeviceAuth(
@@ -197,7 +197,7 @@ describe("Builtin device-auth awaiting restoration", () => {
       await expectAccountIdentities(
         actor,
         expected,
-        defaultAccount.connector.id,
+        defaultAccount.connectionId,
       );
       mockTestOAuthDeviceConnectorProvider();
       mockNow(startedAt + 17_999);
@@ -207,14 +207,14 @@ describe("Builtin device-auth awaiting restoration", () => {
       });
       mockNow(startedAt + 18_000);
       const recovered = await completeSession(actor, reconnect);
-      expect(recovered.connector.id).toBe(siblingAccount.connector.id);
+      expect(recovered.connectionId).toBe(siblingAccount.connectionId);
       await expect(completeSession(actor, reconnect)).resolves.toStrictEqual(
         recovered,
       );
       await expectAccountIdentities(
         actor,
         expected,
-        defaultAccount.connector.id,
+        defaultAccount.connectionId,
       );
     });
   });
@@ -279,7 +279,7 @@ describe("Builtin device-auth awaiting restoration", () => {
           );
           expect(replacement.sessionId).not.toBe(old.sessionId);
           const completed = await completeSession(actor, replacement);
-          expect(completed.connector.oauthScopes).toStrictEqual([
+          expect(completed.account.oauthScopes).toStrictEqual([
             "read",
             "replacement",
           ]);
@@ -303,8 +303,8 @@ describe("Builtin device-auth awaiting restoration", () => {
           ).resolves.toStrictEqual(completed);
           await expectAccountIdentities(
             actor,
-            [{ id: completed.connector.id, isDefault: true }],
-            completed.connector.id,
+            [{ id: completed.connectionId, isDefault: true }],
+            completed.connectionId,
           );
         })().finally(() => {
           held.release();

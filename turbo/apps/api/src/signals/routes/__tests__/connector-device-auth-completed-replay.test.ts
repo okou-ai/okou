@@ -61,7 +61,7 @@ async function completeSession(
   if (completed.status !== "complete") {
     throw new Error(`Expected completed device session: ${completed.status}`);
   }
-  expect(completed.connector).toMatchObject({
+  expect(completed.account).toMatchObject({
     authMethod: "oauth",
     connectionStatus: "connected",
   });
@@ -119,19 +119,19 @@ describe("Builtin device-auth completed replay", () => {
         "oauth",
       );
       const sibling = await completeSession(actor, siblingSession);
-      expect(sibling.connector.id).not.toBe(defaultAccount.connector.id);
-      expect(sibling.connector.oauthScopes).toStrictEqual(["read", "write"]);
+      expect(sibling.connectionId).not.toBe(defaultAccount.connectionId);
+      expect(sibling.account.oauthScopes).toStrictEqual(["read", "write"]);
       mockTestOAuthDeviceConnectorProvider({ tokenScope: "read" });
       const reconnect = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: sibling.connector.id },
+        { intent: "reconnect", connectionId: sibling.connectionId },
       );
       const reconnected = await completeSession(actor, reconnect);
-      expect(reconnected.connector).toMatchObject({
-        id: sibling.connector.id,
+      expect(reconnected.account).toMatchObject({
+        id: sibling.connectionId,
         oauthScopes: ["read"],
       });
       mockNow(startedAt + siblingSession.expiresIn * 1000 + 1);
@@ -141,17 +141,17 @@ describe("Builtin device-auth completed replay", () => {
         }),
       );
       const replayed = await completeSession(actor, siblingSession);
-      expect(replayed.connector).toMatchObject({
-        id: sibling.connector.id,
+      expect(replayed.account).toMatchObject({
+        id: sibling.connectionId,
         oauthScopes: ["read"],
       });
       await expectAccounts(
         actor,
         [
-          { id: defaultAccount.connector.id, isDefault: true },
-          { id: sibling.connector.id, isDefault: false },
+          { id: defaultAccount.connectionId, isDefault: true },
+          { id: sibling.connectionId, isDefault: false },
         ],
-        defaultAccount.connector.id,
+        defaultAccount.connectionId,
       );
     });
   });
@@ -176,11 +176,11 @@ describe("Builtin device-auth completed replay", () => {
         "oauth",
       );
       const sibling = await completeSession(actor, siblingSession);
-      expect(sibling.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(sibling.connectionId).not.toBe(defaultAccount.connectionId);
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "test-oauth-device",
-        sibling.connector.id,
+        sibling.connectionId,
       );
       const replayed = await connectors.requestDeviceAuthPoll(
         actor,
@@ -193,8 +193,8 @@ describe("Builtin device-auth completed replay", () => {
       expectNoSecrets(replayed.body, siblingSession.sessionToken);
       await expectAccounts(
         actor,
-        [{ id: defaultAccount.connector.id, isDefault: true }],
-        defaultAccount.connector.id,
+        [{ id: defaultAccount.connectionId, isDefault: true }],
+        defaultAccount.connectionId,
       );
     });
   });
@@ -270,8 +270,8 @@ describe("Builtin device-auth completed replay", () => {
       expectNoSecrets(replayed.body, started.body.sessionToken);
       await expectAccounts(
         actor,
-        [{ id: completed.connector.id, isDefault: true }],
-        completed.connector.id,
+        [{ id: completed.connectionId, isDefault: true }],
+        completed.connectionId,
       );
       await expect(
         agents.readEnabledConnectorSlugs(actor, defaultAgent.agentId),

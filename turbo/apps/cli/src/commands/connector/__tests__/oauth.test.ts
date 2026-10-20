@@ -83,7 +83,7 @@ describe("connector oauth start", () => {
     },
   );
 
-  it.each([undefined, ID])(
+  it.each([ID])(
     "normalizes whitelisted custom automatic identity from connectionId %s",
     async (connectionId) => {
       const connector = customMcpConnector({
@@ -106,10 +106,8 @@ describe("connector oauth start", () => {
               connector: {
                 ...connector,
                 connected: true,
-                connectedAccountId: ID,
                 clientSecret: SECRET,
               },
-              connectedAccountId: ID,
               connectionId,
               password: SECRET,
             });
@@ -128,18 +126,23 @@ describe("connector oauth start", () => {
       ]);
       expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
         result: "connected",
-        connectedAccountId: ID,
         connectionId: ID,
       });
     },
   );
 
-  it("preserves the explicit builtin automatic account ID without changing its legacy identity", async () => {
+  it("preserves the explicit builtin automatic account ID as the canonical completion identity", async () => {
     server.use(
       stubConnectorCatalog([
         catalogStatusItem({
           connectorSlug: "github",
-          authMethods: [{ ...authCodeMethod("oauth"), grantKind: "automatic" }],
+          authMethods: [
+            {
+              ...authCodeMethod("oauth"),
+              grantKind: "automatic",
+              supportsRefresh: true,
+            },
+          ],
         }),
       ]),
       http.post(
@@ -147,7 +150,7 @@ describe("connector oauth start", () => {
         () => {
           return HttpResponse.json({
             result: "connected",
-            connectedAccountId: ID,
+
             connectionId: ID,
             accessToken: SECRET,
           });
@@ -165,7 +168,6 @@ describe("connector oauth start", () => {
     ]);
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
       result: "connected",
-      connectedAccountId: ID,
       connectionId: ID,
     });
   });

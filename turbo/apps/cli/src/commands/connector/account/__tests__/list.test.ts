@@ -24,6 +24,9 @@ function connectorAccount(
   overrides: Partial<ConnectorAccountConnection> = {},
 ): ConnectorAccountConnection {
   return {
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     id: FIRST_CONNECTION_ID,
     target: { kind: "builtin", connectorSlug: "github" },
     authMethod: "oauth",
@@ -496,6 +499,9 @@ describe("okou connector account list command", () => {
           isDefault: true,
           authMethod: "oauth",
           connectionStatus: "connected",
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
           reconnectReason: null,
         },
       ],

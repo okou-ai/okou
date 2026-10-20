@@ -10,19 +10,17 @@ import {
   type CreateCustomConnectorBody,
   type CustomConnectorValueInput,
   type UpdateCustomConnectorBody,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  customConnectorByIdReaderContract as customConnectorByIdContract,
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-  customConnectorsReaderContract as customConnectorsContract,
-  customConnectorReaderListResponseSchema as customConnectorListResponseSchema,
-  customConnectorReaderResponseSchema as customConnectorResponseSchema,
-  setCustomConnectorValuesReaderResponseSchema as setCustomConnectorValuesResponseSchema,
-  startCustomConnectorOAuth2ReaderResponseSchema as startCustomConnectorOAuth2ResponseSchema,
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorByIdContract,
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+  customConnectorListResponseSchema,
+  customConnectorResponseSchema,
+  setCustomConnectorValuesResponseSchema,
+  startCustomConnectorOAuth2ResponseSchema,
+  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrants,

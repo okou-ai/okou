@@ -182,7 +182,7 @@ async function connectAutomaticRuntime(args: {
     [200],
   );
   if (started.body.result === "connected") {
-    return started.body.connectedAccountId;
+    return started.body.connectionId;
   }
   const state = new URL(started.body.authorizationUrl).searchParams.get(
     "state",
@@ -5708,10 +5708,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await connectors.setDefaultBuiltinConnectorAccount(
             actor,
             "lark",
-            sibling.body.id,
+            sibling.body.connectionId,
           );
         expect(defaultAccount).toMatchObject({
-          id: sibling.body.id,
+          id: sibling.body.connectionId,
           isDefault: true,
         });
         const [exactRuntimeWithSibling] = await api.syncConnectorRuntime(
@@ -6307,7 +6307,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           customConnectorRuntimeRegistration(claim, automaticConnector.id),
         ).toMatchObject({
           baseUrlVars: {},
-          sourceId: automaticConnection.body.connectedAccountId,
+          sourceId: automaticConnection.body.connectionId,
         });
 
         const runtimeResults = await api.syncConnectorRuntime(run.runId, {
@@ -10088,7 +10088,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             { key: "subdomain", kind: "variable", value: longSubdomain },
           ],
         );
-        if (!recoveredConnection.connectedAccountId) {
+        if (!recoveredConnection.connectionId) {
           throw new Error("Expected the recovered custom connector account");
         }
 
@@ -10129,7 +10129,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [{ key: "subdomain", kind: "variable", value: "version-two" }],
           {
             intent: "reconnect",
-            connectionId: recoveredConnection.connectedAccountId,
+            connectionId: recoveredConnection.connectionId,
           },
         );
 

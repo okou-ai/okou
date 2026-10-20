@@ -1,5 +1,4 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import {
   isOneClickConnectorGrantKind,
@@ -7,8 +6,6 @@ import {
   type PublicConnectorCatalogAuthMethodSummary,
   type PublicConnectorCatalogConnectItem,
   type PublicConnectorCatalogConnectListResponse,
-  type PublicConnectorCatalogConnection,
-  type PublicConnectorCatalogConnectionStatus,
   type PublicConnectorCatalogDetail,
   type PublicConnectorCatalogDiscoveryResponse,
   type PublicConnectorCatalogIcon,
@@ -66,18 +63,12 @@ import {
   createConnectorPopularityIndex,
   isInternalConnector,
 } from "./connector-popularity";
-import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import {
   catalogIdentityFromCapture,
   type ConnectorCatalogRuntimeView,
   type ExternalCatalogIdentity,
 } from "./connector-catalog-view";
 const CONNECTOR_CATALOG_ICON_BASE_URL = "https://static.vm0.io/";
-
-interface PrivateAuthMethodFacts {
-  readonly requestedScopes: readonly string[];
-  readonly supportsRefresh: boolean;
-}
 
 export type AcceptedConnectorCatalogSnapshot = ConnectorCatalogRuntimeView;
 
@@ -156,20 +147,16 @@ interface ExternalCatalogConnectorReadArgs<
   readonly connectorSlug: string;
 }
 
-interface ExternalCatalogConnectorStatusReadArgs extends ExternalCatalogConnectorReadArgs {
-  readonly connections: readonly ConnectorCatalogConnection[];
-}
-
 interface ExternalCatalogSearchArgs extends ExternalCatalogReadArgs {
   readonly keyword: string | undefined;
 }
 
 interface ExternalCatalogStatusArgs extends ExternalCatalogReadArgs {
-  readonly connections: readonly ConnectorCatalogConnection[];
   readonly referenceConnectorSlugs: readonly string[];
 }
 
 interface ExternalCatalogDiscoveryArgs extends ExternalCatalogStatusArgs {
+  readonly savedConnectorSlugs: readonly string[];
   readonly keyword: string | undefined;
   readonly category: string | undefined;
 }
@@ -235,33 +222,6 @@ function identityKey(identity: ExternalCatalogIdentity): string {
     identity.catalogDigest,
     identity.capabilityDigest,
   ].join("\0");
-}
-
-function requestedScopes(
-  method: ConnectorCatalogAuthMethod,
-): readonly string[] {
-  switch (method.grant.kind) {
-    case "auth-code":
-    case "device-auth":
-    case "external-code": {
-      return method.grant.scopes;
-    }
-    case "manual":
-    case "none":
-    case "automatic":
-    case "openid-auth": {
-      return [];
-    }
-  }
-}
-
-function privateMethodFacts(
-  method: ConnectorCatalogAuthMethod,
-): PrivateAuthMethodFacts {
-  return {
-    requestedScopes: requestedScopes(method),
-    supportsRefresh: method.access.kind === "refresh-token",
-  };
 }
 
 async function measureCatalogLoad<T>(
@@ -747,90 +707,12 @@ export function listAcceptedConnectorCatalogAvailableSlugs(args: {
     .sort();
 }
 
-function connectionForCatalogStatus(
-  connector: BuiltinConnectorResponse | null,
-): PublicConnectorCatalogConnection | null {
-  if (!connector) {
-    return null;
-  }
-  return {
-    id: connector.id,
-    authMethod: connector.authMethod,
-    externalUsername: connector.externalUsername,
-    externalEmail: connector.externalEmail,
-    reconnectReason: connector.reconnectReason,
-  };
-}
-
-function hasRequestedScopes(
-  requested: readonly string[],
-  stored: readonly string[] | null,
-): boolean {
-  if (requested.length === 0) {
-    return true;
-  }
-  if (!stored) {
-    return false;
-  }
-  const storedScopes = new Set(stored);
-  return requested.every((scope) => {
-    return storedScopes.has(scope);
-  });
-}
-
-function hasCatalogScopeMismatch(args: {
-  readonly connector: BuiltinConnectorResponse | null;
-  readonly facts: PrivateAuthMethodFacts | undefined;
-  readonly storedRequestedScopes: readonly string[] | null;
-}): boolean {
-  if (args.connector === null || args.facts === undefined) {
-    return false;
-  }
-  return !hasRequestedScopes(
-    args.facts.requestedScopes,
-    args.storedRequestedScopes,
-  );
-}
-
-function connectionMethodForCatalogStatus(args: {
-  readonly effective: EffectiveConnector;
-  readonly featureStates: ConnectorFeatureStates;
-  readonly response: BuiltinConnectorResponse | null;
-}): ConnectorCatalogAuthMethod | undefined {
-  if (!args.response) {
-    return undefined;
-  }
-  const authMethodId = args.response.authMethod;
-  const effectiveMethod = args.effective.authMethods.find((method) => {
-    return method.id === authMethodId;
-  });
-  if (effectiveMethod) {
-    return effectiveMethod;
-  }
-  if (
-    !featureSwitchHidesAuthMethod(
-      args.effective.connector.slug,
-      authMethodId,
-      args.featureStates,
-    )
-  ) {
-    return undefined;
-  }
-  // Rollout replacements are unavailable for new connections, but existing
-  // connections still need to remain visible and manageable.
-  return args.effective.connector.authMethods.find((method) => {
-    return method.id === authMethodId;
-  });
-}
-
 interface ConnectorCatalogStatusItemArgs {
   readonly effective: EffectiveConnector;
-  readonly featureStates: ConnectorFeatureStates;
-  readonly connection: ConnectorCatalogConnection | null;
   readonly popularityIndex: ReadonlyMap<string, number>;
 }
 
-type ConnectorCatalogConnectionFields = Omit<
+type ConnectorCatalogConnectHints = Omit<
   PublicConnectorCatalogStatusItem,
   keyof PublicConnectorCatalogDetail
 >;
@@ -840,7 +722,7 @@ function connectorCatalogStatusItem(
 ): PublicConnectorCatalogStatusItem {
   return {
     ...connectorCatalogDetail(args.effective, args.popularityIndex),
-    ...connectorCatalogConnectionFields(args),
+    ...connectorCatalogConnectHints(args),
   };
 }
 
@@ -862,50 +744,16 @@ function connectorCatalogConnectItem(
     icon: iconForCatalog(args.effective.connector),
     ...(rank === Number.MAX_SAFE_INTEGER ? {} : { popularityRank: rank }),
     authMethods: args.effective.authMethods.map(authMethodDetailForCatalog),
-    ...connectorCatalogConnectionFields(args),
+    ...connectorCatalogConnectHints(args),
   };
 }
 
-function connectorCatalogConnectionFields(
+function connectorCatalogConnectHints(
   args: ConnectorCatalogStatusItemArgs,
-): ConnectorCatalogConnectionFields {
-  const response = args.connection?.response ?? null;
-  const connectionMethod = connectionMethodForCatalogStatus({
-    effective: args.effective,
-    featureStates: args.featureStates,
-    response,
-  });
-  const connector = connectionMethod ? response : null;
-  const facts = connectionMethod
-    ? privateMethodFacts(connectionMethod)
-    : undefined;
-  const scopeMismatch = hasCatalogScopeMismatch({
-    connector,
-    facts,
-    storedRequestedScopes: args.connection?.oauthRequestedScopes ?? null,
-  });
-  let connectionStatus: PublicConnectorCatalogConnectionStatus =
-    "not-connected";
-  if (connector !== null) {
-    connectionStatus =
-      connector.connectionStatus === "reconnect-required"
-        ? "reconnect-required"
-        : scopeMismatch
-          ? "scope-mismatch"
-          : "connected";
-  }
+): ConnectorCatalogConnectHints {
   const [singleMethod] = args.effective.authMethods;
 
   return {
-    connection: connectionForCatalogStatus(connector),
-    connected: connector !== null,
-    connectionStatus,
-    setupStatus:
-      connector === null ? null : (args.connection?.setupStatus ?? null),
-    scopeMismatch,
-    authMethodSupportsRefresh:
-      connector !== null && facts?.supportsRefresh === true,
-    tokenExpiresAt: connector?.tokenExpiresAt ?? null,
     singleAuthCodeAuthMethodId:
       args.effective.authMethods.length === 1 &&
       singleMethod?.grant.kind === "auth-code"
@@ -1040,7 +888,7 @@ function discoveryEffectiveConnectors(
   effective: readonly EffectiveConnector[],
   args: Pick<
     ExternalCatalogDiscoveryArgs,
-    "connections" | "keyword" | "category"
+    "keyword" | "category" | "savedConnectorSlugs"
   >,
 ): EffectiveConnector[] {
   if (args.keyword?.trim()) {
@@ -1056,18 +904,13 @@ function discoveryEffectiveConnectors(
     // count a claim the page cannot keep.
     return categoryEffectiveConnectors(effective, category);
   }
-  const connectedSlugs = new Set(
-    args.connections.map((connection) => {
-      return connection.response.slug;
-    }),
-  );
-  const connected = effective.filter((entry) => {
-    return connectedSlugs.has(entry.connector.slug);
-  });
+  const savedSlugs = new Set(args.savedConnectorSlugs);
   return [
-    ...connected,
+    ...effective.filter((entry) => {
+      return savedSlugs.has(entry.connector.slug);
+    }),
     ...browseEffectiveConnectors(effective).filter((entry) => {
-      return !connectedSlugs.has(entry.connector.slug);
+      return !savedSlugs.has(entry.connector.slug);
     }),
   ];
 }
@@ -1098,7 +941,7 @@ export async function searchExternalConnectorCatalog(
 }
 
 export function publicConnectorCatalogStatusFromSource(
-  args: ExternalCatalogConnectorStatusReadArgs,
+  args: ExternalCatalogConnectorReadArgs,
 ): PublicConnectorCatalogStatusItem | null {
   const effective = effectiveConnectors({
     catalog: args.catalog,
@@ -1110,13 +953,8 @@ export function publicConnectorCatalogStatusFromSource(
   if (!entry) {
     return null;
   }
-  const connection = args.connections.find((candidate) => {
-    return candidate.response.slug === args.connectorSlug;
-  });
   return connectorCatalogStatusItem({
     effective: entry,
-    featureStates: args.featureStates,
-    connection: connection ?? null,
     popularityIndex: createConnectorPopularityIndex(),
   });
 }
@@ -1127,7 +965,6 @@ export function publicConnectorCatalogStatusFromSource(
  */
 export function connectorCatalogConnectItemsFromSource(
   args: ExternalCatalogSourceArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
     readonly oneClickOnly: boolean;
   },
 ): PublicConnectorCatalogConnectListResponse {
@@ -1139,18 +976,11 @@ export function connectorCatalogConnectItemsFromSource(
       })
     );
   });
-  const connectionsBySlug = new Map(
-    args.connections.map((connection) => {
-      return [connection.response.slug, connection];
-    }),
-  );
   const popularityIndex = createConnectorPopularityIndex();
   return {
     connectors: effective.map((entry) => {
       return connectorCatalogConnectItem({
         effective: entry,
-        featureStates: args.featureStates,
-        connection: connectionsBySlug.get(entry.connector.slug) ?? null,
         popularityIndex,
       });
     }),
@@ -1189,8 +1019,6 @@ export async function listExternalPublicConnectorCatalogStatus(
   return connectorCatalogStatusRead({
     catalog,
     effective,
-    featureStates: args.featureStates,
-    connections: args.connections,
     referenceConnectorSlugs: args.referenceConnectorSlugs,
   });
 }
@@ -1210,8 +1038,6 @@ export async function discoverExternalPublicConnectorCatalogStatus(
   const read = connectorCatalogStatusRead({
     catalog,
     effective: discoveryEffectiveConnectors(effective, args),
-    featureStates: args.featureStates,
-    connections: args.connections,
     referenceConnectorSlugs: args.referenceConnectorSlugs,
   });
   return {
@@ -1227,21 +1053,12 @@ export async function discoverExternalPublicConnectorCatalogStatus(
 function connectorCatalogStatusRead(args: {
   readonly catalog: AcceptedDisplayCatalogSnapshot;
   readonly effective: readonly EffectiveConnector[];
-  readonly featureStates: ConnectorFeatureStates;
-  readonly connections: readonly ConnectorCatalogConnection[];
   readonly referenceConnectorSlugs: readonly string[];
 }): ConnectorCatalogStatusRead {
-  const connectionsBySlug = new Map(
-    args.connections.map((connection) => {
-      return [connection.response.slug, connection];
-    }),
-  );
   const popularityIndex = createConnectorPopularityIndex();
   const connectors = args.effective.map((entry) => {
     return connectorCatalogStatusItem({
       effective: entry,
-      featureStates: args.featureStates,
-      connection: connectionsBySlug.get(entry.connector.slug) ?? null,
       popularityIndex,
     });
   });

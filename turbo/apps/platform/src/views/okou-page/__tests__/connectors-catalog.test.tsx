@@ -1,11 +1,11 @@
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 
-import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { screen, waitFor, within } from "@testing-library/react";

@@ -236,7 +236,7 @@ describe("connector account contracts", () => {
     ).toBe(false);
   });
 
-  it("keeps scope mismatch enrichment optional on account lists", () => {
+  it("keeps builtin scope enrichment optional on canonical account lists", () => {
     const connection = {
       id: connectionId,
       target: { kind: "builtin" as const, connectorSlug: "github" },
@@ -248,6 +248,9 @@ describe("connector account contracts", () => {
       externalEmail: null,
       oauthScopes: ["repo"],
       connectionStatus: "connected" as const,
+      setupStatus: "complete" as const,
+      missingRequiredFields: [],
+      configuredFieldKeys: [],
       reconnectReason: null,
       tokenExpiresAt: null,
       createdAt: "2026-09-03T00:00:00.000Z",

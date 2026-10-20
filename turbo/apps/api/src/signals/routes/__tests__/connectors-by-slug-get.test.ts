@@ -66,7 +66,7 @@ async function connectOpenai(fixture: AuthenticatedFixture): Promise<string> {
     }),
     [200],
   );
-  const connectionId = response.body.id;
+  const connectionId = response.body.connectionId;
   onTestFinished(async () => {
     await deleteOpenai(fixture, connectionId, [200, 404]);
   });

@@ -3,9 +3,9 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-  customConnectorsReaderContract as customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+  customConnectorOAuth2Contract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 

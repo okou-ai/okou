@@ -259,6 +259,9 @@ describe("okou connector search command", () => {
         stubUserConnectors(AGENT_UUID, []),
         stubRunConnectorAccountInspection([
           {
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: [],
             kind: "available",
             target,
             connectionId: RUN_CONNECTION_ID,
@@ -611,6 +614,9 @@ describe("okou connector search command", () => {
           ]),
           stubRunConnectorAccountInspection([
             {
+              setupStatus: "complete",
+              missingRequiredFields: [],
+              configuredFieldKeys: [],
               kind: "available",
               connectionId: RUN_CONNECTION_ID,
               target: { kind: "builtin", connectorSlug: "github" },
@@ -767,6 +773,9 @@ describe("okou connector search command", () => {
         ]),
         stubRunConnectorAccountInspection([
           {
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: [],
             kind: "available",
             connectionId: RUN_CONNECTION_ID,
             target: { kind: "builtin", connectorSlug: "github" },
@@ -815,6 +824,9 @@ describe("okou connector search command", () => {
         stubCustomConnectors([definition]),
         stubRunConnectorAccountInspection([
           {
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: [],
             kind: "available",
             connectionId: RUN_CONNECTION_ID,
             target: { kind: "custom", customConnectorId: definition.id },
@@ -857,6 +869,9 @@ describe("okou connector search command", () => {
         ]),
         stubRunConnectorAccountInspection([
           {
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: [],
             kind: "available",
             connectionId: RUN_CONNECTION_ID,
             target: { kind: "builtin", connectorSlug: "google-sheets" },

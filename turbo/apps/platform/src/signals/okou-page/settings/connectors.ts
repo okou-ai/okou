@@ -19,15 +19,13 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
+  builtinConnectorAutomaticContract,
+  builtinConnectorAutomaticResponseSchema,
+  builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
-  builtinConnectorAutomaticReaderResponseSchema,
-  builtinConnectorExternalCodeSessionReaderContract as builtinConnectorExternalCodeSessionContract,
-  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
-  builtinConnectorOauthDeviceAuthSessionReaderContract as builtinConnectorOauthDeviceAuthSessionContract,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type {
   InitClientArgs,
@@ -36,7 +34,6 @@ import type {
 import type { BuiltinConnectorOauthDeviceAuthSessionPollResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
-  PublicConnectorCatalogConnectionStatus,
   PublicConnectorCatalogIcon,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -74,6 +71,7 @@ import {
 } from "./connector-directory-route.ts";
 import type {
   PlatformConnectorCatalogConnectItem,
+  PlatformConnectorConnectionStatus,
   PlatformConnectorAccountMutationIntent,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
@@ -389,7 +387,7 @@ function connectorTokenExpiresAtMs(
 export function builtinConnectorCurrentConnectionStatus(
   connector: PlatformConnectorCatalogConnectItem,
   nowMs = now(),
-): PublicConnectorCatalogConnectionStatus | "unavailable" {
+): PlatformConnectorConnectionStatus | "unavailable" {
   if (connector.connectionStatus === undefined) {
     return "unavailable";
   }
@@ -2494,7 +2492,7 @@ const startConnectorBrowserAuthorization$ = command(
       signal.throwIfAborted();
       return {
         ...result,
-        body: builtinConnectorAutomaticReaderResponseSchema.parse(result.body),
+        body: builtinConnectorAutomaticResponseSchema.parse(result.body),
       };
     }
     if (args.method.grantKind === "openid-auth") {

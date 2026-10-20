@@ -334,6 +334,9 @@ describe("okou connector check command", () => {
           ? []
           : [
               {
+                setupStatus: "complete",
+                missingRequiredFields: [],
+                configuredFieldKeys: [],
                 kind: "available",
                 target,
                 connectionId,

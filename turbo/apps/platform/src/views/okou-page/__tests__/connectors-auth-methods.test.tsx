@@ -4,14 +4,12 @@ import {
   builtinConnectorOauthStartContract,
   builtinConnectorOpenIdStartContract,
   builtinConnectorsMainContract,
+  builtinConnectorAutomaticContract,
+  builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
-  builtinConnectorExternalCodeSessionReaderContract as builtinConnectorExternalCodeSessionContract,
-  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
-  builtinConnectorOauthDeviceAuthSessionReaderContract as builtinConnectorOauthDeviceAuthSessionContract,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 
@@ -872,9 +870,7 @@ test.each(["canonical"])(
 );
 
 test.each([
-  ["device-auth", undefined],
   ["device-auth", "invalid"],
-  ["external-code", undefined],
   ["external-code", "invalid"],
 ] as const)(
   "Reject %s completion when account setup is %s",
@@ -971,9 +967,7 @@ test.each([
       click(within(dialog).getByTestId("connector-external-code-complete"));
     }
     await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-      setupStatus === undefined
-        ? "Connector account setup information is unavailable. Refresh and try again."
-        : "This account needs additional setup. Review its connector settings and try again.",
+      "This account needs additional setup. Review its connector settings and try again.",
     );
     expect(
       screen.queryByRole("dialog", { name: `Name your ${label} account` }),

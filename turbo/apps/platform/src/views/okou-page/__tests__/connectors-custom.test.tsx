@@ -16,21 +16,19 @@ import {
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import type {
-  CreateCustomConnectorBody,
-  UpdateCustomConnectorBody,
-} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  type CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
-  type CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
-  customConnectorHttpReaderResponseSchema as customConnectorHttpResponseSchema,
-  customConnectorMcpReaderResponseSchema as customConnectorMcpResponseSchema,
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
-  customConnectorByIdReaderContract as customConnectorByIdContract,
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-  customConnectorsReaderContract as customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+  type CreateCustomConnectorBody,
+  type UpdateCustomConnectorBody,
+  type CustomConnectorHttpResponse,
+  type CustomConnectorMcpResponse,
+  customConnectorHttpResponseSchema,
+  customConnectorMcpResponseSchema,
+  type CustomConnectorResponse,
+  customConnectorByIdContract,
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -184,12 +182,6 @@ function mockCustomAgentAccess(
 
 test.each([
   {
-    label: "an older API omits setup facts",
-    status: undefined,
-    message:
-      "Error: Connector account setup information is unavailable. Refresh and try again.",
-  },
-  {
     label: "required configuration is incomplete",
     status: "incomplete" as const,
     message:
@@ -226,8 +218,8 @@ test.each([
     context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
       account = customAccount(connector.id, connectionId, {
         setupStatus: status,
-        missingRequiredFields: status === undefined ? undefined : ["secret"],
-        configuredFieldKeys: status === undefined ? undefined : [],
+        missingRequiredFields: ["secret"],
+        configuredFieldKeys: [],
       });
       return respond(200, { ...connector, connectionId });
     });

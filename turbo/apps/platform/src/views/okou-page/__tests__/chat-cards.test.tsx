@@ -2,8 +2,8 @@ import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtur
 import { screen, waitFor, within } from "@testing-library/react";
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import { builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connector-operation-readers";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";

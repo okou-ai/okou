@@ -77,7 +77,9 @@ function stubAvailableConnectors(connectorSlugs: string[]) {
 
 describe("okou connector list command", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
-    throw new Error("process.exit called");
+    throw new Error(
+      `process.exit called: ${mockConsoleError.mock.calls.flat().join(" ")}`,
+    );
   }) as never);
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const mockConsoleError = vi

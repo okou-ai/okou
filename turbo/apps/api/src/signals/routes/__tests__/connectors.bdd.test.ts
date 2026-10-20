@@ -26,6 +26,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   customConnectorsContract,
+  customConnectorResponseSchema,
   type CreateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -815,11 +816,7 @@ describe("CONN-02: OAuth start and callback", () => {
       catalog.body.connectors.find((connector) => {
         return connector.slug === "datadog";
       }),
-    ).toMatchObject({
-      connected: true,
-      connectionStatus: "connected",
-      scopeMismatch: false,
-    });
+    ).toMatchObject({ slug: "datadog" });
   });
 });
 
@@ -881,8 +878,8 @@ describe("CONN-02: OAuth device authorization", () => {
     if (poll.status !== "complete") {
       throw new Error(`Expected complete device auth, received ${poll.status}`);
     }
-    expect(poll.connector).toMatchObject({
-      slug: "test-oauth-device",
+    expect(poll.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "test-oauth-device" },
       authMethod: "oauth",
       connectionStatus: "connected",
       oauthScopes: ["read", "provider-added"],
@@ -892,12 +889,12 @@ describe("CONN-02: OAuth device authorization", () => {
       actor,
       "test-oauth-device",
     );
-    expect(readBack.id).toBe(poll.connector.id);
+    expect(readBack.id).toBe(poll.connectionId);
 
     const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(
       builtinConnectorBySlug(listed.connectors, "test-oauth-device")?.id,
-    ).toBe(poll.connector.id);
+    ).toBe(poll.connectionId);
 
     mockTestOAuthDeviceConnectorProvider({ tokenScope: "" });
     const emptyReconnect = await connectorsApi.startDeviceAuth(
@@ -905,7 +902,7 @@ describe("CONN-02: OAuth device authorization", () => {
       "test-oauth-device",
       "oauth",
       undefined,
-      { intent: "reconnect", connectionId: poll.connector.id },
+      { intent: "reconnect", connectionId: poll.connectionId },
     );
     const emptyPoll = await connectorsApi.pollDeviceAuth(
       actor,
@@ -919,8 +916,8 @@ describe("CONN-02: OAuth device authorization", () => {
         `Expected explicit-empty device auth, received ${emptyPoll.status}`,
       );
     }
-    expect(emptyPoll.connector).toMatchObject({
-      id: poll.connector.id,
+    expect(emptyPoll.account).toMatchObject({
+      id: poll.connectionId,
       connectionStatus: "connected",
       oauthScopes: [],
     });
@@ -930,7 +927,7 @@ describe("CONN-02: OAuth device authorization", () => {
       "test-oauth-device",
       "oauth",
       undefined,
-      { intent: "reconnect", connectionId: poll.connector.id },
+      { intent: "reconnect", connectionId: poll.connectionId },
     );
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(
       actor,
@@ -995,7 +992,7 @@ describe("CONN-02: OAuth device authorization", () => {
       );
     }
 
-    expect(siblingPoll.connector.id).not.toBe(defaultPoll.connector.id);
+    expect(siblingPoll.connectionId).not.toBe(defaultPoll.connectionId);
     const accounts = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
       "test-oauth-device",
@@ -1003,11 +1000,11 @@ describe("CONN-02: OAuth device authorization", () => {
     expect(accounts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: defaultPoll.connector.id,
+          id: defaultPoll.connectionId,
           isDefault: true,
         }),
         expect.objectContaining({
-          id: siblingPoll.connector.id,
+          id: siblingPoll.connectionId,
           isDefault: false,
         }),
       ]),
@@ -1024,18 +1021,18 @@ describe("CONN-02: OAuth device authorization", () => {
         `Expected complete device auth replay, received ${rePoll.status}`,
       );
     }
-    expect(rePoll.connector.id).toBe(siblingPoll.connector.id);
+    expect(rePoll.connectionId).toBe(siblingPoll.connectionId);
     expect(provider.tokenBodies).toHaveLength(2);
 
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "test-oauth-device",
-      siblingPoll.connector.id,
+      siblingPoll.connectionId,
     );
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "test-oauth-device",
-      defaultPoll.connector.id,
+      defaultPoll.connectionId,
     );
     await connectorsApi.deleteFeatureSwitches(actor);
   });
@@ -1081,8 +1078,8 @@ describe("CONN-02: OAuth device authorization", () => {
         `Expected complete Stripe device auth, got ${poll.status}`,
       );
     }
-    expect(poll.connector).toMatchObject({
-      slug: "stripe",
+    expect(poll.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "stripe" },
       authMethod: "cli",
       externalId: "acct_bdd",
       externalUsername: "BDD Stripe",
@@ -1096,7 +1093,7 @@ describe("CONN-02: OAuth device authorization", () => {
 
     const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(builtinConnectorBySlug(listed.connectors, "stripe")?.id).toBe(
-      poll.connector.id,
+      poll.connectionId,
     );
     expect(listed.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
@@ -1315,7 +1312,7 @@ describe("CONN-02: OAuth device authorization", () => {
         `Expected complete api-method device auth, received ${apiPoll.status}`,
       );
     }
-    expect(apiPoll.connector.authMethod).toBe("api");
+    expect(apiPoll.account.authMethod).toBe("api");
     const apiTokenBody = provider.tokenBodies.find((body) => {
       return body.get("device_code")?.endsWith(":read:test");
     });
@@ -1340,8 +1337,8 @@ describe("CONN-02: OAuth device authorization", () => {
         `Expected complete oauth device auth, received ${completed.status}`,
       );
     }
-    expect(completed.connector).toMatchObject({
-      slug: "test-oauth-device",
+    expect(completed.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "test-oauth-device" },
       authMethod: "oauth",
       connectionStatus: "connected",
       oauthScopes: ["read", "granted"],
@@ -1352,11 +1349,11 @@ describe("CONN-02: OAuth device authorization", () => {
       actor,
       "test-oauth-device",
     );
-    expect(readBack.id).toBe(completed.connector.id);
+    expect(readBack.id).toBe(completed.connectionId);
     const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(
       builtinConnectorBySlug(listed.connectors, "test-oauth-device")?.id,
-    ).toBe(completed.connector.id);
+    ).toBe(completed.connectionId);
 
     const tokenCallsBeforeRePoll = provider.tokenBodies.length;
     const rePoll = await connectorsApi.pollDeviceAuth(
@@ -1371,7 +1368,7 @@ describe("CONN-02: OAuth device authorization", () => {
         `Expected idempotent complete device auth, received ${rePoll.status}`,
       );
     }
-    expect(rePoll.connector.id).toBe(completed.connector.id);
+    expect(rePoll.connectionId).toBe(completed.connectionId);
     expect(provider.tokenBodies).toHaveLength(tokenCallsBeforeRePoll);
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(
@@ -1700,7 +1697,7 @@ describe("CONN-02: OAuth device authorization", () => {
             `Expected reclaimed completion, received ${reclaimedPoll.status}`,
           );
         }
-        expect(reclaimedPoll.connector.oauthScopes).toStrictEqual([
+        expect(reclaimedPoll.account.oauthScopes).toStrictEqual([
           "read",
           "reclaimed",
         ]);
@@ -1721,7 +1718,7 @@ describe("CONN-02: OAuth device authorization", () => {
         );
         expect(accounts).toHaveLength(1);
         expect(accounts[0]).toMatchObject({
-          id: reclaimedPoll.connector.id,
+          id: reclaimedPoll.connectionId,
           oauthScopes: ["read", "reclaimed"],
         });
         expect(staleDeferred.calls()).toBe(1);
@@ -1796,7 +1793,7 @@ describe("CONN-02: OAuth device authorization", () => {
                 `Expected reclaimed completion, received ${reclaimedPoll.status}`,
               );
             }
-            expect(reclaimedPoll.connector.oauthScopes).toStrictEqual(["read"]);
+            expect(reclaimedPoll.account.oauthScopes).toStrictEqual(["read"]);
             await expect(
               connectorsApi.listBuiltinConnectorAccounts(
                 actor,
@@ -1804,7 +1801,7 @@ describe("CONN-02: OAuth device authorization", () => {
               ),
             ).resolves.toStrictEqual([
               expect.objectContaining({
-                id: reclaimedPoll.connector.id,
+                id: reclaimedPoll.connectionId,
                 oauthScopes: ["read"],
               }),
             ]);
@@ -1863,7 +1860,7 @@ describe("CONN-02: OAuth device authorization", () => {
             `Expected ${connectorSlug} completion, received ${completed.status}`,
           );
         }
-        return { connectorSlug, connector: completed.connector };
+        return { connectorSlug, connector: completed.account };
       }),
     );
     await Promise.all(
@@ -1884,7 +1881,7 @@ describe("CONN-02: OAuth device authorization", () => {
           ),
         ).resolves.toMatchObject({
           status: "complete",
-          connector: { id: connector.id },
+          connectionId: connector.id,
         });
       }),
     );
@@ -2137,6 +2134,66 @@ describe("CONN-02: external-code authorization", () => {
   });
 });
 
+/** Assert member readiness through canonical account reads, separately from definition metadata. */
+async function expectCustomAccountReadiness(
+  actor: ApiTestUser,
+  definition: unknown,
+  expected: {
+    readonly ready?: boolean;
+    readonly configuredFieldKeys?: unknown;
+    readonly missingRequiredFields?: unknown;
+    readonly connectionId?: unknown;
+    readonly updatedAt?: unknown;
+    readonly setupStatus?: "complete" | "incomplete" | "invalid";
+  },
+): Promise<void> {
+  const metadata = customConnectorResponseSchema.parse(definition);
+  const accounts = await connectorsApi.listCustomConnectorAccounts(
+    actor,
+    metadata.id,
+  );
+  const account = accounts.find((candidate) => {
+    return candidate.isDefault;
+  });
+  if (expected.ready !== undefined) {
+    expect(
+      account?.connectionStatus === "connected" &&
+        account.setupStatus === "complete",
+    ).toBe(expected.ready);
+  }
+  if (account) {
+    if (expected.setupStatus !== undefined) {
+      expect(account.setupStatus).toBe(expected.setupStatus);
+    }
+    if (expected.configuredFieldKeys !== undefined) {
+      expect(account.configuredFieldKeys).toStrictEqual(
+        expected.configuredFieldKeys,
+      );
+    }
+    if (expected.missingRequiredFields !== undefined) {
+      expect(account.missingRequiredFields).toStrictEqual(
+        expected.missingRequiredFields,
+      );
+    }
+    if (expected.updatedAt !== undefined) {
+      expect(account.updatedAt).toStrictEqual(expected.updatedAt);
+    }
+  } else {
+    expect(accounts).toStrictEqual([]);
+  }
+  if (expected.connectionId !== undefined) {
+    if (
+      typeof definition === "object" &&
+      definition !== null &&
+      "connectionId" in definition
+    ) {
+      expect(definition.connectionId).toStrictEqual(expected.connectionId);
+    } else {
+      expect(account?.id).toStrictEqual(expected.connectionId);
+    }
+  }
+}
+
 describe("CONN-03: custom connectors and connector-owned secrets", () => {
   it("rejects credentialless manual auth across definition write boundaries", async () => {
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
@@ -2186,7 +2243,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       queryInjections: [],
       authMode: "manual",
     });
-    expect(valid).toMatchObject({ connected: false });
+    await expectCustomAccountReadiness(admin, valid, { ready: false });
 
     const rejectedUpdate = await connectorsApi.requestUpdateCustomConnector(
       admin,
@@ -2262,34 +2319,38 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           authMode: "manual",
         });
       });
-      expect(created).toMatchObject({
-        connected: false,
+      await expectCustomAccountReadiness(admin, created, {
+        ready: false,
         configuredFieldKeys: [],
         missingRequiredFields: [],
       });
-      await expect(
-        own(() => {
+      await expectCustomAccountReadiness(
+        admin,
+        await own(() => {
           return connectorsApi.readCustomConnector(admin, created.id);
         }),
-      ).resolves.toMatchObject({ connected: false });
+        { ready: false },
+      );
 
       const connected = await own(() => {
         return connectorsApi.setCustomConnectorValues(admin, created.id, []);
       });
-      expect(connected).toMatchObject({
-        connected: true,
+      await expectCustomAccountReadiness(admin, connected, {
+        ready: true,
         configuredFieldKeys: [],
         missingRequiredFields: [],
       });
-      await expect(
-        own(() => {
+      await expectCustomAccountReadiness(
+        admin,
+        await own(() => {
           return connectorsApi.readCustomConnector(admin, created.id);
         }),
-      ).resolves.toMatchObject({
-        connected: true,
-        connectedAccountId: connected.connectedAccountId,
-        connectedAccountUpdatedAt: expect.any(String),
-      });
+        {
+          ready: true,
+          connectionId: connected.connectionId,
+          updatedAt: expect.any(String),
+        },
+      );
 
       await own(() => {
         return connectorsApi.deleteDefaultCustomConnectorAccount(
@@ -2297,11 +2358,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           created.id,
         );
       });
-      await expect(
-        own(() => {
+      await expectCustomAccountReadiness(
+        admin,
+        await own(() => {
           return connectorsApi.readCustomConnector(admin, created.id);
         }),
-      ).resolves.toMatchObject({ connected: false });
+        { ready: false },
+      );
       await own(() => {
         return connectorsApi.deleteCustomConnector(admin, created.id);
       });
@@ -2335,7 +2398,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(http).toMatchObject({
       kind: "http",
       authMode: "none",
-      connected: false,
+    });
+    await expectCustomAccountReadiness(admin, http, {
+      ready: false,
       missingRequiredFields: ["region"],
     });
     const connectedHttp = await own(() => {
@@ -2343,9 +2408,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         { key: "region", kind: "variable", value: "us" },
       ]);
     });
-    expect(connectedHttp).toMatchObject({
-      authMode: "none",
-      connected: true,
+    expect(connectedHttp).toMatchObject({ authMode: "none" });
+    await expectCustomAccountReadiness(admin, connectedHttp, {
+      ready: true,
       missingRequiredFields: [],
       configuredFieldKeys: ["region"],
     });
@@ -2364,15 +2429,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(mcp).toMatchObject({
       kind: "mcp",
       authMode: "none",
-      connected: false,
+    });
+    await expectCustomAccountReadiness(admin, mcp, {
+      ready: false,
       missingRequiredFields: [],
     });
     const connectedMcp = await own(() => {
       return connectorsApi.setCustomConnectorValues(admin, mcp.id, []);
     });
-    expect(connectedMcp).toMatchObject({
-      authMode: "none",
-      connected: true,
+    expect(connectedMcp).toMatchObject({ authMode: "none" });
+    await expectCustomAccountReadiness(admin, connectedMcp, {
+      ready: true,
       configuredFieldKeys: [],
     });
     const agent = await own(() => {
@@ -2389,18 +2456,22 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       }),
     ).resolves.toStrictEqual(expect.arrayContaining([http.id, mcp.id]));
 
-    await expect(
-      own(() => {
-        return connectorsApi.readCustomConnector(admin, http.id);
-      }),
-    ).resolves.toMatchObject({ authMode: "none", connected: true });
-    await expect(
-      own(() => {
-        return connectorsApi.setCustomConnectorValues(admin, http.id, [
-          { key: "region", kind: "variable", value: "eu" },
-        ]);
-      }),
-    ).resolves.toMatchObject({ authMode: "none", connected: true });
+    const observedConnector2392 = await own(() => {
+      return connectorsApi.readCustomConnector(admin, http.id);
+    });
+    expect(observedConnector2392).toMatchObject({ authMode: "none" });
+    await expectCustomAccountReadiness(admin, observedConnector2392, {
+      ready: true,
+    });
+    const observedConnector2397 = await own(() => {
+      return connectorsApi.setCustomConnectorValues(admin, http.id, [
+        { key: "region", kind: "variable", value: "eu" },
+      ]);
+    });
+    expect(observedConnector2397).toMatchObject({ authMode: "none" });
+    await expectCustomAccountReadiness(admin, observedConnector2397, {
+      ready: true,
+    });
 
     const manualHttp = await own(() => {
       return connectorsApi.updateCustomConnector(admin, http.id, {
@@ -2427,8 +2498,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     expect(manualHttp).toMatchObject({
       authMode: "manual",
-      connected: false,
       storageVersion: 2,
+    });
+    await expectCustomAccountReadiness(admin, manualHttp, {
+      ready: false,
     });
     const restoredNone = await own(() => {
       return connectorsApi.updateCustomConnector(
@@ -2439,8 +2512,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     expect(restoredNone).toMatchObject({
       authMode: "none",
-      connected: false,
       storageVersion: 3,
+    });
+    await expectCustomAccountReadiness(admin, restoredNone, {
+      ready: false,
     });
 
     await own(() => {
@@ -2487,14 +2562,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         [200],
         { intent: "add" },
       );
-      expect(connected.body).toMatchObject({
-        connected: true,
-        connectedAccountId: expect.any(String),
+      await expectCustomAccountReadiness(admin, connected.body, {
+        ready: true,
+        connectionId: expect.any(String),
       });
-      if (connected.status !== 200 || !connected.body.connectedAccountId) {
+      if (connected.status !== 200 || !connected.body.connectionId) {
         throw new Error("Expected a connected custom connector account");
       }
-      const connectedAccountId = connected.body.connectedAccountId;
+      const connectedAccountId = connected.body.connectionId;
 
       const replaced = await connectorsApi.requestSetCustomConnectorValues(
         admin,
@@ -2506,9 +2581,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           connectionId: connectedAccountId,
         },
       );
-      expect(replaced.body).toMatchObject({
-        connected: true,
-        connectedAccountId,
+      await expectCustomAccountReadiness(admin, replaced.body, {
+        ready: true,
+        connectionId: connectedAccountId,
       });
 
       const sibling = await connectorsApi.requestSetCustomConnectorValues(
@@ -2518,11 +2593,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         [200],
         { intent: "add", displayName: "Personal" },
       );
-      expect(sibling.body).toMatchObject({ connected: true });
+      await expectCustomAccountReadiness(admin, sibling.body, { ready: true });
 
-      await expect(
-        connectorsApi.readCustomConnector(admin, connector.id),
-      ).resolves.toMatchObject({ connected: true });
+      await expectCustomAccountReadiness(
+        admin,
+        await connectorsApi.readCustomConnector(admin, connector.id),
+        { ready: true },
+      );
       await connectorsApi.deleteCustomConnector(admin, connector.id);
     }
   });
@@ -2597,7 +2674,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         clientId,
         scopes: ["read", "write"],
       },
-      connected: false,
+    });
+    await expectCustomAccountReadiness(admin, created, {
+      ready: false,
     });
     expectNoVisibleSecret(created, clientSecret);
     const expectedGrant = {
@@ -2708,13 +2787,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const oauthConnected = await own(() => {
       return connectorsApi.listCustomConnectors(member);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      member,
       oauthConnected.find((connector) => {
         return connector.id === created.id;
       }),
-    ).toMatchObject({
-      connected: true,
-    });
+      { ready: true },
+    );
     expectNoVisibleSecret(oauthConnected, clientSecret);
     expectNoVisibleSecret(oauthConnected, "custom-oauth-initial-access-token");
     expectNoVisibleSecret(oauthConnected, "custom-oauth-refresh-token");
@@ -2804,15 +2883,18 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const disconnectedConnection = await own(() => {
       return connectorsApi.listCustomConnectors(member);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      member,
       disconnectedConnection.find((connector) => {
         return connector.id === created.id;
       }),
-    ).toMatchObject({
-      connected: false,
-      configuredFieldKeys: [],
-      missingRequiredFields: ["oauth"],
-    });
+      {
+        ready: false,
+        configuredFieldKeys: [],
+        setupStatus: "invalid",
+        missingRequiredFields: [],
+      },
+    );
     await expect(
       own(() => {
         return connectorsApi.readAgentCustomConnectors(member, agent.agentId);
@@ -2836,11 +2918,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(provider.tokenBodies[3]?.get("code")).toBe(
       "bdd-custom-oauth-reconnect-code",
     );
-    await expect(
-      own(() => {
+    await expectCustomAccountReadiness(
+      member,
+      await own(() => {
         return connectorsApi.readCustomConnector(member, created.id);
       }),
-    ).resolves.toMatchObject({ connected: true });
+      { ready: true },
+    );
     await expect(
       own(() => {
         return connectorsApi.readAgentCustomConnectors(member, agent.agentId);
@@ -2982,11 +3066,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     if (!oauthAccount) {
       throw new Error("Expected the custom OAuth account");
     }
-    await expect(
-      own(() => {
-        return connectorsApi.readCustomConnector(admin, created.id);
-      }),
-    ).resolves.toMatchObject({ connected: true, storageVersion: 1 });
+    const observedConnector2985 = await own(() => {
+      return connectorsApi.readCustomConnector(admin, created.id);
+    });
+    expect(observedConnector2985).toMatchObject({ storageVersion: 1 });
+    await expectCustomAccountReadiness(admin, observedConnector2985, {
+      ready: true,
+    });
 
     const manual = await own(() => {
       return connectorsApi.updateCustomConnector(admin, created.id, {
@@ -3010,7 +3096,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         authMode: "manual",
       });
     });
-    expect(manual).toMatchObject({ connected: false, storageVersion: 2 });
+    expect(manual).toMatchObject({ storageVersion: 2 });
+    await expectCustomAccountReadiness(admin, manual, {
+      ready: false,
+    });
     await own(() => {
       return connectorsApi.setCustomConnectorValues(
         admin,
@@ -3098,15 +3187,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         oauthDefinition,
       );
     });
-    expect(oauthAgain).toMatchObject({ connected: false, storageVersion: 3 });
-    await expect(
-      own(() => {
+    expect(oauthAgain).toMatchObject({ storageVersion: 3 });
+    await expectCustomAccountReadiness(admin, oauthAgain, {
+      ready: false,
+    });
+    await expectCustomAccountReadiness(
+      admin,
+      await own(() => {
         return connectorsApi.readCustomConnector(admin, created.id);
       }),
-    ).resolves.toMatchObject({
-      connected: false,
-      missingRequiredFields: ["oauth"],
-    });
+      { ready: false, setupStatus: "invalid", missingRequiredFields: [] },
+    );
 
     const reconnectUrl = await own(() => {
       return connectorsApi.startCustomConnectorOAuth2(
@@ -3229,19 +3320,23 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const ownerConnectors = await own(() => {
       return connectorsApi.listCustomConnectors(owner);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      owner,
       ownerConnectors.find((candidate) => {
         return candidate.id === connector.id;
       }),
-    ).toMatchObject({ connected: true });
+      { ready: true },
+    );
     const peerConnectors = await own(() => {
       return connectorsApi.listCustomConnectors(peer);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      peer,
       peerConnectors.find((candidate) => {
         return candidate.id === connector.id;
       }),
-    ).toMatchObject({ connected: false });
+      { ready: false },
+    );
 
     const customReplay = await own(() => {
       return connectorsApi.completeCustomConnectorOAuth2CallbackResult({
@@ -3348,11 +3443,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const peerAfterExpiry = await own(() => {
       return connectorsApi.listCustomConnectors(peer);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      admin,
       peerAfterExpiry.find((candidate) => {
         return candidate.id === connector.id;
       }),
-    ).toMatchObject({ connected: false });
+      { ready: false },
+    );
 
     await own(() => {
       return connectorsApi.deleteDefaultBuiltinConnectorAccount(peer, "github");
@@ -3425,7 +3522,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       authMode: "oauth",
       endpoint: definition.endpoint,
       storageVersion: 1,
-      connected: false,
+    });
+    await expectCustomAccountReadiness(admin, created, {
+      ready: false,
     });
     expectNoVisibleSecret(created, clientSecret);
 
@@ -3464,7 +3563,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       member,
       created.id,
     );
-    expect(connected).toMatchObject({ connected: true });
+    await expectCustomAccountReadiness(member, connected, { ready: true });
     expectNoVisibleSecret(connected, clientSecret);
 
     await connectorsApi.deleteDefaultCustomConnectorAccount(member, created.id);
@@ -3542,9 +3641,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(provider.tokenBodies[0]?.get("client_id")).toBe(
       "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
     );
-    await expect(
-      connectorsApi.readCustomConnector(admin, connector.id),
-    ).resolves.toMatchObject({ connected: true, authMode: "automatic" });
+    const observedConnector3545 = await connectorsApi.readCustomConnector(
+      admin,
+      connector.id,
+    );
+    expect(observedConnector3545).toMatchObject({ authMode: "automatic" });
+    await expectCustomAccountReadiness(admin, observedConnector3545, {
+      ready: true,
+    });
     await expect(
       connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
     ).resolves.toContain(connector.id);
@@ -3651,12 +3755,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     if ("error" in noAuth.body || noAuth.body.result !== "connected") {
       throw new Error("Expected Automatic MCP no-auth connection");
     }
-    const connectionId = noAuth.body.connectedAccountId;
+    const connectionId = noAuth.body.connectionId;
     expect(noAuth.body.connector).toMatchObject({
       id: connector.id,
       authMode: "automatic",
-      connected: true,
-      connectedAccountId: connectionId,
+    });
+    await expectCustomAccountReadiness(admin, noAuth.body.connector, {
+      ready: true,
+      connectionId: connectionId,
     });
     await expect(
       own(() => {
@@ -3736,7 +3842,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ) {
       throw new Error("Expected Automatic MCP no-auth reconnect");
     }
-    expect(restoredNoAuth.body.connectedAccountId).toBe(connectionId);
+    expect(restoredNoAuth.body.connectionId).toBe(connectionId);
     await expect(
       own(() => {
         return connectorsApi.listCustomConnectorAccounts(admin, connector.id);
@@ -3760,7 +3866,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ) {
       throw new Error("Expected an added Automatic MCP no-auth account");
     }
-    expect(addedNoAuth.body.connectedAccountId).not.toBe(connectionId);
+    expect(addedNoAuth.body.connectionId).not.toBe(connectionId);
     await expect(
       own(() => {
         return connectorsApi.listCustomConnectorAccounts(admin, connector.id);
@@ -4410,7 +4516,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const created = await own(() => {
       return connectorsApi.createCustomConnector(admin, definition);
     });
-    expect(created).toMatchObject({ authMode: "automatic", connected: false });
+    expect(created).toMatchObject({ authMode: "automatic" });
+    await expectCustomAccountReadiness(admin, created, {
+      ready: false,
+    });
     const authorizationUrl = await own(() => {
       return connectorsApi.startCustomConnectorOAuth2(admin, created.id);
     });
@@ -4429,7 +4538,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       id: created.id,
       kind: "mcp",
       authMode: "automatic",
-      connected: true,
+    });
+    await expectCustomAccountReadiness(admin, persisted, {
+      ready: true,
     });
     expect(persisted).not.toHaveProperty("oauthConfig");
     expectNoVisibleSecret(persisted, "automatic-dcr-secret");
@@ -4523,7 +4634,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(updated).toMatchObject({
       authMode: "oauth",
       storageVersion: 2,
-      connected: false,
+    });
+    await expectCustomAccountReadiness(admin, updated, {
+      ready: false,
     });
     const automaticUpdate = await own(() => {
       return connectorsApi.updateCustomConnector(admin, created.id, definition);
@@ -4586,21 +4699,25 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const connected = await own(() => {
       return connectorsApi.listCustomConnectors(member);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      member,
       connected.find((connector) => {
         return connector.id === created.id;
       }),
-    ).toMatchObject({
-      connected: true,
-    });
+      { ready: true },
+    );
 
-    const initialAccount = connected.find((connector) => {
-      return connector.id === created.id;
+    const initialAccount = (
+      await own(() => {
+        return connectorsApi.listCustomConnectorAccounts(member, created.id);
+      })
+    ).find((account) => {
+      return account.isDefault;
     });
-    if (!initialAccount?.connectedAccountId) {
+    if (!initialAccount) {
       throw new Error("Expected the actual connected OAuth account");
     }
-    const connectionId = initialAccount.connectedAccountId;
+    const connectionId = initialAccount.id;
 
     const updateBody = {
       displayName: "BDD Edited OAuth Connector",
@@ -4648,14 +4765,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const disconnected = await own(() => {
       return connectorsApi.listCustomConnectors(member);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      member,
       disconnected.find((connector) => {
         return connector.id === created.id;
       }),
-    ).toMatchObject({
-      connected: false,
-      missingRequiredFields: ["oauth"],
-    });
+      { ready: false, setupStatus: "invalid", missingRequiredFields: [] },
+    );
 
     const nextAuthorizationUrl = await own(() => {
       return connectorsApi.startCustomConnectorOAuth2(
@@ -4675,14 +4791,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         state: stateFromAuthorizationUrl(nextAuthorizationUrl),
       });
     });
-    await expect(
-      own(() => {
-        return connectorsApi.readCustomConnector(member, created.id);
-      }),
-    ).resolves.toMatchObject({
-      connected: true,
+    const observedConnector4680 = await own(() => {
+      return connectorsApi.readCustomConnector(member, created.id);
+    });
+    expect(observedConnector4680).toMatchObject({ storageVersion: 2 });
+    await expectCustomAccountReadiness(member, observedConnector4680, {
+      ready: true,
       missingRequiredFields: [],
-      storageVersion: 2,
     });
     await own(() => {
       return connectorsApi.deleteCustomConnector(admin, created.id);
@@ -4923,11 +5038,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       secretValue,
     );
     const afterSecret = await connectorsApi.listCustomConnectors(admin);
-    expect(
-      afterSecret.find((connector) => {
-        return connector.id === created.id;
-      })?.connected,
-    ).toBeTruthy();
+    await expect(
+      connectorsApi.listCustomConnectorAccounts(admin, created.id),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        connectionStatus: "connected",
+        setupStatus: "complete",
+      }),
+    ]);
     expectNoVisibleSecret(afterSecret, secretValue);
 
     const definitionUpdateBody = {
@@ -4946,7 +5064,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(updated).toMatchObject({
       displayName: "BDD Custom Connector Updated",
       prefixTemplates: [`https://${slug.slice(1)}.example.test/v2/`],
-      connected: true,
+    });
+    await expectCustomAccountReadiness(admin, updated, {
+      ready: true,
     });
 
     const agent = await bdd.createAgent(admin, {
@@ -4996,14 +5116,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
     await connectorsApi.deleteDefaultCustomConnectorAccount(admin, created.id);
     const afterDisconnect = await connectorsApi.listCustomConnectors(admin);
-    expect(
+    await expectCustomAccountReadiness(
+      admin,
       afterDisconnect.find((connector) => {
         return connector.id === created.id;
       }),
-    ).toMatchObject({
-      connected: false,
-      configuredFieldKeys: [],
-    });
+      { ready: false, configuredFieldKeys: [] },
+    );
     await expect(
       connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
     ).resolves.toStrictEqual([created.id]);
@@ -5014,11 +5133,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "reconnected-custom-connector-secret-value",
     );
     const afterReconnect = await connectorsApi.listCustomConnectors(admin);
-    expect(
+    await expectCustomAccountReadiness(
+      admin,
       afterReconnect.find((connector) => {
         return connector.id === created.id;
       }),
-    ).toMatchObject({ connected: true });
+      { ready: true },
+    );
     await expect(
       connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
     ).resolves.toStrictEqual([created.id]);
@@ -5085,7 +5206,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         );
       });
       expect(created.body).toMatchObject({
-        connected: false,
+        id: expect.any(String),
+        authMode: "manual",
+      });
+      await expectCustomAccountReadiness(admin, created.body, {
+        ready: false,
         missingRequiredFields: ["secret"],
         configuredFieldKeys: [],
       });
@@ -5100,14 +5225,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       const configured = await own(() => {
         return connectorsApi.listCustomConnectors(admin);
       });
-      expect(
+      await expectCustomAccountReadiness(
+        admin,
         configured.find((connector) => {
           return connector.id === created.body.id;
         }),
-      ).toMatchObject({
-        connected: true,
-        configuredFieldKeys: ["secret"],
-      });
+        { ready: true, configuredFieldKeys: ["secret"] },
+      );
       expectNoVisibleSecret(configured, "agent-created-secret");
       await own(() => {
         return connectorsApi.deleteCustomConnector(admin, created.body.id);
@@ -5161,20 +5285,19 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         { key: "subdomain", kind: "variable", value: "acme" },
       ]);
     });
-
-    expect(configured).toMatchObject({
-      id: created.id,
-      connected: true,
+    expect(configured).toMatchObject({ id: created.id });
+    await expectCustomAccountReadiness(admin, configured, {
+      ready: true,
       missingRequiredFields: [],
       configuredFieldKeys: ["api_key", "subdomain"],
     });
     expect(kms.generateDataKeyCalls).toBe(1);
     expectNoVisibleSecret(configured, "configured-secret");
 
-    if (!configured.connectedAccountId) {
+    if (!configured.connectionId) {
       throw new Error("Expected the newly connected custom account");
     }
-    const connectionId = configured.connectedAccountId;
+    const connectionId = configured.connectionId;
     await own(() => {
       return connectorsApi.setCustomConnectorValues(
         admin,
@@ -5188,14 +5311,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const listed = await own(() => {
       return connectorsApi.listCustomConnectors(admin);
     });
-    expect(
+    await expectCustomAccountReadiness(
+      admin,
       listed.find((connector) => {
         return connector.id === created.id;
       }),
-    ).toMatchObject({
-      connected: true,
-      configuredFieldKeys: ["api_key", "subdomain"],
-    });
+      { ready: true, configuredFieldKeys: ["api_key", "subdomain"] },
+    );
     expectNoVisibleSecret(listed, "configured-secret");
 
     await own(() => {
@@ -5277,15 +5399,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         created.id,
       );
     });
-    await expect(
-      own(() => {
+    await expectCustomAccountReadiness(
+      admin,
+      await own(() => {
         return connectorsApi.readCustomConnector(admin, created.id);
       }),
-    ).resolves.toMatchObject({
-      connected: false,
-      configuredFieldKeys: [],
-      missingRequiredFields: ["api_key", "subdomain"],
-    });
+      {
+        ready: false,
+        configuredFieldKeys: [],
+        missingRequiredFields: ["api_key", "subdomain"],
+      },
+    );
 
     await own(() => {
       return connectorsApi.setCustomConnectorValues(admin, created.id, [
@@ -5293,15 +5417,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         { key: "subdomain", kind: "variable", value: "reconnected" },
       ]);
     });
-    await expect(
-      own(() => {
+    await expectCustomAccountReadiness(
+      admin,
+      await own(() => {
         return connectorsApi.readCustomConnector(admin, created.id);
       }),
-    ).resolves.toMatchObject({
-      connected: true,
-      configuredFieldKeys: ["api_key", "subdomain"],
-      missingRequiredFields: [],
-    });
+      {
+        ready: true,
+        configuredFieldKeys: ["api_key", "subdomain"],
+        missingRequiredFields: [],
+      },
+    );
 
     await expectUsableValues("reconnected-secret", "reconnected");
     await own(() => {
@@ -5356,15 +5482,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         );
       });
 
-      await expect(
-        own(() => {
+      await expectCustomAccountReadiness(
+        admin,
+        await own(() => {
           return connectorsApi.readCustomConnector(admin, created.id);
         }),
-      ).resolves.toMatchObject({
-        connected: true,
-        configuredFieldKeys: ["api_key", "subdomain"],
-        missingRequiredFields: [],
-      });
+        {
+          ready: true,
+          configuredFieldKeys: ["api_key", "subdomain"],
+          missingRequiredFields: [],
+        },
+      );
       await own(() => {
         return connectorsApi.updateAgentCustomConnectors(admin, agentId, [
           created.id,
@@ -5429,15 +5557,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         return firewall.requestFirewallAuth(sandboxHeaders, authBody, [424]);
       });
       expect(rejected.status).toBe(424);
-      await expect(
-        own(() => {
+      await expectCustomAccountReadiness(
+        admin,
+        await own(() => {
           return connectorsApi.readCustomConnector(admin, created.id);
         }),
-      ).resolves.toMatchObject({
-        connected: false,
-        configuredFieldKeys: [],
-        missingRequiredFields: ["api_key", "subdomain"],
-      });
+        {
+          ready: false,
+          configuredFieldKeys: [],
+          missingRequiredFields: ["api_key", "subdomain"],
+        },
+      );
 
       await own(() => {
         return connectorsApi.deleteCustomConnector(admin, created.id);
@@ -5496,15 +5626,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           return connectorsApi.listCustomConnectorAccounts(admin, created.id);
         }),
       ).resolves.toStrictEqual([]);
-      await expect(
-        own(() => {
+      await expectCustomAccountReadiness(
+        admin,
+        await own(() => {
           return connectorsApi.readCustomConnector(admin, created.id);
         }),
-      ).resolves.toMatchObject({
-        connected: false,
-        configuredFieldKeys: [],
-        missingRequiredFields: ["api_key", "account"],
-      });
+        {
+          ready: false,
+          configuredFieldKeys: [],
+          missingRequiredFields: ["api_key", "account"],
+        },
+      );
 
       await own(() => {
         return connectorsApi.deleteCustomConnector(admin, created.id);
@@ -5875,15 +6007,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         );
       });
       expect(inferred.storageVersion).toBe(4);
-      await expect(
-        own(() => {
+      await expectCustomAccountReadiness(
+        admin,
+        await own(() => {
           return connectorsApi.readCustomConnector(admin, created.id);
         }),
-      ).resolves.toMatchObject({
-        connected: false,
-        configuredFieldKeys: [],
-        missingRequiredFields: ["api_key", "replacement"],
-      });
+        {
+          ready: false,
+          configuredFieldKeys: [],
+          missingRequiredFields: ["api_key", "replacement"],
+        },
+      );
 
       const partialRecovery = await own(() => {
         return connectorsApi.requestSetCustomConnectorValues(
@@ -5920,8 +6054,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           { intent: "reconnect", connectionId: initialAccount.id },
         );
       });
-      expect(recovered).toMatchObject({
-        connected: true,
+      await expectCustomAccountReadiness(admin, recovered, {
+        ready: true,
         configuredFieldKeys: ["api_key", "replacement"],
         missingRequiredFields: [],
       });
@@ -6012,7 +6146,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           valueTemplate: "Bearer {{secrets.api_key}}",
         },
       ],
-      connected: true,
+    });
+    await expectCustomAccountReadiness(admin, saved.connector, {
+      ready: true,
       missingRequiredFields: [],
       configuredFieldKeys: ["api_key", "subdomain"],
     });
@@ -6021,14 +6157,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toStrictEqual([saved.connector.id]);
 
     const listed = await connectorsApi.listCustomConnectors(admin);
-    expect(
+    await expectCustomAccountReadiness(
+      admin,
       listed.find((connector) => {
         return connector.id === saved.connector.id;
       }),
-    ).toMatchObject({
-      connected: true,
-      configuredFieldKeys: ["api_key", "subdomain"],
-    });
+      { ready: true, configuredFieldKeys: ["api_key", "subdomain"] },
+    );
     expectNoVisibleSecret(listed, "proposal-secret");
 
     await connectorsApi.deleteCustomConnector(admin, saved.connector.id);
@@ -6148,8 +6283,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       });
 
       expect(saved.authorizedAgentId).toBe(agent.agentId);
-      expect(saved.connector).toMatchObject({
-        connected: false,
+      await expectCustomAccountReadiness(admin, saved.connector, {
+        ready: false,
         missingRequiredFields: ["api_key"],
         configuredFieldKeys: [],
       });
@@ -6185,8 +6320,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           agentId: agent.agentId,
         });
       });
-      expect(emptyComplete.connector).toMatchObject({
-        connected: true,
+      await expectCustomAccountReadiness(admin, emptyComplete.connector, {
+        ready: true,
         missingRequiredFields: [],
         configuredFieldKeys: [],
       });
@@ -6198,7 +6333,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           );
         }),
       ).resolves.toMatchObject([
-        { id: emptyComplete.connector.connectedAccountId, isDefault: true },
+        {
+          id: emptyComplete.connectionId,
+          isDefault: true,
+          setupStatus: "complete",
+          configuredFieldKeys: [],
+          missingRequiredFields: [],
+        },
       ]);
 
       await own(() => {
@@ -6415,8 +6556,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       values: [{ key: "subdomain", kind: "variable", value: "acme" }],
     });
     expect(saved.connector).toMatchObject({
-      connected: true,
-      configuredFieldKeys: ["subdomain"],
       headerInjections: [],
       queryInjections: [
         {
@@ -6425,6 +6564,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         },
       ],
     });
+    await expectCustomAccountReadiness(admin, saved.connector, {
+      ready: true,
+      configuredFieldKeys: ["subdomain"],
+    });
 
     await connectorsApi.deleteDefaultCustomConnectorAccount(
       admin,
@@ -6432,15 +6575,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
 
     const listed = await connectorsApi.listCustomConnectors(admin);
-    expect(
+    await expectCustomAccountReadiness(
+      admin,
       listed.find((connector) => {
         return connector.id === saved.connector.id;
       }),
-    ).toMatchObject({
-      connected: false,
-      configuredFieldKeys: [],
-      missingRequiredFields: ["subdomain"],
-    });
+      {
+        ready: false,
+        configuredFieldKeys: [],
+        missingRequiredFields: ["subdomain"],
+      },
+    );
 
     await connectorsApi.deleteCustomConnector(admin, saved.connector.id);
   });
@@ -6514,7 +6659,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       new RegExp(`^_api-bdd${rand}-example-test-[a-z0-9]{6}$`),
     );
     expect(autoSlug.prefixTemplates).toStrictEqual([`https://api.${host}/v1/`]);
-    expect(autoSlug.connected).toBeFalsy();
+    await expect(
+      connectorsApi.listCustomConnectorAccounts(admin, autoSlug.id),
+    ).resolves.toStrictEqual([]);
 
     const sharedPrefix = await connectorsApi.createCustomConnector(
       admin,
@@ -6636,7 +6783,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       prefixTemplates: [],
       permissionBundleRef: null,
       storageVersion: 1,
-      connected: false,
+    });
+    await expectCustomAccountReadiness(admin, created, {
+      ready: false,
     });
 
     const connected = await connectorsApi.setCustomConnectorValues(
@@ -6644,7 +6793,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       created.id,
       [{ key: "secret", kind: "secret", value: "bdd-mcp-api-token" }],
     );
-    expect(connected).toMatchObject({ connected: true });
+    await expectCustomAccountReadiness(admin, connected, { ready: true });
     expectNoVisibleSecret(connected, "bdd-mcp-api-token");
     await expect(
       connectorsApi.updateAgentCustomConnectors(admin, agent.agentId, [
@@ -6665,7 +6814,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       id: created.id,
       endpoint: movedDefinition.endpoint,
       storageVersion: 1,
-      connected: true,
+    });
+    await expectCustomAccountReadiness(admin, moved, {
+      ready: true,
     });
     await expect(
       connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
@@ -6718,9 +6869,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ),
     ).resolves.not.toContain(created.id);
     await connectorsApi.deleteDefaultCustomConnectorAccount(admin, created.id);
-    await expect(
-      connectorsApi.readCustomConnector(admin, created.id),
-    ).resolves.toMatchObject({ connected: false });
+    await expectCustomAccountReadiness(
+      admin,
+      await connectorsApi.readCustomConnector(admin, created.id),
+      { ready: false },
+    );
     await connectorsApi.deleteCustomConnector(admin, created.id);
     await bdd.deleteAgent(admin, agent.agentId);
   });
@@ -6818,7 +6971,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       kind: "mcp",
       endpoint: queryEndpoint,
       authMode: "manual",
-      connected: false,
+    });
+    await expectCustomAccountReadiness(admin, query, {
+      ready: false,
       missingRequiredFields: ["secret"],
     });
     await expect(
@@ -7314,10 +7469,16 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       actor: ApiTestUser,
       connectorId: string,
     ): Promise<boolean | undefined> {
-      const connectors = await connectorsApi.listCustomConnectors(actor);
-      return connectors.find((connector) => {
-        return connector.id === connectorId;
-      })?.connected;
+      const accounts = await connectorsApi.listCustomConnectorAccounts(
+        actor,
+        connectorId,
+      );
+      return accounts.some((account) => {
+        return (
+          account.connectionStatus === "connected" &&
+          account.setupStatus === "complete"
+        );
+      });
     }
 
     const missing = await connectorsApi.requestSetCustomConnectorSecret(
@@ -7357,11 +7518,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       { intent: "reconnect", connectionId: adminAccount.id },
     );
     const adminList = await connectorsApi.listCustomConnectors(admin);
-    expect(
-      adminList.find((connector) => {
-        return connector.id === shared.id;
-      })?.connected,
-    ).toBeTruthy();
+    await expect(
+      connectorsApi.listCustomConnectorAccounts(admin, shared.id),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        connectionStatus: "connected",
+        setupStatus: "complete",
+      }),
+    ]);
     expectNoVisibleSecret(adminList, "admin-secret-value");
     expectNoVisibleSecret(adminList, "member-secret-value");
 
@@ -7383,10 +7547,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
     await connectorsApi.deleteCustomConnector(admin, shared.id);
     await connectorsApi.deleteCustomConnector(adminInOtherOrg, otherOrg.id);
-    await expect(readConnected(admin, shared.id)).resolves.toBeUndefined();
     await expect(
-      readConnected(adminInOtherOrg, otherOrg.id),
-    ).resolves.toBeUndefined();
+      connectorsApi.listCustomConnectors(admin),
+    ).resolves.not.toContainEqual(expect.objectContaining({ id: shared.id }));
+    await expect(
+      connectorsApi.listCustomConnectors(adminInOtherOrg),
+    ).resolves.not.toContainEqual(expect.objectContaining({ id: otherOrg.id }));
   });
 });
 
@@ -8296,7 +8462,7 @@ describe("CONN-02: device-auth method switching", () => {
         `Expected complete api device auth, received ${apiPoll.status}`,
       );
     }
-    expect(apiPoll.connector.authMethod).toBe("api");
+    expect(apiPoll.account.authMethod).toBe("api");
 
     const apiListed = await connectorsApi.listBuiltinConnectors(actor);
     expect(apiListed.connectorProvidedBindings).toContainEqual(
@@ -8313,7 +8479,7 @@ describe("CONN-02: device-auth method switching", () => {
       "test-oauth-device",
       "oauth",
       undefined,
-      { intent: "reconnect", connectionId: apiPoll.connector.id },
+      { intent: "reconnect", connectionId: apiPoll.connectionId },
     );
     const oauthPoll = await connectorsApi.pollDeviceAuth(
       actor,
@@ -8327,13 +8493,13 @@ describe("CONN-02: device-auth method switching", () => {
         `Expected complete oauth device auth, received ${oauthPoll.status}`,
       );
     }
-    expect(oauthPoll.connector.authMethod).toBe("oauth");
+    expect(oauthPoll.account.authMethod).toBe("oauth");
 
     const readBack = await connectorsApi.readConnectorBySlug(
       actor,
       "test-oauth-device",
     );
-    expect(readBack.id).toBe(apiPoll.connector.id);
+    expect(readBack.id).toBe(apiPoll.connectionId);
     expect(readBack.authMethod).toBe("oauth");
 
     const oauthListed = await connectorsApi.listBuiltinConnectors(actor);

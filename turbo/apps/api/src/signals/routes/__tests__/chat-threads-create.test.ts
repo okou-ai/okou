@@ -453,7 +453,7 @@ describe("POST /api/chat-threads", () => {
           model: WORKSPACE_DEFAULT_MODEL,
           connectorSelections: [
             {
-              connectionId: secondResponse.body.id,
+              connectionId: secondResponse.body.connectionId,
               target: { kind: "builtin", connectorSlug: "openai" },
             },
           ],
@@ -466,7 +466,7 @@ describe("POST /api/chat-threads", () => {
     const impact = await accept(
       connectorAccountsClient().deletionImpact({
         headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: secondResponse.body.id },
+        params: { connectionId: secondResponse.body.connectionId },
         query: { kind: "builtin", connectorSlug: "openai" },
       }),
       [200],
@@ -476,7 +476,7 @@ describe("POST /api/chat-threads", () => {
     const deletedSelectedAccount = await accept(
       connectorAccountsClient().delete({
         headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: secondResponse.body.id },
+        params: { connectionId: secondResponse.body.connectionId },
         body: {
           target: { kind: "builtin", connectorSlug: "openai" },
         },
@@ -508,7 +508,7 @@ describe("POST /api/chat-threads", () => {
     const deletedRemainingAccount = await accept(
       connectorAccountsClient().delete({
         headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: firstResponse.body.id },
+        params: { connectionId: firstResponse.body.connectionId },
         body: {
           target: { kind: "builtin", connectorSlug: "openai" },
         },
@@ -534,7 +534,7 @@ describe("POST /api/chat-threads", () => {
           model: WORKSPACE_DEFAULT_MODEL,
           connectorSelections: [
             {
-              connectionId: firstResponse.body.id,
+              connectionId: firstResponse.body.connectionId,
               target: { kind: "builtin", connectorSlug: "openai" },
             },
           ],
@@ -582,7 +582,7 @@ describe("POST /api/chat-threads", () => {
       definition.id,
       [{ key: "secret", kind: "secret", value: "scope-read-custom-key" }],
     );
-    if (!custom.connectedAccountId) {
+    if (!custom.connectionId) {
       throw new Error("Expected the API-created custom connector account");
     }
     await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, [
@@ -595,7 +595,7 @@ describe("POST /api/chat-threads", () => {
         target: { kind: "builtin", connectorSlug: "openai" },
       },
       {
-        connectionId: custom.connectedAccountId,
+        connectionId: custom.connectionId,
         target: { kind: "custom", customConnectorId: definition.id },
       },
     ] as const;
@@ -982,8 +982,8 @@ describe("POST /api/chat-threads", () => {
       fixture.agentId,
       [httpConnector.id, mcpConnector.id],
     );
-    const httpConnectionId = httpConnection.connectedAccountId;
-    const mcpConnectionId = mcpConnection.connectedAccountId;
+    const httpConnectionId = httpConnection.connectionId;
+    const mcpConnectionId = mcpConnection.connectionId;
     if (!httpConnectionId || !mcpConnectionId) {
       throw new Error("Expected custom connector account fixtures");
     }
@@ -1143,12 +1143,12 @@ describe("POST /api/chat-threads", () => {
         [{ key: "secret", kind: "secret", value: "deleted-secret" }],
         { intent: "add", displayName: "Deleted" },
       );
-      if (!survivor.connectedAccountId || !removed.connectedAccountId) {
+      if (!survivor.connectionId || !removed.connectionId) {
         throw new Error("Expected both custom connector accounts");
       }
       const accounts = {
-        surviving: survivor.connectedAccountId,
-        deleted: removed.connectedAccountId,
+        surviving: survivor.connectionId,
+        deleted: removed.connectionId,
       };
       const target = {
         kind: "custom" as const,

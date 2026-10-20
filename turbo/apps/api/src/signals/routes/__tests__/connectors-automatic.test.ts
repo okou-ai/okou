@@ -127,10 +127,9 @@ describe("builtin MCP automatic authentication", () => {
     if (connected.body.result !== "connected") {
       throw new Error("Expected immediate no-auth completion");
     }
-    const connectionId = connected.body.connectedAccountId;
+    const connectionId = connected.body.connectionId;
     expect(connected.body).toStrictEqual({
       result: "connected",
-      connectedAccountId: connectionId,
       connectionId,
     });
     const account = await accept(

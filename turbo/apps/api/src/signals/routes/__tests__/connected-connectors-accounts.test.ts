@@ -123,7 +123,7 @@ test.each(["builtin", "custom"] as const)(
         if (completed.body.status !== "complete") {
           throw new Error("Expected completed Stripe CLI authorization");
         }
-        return completed.body.connector.id;
+        return completed.body.connectionId;
       }
       const started = await accept(
         app(customConnectorOAuth2Contract).start({
@@ -200,17 +200,17 @@ test.each(["builtin", "custom"] as const)(
         }),
         [200],
       );
-      expect(catalog.body.connector).toMatchObject({
-        connected: true,
-        connectionStatus: "reconnect-required",
-      });
+      expect(catalog.body.connector.slug).toBe(target.connectorSlug);
+      expect(listed.body.defaultConnection?.connectionStatus).toBe(
+        "reconnect-required",
+      );
     } else {
       const definitions = await accept(
         app(customConnectorsContract).list({ headers }),
         [200],
       );
       expect(definitions.body.connectors).toMatchObject([
-        { id: target.customConnectorId, connected: false },
+        { id: target.customConnectorId },
       ]);
     }
 

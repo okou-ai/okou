@@ -6,8 +6,10 @@ import {
   chatEventsContract,
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import {
+  type PublicConnectorCatalogPermissionDetail,
+  connectorCatalogContract,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   type ApplyUserPermissionGrantsRequest,
   type UserPermissionGrantResponse,

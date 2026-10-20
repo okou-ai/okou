@@ -3,11 +3,9 @@ import type { FormEvent } from "react";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorValueInput,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  type CustomConnectorResponse,
   customConnectorManagedStatusSchema,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   Button,
   Dialog,
@@ -326,13 +324,8 @@ function useCustomConnectorAccountSetup(
           : undefined;
   const setupAvailable =
     accountMode?.kind === "add" ||
-    (accountMode?.kind === "reconnect"
-      ? account?.setupStatus !== undefined
-      : accounts.state === "hasData" &&
-        accounts.data.available &&
-        (account === null ||
-          account === undefined ||
-          account.setupStatus !== undefined));
+    accountMode?.kind === "reconnect" ||
+    (accounts.state === "hasData" && accounts.data.available);
   const missingRequiredFields =
     account?.missingRequiredFields ??
     connector.fields

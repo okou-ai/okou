@@ -4,6 +4,8 @@ import { authHeadersSchema, initContract } from "./base";
 import {
   connectorAuthMethodIdSchema,
   connectorSlugSchema,
+  type ConnectorAuthMethodId,
+  type ConnectorSlug,
 } from "./connector-identity";
 import {
   connectorReconnectReasonSchema,
@@ -35,8 +37,6 @@ export const connectorAccountTargetSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-// Readers temporarily accept absent setup facts from current/rollback APIs.
-// #41309 removes optional reads after API retirement and client/Runner gates.
 export const connectorAccountSetupSchema = z.object({
   setupStatus: z.enum(["complete", "incomplete", "invalid"]),
   missingRequiredFields: z.array(z.string()),
@@ -45,7 +45,7 @@ export const connectorAccountSetupSchema = z.object({
 
 export const connectorAccountConnectionSchema = z
   .object({
-    ...connectorAccountSetupSchema.partial().shape,
+    ...connectorAccountSetupSchema.shape,
     id: z.uuid(),
     target: connectorAccountTargetSchema,
     authMethod: connectorAuthMethodIdSchema,
@@ -76,7 +76,7 @@ export const CONNECTOR_ACCOUNT_LIST_MAX_LIMIT = 100;
 
 const connectorAccountInspectionAvailableSchema = z
   .object({
-    ...connectorAccountSetupSchema.partial().shape,
+    ...connectorAccountSetupSchema.shape,
     kind: z.literal("available"),
     connectionId: z.uuid(),
     target: connectorAccountTargetSchema,
@@ -385,3 +385,30 @@ export type ConnectorAccountInspectionResult = z.infer<
 export type ConnectorAccountMutationIntent = z.infer<
   typeof connectorAccountMutationIntentSchema
 >;
+/** Canonical saved-account facts; connect-method visibility does not identify accounts. */
+export function builtinConnectorAccountFacts(
+  connector: {
+    readonly slug: ConnectorSlug;
+    readonly authMethods: readonly {
+      readonly id: ConnectorAuthMethodId;
+      readonly supportsRefresh: boolean;
+    }[];
+  },
+  account: ConnectorAccountConnection,
+) {
+  if (
+    account.target.kind !== "builtin" ||
+    account.target.connectorSlug !== connector.slug
+  ) {
+    throw new Error("Connector account metadata identity mismatch");
+  }
+  const method = connector.authMethods.find((candidate) => {
+    return candidate.id === account.authMethod;
+  });
+  return {
+    scopeMismatch: account.scopeMismatch,
+    // Existing accounts can use a method hidden from new connections, such as
+    // the non-expiring Mercury API token. Absence does not invent a capability.
+    supportsRefresh: method?.supportsRefresh,
+  };
+}
