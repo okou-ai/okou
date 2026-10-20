@@ -94,6 +94,12 @@ final class ChatComposerPasteTests: XCTestCase {
     let input = try XCTUnwrap(textView(in: host.view))
     let compactHeight = input.bounds.height
     input.becomeFirstResponder()
+    // Wait for the native focus handoff and SwiftUI expansion before driving
+    // editing operations; a nonempty initial frame does not mean either settled.
+    try await eventually(message: "Composer did not focus and expand: \(input.bounds)") {
+      input.isFirstResponder && input.bounds.height > compactHeight
+        && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    }
     input.selectedRange = NSRange(location: 7, length: 3)
     UIPasteboard.general.setItems(
       [
@@ -113,8 +119,10 @@ final class ChatComposerPasteTests: XCTestCase {
     input.insertText("\nNext line")
     try await eventually { conversation.draft.contains("Next line") }
     XCTAssertTrue(conversation.attachmentDraft.items.isEmpty)
-    try await eventually {
-      input.bounds.height > compactHeight
+    try await eventually(
+      message: "Composer lost focus or expansion: \(input.isFirstResponder), \(input.bounds)"
+    ) {
+      input.isFirstResponder && input.bounds.height > compactHeight
         && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
     }
     XCTAssertEqual(input.font?.pointSize, 16)
