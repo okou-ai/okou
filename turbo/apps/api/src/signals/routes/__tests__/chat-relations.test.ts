@@ -299,7 +299,18 @@ describe("chat relationships", () => {
     await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
   });
 
-  it("returns complete communication lists and message histories", async () => {
+  it.each([
+    {
+      name: "returns all six communicating chats",
+      peerCount: 6,
+      firstPeerMessageCount: 1,
+    },
+    {
+      name: "returns all 21 messages in order",
+      peerCount: 1,
+      firstPeerMessageCount: 21,
+    },
+  ])("$name", async ({ peerCount, firstPeerMessageCount }) => {
     const {
       actor,
       agentId,
@@ -310,10 +321,10 @@ describe("chat relationships", () => {
     } = await sourceFixture({ isolatePg: true });
     const peerIds: string[] = [];
     const messageIds: string[] = [];
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < peerCount; index++) {
       const peer = await chat.createThread(actor, { agentId });
       peerIds.push(peer.id);
-      const messageCount = index === 0 ? 21 : 1;
+      const messageCount = index === 0 ? firstPeerMessageCount : 1;
       for (let messageIndex = 0; messageIndex < messageCount; messageIndex++) {
         const clientEventId = randomUUID();
         await requestSendEventWithBearer(
