@@ -1734,7 +1734,12 @@ export function registerFeishuIntegrationTests(
       expectFeishuResourceDownloads,
       startFeishuDmSession,
     } = createFeishuIntegrationFixture(platform);
-    beforeEach(reset);
+    beforeEach(() => {
+      reset();
+      context.mocks.axiom.useRealTelemetry.mockReturnValue(
+        group === "oauth-and-events",
+      );
+    });
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "user-deletion") {
