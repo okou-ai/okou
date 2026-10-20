@@ -389,6 +389,16 @@ impl AppServerState {
                 ..
             } => response_text,
         };
+        if self.scenario == Scenario::RuntimeBufferedNotifications {
+            // All notifications precede the reply on the same pipe. A client
+            // that blocks its unread FIFO cannot make response progress.
+            write_json_line(output, &turn_started_notification(&thread_id, &turn_id))?;
+            for index in 0..NOTIFICATION_OVERFLOW_COUNT {
+                write_json_line(output, &warning_notification(&thread_id, index))?;
+            }
+            write_large_stdout_notification(output, &thread_id, &turn_id)?;
+            write_json_line(output, &turn_completed_notification(&thread_id, &turn_id))?;
+        }
         write_success(output, id, json!({ "turn": turn(&turn_id) }))?;
         if self.scenario == Scenario::UnexpectedThreadOutputItemStarted {
             write_json_line(
@@ -446,6 +456,8 @@ impl AppServerState {
         if matches!(
             self.scenario,
             Scenario::RuntimeTurnComplete
+                | Scenario::NotificationOverflow
+                | Scenario::LargeNotificationBeforeResponse
                 | Scenario::ResumeRolloutMissing
                 | Scenario::RuntimeTurnCompleteBeforeHeartbeat
                 | Scenario::RuntimeTurnCompleteWithoutThreadStarted

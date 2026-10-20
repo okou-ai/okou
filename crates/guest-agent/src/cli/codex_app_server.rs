@@ -37,8 +37,6 @@ use super::{
 };
 
 const METHOD_NOT_FOUND: i64 = -32601;
-const NOTIFICATION_QUEUE_CAPACITY: usize = 128;
-const NOTIFICATION_QUEUE_MAX_BYTES: usize = 16 * 1024 * 1024;
 const SHUTDOWN_SIGKILL_GRACE: Duration = Duration::from_secs(2);
 const STDERR_DRAIN_GRACE: Duration = Duration::from_secs(2);
 
@@ -348,8 +346,7 @@ pub struct CodexAppServerClient {
     in_flight_request_id: Option<JsonRpcId>,
     outbound_write_in_progress: bool,
     stream_unusable_reason: Option<String>,
-    notifications: VecDeque<QueuedNotification>,
-    notification_queue_bytes: usize,
+    notifications: VecDeque<ServerNotification>,
     opt_out_notification_methods: Vec<String>,
     closed: bool,
 }
@@ -452,8 +449,7 @@ impl CodexAppServerClient {
             in_flight_request_id: None,
             outbound_write_in_progress: false,
             stream_unusable_reason: None,
-            notifications: VecDeque::with_capacity(NOTIFICATION_QUEUE_CAPACITY),
-            notification_queue_bytes: 0,
+            notifications: VecDeque::new(),
             opt_out_notification_methods: config.opt_out_notification_methods,
             closed: false,
         })
@@ -470,12 +466,9 @@ impl CodexAppServerClient {
     /// Pop the oldest buffered notification, if any.
     ///
     /// Notifications are buffered only when they arrive while a request is
-    /// waiting for its response. Removing a notification also releases the
-    /// queued byte count tracked for the notification buffer.
+    /// waiting for its response.
     pub fn pop_notification(&mut self) -> Option<ServerNotification> {
-        let queued = self.notifications.pop_front()?;
-        self.notification_queue_bytes = self.notification_queue_bytes.saturating_sub(queued.bytes);
-        Some(queued.notification)
+        self.notifications.pop_front()
     }
 
     /// Return the bounded stderr tail collected during shutdown or termination.
@@ -562,10 +555,15 @@ impl CodexAppServerClient {
 
     /// Send a request and return the raw JSON-RPC result value.
     ///
-    /// Notifications received before the matching response are buffered up to
-    /// 128 entries or 16 MiB of raw line data. Unsupported app-server requests
-    /// received during the wait are rejected with JSON-RPC `METHOD_NOT_FOUND`,
-    /// after which the client continues waiting for the original response.
+    /// Notifications received before the matching response are buffered in
+    /// order without a count or byte cap, matching Codex clients. The consumer
+    /// runs after this request returns, so waiting for a full notification queue
+    /// to drain could deadlock reading the response. Buffered payloads consume
+    /// memory until the caller drains them or drops the client.
+    ///
+    /// Unsupported app-server requests received during the wait are rejected
+    /// with JSON-RPC `METHOD_NOT_FOUND`, after which the client continues
+    /// waiting for the original response.
     ///
     /// # Cancellation safety
     ///
@@ -626,14 +624,8 @@ impl CodexAppServerClient {
                         "received response for unknown id while waiting for {method}"
                     )));
                 }
-                IncomingMessage::Notification {
-                    notification,
-                    line_bytes,
-                } => {
-                    if let Err(error) = self.push_notification(notification, line_bytes) {
-                        self.in_flight_request_id = None;
-                        return Err(self.poison_error(error));
-                    }
+                IncomingMessage::Notification(notification) => {
+                    self.notifications.push_back(notification);
                 }
                 IncomingMessage::Request(request) => {
                     if let Err(error) = self.reject_server_request(&request).await {
@@ -676,7 +668,7 @@ impl CodexAppServerClient {
 
         loop {
             match self.read_next_message(pending_method).await? {
-                IncomingMessage::Notification { notification, .. } => return Ok(notification),
+                IncomingMessage::Notification(notification) => return Ok(notification),
                 IncomingMessage::Request(request) => {
                     self.reject_server_request(&request).await?;
                 }
@@ -917,37 +909,6 @@ impl CodexAppServerClient {
         .await
     }
 
-    fn push_notification(
-        &mut self,
-        notification: ServerNotification,
-        line_bytes: usize,
-    ) -> Result<(), CodexAppServerError> {
-        if self.notifications.len() == NOTIFICATION_QUEUE_CAPACITY {
-            return Err(CodexAppServerError::Protocol(format!(
-                "server notification queue exceeded {NOTIFICATION_QUEUE_CAPACITY} entries"
-            )));
-        }
-        let next_bytes = self
-            .notification_queue_bytes
-            .checked_add(line_bytes)
-            .ok_or_else(|| {
-                CodexAppServerError::Protocol(
-                    "server notification queue byte count overflowed".to_string(),
-                )
-            })?;
-        if next_bytes > NOTIFICATION_QUEUE_MAX_BYTES {
-            return Err(CodexAppServerError::Protocol(format!(
-                "server notification queue exceeded {NOTIFICATION_QUEUE_MAX_BYTES} bytes"
-            )));
-        }
-        self.notification_queue_bytes = next_bytes;
-        self.notifications.push_back(QueuedNotification {
-            notification,
-            bytes: line_bytes,
-        });
-        Ok(())
-    }
-
     async fn write_message(&mut self, message: &Value) -> Result<(), CodexAppServerError> {
         if let Some(message) = self.stream_unusable_reason.clone() {
             self.kill_unusable_stream_process_if_needed();
@@ -1103,24 +1064,10 @@ impl Drop for CodexAppServerClient {
     }
 }
 
-struct QueuedNotification {
-    notification: ServerNotification,
-    bytes: usize,
-}
-
 enum IncomingMessage {
-    Success {
-        id: JsonRpcId,
-        result: Value,
-    },
-    Error {
-        id: JsonRpcId,
-        error: JsonRpcError,
-    },
-    Notification {
-        notification: ServerNotification,
-        line_bytes: usize,
-    },
+    Success { id: JsonRpcId, result: Value },
+    Error { id: JsonRpcId, error: JsonRpcError },
+    Notification(ServerNotification),
     Request(ServerRequest),
 }
 
@@ -1204,10 +1151,10 @@ fn parse_incoming_message(line: &str) -> Result<IncomingMessage, CodexAppServerE
                 params,
             }));
         }
-        return Ok(IncomingMessage::Notification {
-            notification: ServerNotification { method, params },
-            line_bytes: line.len(),
-        });
+        return Ok(IncomingMessage::Notification(ServerNotification {
+            method,
+            params,
+        }));
     }
 
     let Some(id_value) = fields.remove("id") else {
