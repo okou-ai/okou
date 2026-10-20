@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.234.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.18...runner-rs-v0.234.19) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** report initial cache inventory before running ([#41556](https://github.com/okou-ai/okou/issues/41556)) ([2b4d023](https://github.com/okou-ai/okou/commit/2b4d023eb3b6d97269d2bbe71a5d8395ae5c2763))
+* **runner:** retain managed model content-length diagnostics ([#41638](https://github.com/okou-ai/okou/issues/41638)) ([dec83e8](https://github.com/okou-ai/okou/commit/dec83e8cee9c62e3307006ac96f4187e03366e86))
+
+
+### Refactoring
+
+* **runner:** share service signal completion ownership ([#41586](https://github.com/okou-ai/okou/issues/41586)) ([cee6403](https://github.com/okou-ai/okou/commit/cee6403d9e6eb28f40a731fe6781318919bc2820))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.17...runner-rs-v0.234.18) (2026-10-19)
 
 
