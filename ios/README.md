@@ -39,8 +39,9 @@ links, images, and code blocks, with text selection, code copying, and horizonta
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output and tool cards are not rendered. Sharing, Cloud Browser,
 Computer Use, artifact controls, and the global connector picker are outside this local UI.
-Trusted connector action links in assistant messages render as native cards, including
-exact-account reconnect and conversation account confirmation. Credential forms remain
+Trusted connector and permission action links in assistant messages render as native cards,
+including exact-account reconnect, conversation account confirmation, and permission decisions.
+Permission details and confirmation use a native sheet. Credential forms remain
 native; external authorization uses system Safari and verifies owned server receipts
 before continuing the conversation. The composer uses a combined send/stop
 control: a nonempty draft can be sent while work is active, and the empty-draft

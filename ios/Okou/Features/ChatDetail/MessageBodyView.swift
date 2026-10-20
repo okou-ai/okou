@@ -13,6 +13,7 @@ struct MessageBodyView: View, Equatable {
   let markdown: MessageMarkdownCache
   let actionContext: MessageActionContext?
   let connectorActions: ConnectorActionStore?
+  let permissionActions: PermissionActionRegistry?
   let loadsActions: Bool
   @Environment(\.openURL) private var openURL
   private struct Prepared {
@@ -24,6 +25,7 @@ struct MessageBodyView: View, Equatable {
   init(
     text: String, baseURL: URL, markdown: MessageMarkdownCache,
     actionContext: MessageActionContext? = nil, connectorActions: ConnectorActionStore? = nil,
+    permissionActions: PermissionActionRegistry? = nil,
     loadsActions: Bool = false
   ) {
     self.text = text
@@ -31,6 +33,7 @@ struct MessageBodyView: View, Equatable {
     self.markdown = markdown
     self.actionContext = actionContext
     self.connectorActions = connectorActions
+    self.permissionActions = permissionActions
     self.loadsActions = loadsActions
     _prepared = State(
       initialValue: markdown.cached(text).map { Prepared(source: text, content: $0) })
@@ -39,13 +42,15 @@ struct MessageBodyView: View, Equatable {
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.text == rhs.text && lhs.baseURL == rhs.baseURL && lhs.markdown === rhs.markdown
       && lhs.actionContext == rhs.actionContext && lhs.connectorActions === rhs.connectorActions
+      && lhs.permissionActions === rhs.permissionActions
       && lhs.loadsActions == rhs.loadsActions
   }
 
   @ViewBuilder private func preparedBody(_ content: AttributedString) -> some View {
     if let context = actionContext, let connectorActions {
       let blocks = MessageActionBody.blocks(
-        content, webURL: baseURL, agentID: context.agentID, threadID: context.threadID)
+        content, webURL: baseURL, agentID: context.agentID, threadID: context.threadID,
+        permissionsEnabled: permissionActions != nil)
       VStack(alignment: .leading, spacing: 12) {
         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
           switch block {
@@ -56,6 +61,15 @@ struct MessageBodyView: View, Equatable {
             }
           case .connector(let action):
             ConnectorActionCard(action: action, store: connectorActions, loadsState: loadsActions)
+          case .permission(let action):
+            if let permissionActions {
+              PermissionActionCard(store: permissionActions.card(action), loadsState: loadsActions)
+            }
+          case .unavailablePermission:
+            Label("Permission request unavailable", systemImage: "exclamationmark.shield")
+              .font(.subheadline).foregroundStyle(.secondary)
+              .padding(14).frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
+              .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
           }
         }
       }

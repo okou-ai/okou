@@ -344,7 +344,8 @@ struct ChatDetailView: View {
           text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown,
           actionContext: message.role == .assistant
             ? MessageActionContext(agentID: thread.agentID, threadID: thread.id) : nil,
-          connectorActions: conversation.connectorActions, loadsActions: loadsAttachments
+          connectorActions: conversation.connectorActions,
+          permissionActions: conversation.permissionActions, loadsActions: loadsAttachments
         )
         .equatable()
         .foregroundStyle(

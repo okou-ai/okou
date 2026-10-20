@@ -3,6 +3,7 @@ import Foundation
 
 /// Workspace-scoped mutations. Read synchronization belongs to ChatSync.
 public actor ChatCommands {
+  public nonisolated let permissions: ChatPermissions
   let client: APIClient
   public nonisolated let connectorActions: ChatConnectorService
   private let sync: ChatSync
@@ -11,6 +12,7 @@ public actor ChatCommands {
   private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
   public init(client: APIClient, sync: ChatSync) {
+    permissions = ChatPermissions(client: client)
     self.client = client
     connectorActions = ChatConnectorService(client: client)
     self.sync = sync
@@ -82,6 +84,7 @@ public actor ChatCommands {
     thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
     document: ChatDraftDocument? = nil,
     clientEventID: String = UUID().uuidString,
+    chatThreadSortEventID: String = UUID().uuidString,
     modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil,
     expectedAgentID: String? = nil
   )
@@ -109,7 +112,7 @@ public actor ChatCommands {
       prompt: prompt.isEmpty
         ? (document?.hasFeedback == true ? "(see quoted passages)" : "(see attached files)")
         : prompt,
-      clientEventId: clientEventID, chatThreadSortEventId: UUID().uuidString,
+      clientEventId: clientEventID, chatThreadSortEventId: chatThreadSortEventID,
       userMessage: document
         ?? ChatDraftDocument(
           parts: (prompt.isEmpty
