@@ -719,7 +719,11 @@ function useVncPresentation(dialog: VncDialogState | null, inline: boolean) {
         ? t(($) => {
             return $.remoteControlSetup.vncProfileDescription;
           })
-        : base.description,
+        : setup.vncStep === "connection"
+          ? t(($) => {
+              return $.remoteControlSetup.vncConnectionDescription;
+            })
+          : base.description,
   };
 }
 

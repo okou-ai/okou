@@ -186,6 +186,7 @@ export function VncEndpointFields({
   readonly connection: VncConnectionResponse | null;
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   const editor = useGet(vncEditor$);
   const chooseLoopback = useSet(chooseVncLoopbackHost$);
   const editDestination = useSet(editVncDestinationHost$);
@@ -195,18 +196,26 @@ export function VncEndpointFields({
     !apple &&
     editor.transport === "direct" &&
     isPrivateVncLiteral(editor.destinationHost);
+  const hasDestinationHelp =
+    !guided || editor.transport === "direct" || editor.transport === "ssh";
   const loopbackItems = [
     { value: "127.0.0.1", label: "127.0.0.1" },
     { value: "::1", label: "::1" },
   ];
   return (
     <div className="grid gap-3">
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
+      <div
+        className={
+          guided
+            ? "grid gap-4"
+            : "grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]"
+        }
+      >
         {apple ? (
           <div className="grid min-w-0 gap-2 text-sm">
             <label htmlFor="vnc-loopback-host">
               {t(($) => {
-                return $.vnc.host;
+                return guided ? $.remoteControlSetup.deviceAddress : $.vnc.host;
               })}
             </label>
             <Select
@@ -238,7 +247,7 @@ export function VncEndpointFields({
           <label className="grid min-w-0 gap-2 text-sm">
             <span>
               {t(($) => {
-                return $.vnc.host;
+                return guided ? $.remoteControlSetup.deviceAddress : $.vnc.host;
               })}
             </span>
             <Input
@@ -255,34 +264,15 @@ export function VncEndpointFields({
               aria-describedby={
                 privateDirect
                   ? "vnc-destination-help vnc-direct-private-error"
-                  : "vnc-destination-help"
+                  : hasDestinationHelp
+                    ? "vnc-destination-help"
+                    : undefined
               }
               aria-invalid={privateDirect}
             />
           </label>
         )}
-        <label className="grid gap-2 text-sm">
-          <span>
-            {t(($) => {
-              return $.vnc.port;
-            })}
-          </span>
-          <Input
-            key={editor.transport}
-            name="port"
-            type="number"
-            required
-            min={1}
-            max={65_535}
-            defaultValue={
-              editor.transport === "cloudflare_access"
-                ? 443
-                : (connection?.port ?? 5900)
-            }
-            readOnly={editor.transport === "cloudflare_access"}
-            aria-describedby="vnc-destination-help"
-          />
-        </label>
+        <VncPortSettings connection={connection} />
       </div>
       {privateDirect && (
         <p
@@ -295,12 +285,76 @@ export function VncEndpointFields({
           })}
         </p>
       )}
-      <p id="vnc-destination-help" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.transport.destinationHelp;
-        })}
-      </p>
+      {hasDestinationHelp && (
+        <p id="vnc-destination-help" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return guided && editor.transport === "direct"
+              ? $.remoteControlSetup.directHelp
+              : $.vnc.transport.destinationHelp;
+          })}
+        </p>
+      )}
     </div>
+  );
+}
+
+function VncPortSettings({
+  connection,
+}: {
+  readonly connection: VncConnectionResponse | null;
+}) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  if (!guided) {
+    return <VncPortField connection={connection} />;
+  }
+  return (
+    <details className="border-t border-divider pt-4">
+      <summary className="cursor-pointer text-sm text-muted-foreground">
+        {t(($) => {
+          return $.remoteControlSetup.more;
+        })}
+      </summary>
+      <div className="mt-4">
+        <VncPortField connection={connection} />
+      </div>
+    </details>
+  );
+}
+
+function VncPortField({
+  connection,
+}: {
+  readonly connection: VncConnectionResponse | null;
+}) {
+  const { t } = useTranslation();
+  const transport = useGet(vncTransport$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return (
+    <label className="grid gap-2 text-sm">
+      <span>
+        {t(($) => {
+          return guided ? $.ssh.port : $.vnc.port;
+        })}
+      </span>
+      <Input
+        key={transport}
+        name="port"
+        type="number"
+        required
+        min={1}
+        max={65_535}
+        defaultValue={
+          transport === "cloudflare_access" ? 443 : (connection?.port ?? 5900)
+        }
+        readOnly={transport === "cloudflare_access"}
+        aria-describedby={
+          !guided || transport === "direct" || transport === "ssh"
+            ? "vnc-destination-help"
+            : undefined
+        }
+      />
+    </label>
   );
 }
 

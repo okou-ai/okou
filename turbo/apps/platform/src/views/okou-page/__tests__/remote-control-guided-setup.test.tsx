@@ -365,7 +365,8 @@ test("VNC groups actual service methods and retains the connection step while ad
   await screen.findByRole("heading", {
     name: "Connect to the target computer",
   });
-  const port = screen.getByLabelText("RFB destination port");
+  click(screen.getByText("More settings", { selector: "summary" }));
+  const port = screen.getByLabelText("Port");
   await fill(port, "5901");
   click(getAction("button", "Add the required SSH connection"));
   const ssh = await screen.findByRole("dialog", { name: "Add host" });
@@ -480,10 +481,7 @@ test("VNC saves only after the separate login and server-identity steps", async 
   await screen.findByRole("heading", {
     name: "Connect to the target computer",
   });
-  await fill(
-    screen.getByLabelText("RFB destination host"),
-    "screen.example.com",
-  );
+  await fill(screen.getByLabelText("Device address"), "screen.example.com");
   click(getAction("button", "Continue"));
   await screen.findByRole("heading", {
     name: "Enter device login information",
@@ -714,11 +712,12 @@ test.each(["ssh", "vnc"] as const)(
     expect(screen.queryByLabelText("Credential name")).toBeNull();
     expect(screen.queryByLabelText("VNC credential name")).toBeNull();
     click(screen.getByText("Connection settings", { selector: "summary" }));
-    expect(
-      screen.getByLabelText(
-        protocol === "ssh" ? "Port" : "RFB destination port",
-      ),
-    ).toHaveValue(protocol === "ssh" ? 22 : 5900);
+    if (protocol === "vnc") {
+      click(screen.getByText("More settings", { selector: "summary" }));
+    }
+    expect(screen.getByLabelText("Port")).toHaveValue(
+      protocol === "ssh" ? 22 : 5900,
+    );
     await fill(screen.getByLabelText(/Connection name/u), "Renamed device");
     click(getAction("button", "Save only"));
     await screen.findByRole("heading", {

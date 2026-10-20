@@ -40,6 +40,7 @@ import {
   vncOriginTlsCaBundle$,
 } from "../../signals/vnc.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 function VncNetworkConfigGroups({
@@ -213,6 +214,7 @@ export function VncNetworkFields({
   readonly protectedRoute?: boolean;
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   const type = useGet(role === "rfb" ? vncTransport$ : vncKdcTransport$);
   const chooseRfb = useSet(chooseVncTransport$);
   const chooseKdc = useSet(chooseVncKdcTransport$);
@@ -220,7 +222,7 @@ export function VncNetworkFields({
     {
       value: "direct",
       label: t(($) => {
-        return $.vnc.transport.direct;
+        return guided ? $.remoteControlSetup.direct : $.vnc.transport.direct;
       }),
     },
     {
@@ -248,7 +250,9 @@ export function VncNetworkFields({
         <label htmlFor={`vnc-${role}-route`}>
           {role === "rfb"
             ? t(($) => {
-                return $.vnc.transport.title;
+                return guided
+                  ? $.remoteControlSetup.connectionMethod
+                  : $.vnc.transport.title;
               })
             : t(($) => {
                 return $.vnc.kerberos.kdcRoute;
