@@ -8,7 +8,7 @@ import pytest
 from mitmproxy import http
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.flow import Error
-from mitmproxy.proxy import events
+from mitmproxy.proxy import commands, events
 from mitmproxy.proxy.layers.http import HttpLayer
 from mitmproxy.proxy.layers.http._hooks import (
     HttpErrorHook,
@@ -64,12 +64,16 @@ def _write_auth_base_firewall_registry(tmp_path: Path) -> Path:
     )
 
 
-def _write_aws_sigv4_firewall_registry(tmp_path: Path) -> Path:
+def _write_aws_sigv4_firewall_registry(
+    tmp_path: Path,
+    *,
+    rules: list[str] | None = None,
+) -> Path:
     api_entry: dict[str, object] = dict(aws_api_entry())
     api_entry["permissions"] = [
         {
             "name": "identity",
-            "rules": ["POST /"],
+            "rules": ["POST /"] if rules is None else rules,
         }
     ]
     return _write_registry(
@@ -108,6 +112,89 @@ def _start_http1_request(
         command for command in commands if isinstance(command, HttpRequestHeadersHook)
     )
     return http_layer, request_headers_hook
+
+
+@pytest.mark.parametrize(
+    "content_length",
+    [
+        pytest.param("9" * 5000, id="long-positive"),
+        pytest.param("0" * 5000, id="long-zero"),
+        pytest.param("0" * 5000 + "1", id="long-leading-zero-positive"),
+    ],
+)
+async def test_http1_rejected_long_content_length_survives_aws_action_header_hook(
+    tmp_path: Path,
+    content_length: str,
+) -> None:
+    registry_path = _write_aws_sigv4_firewall_registry(
+        tmp_path,
+        rules=["POST / AWS sigv4=sts action=GetCallerIdentity"],
+    )
+    authorization = aws_sigv4_authorization()
+    get_headers = AsyncMock()
+
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+        patch.object(auth, "get_firewall_headers", get_headers),
+    ):
+        addon_context.options.update(
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
+        )
+        client, http_layer = start_http_layer(
+            addon_context,
+            alpn=b"http/1.1",
+            host=STS_HOST,
+        )
+        # Absolute-form retains the destination when native validation rejects
+        # headers before the usual Host normalization.
+        request_head = (
+            f"POST https://{STS_HOST}/ HTTP/1.1\r\nHost: {STS_HOST}\r\n"
+            f"X-Amz-Date: {DEFAULT_SIGV4_TIMESTAMP}\r\nAuthorization: {authorization}\r\n"
+            f"Content-Length: {content_length}\r\n\r\n"
+        ).encode()
+        all_commands = list(http_layer.handle_event(events.DataReceived(client, request_head)))
+        request_headers_hook = next(
+            command for command in all_commands if isinstance(command, HttpRequestHeadersHook)
+        )
+        flow = request_headers_hook.flow
+        assert flow.error is not None
+        original_error = flow.error.msg
+
+        await addon_context.master.addons.invoke_addon(mitm_addon, request_headers_hook)
+        header_commands = list(
+            http_layer.handle_event(events.HookCompleted(request_headers_hook, None))
+        )
+        all_commands.extend(header_commands)
+        error_hook = next(
+            command for command in header_commands if isinstance(command, HttpErrorHook)
+        )
+        await addon_context.master.addons.invoke_addon(mitm_addon, error_hook)
+        all_commands.extend(http_layer.handle_event(events.HookCompleted(error_hook, None)))
+
+    assert flow.error is not None
+    assert flow.error.msg == original_error
+    assert flow.live is False
+    assert flow.request.raw_content is None
+    assert flow.request.headers["Authorization"] == authorization
+    assert not any(isinstance(command, HttpRequestHook) for command in all_commands)
+    assert not any(
+        isinstance(command, (commands.OpenConnection, commands.SendData))
+        and command.connection is flow.server_conn
+        for command in all_commands
+    )
+    assert any(
+        isinstance(command, commands.CloseConnection) and command.connection is client
+        for command in all_commands
+    )
+    client_bytes = b"".join(
+        command.data
+        for command in all_commands
+        if isinstance(command, commands.SendData) and command.connection is client
+    )
+    assert client_bytes.startswith(b"HTTP/1.1 400")
+    get_headers.assert_not_awaited()
 
 
 async def test_http2_open_sigv4_request_without_length_is_rejected_before_body(
