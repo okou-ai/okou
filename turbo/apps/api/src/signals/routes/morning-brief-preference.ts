@@ -5,6 +5,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
+import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recovery.service";
 import {
   morningBriefPreference$,
   updateMorningBriefPreference$,
@@ -57,6 +58,27 @@ const getMorningBriefPreferenceInner$ = command(
 );
 
 const updateBody$ = bodyResultOf(morningBriefPreferenceContract.update);
+const retryMorningBriefPreferenceInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const reconciled = await set(
+      reconcileExistingMorningBrief$,
+      { orgId: auth.orgId, member: memberFromAuth(auth) },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (reconciled === "conflict" || reconciled === "ineligible") {
+      return failureResponse({
+        kind: "conflict",
+        code: "MORNING_BRIEF_STATE_CONFLICT",
+        message:
+          "Morning Brief could not be reconciled. Retry after configuration is available.",
+      });
+    }
+    return await set(getMorningBriefPreferenceInner$, signal);
+  },
+);
+
 const updateMorningBriefPreferenceInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -83,6 +105,13 @@ const updateMorningBriefPreferenceInner$ = command(
 );
 
 export const morningBriefPreferenceRoutes: readonly RouteEntry[] = [
+  {
+    route: morningBriefPreferenceContract.retry,
+    handler: authRoute(
+      morningBriefPreferenceWriteAuth,
+      retryMorningBriefPreferenceInner$,
+    ),
+  },
   {
     route: morningBriefPreferenceContract.get,
     handler: authRoute(

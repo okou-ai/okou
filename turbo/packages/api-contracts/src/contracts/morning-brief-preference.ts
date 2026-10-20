@@ -91,4 +91,19 @@ export const morningBriefPreferenceContract = c.router({
     },
     summary: "Update the Morning Brief preference",
   },
+  retry: {
+    method: "POST",
+    path: "/api/preferences/morning-brief/retry",
+    headers: authHeadersSchema,
+    body: c.noBody(),
+    responses: {
+      200: morningBriefPreferenceResponseSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      409: morningBriefPreferenceErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Reconcile an existing Morning Brief without changing its preference",
+  },
 });
