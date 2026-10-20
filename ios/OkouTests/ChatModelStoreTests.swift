@@ -62,6 +62,96 @@ final class ChatModelStoreTests: XCTestCase {
     XCTAssertEqual(selection.effectiveEffort, "max")
   }
 
+  func testRetryAfterRestartKeepsCapturedModelEffortAndFast() async throws {
+    let changed = Mutex(false)
+    let sends = Mutex<[Data]>([])
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url!.path
+      switch path {
+      case "/api/chat/events":
+        let count = sends.withLock {
+          $0.append(chatRequestBody(request))
+          return $0.count
+        }
+        if count == 1 {
+          return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Uncertain send\"}}")
+        }
+        return ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/draft":
+        return ChatHTTPResponse(body: "{}")
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/connector-selections":
+        return ChatHTTPResponse(body: "{\"selections\":[]}")
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/event-snapshot":
+        return ChatHTTPResponse(
+          status: 404,
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/event-rows":
+        return ChatHTTPResponse(
+          body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)":
+        if request.httpMethod == "PATCH" { return ChatHTTPResponse(status: 204, body: "") }
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/metadata":
+        let metadata =
+          changed.withLock { $0 }
+          ? ModelHTTPFixtures.metadata.replacingOccurrences(
+            of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
+          : ModelHTTPFixtures.metadata.replacingOccurrences(
+            of: "\"serviceTier\":null", with: "\"serviceTier\":\"priority\"")
+        return ChatHTTPResponse(body: metadata)
+      default:
+        return try XCTUnwrap(ModelHTTPFixtures.response(path), "Unhandled request: \(path)")
+      }
+    }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "org"),
+      directory: directory)
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    defer { resource.close() }
+    func conversation(_ selection: ChatModelSelectionStore) -> ConversationStore {
+      let sync = ChatSync(client: fixture.client)
+      return ConversationStore(
+        thread: thread(), sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
+        webURL: fixture.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL),
+        isVisible: { false }, didMarkRead: {}, didSend: {}, didFail: { _ in }, didSettle: {},
+        modelSelection: selection, draftRepository: ChatDraftRepository(client: fixture.client),
+        draftStorage: storage)
+    }
+    let firstSelection = ChatModelSelectionStore(models: resource, thread: thread())
+    let first = conversation(firstSelection)
+    await firstSelection.open()
+    await first.composer.synchronize()
+    first.draft = "Retry with the configuration that admitted this message"
+    await first.send()
+    XCTAssertTrue(try XCTUnwrap(first.pending.first).needsRetry)
+    first.close()
+    changed.withLock { $0 = true }
+    let nextSelection = ChatModelSelectionStore(models: resource, thread: thread())
+    let reopened = conversation(nextSelection)
+    defer { reopened.close() }
+    await nextSelection.open()
+    XCTAssertEqual(nextSelection.selection.model, "claude-model")
+    XCTAssertEqual(sends.withLock { $0.count }, 1)
+    await reopened.retry(try XCTUnwrap(reopened.pending.first))
+    let attempts = sends.withLock { $0 }
+    let bodies = try attempts.map {
+      try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+    }
+    XCTAssertEqual(bodies.count, 2)
+    XCTAssertEqual(
+      bodies.first?["clientEventId"] as? String, bodies.last?["clientEventId"] as? String)
+    for body in bodies {
+      XCTAssertEqual(body["model"] as? String, "codex-model")
+      let options = try XCTUnwrap(body["runOptions"] as? [String: String])
+      XCTAssertEqual(options["reasoningEffort"], "max")
+      XCTAssertEqual(options["codexServiceTier"], "fast")
+    }
+  }
+
   func testFirstMessageKeepsItsChoiceWhenDefaultsChangeDuringCreation() async throws {
     for explicit in [false, true] {
       let model = explicit ? "claude-model" : "codex-model"
