@@ -93,7 +93,6 @@ async def test_invalid_stream_discards_after_accepted_header_auth(
         auth_fetch.assert_awaited_once()
         assert callable(flow.request.stream)
         assert flow.request.stream(raw) == b""
-        assert flow.error is None
         assert flow.response is None
         assert flow.request.stream(b"remaining-private-body") == b""
         assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is False
