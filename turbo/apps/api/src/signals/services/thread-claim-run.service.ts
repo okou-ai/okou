@@ -28,6 +28,7 @@ import {
   withoutLegacyAgentRunEnvironmentEntries,
 } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
+import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
   createOkouTokenInputSignals,
   prepareOkouTokenEnvironment$,
@@ -3793,6 +3794,17 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
       if (head.contextType === "automation") {
         await set(initializeAutomationExecution$, head, timing.run, signal);
+        const [event, target] = await Promise.all([get(event$), get(target$)]);
+        signal.throwIfAborted();
+        if (event && !target) {
+          await set(
+            revokeDeletedWorkflowAutomationInputs$,
+            { orgId: claim.orgId, automationId: event.automationId },
+            signal,
+          );
+          signal.throwIfAborted();
+          return null;
+        }
       } else {
         await set(initializeQueuedPrompt$, head, signal);
       }
