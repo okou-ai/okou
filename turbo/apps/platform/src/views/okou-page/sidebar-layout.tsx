@@ -412,15 +412,23 @@ function SkillImportDialogMount() {
   return open ? <SkillImportDialog /> : null;
 }
 
-function MobileSidebarMount() {
+function MobileSidebarSheet({ children }: { readonly children: ReactNode }) {
   const expanded = useGet(sidebarExpanded$);
   const setExpanded = useSet(setSidebarExpanded$);
 
   return (
     <Sheet open={expanded} onOpenChange={setExpanded}>
+      {children}
+    </Sheet>
+  );
+}
+
+function MobileSidebarMount() {
+  return (
+    <MobileSidebarSheet>
       <MobileTopBar />
       <Sidebar isDesktop={false} />
-    </Sheet>
+    </MobileSidebarSheet>
   );
 }
 
@@ -460,6 +468,39 @@ function ChatWorkspace({
   );
 }
 
+function SidebarWorkspaceFrame({
+  children,
+  header,
+  footer,
+  pwaNavigation,
+}: {
+  children: ReactNode;
+  header: ReactNode;
+  footer: ReactNode;
+  pwaNavigation: boolean;
+}) {
+  const chatListHidden = useGet(sidebarOff$);
+  const activeRoute = useGet(activeRoute$);
+  const beside = chatListHidden ? "nav-rail" : "chat-list";
+
+  return activeRoute === "chat" ? (
+    <ChatWorkspace
+      beside={beside}
+      header={header}
+      footer={footer}
+      pwaNavigation={pwaNavigation}
+    >
+      {children}
+    </ChatWorkspace>
+  ) : (
+    <WorkspaceInset beside={beside}>
+      {header}
+      {children}
+      {footer}
+    </WorkspaceInset>
+  );
+}
+
 function SidebarWorkspace({
   children,
   isDesktop,
@@ -469,7 +510,6 @@ function SidebarWorkspace({
   isDesktop: boolean;
   pwaNavigation: boolean;
 }) {
-  const chatListHidden = useGet(sidebarOff$);
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
 
@@ -498,23 +538,14 @@ function SidebarWorkspace({
     children
   );
   const workspaceFooter = pwaNavigation ? <PwaBottomNavigation /> : null;
-  const beside = chatListHidden ? "nav-rail" : "chat-list";
-
-  return activeRoute === "chat" ? (
-    <ChatWorkspace
-      beside={beside}
+  return (
+    <SidebarWorkspaceFrame
       header={workspaceHeader}
       footer={workspaceFooter}
       pwaNavigation={pwaNavigation}
     >
       {workspaceContent}
-    </ChatWorkspace>
-  ) : (
-    <WorkspaceInset beside={beside}>
-      {workspaceHeader}
-      {workspaceContent}
-      {workspaceFooter}
-    </WorkspaceInset>
+    </SidebarWorkspaceFrame>
   );
 }
 
