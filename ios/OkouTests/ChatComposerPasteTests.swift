@@ -388,7 +388,11 @@ final class ChatComposerPasteTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     input.becomeFirstResponder()
-    try await eventually { input.isFirstResponder }
+    // Clear only after SwiftUI has presented the native focus change. UIKit's
+    // immediate first-responder result alone precedes the composer's focus handoff.
+    try await eventually {
+      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    }
     conversation.composer.clear()
     input.insertText("stale callback")
     XCTAssertEqual(conversation.draft, "")
