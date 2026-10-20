@@ -8,12 +8,11 @@ permissions:
 jobs:
   measure:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       max-parallel: 16
       matrix:
-        variant: [baseline]
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
       image: ghcr.io/okou-ai/vm0-toolchain:20261009
@@ -39,13 +38,12 @@ jobs:
       - name: Measure actual deletion and reshared API tests
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-          LAB_VARIANT: ${{ matrix.variant }}
           LAB_SHARD: ${{ matrix.shard }}
         run: python3 .github/perf-api-delete/run.py
       - name: Upload measurements
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lab-${{ matrix.variant }}-${{ matrix.shard }}
+          name: paired-lab-${{ matrix.shard }}
           path: lab-results/
           retention-days: 7
