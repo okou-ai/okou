@@ -359,7 +359,7 @@ impl CowLayer {
             self.write_buffer.insert(span.block_idx, block_data);
         }
 
-        Ok(self.buffer_bytes() >= self.flush_threshold)
+        Ok(self.needs_flush())
     }
 
     /// Flush the write buffer to the COW file.
@@ -478,6 +478,10 @@ impl CowLayer {
     /// Current write buffer size in bytes.
     pub fn buffer_bytes(&self) -> usize {
         self.write_buffer.len() * self.block_size
+    }
+
+    pub(crate) fn needs_flush(&self) -> bool {
+        self.buffer_bytes() >= self.flush_threshold
     }
 
     fn check_bounds(&self, offset: u64, length: u64) -> Result<()> {
