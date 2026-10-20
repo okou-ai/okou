@@ -1490,7 +1490,6 @@ const handleOfficialCommand$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly botToken: string;
       readonly botUsername: string | null;
       readonly command: string;
@@ -1498,6 +1497,7 @@ const handleOfficialCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    const db = set(writeDb$);
     const chatId = String(args.message.chat.id);
     const fromUserId = String(args.message.from?.id ?? 0);
     const displayName = formatTelegramUserDisplayName(args.message.from ?? {});
@@ -1573,7 +1573,7 @@ const handleOfficialCommand$ = command(
     }
 
     if (args.command === "disconnect") {
-      await args.db
+      await db
         .delete(telegramOfficialUserLinks)
         .where(eq(telegramOfficialUserLinks.id, userLink.id));
       signal.throwIfAborted();
@@ -1654,7 +1654,6 @@ const processOfficialWebhookMessage$ = command(
       await set(
         handleOfficialCommand$,
         {
-          db,
           botToken: config.botToken,
           botUsername: config.botUsername,
           command: commandName,
