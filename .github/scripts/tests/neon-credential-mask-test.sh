@@ -61,8 +61,8 @@ mapfile -t script_invocations < <(
     "${generator_files[@]}"
 )
 
-if [[ ${#script_invocations[@]} -ne 1 ]]; then
-  fail "expected one reviewed neon-preview-branch.sh invocation"
+if [[ ${#script_invocations[@]} -ne 2 ]]; then
+  fail "expected two reviewed neon-preview-branch.sh invocations"
 fi
 
 mapfile -t raw_mask_variables <<'VARIABLES'
@@ -167,7 +167,8 @@ while IFS='|' read -r file boundary variable resolution_pattern consumer_pattern
 done <<'BOUNDARIES'
 .github/actions/neon-branch/action.yml|Neon branch action|DATABASE_URL|DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name "$INPUT_DATABASE_NAME" --role-name "$INPUT_ROLE_NAME" --ssl verify-full)|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 .github/actions/production-migration-smoke/action.yml|Production migration smoke action|DATABASE_URL|DATABASE_URL=$(neonctl connection-string "$BRANCH_ID"|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
-.github/workflows/turbo.yml|Turbo preview database|DATABASE_URL|DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch|DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:reset
+.github/workflows/turbo.yml|Turbo test parent database|PARENT_DATABASE_URL|PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)|(cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
+.github/workflows/turbo.yml|Turbo preview database|DATABASE_URL|DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch|DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
 .github/workflows/release-please.yml|Production release database|DATABASE_URL|DATABASE_URL=$(neonctl connection-string production|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 BOUNDARIES
 
@@ -181,4 +182,4 @@ assert_ordered \
   'Production release database shell' \
   "${release_shell_patterns[@]}"
 
-echo "Neon credential masking checks passed (5 invocations, 4 resolved values)"
+echo "Neon credential masking checks passed (6 invocations, 5 resolved values)"
