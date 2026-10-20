@@ -1,6 +1,7 @@
 import { command, computed } from "ccstate";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { CustomConnectorReaderResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
@@ -18,7 +19,7 @@ import { requireCustomConnectorAccountReady } from "../settings/connector-accoun
 export const prepareJobCustomConnectorAccess$ = command(
   async (
     { get },
-    connector: CustomConnectorReaderResponse,
+    connector: CustomConnectorResponse,
     signal: AbortSignal,
   ): Promise<void> => {
     if (!isIntegrationManagedCustomConnector(connector)) {

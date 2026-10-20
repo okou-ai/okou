@@ -1874,7 +1874,6 @@
         "emptyCustomBody": "HTTP API や MCP サーバーから作成すると、Okou は他のコネクターと同じように使えます。",
         "emptyCustomTitle": "カスタムコネクターはまだありません",
         "matchCount_other": "{{count}} 件の一致",
-        "needsAttention": "対応が必要",
         "nextCategories": "次のカテゴリ",
         "noResultsBody": "製品名で検索するか、API や MCP サーバーから自分で作成してください。",
         "noResultsTitle": "「{{query}}」に一致するコネクターがありません",

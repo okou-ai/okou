@@ -1,8 +1,9 @@
+import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -68,6 +69,7 @@ function mockExactReconnectAccount(
               label: "API token",
               description: null,
               grantKind: "manual" as const,
+              supportsRefresh: true,
               manualFields: [
                 {
                   id: "apiToken",
@@ -86,6 +88,7 @@ function mockExactReconnectAccount(
         label: "OAuth",
         description: null,
         grantKind: "auth-code" as const,
+        supportsRefresh: true,
         manualFields: [],
         startOptions: [],
       },
@@ -106,7 +109,6 @@ function mockExactReconnectAccount(
     connected: true,
     connectionStatus: "connected" as const,
     scopeMismatch: false,
-    authMethodSupportsRefresh: true,
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: null,
     connectNotice: null,
@@ -206,18 +208,7 @@ function mockManualReconnect(
       }
       onComplete();
       return respond(200, {
-        id: options?.responseId ?? EXACT_CONNECTION_ID,
-        slug: "github",
-        authMethod: "api-token",
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-        oauthScopes: null,
-        connectionStatus: "connected",
-        reconnectReason: null,
-        tokenExpiresAt: null,
-        createdAt: "2026-08-01T12:00:00.000Z",
-        updatedAt: "2026-08-01T12:00:00.000Z",
+        connectionId: options?.responseId ?? EXACT_CONNECTION_ID,
       });
     },
   );
@@ -1188,6 +1179,9 @@ test("A connector account switch shows its connector icon from that connector's 
     connectorAccountsContract.connection,
     ({ params, respond }) => {
       return respond(200, {
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: [],
         id: params.connectionId,
         target: { kind: "builtin", connectorSlug: github },
         authMethod: "oauth",
@@ -1215,7 +1209,7 @@ test("A connector account switch shows its connector icon from that connector's 
     itemReads.push(params.connectorSlug);
     return params.connectorSlug === github
       ? respond(200, {
-          connector: {
+          connector: catalogFixture({
             slug: github,
             label: "GitHub",
             description: "GitHub connector",
@@ -1234,11 +1228,10 @@ test("A connector account switch shows its connector icon from that connector's 
             connected: true,
             connectionStatus: "connected",
             scopeMismatch: false,
-            authMethodSupportsRefresh: true,
             tokenExpiresAt: null,
             singleAuthCodeAuthMethodId: null,
             connectNotice: null,
-          },
+          }),
         })
       : respond(404, {
           error: { code: "NOT_FOUND", message: "Connector not found" },

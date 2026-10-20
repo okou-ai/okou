@@ -1,4 +1,11 @@
 import {
+  customConnectorCompletionFixture,
+  httpConnectorFixture,
+  mcpConnectorFixture,
+  connectorFixtureAccount,
+  requireConnectorFixtureAccount,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
+import {
   type AgentCustomConnectorGrant,
   type AgentCustomConnectorGrants,
   type AgentCustomConnectorUpdate,
@@ -9,25 +16,22 @@ import {
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import {
-  type CreateCustomConnectorBody,
-  type CustomConnectorHttpResponse,
-  type CustomConnectorMcpResponse,
-  type CustomConnectorResponse,
-  type UpdateCustomConnectorBody,
-  customConnectorByIdContract,
-  customConnectorHttpResponseSchema,
-  customConnectorMcpResponseSchema,
-  customConnectorOAuth2Contract,
-  customConnectorValuesContract,
-  customConnectorsContract,
+import type {
+  CreateCustomConnectorBody,
+  UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import {
-  customConnectorsReaderContract,
-  customConnectorByIdReaderContract,
-  customConnectorOAuth2ReaderContract,
+  type CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
+  type CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
+  customConnectorHttpReaderResponseSchema as customConnectorHttpResponseSchema,
+  customConnectorMcpReaderResponseSchema as customConnectorMcpResponseSchema,
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorByIdReaderContract as customConnectorByIdContract,
+  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
+  customConnectorValuesReaderContract as customConnectorValuesContract,
+  customConnectorsReaderContract as customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -109,27 +113,10 @@ function mockCustomAccounts(
 ): void {
   const readAccounts = () => {
     const connector = readConnector();
-    if (!connector?.connected) {
+    const account = connector ? connectorFixtureAccount(connector) : undefined;
+    if (!account) {
       return [];
     }
-    const account = customAccount(
-      connector.id,
-      connector.connectedAccountId ?? "66666666-6666-4666-8666-666666666666",
-      {
-        authMethod: connector.authMode === "manual" ? "manual" : "oauth",
-        configuredFieldKeys: connector.configuredFieldKeys,
-        missingRequiredFields: connector.fields
-          .filter((field) => {
-            return (
-              field.required &&
-              connector.missingRequiredFields.includes(field.key)
-            );
-          })
-          .map((field) => {
-            return field.key;
-          }),
-      },
-    );
     return [account];
   };
   context.mocks.api(
@@ -197,12 +184,6 @@ function mockCustomAgentAccess(
 
 test.each([
   {
-    label: "an older API omits setup facts",
-    status: undefined,
-    message:
-      "Error: Connector account setup information is unavailable. Refresh and try again.",
-  },
-  {
     label: "required configuration is incomplete",
     status: "incomplete" as const,
     message:
@@ -239,10 +220,10 @@ test.each([
     context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
       account = customAccount(connector.id, connectionId, {
         setupStatus: status,
-        missingRequiredFields: status === undefined ? undefined : ["secret"],
-        configuredFieldKeys: status === undefined ? undefined : [],
+        missingRequiredFields: ["secret"],
+        configuredFieldKeys: [],
       });
-      return respond(200, { ...connector, connected: true, connectionId });
+      return respond(200, { ...connector, connectionId });
     });
     await setupCustomPage();
     click(
@@ -452,7 +433,12 @@ test("Preserve revoked access when adding another account", async () => {
       isDefault: false,
     });
     accounts.push(account);
-    return respond(200, { ...connector, connectedAccountId: account.id });
+    return respond(
+      200,
+      customConnectorCompletionFixture(
+        httpConnectorFixture({ ...connector, connectedAccountId: account.id }),
+      ),
+    );
   });
   await setupCustomPage();
   const name = connector.displayName;
@@ -722,12 +708,17 @@ test("Complete a custom connector’s declared fields", async () => {
   });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
     saved = body.values;
-    return respond(200, {
-      ...connector,
-      connected: true,
-      missingRequiredFields: [],
-      configuredFieldKeys: ["api_token", "account_id", "backup_token"],
-    });
+    return respond(
+      200,
+      customConnectorCompletionFixture(
+        httpConnectorFixture({
+          ...connector,
+          connected: true,
+          missingRequiredFields: [],
+          configuredFieldKeys: ["api_token", "account_id", "backup_token"],
+        }),
+      ),
+    );
   });
   await setupCustomPage();
   click(
@@ -774,33 +765,23 @@ test("Complete a custom connector’s declared fields", async () => {
 
 test("Create and edit a custom definition without ordinary legacy status projections", async () => {
   mockCustomConnectorStory(context);
-  const {
-    connected: _connected,
-    connectedAccountId: _connectedAccountId,
-    connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
-    missingRequiredFields: _missingRequiredFields,
-    configuredFieldKeys: _configuredFieldKeys,
-    ...definition
-  } = customConnector({ displayName: "Canonical API" });
+  const { ...definition } = customConnector({ displayName: "Canonical API" });
   let saved: typeof definition | null = null;
-  context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: saved ? [saved] : [] });
   });
-  context.mocks.api(
-    customConnectorsReaderContract.create,
-    ({ body, respond }) => {
-      expect(body.displayName).toBe("Canonical API");
-      saved = definition;
-      return respond(201, saved);
-    },
-  );
-  context.mocks.api(customConnectorByIdReaderContract.get, ({ respond }) => {
+  context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
+    expect(body.displayName).toBe("Canonical API");
+    saved = definition;
+    return respond(201, saved);
+  });
+  context.mocks.api(customConnectorByIdContract.get, ({ respond }) => {
     return saved
       ? respond(200, saved)
       : respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
   });
   context.mocks.api(
-    customConnectorByIdReaderContract.update,
+    customConnectorByIdContract.update,
     ({ body, params, respond }) => {
       expect(params.id).toBe(definition.id);
       expect(body.displayName).toBe("Edited Canonical API");
@@ -1036,14 +1017,12 @@ test("Manage custom HTTP OAuth through creation", async () => {
       if (!connector) {
         throw new Error("Expected OAuth connector");
       }
-      connector = {
+      connector = httpConnectorFixture({
         ...connector,
         connected: true,
         missingRequiredFields: [],
-      };
-      const connectedAccountId =
-        connector.connectedAccountId ?? crypto.randomUUID();
-      connector = { ...connector, connectedAccountId };
+      });
+      const connectedAccountId = requireConnectorFixtureAccount(connector).id;
       completedAttempts.set(oauthAttemptId, connectedAccountId);
       authWindow.close();
       return respond(200, {
@@ -1225,14 +1204,12 @@ test("Manage custom HTTP OAuth through configuration update and connection", asy
       if (!connector) {
         throw new Error("Expected OAuth connector");
       }
-      connector = {
+      connector = httpConnectorFixture({
         ...connector,
         connected: true,
         missingRequiredFields: [],
-      };
-      const connectedAccountId =
-        connector.connectedAccountId ?? crypto.randomUUID();
-      connector = { ...connector, connectedAccountId };
+      });
+      const connectedAccountId = requireConnectorFixtureAccount(connector).id;
       completedAttempts.set(oauthAttemptId, connectedAccountId);
       authWindow.close();
       return respond(200, {
@@ -1338,7 +1315,7 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
     if (!connector) {
       throw new Error("Expected MCP connector");
     }
-    connector = {
+    connector = mcpConnectorFixture({
       ...connector,
       connected: true,
       missingRequiredFields: [],
@@ -1346,10 +1323,10 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
         return value.key;
       }),
       connectedAccountId: "66666666-6666-4666-8666-666666666666",
-    };
+    });
     return respond(200, {
       ...connector,
-      connectionId: connector.connectedAccountId,
+      connectionId: requireConnectorFixtureAccount(connector).id,
     });
   });
   context.mocks.api(
@@ -1501,7 +1478,7 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
   });
 });
 
-test.each(["legacy", "canonical"] as const)(
+test.each(["canonical"] as const)(
   "Create and connect an MCP server with a %s automatic receipt",
   async (receiptShape) => {
     const connectionId = "a0000000-0000-4000-a000-000000000094";
@@ -1537,38 +1514,19 @@ test.each(["legacy", "canonical"] as const)(
     });
     context.mocks.api(
       receiptShape === "canonical"
-        ? customConnectorOAuth2ReaderContract.start
+        ? customConnectorOAuth2Contract.start
         : customConnectorOAuth2Contract.start,
       ({ body, respond }) => {
         expect(body.account).toStrictEqual({ intent: "add" });
         if (!connector) {
           throw new Error("Expected automatic MCP connector");
         }
-        connector = {
+        connector = mcpConnectorFixture({
           ...connector,
           connected: true,
           connectedAccountId: connectionId,
-        };
-        const {
-          connected: _connected,
-          connectedAccountId: _connectedAccountId,
-          connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
-          missingRequiredFields: _missingRequiredFields,
-          configuredFieldKeys: _configuredFieldKeys,
-          ...definition
-        } = connector;
-        if (receiptShape === "canonical") {
-          return respond(200, {
-            result: "connected",
-            connector: definition,
-            connectionId,
-          });
-        }
-        return respond(200, {
-          result: "connected",
-          connector,
-          connectedAccountId: connectionId,
         });
+        return respond(200, { result: "connected", connector, connectionId });
       },
     );
 
@@ -2061,13 +2019,17 @@ test("Add and optionally name a custom OAuth account", async () => {
     customConnectorOAuth2Contract.start,
     ({ body, respond }) => {
       submitted = body.account;
-      connector = { ...connector, connected: true, missingRequiredFields: [] };
+      connector = httpConnectorFixture({
+        ...connector,
+        connected: true,
+        missingRequiredFields: [],
+      });
       account = customAccount(connector.id, connectionId, {
         authMethod: "oauth",
         oauthScopes: ["search.read"],
       });
       const connectedAccountId = connectionId;
-      connector = { ...connector, connectedAccountId };
+      connector = httpConnectorFixture({ ...connector, connectedAccountId });
       completedAttempts.set(oauthAttemptId, connectedAccountId);
       authWindow.close();
       return respond(200, {
@@ -2184,32 +2146,37 @@ test("Edit a custom HTTP connector without losing advanced configuration", async
 
 test("Do not grant access after an unsuccessful custom connection", async () => {
   const connector = customConnector({ displayName: "Acme Incomplete" });
-  let writes = 0;
-  let grantMutations = 0;
+  let writeAvailable = false;
+  let account: ConnectorAccountConnection | null = null;
   context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
+  mockCustomAgentAccess();
+  mockSavedConnectorAccounts(context, () => {
+    return account ? [account] : [];
+  });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    return respond(200, { grants: [] });
-  });
-  context.mocks.api(agentCustomConnectorsContract.update, ({ respond }) => {
-    grantMutations += 1;
-    return respond(200, { grants: [] });
-  });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      return account && account.id === params.connectionId
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
   context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
-    writes += 1;
-    if (writes === 1) {
+    if (!writeAvailable) {
       return respond(500, {
         error: { code: "UNAVAILABLE", message: "Write unavailable" },
       });
     }
-    return respond(200, {
-      ...connector,
-      connected: false,
-      missingRequiredFields: [],
-      configuredFieldKeys: ["secret"],
+    account = customAccount(connector.id, crypto.randomUUID(), {
+      setupStatus: "incomplete",
+      missingRequiredFields: ["secret"],
     });
+    return respond(200, { ...connector, connectionId: account.id });
   });
   await setupCustomPage();
   click(
@@ -2223,18 +2190,29 @@ test("Do not grant access after an unsuccessful custom connection", async () => 
   await fill(within(dialog).getByLabelText("Secret"), "acme-secret");
 
   click(getConnectorAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(writes).toBe(1);
-  });
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Write unavailable",
+  );
   expect(dialog).toBeInTheDocument();
-  expect(grantMutations).toBe(0);
 
+  writeAvailable = true;
   click(getConnectorAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(writes).toBe(2);
-  });
+  await within(dialog).findByText(/This account needs additional setup/u);
   expect(dialog).toBeInTheDocument();
-  expect(grantMutations).toBe(0);
+  click(getConnectorAction("button", "Close", dialog));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Manage Acme Incomplete access");
+    }),
+  );
+  const access = await screen.findByRole("dialog", {
+    name: "Manage Acme Incomplete access",
+  });
+  await expect(
+    within(access).findByRole("switch", {
+      name: "Authorize Acme Incomplete access for Research",
+    }),
+  ).resolves.not.toBeChecked();
 });
 
 test("Hide integration-managed connectors from custom settings", async () => {
@@ -2352,7 +2330,12 @@ test("Validate new and reconnecting custom accounts appropriately", async () => 
   });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
     submitted = body.account;
-    return respond(200, { ...connector, connectedAccountId: existing.id });
+    return respond(
+      200,
+      customConnectorCompletionFixture(
+        httpConnectorFixture({ ...connector, connectedAccountId: existing.id }),
+      ),
+    );
   });
   await setupCustomPage();
   click(
@@ -2432,12 +2415,12 @@ test("Preserve custom connector grants when credentials are added", async () => 
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [
-        {
+        httpConnectorFixture({
           ...connector,
           connected,
           configuredFieldKeys: connected ? ["secret"] : [],
           missingRequiredFields: connected ? [] : ["secret"],
-        },
+        }),
       ],
     });
   });
@@ -2470,16 +2453,23 @@ test("Preserve custom connector grants when credentials are added", async () => 
       { key: "secret", kind: "secret", value: "acme-secret" },
     ]);
     connected = true;
-    return respond(200, {
-      ...connector,
-      connected: true,
-      configuredFieldKeys: ["secret"],
-      missingRequiredFields: [],
-      connectionId: "66666666-6666-4666-8666-666666666666",
-    });
+    return respond(
+      200,
+      customConnectorCompletionFixture(
+        httpConnectorFixture({
+          ...connector,
+          connected: true,
+          configuredFieldKeys: ["secret"],
+          missingRequiredFields: [],
+          connectionId: "66666666-6666-4666-8666-666666666666",
+        }),
+      ),
+    );
   });
   mockCustomAccounts(() => {
-    return connected ? { ...connector, connected: true } : null;
+    return connected
+      ? httpConnectorFixture({ ...connector, connected: true })
+      : null;
   });
   await setupCustomPage();
   click(

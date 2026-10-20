@@ -19,7 +19,7 @@ import {
   customConnectorReaderListResponseSchema as customConnectorListResponseSchema,
   customConnectorReaderResponseSchema as customConnectorResponseSchema,
   setCustomConnectorValuesReaderResponseSchema as setCustomConnectorValuesResponseSchema,
-  startCustomConnectorOAuth2ReaderResponseSchema,
+  startCustomConnectorOAuth2ReaderResponseSchema as startCustomConnectorOAuth2ResponseSchema,
   type CustomConnectorReaderResponse as CustomConnectorResponse,
   customConnectorManagedStatusSchema,
 } from "@okouai/api-contracts/contracts/custom-connector-readers";
@@ -560,7 +560,7 @@ const startCustomConnectorAuthorization$ = command(
     );
     return {
       ...result,
-      body: startCustomConnectorOAuth2ReaderResponseSchema.parse(result.body),
+      body: startCustomConnectorOAuth2ResponseSchema.parse(result.body),
     };
   },
 );
@@ -885,6 +885,7 @@ const submitCustomConnectorConnectionCommand$ = command(
       readonly values: readonly CustomConnectorValueInput[];
       readonly accountOptions: CustomConnectorAccountMutationOptions;
       readonly accountMode?: ConnectorAccountConnectMode;
+      readonly onConnected?: ConnectorConnectSuccess;
     },
     onSuccess: ConnectorConnectSuccess | undefined,
     signal: AbortSignal,
@@ -893,6 +894,10 @@ const submitCustomConnectorConnectionCommand$ = command(
       result: CustomConnectorConnectionResult,
       attemptSignal: AbortSignal,
     ) => {
+      if (result.connected) {
+        await args.onConnected?.(result.connectionId, attemptSignal);
+        attemptSignal.throwIfAborted();
+      }
       if (result.connected && (result.targetAuthorized || args.accountMode)) {
         await onSuccess?.(result.connectionId, attemptSignal);
         attemptSignal.throwIfAborted();

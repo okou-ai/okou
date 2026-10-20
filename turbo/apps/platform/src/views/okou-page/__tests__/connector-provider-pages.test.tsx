@@ -1,7 +1,8 @@
+import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import {
@@ -82,7 +83,7 @@ function telegramConnectPath(path: string, signature = "b".repeat(64)): string {
 }
 
 function feishuConnectorStatus(): PublicConnectorCatalogStatusItem {
-  return {
+  return catalogFixture({
     slug: "lark",
     label: "Feishu",
     description: "Connect Feishu to Okou.",
@@ -101,11 +102,10 @@ function feishuConnectorStatus(): PublicConnectorCatalogStatusItem {
     connected: false,
     connectionStatus: "not-connected",
     scopeMismatch: false,
-    authMethodSupportsRefresh: false,
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: null,
     connectNotice: null,
-  };
+  });
 }
 
 test("A user links GitHub for agent mentions", async () => {

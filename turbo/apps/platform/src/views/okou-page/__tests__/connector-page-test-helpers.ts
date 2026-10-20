@@ -1,3 +1,12 @@
+import {
+  catalogFixture,
+  connectorFixtureAccount,
+  type BuiltinFixtureAccount,
+  type HttpFixtureOverrides,
+  type McpFixtureOverrides,
+  httpConnectorFixture,
+  mcpConnectorFixture,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
@@ -8,24 +17,22 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
-  type PublicConnectorCatalogStatusItem,
-  connectorCatalogContract,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+  connectorCatalogReaderContract as connectorCatalogContract,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  type CreateCustomConnectorBody,
-  type CustomConnectorHttpResponse,
-  type CustomConnectorMcpResponse,
-  customConnectorByIdContract,
-  customConnectorHttpResponseSchema,
-  customConnectorMcpResponseSchema,
-  customConnectorValuesContract,
-  customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  type CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
+  type CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
+  customConnectorByIdReaderContract as customConnectorByIdContract,
+  customConnectorValuesReaderContract as customConnectorValuesContract,
+  customConnectorsReaderContract as customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, within } from "@testing-library/react";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -295,16 +302,15 @@ export function publicStatusItem(args: {
   readonly authMethods?: PublicConnectorCatalogStatusItem["authMethods"];
   readonly singleAuthCodeAuthMethodId?: string | null;
   readonly connectNotice?: PublicConnectorCatalogStatusItem["connectNotice"];
-  readonly connection?: PublicConnectorCatalogStatusItem["connection"];
+  readonly connection?: BuiltinFixtureAccount["connection"];
   readonly connected?: boolean;
-  readonly connectionStatus?: PublicConnectorCatalogStatusItem["connectionStatus"];
+  readonly connectionStatus?: BuiltinFixtureAccount["connectionStatus"];
   readonly scopeMismatch?: boolean;
-  readonly authMethodSupportsRefresh?: boolean;
   readonly tokenExpiresAt?: string | null;
   readonly permissionSummary?: PublicConnectorCatalogStatusItem["permissionSummary"];
   readonly popularityRank?: number;
 }): PublicConnectorCatalogStatusItem {
-  return {
+  return catalogFixture({
     slug: args.connectorSlug,
     label: args.label,
     ...(args.popularityRank === undefined
@@ -330,11 +336,10 @@ export function publicStatusItem(args: {
     setupStatus: args.connected ? "complete" : null,
     connectionStatus: args.connectionStatus ?? "not-connected",
     scopeMismatch: args.scopeMismatch ?? false,
-    authMethodSupportsRefresh: args.authMethodSupportsRefresh ?? false,
     tokenExpiresAt: args.tokenExpiresAt ?? null,
     singleAuthCodeAuthMethodId: args.singleAuthCodeAuthMethodId ?? null,
     connectNotice: args.connectNotice ?? null,
-  };
+  });
 }
 
 /** What the API returns per category when no category is asked for by name. */
@@ -344,12 +349,12 @@ const DISCOVERY_PER_CATEGORY = 12;
  * Discovery keeps every connected connector and slices the rest per category,
  * so a fixture of connected connectors is returned whole.
  */
-function browseSlice<
-  T extends { readonly category: string; readonly connection: unknown },
->(connectors: readonly T[]): T[] {
+function browseSlice<T extends { readonly category: string }>(
+  connectors: readonly T[],
+): T[] {
   const shownPerCategory = new Map<string, number>();
   return connectors.filter((connector) => {
-    if (connector.connection) {
+    if (connectorFixtureAccount(connector)) {
       return true;
     }
     const shown = shownPerCategory.get(connector.category) ?? 0;
@@ -370,7 +375,7 @@ export function mockPublicConnectorStatus(
     connectorCatalogContract.discovery,
     ({ query, respond }) => {
       // Production answers a named category with the whole category, and a
-      // keyword-free browse with every connected connector plus a slice of
+      // keyword-free browse with a slice of
       // each category. The fixture does the same, or the category view is
       // tested against a response the API never returns.
       const scoped = query.category
@@ -388,9 +393,9 @@ export function mockPublicConnectorStatus(
 }
 
 export function customConnector(
-  overrides: Partial<CustomConnectorHttpResponse> = {},
+  overrides: HttpFixtureOverrides = {},
 ): CustomConnectorHttpResponse {
-  return customConnectorHttpResponseSchema.parse({
+  return httpConnectorFixture({
     kind: "http",
     id: "33333333-3333-4333-8333-333333333333",
     slug: "acme-search",
@@ -415,9 +420,9 @@ export function customConnector(
 }
 
 export function mcpCustomConnector(
-  overrides: Partial<CustomConnectorMcpResponse> = {},
+  overrides: McpFixtureOverrides = {},
 ): CustomConnectorMcpResponse {
-  return customConnectorMcpResponseSchema.parse({
+  return mcpConnectorFixture({
     kind: "mcp",
     id: "44444444-4444-4444-8444-444444444444",
     slug: "_acme-mcp",
@@ -509,7 +514,7 @@ export function mockCustomConnectorStory(
         if (connector.id !== params.id) {
           return connector;
         }
-        updated = customConnectorHttpResponseSchema.parse({
+        updated = httpConnectorFixture({
           ...connector,
           connected: true,
           missingRequiredFields: [],
@@ -544,14 +549,14 @@ export function mockCustomConnectorStory(
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       });
-      const connected = customConnectorHttpResponseSchema.parse({
+      const connected = httpConnectorFixture({
         ...updated,
         connectedAccountId: connectionId,
       });
       connectors = connectors.map((connector) => {
         return connector.id === params.id ? connected : connector;
       });
-      return respond(200, connected);
+      return respond(200, { ...connected, connectionId });
     },
   );
   context.mocks.api(
@@ -569,7 +574,7 @@ export function mockCustomConnectorStory(
         const oauthConfig = body.oauthConfig
           ? publicOAuthConfig(body.oauthConfig)
           : connector.oauthConfig;
-        const next = customConnectorHttpResponseSchema.parse({
+        const next = httpConnectorFixture({
           ...connector,
           displayName: body.displayName,
           prefixTemplates: body.prefixTemplates,

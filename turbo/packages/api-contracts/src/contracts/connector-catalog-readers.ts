@@ -3,6 +3,7 @@ import type { ConnectorAccountConnection } from "./connector-accounts";
 
 import { initContract } from "./base";
 import { connectorReaderRouteSpec } from "./connector-reader-contract";
+import { onboardingSourcesContract } from "./onboarding";
 import {
   connectorCatalogContract,
   publicConnectorCatalogConnectItemSchema,
@@ -120,6 +121,21 @@ export const connectorCatalogReaderContract = c.router({
       ...connectorCatalogContract.get.responses,
       200: connectorCatalogContract.get.responses[200].extend({
         connector: catalogStatusReaderSchema,
+      }),
+    },
+  },
+});
+
+// Onboarding shares catalog metadata. Keep its client view tolerant until the
+// prepared App is deployed and #41821 retires the serving projections.
+export const onboardingSourcesReaderContract = c.router({
+  ...onboardingSourcesContract,
+  list: {
+    ...connectorReaderRouteSpec(onboardingSourcesContract.list),
+    responses: {
+      ...onboardingSourcesContract.list.responses,
+      200: onboardingSourcesContract.list.responses[200].extend({
+        connectors: z.array(catalogConnectReaderSchema),
       }),
     },
   },

@@ -1,3 +1,9 @@
+import {
+  catalogFixture,
+  connectorFixtureAccount,
+  httpConnectorFixture,
+  mcpConnectorFixture,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
   agentCustomConnectorsContract,
@@ -11,33 +17,36 @@ import {
   type ConnectorAccountSelection,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogAuthMethodDetail,
-  type PublicConnectorCatalogPermissionDetail,
-  type PublicConnectorCatalogStatusItem,
+import type {
+  PublicConnectorCatalogAuthMethodDetail,
+  PublicConnectorCatalogPermissionDetail,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
-  builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantContract,
-  builtinConnectorOauthStartContract,
-} from "@okouai/api-contracts/contracts/connectors";
+  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import {
-  customConnectorsContract,
-  customConnectorHttpResponseSchema,
-  customConnectorValuesContract,
   isIntegrationManagedCustomConnector,
-  type CustomConnectorHttpResponse,
-  type CustomConnectorMcpResponse,
-  type CustomConnectorResponse,
   type CustomConnectorValueInput,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  type CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
+  type CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+  customConnectorsReaderContract as customConnectorsContract,
+  customConnectorValuesReaderContract as customConnectorValuesContract,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   chatThreadConnectorSelectionContract,
   type ChatThreadServiceTier,
@@ -199,7 +208,7 @@ function connectedCatalogItem(
   connectionId: string,
   authMethod: ConnectorAuthMethodId,
 ): PublicConnectorCatalogStatusItem {
-  return {
+  return catalogFixture({
     ...item,
     connected: true,
     connectionStatus: "connected",
@@ -210,7 +219,7 @@ function connectedCatalogItem(
       externalEmail: null,
       reconnectReason: null,
     },
-  };
+  });
 }
 
 function connectorResponse(
@@ -241,12 +250,12 @@ const DISCOVERY_PER_CATEGORY = 12;
  * Discovery keeps every connected connector and slices the rest per category,
  * so a fixture of connected connectors is returned whole.
  */
-function browseSlice<
-  T extends { readonly category: string; readonly connection: unknown },
->(connectors: readonly T[]): T[] {
+function browseSlice<T extends { readonly category: string }>(
+  connectors: readonly T[],
+): T[] {
   const shownPerCategory = new Map<string, number>();
   return connectors.filter((connector) => {
-    if (connector.connection) {
+    if (connectorFixtureAccount(connector)) {
       return true;
     }
     const shown = shownPerCategory.get(connector.category) ?? 0;
@@ -260,49 +269,10 @@ function savedConnectorAccounts(
   customConnectors: readonly CustomConnectorResponse[],
 ): ConnectorAccountConnection[] {
   const byTarget = new Map<string, ConnectorAccountConnection[]>();
-  for (const connector of catalog) {
-    const target = { kind: "builtin", connectorSlug: connector.slug } as const;
-    const key = connectorAccountTargetKey(target);
-    if (connector.connection?.id && !byTarget.has(key)) {
-      byTarget.set(key, [
-        {
-          ...connectorAccount({
-            id: connector.connection.id,
-            target,
-            displayName: "Work",
-            isDefault: true,
-          }),
-          authMethod: connector.connection.authMethod,
-          externalUsername: connector.connection.externalUsername,
-          externalEmail: connector.connection.externalEmail,
-          connectionStatus:
-            connector.connectionStatus === "reconnect-required"
-              ? "reconnect-required"
-              : "connected",
-          reconnectReason: connector.connection.reconnectReason,
-        },
-      ]);
-    }
-  }
-  for (const connector of customConnectors) {
-    const target = { kind: "custom", customConnectorId: connector.id } as const;
-    const key = connectorAccountTargetKey(target);
-    if (
-      !isIntegrationManagedCustomConnector(connector) &&
-      connector.connectedAccountId &&
-      !byTarget.has(key)
-    ) {
-      byTarget.set(key, [
-        {
-          ...connectorAccount({
-            id: connector.connectedAccountId,
-            target,
-            displayName: "Work",
-            isDefault: true,
-          }),
-          authMethod: connector.authMode === "manual" ? "manual" : "oauth",
-        },
-      ]);
+  for (const connector of [...catalog, ...customConnectors]) {
+    const account = connectorFixtureAccount(connector);
+    if (account && !byTarget.has(connectorAccountTargetKey(account.target))) {
+      byTarget.set(connectorAccountTargetKey(account.target), [account]);
     }
   }
   return [...byTarget.values()].flat();
@@ -313,7 +283,7 @@ export function installComposerConnectorFixture(
 ): ComposerConnectorFixture {
   const fixtureThreadId = options.threadId ?? SCOUT_THREAD_ID;
   let catalog = [...(options.catalog ?? [])];
-  let customConnectors = [...(options.customConnectors ?? [])];
+  const customConnectors = [...(options.customConnectors ?? [])];
   const builtinAuthorizations = copyAuthorizationRecord(
     options.builtinAuthorizations,
   );
@@ -449,7 +419,7 @@ export function installComposerConnectorFixture(
           })
         : catalog;
       // Production answers a named category with the whole category, and a
-      // keyword-free browse with every connected connector plus a slice of
+      // keyword-free browse with a slice of
       // each category. The fixture does the same, or a category view is
       // tested against a response the API never returns.
       const browsed = query.category
@@ -721,19 +691,7 @@ export function installComposerConnectorFixture(
           return value.key;
         }),
       );
-      const connected = {
-        ...current,
-        connected: true,
-        connectedAccountId: account.id,
-        connectedAccountUpdatedAt: CREATED_AT,
-        configuredFieldKeys: account.configuredFieldKeys,
-        missingRequiredFields: [],
-        updatedAt: CREATED_AT,
-      };
-      customConnectors = customConnectors.map((connector) => {
-        return connector.id === connected.id ? connected : connector;
-      });
-      return respond(200, { ...connected, connectionId: account.id });
+      return respond(200, { ...current, connectionId: account.id });
     },
   );
 
@@ -778,16 +736,15 @@ export function installComposerConnectorFixture(
         connectorSlug: params.connectorSlug,
       };
       manualConnectionRequests.push(request);
-      return respond(
-        200,
-        installBuiltinConnection(
+      return respond(200, {
+        connectionId: installBuiltinConnection(
           request,
           body.account.intent === "reconnect"
             ? body.account.connectionId
             : crypto.randomUUID(),
           Object.keys(body.values),
-        ),
-      );
+        ).id,
+      });
     },
   );
   context.mocks.api(
@@ -800,15 +757,14 @@ export function installComposerConnectorFixture(
         connectorSlug: params.connectorSlug,
       };
       noAuthConnectionRequests.push(request);
-      return respond(
-        200,
-        installBuiltinConnection(
+      return respond(200, {
+        connectionId: installBuiltinConnection(
           request,
           body.account.intent === "reconnect"
             ? body.account.connectionId
             : crypto.randomUUID(),
-        ),
-      );
+        ).id,
+      });
     },
   );
   context.mocks.api(
@@ -860,6 +816,7 @@ export function oauthAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
     label: "OAuth",
     description: "Sign in with the provider.",
     grantKind: "auth-code",
+    supportsRefresh: true,
     manualFields: [],
     startOptions: [],
   };
@@ -871,6 +828,7 @@ export function manualAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
     label: "API Token",
     description: "Enter the API token.",
     grantKind: "manual",
+    supportsRefresh: false,
     manualFields: [
       {
         id: "apiToken",
@@ -890,6 +848,7 @@ export function noAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
     label: "Public access",
     description: "No credentials are required.",
     grantKind: "none",
+    supportsRefresh: false,
     manualFields: [],
     startOptions: [],
   };
@@ -904,6 +863,7 @@ export function builtinConnector(args: {
   readonly tags?: readonly string[];
   readonly category?: string;
   readonly popularityRank?: number;
+  readonly mcp?: PublicConnectorCatalogStatusItem["mcp"];
 }): PublicConnectorCatalogStatusItem {
   const authMethods = [...(args.authMethods ?? [oauthAuthMethod()])];
   const connected = args.connected ?? true;
@@ -916,7 +876,7 @@ export function builtinConnector(args: {
     .padStart(12, "0")
     .slice(-12)}`;
   const authMethod = authMethods[0]?.id ?? "oauth";
-  return {
+  return catalogFixture({
     slug: args.slug,
     label: args.label,
     description: `${args.label} connector`,
@@ -928,6 +888,7 @@ export function builtinConnector(args: {
     ...(args.popularityRank === undefined
       ? {}
       : { popularityRank: args.popularityRank }),
+    ...(args.mcp === undefined ? {} : { mcp: args.mcp }),
     generation: [],
     tags: [...(args.tags ?? [])],
     authMethods,
@@ -950,14 +911,13 @@ export function builtinConnector(args: {
     setupStatus: connected ? "complete" : null,
     connectionStatus: connected ? "connected" : "not-connected",
     scopeMismatch: false,
-    authMethodSupportsRefresh: authMethod === "oauth",
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId:
       authMethods.length === 1 && authMethods[0]?.grantKind === "auth-code"
         ? authMethod
         : null,
     connectNotice: null,
-  };
+  });
 }
 
 interface HttpConnectorOptions {
@@ -974,7 +934,7 @@ export function httpConnector(
   args: HttpConnectorOptions,
 ): CustomConnectorHttpResponse {
   const authMode = args.authMode ?? "manual";
-  return customConnectorHttpResponseSchema.parse({
+  return httpConnectorFixture({
     id: args.id,
     slug: args.slug,
     displayName: args.displayName,
@@ -1033,7 +993,7 @@ export function mcpConnector(args: {
   readonly displayName: string;
   readonly connected: boolean;
 }): CustomConnectorMcpResponse {
-  return {
+  return mcpConnectorFixture({
     id: args.id,
     slug: args.slug,
     displayName: args.displayName,
@@ -1059,7 +1019,7 @@ export function mcpConnector(args: {
     configuredFieldKeys: [],
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
-  };
+  });
 }
 
 export function permissionDetail(

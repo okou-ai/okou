@@ -182,6 +182,7 @@ import {
   closeChatConnectorActionConnectDialog$,
   completeExactReconnectChatAction$,
   completeCustomConnectorChatAction$,
+  refreshCustomConnectorChatAccount$,
   completeCatalogConnectorChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
@@ -4613,6 +4614,7 @@ function ActiveChatConnectorActionConnectModal() {
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const completeExactReconnect = useSet(completeExactReconnectChatAction$);
   const completeCustomConnector = useSet(completeCustomConnectorChatAction$);
+  const refreshCustomAccount = useSet(refreshCustomConnectorChatAccount$);
   const completeCatalogConnector = useSet(completeCatalogConnectorChatAction$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
@@ -4649,6 +4651,9 @@ function ActiveChatConnectorActionConnectModal() {
         agentId={active.agentId}
         accountOptions={accountOptions}
         onClose={close}
+        onConnected={async (_connectionId, attemptSignal) => {
+          await refreshCustomAccount(active, attemptSignal);
+        }}
         onSuccess={onSuccess}
       />
     ) : null;

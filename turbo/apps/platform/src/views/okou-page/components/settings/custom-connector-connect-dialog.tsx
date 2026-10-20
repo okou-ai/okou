@@ -231,6 +231,10 @@ interface CustomConnectorConnectDialogProps {
   readonly connector: CustomConnectorResponse;
   readonly agentId?: string;
   readonly onClose?: () => void;
+  readonly onConnected?: (
+    connectionId: string | null,
+    signal: AbortSignal,
+  ) => void | Promise<void>;
   readonly onSuccess?: (
     connectionId: string | null,
     signal: AbortSignal,
@@ -392,10 +396,33 @@ export function CustomConnectorConnectDialog(
   return <CustomConnectorValuesConnectDialog {...props} />;
 }
 
+function CustomConnectorSecretDescription({
+  connector,
+}: {
+  readonly connector: CustomConnectorResponse;
+}) {
+  const { t } = useTranslation();
+  if (
+    connector.authMode !== "manual" ||
+    connector.fields.length !== 1 ||
+    connector.fields[0]?.kind !== "secret"
+  ) {
+    return null;
+  }
+  return (
+    <p className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.connectors.custom.connect.description;
+      })}
+    </p>
+  );
+}
+
 function CustomConnectorConnectDialogContent({
   connector,
   agentId,
   onClose,
+  onConnected,
   onSuccess,
   accountOptions,
   accountMode,
@@ -432,10 +459,6 @@ function CustomConnectorConnectDialogContent({
     !submitting &&
     setupAvailable &&
     (authorization || (hasRequiredValues && (noAuth || values.length > 0)));
-  const showSecretDescription =
-    !authorization &&
-    connector.fields.length === 1 &&
-    connector.fields[0]?.kind === "secret";
 
   const { close: cancel, onOpenChange } = useConnectorConnectionDialogClose(
     connectionSubmitting,
@@ -450,7 +473,14 @@ function CustomConnectorConnectDialogContent({
     detach(
       (async () => {
         const connected = await submit(
-          { connector, agentId, values, accountOptions, accountMode },
+          {
+            connector,
+            agentId,
+            values,
+            accountOptions,
+            accountMode,
+            onConnected,
+          },
           onSuccess,
           signal,
         );
@@ -488,13 +518,7 @@ function CustomConnectorConnectDialogContent({
             </DialogTitle>
           </div>
         </DialogHeader>
-        {showSecretDescription && (
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.connectors.custom.connect.description;
-            })}
-          </p>
-        )}
+        <CustomConnectorSecretDescription connector={connector} />
         <ConnectorConnectionDialogBody>
           {connectionLoadable.state === "hasError" && (
             <p role="alert" className="text-sm text-destructive">

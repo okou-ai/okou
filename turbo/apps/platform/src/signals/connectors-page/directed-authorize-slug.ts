@@ -28,7 +28,13 @@ import {
   routeChatActionCallback$,
   type ChatActionCallback,
 } from "../chat-page/action-callback.ts";
-import { connectorCatalogItemForSlug } from "../external/connectors.ts";
+import {
+  connectorCatalogItemForSlug,
+  withMemberAccount,
+  reloadBuiltinConnectors$,
+  builtinConnectorsReloadVersion$,
+} from "../external/connectors.ts";
+import { createConnectorAccountListSignals } from "../okou-page/connector-accounts.ts";
 
 /**
  * Connector slug extracted from `/connectors/:connectorSlug/authorize` route params.
@@ -42,10 +48,47 @@ export const directedAuthorizeSlug$ = computed((get): ConnectorSlug | null => {
   return parsed.success ? parsed.data : null;
 });
 
-/** The catalog entry of the connector the page is directed at. */
-export const directedAuthorizeCatalogItem$ = connectorCatalogItemForSlug(
+const directedAuthorizeDefinition$ = connectorCatalogItemForSlug(
   directedAuthorizeSlug$,
 );
+const directedAuthorizeAccounts = createConnectorAccountListSignals({
+  includeBuiltinScopeMismatch: true,
+  refreshVersion$: builtinConnectorsReloadVersion$,
+});
+
+export const retryDirectedAuthorize$ = command(({ set }) => {
+  set(reloadBuiltinConnectors$);
+});
+
+export const initializeDirectedAuthorizeAccounts$ = command(
+  ({ get, set }, signal: AbortSignal) => {
+    set(directedAuthorizeAccounts.clearTarget$);
+    signal.addEventListener("abort", () => {
+      set(directedAuthorizeAccounts.clearTarget$);
+    });
+    const connectorSlug = get(directedAuthorizeSlug$);
+    if (connectorSlug) {
+      set(
+        directedAuthorizeAccounts.setTarget$,
+        { kind: "builtin", connectorSlug },
+        signal,
+      );
+    }
+  },
+);
+
+/** Authorization uses the current canonical default, separate from catalog metadata. */
+export const directedAuthorizeCatalogItem$ = computed(async (get) => {
+  const definition = await get(directedAuthorizeDefinition$);
+  if (!definition) {
+    return null;
+  }
+  const accounts = await get(directedAuthorizeAccounts.accounts$);
+  if (!accounts.available) {
+    throw new Error("Connector account information is unavailable");
+  }
+  return withMemberAccount(definition, accounts.defaultConnection);
+});
 
 /**
  * Agent ID extracted from `?agentId=` query parameter.

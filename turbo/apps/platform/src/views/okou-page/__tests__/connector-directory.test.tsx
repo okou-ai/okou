@@ -27,19 +27,17 @@ test("Show builtin tool service details without HTTP permission controls", async
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({
     catalog: [
-      {
-        ...builtinConnector({
-          slug: "public-mcp",
-          label: "Public Tools",
-          connected: true,
-          authMethods: [noAuthMethod()],
-          popularityRank: 0,
-        }),
+      builtinConnector({
+        slug: "public-mcp",
+        label: "Public Tools",
+        connected: true,
+        authMethods: [noAuthMethod()],
+        popularityRank: 0,
         mcp: {
           transport: "streamable-http",
           endpoint: "https://public.example.test/mcp",
         },
-      },
+      }),
     ],
   });
   await setupPage({

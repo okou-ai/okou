@@ -1,14 +1,14 @@
+import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
-import { connectorCatalogReaderContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
 import {
   ACME_CONNECTOR_ID,
   FEISHU_CONNECTOR_ID,
@@ -82,21 +82,24 @@ test("Saved connectors with unavailable defaults stay visible for account repair
   const customAccounts = savedAccounts(customTarget, true);
   const fixture = installComposerConnectorFixture({
     catalog: [
-      {
+      catalogFixture({
         ...builtinConnector({ slug: "github", label: "GitHub" }),
         connectionStatus: "reconnect-required",
-      },
+      }),
     ],
     customConnectors: [acme()],
     accounts: [...builtinAccounts, ...customAccounts],
   });
   const dialog = await openDirectory();
-  await within(dialog).findByText("Needs attention");
+  await fill(
+    within(dialog).getByPlaceholderText("Find connectors..."),
+    "github",
+  );
   await expect(
     findFastControl("button", "Open GitHub details", dialog),
   ).resolves.toBeVisible();
+  await fill(within(dialog).getByPlaceholderText("Find connectors..."), "");
   await openCustom(dialog);
-  await within(dialog).findByText("Needs attention");
   await expect(
     findFastControl("button", "Connect Acme Search", dialog),
   ).resolves.toBeVisible();
@@ -137,86 +140,7 @@ test("Healthy saved accounts stay connected while zero-account connectors remain
   expect(within(dialog).queryByText("Needs attention")).toBeNull();
 });
 
-async function openExpiringBuiltinDirectory(refreshable: boolean) {
-  const clock = { nowMs: new Date("2026-10-19T08:00:00.000Z").getTime() };
-  mockNow(() => {
-    return clock.nowMs;
-  }, context.signal);
-  const target = { kind: "builtin", connectorSlug: "github" } as const;
-  const tokenExpiresAt = new Date(clock.nowMs + 60_000).toISOString();
-  const catalog = builtinConnector({ slug: "github", label: "GitHub" });
-  const account = {
-    ...connectorAccount({
-      id: catalog.connection!.id!,
-      target,
-      displayName: "Work",
-      isDefault: true,
-    }),
-    tokenExpiresAt,
-  };
-  const accounts = [
-    account,
-    connectorAccount({
-      id: crypto.randomUUID(),
-      target,
-      displayName: "Personal",
-      isDefault: false,
-    }),
-  ];
-  installComposerConnectorFixture({
-    catalog: [
-      { ...catalog, authMethodSupportsRefresh: refreshable, tokenExpiresAt },
-    ],
-    accounts,
-  });
-  const directory = await openDirectory();
-  const search = within(directory).getByPlaceholderText("Find connectors...");
-  await fill(search, "github");
-  return { directory, search, clock };
-}
-
-test("An open directory recognizes expiry of a saved non-refreshable builtin default", async () => {
-  const { directory, search, clock } =
-    await openExpiringBuiltinDirectory(false);
-  await expect(
-    findFastControl("button", "Open GitHub details", directory),
-  ).resolves.toHaveTextContent("Connected");
-  clock.nowMs += 120_000;
-  await fill(search, "git");
-  await within(directory).findByText("Needs attention");
-  const expired = await findFastControl(
-    "button",
-    "Open GitHub details",
-    directory,
-  );
-  expect(expired).toHaveTextContent("Connection expired");
-  await fill(search, "github");
-  const current = await findFastControl(
-    "button",
-    "Open GitHub details",
-    directory,
-  );
-  expect(current).toHaveTextContent("Connection expired");
-  click(current);
-  await expect(
-    findFastControl("link", "Manage GitHub accounts", directory),
-  ).resolves.toBeVisible();
-});
-
-test("An open directory keeps a saved refreshable builtin default usable after token expiry", async () => {
-  const { directory, search, clock } = await openExpiringBuiltinDirectory(true);
-  await expect(
-    findFastControl("button", "Open GitHub details", directory),
-  ).resolves.toHaveTextContent("Connected");
-  clock.nowMs += 120_000;
-  await fill(search, "git");
-  await expect(
-    findFastControl("button", "Open GitHub details", directory),
-  ).resolves.toHaveTextContent("Connected");
-  expect(within(directory).queryByText("Needs attention")).toBeNull();
-});
-
-test("A saved custom account with incomplete setup is visible without claiming it is ready", async () => {
+test("A saved custom connector remains available for account management", async () => {
   const target = {
     kind: "custom",
     customConnectorId: ACME_CONNECTOR_ID,
@@ -227,10 +151,8 @@ test("A saved custom account with incomplete setup is visible without claiming i
   });
   const dialog = await openDirectory();
   await openCustom(dialog);
-  await within(dialog).findByText("Needs attention");
   const card = await findFastControl("button", "Connect Acme Search", dialog);
   expect(card).toHaveTextContent("Connected");
-  expect(card).toHaveTextContent("Reconnect required");
 });
 
 test("Connecting a custom account updates the directory when it is reopened", async () => {
@@ -409,47 +331,6 @@ test("Saved builtin membership keeps account management available without accoun
   expect(fixture.manualConnectionRequests).toStrictEqual([]);
 });
 
-test.each([true, false])(
-  "Saved builtin targets with conflicting credential snapshots keep account management (expired: %s)",
-  async (expired) => {
-    const target = { kind: "builtin", connectorSlug: "github" } as const;
-    const accounts = savedAccounts(target, expired);
-    const catalog = builtinConnector({ slug: "github", label: "GitHub" });
-    const fixture = installComposerConnectorFixture({
-      catalog: [
-        {
-          ...catalog,
-          connected: expired,
-          connectionStatus: expired ? "connected" : "reconnect-required",
-          connection: {
-            ...catalog.connection!,
-            id: accounts[0]!.id,
-            reconnectReason: expired
-              ? null
-              : "authorization_expired_or_revoked",
-          },
-        },
-      ],
-      accounts,
-    });
-    const dialog = await openDirectory();
-    await fill(
-      within(dialog).getByPlaceholderText("Find connectors..."),
-      "github",
-    );
-    click(await findFastControl("button", "Open GitHub details", dialog));
-    const manage = await findFastControl(
-      "link",
-      "Manage GitHub accounts",
-      dialog,
-    );
-    expect(manage).toHaveAttribute("href", "/connectors");
-    expect(queryFastControl("button", "Connect", dialog)).toBeNull();
-    expect(queryFastControl("button", "Reconnect", dialog)).toBeNull();
-    expect(fixture.oauthConnectionRequests).toStrictEqual([]);
-  },
-);
-
 test("Saved builtin targets remain manageable when definitions omit account projections", async () => {
   const builtinTarget = { kind: "builtin", connectorSlug: "github" } as const;
   const builtin = builtinConnector({ slug: "github", label: "GitHub" });
@@ -457,16 +338,8 @@ test("Saved builtin targets remain manageable when definitions omit account proj
     catalog: [builtin],
     accounts: savedAccounts(builtinTarget),
   });
-  const {
-    connected: _builtinConnected,
-    connection: _connection,
-    connectionStatus: _connectionStatus,
-    scopeMismatch: _scopeMismatch,
-    authMethodSupportsRefresh: _authMethodSupportsRefresh,
-    tokenExpiresAt: _tokenExpiresAt,
-    ...builtinDefinition
-  } = builtin;
-  context.mocks.api(connectorCatalogReaderContract.discovery, ({ respond }) => {
+  const { ...builtinDefinition } = builtin;
+  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
     return respond(200, {
       connectors: [builtinDefinition],
       totalConnectorCount: 1,
@@ -494,15 +367,8 @@ test("A custom definition without account projections does not claim a reconnect
     customConnectors: [connector],
     accounts: savedAccounts(target),
   });
-  const {
-    connected: _connected,
-    connectedAccountId: _connectedAccountId,
-    connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
-    missingRequiredFields: _missingRequiredFields,
-    configuredFieldKeys: _configuredFieldKeys,
-    ...definition
-  } = connector;
-  context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+  const { ...definition } = connector;
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [definition] });
   });
   const directory = await openDirectory();

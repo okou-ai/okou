@@ -1,4 +1,4 @@
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import {
   onboardingCompleteContract,

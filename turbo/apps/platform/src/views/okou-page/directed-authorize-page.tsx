@@ -24,10 +24,11 @@ import {
   completeDirectedConnectorAuthorization$,
   directedAuthorizeConnectModalKey$,
   setDirectedAuthorizeConnectModalKey$,
+  retryDirectedAuthorize$,
 } from "../../signals/connectors-page/directed-authorize-slug.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { routeChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
-import { Check, Loader2 } from "lucide-react";
+import { Check, CircleAlert, Loader2 } from "lucide-react";
 import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useTranslation } from "react-i18next";
@@ -111,9 +112,11 @@ function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
   return {
     item,
     isConnected,
+    catalogFailed: itemLoadable.state === "hasError",
     catalogLoading:
       connectorSlug !== null &&
       !justConnected.has(connectorSlug) &&
+      itemLoadable.state !== "hasError" &&
       !catalogLoaded,
     unavailable:
       connectorSlug !== null && catalogLoaded && !item && !isConnected,
@@ -238,7 +241,7 @@ function useDirectedAuthorizeCardState() {
   const connectorSlugForState = params?.connectorSlug ?? null;
   const agentIdForState = params?.agentId ?? null;
   const agentName = useDirectedAuthorizeAgentName(agentIdForState);
-  const { item, isConnected, catalogLoading, unavailable } =
+  const { item, isConnected, catalogFailed, catalogLoading, unavailable } =
     useDirectedAuthorizeCatalogState(connectorSlugForState);
   const { agentMissing, isAuthorized, permissionLoading } =
     useDirectedAuthorizePermissionState(connectorSlugForState, agentIdForState);
@@ -259,6 +262,7 @@ function useDirectedAuthorizeCardState() {
     agentName,
     item,
     isConnected,
+    catalogFailed,
     catalogLoading,
     unavailable,
     agentMissing,
@@ -266,6 +270,33 @@ function useDirectedAuthorizeCardState() {
     permissionLoading,
     connectModalOpen,
   };
+}
+
+function DirectedAuthorizeReadError() {
+  const { t } = useTranslation();
+  const retry = useSet(retryDirectedAuthorize$);
+  return (
+    <DirectedCardShell
+      icon={<CircleAlert size={20} />}
+      title={t(($) => {
+        return $.connectors.accounts.accountsUnavailable;
+      })}
+      description=""
+      isLoading={false}
+    >
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          retry();
+        }}
+      >
+        {t(($) => {
+          return $.connectors.actions.tryAgain;
+        })}
+      </Button>
+    </DirectedCardShell>
+  );
 }
 
 function DirectedAuthorizeCard() {
@@ -283,6 +314,7 @@ function DirectedAuthorizeCard() {
     agentName,
     item,
     isConnected,
+    catalogFailed,
     catalogLoading,
     unavailable,
     agentMissing,
@@ -290,6 +322,9 @@ function DirectedAuthorizeCard() {
     permissionLoading,
     connectModalOpen,
   } = useDirectedAuthorizeCardState();
+  if (catalogFailed) {
+    return <DirectedAuthorizeReadError />;
+  }
   if (!params || unavailable) {
     return null;
   }

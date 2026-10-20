@@ -1,14 +1,19 @@
+import {
+  catalogFixture,
+  httpConnectorFixture,
+  mcpConnectorFixture,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogPermissionDetail,
-  PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
+import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 
 import {
   CAPABILITY_AGENT_ID,
@@ -28,6 +33,7 @@ export function browserAuthMethod(
     label: "Provider sign-in",
     description: "Sign in with the provider to continue.",
     grantKind: "auth-code",
+    supportsRefresh: true,
     manualFields: [],
     startOptions: [],
   };
@@ -41,6 +47,7 @@ export function noAuthMethod(
     label: "No authorization",
     description: "Enable this connector without an account.",
     grantKind: "none",
+    supportsRefresh: false,
     manualFields: [],
     startOptions: [],
   };
@@ -57,7 +64,7 @@ export function catalogConnector(args: {
 }): PublicConnectorCatalogStatusItem {
   const connected = args.connected ?? false;
   const reconnectRequired = args.reconnectRequired ?? false;
-  return {
+  return catalogFixture({
     slug: args.slug,
     label: args.label,
     description: `${args.label} workspace service`,
@@ -94,12 +101,11 @@ export function catalogConnector(args: {
         : "connected"
       : "not-connected",
     scopeMismatch: false,
-    authMethodSupportsRefresh: false,
     tokenExpiresAt: args.tokenExpiresAt ?? null,
     singleAuthCodeAuthMethodId:
       args.method.grantKind === "auth-code" ? args.method.id : null,
     connectNotice: null,
-  };
+  });
 }
 
 export function connectedConnectorResponse(args: {
@@ -168,19 +174,19 @@ export function customConnector(args: {
     updatedAt: "2026-08-01T09:00:00.000Z",
   };
   return args.kind === "http"
-    ? {
+    ? httpConnectorFixture({
         ...base,
         kind: "http",
         prefixTemplates: ["https://api.example.test/**"],
-      }
-    : {
+      })
+    : mcpConnectorFixture({
         ...base,
         kind: "mcp",
         endpoint: "https://mcp.example.test",
         transport: "streamable-http",
         prefixTemplates: [],
         permissionBundleRef: null,
-      };
+      });
 }
 
 export function connectorActionUrl(args: {

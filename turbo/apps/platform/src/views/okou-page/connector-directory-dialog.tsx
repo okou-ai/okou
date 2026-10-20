@@ -7,6 +7,7 @@ import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+
 import {
   Dialog,
   DialogContent,
@@ -303,13 +304,6 @@ function CustomConnectorDirectoryCard({
       {!isIntegrationManagedCustomConnector(connector) && (
         <span className="flex flex-col gap-1 border-t border-border/50 px-4 py-2.5 text-xs">
           <ConnectorMembershipText connected={hasAccounts} status="ready" />
-          {hasAccounts && connector.connected === false && (
-            <span className="text-amber-600 dark:text-amber-400">
-              {t(($) => {
-                return $.connectors.accounts.reconnectRequired;
-              })}
-            </span>
-          )}
         </span>
       )}
     </button>
@@ -469,36 +463,6 @@ function DirectoryCategoryChips({
   );
 }
 
-function DirectoryAttention({
-  connectors,
-  renderCard,
-}: {
-  readonly connectors: ConnectorDirectoryModel["attention"];
-  readonly renderCard: RenderConnectorCard;
-}) {
-  const { t } = useTranslation();
-  if (connectors.length === 0) {
-    return null;
-  }
-  return (
-    <DirectorySection
-      connectorGroupKey={connectors
-        .map((connector) => {
-          return connector.slug;
-        })
-        .join(",")}
-      tone="warning"
-      title={t(($) => {
-        return $.chat.connectors.directory.needsAttention;
-      })}
-    >
-      {connectors.map((item) => {
-        return renderCard(item, true);
-      })}
-    </DirectorySection>
-  );
-}
-
 function DirectoryRemoteStatuses({
   ssh,
   vnc,
@@ -561,9 +525,6 @@ function DirectoryDiscoverPanel({
   readonly onCreateCustom: () => void;
 }) {
   const { t } = useTranslation();
-  const attention = (
-    <DirectoryAttention connectors={model.attention} renderCard={renderCard} />
-  );
   if (
     model.discover.length === 0 &&
     model.matchedConnected.length === 0 &&
@@ -574,7 +535,6 @@ function DirectoryDiscoverPanel({
   ) {
     return (
       <>
-        {attention}
         <DirectoryNoResults
           query={search}
           action={
@@ -600,7 +560,6 @@ function DirectoryDiscoverPanel({
     return (
       <>
         <DirectoryRemoteStatuses ssh={sshStatus} vnc={vncStatus} />
-        {attention}
         {model.matchedConnected.length > 0 && (
           <DirectorySection
             connectorGroupKey={model.matchedConnected
@@ -645,7 +604,6 @@ function DirectoryDiscoverPanel({
   return (
     <>
       <DirectoryRemoteStatuses ssh={sshStatus} vnc={vncStatus} />
-      {attention}
       {model.shelfLayout.shelves.map((shelf) => {
         return (
           <ConnectorShelfSection
@@ -672,17 +630,15 @@ function DirectoryDiscoverPanel({
 
 function DirectoryCustomPanel({
   connectors,
-  attention,
   connectedTargets,
   onConnectCustom,
 }: {
   readonly connectors: readonly CustomConnectorResponse[];
-  readonly attention: readonly CustomConnectorResponse[];
   readonly connectedTargets: ReadonlySet<string> | undefined;
   readonly onConnectCustom: (connector: CustomConnectorResponse) => void;
 }) {
   const { t } = useTranslation();
-  if (connectors.length === 0 && attention.length === 0) {
+  if (connectors.length === 0) {
     return (
       <DirectoryEmptyState
         icon={<Plus size={24} aria-hidden="true" />}
@@ -709,16 +665,6 @@ function DirectoryCustomPanel({
   };
   return (
     <>
-      {attention.length > 0 && (
-        <DirectorySection
-          tone="warning"
-          title={t(($) => {
-            return $.chat.connectors.directory.needsAttention;
-          })}
-        >
-          {attention.map(renderCard)}
-        </DirectorySection>
-      )}
       {connectors.length > 0 && (
         <DirectorySection
           title={t(($) => {
@@ -899,7 +845,6 @@ function DirectoryBody({
       {(!accountStatus || model.custom.length > 0) && (
         <DirectoryCustomPanel
           connectors={model.custom}
-          attention={model.customAttention}
           connectedTargets={connectedTargets}
           onConnectCustom={onConnectCustom}
         />

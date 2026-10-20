@@ -1,7 +1,5 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogPermissionDetail,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {

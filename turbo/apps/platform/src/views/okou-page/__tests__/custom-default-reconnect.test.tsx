@@ -1,4 +1,8 @@
 import {
+  httpConnectorFixture,
+  connectorFixtureAccount,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
+import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -9,10 +13,10 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  customConnectorOAuth2Contract,
-  customConnectorValuesContract,
-  customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
+  customConnectorValuesReaderContract as customConnectorValuesContract,
+  customConnectorsReaderContract as customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -78,12 +82,17 @@ async function openConnection(
     path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
   });
   await screen.findByText(
-    connector.connected
+    connectorFixtureAccount(connector) !== undefined
       ? `${connector.displayName} connected`
       : `Okou needs ${connector.displayName} to proceed`,
   );
   click(
-    getConnectorAction("button", connector.connected ? "Reconnect" : "Connect"),
+    getConnectorAction(
+      "button",
+      connectorFixtureAccount(connector) !== undefined
+        ? "Reconnect"
+        : "Connect",
+    ),
   );
   return await screen.findByRole("dialog", {
     name: `Connect ${connector.displayName}`,
@@ -130,12 +139,12 @@ test.each([1, 2])(
           connectionStatus: "connected",
           reconnectReason: null,
         };
-        connector = {
+        connector = httpConnectorFixture({
           ...connector,
           connected: true,
           connectedAccountId: account.id,
           missingRequiredFields: [],
-        };
+        });
         return respond(200, { ...connector, connectionId: account.id });
       },
     );
@@ -191,7 +200,10 @@ test("Resolve the current default instead of stale definition identity", async (
   const mutations: ConnectorAccountMutationIntent[] = [];
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
     mutations.push(body.account);
-    connector = { ...connector, connectedAccountId: account.id };
+    connector = httpConnectorFixture({
+      ...connector,
+      connectedAccountId: account.id,
+    });
     return respond(200, { ...connector, connectionId: account.id });
   });
   const dialog = await openConnection(connector);
@@ -271,7 +283,8 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, query, respond }) => {
-      return (state === "expired" || connector.connected) &&
+      return (state === "expired" ||
+        connectorFixtureAccount(connector) !== undefined) &&
         params.connectionId === account.id &&
         connectorAccountTargetKey(query) ===
           connectorAccountTargetKey(account.target)
@@ -296,12 +309,12 @@ function installOAuthFlow(state: PreflightState, complete = false) {
           connectionStatus: "connected",
           reconnectReason: null,
         };
-        connector = {
+        connector = httpConnectorFixture({
           ...connector,
           connected: true,
           connectedAccountId: account.id,
           missingRequiredFields: [],
-        };
+        });
       }
       return respond(200, {
         result: "authorization",

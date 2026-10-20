@@ -170,7 +170,10 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../../signals/agent.ts";
 import { computerUseProductName$ } from "../../signals/branding.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import {
+  connectorCatalogStatus$,
+  withConnectorCompletion,
+} from "../../signals/external/connectors.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../signals/external/run-models.ts";
@@ -8260,7 +8263,7 @@ function composerDirectoryBrowseData(
 ) {
   return {
     categoryCounts: browse?.categoryConnectorCounts,
-    chipCatalog: browse?.connectors ?? items,
+    chipCatalog: browse?.connectors.map(withConnectorCompletion) ?? items,
   };
 }
 

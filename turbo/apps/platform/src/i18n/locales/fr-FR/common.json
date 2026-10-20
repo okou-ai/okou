@@ -1908,7 +1908,6 @@
         "matchCount_one": "{{count}} résultat",
         "matchCount_many": "{{count}} résultats",
         "matchCount_other": "{{count}} résultats",
-        "needsAttention": "À vérifier",
         "nextCategories": "Catégories suivantes",
         "noResultsBody": "Essayez un nom de produit, ou créez le vôtre à partir d'une API ou d'un serveur MCP.",
         "noResultsTitle": "Aucun connecteur ne correspond à « {{query}} »",

@@ -9,11 +9,11 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import type { CustomConnectorOAuthConfig } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  customConnectorOAuth2Contract,
-  customConnectorsContract,
-  type CustomConnectorOAuthConfig,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
+  customConnectorsReaderContract as customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -137,6 +137,7 @@ test.each([
         singleAuthCodeAuthMethodId: grantKind === "auth-code" ? "oauth" : null,
         authMethods: [
           {
+            supportsRefresh: true,
             id: "oauth",
             label: "OAuth",
             description: null,
@@ -270,6 +271,7 @@ test.each(["popup", "cancel", "forbidden"] as const)(
             label: "OAuth",
             description: null,
             grantKind: "auth-code",
+            supportsRefresh: true,
             manualFields: [],
             startOptions: [],
           },
@@ -336,7 +338,7 @@ test.each(["popup", "cancel", "forbidden"] as const)(
 test.each(["http", "mcp", "automatic"] as const)(
   "Keep custom %s progress until naming is ready",
   async (kind) => {
-    let connector =
+    const connector =
       kind === "http"
         ? customConnector({
             authMode: "oauth",
@@ -426,12 +428,6 @@ test.each(["http", "mcp", "automatic"] as const)(
       return expect(popup.location.href).toBe(start.authorizationUrl);
     });
     authorized = true;
-    connector = {
-      ...connector,
-      connected: true,
-      connectedAccountId: account.id,
-      missingRequiredFields: [],
-    };
     popup.close();
     await confirmRequest.promise;
     expect(screen.queryAllByRole("dialog", { name: PROGRESS })).toHaveLength(1);

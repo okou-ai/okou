@@ -50,10 +50,7 @@ function ConnectorDetailHeader({
   const status = builtinConnectorCurrentConnectionStatus(connector);
   // The directory does not read accounts. Choose or repair a saved account in
   // the target account manager instead of guessing its default from a brief.
-  const needsAccountChoice =
-    hasAccounts ||
-    connector.accountProjectionConflict === true ||
-    status === "unavailable";
+  const needsAccountChoice = hasAccounts || status === "unavailable";
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-6 pt-6">

@@ -2,8 +2,8 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";

@@ -1,11 +1,11 @@
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorCatalogReaderContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -44,20 +44,16 @@ test("Show saved membership without loading accounts when catalog projections ha
   if (!account) {
     throw new Error("Expected the saved GitHub account");
   }
-  const {
-    connected: _connected,
-    connection: _connection,
-    ...metadata
-  } = publicStatusItem({
+  const { ...metadata } = publicStatusItem({
     connectorSlug: "github",
     label: "GitHub",
     authMethods: [oauthMethod()],
     connectionStatus: "connected",
   });
-  context.mocks.api(connectorCatalogReaderContract.discovery, ({ respond }) => {
+  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
     return respond(200, { connectors: [metadata], totalConnectorCount: 1 });
   });
-  context.mocks.api(connectorCatalogReaderContract.status, ({ respond }) => {
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, { connectors: [metadata] });
   });
   context.mocks.api(connectorAccountsContract.connections, () => {
@@ -143,6 +139,7 @@ function oauthMethod() {
     label: "OAuth",
     description: null,
     grantKind: "auth-code" as const,
+    supportsRefresh: true,
     manualFields: [],
     startOptions: [],
   };

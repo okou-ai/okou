@@ -1878,7 +1878,6 @@
         "emptyCustomTitle": "अभी कोई कस्टम कनेक्टर नहीं है",
         "matchCount_one": "{{count}} परिणाम",
         "matchCount_other": "{{count}} परिणाम",
-        "needsAttention": "ध्यान देने की ज़रूरत",
         "nextCategories": "अगली श्रेणियाँ",
         "noResultsBody": "किसी प्रोडक्ट का नाम आज़माएँ, या API या MCP सर्वर से अपना बनाएँ।",
         "noResultsTitle": "“{{query}}” से मेल खाता कोई कनेक्टर नहीं",

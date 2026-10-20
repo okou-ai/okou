@@ -1,15 +1,25 @@
+import {
+  catalogFixture,
+  type BuiltinFixtureAccount,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
-  builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantContract,
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -34,12 +44,12 @@ function publicStatusItem(args: {
   readonly description?: string;
   readonly category?: string;
   readonly authMethods: PublicConnectorCatalogStatusItem["authMethods"];
-  readonly connection?: PublicConnectorCatalogStatusItem["connection"];
+  readonly connection?: BuiltinFixtureAccount["connection"];
   readonly connected?: boolean;
   readonly singleAuthCodeAuthMethodId?: string | null;
 }): PublicConnectorCatalogStatusItem {
   const connected = args.connected ?? false;
-  return {
+  return catalogFixture({
     slug: args.connectorSlug,
     label: args.label,
     description: args.description ?? `${args.label} public description`,
@@ -61,11 +71,10 @@ function publicStatusItem(args: {
     connected,
     connectionStatus: connected ? "connected" : "not-connected",
     scopeMismatch: false,
-    authMethodSupportsRefresh: false,
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: args.singleAuthCodeAuthMethodId ?? null,
     connectNotice: null,
-  };
+  });
 }
 
 function mockPublicConnectorStatus(
@@ -239,6 +248,54 @@ test("Authorize an agent to use an already connected connector", async () => {
   });
 });
 
+test("Retry an unavailable account read before authorizing the connected default", async () => {
+  const { slug: _slug, ...credential } = connectorResponse("gmail");
+  const account: ConnectorAccountConnection = {
+    ...credential,
+    target: { kind: "builtin", connectorSlug: "gmail" },
+    isDefault: true,
+    displayName: null,
+    scopeMismatch: false,
+    setupStatus: "complete",
+    configuredFieldKeys: [],
+    missingRequiredFields: [],
+  };
+  let available = false;
+  let authorized = false;
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return available
+      ? respond(200, {
+          connections: [account],
+          defaultConnection: account,
+          nextCursor: null,
+        })
+      : respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Accounts unavailable" },
+        });
+  });
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+    return respond(200, { enabledConnectorSlugs: authorized ? ["gmail"] : [] });
+  });
+  context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
+    authorized = true;
+    return respond(200, { enabledConnectorSlugs: ["gmail"] });
+  });
+  await setupPage({
+    context,
+    path: `/connectors/gmail/authorize?agentId=${AGENT_ID}`,
+  });
+  await screen.findByRole("heading", { name: /Accounts are unavailable/ });
+  available = true;
+  click(getButtonByText("Try again"));
+  click(
+    await waitFor(() => {
+      return getButtonByText("Authorize Okou");
+    }),
+  );
+  await screen.findByText("Gmail authorized");
+  expect(screen.getByText("Authorized")).toBeInTheDocument();
+});
+
 test("Show an unavailable state for a deleted agent", async () => {
   mockConnectedConnector("gmail");
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
@@ -275,6 +332,7 @@ test("Connect a manual-token connector while authorizing an agent", async () => 
           label: "Public API Token",
           description: null,
           grantKind: "manual",
+          supportsRefresh: false,
           manualFields: [
             {
               id: "apiToken",
@@ -319,7 +377,7 @@ test("Connect a manual-token connector while authorizing an agent", async () => 
         updatedAt: "2026-01-01T00:00:00Z",
       };
       context.mocks.data.connectors([connected]);
-      return respond(200, connected);
+      return respond(200, { connectionId: connected.id });
     },
   );
 
@@ -398,6 +456,7 @@ test("Connect and authorize an agent through OpenID", async () => {
           label: "Steam OpenID",
           description: null,
           grantKind: "openid-auth",
+          supportsRefresh: true,
           manualFields: [],
           startOptions: [],
         },
@@ -457,7 +516,7 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
         updatedAt: "2026-01-01T00:00:00Z",
       };
       context.mocks.data.connectors([connected]);
-      return respond(200, connected);
+      return respond(200, { connectionId: connected.id });
     },
   );
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
@@ -475,6 +534,7 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
           label: "Public catalog",
           description: null,
           grantKind: "none",
+          supportsRefresh: false,
           manualFields: [],
           startOptions: [],
         },

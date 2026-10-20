@@ -1878,7 +1878,6 @@
         "emptyCustomTitle": "No custom connectors yet",
         "matchCount_one": "{{count}} match",
         "matchCount_other": "{{count}} matches",
-        "needsAttention": "Needs attention",
         "nextCategories": "Next categories",
         "noResultsBody": "Try a product name, or build your own from an API or MCP server.",
         "noResultsTitle": "No connector matches “{{query}}”",

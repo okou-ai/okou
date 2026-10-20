@@ -1,21 +1,25 @@
+import {
+  catalogFixture,
+  connectorFixtureAccount,
+  httpConnectorFixture,
+  mcpConnectorFixture,
+  type HttpFixtureOverrides,
+  type McpFixtureOverrides,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   agentsByIdContract,
   agentsMainContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import {
-  customConnectorHttpResponseSchema,
-  customConnectorMcpResponseSchema,
-  type CustomConnectorHttpResponse,
-  type CustomConnectorMcpResponse,
-  type CustomConnectorResponse,
-  isIntegrationManagedCustomConnector,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
-  PublicConnectorCatalogPermissionDetail,
-  PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
+  CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
+  CustomConnectorReaderResponse as CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
+import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -58,7 +62,7 @@ export function catalogConnectorFixture(
   } = {},
 ): PublicConnectorCatalogStatusItem {
   const hasPermissions = options.hasPermissions ?? true;
-  return {
+  return catalogFixture({
     slug,
     label,
     description: `${label} connected service`,
@@ -75,6 +79,7 @@ export function catalogConnectorFixture(
         label: "OAuth",
         description: null,
         grantKind: "auth-code",
+        supportsRefresh: true,
         manualFields: [],
         startOptions: [],
       },
@@ -96,11 +101,10 @@ export function catalogConnectorFixture(
     setupStatus: "complete",
     connectionStatus: "connected",
     scopeMismatch: false,
-    authMethodSupportsRefresh: true,
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
-  };
+  });
 }
 
 /** Serves saved connector membership independently of default-account readiness. */
@@ -118,7 +122,7 @@ export function mockConnectorOverview(
       return respond(200, {
         builtinConnectors: connectors
           .filter((connector) => {
-            return connector.connection !== null;
+            return connectorFixtureAccount(connector) !== undefined;
           })
           .map((connector) => {
             return {
@@ -132,7 +136,9 @@ export function mockConnectorOverview(
           .filter((connector) => {
             return options.connectedCustomConnectorIds
               ? options.connectedCustomConnectorIds.includes(connector.id)
-              : connector.connected;
+              : isIntegrationManagedCustomConnector(connector)
+                ? connector.connected
+                : connectorFixtureAccount(connector) !== undefined;
           })
           .map((connector) => {
             return {
@@ -168,9 +174,9 @@ function customConnectorBase() {
 }
 
 export function acmeConnectorFixture(
-  overrides: Partial<CustomConnectorHttpResponse> = {},
+  overrides: HttpFixtureOverrides = {},
 ): CustomConnectorHttpResponse {
-  return customConnectorHttpResponseSchema.parse({
+  return httpConnectorFixture({
     ...customConnectorBase(),
     id: ACME_CONNECTOR_ID,
     slug: "acme-search",
@@ -183,9 +189,9 @@ export function acmeConnectorFixture(
 }
 
 export function deepWikiConnectorFixture(
-  overrides: Partial<CustomConnectorMcpResponse> = {},
+  overrides: McpFixtureOverrides = {},
 ): CustomConnectorMcpResponse {
-  return customConnectorMcpResponseSchema.parse({
+  return mcpConnectorFixture({
     ...customConnectorBase(),
     id: DEEPWIKI_CONNECTOR_ID,
     slug: "deepwiki",

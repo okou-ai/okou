@@ -1,14 +1,12 @@
+import { httpConnectorFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  RESEARCH_AGENT_ID,
-  setupTeamPage,
-} from "../../team-page/__tests__/team-page-test-helpers.ts";
+import { setupTeamPage } from "../../team-page/__tests__/team-page-test-helpers.ts";
 import {
   customConnector,
   customConnectorAccount,
@@ -19,7 +17,7 @@ import {
 const context = testContext();
 
 test.each(["set-default", "delete-default"] as const)(
-  "Refresh Job readiness after a local account %s",
+  "Check the current Job default after a local account %s",
   async (mutation) => {
     const connector = customConnector({
       connected: true,
@@ -40,10 +38,10 @@ test.each(["set-default", "delete-default"] as const)(
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, {
         connectors: [
-          {
+          httpConnectorFixture({
             ...connector,
             connected: defaultConnection.connectionStatus === "connected",
-          },
+          }),
         ],
       });
     });
@@ -152,15 +150,11 @@ test.each(["set-default", "delete-default"] as const)(
       }),
     );
     await screen.findByRole("heading", { name: "Research Agent" });
-    await expect(
-      screen.findByText(/Reconnect required/u),
-    ).resolves.toBeVisible();
+    click(screen.getByRole("switch", { name: "Grant Acme Search access" }));
+    await screen.findByText(/fully configured default account/);
     expect(
       screen.getByRole("switch", { name: "Grant Acme Search access" }),
-    ).toHaveAttribute("aria-disabled", "true");
-    expect(getConnectorAction("link", "Reconnect")).toHaveAttribute(
-      "href",
-      `/connectors/${connector.slug}/connect?agentId=${RESEARCH_AGENT_ID}`,
-    );
+    ).not.toBeChecked();
+    expect(screen.queryByRole("dialog")).toBeNull();
   },
 );

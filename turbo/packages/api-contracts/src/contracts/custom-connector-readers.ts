@@ -35,14 +35,20 @@ export const customConnectorManagedStatusSchema =
     configuredFieldKeys: true,
   });
 
-const customConnectorHttpReaderResponseSchema = z.intersection(
+export const customConnectorHttpReaderResponseSchema = z.intersection(
   customConnectorHttpResponseCoreSchema.partial(optionalCustomProjection),
   customConnectorHttpAuthResponseSchema,
 );
-const customConnectorMcpReaderResponseSchema = z.intersection(
+export const customConnectorMcpReaderResponseSchema = z.intersection(
   customConnectorMcpResponseCoreSchema.partial(optionalCustomProjection),
   customConnectorMcpAuthResponseSchema,
 );
+export type CustomConnectorHttpReaderResponse = z.infer<
+  typeof customConnectorHttpReaderResponseSchema
+>;
+export type CustomConnectorMcpReaderResponse = z.infer<
+  typeof customConnectorMcpReaderResponseSchema
+>;
 export const customConnectorReaderResponseSchema = z
   .union([
     customConnectorHttpReaderResponseSchema,

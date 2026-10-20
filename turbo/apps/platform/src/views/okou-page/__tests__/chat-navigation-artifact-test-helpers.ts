@@ -1,3 +1,4 @@
+import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
   artifactCatalogContract,
   type ArtifactCatalogListQuery,
@@ -9,9 +10,9 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
 import {
@@ -247,10 +248,10 @@ export function googleDriveConnector(
 }
 
 export function googleDriveCatalogItem(
-  connectionStatus: PublicConnectorCatalogStatusItem["connectionStatus"],
+  connectionStatus: "connected" | "not-connected" | "reconnect-required",
 ): PublicConnectorCatalogStatusItem {
   const connected = connectionStatus === "connected";
-  return {
+  return catalogFixture({
     slug: "google-drive",
     label: "Google Drive",
     description: "Store generated files in Google Drive.",
@@ -267,6 +268,7 @@ export function googleDriveCatalogItem(
         label: "Google",
         description: null,
         grantKind: "auth-code",
+        supportsRefresh: true,
         manualFields: [],
         startOptions: [],
       },
@@ -293,11 +295,10 @@ export function googleDriveCatalogItem(
     connected,
     connectionStatus,
     scopeMismatch: false,
-    authMethodSupportsRefresh: true,
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
-  };
+  });
 }
 
 function queryButtonNamed(
