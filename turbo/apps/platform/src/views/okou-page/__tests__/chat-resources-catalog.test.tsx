@@ -1,6 +1,7 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
 import {
@@ -384,4 +385,52 @@ test("Retain loaded resources after a paging failure and retry with show more", 
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(65);
   expect(within(artifacts).queryByRole("alert")).not.toBeInTheDocument();
   expect(more).toHaveTextContent("Collapse");
+});
+
+test("Copy link tooltips follow resource focus and close when their row collapses", async () => {
+  const user = userEvent.setup();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const { panel } = await setupOverflowResources(4, { withLinks: false });
+  const artifacts = within(panel).getByRole("region", { name: "Artifacts" });
+  const more = buttonNamed("Show more", artifacts);
+  click(more);
+  await within(artifacts).findByText("report-4.pdf");
+  const firstEntry = artifactEntryNamed("report-1.pdf", artifacts);
+  const lastEntry = artifactEntryNamed("report-4.pdf", artifacts);
+  const firstRow = firstEntry.closest("li");
+  const lastRow = lastEntry.closest("li");
+  if (!firstRow || !lastRow) {
+    throw new Error("Expected both resource rows");
+  }
+  const firstCopy = buttonNamed("Copy link", firstRow);
+  const lastCopy = buttonNamed("Copy link", lastRow);
+
+  await user.hover(firstCopy);
+  await expect(screen.findByText("Copy link")).resolves.toBeVisible();
+  expect(firstCopy).toHaveAccessibleName("Copy link");
+  await user.unhover(firstCopy);
+  await waitFor(() => {
+    expect(screen.queryByText("Copy link")).not.toBeInTheDocument();
+  });
+
+  lastCopy.focus();
+  expect(lastCopy).toHaveFocus();
+  await expect(screen.findByText("Copy link")).resolves.toBeVisible();
+  expect(lastCopy).toHaveAccessibleName("Copy link");
+  expect(firstCopy).not.toHaveFocus();
+
+  click(more);
+  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(3);
+  expect(within(artifacts).queryByText("report-4.pdf")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.queryByText("Copy link")).not.toBeInTheDocument();
+  });
+
+  firstCopy.focus();
+  expect(firstCopy).toHaveFocus();
+  await user.keyboard("{Enter}");
+  await screen.findByText("Link copied");
+  expect(clipboard.writes).toStrictEqual([
+    "https://files.example.test/report-1.pdf",
+  ]);
 });
