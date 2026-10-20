@@ -4,7 +4,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { eq } from "drizzle-orm";
 
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { escapeHtml } from "../../lib/telegram-format";
 import {
   runModelSelectionColumns,
@@ -21,33 +21,6 @@ function displayLabel(row: {
     return displayName;
   }
   return row.agentName;
-}
-
-export async function resolveTelegramAgentReplyFooterText(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly runId: string;
-  readonly installationId: string;
-  readonly agentId: string;
-}): Promise<string | undefined> {
-  // The official shared bot has no per-bot default agent, so replies never
-  // carry a "Responded by" label; only the model label is shown.
-  const db = args.db;
-  const runId = args.runId;
-  const runModel = await (async () => {
-    const [row] = await db
-      .select(runModelSelectionColumns())
-      .from(agentRuns)
-      .where(runModelSelectionCondition(runId))
-      .limit(1);
-    return runModelSelectionFromRow(row);
-  })();
-  const model = runModel?.selectedModel;
-  const modelLabel = model
-    ? getRunModelDisplayName(model, runModel?.codexServiceTier)
-    : undefined;
-
-  return modelLabel ? escapeHtml(modelLabel) : undefined;
 }
 
 /**
