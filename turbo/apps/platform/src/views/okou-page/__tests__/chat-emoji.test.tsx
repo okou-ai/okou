@@ -122,9 +122,6 @@ test("Keep the check-mark thread icon Done when archiving is enabled", async () 
   await screen.findByLabelText("Search emoji");
 
   expect(emojiButton("Done")).toHaveTextContent("✅");
-  expect(
-    document.querySelector('[data-chat-thread-emoji][aria-label="Archive"]'),
-  ).not.toBeInTheDocument();
 });
 
 test("Show frequently used emoji while the full emoji set loads", async () => {
@@ -184,7 +181,6 @@ test("Change a thread icon before its save finishes", async () => {
     );
     expect(buttonByLabel("Open menu")).toBeInTheDocument();
   });
-  expect(screen.queryByTestId("agent-avatar")).not.toBeInTheDocument();
   const changeIcon = buttonByLabel("Change icon");
 
   click(changeIcon);

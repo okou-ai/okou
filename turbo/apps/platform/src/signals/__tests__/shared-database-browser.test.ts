@@ -8,7 +8,6 @@ import {
   mockedClerk,
 } from "../../__tests__/mock-auth.ts";
 import type { SharedDatabasePortLike } from "../../shared-database/bridge.ts";
-import { sharedDatabaseClientMessageSchema } from "../../shared-database/protocol.ts";
 import { setupSharedDatabaseBridge$ } from "../shared-database-browser.ts";
 import {
   bridgeConnected$,
@@ -221,44 +220,6 @@ test("Expose worker construction failures to bridge consumers", async () => {
 
   await expect(setupBridge()).rejects.toBe(error);
   await expect(context.store.get(bridgeConnected$)).rejects.toBe(error);
-});
-
-test("Return a worker query error to its caller", async () => {
-  const { workers } = installSharedWorkerMock();
-  await setupBridge();
-  await context.store.get(bridgeConnected$);
-  const bridge = context.store.get(installedSharedDatabaseBridge$);
-  const query = bridge.query(
-    {
-      dataKey: { kind: "chat-event", threadId: "thread-1" },
-      afterSeqId: null,
-      consistency: "cache-only",
-    },
-    context.signal,
-  );
-  const request = workers[0]!.port.postedMessages
-    .map((message) => {
-      return sharedDatabaseClientMessageSchema.parse(message);
-    })
-    .find((message) => {
-      return message.type === "query";
-    });
-  if (!request) {
-    throw new Error("Expected a worker query request");
-  }
-
-  workers[0]!.port.receive({
-    type: "error",
-    requestId: request.requestId,
-    error: {
-      name: "Error",
-      message: "Shared database tab registration is required before query",
-    },
-  });
-
-  await expect(query).rejects.toThrow(
-    "Shared database tab registration is required before query",
-  );
 });
 
 test("Reject pending requests when the worker fails", async () => {

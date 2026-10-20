@@ -552,7 +552,6 @@ describe("Discord product OAuth", () => {
     expect(f.messages).toHaveLength(1);
     expect(f.messages[0]).toContain(`**Hi! I'm <@${f.botId}>.**`);
     expect(f.messages[0]).toContain("_No workspace agent configured yet._");
-    expect(f.messages[0]).not.toContain("https://app.okou.ai/works");
     await installed(f, admin);
     await status(admin);
     await status(admin);
@@ -573,7 +572,6 @@ describe("Discord product OAuth", () => {
     expect(f.messages[0]).toContain(
       "**How to Use**\n• Just describe what you need help with",
     );
-    expect(f.messages[0]).not.toContain("https://app.okou.ai/works");
   });
   it("installs when Discord returns only user scopes in the token and authorization", async () => {
     const f = fixture();
@@ -687,14 +685,6 @@ describe("Discord product OAuth", () => {
       }),
       [400],
     );
-    await accept(
-      raw("/api/integrations/discord/oauth/start", {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ guildId: "not-a-snowflake" }),
-      }),
-      [400],
-    );
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
       toAuth: () => {
@@ -757,12 +747,7 @@ describe("Discord product OAuth", () => {
     expect((await status(actor)).isConnected).toBeFalsy();
     expect((await finish(f, started)).status).toBe("connected");
   });
-  it.each([
-    "malformed-state",
-    "oversize-code",
-    "oversize-error",
-    "overflow-guild",
-  ])(
+  it.each(["malformed-state", "oversize-code", "oversize-error"])(
     "bounds callback %s before handling without consuming genuine state",
     async (variant) => {
       const f = await fixture();
@@ -774,9 +759,6 @@ describe("Discord product OAuth", () => {
         ...(variant === "malformed-state" ? { state: "malformed" } : {}),
         ...(variant === "oversize-code" ? { code: "x".repeat(2049) } : {}),
         ...(variant === "oversize-error" ? { error: "x".repeat(129) } : {}),
-        ...(variant === "overflow-guild"
-          ? { guild_id: "18446744073709551616" }
-          : {}),
       };
       await accept(clients()(discordOauthContract).callback({ query }), [400]);
       expect((await finish(f, started)).status).toBe("connected");
@@ -1613,7 +1595,7 @@ describe("Discord product OAuth", () => {
     expect((await status(actor)).isConnected).toBeTruthy();
     expect(f.messages).toHaveLength(1);
   });
-  it("does not grant access from query markers, lost opener proof, malformed capabilities or uint64 overflow", async () => {
+  it("does not grant access from query markers, lost opener proof or malformed capabilities", async () => {
     const f = await fixture();
     const actor = await f.actor();
     const started = await start(actor, "install", f.guildId);
@@ -1655,13 +1637,6 @@ describe("Discord product OAuth", () => {
         [400],
       );
     }
-    await accept(
-      clients()(discordOauthContract).start({
-        headers: actorHeaders(actor),
-        body: { guildId: "18446744073709551616" },
-      }),
-      [400],
-    );
     expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });

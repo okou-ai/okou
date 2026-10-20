@@ -613,23 +613,6 @@ describe("Official Workflow catalog release boundary", () => {
       expect.objectContaining({ code: "invalid-parameter-declaration" }),
     );
 
-    const runtimeSetting = await syncCatalog({
-      schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-      definitions: [
-        {
-          ...activeDefinition(name),
-          blueprints: [
-            { ...scheduleBlueprint("daily"), runtime: { resultEmail: false } },
-          ],
-        },
-      ],
-    });
-    expect(runtimeSetting.body).toMatchObject({
-      outcome: "rejected",
-      releaseId: acceptedReleaseId,
-      diagnostics: [{ code: "invalid-candidate" }],
-    });
-
     const nonCanonical = await syncCatalog(
       catalog([
         activeDefinition(name, { instruction: "Windows line\r\nbreak" }),

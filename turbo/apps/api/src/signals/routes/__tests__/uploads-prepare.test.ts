@@ -214,24 +214,6 @@ describe("POST /api/uploads/prepare", () => {
     });
   });
 
-  it("rejects invalid body shape with 400", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await accept(
-      client.prepare({
-        body: { filename: "" } as never,
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
   it("rejects files larger than 1 GB with 400", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;

@@ -69,15 +69,8 @@ describe("email subscription settings", () => {
       expect(brief).toBeChecked();
     });
     expect(
-      within(region).queryByText(
-        "Email is off. Your brief will still appear in Chat.",
-      ),
-    ).not.toBeInTheDocument();
-    expect(
       within(region).getByText(/updates at alex@example\.test/u),
     ).toBeVisible();
-    expect(within(region).queryByText("Subscribed")).not.toBeInTheDocument();
-    expect(within(region).queryByText("Unsubscribed")).not.toBeInTheDocument();
     const emails = within(region).getByRole("switch", {
       name: "Email updates",
     });

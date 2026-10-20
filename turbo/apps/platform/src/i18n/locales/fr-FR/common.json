@@ -2218,11 +2218,8 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "emptyLinks": "Aucun lien dans ce chat pour le moment",
       "expand": "Développer",
-      "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
-      "loadingLinks": "Chargement des liens",
       "retry": "Réessayer",
       "title": "Ressources du chat"
     },

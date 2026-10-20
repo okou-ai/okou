@@ -52,7 +52,6 @@ describe("CHAT-02: run-level model overrides", () => {
   it("reuses Codex sessions across account switches with the newly captured account", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const firewall = createFirewallApi(context);
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     mockCodexDeviceAuthProvider({
       accountId: "chat-codex-account-a",
@@ -221,7 +220,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("resumes the CLI session across same-family model switches", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Claude subscription credentials stay on the native Claude Code harness
     // for every Claude model, so a same-family switch keeps the CLI session.
     await misc.upsertPersonalModelProvider(
@@ -269,7 +267,6 @@ describe("CHAT-02: run-level model overrides", () => {
     // concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "establish the session before organization capacity fills",
@@ -384,7 +381,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("requires Chat recovery after a model family resets native continuation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     // Fable and Astra keep both families on their native Runner harnesses.
     await createBddIntegrationApi(context)
@@ -438,7 +434,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("keeps incomplete context without rotating after a failure before the first native history", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const firstPrompt = "complete the migration without losing this request";
     const first = await sendChatRun(actor, {
@@ -467,7 +462,6 @@ describe("CHAT-02: run-level model overrides", () => {
     });
     const secondRun = await api.readRun(actor, second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
-    expect(appended).not.toContain("# Web Chat Run Context");
     expect(appended).toContain("# Incomplete Rounds Context");
     expect(appended).toContain(`User: ${firstPrompt}`);
 
@@ -486,7 +480,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("keeps durable Chat and native identity independent of a history archive", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const firstPrompt = "finish work before native history becomes oversized";
     const first = await sendChatRun(actor, {
@@ -547,7 +540,6 @@ describe("CHAT-02: run-level model overrides", () => {
     });
     const secondRun = await api.readRun(actor, second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
-    expect(appended).not.toContain("# Web Chat Run Context");
     expect(appended).not.toContain(firstPrompt);
     expect(appended).not.toContain(firstAnswer);
 
@@ -567,7 +559,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("resumes a sticky model through personal credential replacement and reconnect", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const first = await sendChatRun(actor, {
       agentId,
@@ -578,8 +569,6 @@ describe("CHAT-02: run-level model overrides", () => {
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
 
-    const pinned = await chat.readThread(actor, first.threadId);
-    expect(pinned).not.toHaveProperty("selectedModel");
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
@@ -613,8 +602,6 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(secondClaim.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
-    const after = await chat.readThread(actor, first.threadId);
-    expect(after).not.toHaveProperty("selectedModel");
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
@@ -704,30 +691,6 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(invalidModel.body.error.message).toBe('Unknown model "codex"');
     await chat.requestReadThread(actor, invalidModelThreadId, [404]);
 
-    // Models outside the catalog are rejected.
-    for (const selectedModel of [
-      "claude-haiku-4-5",
-      "anthropic/claude-haiku-4.5",
-    ]) {
-      const removedThreadId = randomUUID();
-      const removed = await chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          prompt: `removed ${selectedModel}`,
-          clientThreadId: removedThreadId,
-          model: selectedModel as never,
-        },
-        [400],
-      );
-      expectApiError(removed.body);
-      expect(removed.body.error).toMatchObject({
-        code: "BAD_REQUEST",
-        message: `Unknown model "${selectedModel}"`,
-      });
-      await chat.requestReadThread(actor, removedThreadId, [404]);
-    }
-
     const events = await chat.requestThreadEvents(actor, {}, [200]);
     expect(events.status).toBe(200);
     if (events.status !== 200) {
@@ -738,7 +701,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   it("rejects an explicit disconnected personal model instead of capturing Auto", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const sent = await chat.requestSendEvent(
       actor,

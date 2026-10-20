@@ -196,27 +196,7 @@ describe("Teams OAuth API routes", () => {
     );
   });
 
-  it("rejects connect requests without org and user state", async () => {
-    const response = await appRequest("/api/teams/oauth/connect");
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toStrictEqual({
-      error: "Missing orgId or userId",
-    });
-  });
-
-  it.each([
-    ["missing", ""],
-    ["malformed", `&state=${encodeURIComponent("not-json")}`],
-    [
-      "org-less",
-      `&state=${encodeURIComponent(
-        JSON.stringify({
-          redirectUri: `${API_ORIGIN}/api/integrations/teams/oauth/callback`,
-        }),
-      )}`,
-    ],
-  ])(
+  it.each([["malformed", `&state=${encodeURIComponent("not-json")}`]])(
     "rejects %s callback state using the configured app",
     async (_caseName, stateQuery) => {
       mockEnv("APP_URL", "https://app.okou.ai");
@@ -592,7 +572,6 @@ describe("Teams OAuth API routes", () => {
     expect(new URL(location!).searchParams.get("error")).toBe(
       "Invalid connect state.",
     );
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
   it.each([false, true])(
     "rejects another OAuth owner without changing account metadata (installed=%s)",

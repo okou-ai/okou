@@ -277,7 +277,6 @@ test.each(["primary email", "missing user", "provider failure"])(
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
       current.userId,
     );
-    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
     if (outcome === "provider failure") {
       expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
     } else {

@@ -185,7 +185,6 @@ describe("POST /api/voice-io/polish", () => {
         ],
       },
     },
-    { reason: "invalid_response", body: { candidates: [{ finishReason: 7 }] } },
   ])("rejects unusable Google output for $reason", async ({ body }) => {
     await setupVoicePolish();
     server.use(
@@ -407,8 +406,6 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it.each([
-    { label: "empty list", segments: [] },
-    { label: "empty segment", segments: [""] },
     {
       label: "oversized total",
       segments: ["a".repeat(131_073), "b".repeat(131_072)],

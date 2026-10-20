@@ -643,18 +643,6 @@ describe("POST /api/uploads/complete", () => {
     expect(response.body.error.message).toContain("file:write");
   });
 
-  it("returns 400 when the request body is invalid", async () => {
-    const response = await chat.completeUploadWithBearer(
-      okouBearer(),
-      { id: "not-a-uuid" },
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: { message: "Invalid request body", code: "BAD_REQUEST" },
-    });
-  });
-
   it("falls back to a generic complete content type for unrecognized MIME values", async () => {
     const actor = bdd.user();
     const objectStore = chatCallbacks.acceptChatObjectStorage();

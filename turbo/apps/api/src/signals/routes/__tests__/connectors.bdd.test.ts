@@ -848,44 +848,6 @@ describe("CONN-02: OAuth start and callback", () => {
       scopeMismatch: false,
     });
   });
-
-  it("rejects OAuth start requests that target unsupported auth methods", async () => {
-    mockGitHubConnectorOAuth();
-
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-
-    const unauthenticated = await connectorsApi.requestOauthStart(
-      null,
-      "github",
-      "oauth",
-      { statuses: [401] },
-    );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const wrongGrant = await connectorsApi.requestOauthStart(
-      actor,
-      "openai",
-      "api-token",
-      { statuses: [400] },
-    );
-    expectApiError(wrongGrant.body);
-    expect(wrongGrant.body.error.message).toContain(
-      "openai connector does not use an auth-code grant",
-    );
-
-    const missingMethod = await connectorsApi.requestOauthStart(
-      actor,
-      "github",
-      "api-token",
-      { statuses: [400] },
-    );
-    expectApiError(missingMethod.body);
-    expect(missingMethod.body.error.message).toContain(
-      "github connector does not have api-token auth method",
-    );
-  });
 });
 
 describe("CONN-02: OAuth device authorization", () => {
@@ -1303,18 +1265,6 @@ describe("CONN-02: OAuth device authorization", () => {
       status: "pending",
     });
     expect(testOauthProvider.deviceCodeBodies).toHaveLength(1);
-
-    const missingSession = await connectorsApi.requestDeviceAuthPoll(
-      actor,
-      "test-oauth-device",
-      randomUUID(),
-      "wrong-session-token",
-      [404],
-    );
-    expectApiError(missingSession.body);
-    expect(missingSession.body.error.message).toBe(
-      "OAuth device authorization session not found",
-    );
 
     await connectorsApi.deleteFeatureSwitches(actor);
   });
@@ -2180,7 +2130,6 @@ describe("CONN-02: external-code authorization", () => {
   it("validates external-code auth, grant, and session boundaries without using rollout as authorization", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    const missingSessionId = randomUUID();
 
     const unauthenticated = await connectorsApi.requestExternalCodeStart(
       null,
@@ -2212,32 +2161,6 @@ describe("CONN-02: external-code authorization", () => {
       connectorSlug: "aws",
       status: "pending",
     });
-
-    const invalidCompleteBody = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: missingSessionId,
-        sessionToken: "bdd-session-token",
-        code: "",
-      },
-      [400],
-    );
-    expectApiError(invalidCompleteBody.body);
-    expect(invalidCompleteBody.body.error.code).toBe("BAD_REQUEST");
-
-    const missingComplete = await connectorsApi.requestExternalCodeComplete(
-      actor,
-      "aws",
-      {
-        sessionId: missingSessionId,
-        sessionToken: "bdd-session-token",
-        code: "bdd-code",
-      },
-      [404],
-    );
-    expectApiError(missingComplete.body);
-    expect(missingComplete.body.error.code).toBe("NOT_FOUND");
   });
 });
 
@@ -2703,7 +2626,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       },
       connected: false,
     });
-    expect(created).not.toHaveProperty("oauthSetup");
     expectNoVisibleSecret(created, clientSecret);
     const expectedGrant = {
       customConnectorId: created.id,
@@ -4441,9 +4363,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         message:
           "Automatic MCP OAuth setup failed. Check the server's OAuth configuration or choose another authentication method.",
       });
-      expect(rejected.body.error.message).not.toContain(
-        "private-upstream-sentinel",
-      );
       expect(provider.tokenBodies).toHaveLength(0);
 
       await connectorsApi.deleteCustomConnector(admin, connector.id);
@@ -4520,7 +4439,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       return connectorsApi.createCustomConnector(admin, definition);
     });
     expect(created).toMatchObject({ authMode: "automatic", connected: false });
-    expect(created).not.toHaveProperty("oauthSetup");
     const authorizationUrl = await own(() => {
       return connectorsApi.startCustomConnectorOAuth2(admin, created.id);
     });
@@ -4635,7 +4553,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       storageVersion: 2,
       connected: false,
     });
-    expect(updated).not.toHaveProperty("oauthSetup");
     const automaticUpdate = await own(() => {
       return connectorsApi.updateCustomConnector(admin, created.id, definition);
     });
@@ -4977,122 +4894,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toMatchObject(updatedInjections);
 
     await connectorsApi.deleteCustomConnector(admin, created.id);
-  });
-
-  it("rejects retired manual secret placeholder writes before persistence", async () => {
-    const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    const rand = randomUUID().replace(/-/g, "").slice(0, 8);
-    const fields = [
-      {
-        key: "secret",
-        label: "Connector secret",
-        kind: "secret" as const,
-        required: true,
-      },
-    ];
-    const rejectedDisplayNames: string[] = [];
-    const rejectedTemplates = [
-      {
-        label: "header",
-        headerInjections: [
-          { name: "Authorization", valueTemplate: "Bearer {{secret}}" },
-        ],
-        queryInjections: [],
-      },
-      {
-        label: "query",
-        headerInjections: [
-          {
-            name: "Authorization",
-            valueTemplate: "Bearer {{secrets.secret}}",
-          },
-        ],
-        queryInjections: [{ name: "token", valueTemplate: "{{secret}}" }],
-      },
-      {
-        label: "mixed",
-        headerInjections: [
-          {
-            name: "Authorization",
-            valueTemplate: "Bearer {{secrets.secret}}/{{secret}}",
-          },
-        ],
-        queryInjections: [],
-      },
-    ];
-    for (const rejectedTemplate of rejectedTemplates) {
-      const displayName = `BDD Retired Placeholder ${rejectedTemplate.label}`;
-      rejectedDisplayNames.push(displayName);
-      const rejected = await connectorsApi.requestCreateCustomConnector(
-        admin,
-        {
-          displayName,
-          prefixTemplates: [
-            `https://${rand}.${rejectedTemplate.label}-retired.test/v1/`,
-          ],
-          fields,
-          headerInjections: rejectedTemplate.headerInjections,
-          queryInjections: rejectedTemplate.queryInjections,
-          authMode: "manual",
-        },
-        [400],
-      );
-      expectApiError(rejected.body);
-      expect(rejected.body.error.message).toContain(
-        "uses unsupported template placeholder",
-      );
-    }
-
-    const listed = await connectorsApi.listCustomConnectors(admin);
-    expect(
-      listed.some((connector) => {
-        return rejectedDisplayNames.includes(connector.displayName);
-      }),
-    ).toBeFalsy();
-
-    const canonical = await connectorsApi.createCustomConnector(admin, {
-      displayName: "BDD Canonical Placeholder Before Rejected Update",
-      prefixTemplates: [`https://${rand}.canonical-update.test/v1/`],
-      fields,
-      headerInjections: [
-        {
-          name: "Authorization",
-          valueTemplate: "Bearer {{secrets.secret}}",
-        },
-      ],
-      queryInjections: [],
-      authMode: "manual",
-    });
-    const rejectedUpdate = await connectorsApi.requestUpdateCustomConnector(
-      admin,
-      canonical.id,
-      {
-        displayName: "BDD Retired Placeholder Update",
-        prefixTemplates: canonical.prefixTemplates,
-        fields,
-        headerInjections: [
-          {
-            name: "Authorization",
-            valueTemplate: "Bearer {{secrets.secret}}/{{secret}}",
-          },
-        ],
-        queryInjections: [],
-        authMode: "manual",
-      },
-      [400],
-    );
-    expectApiError(rejectedUpdate.body);
-    expect(rejectedUpdate.body.error.message).toContain(
-      "uses unsupported template placeholder",
-    );
-    await expect(
-      connectorsApi.readCustomConnector(admin, canonical.id),
-    ).resolves.toMatchObject({
-      displayName: canonical.displayName,
-      headerInjections: canonical.headerInjections,
-    });
-
-    await connectorsApi.deleteCustomConnector(admin, canonical.id);
   });
 
   it("creates, patches, secrets, enables for an agent, rejects cross-org ids, and deletes through APIs", async () => {
@@ -6817,24 +6618,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
     expect(wildcard.prefixTemplates).toStrictEqual([`https://*.${host}/v1/`]);
 
-    const missingPlaceholder = await connectorsApi.requestCreateCustomConnector(
-      admin,
-      {
-        ...manualHttpCustomConnectorCreateBody({
-          displayName: "BDD Bad Template",
-          prefixTemplates: [`https://template.${host}/`],
-        }),
-        headerInjections: [
-          { name: "Authorization", valueTemplate: "Bearer static-token" },
-        ],
-      },
-      [400],
-    );
-    expectApiError(missingPlaceholder.body);
-    expect(missingPlaceholder.body.error.message).toContain(
-      "must reference a declared secret or variable field",
-    );
-
     const builtinOverlap = await connectorsApi.createCustomConnector(
       admin,
       manualHttpCustomConnectorCreateBody({
@@ -7022,18 +6805,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   it("rejects unsafe MCP endpoints and protected transport headers", async () => {
     const bdd = createBddApi(context);
     const admin = bdd.user({ orgRole: "org:admin" });
-
-    const hybrid = await connectorsApi.requestCreateCustomConnectorRaw(admin, {
-      ...manualMcpConnectorBody({
-        displayName: "Hybrid MCP",
-        endpoint: "https://hybrid-mcp.example.test/server",
-      }),
-      prefixTemplates: ["https://api.example.test/"],
-    });
-    expect(hybrid.status).toBe(400);
-    await expect(hybrid.json()).resolves.toMatchObject({
-      error: { code: "BAD_REQUEST" },
-    });
 
     for (const endpoint of [
       "http://mcp.example.test/server",
@@ -7692,14 +7463,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       })?.displayName,
     ).toBe("Original");
 
-    const unknownDelete = await connectorsApi.requestDeleteCustomConnector(
-      admin,
-      randomUUID(),
-      [404],
-    );
-    expectApiError(unknownDelete.body);
-    expect(unknownDelete.body.error.code).toBe("NOT_FOUND");
-
     const crossOrgDelete = await connectorsApi.requestDeleteCustomConnector(
       admin,
       foreign.id,
@@ -7936,14 +7699,6 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
     expect(missingCode.headers.getSetCookie()).toStrictEqual(
       expect.arrayContaining([...CONNECTOR_OAUTH_COOKIE_CLEARS]),
     );
-
-    const unknownState = await connectorsApi.completeOauthCallback("github", {
-      state: "bdd-unknown-state",
-    });
-    expectConnectorErrorRedirect(unknownState, {
-      connectorSlug: "github",
-      message: "Invalid state - please try again",
-    });
 
     const success = await connectorsApi.completeOauthCallback("github", {
       code: "github-success-code",

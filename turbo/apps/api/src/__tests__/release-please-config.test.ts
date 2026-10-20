@@ -194,7 +194,6 @@ describe("release-please API deployment graph", () => {
     const connectorsPackage = readJson<VersionedPackageJson>(
       "turbo/packages/connectors/package.json",
     );
-    const releaseWorkflow = readText(".github/workflows/release-please.yml");
 
     expect(releaseConfig.packages["turbo/packages/connectors"]).toStrictEqual({
       "release-type": "node",
@@ -206,13 +205,6 @@ describe("release-please API deployment graph", () => {
     expect(
       releaseManagedWorkspaceDependencyPaths(connectorsPackage, releaseConfig),
     ).toStrictEqual([]);
-    expect(releaseConfig.packages).not.toHaveProperty(
-      "turbo/packages/connector-catalog-validation",
-    );
-    expect(manifest).not.toHaveProperty(
-      "turbo/packages/connector-catalog-validation",
-    );
-    expect(releaseWorkflow).not.toContain("connector-catalog-validation");
   });
 
   it("tracks every API runtime workspace dependency", () => {

@@ -158,7 +158,6 @@ async function publishPrivateChatTemplates(actor: ApiTestUser) {
 describe("CHAT-02: generation templates and attachments", () => {
   it("uses the userMessage document for the runtime prompt", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -283,7 +282,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("lists the agents and chat threads the message links", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const referencedAgentId = randomUUID();
     const referencedThreadId = randomUUID();
@@ -335,7 +333,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("projects referenced passages without requiring every feedback note", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const userMessage: UserMessageInputDocument = {
       version: 1,
@@ -392,7 +389,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("projects forwarded passages from the authoritative source title", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const source = await sendChatRun(actor, {
       agentId,
@@ -462,7 +458,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("preserves common mail identifiers in forwarded prompts", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const source = await chat.sendAndLaunch(actor, {
       agentId,
@@ -611,71 +606,8 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, source.runId);
   }, 90_000);
 
-  it("ignores retired video and intro-video templates and keeps live template numbering", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
-    if (!style) {
-      throw new Error("Expected a registered illustration template");
-    }
-    const userMessage: UserMessageInputDocument = {
-      version: 1,
-      parts: [
-        { type: "text", text: "Animate " },
-        {
-          type: "template",
-          titleSnapshot: "Epic grandeur",
-          template: {
-            type: "video",
-            selection: { stylePresetId: "video-template:epic-grandeur" },
-          },
-        },
-        { type: "text", text: " and introduce " },
-        {
-          type: "template",
-          titleSnapshot: "Intro video",
-          template: { type: "intro-video", selection: {} },
-        },
-        { type: "text", text: " then draw with " },
-        {
-          type: "template",
-          titleSnapshot: style.title,
-          template: {
-            type: "illustration",
-            selection: { illustrationStyleId: style.illustrationStyleId },
-          },
-        },
-        { type: "text", text: " and describe " },
-        {
-          type: "template",
-          titleSnapshot: "Intro video",
-          template: { type: "intro-video", selection: {} },
-        },
-        { type: "text", text: "\n\nThen caption" },
-      ],
-    };
-
-    const sent = await sendChatRun(actor, {
-      agentId,
-      prompt: "legacy fallback",
-      userMessage,
-    });
-    const run = await api.readRun(actor, sent.runId);
-    expect(run.prompt).toContain(
-      `Animate and introduce then draw with [Template #1: ${style.title} (illustration)] and describe \n\nThen caption`,
-    );
-
-    const systemPrompt = run.appendSystemPrompt ?? "";
-    expect(systemPrompt).toContain("## Template #1 (illustration)");
-    expect(systemPrompt).toContain(style.illustrationStyleId);
-
-    await cancelChatRun(actor, sent.runId);
-  });
-
   it("projects multiple inline templates into one ordered prompt and one shared context", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     const workflow = WORKFLOW_TEMPLATE_ITEMS[0];
@@ -740,8 +672,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     const systemPrompt = run.appendSystemPrompt ?? "";
     expect(systemPrompt.match(/^# Inline Templates$/gm)).toHaveLength(1);
-    expect(systemPrompt).not.toContain("# Artifact Template Context");
-    expect(systemPrompt).not.toContain("# Workflow Template Context");
     expect(systemPrompt).toContain("## Template #1 (illustration)");
     expect(systemPrompt).toContain("## Template #2 (workflow)");
     expect(systemPrompt).toContain("## Template #3 (illustration)");
@@ -777,7 +707,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("preserves the attachment userMessage order in the runtime prompt", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const fileId = randomUUID();
     chat.mockCompletedUploadObject(actor, fileId, "api-input.txt", 12);
@@ -846,7 +775,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("uses only the canonical template part", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -896,7 +824,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     "preserves client-authored additional info in the agent prompt: %s",
     async (additionalInfo) => {
       const { actor, agentId } = await entitledChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
       const prompt = "Our launch brief";
       const userMessage: UserMessageInputDocument = {
         version: 1,
@@ -930,7 +857,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Pinned by slug because the assertions below quote this runbook by name.
     const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
       return item.slug === "playful-launch-presentation";
@@ -973,7 +899,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(presentationPrompt).toContain(
       "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",
     );
-    expect(presentationPrompt).not.toContain("Selected design system");
     expect(presentationPrompt).toContain(
       `okou resource pull ${template.templateId}-runbook --dir ./generated/resources`,
     );
@@ -988,10 +913,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       "Keep all slides and visible content in index.html; render the first slide without JavaScript",
     );
     expect(presentationPrompt).toContain("--artifact-kind presentation-html");
-    expect(presentationPrompt).not.toContain(
-      "okou generate presentation --design-system",
-    );
-    expect(presentationPrompt).not.toContain("- Artifact type: presentation");
     await cancelChatRun(actor, presentation.runId);
 
     const revision = await sendChatRun(actor, {
@@ -1038,15 +959,11 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(websitePrompt).toMatch(
       /with `okou generate image-batch wait <state-dir>`/,
     );
-    expect(websitePrompt).not.toContain("tools/generate-images.mjs");
-    expect(websitePrompt).not.toContain("resolve-images.mjs");
-    expect(websitePrompt).not.toContain("render.mjs");
     await cancelChatRun(actor, website.runId);
   }, 90_000);
 
   it("uses R2 for archive-backed styles", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const style = ILLUSTRATION_TEMPLATE_ITEMS.find((item) => {
       return item.illustrationStyleId === "image-style:ink-storefront";
     });
@@ -1073,7 +990,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("is one-shot: a follow-up without re-attaching the style gets no template context", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
       throw new Error("Expected a registered illustration style");
@@ -1123,7 +1039,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       .appendSystemPrompt;
     expect(secondPrompt).not.toContain("# Inline Templates");
     expect(secondPrompt).toContain("# This Chat Thread");
-    expect(secondPrompt).not.toContain("Selected a template");
     expect(secondPrompt).not.toContain(style.illustrationStyleId);
     await waitForRunUserMessage(
       actor,
@@ -1154,7 +1069,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     expect(thirdPrompt).toContain("When you produce a website");
     expect(thirdPrompt).toContain("# Incomplete Rounds Context");
-    expect(thirdPrompt).not.toContain("# Web Chat Run Context");
     // The illustration style is gone entirely for this turn: it's not attached
     // to this message, and prior/incomplete context no longer repeats template
     // selections.
@@ -1175,7 +1089,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("injects workflow templates as one-shot context without prior template selections", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     const workflowTemplate = WORKFLOW_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -1218,13 +1131,11 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(workflowPrompt).toContain(
       "Save the reusable workflow draft as soon as the template behavior is clear.",
     );
-    expect(workflowPrompt).not.toContain("Before creating anything");
     expect(workflowPrompt).toContain("Gmail label-applied automation");
     // The cancelled illustration run remains incomplete context with the
     // same model and runtime, without carrying over its template selection.
     expect(workflowPrompt).toContain("# Incomplete Rounds Context");
     expect(workflowPrompt).toContain("User: draw a labeled inbox");
-    expect(workflowPrompt).not.toContain("# Web Chat Run Context");
     expect(workflowPrompt).not.toContain(style.illustrationStyleId);
     await cancelChatRun(actor, workflow.runId);
 
@@ -1242,15 +1153,12 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(followUpPrompt).toContain("# Incomplete Rounds Context");
     expect(followUpPrompt).toContain("User: draw a labeled inbox");
     expect(followUpPrompt).toContain("User: create the workflow version");
-    expect(followUpPrompt).not.toContain("# Web Chat Run Context");
-    expect(followUpPrompt).not.toContain("Selected a template");
     expect(followUpPrompt).not.toContain(style.illustrationStyleId);
     await cancelChatRun(actor, followUp.runId);
   }, 120_000);
 
   it("rejects unavailable templates at pick and launches all templates once they are shared", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected a chat organization");
@@ -1440,7 +1348,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("rejects Document templates while disabled and injects their pinned resource after enablement", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     if (!actor.orgId) {
       throw new Error("Expected a chat organization");
     }
@@ -1506,7 +1413,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("preserves multiple Document references and their pinned sources in the run", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     if (!actor.orgId) {
       throw new Error("Expected a chat organization");
     }
@@ -1668,17 +1574,6 @@ describe("CHAT-02: generation templates and attachments", () => {
         message: "Unknown generation template color system",
       },
       {
-        // A runbook id without a package is unknown; presentations are
-        // runbook-only, so there is no separate "wrong target type" path.
-        template: {
-          type: "presentation",
-          selection: {
-            templateId: "template:html-ppt-missing",
-          },
-        },
-        message: "Unknown generation template",
-      },
-      {
         template: {
           type: "workflow",
           selection: { workflowTemplateId: "workflow-template:missing" },
@@ -1771,7 +1666,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("resolves attachment metadata in ordered waves of four", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const files = Array.from({ length: 5 }, (_, index) => {
       return {
         id: randomUUID(),
@@ -2231,7 +2125,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("persists attachments and injects them into the run prompt", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const fileId = randomUUID();
     const filename = "diagram final 100%.png";
     chat.mockCompletedUploadObject(actor, fileId, filename, 42);
@@ -2290,7 +2183,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("projects one structured annotated file through its rendered derivative", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const fileId = randomUUID();
     const annotatedFileId = randomUUID();
     const filename = "billing-page.png";
@@ -2370,7 +2262,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("keeps a legacy-layout attachment on the legacy CDN for a new send", async () => {
     const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
     const fileId = randomUUID();
     const filename = "legacy-brand.txt";
     chat.mockCompletedUploadObject(actor, fileId, filename, 24);
@@ -2395,9 +2286,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     const resolved = await chat.resolveWebFileUrl(actor, fileId);
     expect(resolved.publicUrl).toMatch(/^https:\/\/cdn\.vm7\.io\//);
-    expect(resolved.publicUrl).not.toMatch(
-      /^https:\/\/(?:a\.okou\.io|cdn\.okou\.io)\//,
-    );
 
     await cancelChatRun(actor, run.runId);
   }, 60_000);
@@ -2406,7 +2294,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 describe("CHAT-02: queued attachments on auto-send", () => {
   it("preserves structured part order when a queued message is promoted", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,
@@ -2498,7 +2385,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
 
   it("carries queued attachments into the auto-sent follow-up run", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const anchor = await sendChatRun(actor, {
       agentId,

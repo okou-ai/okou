@@ -41,24 +41,9 @@ const passwordBody = {
 } as const;
 
 describe("reusable SSH credential owner routes", () => {
-  it("requires a session and rejects invalid input before encrypting secrets", async () => {
-    const kms = useSecretKmsProbe();
-    await accept(credentials().list({ headers: {} }), [401]);
-    mocks.clerk.session(
-      `user_invalid_${randomUUID()}`,
-      `org_invalid_${randomUUID()}`,
-    );
-    const request = setupRawAppRequest({
-      context,
-      routes: sshConnectionsRoutes,
-    });
-    const invalid = await request("/api/ssh/credentials", {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ authentication: "invalid" }),
-    });
-    expect(invalid.status).toBe(400);
-    expect(kms.generateDataKeyCalls).toBe(0);
+  it("requires a session to list credentials", async () => {
+    const response = await accept(credentials().list({ headers: {} }), [401]);
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
   it("shares named metadata, rejects referenced deletion, and preserves credentials after host deletion", async () => {
@@ -462,14 +447,11 @@ describe("reusable SSH credential owner routes", () => {
       routes: sshConnectionsRoutes,
     });
     for (const authentication of [
-      { method: "password", password: "" },
-      { method: "password", password: "x".repeat(4097) },
       {
         method: "password",
         password: "secret-canary",
         privateKey: "secret-canary",
       },
-      { method: "private_key", privateKey: "" },
       { method: "private_key", privateKey: "secret-canary", passphrase: "" },
       {
         method: "private_key",

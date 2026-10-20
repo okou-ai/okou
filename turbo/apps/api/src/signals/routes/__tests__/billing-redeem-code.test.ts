@@ -378,7 +378,6 @@ describe("POST /api/billing/redeem-code", () => {
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
       fixture.userId,
     );
-    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
     expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
     expect(calledAtom).toBeFalsy();
   });
@@ -425,7 +424,6 @@ describe("POST /api/billing/redeem-code", () => {
       expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
         fixture.userId,
       );
-      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
       expect(context.mocks.clerk.m2m.createToken).toHaveBeenCalledWith({
         machineSecretKey: ATOM_MACHINE_SECRET_KEY,
         secondsUntilExpiration: 3600,

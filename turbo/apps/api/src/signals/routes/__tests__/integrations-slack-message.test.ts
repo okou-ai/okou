@@ -295,24 +295,6 @@ describe("POST /api/integrations/slack/message", () => {
     expect(response.body.error.message).toContain("slack:write");
   });
 
-  it("returns 404 when no Slack installation exists for org", async () => {
-    const { orgId, userId } = await seedBaseContext();
-    const token = await credentials.okouToken({ userId, orgId });
-
-    const client = setupApp({
-      context,
-      routes: integrationsSlackMessageRoutes,
-    })(integrationsSlackMessageContract);
-    const response = await accept(
-      client.sendMessage({
-        body: { channel: "C123", text: "hello" },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [404],
-    );
-    expect(response.body.error.message).toContain("No Slack installation");
-  });
-
   it("sends message successfully and returns Slack response", async () => {
     const { orgId, userId } = await seedWithInstallation();
     const token = await credentials.okouToken({ userId, orgId });

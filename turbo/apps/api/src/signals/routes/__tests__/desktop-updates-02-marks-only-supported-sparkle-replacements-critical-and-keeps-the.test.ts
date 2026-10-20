@@ -35,11 +35,6 @@ describe("desktop update routes", () => {
     expect(supported).toContain(
       '<sparkle:criticalUpdate sparkle:version="0.51.0"/>',
     );
-    for (const item of items.filter((item) => {
-      return item.includes("<sparkle:version>0.50.1</sparkle:version>");
-    })) {
-      expect(item).not.toContain("criticalUpdate");
-    }
     const legacy = await appRequest(`${path}RELEASES.json`);
     expect(legacy.status).toBe(200);
     await expect(legacy.json()).resolves.toMatchObject({

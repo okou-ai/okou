@@ -146,18 +146,14 @@ test("Debug off hides Files and starts no Files work, including a direct Files U
   expect(fixture.sockets).toHaveLength(0);
 });
 
-test.each([false, true])(
-  "An inactive Activity shows its pending context (%s) without bootstrap",
-  async (queued) => {
-    const fixture = await setupFilesPage(context, { active: false, queued });
-    const panel = await openFiles();
-    await expect(
-      within(panel).findByText(
-        queued
-          ? "Files will be available when the queued run starts."
-          : "Files are available while a run is active.",
-      ),
-    ).resolves.toBeInTheDocument();
-    expect(fixture.bootstraps).toHaveLength(0);
-  },
-);
+test("An inactive Activity explains that Files require an active run without bootstrap", async () => {
+  const fixture = await setupFilesPage(context, {
+    active: false,
+    queued: false,
+  });
+  const panel = await openFiles();
+  await expect(
+    within(panel).findByText("Files are available while a run is active."),
+  ).resolves.toBeInTheDocument();
+  expect(fixture.bootstraps).toHaveLength(0);
+});

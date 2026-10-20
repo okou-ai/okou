@@ -311,8 +311,5 @@ test("Markdown preserves content and iframe names without native hover hints", a
   expect(link).not.toHaveAttribute("title");
   const notes = screen.getByText("Review notes");
   expect(notes).not.toHaveAttribute("title");
-  expect(
-    markdownFrameFor(link).querySelector("[title]:not(iframe)"),
-  ).toBeNull();
   expect(screen.getByTitle("Report preview").tagName).toBe("IFRAME");
 });

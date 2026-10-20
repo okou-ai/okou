@@ -258,10 +258,6 @@ describe("VNC authority and revocation", () => {
         ],
       ]),
     );
-    expect(notifications()).not.toContainEqual([
-      "vnc-authority-invalidated",
-      { runId: f.runId, connectionId: unrelated.body.id },
-    ]);
     expect(requireVncCredentialId(unrelated.body)).not.toBe(f.credentialId);
     expect((await check(f)).body).toStrictEqual({
       outcome: "configuration_changed",

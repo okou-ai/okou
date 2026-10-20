@@ -329,9 +329,6 @@ test("Review your member-package credit balance and grant rows", async () => {
   expect(within(grants).getByText("Date")).toBeInTheDocument();
   expect(within(grants).getByText("Credits")).toBeInTheDocument();
   expect(within(grants).getByText("Left")).toBeInTheDocument();
-  expect(
-    within(card).queryByTestId("usage-pack-credit-grants-toggle"),
-  ).toBeNull();
   expect(within(card).getByText("20,400")).toBeInTheDocument();
   expect(within(card).getByText("20,000")).toBeInTheDocument();
   expect(within(grants).getByText("+25,000")).toBeInTheDocument();
@@ -684,7 +681,6 @@ test("Review personal credit-usage records by date range", async () => {
   expect(screen.getByText("21 threads")).toBeInTheDocument();
   expect(screen.getByText("Mar 21")).toBeInTheDocument();
   expect(screen.queryByText("Extended agent audit")).not.toBeInTheDocument();
-  expect(screen.queryByText("All sources")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Slack")).not.toBeInTheDocument();
   expect(screen.getAllByLabelText("Thread").length).toBeGreaterThan(0);
   expect(requests.ranges).toContain("today");

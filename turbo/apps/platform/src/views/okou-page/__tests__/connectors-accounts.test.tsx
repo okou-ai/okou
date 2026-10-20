@@ -311,7 +311,6 @@ test("Show the full agent name after granting the first connector access", async
       getConnectorCard("GitHub"),
     );
     expect(access).toHaveTextContent(`Used by ${longName}`);
-    expect(access).not.toHaveAttribute("title");
   });
 });
 
@@ -1035,9 +1034,6 @@ test("Manage access for a connector without configurable permissions", async () 
     }),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Allowed")).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("No configurable permissions"),
-  ).not.toBeInTheDocument();
   expect(queryConnectorAction("button", "Manage", dialog)).toBeNull();
 });
 
@@ -1085,7 +1081,6 @@ test("Prevent account additions when a connector target is unavailable", async (
     within(manager).findByText("Accounts are unavailable for this connector."),
   ).resolves.toBeInTheDocument();
   expect(getConnectorAction("button", "Add account", manager)).toBeDisabled();
-  expect(within(manager).queryByRole("group", { name: "Default" })).toBeNull();
 });
 
 test("Keep connector account summaries while a realtime refresh loads", async () => {

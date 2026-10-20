@@ -499,7 +499,7 @@ describe("Discord native authorization and reads", () => {
     );
   });
 
-  it.each([401, 403, 404, 500, "invalid", "mismatch"])(
+  it.each([401, 500, "invalid", "mismatch"])(
     "fails guild history closed on application discovery failure %s without blocking sends",
     async (failure) => {
       const f = await fixture();

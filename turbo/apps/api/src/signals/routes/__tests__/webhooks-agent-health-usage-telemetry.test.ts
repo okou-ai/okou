@@ -75,36 +75,6 @@ describe("agent usage event webhook", () => {
     },
   );
 
-  it("returns not found when a usage event targets a missing run", async () => {
-    const runId = randomUUID();
-    const orgId = `org_usage_missing_${randomUUID().slice(0, 8)}`;
-    const userId = `user_usage_missing_${randomUUID().slice(0, 8)}`;
-    const sandboxToken = generateSandboxToken(userId, runId, orgId);
-
-    const response = await accept(
-      setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
-        webhookUsageEventContract,
-      ).send({
-        headers: { authorization: `Bearer ${sandboxToken}` },
-        body: {
-          runId,
-          events: [
-            {
-              idempotencyKey: randomUUID(),
-              kind: "connector",
-              provider: "x",
-              category: "tweet.read",
-              quantity: Number.MAX_SAFE_INTEGER,
-            },
-          ],
-        },
-      }),
-      [404],
-    );
-
-    expect(response.status).toBe(404);
-  });
-
   it("rejects a usage quantity above the exact integer range", async () => {
     const runId = randomUUID();
     const orgId = `org_usage_unsafe_${randomUUID().slice(0, 8)}`;

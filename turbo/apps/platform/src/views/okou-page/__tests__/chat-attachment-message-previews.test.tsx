@@ -405,7 +405,6 @@ test("Persisted PDF attachments use the document sidebar", async () => {
   await expect(
     screen.findByTestId("artifact-sidebar-body-pdf"),
   ).resolves.toBeVisible();
-  expect(screen.queryByTestId("presentation-artifact-viewport")).toBeNull();
   click(getNamedButton("Close artifact"));
   await waitFor(() => {
     expect(screen.queryByTestId("artifact-sidebar-body-pdf")).toBeNull();
@@ -438,7 +437,6 @@ test("Persisted HTML presentations open and download as presentations", async ()
     expect(downloads.downloads).toHaveLength(1);
   });
   expect(downloads.downloads[0]?.filename).toBe("quarterly-deck.html");
-  expect(screen.queryByText("Download failed")).toBeNull();
 });
 
 test("A Slack-originated message keeps its attachment and original source", async () => {

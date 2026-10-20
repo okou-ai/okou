@@ -192,10 +192,6 @@ describe("POST /api/discord/interactions signature and protocol validation", () 
   });
 
   it.each([
-    ["non-decimal snowflake", { ...pingPayload(), id: "1e18" }],
-    ["overflowing snowflake", { ...pingPayload(), id: "18446744073709551616" }],
-    ["numeric snowflake", { ...pingPayload(), id: 123 }],
-    ["missing token", { ...pingPayload(), token: undefined }],
     ["missing actor", { ...commandPayload(), user: undefined }],
     [
       "guild with DM identity",

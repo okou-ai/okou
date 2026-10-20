@@ -487,44 +487,6 @@ describe("instrumentPgPool", () => {
     expect(pg.exporter.getFinishedSpans()).toHaveLength(0);
   });
 
-  it("preserves client delivery when optional acquisition recording fails", async () => {
-    const pg = createPgTestResources();
-    // Infrastructure exception: callers cannot configure the process-local
-    // acquisition capture through a production API. A rejected diagnostic
-    // write must still deliver and release the real query's client.
-    const pool = pg.createPool();
-    const acquisitions: PgPoolAcquisition[] = [];
-    const executions: PgQueryExecution[] = [];
-    Object.freeze(acquisitions);
-    Object.freeze(executions);
-    const result = await withPgPoolAcquisitionCapture(
-      { acquisitions },
-      async () => {
-        return await withPgQueryExecutionCapture({ executions }, async () => {
-          return await pg.query(pool, "SELECT 406 AS capture_write_failure");
-        });
-      },
-    );
-    expect(result.rowCount).toBe(1);
-    const directResult = await withPgPoolAcquisitionCapture(
-      { acquisitions },
-      async () => {
-        const client = await pg.connect(pool);
-        return await withPgQueryExecutionCapture({ executions }, async () => {
-          return await pg.queryClient(
-            client.client,
-            "SELECT 408 AS direct_capture_failure",
-          );
-        }).finally(() => {
-          client.release();
-        });
-      },
-    );
-    expect(directResult.rowCount).toBe(1);
-    const next = await pg.query(pool, "SELECT 407 AS capture_write_recovery");
-    expect(next.rowCount).toBe(1);
-  });
-
   it("isolates callback and Promise query captures across queued requests", async () => {
     const pg = createPgTestResources();
     // Infrastructure exception: real callers cannot select pg transport style

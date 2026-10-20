@@ -25,7 +25,7 @@ function artifactEntryNamed(title: string, container: HTMLElement) {
   return button;
 }
 
-test("Browse directory artifacts with permanently optional source URLs and open their detail", async () => {
+test("Browse artifacts without source URLs in the popover and sidebar without showing message links", async () => {
   const report = artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf");
   await setupResources({
     sourceUrl: false,
@@ -62,13 +62,14 @@ test("Browse directory artifacts with permanently optional source URLs and open 
   });
   const resources = await screen.findByRole("region", { name: "Resources" });
   await within(resources).findByText("report.pdf");
-  // Shared snapshots legitimately omit source/alias URLs. Their directory
-  // entries remain usable, and unknown URLs remain ordinary message links.
-  expect(within(resources).getByText("Report").closest("a")).toHaveAttribute(
-    "href",
-    "https://files.example.test/report.pdf",
-  );
-  expect(within(resources).getByText("Current guide")).toBeInTheDocument();
+  // Shared snapshots legitimately omit source/alias URLs; their directory
+  // entries remain usable without extracting links from messages.
+  expect(
+    within(resources).queryByRole("region", { name: "Links" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(resources).queryByText("Current guide"),
+  ).not.toBeInTheDocument();
 
   click(artifactEntryNamed("report.pdf", resources));
   const sidebar = await screen.findByTestId("artifact-sidebar");
@@ -79,6 +80,23 @@ test("Browse directory artifacts with permanently optional source URLs and open 
   ).resolves.toHaveAttribute(
     "src",
     "https://files.example.test/download-report.pdf#navpanes=0",
+  );
+
+  click(buttonNamed("Back to all artifacts", sidebar));
+  const artifactList = await screen.findByTestId("thread-sidebar-artifacts");
+  await within(artifactList).findByText("report.pdf");
+  expect(
+    within(artifactList).getByRole("heading", { name: "Artifacts 1" }),
+  ).toBeInTheDocument();
+  expect(within(artifactList).queryByText("Links")).not.toBeInTheDocument();
+  expect(
+    within(artifactList).queryByText("Current guide"),
+  ).not.toBeInTheDocument();
+  expect(within(artifactList).queryByRole("tablist")).not.toBeInTheDocument();
+
+  click(buttonNamed("Preview report.pdf", artifactList));
+  await within(await screen.findByTestId("artifact-sidebar")).findByText(
+    "download-report.pdf",
   );
 });
 
@@ -122,17 +140,6 @@ test.each([
     expect(artifactEntryNamed(title, resources)).toBeInTheDocument();
   },
 );
-
-test("Deduplicate both source and hosted alias links using only summaries", async () => {
-  await setupResources({ aliasUrl: "https://report.sites.okou.ai/" });
-  const resources = await screen.findByRole("region", { name: "Resources" });
-  await within(resources).findByText("report.pdf");
-  const links = within(resources).getByRole("region", { name: "Links" });
-  expect(within(links).queryByText("Report")).not.toBeInTheDocument();
-  expect(within(links).queryByText("Hosted alias")).not.toBeInTheDocument();
-  expect(within(links).getByText("Current guide")).toBeInTheDocument();
-  expect(within(links).getByText("Reference")).toBeInTheDocument();
-});
 
 test("Copy an artifact's on-demand detail URL without opening its preview", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();

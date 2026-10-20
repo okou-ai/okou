@@ -332,12 +332,10 @@ describe("Steam OpenID connector", () => {
     const {
       authorizationUrl: replacementAuthorizationUrl,
       oauthAttemptId: replacementAttemptId,
-      connectionId: replacementConnectionId,
     } = await startSteamOpenId(actor, {
       intent: "reconnect",
       connectionId: initial.body.id,
     });
-    expect(replacementConnectionId).toBeUndefined();
     const replacementPending = await accept(
       setupApp({ context, routes: connectorAccountRoutes })(
         connectorAccountsContract,
@@ -386,7 +384,7 @@ describe("Steam OpenID connector", () => {
     });
   });
 
-  it.each(["missing", "other-user", "other-org", "wrong-target"] as const)(
+  it.each(["other-user", "other-org", "wrong-target"] as const)(
     "rejects a %s reconnect target without changing its account",
     async (scenario) => {
       const owner = testActor();
@@ -397,7 +395,7 @@ describe("Steam OpenID connector", () => {
         email: `${owner.userId}@example.test`,
       };
       let connectorSlug: "steam" | "github" = "steam";
-      let connectionId: string = randomUUID();
+      let connectionId: string;
       if (scenario === "wrong-target") {
         connectorSlug = "github";
         mockGitHubConnectorOAuth({
@@ -425,7 +423,7 @@ describe("Steam OpenID connector", () => {
           throw new Error("Expected the publicly created GitHub account");
         }
         connectionId = account.id;
-      } else if (scenario !== "missing") {
+      } else {
         const started = await startSteamOpenId(owner);
         await completeSteamOpenIdCallback(started.authorizationUrl);
         const accounts = await connectors.listBuiltinConnectorAccounts(

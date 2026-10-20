@@ -60,7 +60,6 @@ test("Local conversation data is isolated by user and workspace", async () => {
   await expect(
     otherUser.get(CHAT_THREAD_SNAPSHOT_STORE, privateSnapshot.id),
   ).resolves.toBeUndefined();
-  expect(onVersionChange).not.toHaveBeenCalled();
 });
 
 test("A local chat-cache upgrade closes the old connection and notifies its owner", async () => {

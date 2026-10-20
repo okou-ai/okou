@@ -1092,9 +1092,6 @@ describe("canonical Discord ingress", () => {
     expect(claim.appendSystemPrompt).toContain(
       "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
     );
-    expect(claim.appendSystemPrompt).not.toContain(
-      "Only your own bot DM is accessible",
-    );
     const privateArtifactRule =
       "A private `/artifacts/...` address is not openable from Discord, so a link alone shows the user nothing.";
     expect(claim.appendSystemPrompt).toContain(privateArtifactRule);

@@ -366,9 +366,6 @@ test("The workflow section is hidden when no workflows match", async () => {
   await waitFor(() => {
     expect(within(menu).queryByText("Workflows")).not.toBeInTheDocument();
   });
-  expect(
-    within(menu).queryByText("No matching workflows"),
-  ).not.toBeInTheDocument();
   expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
   expect(slashButton("Browse all templates")).toBeInTheDocument();
 

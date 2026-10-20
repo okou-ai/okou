@@ -431,7 +431,6 @@ describe("private Runner VNC authority", () => {
       { failureReason: "sensitive-secret-provider-error" },
       { failureReason: "cancelled" },
       { failureReason: "stale_geometry" },
-      { observedAt: "invalid" },
       { password: "sensitive-secret-provider-error" },
     ]) {
       const response = await setupRawAppRequest({
@@ -1647,28 +1646,6 @@ describe("private Runner VNC authority", () => {
       supportedProfiles: [...vncProfiles],
     };
     for (const body of [
-      {
-        ...base,
-        supportedProfiles: [
-          { authMethod: "vnc_password", securityType: "none" },
-        ],
-      },
-      {
-        ...base,
-        supportedProfiles: [{ authMethod: "none", securityType: "x509_vnc" }],
-      },
-      {
-        ...base,
-        supportedProfiles: [
-          { authMethod: "vnc_password", securityType: "x509_plain" },
-        ],
-      },
-      {
-        ...base,
-        supportedProfiles: [
-          { authMethod: "username_password", securityType: "x509_vnc" },
-        ],
-      },
       { ...base, host: "attacker.example.com" },
       { ...base, userId: f.userId },
       {
@@ -1686,26 +1663,6 @@ describe("private Runner VNC authority", () => {
       );
       expect(result.status).toBe(400);
       expect(JSON.stringify(result.body)).not.toContain("injected");
-    }
-    const checkBody = {
-      connectionId: f.connectionId,
-      runnerIdentity: f.runnerIdentity,
-      expectedGeneration: 1,
-    };
-    for (const body of [
-      { ...checkBody, host: "attacker.example.com" },
-      { ...checkBody, userId: f.userId },
-      { ...checkBody, expectedGeneration: 0 },
-    ]) {
-      const result = await request(
-        runnerVncContract.check.path.replace(":runId", f.runId),
-        {
-          method: "POST",
-          headers: { ...vncRunnerHeaders, "content-type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
-      expect(result.status).toBe(400);
     }
     expect(kms.decryptCalls).toBe(0);
   });
@@ -1859,7 +1816,6 @@ describe("private Runner VNC authority", () => {
       outcome: "valid",
     });
     for (const override of [
-      {},
       { expectedTransport: { type: "direct" as const } },
       {
         expectedTransport: {

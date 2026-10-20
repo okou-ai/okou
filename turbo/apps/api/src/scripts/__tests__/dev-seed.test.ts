@@ -45,16 +45,10 @@ describe("official skill volume seeds", () => {
   it("keeps published historical Storage bindings out of metadata fallback", () => {
     expect(
       getMetadataOnlySeedSkillNames(
-        [
-          "computer-use",
-          "gen",
-          "office-files",
-          "ppt-avatar-video",
-          "workflow-setup",
-        ],
+        ["computer-use", "gen", "office", "ppt-avatar-video", "workflow-setup"],
         rawDevSeedSkillVolumes,
       ),
-    ).toStrictEqual(["office-files", "ppt-avatar-video", "workflow-setup"]);
+    ).toStrictEqual(["office", "ppt-avatar-video", "workflow-setup"]);
   });
 });
 

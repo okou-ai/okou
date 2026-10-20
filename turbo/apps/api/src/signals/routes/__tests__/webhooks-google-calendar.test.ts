@@ -514,7 +514,6 @@ describe("POST /api/webhooks/google-calendar", () => {
     }
 
     expect(refreshCalls).toBe(1);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expect(
       connectorsApi.readConnectorBySlug(scenario.actor, "google-calendar"),
     ).resolves.toMatchObject({

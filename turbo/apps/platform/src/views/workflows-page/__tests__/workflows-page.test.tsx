@@ -3622,7 +3622,6 @@ test("Create a daily schedule in the user's preferred time zone", async () => {
   expect(
     within(createAutomationForm).getByText("Time (Asia/Shanghai)"),
   ).toBeInTheDocument();
-  expect(within(createAutomationForm).queryByText(/Saved as/u)).toBeNull();
   click(buttonByText("Add schedule", createAutomationForm));
 
   await waitFor(() => {

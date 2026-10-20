@@ -102,7 +102,6 @@ import {
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
@@ -1018,18 +1017,6 @@ function useOrdinaryOAuthRuns() {
 
 const createOrdinaryOAuthRunApi = useOrdinaryOAuthRuns();
 
-const CHAT_CALLBACK_URL = "http://localhost:3000/api/internal/callbacks/chat";
-
-function failIfChatCallbackRouteIsFetched(): void {
-  server.use(
-    http.post(CHAT_CALLBACK_URL, () => {
-      return HttpResponse.text("chat callback route should not be fetched", {
-        status: 500,
-      });
-    }),
-  );
-}
-
 async function finishCancelledRun(
   runId: string,
   sandboxToken: string,
@@ -1293,9 +1280,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.appendSystemPrompt).toContain(
           "You have access to the Okou CLI. Run commands with: `okou <command>`.",
         );
-        expect(claim.appendSystemPrompt).not.toContain(
-          "If `okou` is unavailable",
-        );
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
@@ -1394,7 +1378,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(claim.billableFirewalls).toStrictEqual([]);
         expect(claim.connectorRuntimeTargets).toStrictEqual([]);
-        expect(claim).not.toHaveProperty("connectorPermissionBaseline");
       });
 
       it("reuses scoped runtime entries and materializes sibling connectors", async () => {
@@ -2018,8 +2001,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!canonicalManifest) {
           throw new Error("Expected canonical storageMounts manifest");
         }
-        expect(canonicalManifest).not.toHaveProperty("storages");
-        expect(canonicalManifest).not.toHaveProperty("artifacts");
         expect(canonicalManifest.storageMounts).toStrictEqual(
           expect.arrayContaining([
             expect.objectContaining({
@@ -2166,7 +2147,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!sessionManifest || !("storageMounts" in sessionManifest)) {
           throw new Error("Expected canonical mounts from session persistence");
         }
-        expect(sessionManifest).not.toHaveProperty("storages");
         expect(sessionManifest.storageMounts).toStrictEqual(
           expect.arrayContaining([
             expect.objectContaining({
@@ -4727,13 +4707,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
         expectApiError(claim.body);
-
-        const missing = await api.requestClaimRunnerJob(
-          true,
-          randomUUID(),
-          [404],
-        );
-        expectApiError(missing.body);
       });
     });
 
@@ -5191,7 +5164,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const chat = createChatFilesBddApi(context);
         const misc = createMiscRoutesApi(context);
         const { actor, runnerGroup } = await entitledRunActor();
-        failIfChatCallbackRouteIsFetched();
 
         const workflowNames = ["bdd-codex-kit", "bdd-codex-research"] as const;
 
@@ -5308,7 +5280,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(findFirewallEntry(claim.firewalls, "x")).toBeUndefined();
         expect(claim.billableFirewalls).not.toContain("x");
         expect(claim.networkPolicies ?? {}).not.toHaveProperty("x");
-        expect(claim).not.toHaveProperty("connectorPermissionBaseline");
 
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
@@ -8095,9 +8066,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             baseUrlVars: { workspace: "restored" },
             sourceId: expect.any(String),
           });
-          expect(restoredClaim).not.toHaveProperty(
-            "connectorPermissionBaseline",
-          );
           const restoredSkillMount = expectCanonicalStorageManifest(
             restoredClaim.storageManifest,
           )?.storageMounts.find((storage) => {
@@ -10615,9 +10583,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const grantedContext = await claimSlackContext("granted permissions");
         const granted = grantedContext.policy;
-        expect(grantedContext.claim).not.toHaveProperty(
-          "connectorPermissionBaseline",
-        );
         expect(
           grantedContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
         ).toBe(firstExpiry);
@@ -11395,7 +11360,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.disallowedTools).toStrictEqual(
           EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
         );
-        expect(claim.disallowedTools).not.toContain("WebFetch");
         expectCanonicalOkouRunEnvironment({
           environment: claim.environment,
           platformEnvironment: claim.platformEnvironment,
@@ -11877,7 +11841,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.disallowedTools).toStrictEqual(
           EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
         );
-        expect(claim.disallowedTools).not.toContain("WebFetch");
         expect(claim.appendSystemPrompt ?? "").toContain("okou scrape --help");
         expect(claim.appendSystemPrompt ?? "").toContain(
           "okou web-search --help",
@@ -12287,19 +12250,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     });
 
     describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () => {
-      it("delivers chat run callbacks through cancellation side effects without HTTP self-dispatch", async () => {
+      it("delivers chat run callbacks through cancellation side effects", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const { actor, agentId } = await entitledRunActor();
-        mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "bdd-bypass");
-
-        let routeRequests = 0;
-        server.use(
-          http.post(CHAT_CALLBACK_URL, () => {
-            routeRequests += 1;
-            return HttpResponse.json({ error: "boom" }, { status: 500 });
-          }),
-        );
 
         const first = await sendChatRunMessage(actor, {
           agentId,
@@ -12320,7 +12274,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runLifecycleEvent: "cancelled",
           }),
         );
-        expect(routeRequests).toBe(0);
 
         const second = await sendChatRunMessage(actor, {
           agentId,
@@ -12340,7 +12293,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runLifecycleEvent: "cancelled",
           }),
         );
-        expect(routeRequests).toBe(0);
 
         const third = await sendChatRunMessage(actor, {
           agentId,
@@ -12367,7 +12319,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         expect(cancelNote.runLifecycleEvent).toBe("cancelled");
         expect(cancelNote.content).toStrictEqual(expect.any(String));
-        expect(routeRequests).toBe(0);
       });
     });
 
@@ -13806,14 +13757,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expectApiError(forbidden.body);
         expect(forbidden.body.error.code).toBe("FORBIDDEN");
 
-        const invalidTimezone = await billing.requestUsageMembers(
-          actor,
-          { tz: "Not/A/Timezone" },
-          [400],
-        );
-        expectApiError(invalidTimezone.body);
-        expect(invalidTimezone.body.error.code).toBe("BAD_REQUEST");
-
         const beforeUsage = await billing.readUsageMembers(actor);
         expect(beforeUsage.body.period).not.toBeNull();
         expect(beforeUsage.body.members).toStrictEqual([]);
@@ -13947,12 +13890,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const chatCallbacks = createChatCallbacksApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        chatCallbacks.failIfChatCallbackRouteIsFetched();
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
           agentId,
@@ -14054,7 +13995,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        failIfChatCallbackRouteIsFetched();
         const requestedAt = Date.parse("2026-07-23T08:00:00.000Z");
         mockNow(requestedAt);
         onTestFinished(() => {
@@ -14325,7 +14265,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        failIfChatCallbackRouteIsFetched();
         const requestedAt = Date.parse("2026-07-23T08:30:00.000Z");
         mockNow(requestedAt);
         onTestFinished(() => {
@@ -14436,7 +14375,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           .then(() => {
             return api.updateUserModelPreference(actor, "gpt-6-astra");
           });
-        failIfChatCallbackRouteIsFetched();
         const requestedAt = Date.parse("2026-07-23T09:00:00.000Z");
         mockNow(requestedAt);
         onTestFinished(() => {
@@ -14522,7 +14460,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        failIfChatCallbackRouteIsFetched();
         const requestedAt = Date.parse("2026-07-23T10:00:00.000Z");
         const pickedAt = requestedAt + 120_000;
         mockNow(requestedAt);
@@ -14568,7 +14505,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        failIfChatCallbackRouteIsFetched();
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
           agentId,

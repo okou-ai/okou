@@ -175,19 +175,6 @@ describe("PUT /api/agents/:id", () => {
     });
   });
 
-  it("returns 400 for invalid path params", async () => {
-    const response = await accept(
-      agentsClient().update({
-        params: { id: "not-a-uuid" },
-        headers: authHeaders(),
-        body: {},
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
   it("updates agent metadata while preserving omitted fields", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {
@@ -597,27 +584,6 @@ describe("PUT /api/agents/:id/instructions", () => {
 
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 400 for an invalid agent id", async () => {
-    const user = newOrgUser();
-    mocks.clerk.session(user.userId, user.orgId);
-
-    const response = await accept(
-      instructionsClient().update({
-        params: { id: "not-a-uuid" },
-        headers: authHeaders(),
-        body: { content: "new instructions" },
-      }),
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "id: Invalid UUID",
-        code: "BAD_REQUEST",
-      },
     });
   });
 

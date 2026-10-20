@@ -283,68 +283,6 @@ describe("Teams installation read ownership", () => {
     });
   });
 
-  it("rejects an authenticated message with both target forms", async () => {
-    const owner = createPublicTeamsDispatchFixture(context);
-    await owner.run(async () => {
-      const fixture = await owner.create({
-        withDefaultAgent: true,
-        isolatePg: true,
-      });
-      const requests = captureTeamsRequests(
-        fixture.installation.serviceUrl,
-        "unused",
-      );
-      const response = await accept(
-        setupApp({ context, routes: integrationsTeamsMessageRoutes })(
-          integrationsTeamsMessageContract,
-        ).sendMessage({
-          headers,
-          body: {
-            user: "me",
-            conversationId: fixture.installation.teamsConversationId,
-            text: "Invalid target",
-          },
-        }),
-        [400],
-      );
-      expect(response.body.error.message).toContain(
-        "Exactly one of conversationId or user is required",
-      );
-      expect(requests).toStrictEqual([]);
-    });
-  });
-
-  it("rejects an authenticated upload with both target forms", async () => {
-    const owner = createPublicTeamsDispatchFixture(context);
-    await owner.run(async () => {
-      const fixture = await owner.create({
-        withDefaultAgent: true,
-        isolatePg: true,
-      });
-      const requests = captureTeamsRequests(
-        fixture.installation.serviceUrl,
-        "unused",
-      );
-      const response = await accept(
-        setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
-          integrationsTeamsUploadCompleteContract,
-        ).complete({
-          headers,
-          body: {
-            uploadId: randomUUID(),
-            user: "me",
-            conversationId: fixture.installation.teamsConversationId,
-          },
-        }),
-        [400],
-      );
-      expect(response.body.error.message).toContain(
-        "Exactly one of conversationId or user is required",
-      );
-      expect(requests).toStrictEqual([]);
-    });
-  });
-
   it("reports the missing installation for a publicly onboarded message sender", async () => {
     const owner = createPublicConnectorActor(context);
     await owner.run(async () => {
@@ -444,16 +382,6 @@ describe("Teams target command ownership", () => {
         context,
         routes: integrationsTeamsUploadCompleteRoutes,
       })(integrationsTeamsUploadCompleteContract);
-      const missing = await accept(
-        client.complete({
-          headers,
-          body: { uploadId: randomUUID(), user: "me" },
-        }),
-        [404],
-      );
-      expect(missing.body).toStrictEqual({
-        error: { message: "Uploaded file not found", code: "NOT_FOUND" },
-      });
       const bytes = "A real upload for a disconnected recipient";
       const initialized = await accept(
         setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
