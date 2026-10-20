@@ -32,6 +32,11 @@ function buildIntegrationToolsPrompt(
   deliveryFormatGuidanceEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
+    ...(deliveryFormatGuidanceEnabled
+      ? [
+          "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
+        ]
+      : []),
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
@@ -39,9 +44,8 @@ function buildIntegrationToolsPrompt(
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     ...(deliveryFormatGuidanceEnabled
       ? [
-          "Hosting and file delivery are two channels and neither is the default: `okou host` publishes a view the user browses, while `upload-file` hands the user a file they keep. Choose from what the user will do with the result, not from what is easiest to produce.",
-          "Choose the delivery format for every artifact based on the user's request, relevant remembered preferences, and intended use. Honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
-          "Producing DOCX, XLSX, or PDF requires the `office` skill. Read its `SKILL.md` entry point, then the relevant `docx/SKILL.md`, `xlsx/SKILL.md`, or `pdf/SKILL.md` within that package for setup, creation, and validation.",
+          "For file delivery, use the current integration's `upload-file` command.",
+          "For Word documents, PDFs, or spreadsheets, read the `office` skill's `SKILL.md` entry point and follow its task routing. Read only the selected route and references needed for the task.",
         ]
       : [
           "For static HTML or site artifacts, a hosted URL is the user-accessible artifact view; the local `index.html` is an implementation file inside the authored bundle.",
