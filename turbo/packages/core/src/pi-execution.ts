@@ -102,7 +102,10 @@ export interface PiRouteArgs {
 
 export interface PiExecutionRouteArgs extends PiRouteArgs {
   readonly codexServiceTier: "fast" | undefined;
-  /** Auto and personal Codex subscriptions can use their native Codex harness. */
+  /**
+   * Personal Codex subscriptions can use their native Codex harness. Auto stays
+   * on Pi: the managed OpenRouter firewall only admits captured Pi presets.
+   */
   readonly codexExecution?: boolean;
 }
 
@@ -162,7 +165,7 @@ export function isPiRouteRuntimeCapable(args: PiRouteArgs): boolean {
 
 export function isPiExecutionRoute(args: PiExecutionRouteArgs): boolean {
   return (
-    !args.codexExecution &&
+    (!args.codexExecution || isAutoRoute(args)) &&
     isPiAdmittedRoute(args) &&
     isPiRouteRuntimeCapable(args)
   );
