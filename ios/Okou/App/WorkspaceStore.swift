@@ -333,6 +333,7 @@ final class WorkspaceStore {
 
   func sendNewChat() async {
     let sourceComposer = newComposer
+    let wasAwaitingAgent = selectedAgentID == nil
     guard sourceComposer.hasContent, sourceComposer.canSend, newAttachmentDraft.isReady,
       selectedThreadID == nil, !isCreating, !needsUpgrade, !closed
     else {
@@ -342,6 +343,10 @@ final class WorkspaceStore {
       let conversation = conversation(for: created.id)
     else { return }
     sourceComposer.move(to: conversation.composer)
+    if wasAwaitingAgent && newComposer !== sourceComposer {
+      newComposer.clear()
+      newComposer.requestSync()
+    }
     sourceComposer.requestSync()
     await conversation.send()
   }

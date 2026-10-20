@@ -107,6 +107,34 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
   }
 
+  func testFirstSendBeforeAgentNavigationCannotRestoreTheOldAgentDraftAfterward() async throws {
+    let fixture = AttachmentFlowFixture()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.http.baseURL,
+        userID: "user", workspaceID: "org"), directory: directory)
+    var old = ChatDraftDocument()
+    old.replaceText("Previously saved Agent draft")
+    fixture.state.value.withLock {
+      $0.agentDrafts["/api/agents/\(AttachmentFlowFixture.agentID)/draft"] = ComposerDraft(
+        document: old)
+    }
+    let store = WorkspaceStore(
+      client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
+    defer { store.close() }
+    XCTAssertNil(store.selectedAgentID)
+    store.newChatDraft = "First message before navigation finishes"
+    await store.sendNewChat()
+    await store.newComposer.synchronize()
+    XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
+    XCTAssertEqual(store.newChatDraft, "")
+    XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 1)
+    store.startNewChat()
+    XCTAssertEqual(store.newChatDraft, "")
+  }
+
   func testUncertainSendSurvivesRestartWithOriginalIdentityAndNoAutomaticResend() async throws {
     for acceptedBeforeFailure in [false, true] {
       let fixture = AttachmentFlowFixture(
