@@ -188,7 +188,7 @@ export function AgentPhoneConnectionCodeContent({
             marginSize={1}
             bgColor="#ffffff"
             fgColor="#000000"
-            title={t(($) => {
+            aria-label={t(($) => {
               return $.connectors.providerSettings.agentphone.qrTitle;
             })}
             data-testid="agentphone-link-qr"

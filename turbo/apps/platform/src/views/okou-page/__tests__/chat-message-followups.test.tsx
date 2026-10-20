@@ -86,9 +86,7 @@ async function keepGoingGroup(): Promise<HTMLElement> {
 }
 
 function followupButtons(group: ParentNode): HTMLElement[] {
-  return queryAllByRoleFast("button", group).filter((button) => {
-    return button.hasAttribute("title");
-  });
+  return queryAllByRoleFast("button", group);
 }
 
 test("Invalid recommended-follow-up data stays hidden", async () => {
@@ -212,7 +210,7 @@ test("Valid recommended follow-ups still appear when delivered late", async () =
   let group = await keepGoingGroup();
   expect(
     followupButtons(group).find((button) => {
-      return button.title === PRESENTATION_PROMPT;
+      return button.textContent?.trim() === PRESENTATION_PROMPT;
     }),
   ).toBeVisible();
   expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
@@ -238,7 +236,7 @@ test("Valid recommended follow-ups still appear when delivered late", async () =
   });
   expect(
     followupButtons(group).find((button) => {
-      return button.title === PRESENTATION_PROMPT;
+      return button.textContent?.trim() === PRESENTATION_PROMPT;
     }),
   ).toBeVisible();
   expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
@@ -303,12 +301,13 @@ test("A recommended follow-up edits the draft without sending it", async () => {
   const composer = await findComposer();
   await fill(composer, "Keep the current launch context");
   const recommendation = followupButtons(group).find((button) => {
-    return button.title === PRESENTATION_PROMPT;
+    return button.textContent?.trim() === PRESENTATION_PROMPT;
   });
   if (!recommendation) {
     throw new Error("Presentation recommendation not found");
   }
 
+  expect(recommendation).not.toHaveAttribute("title");
   await user.click(recommendation);
   await waitFor(() => {
     expect(composer.textContent).toBe(
@@ -319,6 +318,7 @@ test("A recommended follow-up edits the draft without sending it", async () => {
   expect(recommendation).toBeVisible();
   expect(onSendRequest).not.toHaveBeenCalled();
 
+  expect(recommendation).not.toHaveAttribute("title");
   await user.click(recommendation);
   await waitFor(() => {
     expect(window.getSelection()?.toString()).toBe(PRESENTATION_PROMPT);
@@ -349,7 +349,7 @@ test("An older run's video follow-up is not offered", async () => {
   const group = await keepGoingGroup();
   expect(
     followupButtons(group).map((button) => {
-      return button.title;
+      return button.textContent?.trim();
     }),
   ).toStrictEqual([talkPrompt]);
 });

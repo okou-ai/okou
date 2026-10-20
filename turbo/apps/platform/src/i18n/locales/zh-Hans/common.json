@@ -708,7 +708,6 @@
       "multiAccent": "多口音",
       "nextSlide": "预览下一页",
       "noMatches": "没有匹配结果",
-      "placeholder": "{{title}} 网站预览占位图",
       "previewCurrentSlide": "从当前页预览 {{title}}",
       "previewSlide": "预览第 {{slideNumber}} 页",
       "previewWebsite": "预览网站模板 {{title}}",

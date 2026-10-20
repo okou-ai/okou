@@ -21,7 +21,7 @@ async function openComposer(): Promise<HTMLElement> {
   return screen.getByRole("textbox", { name: "Message" });
 }
 
-test("A legacy template attachment can be previewed and removed without losing the draft", async () => {
+test("A template attachment keeps clipboard metadata without native hover hints", async () => {
   const editor = await openComposer();
   const user = userEvent.setup({ delay: null });
   await user.click(editor);
@@ -34,6 +34,17 @@ test("A legacy template attachment can be previewed and removed without losing t
   );
   await user.paste(clipboard);
   const preview = await findButton("Preview template Legacy deck");
+  expect(editor.querySelector("[title]")).toBeNull();
+
+  await user.keyboard("{Control>}a{/Control}");
+  const copied = await user.copy();
+  const copiedDocument = new DOMParser().parseFromString(
+    copied?.getData("text/html") ?? "",
+    "text/html",
+  );
+  expect(
+    copiedDocument.querySelector("[data-composer-template-attachment]"),
+  ).toHaveAttribute("title", "Legacy deck");
 
   await user.click(preview);
   await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();

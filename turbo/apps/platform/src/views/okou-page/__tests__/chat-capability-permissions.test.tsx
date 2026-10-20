@@ -154,10 +154,10 @@ test("Expose the full permission scope on the card itself", async () => {
   await waitFor(() => {
     expect(getButton("Confirm", card)).toBeEnabled();
   });
-  expect(
-    within(card).getByTitle("Scope Service permissions"),
-  ).toHaveTextContent("Scope Service permissions");
-  expect(within(card).getByTitle(`Allow ${permission}`)).toHaveTextContent(
+  expect(within(card).getByText("Scope Service permissions")).toHaveTextContent(
+    "Scope Service permissions",
+  );
+  expect(within(card).getByText(`Allow ${permission}`)).toHaveTextContent(
     `Allow ${permission}`,
   );
 });

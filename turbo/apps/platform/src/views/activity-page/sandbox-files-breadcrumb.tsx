@@ -88,11 +88,7 @@ export function SandboxFilesBreadcrumb({
       })}
     >
       {location.length === 0 ? (
-        <span
-          aria-current="location"
-          className="px-1 text-xs font-medium"
-          title="/"
-        >
+        <span aria-current="location" className="px-1 text-xs font-medium">
           /
         </span>
       ) : (
@@ -104,7 +100,6 @@ export function SandboxFilesBreadcrumb({
           aria-label={t(($) => {
             return $.activity.detail.files.root;
           })}
-          title="/"
           onClick={() => {
             detach(navigate([], signal), Reason.DomCallback);
           }}
@@ -124,7 +119,6 @@ export function SandboxFilesBreadcrumb({
       )}
       {visible.map(({ part, depth }) => {
         const target = location.slice(0, depth);
-        const path = filesLocationLabel(target);
         return (
           <div
             key={JSON.stringify(filesLocationTokens(target))}
@@ -138,7 +132,6 @@ export function SandboxFilesBreadcrumb({
             {depth === location.length ? (
               <span
                 aria-current="location"
-                title={path}
                 className="min-w-0 truncate px-1 text-xs font-medium"
               >
                 {part.displayName}
@@ -148,7 +141,6 @@ export function SandboxFilesBreadcrumb({
                 type="button"
                 variant="quiet"
                 size="xs"
-                title={path}
                 className="min-w-0 px-1 text-xs"
                 onClick={() => {
                   detach(navigate(target, signal), Reason.DomCallback);

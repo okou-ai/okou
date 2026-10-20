@@ -732,7 +732,6 @@ function buildFeedbackItemChrome(
     return $.chat.feedback.remove;
   });
   removeButton.setAttribute("aria-label", removeLabel);
-  removeButton.title = removeLabel;
   removeButton.addEventListener("click", onRemove);
   return quoteDom;
 }
@@ -1036,7 +1035,6 @@ function createTemplateAttachmentNodeView(
     );
     const removeLabel = templateAttachmentRemoveLabel(attachment);
     removeButton.setAttribute("aria-label", removeLabel);
-    removeButton.title = removeLabel;
     typeText.textContent = templateAttachmentTypeLabel(attachment.type);
   }
   function render(nextNode: ProseMirrorNode): void {

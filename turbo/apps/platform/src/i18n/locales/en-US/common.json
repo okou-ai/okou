@@ -709,7 +709,6 @@
       "multiAccent": "Multi-accent",
       "nextSlide": "Preview next slide",
       "noMatches": "No matches",
-      "placeholder": "{{title}} website preview placeholder",
       "previewCurrentSlide": "Preview {{title}} at current slide",
       "previewSlide": "Preview slide {{slideNumber}}",
       "previewWebsite": "Preview website template {{title}}",

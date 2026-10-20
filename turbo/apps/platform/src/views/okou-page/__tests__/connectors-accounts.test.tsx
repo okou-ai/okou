@@ -308,7 +308,7 @@ test("Show the full agent name after granting the first connector access", async
       getConnectorCard("GitHub"),
     );
     expect(access).toHaveTextContent(`Used by ${longName}`);
-    expect(access).toHaveAttribute("title", longName);
+    expect(access).not.toHaveAttribute("title");
   });
 });
 

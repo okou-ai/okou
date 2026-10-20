@@ -550,7 +550,6 @@ function LabeledRailLink({
       onClick={onClick}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
-      title={caption}
       className="group flex w-full shrink-0 scroll-my-1 flex-col items-center gap-0.5 rounded-lg no-underline outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span

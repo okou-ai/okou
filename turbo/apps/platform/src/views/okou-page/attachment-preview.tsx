@@ -224,7 +224,6 @@ function AttachmentAnchorChip({
           filename,
         },
       )}
-      title={filename}
       className="group/doc-preview inline-flex w-fit self-start align-top text-left no-underline"
     >
       <AttachmentCardArtwork
@@ -299,7 +298,6 @@ export function SitePreviewCard({
       data-testid={testId}
       onClick={onClick}
       aria-label={ariaLabel}
-      title={title}
       {...(openInNewTab
         ? { target: "_blank", rel: "noopener noreferrer" }
         : {})}
@@ -514,7 +512,6 @@ function FileThumbnailPreview({
         event.currentTarget.blur();
         onPreview();
       }}
-      title={filename}
       data-testid="attachment-preview-file"
       aria-label={t(
         ($) => {
@@ -565,7 +562,6 @@ function AudioPreview({
         openAudioLightbox({ url, filename, preview });
       }}
       disabled={lightboxOpen}
-      title={filename}
       aria-label={t(
         ($) => {
           return $.artifacts.preview.openKind;
@@ -618,7 +614,6 @@ function VideoThumbnailPreview({
         openVideoLightbox({ url, filename, preview });
       }}
       disabled={lightboxOpen}
-      title={filename}
       aria-label={t(
         ($) => {
           return $.artifacts.preview.openKind;

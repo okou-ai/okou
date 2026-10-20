@@ -58,7 +58,6 @@ function AgentOriginLink({
         hash: `run-${part.runId}`,
       }}
       className="min-w-0 truncate rounded-lg px-1.5 py-1 text-xs leading-4.5 text-muted-foreground transition-colors hover:bg-gray-50 hover:text-foreground focus-visible:bg-gray-50"
-      title={title}
     >
       {title}
     </Link>
@@ -141,7 +140,6 @@ function RelatedChatLink({
       <span
         role="img"
         aria-label={status}
-        title={status}
         className={cn(
           "shrink-0 rounded-full",
           chat.status === "idle"
@@ -159,7 +157,7 @@ function MessageTime({ value }: { readonly value: string }) {
   return (
     <time
       dateTime={value}
-      title={formatChatTimestamp(value)}
+      aria-label={formatChatTimestamp(value)}
       className="shrink-0 text-xs tabular-nums text-muted-foreground"
     >
       {formatCompactChatTimestamp(value)}
@@ -203,10 +201,7 @@ function MessageRow({
   return (
     <li>
       {unavailable && message.direction === "sent" ? (
-        <div
-          className="block min-w-0 space-y-1.5 px-2 py-3 text-muted-foreground"
-          title={preview}
-        >
+        <div className="block min-w-0 space-y-1.5 px-2 py-3 text-muted-foreground">
           {content}
         </div>
       ) : (
@@ -219,7 +214,6 @@ function MessageRow({
               : undefined,
           }}
           className="block min-w-0 space-y-1.5 rounded-lg px-2 py-3 transition-colors hover:bg-state-hover"
-          title={preview}
         >
           {content}
         </Link>

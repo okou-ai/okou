@@ -45,7 +45,6 @@ export function DialogIconButton({
       size="icon-sm"
       className="shrink-0"
       aria-label={ariaLabel}
-      title={ariaLabel}
     >
       {children}
     </Button>

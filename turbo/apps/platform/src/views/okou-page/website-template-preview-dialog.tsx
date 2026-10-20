@@ -76,14 +76,6 @@ function WebsiteTemplatePreviewDialog({
               src={placeholderUrl}
               alt=""
               aria-hidden="true"
-              title={t(
-                ($) => {
-                  return $.artifacts.templates.placeholder;
-                },
-                {
-                  title: item.title,
-                },
-              )}
               className={`pointer-events-none absolute inset-0 z-10 h-full w-full bg-background object-contain object-top ${
                 previewLoaded ? "hidden" : "block"
               }`}

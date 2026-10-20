@@ -158,7 +158,7 @@ test("MCP messages show the saved client name or generic marker with a local ico
   expect(longMessage).not.toBeNull();
   // Even when the narrow badge truncates visually, the full name stays available.
   expect(
-    within(longMessage as HTMLElement).getByTitle(longName),
+    within(longMessage as HTMLElement).getByText(longName),
   ).toHaveTextContent(longName);
 });
 

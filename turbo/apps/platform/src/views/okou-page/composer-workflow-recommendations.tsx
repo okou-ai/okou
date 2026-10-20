@@ -96,9 +96,7 @@ function WorkflowTile({
       <span className="block aspect-video overflow-hidden rounded-xl border border-border bg-muted">
         <WorkflowCover item={item} />
       </span>
-      <span className={RAIL_TILE_CAPTION} title={copy.title}>
-        {copy.title}
-      </span>
+      <span className={RAIL_TILE_CAPTION}>{copy.title}</span>
     </Button>
   );
 }

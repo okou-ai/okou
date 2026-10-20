@@ -401,10 +401,7 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
                 </Tooltip>
               </TooltipProvider>
             ) : (
-              <span
-                className="block truncate text-sm font-medium text-foreground"
-                title={displayName}
-              >
+              <span className="block truncate text-sm font-medium text-foreground">
                 {displayName}
               </span>
             )}

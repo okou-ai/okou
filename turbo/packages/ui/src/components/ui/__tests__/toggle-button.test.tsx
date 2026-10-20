@@ -48,15 +48,14 @@ describe("ToggleButton", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Submitted");
   });
 
-  it("preserves the native title when tooltips are not enabled", () => {
+  it("removes the native title when tooltips are not enabled", () => {
     render(
       <ToggleButton selected={false} aria-label="Bold" title="Bold text">
         B
       </ToggleButton>,
     );
-    expect(screen.getByRole("button", { name: "Bold" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Bold" })).not.toHaveAttribute(
       "title",
-      "Bold text",
     );
   });
 

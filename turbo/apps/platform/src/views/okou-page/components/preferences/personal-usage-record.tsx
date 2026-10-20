@@ -228,7 +228,6 @@ function UsageRow({ row, max }: { row: UsageRecordRow; max: number }) {
     <div className={ROW_CLASS}>
       <div className="flex min-w-0 items-center gap-3">
         <span
-          title={label}
           aria-label={label}
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground"
         >

@@ -161,5 +161,10 @@ export function clerkLocalizationForLocale(
   localizations: ClerkLocalizationCache,
   locale: SupportedLocale,
 ): ClerkLocalization {
-  return localizations.get(locale) ?? enUS;
+  return {
+    ...(localizations.get(locale) ?? enUS),
+    // Clerk uses this string as the email input's native title. An empty
+    // public localization override suppresses hover hints in every locale.
+    formFieldInput__emailAddress_format: "",
+  };
 }

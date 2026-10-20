@@ -61,7 +61,6 @@ function SharedAttachmentLink({
       href={attachment.url}
       target="_blank"
       rel="noopener noreferrer"
-      title={attachment.filename}
       aria-label={attachment.filename}
       onClick={(event) => {
         if (shouldUseNativeAnchorNavigation(event)) {

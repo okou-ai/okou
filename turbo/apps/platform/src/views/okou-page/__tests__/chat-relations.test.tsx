@@ -385,6 +385,7 @@ test("Show the first source and created chats, then open message rows in their r
   await expect(
     within(panel).findByText("Please check the launch plan"),
   ).resolves.toBeInTheDocument();
+  expect(panel.querySelector("[title]")).toBeNull();
   expect(within(panel).getAllByText("Sent", { exact: true })).toHaveLength(1);
   expect(within(panel).getAllByText("Received", { exact: true })).toHaveLength(
     1,

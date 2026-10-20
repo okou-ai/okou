@@ -1203,7 +1203,6 @@ function ChatThreadEmojiCategoryRail({
             aria-current={selected ? "location" : undefined}
             aria-controls={chatThreadEmojiSectionId(category.key)}
             aria-label={category.label}
-            title={category.label}
             className={cn(
               "relative flex h-8 flex-1 items-center justify-center rounded-lg transition-colors hover:bg-state-hover hover:text-foreground focus-visible:bg-state-hover focus-visible:text-foreground",
               selected ? "text-foreground" : "text-muted-foreground",
@@ -1565,7 +1564,7 @@ function ChatThreadEmojiGrid({
               item.name,
               shortcodeNames,
             )}
-            title={shortcutLabel}
+            aria-description={shortcutLabel}
             // The focus ring is inset because the feed scrolls: an offset ring
             // on the outer columns and on the first and last rows would be
             // clipped by the feed's own overflow box.
@@ -4155,7 +4154,6 @@ function RecommendedFollowupList({
           <button
             key={followup.prompt}
             type="button"
-            title={followup.prompt}
             className={cn(
               "group flex text-left transition-colors",
               // A quick reply sizes to its own text, so a short suggestion
@@ -5390,7 +5388,7 @@ function AssistantErrorCard({
                 descriptionClassName,
                 pending && "invisible",
               )}
-              title={pending ? undefined : accessibleDescription}
+              aria-description={pending ? undefined : accessibleDescription}
               aria-hidden={pending ? true : undefined}
             >
               {description}
@@ -6798,7 +6796,6 @@ function MessageAnnotation({
             { title: workflowTitle },
           )}
           className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
-          title={part.workflowName}
         >
           {content}
         </Link>
@@ -6815,7 +6812,6 @@ function MessageAnnotation({
           },
         )}
         className={className}
-        title={part.workflowName}
       >
         {content}
       </div>
@@ -6826,9 +6822,7 @@ function MessageAnnotation({
     return (
       <div className={className}>
         <McpMark size={15} />
-        <span className="min-w-0 truncate" title={label}>
-          {label}
-        </span>
+        <span className="min-w-0 truncate">{label}</span>
       </div>
     );
   }
@@ -6892,7 +6886,6 @@ function AgentRunSourceMessageAnnotation({
         { title: part.titleSnapshot },
       )}
       className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
-      title={part.titleSnapshot}
     >
       <AvatarFromUrl
         avatarUrl={agent?.avatarUrl}
@@ -6919,8 +6912,8 @@ function UserMessageTemplateReference({
   return (
     <span
       data-structured-template-reference=""
+      aria-description={label}
       className={STRUCTURED_INLINE_REFERENCE_CLASS}
-      title={label}
     >
       <SwatchBook size={13} className="shrink-0 text-selected-foreground" />
       <span className="min-w-0 truncate">{part.titleSnapshot}</span>
@@ -7041,7 +7034,6 @@ function UserMessageAgentReference({
         { name },
       )}
       className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      title={name}
     >
       <AvatarFromUrl
         avatarUrl={agent?.avatarUrl}
@@ -8235,7 +8227,6 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
         },
         { filename: name },
       )}
-      title={card.signals.url}
       data-chat-run-related-artifact-url={card.signals.url}
       onClick={() => {
         openArtifact(card, "lightbox");

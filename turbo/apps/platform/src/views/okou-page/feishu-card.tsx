@@ -1330,7 +1330,7 @@ function FeishuStatusBadge({ bot }: { bot: FeishuBotInstallation }) {
     return (
       <span className="inline-flex min-w-0 max-w-52 items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-secondary-foreground">
         <CircleCheck className="h-3.5 w-3.5 text-green-600" />
-        <span className="min-w-0 truncate" title={bot.connectedUserName ?? ""}>
+        <span className="min-w-0 truncate">
           {bot.connectedUserName
             ? t(
                 ($) => {
@@ -2032,9 +2032,6 @@ export function FeishuSettingsPage() {
           <div className="mb-4">
             <Link
               pathname={ROUTES.works}
-              title={t(($) => {
-                return $.connectors.catalog.title;
-              })}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "sm" }),
                 "h-8 gap-2 px-2 text-muted-foreground hover:text-foreground",

@@ -743,7 +743,7 @@ function ArtifactDialogImageStage({
                 return (
                   <ArtifactImageZoomControls
                     controls={controls}
-                    nativeTitle
+                    showTooltip={false}
                     placement={fullscreen ? "bottom" : "top"}
                     testIdPrefix="artifact-dialog"
                   />
@@ -1364,9 +1364,6 @@ function ArtifactPreviewDialogActions({
           aria-label={t(($) => {
             return $.artifacts.annotation.open;
           })}
-          title={t(($) => {
-            return $.artifacts.annotation.open;
-          })}
           onClick={() => {
             // The editor owns the whole surface while it is open, so the
             // read-only viewer steps aside — instantly, or the two dialogs
@@ -1605,7 +1602,6 @@ export function FileAttachmentChip({
           "attachment download",
         );
       }}
-      title={filename}
       aria-label={
         previewOfficeDocument
           ? t(
@@ -1693,7 +1689,6 @@ export function PreviewableFileAttachmentChip({
           ...(text$ ? { text$ } : {}),
         });
       }}
-      title={filename}
       aria-label={t(
         ($) => {
           return $.artifacts.preview.openKind;
@@ -1747,7 +1742,6 @@ export function PreviewableAudioAttachmentChip({
           ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
         });
       }}
-      title={filename}
       aria-label={t(
         ($) => {
           return $.artifacts.preview.openKind;
@@ -1843,7 +1837,6 @@ function ComposerImagePreviewButton({
             filename,
           },
         )}
-        title={filename}
         className="group/image-preview relative h-9 w-9 overflow-hidden rounded-lg border border-foreground/10 transition-colors hover:border-foreground/25"
       >
         <Image size={20} className="text-muted-foreground m-auto h-full" />
@@ -1865,7 +1858,6 @@ function ComposerImagePreviewButton({
           filename,
         },
       )}
-      title={filename}
       className="group/image-preview relative h-9 w-9 overflow-hidden rounded-lg border border-foreground/10 transition-colors hover:border-foreground/25"
     >
       {currentImageStatus !== "loaded" && (
@@ -1965,10 +1957,7 @@ function AttachmentChip({
   const annotations = useGet(attachment.annotations$);
   const isImage = attachment.contentType.startsWith("image/");
   return (
-    <div
-      className="relative inline-flex items-center"
-      title={attachment.filename}
-    >
+    <div className="relative inline-flex items-center">
       {isImage ? (
         <ComposerImagePreviewButton
           preview={preview}

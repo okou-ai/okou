@@ -865,14 +865,6 @@ function WebsiteTemplateCard({
                 title: item.title,
               },
             )}
-            title={t(
-              ($) => {
-                return $.artifacts.templates.websitePreview;
-              },
-              {
-                title: item.title,
-              },
-            )}
             src={previewImageUrl}
             loading="eager"
             decoding="async"
@@ -3916,7 +3908,6 @@ function ImportedPptImage({
             src={image?.sourceUrl}
             alt={isActive || isInitialCandidate ? label : ""}
             aria-hidden={isActive || isInitialCandidate ? undefined : "true"}
-            title={isActive || isInitialCandidate ? label : undefined}
             data-imported-presentation-template-image={slot}
             data-active={isActive ? "true" : "false"}
             data-loaded-image-url={isActive ? active.sourceUrl : undefined}
@@ -4757,9 +4748,7 @@ function ComposerPresentationSuggestion({
       >
         {children}
       </span>
-      <span className={RAIL_TILE_CAPTION} title={title}>
-        {title}
-      </span>
+      <span className={RAIL_TILE_CAPTION}>{title}</span>
     </Button>
   );
 }

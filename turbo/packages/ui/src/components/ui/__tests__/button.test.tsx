@@ -15,9 +15,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "../popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../tooltip";
 
 describe("Button", () => {
-  it("renders children", () => {
-    render(<Button>Click me</Button>);
-    expect(screen.getByRole("button")).toHaveTextContent("Click me");
+  it("keeps the button accessible without exposing a native tooltip", () => {
+    render(<Button title="Legacy hint">Click me</Button>);
+    const button = screen.getByRole("button", { name: "Click me" });
+    expect(button).toHaveTextContent("Click me");
+    expect(button).not.toHaveAttribute("title");
   });
 
   it("forwards ref", () => {

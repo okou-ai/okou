@@ -140,10 +140,7 @@ function CustomConnectorHeaderContent({
         <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
           <span className="shrink-0">{connectorType}</span>
           <span aria-hidden="true">·</span>
-          <span
-            className="min-w-0 truncate font-mono text-muted-foreground/60"
-            title={connectorTarget}
-          >
+          <span className="min-w-0 truncate font-mono text-muted-foreground/60">
             {connectorTarget}
           </span>
         </span>

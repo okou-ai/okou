@@ -250,7 +250,7 @@ function ImageModelRow({
                     </span>
                     <span
                       className="shrink-0 text-xs font-medium text-muted-foreground"
-                      title={getMediaModelPriceTierLabel(tier)}
+                      aria-description={getMediaModelPriceTierLabel(tier)}
                     >
                       {tier}
                     </span>
