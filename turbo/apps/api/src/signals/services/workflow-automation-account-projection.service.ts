@@ -3,7 +3,11 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
-import { reprojectGmailAutomationsForOwner } from "./gmail-automation-account.service";
+import {
+  gmailAutomationProjectionColumns,
+  gmailAutomationProjectionConfig,
+  gmailAutomationProjectionCondition,
+} from "./gmail-automation-account.service";
 import {
   googleCalendarAutomationProjectionColumns,
   googleCalendarAutomationProjectionCondition,
@@ -17,6 +21,16 @@ import {
   workflowAutomationDefaultAccountReadPlan,
   workflowAutomationSelectedAccountReadPlan,
 } from "./workflow-automation-account.service";
+
+type ProjectedAutomation =
+  | Pick<
+      typeof workflowAutomations.$inferSelect,
+      "id" | "workflowId" | "eventConnectorId" | "eventType" | "eventConfig"
+    >
+  | Pick<
+      typeof workflowAutomations.$inferSelect,
+      "id" | "workflowId" | "eventConnectorId"
+    >;
 
 export async function reprojectWorkflowAutomationsForOwner(
   db: Db,
@@ -33,37 +47,40 @@ export async function reprojectWorkflowAutomationsForOwner(
   ) {
     return;
   }
-  switch (args.target.connectorSlug) {
-    case "gmail": {
-      await reprojectGmailAutomationsForOwner(db, args);
-      signal.throwIfAborted();
-      return;
-    }
+  const connectorSlug = args.target.connectorSlug;
+  switch (connectorSlug) {
+    case "gmail":
     case "google-calendar": {
-      const calendarProjectionDb = db;
-      const calendarProjectionArgs = args;
+      const projectionDb = db;
+      const projectionArgs = args;
       await (async () => {
-        const automations = await calendarProjectionDb
-          .select(googleCalendarAutomationProjectionColumns())
-          .from(workflowAutomations)
-          .where(
-            googleCalendarAutomationProjectionCondition(calendarProjectionArgs),
-          );
+        const automations: ProjectedAutomation[] =
+          connectorSlug === "gmail"
+            ? await projectionDb
+                .select(gmailAutomationProjectionColumns())
+                .from(workflowAutomations)
+                .where(gmailAutomationProjectionCondition(projectionArgs))
+            : await projectionDb
+                .select(googleCalendarAutomationProjectionColumns())
+                .from(workflowAutomations)
+                .where(
+                  googleCalendarAutomationProjectionCondition(projectionArgs),
+                );
 
         for (const automation of automations) {
           const workflowScope = {
-            ...calendarProjectionArgs,
+            ...projectionArgs,
             workflowId: automation.workflowId,
           };
           const eventConnectorId = await (async () => {
             const accountScope = {
               ...workflowScope,
-              connectorSlug: "google-calendar" as const,
+              connectorSlug,
             };
             return await (async () => {
               const selected =
                 workflowAutomationSelectedAccountReadPlan(accountScope);
-              const [selection] = await calendarProjectionDb
+              const [selection] = await projectionDb
                 .select(selected.columns)
                 .from(selected.from)
                 .innerJoin(selected.join.table, selected.join.on)
@@ -74,7 +91,7 @@ export async function reprojectWorkflowAutomationsForOwner(
               }
               const fallback =
                 workflowAutomationDefaultAccountReadPlan(accountScope);
-              const [defaultAccount] = await calendarProjectionDb
+              const [defaultAccount] = await projectionDb
                 .select(fallback.columns)
                 .from(fallback.from)
                 .where(fallback.where)
@@ -85,10 +102,18 @@ export async function reprojectWorkflowAutomationsForOwner(
           if (automation.eventConnectorId === eventConnectorId) {
             continue;
           }
-          await calendarProjectionDb
-            .update(workflowAutomations)
-            .set({ eventConnectorId })
-            .where(eq(workflowAutomations.id, automation.id));
+          if ("eventType" in automation) {
+            const eventConfig = gmailAutomationProjectionConfig(automation);
+            await projectionDb
+              .update(workflowAutomations)
+              .set({ eventConnectorId, eventConfig })
+              .where(eq(workflowAutomations.id, automation.id));
+          } else {
+            await projectionDb
+              .update(workflowAutomations)
+              .set({ eventConnectorId })
+              .where(eq(workflowAutomations.id, automation.id));
+          }
         }
       })();
       signal.throwIfAborted();
@@ -114,5 +139,5 @@ export async function reprojectWorkflowAutomationsForOwner(
       return;
     }
   }
-  return args.target.connectorSlug satisfies never;
+  return connectorSlug satisfies never;
 }
