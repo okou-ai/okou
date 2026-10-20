@@ -641,77 +641,20 @@ export {
   parseSentMessage as parseFeishuSentMessage,
 };
 
-export async function sendFeishuMessage(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly receiveIdType: "chat_id" | "open_id";
-    readonly receiveId: string;
-    readonly message: FeishuOutboundMessage;
-    readonly idempotencyKey?: string;
-  },
-  signal: AbortSignal,
-): Promise<FeishuSentMessage> {
-  const sendContextArgs = args;
-  const sendContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await sendContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId))
-      .limit(1);
-    sendContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await sendContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      sendContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await sendContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId));
-      sendContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
-  const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
-  url.searchParams.set("receive_id_type", args.receiveIdType);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify({
-      receive_id: args.receiveId,
-      ...messagePayload(args.message),
-      ...(args.idempotencyKey ? { uuid: args.idempotencyKey } : {}),
-    }),
-    signal,
-  });
-  return parseSentMessage(
-    await readJson(response, providerName),
-    `${providerName} message send failed`,
-    providerName,
-  );
+export function feishuMessageSendUrl(apiOrigin: string): URL {
+  return new URL(`${apiOrigin}/open-apis/im/v1/messages`);
+}
+
+export function feishuMessageSendBody(
+  receiveId: string,
+  payload: ReturnType<typeof messagePayload>,
+  idempotencyKey?: string,
+) {
+  return {
+    receive_id: receiveId,
+    ...payload,
+    ...(idempotencyKey ? { uuid: idempotencyKey } : {}),
+  };
 }
 
 export async function replyWithFeishuMessage(
