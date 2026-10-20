@@ -31,6 +31,8 @@ import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { computerUseRoutes } from "../../computer-use";
 import { computerUseAuthorizationRoutes } from "../../computer-use-authorization";
+import { desktopShellAuthorizationContract } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
+import { desktopShellAuthorizationRoutes } from "../../desktop-shell-authorization";
 
 interface AuthHeaders {
   readonly authorization?: string;
@@ -396,6 +398,49 @@ export function createComputerUseBddApi(
   }
 
   return {
+    async requestDesktopShellAccess(
+      auth: ComputerUseAuth,
+      reason: string,
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409 | 410)[] = [200],
+    ) {
+      return await run(() => {
+        return accept(
+          setupApp({ context, routes: desktopShellAuthorizationRoutes })(
+            desktopShellAuthorizationContract,
+          ).create({ headers: authenticate(auth), body: { reason } }),
+          statuses,
+        );
+      });
+    },
+    async readDesktopShellAccess(
+      auth: ComputerUseAuth,
+      id: string,
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409 | 410)[] = [200],
+    ) {
+      return await run(() => {
+        return accept(
+          setupApp({ context, routes: desktopShellAuthorizationRoutes })(
+            desktopShellAuthorizationContract,
+          ).get({ headers: authenticate(auth), params: { id } }),
+          statuses,
+        );
+      });
+    },
+    async actDesktopShellAccess(
+      auth: ComputerUseAuth,
+      id: string,
+      action: "approve" | "deny" | "revoke",
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409 | 410)[] = [200],
+    ) {
+      return await run(() => {
+        return accept(
+          setupApp({ context, routes: desktopShellAuthorizationRoutes })(
+            desktopShellAuthorizationContract,
+          )[action]({ headers: authenticate(auth), params: { id }, body: {} }),
+          statuses,
+        );
+      });
+    },
     /**
      * Stateful in-memory S3 fake for screenshot offload and proxy flows.
      * PutObject stores bytes and records the put, GetObject streams stored

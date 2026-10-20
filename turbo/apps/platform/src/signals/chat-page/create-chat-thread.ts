@@ -201,6 +201,7 @@ import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
+import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
 import { createWalletCardSignalsRegistry } from "./wallet-action-block.ts";
@@ -1481,6 +1482,9 @@ interface EventTreeRegistries {
   readonly computerUseAuthorizationCardSignals: ReturnType<
     typeof createComputerUseAuthorizationCardSignalsRegistry
   >;
+  readonly desktopShellAuthorizationCardSignals: ReturnType<
+    typeof createDesktopShellAuthorizationCardSignalsRegistry
+  >;
   readonly planUpgradeCardSignals: ReturnType<
     typeof createPlanUpgradeCardSignalsRegistry
   >;
@@ -1501,6 +1505,7 @@ function createCardRefRegistrar({
   walletCardSignals,
   browserUserActionCardSignals,
   computerUseAuthorizationCardSignals,
+  desktopShellAuthorizationCardSignals,
   planUpgradeCardSignals,
   mailDraftCardSignals,
   browserSessionSignals,
@@ -1570,6 +1575,15 @@ function createCardRefRegistrar({
             kind: descriptor.type,
             signals: set(
               computerUseAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "desktop-shell-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              desktopShellAuthorizationCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1948,6 +1962,8 @@ function createPagedEventResources({
     createBrowserUserActionCardSignalsRegistry();
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
+  const desktopShellAuthorizationCardSignals =
+    createDesktopShellAuthorizationCardSignalsRegistry(threadId);
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
   const mermaidDiagrams = createMermaidDiagramRegistry(openDiagramLightbox$);
   const imageLoads = createImageLoadRegistry();
@@ -1969,6 +1985,7 @@ function createPagedEventResources({
     walletCardSignals,
     browserUserActionCardSignals,
     computerUseAuthorizationCardSignals,
+    desktopShellAuthorizationCardSignals,
     planUpgradeCardSignals,
     mailDraftCardSignals,
     browserSessionSignals,

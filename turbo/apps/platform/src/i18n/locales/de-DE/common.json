@@ -3961,6 +3961,26 @@
       "connected": "{{connector}} verbunden"
     }
   },
+  "desktopShellAuthorization": {
+    "actionFailed": "Autorisierung konnte nicht aktualisiert werden. Aktualisiere die Seite und versuche es erneut.",
+    "allow": "Für 1 Stunde erlauben",
+    "approved": "Shell-Zugriff erlaubt",
+    "deadline": "Läuft ab: {{date}}",
+    "denied": "Anfrage abgelehnt",
+    "deny": "Ablehnen",
+    "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
+    "details": "Details öffnen",
+    "expired": "Autorisierung abgelaufen",
+    "loading": "Autorisierung wird geladen…",
+    "pending": "Bereit zur Genehmigung",
+    "refresh": "Aktualisieren",
+    "revoke": "Zugriff widerrufen",
+    "revoked": "Shell-Zugriff widerrufen",
+    "scope": "Nur dieser Chat und Computer. Bestehende Terminals bleiben nach Ablauf geöffnet.",
+    "title": "Desktop-Shell-Zugriff",
+    "unavailable": "Autorisierung nicht verfügbar",
+    "waiting": "Eine Genehmigung ist während eines aktiven Runs oder nach einem Computerwechsel nicht möglich."
+  },
   "documentTemplates": {
     "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",
     "categories": {

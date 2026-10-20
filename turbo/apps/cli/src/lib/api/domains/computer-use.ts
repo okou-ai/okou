@@ -2,6 +2,10 @@ import {
   desktopShellContract,
   type DesktopShellRequest,
 } from "@okouai/api-contracts/contracts/desktop-shell";
+import {
+  desktopShellAuthorizationContract,
+  type DesktopShellAuthorization,
+} from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import type {
   ComputerUseAuthorizationRequestCreateResponse,
@@ -197,4 +201,16 @@ export async function createDesktopShellCommand(
   const result = await client.create({ body });
   if (result.status === 200) return result.body;
   handleError(result, "Failed to submit Shell operation");
+}
+
+export async function requestDesktopShellAccess(
+  reason: string,
+): Promise<DesktopShellAuthorization> {
+  const client = initClient(
+    desktopShellAuthorizationContract,
+    await getComputerUseClientConfig(),
+  );
+  const result = await client.create({ body: { reason } });
+  if (result.status === 200) return result.body;
+  handleError(result, "Failed to request Shell access");
 }

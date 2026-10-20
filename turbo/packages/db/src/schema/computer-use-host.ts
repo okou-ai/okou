@@ -39,6 +39,8 @@ export const computerUseCommands = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     runId: text("run_id"),
+    /** API-private grant identity; a replacement grant cannot revive queued input. */
+    shellAuthorizationId: uuid("shell_authorization_id"),
     hostId: uuid("host_id")
       .references(() => {
         return computerUseHosts.id;

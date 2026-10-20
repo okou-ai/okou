@@ -1673,3 +1673,8 @@ export {
 } from "./chat-input-status";
 
 export { desktopShellContract } from "./desktop-shell";
+export {
+  desktopShellAuthorizationContract,
+  desktopShellAuthorizationSchema,
+  type DesktopShellAuthorization,
+} from "./desktop-shell-authorization";
