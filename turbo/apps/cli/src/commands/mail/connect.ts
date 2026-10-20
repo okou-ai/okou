@@ -1,13 +1,10 @@
 import chalk from "chalk";
 import { Command } from "commander";
 
-import { getConnectorCatalogStatus } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import { connectorActionUrl } from "../connector/action-url";
-import { resolveAgentContext } from "../connector/agent-context";
 import {
-  isRunBoundConnectorContext,
   resolveRunConnectorAccountView,
   runConnectorAccountUnavailableMessage,
 } from "../connector/run-account-context";
@@ -117,66 +114,7 @@ export const connectCommand = new Command()
     withErrorHandler(async (providerValue: string, options: ConnectOptions) => {
       const provider = parseMailProvider(providerValue);
       const connectorSlug = MAIL_CONNECTOR_SLUG_BY_PROVIDER[provider];
-      if (isRunBoundConnectorContext()) {
-        await printRunConnect(provider, connectorSlug, options);
-        return;
-      }
-      const agentId = currentAgentId();
-      const [connector, agent, origin] = await Promise.all([
-        getConnectorCatalogStatus(connectorSlug),
-        resolveAgentContext(agentId),
-        getPlatformOrigin(),
-      ]);
-      if (!agent) {
-        throw new Error("Agent context could not be loaded");
-      }
-      if (!connector) {
-        throw new Error(`${provider} is not available`);
-      }
-
-      const authorized = agent.authorizedConnectorSlugs.has(connectorSlug);
-      const action =
-        connector.connectionStatus === "reconnect-required" ||
-        connector.connectionStatus === "scope-mismatch"
-          ? "reconnect"
-          : connector.connected && !authorized
-            ? "authorize"
-            : !connector.connected
-              ? "connect"
-              : "ready";
-      const url =
-        action === "reconnect"
-          ? connector.connectionStatus === "scope-mismatch"
-            ? `${origin}/connectors/${connectorSlug}/connect?agentId=${agentId}`
-            : `${origin}/connectors`
-          : action === "authorize"
-            ? `${origin}/connectors/${connectorSlug}/authorize?agentId=${agentId}`
-            : action === "connect"
-              ? `${origin}/connectors/${connectorSlug}/connect?agentId=${agentId}`
-              : null;
-
-      if (options.json) {
-        console.log(JSON.stringify({ provider, action, url }));
-        return;
-      }
-      if (!url) {
-        console.log(chalk.green(`✓ ${connector.label} is ready`));
-        console.log(
-          chalk.dim(`  Sender: ${connector.connection?.externalEmail}`),
-        );
-        console.log(
-          chalk.dim(
-            "  After creating a Gmail draft: okou mail link <draft-id>",
-          ),
-        );
-        return;
-      }
-      const label =
-        action === "authorize"
-          ? `Authorize ${connector.label}`
-          : action === "reconnect"
-            ? `Reconnect ${connector.label}`
-            : `Connect ${connector.label}`;
-      console.log(`${label}: [${label}](${url})`);
+      currentAgentId();
+      await printRunConnect(provider, connectorSlug, options);
     }),
   );

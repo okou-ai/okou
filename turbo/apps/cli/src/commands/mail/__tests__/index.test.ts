@@ -22,6 +22,10 @@ const RUN_GMAIL_CONNECTION_ID = "550e8400-e29b-41d4-a716-446655440003";
 
 describe("okou mail", () => {
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+    throw new Error("command exited");
+  });
   let directory = "";
   let contextPath = "";
 
@@ -61,9 +65,28 @@ describe("okou mail", () => {
 
   afterEach(() => {
     mockConsoleLog.mockClear();
+    error.mockClear();
+    exit.mockClear();
     vi.unstubAllEnvs();
     rmSync(directory, { recursive: true, force: true });
   });
+
+  it.each([["list"], ["connect", "gmail"]])(
+    "requires Run Agent context: %s",
+    async (...args) => {
+      vi.stubEnv("OKOU_AGENT_ID", "");
+      await expect(
+        mailCommand.parseAsync(["node", "okou", ...args]),
+      ).rejects.toThrow("command exited");
+      expect(error.mock.calls.flat().join("\n")).toContain(
+        "OKOU_AGENT_ID is not set",
+      );
+      expect(error.mock.calls.flat().join("\n")).toContain(
+        "Run this command from an active agent run",
+      );
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+    },
+  );
 
   it("lists the exact mail account used by the run and keeps unadmitted mail unavailable", async () => {
     server.use(
