@@ -151,7 +151,8 @@ async fn shutdown_drains_idle_pool() {
 
     let run_handle = tokio::spawn(run(config));
 
-    // Immediately shutdown — drain should destroy all idle entries.
+    // Exercise runtime teardown after its startup readiness has completed.
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
     shutdown(&env, run_handle).await;
 
     // After shutdown: pool empty, budget fully released.

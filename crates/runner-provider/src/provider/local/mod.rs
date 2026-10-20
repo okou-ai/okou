@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::{ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate, JobProvider};
+use crate::ProviderResult;
 use crate::local_queue::{LocalClaimResult, LocalDiscoveredJob, LocalQueue};
 use crate::run_cancellation::RunCancellationRegistry;
 use cancel::{LocalCancelScanner, LocalCancelWatcher};
@@ -352,7 +353,9 @@ impl JobProvider for LocalProvider {
         }
     }
 
-    async fn heartbeat(&self, _state: &HeartbeatState) {}
+    async fn heartbeat(&self, _state: &HeartbeatState) -> ProviderResult<()> {
+        Ok(())
+    }
 
     async fn shutdown(&self) {
         self.cancel_watcher.shutdown().await;

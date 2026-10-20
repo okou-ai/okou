@@ -845,11 +845,11 @@ pub trait JobProvider: Send + Sync {
     /// carried by the claimed job lifecycle until completion.
     async fn complete(&self, request: CompleteRequest, completion_auth: CompletionAuth);
 
-    /// Report runner state to the server as a best-effort operation.
+    /// Report runner state and confirm successful delivery.
     ///
-    /// Delivery failures do not affect runner operation, but callers retain
-    /// the future to enforce single-flight and lifecycle ordering.
-    async fn heartbeat(&self, state: &HeartbeatState);
+    /// Routine delivery is best effort. Startup requires success before
+    /// publishing running; all callers retain the future for lifecycle ordering.
+    async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()>;
 
     /// Defer the next API-backed poll until the immutable preference deadline
     /// allows normal compatible-runner claiming.

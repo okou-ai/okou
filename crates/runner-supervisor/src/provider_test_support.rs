@@ -102,6 +102,7 @@ pub struct MockJobProvider {
     heartbeat_control: Arc<MockOperationControl>,
     heartbeat_max_in_flight: Arc<AtomicUsize>,
     panic_next_heartbeat: Arc<AtomicBool>,
+    fail_next_heartbeat: Arc<AtomicBool>,
     claim_control: Arc<MockOperationControl>,
     completion_control: Arc<MockOperationControl>,
     completion_after_finalization: Arc<AtomicBool>,
@@ -132,6 +133,7 @@ pub struct MockProviderHandle {
     heartbeat_control: Arc<MockOperationControl>,
     heartbeat_max_in_flight: Arc<AtomicUsize>,
     panic_next_heartbeat: Arc<AtomicBool>,
+    fail_next_heartbeat: Arc<AtomicBool>,
     claim_control: Arc<MockOperationControl>,
     completion_control: Arc<MockOperationControl>,
     completion_after_finalization: Arc<AtomicBool>,
@@ -327,6 +329,7 @@ impl MockJobProvider {
         let heartbeat_control = Arc::new(MockOperationControl::default());
         let heartbeat_max_in_flight = Arc::new(AtomicUsize::new(0));
         let panic_next_heartbeat = Arc::new(AtomicBool::new(false));
+        let fail_next_heartbeat = Arc::new(AtomicBool::new(false));
         let claim_control = Arc::new(MockOperationControl::default());
         let claim_controls = Arc::new(StdMutex::new(HashMap::new()));
         let claim_max_in_flight = Arc::new(AtomicUsize::new(0));
@@ -356,6 +359,7 @@ impl MockJobProvider {
             heartbeat_control: Arc::clone(&heartbeat_control),
             heartbeat_max_in_flight: Arc::clone(&heartbeat_max_in_flight),
             panic_next_heartbeat: Arc::clone(&panic_next_heartbeat),
+            fail_next_heartbeat: Arc::clone(&fail_next_heartbeat),
             claim_control: Arc::clone(&claim_control),
             completion_control: Arc::clone(&completion_control),
             completion_after_finalization: Arc::clone(&completion_after_finalization),
@@ -380,6 +384,7 @@ impl MockJobProvider {
             heartbeat_control,
             heartbeat_max_in_flight,
             panic_next_heartbeat,
+            fail_next_heartbeat,
             claim_control,
             completion_control,
             completion_after_finalization,
@@ -544,6 +549,10 @@ impl MockProviderHandle {
 
     pub fn panic_next_heartbeat(&self) {
         self.panic_next_heartbeat.store(true, Ordering::SeqCst);
+    }
+
+    pub fn fail_next_heartbeat(&self) {
+        self.fail_next_heartbeat.store(true, Ordering::SeqCst);
     }
 
     /// Release all currently blocked heartbeat calls and allow later calls.
@@ -792,7 +801,7 @@ impl JobProvider for MockJobProvider {
             .await;
     }
 
-    async fn heartbeat(&self, state: &HeartbeatState) {
+    async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {
         assert!(
             !self.panic_next_heartbeat.swap(false, Ordering::SeqCst),
             "injected heartbeat panic"
@@ -808,6 +817,17 @@ impl JobProvider for MockJobProvider {
                 self.heartbeat_notify.notify_waiters();
             })
             .await;
+        if self.fail_next_heartbeat.swap(false, Ordering::SeqCst) {
+            Err(ProviderError::ApiStatus(Box::new(
+                runner_provider::ApiStatusError {
+                    endpoint_label: "heartbeat",
+                    status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                    body: "private heartbeat response body".into(),
+                },
+            )))
+        } else {
+            Ok(())
+        }
     }
 
     async fn defer_poll_until(&self, deadline: Instant) {

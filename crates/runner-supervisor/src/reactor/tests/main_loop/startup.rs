@@ -219,8 +219,10 @@ async fn startup_does_not_publish_running_before_factories_are_ready() {
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
     let runtime = BlockingFactoryRuntime::new(entered_tx, release_rx);
-    let (config, env) =
+    let (mut config, env) =
         mock_run_config_with_runtime(test_profiles(), 8, 32768, 4, Box::new(runtime));
+    let scan = StartLoopTestGate::default();
+    config.test_hooks.after_initial_home_cache_scan = Some(scan.clone());
     let status_path = env._temp_dir.path().join("status.json");
     let run_handle = tokio::spawn(run(config));
 
@@ -228,6 +230,11 @@ async fn startup_does_not_publish_running_before_factories_are_ready() {
         .await
         .expect("factory startup should be entered")
         .expect("factory startup should report entry");
+    scan.wait_entered(
+        Duration::from_secs(5),
+        "cache scan must overlap factory startup",
+    )
+    .await;
     assert_ne!(
         status_mode_if_exists(&status_path).await.as_deref(),
         Some("running"),
@@ -242,6 +249,11 @@ async fn startup_does_not_publish_running_before_factories_are_ready() {
     release_tx
         .send(())
         .expect("runner should still be waiting for factory release");
+    assert_eq!(
+        status_mode_if_exists(&status_path).await.as_deref(),
+        Some("starting")
+    );
+    scan.release();
     wait_status_mode(&status_path, "running", Duration::from_secs(5)).await;
     shutdown(&env, run_handle).await;
 }

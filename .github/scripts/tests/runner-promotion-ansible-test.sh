@@ -249,7 +249,7 @@ assert_line_count "$invocation_log" 2 \
   "gc --keep-latest 6 --protect-version $runner_release"
 assert_line_count "$invocation_log" 4 "doctor --name $runner_release"
 assert_line_count "$invocation_log" 2 \
-  "service wait-running --name $runner_release --timeout-secs 120"
+  "service wait-running --name $runner_release --timeout-secs 300"
 assert_line_count "$invocation_log" 0 "service drain --name $runner_release"
 for old_release in v100.0.0 v101.0.0 v102.0.0; do
   assert_line_count "$invocation_log" 2 "service drain --name $old_release"
@@ -307,6 +307,13 @@ fi
 rm -f "$data_dir/fail-wait-running"
 assert_contains "$tmp/readiness-failure-output" \
   "Runner $runner_release failed readiness or health checks."
+assert_line_count "$invocation_log" 2 \
+  "service stop --name $runner_release --force --cleanup failed-start"
+for old_release in v100.0.0 v101.0.0 v102.0.0; do
+  assert_line_count "$invocation_log" 0 "service drain --name $old_release"
+done
+assert_line_count "$invocation_log" 0 \
+  "gc --keep-latest 6 --protect-version $runner_release"
 
 assert_contains "$release_workflow" "id: promote-runner"
 assert_contains "$release_workflow" 'shell: bash'
