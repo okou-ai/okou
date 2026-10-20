@@ -11918,6 +11918,7 @@ describe("usage pack allocation management", () => {
         lifecycle?.captureExternalState();
         const paymentIntentId = `pi_paid_original_${randomUUID()}`;
         const refundId = `re_paid_original_${randomUUID()}`;
+        const creditNoteId = `cn_paid_original_${randomUUID()}`;
         context.mocks.stripe.creditNotes.preview.mockResolvedValue({
           id: "cn_preview_paid_original",
           status: "issued",
@@ -11953,7 +11954,7 @@ describe("usage pack allocation management", () => {
         });
         lifecycle?.captureExternalState();
         context.mocks.stripe.creditNotes.create.mockResolvedValue({
-          id: "cn_paid_original",
+          id: creditNoteId,
           status: "issued",
           pre_payment_amount: 0,
           post_payment_amount: 2000,
@@ -12990,19 +12991,21 @@ describe("usage pack allocation management", () => {
         ],
       },
     });
+    const refundId = `re_last_usage_pack_removal_${randomUUID()}`;
+    const creditNoteId = `cn_last_usage_pack_removal_${randomUUID()}`;
     context.mocks.stripe.refunds.create.mockResolvedValue({
-      id: "re_last_usage_pack_removal",
+      id: refundId,
       status: "succeeded",
     });
     context.mocks.stripe.creditNotes.create.mockResolvedValue({
-      id: "cn_last_usage_pack_removal",
+      id: creditNoteId,
       status: "issued",
       pre_payment_amount: 0,
       post_payment_amount: 2000,
       refunds: [
         {
           amount_refunded: 2000,
-          refund: "re_last_usage_pack_removal",
+          refund: refundId,
         },
       ],
     });
@@ -13041,7 +13044,7 @@ describe("usage pack allocation management", () => {
         ],
         refunds: [
           {
-            refund: "re_last_usage_pack_removal",
+            refund: refundId,
             amount_refunded: 2000,
           },
         ],
