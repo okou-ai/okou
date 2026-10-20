@@ -10,7 +10,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { now } from "../../../lib/time.ts";
+import { mockNow, now } from "../../../lib/time.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
@@ -310,7 +310,9 @@ test("Approving a request arms the grant deadline and removes revoke when access
   expect(findButton(card, "Allow for 1 hour")).toBeUndefined();
 });
 
-test("A shell event rearms the deadline for an approved grant", async () => {
+test("A shell event expires its grant when the timer elapses before the wall-clock deadline sample", async () => {
+  const timestamp = Date.parse("2026-10-20T10:00:00.000Z");
+  mockNow(timestamp, context.signal);
   let current = authorization();
   context.mocks.api(contract.get, ({ respond }) => {
     return respond(200, current);
@@ -323,17 +325,53 @@ test("A shell event rearms the deadline for an approved grant", async () => {
   });
   current = authorization({
     status: "approved",
-    approvedAt: new Date(now()).toISOString(),
-    grantExpiresAt: new Date(now() + 250).toISOString(),
+    approvedAt: new Date(timestamp).toISOString(),
+    grantExpiresAt: new Date(timestamp + 250).toISOString(),
   });
+  // Timer delivery and the wall clock need not agree on the same millisecond.
+  // Keep the application clock one millisecond short while the real timer fires.
+  mockNow(timestamp + 249, context.signal);
   context.mocks.ably.trigger(SHELL_TOPIC);
-  await waitFor(() => {
-    expect(button(card, "Revoke access")).toBeEnabled();
-  });
   await expect(
     within(card).findByText("Authorization expired"),
   ).resolves.toBeInTheDocument();
   expect(findButton(card, "Revoke access")).toBeUndefined();
+});
+
+test("A delayed approval event restores a later grant after the local request deadline elapsed", async () => {
+  const timestamp = Date.parse("2026-10-20T10:00:00.000Z");
+  mockNow(timestamp, context.signal);
+  let current = authorization({
+    requestExpiresAt: new Date(timestamp + 1).toISOString(),
+  });
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, current);
+  });
+  await setupChat(URL);
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await expect(
+    within(card).findByText("Authorization expired"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(SHELL_TOPIC)).toBeTruthy();
+  });
+
+  // Approval happened before expiry; its notification reaches this card later.
+  current = {
+    ...current,
+    status: "approved",
+    approvedAt: new Date(timestamp).toISOString(),
+    grantExpiresAt: new Date(timestamp + 60 * 60 * 1000).toISOString(),
+  };
+  mockNow(timestamp + 2, context.signal);
+  context.mocks.ably.trigger(SHELL_TOPIC);
+  await waitFor(() => {
+    expect(button(card, "Revoke access")).toBeEnabled();
+  });
+  expect(within(card).getByText("Shell access allowed")).toBeInTheDocument();
+  expect(
+    within(card).queryByText("Authorization expired"),
+  ).not.toBeInTheDocument();
 });
 
 test("A request for another chat stays unavailable in this transcript", async () => {

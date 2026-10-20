@@ -45,9 +45,9 @@ export function createDesktopShellAuthorizationSignals(
       ? result.body
       : null;
   });
-  const deadlineRevision$ = state(0);
+  const elapsedDeadline$ = state<string | null>(null);
   const request$ = computed(async (get) => {
-    get(deadlineRevision$);
+    const elapsedDeadline = get(elapsedDeadline$);
     const response = await get(response$);
     const deadline =
       response?.status === "pending"
@@ -55,7 +55,9 @@ export function createDesktopShellAuthorizationSignals(
         : response?.status === "approved"
           ? response.grantExpiresAt
           : null;
-    return response && deadline && Date.parse(deadline) <= now()
+    return response &&
+      deadline &&
+      (deadline === elapsedDeadline || Date.parse(deadline) <= now())
       ? { ...response, status: "expired" as const }
       : response;
   });
@@ -77,18 +79,15 @@ export function createDesktopShellAuthorizationSignals(
     }
     const remaining = Date.parse(deadline) - now();
     if (remaining <= 0) {
-      set(deadlineRevision$, (value) => {
-        return value + 1;
-      });
+      set(elapsedDeadline$, deadline);
       return;
     }
     // Expiry changes only the effective local status, not the HTTP response.
     // A refresh/action replaces this one-shot deadline under the same owner.
+    // Record elapsed time so an early wall-clock sample cannot lose the wakeup.
     timeout(
       () => {
-        set(deadlineRevision$, (value) => {
-          return value + 1;
-        });
+        set(elapsedDeadline$, deadline);
       },
       remaining,
       { signal },
