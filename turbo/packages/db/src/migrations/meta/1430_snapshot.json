@@ -1,5 +1,5 @@
 {
-  "id": "7e50aba1-0260-4d64-ac38-67c9e859e047",
+  "id": "f25a70ed-42eb-4edf-b4f3-2faa61976b3c",
   "prevId": "2b8ecb12-12a4-41c8-b019-8575d0ec043f",
   "version": "7",
   "dialect": "postgresql",
@@ -8617,6 +8617,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "content_digest": {
+          "name": "content_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -16559,56 +16565,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.hosted_site_visibility": {
-      "name": "hosted_site_visibility",
-      "schema": "",
-      "columns": {
-        "site_id": {
-          "name": "site_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "hosted_site_visibility_site_id_hosted_sites_id_fk": {
-          "name": "hosted_site_visibility_site_id_hosted_sites_id_fk",
-          "tableFrom": "hosted_site_visibility",
-          "tableTo": "hosted_sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "hosted_site_visibility_audience": {
-          "name": "hosted_site_visibility_audience",
-          "value": "\"hosted_site_visibility\".\"visibility\" IN ('private', 'organization', 'public')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.hosted_deployments": {

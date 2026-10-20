@@ -31,7 +31,11 @@ const MAX_DIAGNOSTIC_BYTES: usize = u16::MAX as usize;
 #[derive(Clone)]
 pub(crate) enum HomeDriveMountProgram {
     Production,
-    Test { path: PathBuf, timeout_ms: u32 },
+    Test {
+        path: PathBuf,
+        timeout_ms: u32,
+        timeout_gate: Option<mpsc::SyncSender<u32>>,
+    },
 }
 
 impl HomeDriveMountProgram {
@@ -40,7 +44,35 @@ impl HomeDriveMountProgram {
     }
 
     pub(crate) fn for_test(path: PathBuf, timeout_ms: u32) -> Self {
-        Self::Test { path, timeout_ms }
+        Self::Test {
+            path,
+            timeout_ms,
+            timeout_gate: None,
+        }
+    }
+
+    pub(crate) fn for_test_timeout(
+        path: PathBuf,
+        timeout_ms: u32,
+        timeout_gate: mpsc::SyncSender<u32>,
+    ) -> Self {
+        Self::Test {
+            path,
+            timeout_ms,
+            timeout_gate: Some(timeout_gate),
+        }
+    }
+
+    fn await_test_timeout_gate(&self, child_id: u32) {
+        if let Self::Test {
+            timeout_gate: Some(timeout_gate),
+            ..
+        } = self
+        {
+            // A zero-capacity channel lets the test establish helper readiness
+            // before the real timeout starts. A dropped receiver permits cleanup.
+            let _ = timeout_gate.send(child_id);
+        }
     }
 
     fn timeout_ms(&self) -> u32 {
@@ -263,6 +295,7 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
     };
     drop(drain_done_tx);
 
+    program.await_test_timeout_gate(child.id());
     let outcome = wait_with_kill_timeout_or_connection_cancelled(
         child,
         program.timeout_ms(),

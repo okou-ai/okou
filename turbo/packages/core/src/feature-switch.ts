@@ -128,13 +128,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
-  [FeatureSwitchKey.ComposerMentionHint]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Mention search hint",
-    description: "Show a search hint after typing @ in the chat composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:

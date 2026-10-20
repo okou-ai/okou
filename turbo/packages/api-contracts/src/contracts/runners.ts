@@ -205,6 +205,9 @@ export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
         "homeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
+      // Reader preparation only; API discovery writers enable this separately.
+      // Require it for finalizing preferences after the rollout gates in #41657.
+      finalizingSourceRunId: z.uuid().optional(),
     })
     .strict(),
   z

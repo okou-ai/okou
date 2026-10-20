@@ -261,9 +261,13 @@ function handleComposerKeyDownCapture(
   if (eventTargetsNonEditableNodeView(event)) {
     return false;
   }
-  if (event.isComposing || event.keyCode === 229) {
-    context.onKeyDown(event);
-    return event.defaultPrevented;
+  if (event.isComposing || context.composer.editor.editor.view.composing) {
+    return false;
+  }
+  if (event.keyCode === 229) {
+    // A confirming key can arrive after compositionend. Keep it out of editor
+    // keymaps without preventing the input method's native confirmation.
+    return true;
   }
   if (shouldRemoveSelectedTask(event, context)) {
     event.preventDefault();
@@ -943,15 +947,10 @@ function ComposerSuggestionMenu({
       '[data-slot="chat-composer-card"]',
     );
   };
-  const setSuggestionMenuRef = useSet(
-    composer.suggestion.setSuggestionMenuRef$,
-  );
   const setSlashHintMenuRef = useSet(composer.suggestion.setSlashHintMenuRef$);
   const setMentionHintMenuRef = useSet(
     composer.suggestion.setMentionHintMenuRef$,
   );
-  const features = useGet(featureSwitch$);
-  const mentionHintEnabled = features[FeatureSwitchKey.ComposerMentionHint];
 
   return (
     <Popover
@@ -1028,9 +1027,7 @@ function ComposerSuggestionMenu({
       )}
       {suggestionMenu.showMentions && (
         <ComposerMentionSuggestionMenu
-          menuRef={
-            mentionHintEnabled ? setMentionHintMenuRef : setSuggestionMenuRef
-          }
+          menuRef={setMentionHintMenuRef}
           anchor={suggestionAnchor}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}

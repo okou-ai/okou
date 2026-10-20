@@ -7,14 +7,17 @@ use rand::{
     SeedableRng,
     rngs::{StdRng, SysRng},
 };
-use rfb_client::{Error, RsaAesCredentials, RsaAesSecurity, RsaServerKeyPin, authenticate_rsa_aes};
+use rfb_client::{
+    AuthenticationStage, Error, MAX_HANDSHAKE_DURATION, RsaAesCredentials, RsaAesSecurity,
+    RsaServerKeyPin, authenticate_rsa_aes,
+};
 use rsa::{Pkcs1v15Encrypt, RsaPrivateKey, RsaPublicKey, traits::PublicKeyParts};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream},
-    sync::Mutex,
+    sync::{Mutex, oneshot},
     time::Instant,
 };
 
@@ -142,17 +145,35 @@ enum Fault {
     PostAuthMac,
     PostAuthTruncated,
     PostAuthUnreadDrop,
+    Deadline(DeadlinePoint),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum DeadlinePoint {
+    Proof,
+    SecurityResult,
 }
 
 const SMALL_RECORDS: usize = 128;
 const SMALL_PAYLOAD: usize = 1024;
 
 async fn peer(
+    io: DuplexStream,
+    private: RsaPrivateKey,
+    mode: RsaAesSecurity,
+    user: bool,
+    fault: Fault,
+) -> TestResult<bool> {
+    peer_with_deadline_gate(io, private, mode, user, fault, None).await
+}
+
+async fn peer_with_deadline_gate(
     mut io: DuplexStream,
     private: RsaPrivateKey,
     mode: RsaAesSecurity,
     user: bool,
     fault: Fault,
+    gate: Option<oneshot::Sender<(Peer, Vec<u8>)>>,
 ) -> TestResult<bool> {
     let raw = wire(&private.to_public_key());
     let wide = matches!(mode, RsaAesSecurity::Ra2_256 | RsaAesSecurity::Ra2ne256);
@@ -234,6 +255,12 @@ async fn peer(
     if matches!(fault, Fault::Extra) {
         proof.push(9);
     }
+    if matches!(fault, Fault::Deadline(DeadlinePoint::Proof)) {
+        gate.ok_or("missing proof observer")?
+            .send((p, proof))
+            .map_err(|_| "proof observer dropped")?;
+        return Ok(true);
+    }
     p.send(&proof, matches!(fault, Fault::Mac)).await?;
     if matches!(
         fault,
@@ -251,6 +278,12 @@ async fn peer(
     assert_eq!(creds, expected);
     if matches!(fault, Fault::Extra) {
         return p.closed().await;
+    }
+    if matches!(fault, Fault::Deadline(DeadlinePoint::SecurityResult)) {
+        gate.ok_or("missing SecurityResult observer")?
+            .send((p, Vec::new()))
+            .map_err(|_| "SecurityResult observer dropped")?;
+        return Ok(true);
     }
     let result = if matches!(fault, Fault::Password) {
         vec![0, 0, 0, 1, 0, 0, 0, 0]
@@ -448,7 +481,8 @@ async fn wrong_proof_mac_subtype_raw_transition_and_security_result_never_return
             Fault::None
             | Fault::PostAuthMac
             | Fault::PostAuthTruncated
-            | Fault::PostAuthUnreadDrop => false,
+            | Fault::PostAuthUnreadDrop
+            | Fault::Deadline(_) => false,
         };
         assert!(
             rejected,
@@ -530,9 +564,194 @@ async fn peer_key_size_is_rejected_before_body_or_crypto_and_deadlines_drop_the_
             Instant::now()
         )
         .await,
-        Err(Error::AuthenticationDeadlineExceeded { .. })
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion
+        })
     ));
     assert_eq!(b.read(&mut [0]).await?, 0);
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn early_deadlines_report_the_active_stage_and_close_without_credentials() -> TestResult {
+    for mode in [
+        RsaAesSecurity::Ra2,
+        RsaAesSecurity::Ra2ne,
+        RsaAesSecurity::Ra2_256,
+        RsaAesSecurity::Ra2ne256,
+    ] {
+        for stage in [
+            AuthenticationStage::RfbVersion,
+            AuthenticationStage::SecurityNegotiation,
+            AuthenticationStage::RsaAesAuthentication,
+        ] {
+            for budget in [Duration::from_secs(2), Duration::from_secs(60)] {
+                let (client, mut server) = tokio::io::duplex(64);
+                let mut authentication = Box::pin(authenticate_rsa_aes(
+                    client,
+                    mode,
+                    credential(false)?,
+                    RsaServerKeyPin::new([0; 32]),
+                    Instant::now() + budget,
+                ));
+                let mut transcript = Vec::new();
+                tokio::select! {
+                    biased;
+                    result = &mut authentication => {
+                        panic!("authentication ended before the {stage:?} gate: {}", result.is_ok());
+                    }
+                    ready = async {
+                        if stage != AuthenticationStage::RfbVersion {
+                            server.write_all(b"RFB 003.008\n").await?;
+                            let mut banner = [0; 12];
+                            server.read_exact(&mut banner).await?;
+                            assert_eq!(&banner, b"RFB 003.008\n");
+                            transcript.extend_from_slice(&banner);
+                        }
+                        if stage == AuthenticationStage::RsaAesAuthentication {
+                            server.write_all(&[1, mode as u8]).await?;
+                            assert_eq!(server.read_u8().await?, mode as u8);
+                            transcript.push(mode as u8);
+                        }
+                        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+                    } => ready?,
+                }
+                let bounded = budget.min(MAX_HANDSHAKE_DURATION);
+                tokio::time::advance(bounded - Duration::from_millis(1)).await;
+                tokio::select! {
+                    biased;
+                    result = &mut authentication => {
+                        panic!("authentication ended before its deadline: {}", result.is_ok());
+                    }
+                    _ = std::future::ready(()) => {}
+                }
+                tokio::time::advance(Duration::from_millis(1)).await;
+                assert!(matches!(
+                    authentication.await,
+                    Err(Error::AuthenticationDeadlineExceeded { stage: actual }) if actual == stage
+                ));
+                let mut trailing = Vec::new();
+                server.read_to_end(&mut trailing).await?;
+                assert!(
+                    trailing.is_empty(),
+                    "unexpected output after {transcript:?}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+enum DeadlineCase {
+    Proof,
+    ReadyProof,
+    CredentialWrite,
+    SecurityResult,
+    ReadySecurityResult,
+}
+
+#[tokio::test]
+async fn exchange_deadlines_reject_stalled_or_ready_io_and_close_the_stream() -> TestResult {
+    let _crypto_guard = CRYPTO_TEST_LOCK.lock().await;
+    let private = key()?;
+    let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
+    for mode in [
+        RsaAesSecurity::Ra2,
+        RsaAesSecurity::Ra2ne,
+        RsaAesSecurity::Ra2_256,
+        RsaAesSecurity::Ra2ne256,
+    ] {
+        for case in [
+            DeadlineCase::Proof,
+            DeadlineCase::ReadyProof,
+            DeadlineCase::CredentialWrite,
+            DeadlineCase::SecurityResult,
+            DeadlineCase::ReadySecurityResult,
+        ] {
+            let (client, server) = tokio::io::duplex(64);
+            let end = Instant::now() + Duration::from_secs(30);
+            let mut authentication = Box::pin(authenticate_rsa_aes(
+                client,
+                mode,
+                credential(false)?,
+                pin,
+                end,
+            ));
+            let point = match case {
+                DeadlineCase::Proof | DeadlineCase::ReadyProof | DeadlineCase::CredentialWrite => {
+                    DeadlinePoint::Proof
+                }
+                DeadlineCase::SecurityResult | DeadlineCase::ReadySecurityResult => {
+                    DeadlinePoint::SecurityResult
+                }
+            };
+            let (entered, ready) = oneshot::channel();
+            let server = tokio::spawn(peer_with_deadline_gate(
+                server,
+                private.clone(),
+                mode,
+                false,
+                Fault::Deadline(point),
+                Some(entered),
+            ));
+            let (mut peer, proof) = tokio::select! {
+                result = &mut authentication => {
+                    panic!("authentication ended before {mode:?}/{case:?}: {}", result.is_ok());
+                }
+                ready = ready => ready?,
+            };
+            assert!(server.await??);
+            if matches!(
+                case,
+                DeadlineCase::ReadyProof | DeadlineCase::CredentialWrite
+            ) {
+                peer.send(&proof, false).await?;
+            }
+            if matches!(case, DeadlineCase::CredentialWrite) {
+                let length = tokio::select! {
+                    result = &mut authentication => {
+                        panic!("authentication ended before the blocked credential write: {}", result.is_ok());
+                    }
+                    length = peer.io.read_u16() => length?,
+                };
+                assert_eq!(usize::from(length), password().len() + 2);
+            }
+            if matches!(case, DeadlineCase::ReadySecurityResult) {
+                if matches!(mode, RsaAesSecurity::Ra2 | RsaAesSecurity::Ra2_256) {
+                    peer.send(&[0; 4], false).await?;
+                } else {
+                    peer.io.write_u32(0).await?;
+                }
+            }
+            // Crypto and protocol setup use real time. Keep the public future
+            // unpolled while both the IO gate and its absolute deadline become ready.
+            tokio::time::pause();
+            tokio::time::advance(end.saturating_duration_since(Instant::now())).await;
+            assert!(Instant::now() >= end);
+            let result = authentication.await;
+            tokio::time::resume();
+            assert!(matches!(
+                result,
+                Err(Error::AuthenticationDeadlineExceeded {
+                    stage: AuthenticationStage::RsaAesAuthentication
+                })
+            ));
+            let mut trailing = Vec::new();
+            peer.io.read_to_end(&mut trailing).await?;
+            if matches!(case, DeadlineCase::CredentialWrite) {
+                // The bounded duplex buffer contains only a partial credential
+                // record; expiry must not finish it when the peer drains it.
+                assert!(!trailing.is_empty());
+                assert!(trailing.len() < password().len() + 2 + 16);
+            } else {
+                assert!(
+                    trailing.is_empty(),
+                    "unexpected output for {mode:?}/{case:?}"
+                );
+            }
+        }
+    }
     Ok(())
 }
 #[tokio::test]

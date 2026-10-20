@@ -1055,6 +1055,34 @@ pub fn handle_connection_with_test_home_drive_mount_program(
     )
 }
 
+/// Handles a test home mount executable with a readiness gate before its timeout.
+///
+/// Use a zero-capacity channel. Receiving the owned child's PID starts the timer;
+/// receive or drop the receiver before joining the connection so assertion-failure
+/// cleanup can proceed.
+#[doc(hidden)]
+pub fn handle_connection_with_test_home_drive_mount_timeout_gate(
+    stream: UnixStream,
+    program: std::path::PathBuf,
+    timeout_ms: u32,
+    timeout_gate: std::sync::mpsc::SyncSender<u32>,
+) -> io::Result<()> {
+    handle_connection_with_mode_and_program(
+        stream,
+        ProcessContainmentMode::TestNoop,
+        EXEC_OUTPUT_DRAIN_DEADLINE,
+        ConnectionPrograms {
+            home_drive_mount: HomeDriveMountProgram::for_test_timeout(
+                program,
+                timeout_ms,
+                timeout_gate,
+            ),
+            ..ConnectionPrograms::production()
+        },
+        MeminfoSource::production(),
+    )
+}
+
 /// Handles a host-side test connection with a test guest-state helper.
 #[doc(hidden)]
 pub fn handle_connection_with_test_guest_state_restore_program(
