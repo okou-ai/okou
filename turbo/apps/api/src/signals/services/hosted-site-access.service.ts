@@ -6,6 +6,10 @@ import type {
   HostedSiteAccessDecision,
   hostedSiteVisibilitySchema,
 } from "@okouai/api-contracts/contracts/hosted-site-access";
+import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
 import { hostedSiteVisibility } from "@okouai/db/schema/hosted-site-visibility";
 import { db$, writeDb$ } from "../external/db";
@@ -86,11 +90,13 @@ export const checkHostedSiteAccess$ = command(
   },
 );
 
-function ownedSite(owner: Owner) {
+function manageableSiteCondition(owner: Owner) {
   return and(
     eq(hostedSites.id, owner.siteId),
     eq(hostedSites.userId, owner.userId),
     eq(hostedSites.orgId, owner.orgId),
+    // Legacy-domain publications remain public and cannot change visibility.
+    eq(hostedSites.linkLayoutSegment, linkLayoutSegment(CURRENT_LINK_LAYOUT)),
     isNull(hostedSites.deletedAt),
   );
 }
@@ -115,7 +121,7 @@ export const getHostedSiteVisibility$ = command(
       )
       .where(
         and(
-          ownedSite(owner),
+          manageableSiteCondition(owner),
           exists(
             get(db$)
               .select({ id: hostedDeployments.id })
@@ -170,7 +176,7 @@ export const updateHostedSiteVisibility$ = command(
           .from(hostedSites)
           .where(
             and(
-              ownedSite(args),
+              manageableSiteCondition(args),
               exists(
                 database
                   .select({ id: hostedDeployments.id })
