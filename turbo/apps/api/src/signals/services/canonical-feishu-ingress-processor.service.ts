@@ -163,40 +163,25 @@ async function claimIngress(
   return claimed !== undefined;
 }
 
-async function loadClaimedIngress(db: Db, ingressId: string) {
-  const [row] = await db
-    .select({
-      ingressId: feishuChatIngress.id,
-      installationId: feishuChatIngress.installationId,
-      payload: feishuChatIngress.payload,
-      reactionId: feishuChatIngress.reactionId,
-      createdAt: feishuChatIngress.createdAt,
-      orgId: feishuOrgInstallations.orgId,
-      ownerUserId: feishuOrgInstallations.ownerUserId,
-      appId: feishuOrgInstallations.appId,
-      platform: feishuOrgInstallations.platform,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      botName: feishuOrgInstallations.botName,
-      messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-    })
-    .from(feishuChatIngress)
-    .innerJoin(
-      feishuOrgInstallations,
-      eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
-    )
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
-    .where(
-      and(
-        eq(feishuChatIngress.id, ingressId),
-        eq(feishuChatIngress.status, "processing"),
-      ),
-    )
-    .limit(1);
-  return row;
-}
+type ClaimedFeishuIngress = Pick<
+  typeof feishuChatIngress.$inferSelect,
+  "installationId" | "payload" | "reactionId" | "createdAt"
+> &
+  Pick<
+    typeof feishuOrgInstallations.$inferSelect,
+    | "orgId"
+    | "ownerUserId"
+    | "appId"
+    | "platform"
+    | "botName"
+    | "messageReceivedAt"
+  > & {
+    ingressId: typeof feishuChatIngress.$inferSelect.id;
+    defaultAgentId: typeof orgMetadata.$inferSelect.defaultAgentId;
+  };
 
 function parseMatchingMessage(
-  ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
+  ingress: ClaimedFeishuIngress,
 ): CanonicalFeishuInboundMessage {
   const message = feishuInboundMessageSchema.parse(
     JSON.parse(ingress.payload) as unknown,
@@ -442,9 +427,7 @@ const persistCanonicalFeishuIngress$ = command(
   async (
     { set },
     args: {
-      readonly ingress: NonNullable<
-        Awaited<ReturnType<typeof loadClaimedIngress>>
-      >;
+      readonly ingress: ClaimedFeishuIngress;
       readonly installation: FeishuDispatchInstallation;
       readonly connection: FeishuDispatchConnection;
       readonly message: CanonicalFeishuInboundMessage;
@@ -652,7 +635,42 @@ async function loadFeishuIngressDispatchContext(
   ingressId: string,
   signal: AbortSignal,
 ) {
-  const ingress = await loadClaimedIngress(db, ingressId);
+  const claimedIngressDb = db;
+  const claimedIngressId = ingressId;
+  const ingress = await (async () => {
+    const [row] = await claimedIngressDb
+      .select({
+        ingressId: feishuChatIngress.id,
+        installationId: feishuChatIngress.installationId,
+        payload: feishuChatIngress.payload,
+        reactionId: feishuChatIngress.reactionId,
+        createdAt: feishuChatIngress.createdAt,
+        orgId: feishuOrgInstallations.orgId,
+        ownerUserId: feishuOrgInstallations.ownerUserId,
+        appId: feishuOrgInstallations.appId,
+        platform: feishuOrgInstallations.platform,
+        defaultAgentId: orgMetadata.defaultAgentId,
+        botName: feishuOrgInstallations.botName,
+        messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
+      })
+      .from(feishuChatIngress)
+      .innerJoin(
+        feishuOrgInstallations,
+        eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
+      )
+      .leftJoin(
+        orgMetadata,
+        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+      )
+      .where(
+        and(
+          eq(feishuChatIngress.id, claimedIngressId),
+          eq(feishuChatIngress.status, "processing"),
+        ),
+      )
+      .limit(1);
+    return row;
+  })();
   signal.throwIfAborted();
   if (!ingress) {
     throw new Error("Canonical Feishu ingress is unavailable");

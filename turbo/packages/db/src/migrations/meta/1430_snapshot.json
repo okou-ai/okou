@@ -1,5 +1,5 @@
 {
-  "id": "7912c4d4-bd2d-4b5e-9b11-be4f220a8cc7",
+  "id": "f25a70ed-42eb-4edf-b4f3-2faa61976b3c",
   "prevId": "2b8ecb12-12a4-41c8-b019-8575d0ec043f",
   "version": "7",
   "dialect": "postgresql",
@@ -6754,28 +6754,6 @@
           "method": "btree",
           "with": {}
         },
-        "chat_event_snapshots_repair_candidates_idx": {
-          "name": "chat_event_snapshots_repair_candidates_idx",
-          "columns": [
-            {
-              "expression": "archive_schema_version",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "(\n          \"chat_event_snapshots\".\"last_seq_id\" <= 0\n          OR \"chat_event_snapshots\".\"terminal_seq_id\" IS NULL\n          OR btrim(\"chat_event_snapshots\".\"object_key\") = ''\n          OR NOT (\"chat_event_snapshots\".\"object_key\" ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')\n          OR \"chat_event_snapshots\".\"object_key\" ~ '^chat-events/[0-9a-f-]{36}/[0-9]+-[0-9a-f]{64}[.]ndjson[.]gz$'\n        )",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "chat_event_snapshots_thread_version_unique": {
           "name": "chat_event_snapshots_thread_version_unique",
           "columns": [
@@ -8635,6 +8613,12 @@
         },
         "object_key": {
           "name": "object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_digest": {
+          "name": "content_digest",
           "type": "text",
           "primaryKey": false,
           "notNull": false

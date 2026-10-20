@@ -19,6 +19,9 @@ use crate::protocol_impl::{self as protocol, Command, NbdReply, NbdRequest, REQU
 
 /// Maximum allowed request length (32 MB). Requests exceeding this are rejected
 /// with an I/O error to prevent OOM from malformed requests.
+/// Together with `CowIo`'s pre-write flush, default 4 MiB threshold and 4096-byte
+/// blocks, this bounds retained COW payload at 36 MiB, even for unaligned writes.
+/// Per-connection request buffers, map overhead and the dirty bitmap are separate.
 const MAX_REQUEST_LENGTH: u32 = 32 * 1024 * 1024;
 
 /// Maximum reusable payload buffer capacity retained between requests.

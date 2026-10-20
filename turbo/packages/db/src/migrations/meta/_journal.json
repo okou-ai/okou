@@ -2469,8 +2469,15 @@
     {
       "idx": 1430,
       "version": "7",
-      "when": 1792472419317,
-      "tag": "1430_chat_event_snapshot_repair_candidates",
+      "when": 1792472301308,
+      "tag": "1430_chat_thread_snapshot_content_digest",
+      "breakpoints": true
+    },
+    {
+      "idx": 1431,
+      "version": "7",
+      "when": 1792474527908,
+      "tag": "1431_chat_event_snapshot_repair_candidates",
       "breakpoints": true
     }
   ]

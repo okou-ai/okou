@@ -47,6 +47,9 @@ final class WorkspaceStore {
   private var agentDraftTask: Task<Void, Never>?
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
+  @ObservationIgnored lazy var modelStore = ChatModelStore(
+    client: client, webURL: webURL, didFail: { [weak self] in self?.handle($0) })
+  @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands,
     didRefresh: { [weak self] in self?.applyThreads($0) },
@@ -148,6 +151,7 @@ final class WorkspaceStore {
       didSend: { [weak self] in self?.requestRefresh(.threadList) },
       didFail: { [weak self] in self?.handle($0) },
       didSettle: { [weak self] in self?.requestPrune() },
+      modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
       draftRepository: draftRepository, draftStorage: draftStorage)
     conversations[id] = conversation
     return conversation
@@ -160,6 +164,8 @@ final class WorkspaceStore {
     creationTask?.cancel()
     pruneTask?.cancel()
     warmingTask?.cancel()
+    modelStore.close()
+    newModelSelection.close()
     list.close()
     for conversation in conversations.values { conversation.close() }
     realtime?.stop()
@@ -223,6 +229,10 @@ final class WorkspaceStore {
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     let full = batch.contains(.reconnected)
+    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
+    {
+      await modelStore.refresh()
+    }
     if full || batch.contains(.threadList) {
       await list.refresh()
     } else if batch.contains(.readCursor)
@@ -251,6 +261,9 @@ final class WorkspaceStore {
       }
     }
     if full { await synchronizeDrafts() }
+    if modelStore.configuration != nil && (full || batch.contains(.threadList)) {
+      await selectedConversation?.modelSelection?.refresh()
+    }
     await trimConversations(limit: conversationLimit)
     requestHistoryWarming()
   }
@@ -297,21 +310,30 @@ final class WorkspaceStore {
     selectedThreadID = nil
     selectedAgentID =
       agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
+    newModelSelection.resetNewChat()
     error = nil
   }
 
   @discardableResult
   func createChat(agentID: String? = nil) async -> ChatThread? {
     guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
+    guard newModelSelection.canSend else { return nil }
+    let selection = modelStore.configuration.map { _ in
+      newModelSelection.captureNewChatSelection()
+    }
+    let effort = newModelSelection.requestedEffort
+    newModelSelection.isSending = true
     isCreating = true
     let task = Task<ChatThread?, Never> { [weak self] in
       guard let self else { return nil }
       defer {
         isCreating = false
+        newModelSelection.isSending = false
         creationTask = nil
       }
       do {
-        let thread = try await commands.createThread(agentID: agentID)
+        let thread = try await commands.createThread(
+          agentID: agentID, modelSelection: selection, reasoningEffort: effort)
         try Task.checkCancellation()
         guard !closed else { return nil }
         list.insertCreated(thread)
@@ -348,7 +370,7 @@ final class WorkspaceStore {
       newComposer.requestSync()
     }
     sourceComposer.requestSync()
-    await conversation.send()
+    await conversation.send(initialSelection: ChatModelSelection(thread: created))
   }
 
   func reduceMemory() async {
