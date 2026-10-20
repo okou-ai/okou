@@ -20,7 +20,10 @@ import {
   readFeishuResponseJson,
   resolveFeishuRequestCredentials,
   replyWithFeishuMessage,
-  sendFeishuMessage,
+  feishuMessagePayload,
+  feishuMessageSendBody,
+  feishuMessageSendUrl,
+  parseFeishuSentMessage,
 } from "../external/feishu-client";
 import { db$, writeDb$, type Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -296,17 +299,78 @@ export async function deliverFeishuChatAdmissionFailure(
     );
     return;
   }
-  await sendFeishuMessage(
-    {
-      db: args.db,
-      installationId: args.target.installationId,
-      receiveIdType: "chat_id",
-      receiveId: args.target.chatId,
-      message,
-      idempotencyKey: args.chatEventId,
-    },
-    signal,
-  );
+  const sendArgs = {
+    db: args.db,
+    installationId: args.target.installationId,
+    receiveIdType: "chat_id",
+    receiveId: args.target.chatId,
+    message,
+    idempotencyKey: args.chatEventId,
+  };
+  const sendSignal = signal;
+  await (async () => {
+    const sendContextArgs = sendArgs;
+    const { token, apiOrigin, providerName } = await (async () => {
+      const [installation] = await sendContextArgs.db
+        .select()
+        .from(feishuOrgInstallations)
+        .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId))
+        .limit(1);
+      sendSignal.throwIfAborted();
+      if (!installation) {
+        throw new Error("Bot installation not found");
+      }
+      if (
+        !(await (async () => {
+          const plan = feishuInstallationAvailabilityReadPlan(installation);
+          if (plan.kind === "resolved") {
+            return plan.enabled;
+          }
+          const rows = await sendContextArgs.db
+            .select(plan.columns)
+            .from(userFeatureSwitches)
+            .where(plan.condition);
+          return feishuInstallationEnabledFromRows(plan.scope, rows);
+        })())
+      ) {
+        throw new FeishuApiError("Lark integration is not enabled", 403);
+      }
+      const credentials = await resolveFeishuRequestCredentials(
+        installation,
+        sendSignal,
+      );
+      if (credentials.refreshedToken) {
+        await sendContextArgs.db
+          .update(feishuOrgInstallations)
+          .set(feishuTokenUpdateValues(credentials.refreshedToken))
+          .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId));
+        sendSignal.throwIfAborted();
+      }
+      return credentials.context;
+    })();
+    const url = feishuMessageSendUrl(apiOrigin);
+    url.searchParams.set("receive_id_type", sendArgs.receiveIdType);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify(
+        feishuMessageSendBody(
+          sendArgs.receiveId,
+          feishuMessagePayload(sendArgs.message),
+          sendArgs.idempotencyKey,
+        ),
+      ),
+      signal: sendSignal,
+    });
+    return parseFeishuSentMessage(
+      await readFeishuResponseJson(response, providerName),
+      `${providerName} message send failed`,
+      providerName,
+    );
+  })();
 }
 
 async function deliverClaimedFeishuChatCallback(
@@ -361,17 +425,80 @@ async function deliverClaimedFeishuChatCallback(
       signal,
     );
   } else {
-    await sendFeishuMessage(
-      {
-        db: args.db,
-        installationId: payload.installationId,
-        receiveIdType: "chat_id",
-        receiveId: payload.chatId,
-        message,
-        idempotencyKey: args.callback.runId,
-      },
-      signal,
-    );
+    const sendArgs = {
+      db: args.db,
+      installationId: payload.installationId,
+      receiveIdType: "chat_id",
+      receiveId: payload.chatId,
+      message,
+      idempotencyKey: args.callback.runId,
+    };
+    const sendSignal = signal;
+    await (async () => {
+      const sendContextArgs = sendArgs;
+      const { token, apiOrigin, providerName } = await (async () => {
+        const [installation] = await sendContextArgs.db
+          .select()
+          .from(feishuOrgInstallations)
+          .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId))
+          .limit(1);
+        sendSignal.throwIfAborted();
+        if (!installation) {
+          throw new Error("Bot installation not found");
+        }
+        if (
+          !(await (async () => {
+            const plan = feishuInstallationAvailabilityReadPlan(installation);
+            if (plan.kind === "resolved") {
+              return plan.enabled;
+            }
+            const rows = await sendContextArgs.db
+              .select(plan.columns)
+              .from(userFeatureSwitches)
+              .where(plan.condition);
+            return feishuInstallationEnabledFromRows(plan.scope, rows);
+          })())
+        ) {
+          throw new FeishuApiError("Lark integration is not enabled", 403);
+        }
+        const credentials = await resolveFeishuRequestCredentials(
+          installation,
+          sendSignal,
+        );
+        if (credentials.refreshedToken) {
+          await sendContextArgs.db
+            .update(feishuOrgInstallations)
+            .set(feishuTokenUpdateValues(credentials.refreshedToken))
+            .where(
+              eq(feishuOrgInstallations.id, sendContextArgs.installationId),
+            );
+          sendSignal.throwIfAborted();
+        }
+        return credentials.context;
+      })();
+      const url = feishuMessageSendUrl(apiOrigin);
+      url.searchParams.set("receive_id_type", sendArgs.receiveIdType);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify(
+          feishuMessageSendBody(
+            sendArgs.receiveId,
+            feishuMessagePayload(sendArgs.message),
+            sendArgs.idempotencyKey,
+          ),
+        ),
+        signal: sendSignal,
+      });
+      return parseFeishuSentMessage(
+        await readFeishuResponseJson(response, providerName),
+        `${providerName} message send failed`,
+        providerName,
+      );
+    })();
   }
   return "delivered";
 }
