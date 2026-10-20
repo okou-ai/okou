@@ -161,7 +161,7 @@ class TemporaryBody:
         self._files = ExitStack()
         self.lease: _Lease | None = None
         self.waiter: asyncio.Future[_Lease] | None = None
-        self._io_waiter: asyncio.Future[None] | None = None
+        self._closed_signal: asyncio.Future[None] | None = None
         self.worker: asyncio.Future | None = None
         self.chunk = b""
         _active.add(self)
@@ -185,8 +185,7 @@ class TemporaryBody:
         # An unsubmitted read owns no worker. Closing this body must resume
         # its native response without waiting for another body's filesystem I/O.
         admitted = asyncio.create_task(slots.acquire())
-        interrupted: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        self._io_waiter = interrupted
+        interrupted = self.closed_signal()
         acquired = False
         try:
             await asyncio.wait((admitted, interrupted), return_when=asyncio.FIRST_COMPLETED)
@@ -195,8 +194,6 @@ class TemporaryBody:
             admitted.result()
             acquired = True
         finally:
-            self._io_waiter = None
-            interrupted.cancel()
             if not acquired:
                 admitted.cancel()
                 try:
@@ -209,6 +206,14 @@ class TemporaryBody:
                         and admitted.exception() is None
                     ):
                         slots.release()
+
+    def closed_signal(self) -> asyncio.Future[None]:
+        """Shared terminal observation; waiting must not cancel this signal."""
+        if self._closed_signal is None:
+            self._closed_signal = asyncio.get_running_loop().create_future()
+            if self.closed:
+                self._closed_signal.set_result(None)
+        return self._closed_signal
 
     async def _run_io(self, operation: Callable[..., _T], *args: object) -> _T:
         try:
@@ -325,8 +330,8 @@ class TemporaryBody:
         self.chunk = b""
         if self.waiter is not None:
             self.waiter.cancel()
-        if self._io_waiter is not None and not self._io_waiter.done():
-            self._io_waiter.set_result(None)
+        if self._closed_signal is not None and not self._closed_signal.done():
+            self._closed_signal.set_result(None)
         try:
             if self.worker is None:
                 self._close_storage()

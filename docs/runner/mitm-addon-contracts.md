@@ -793,6 +793,10 @@ storage failure. Closing a body interrupts its wait for a filesystem slot, so a
 complete final response or reset can finish without waiting for unrelated file
 operations. Slot admission and cancellation release capacity exactly once;
 accepted operations still join before physical file closure.
+The same terminal signal interrupts an owned replay writer-drain wait. A full
+upstream TCP send buffer must not hold a completed provider response behind the
+upload it has rejected or finished. Join that drain task before native terminal
+processing continues; retain filesystem-worker joins and other flows' drains.
 Unexpected response data queued before upload completion is
 bounded to one chunk; exceeding that bound aborts the native upstream connection
 or HTTP/2 stream immediately, even while a file read remains blocked. The file

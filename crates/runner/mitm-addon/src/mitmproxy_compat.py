@@ -305,6 +305,25 @@ def _install_response_inspection_bridge() -> None:
                 await join_checkpoints(checkpoints)
         await current_drain(self)
 
+    async def drain_managed_upload(
+        self: ConnectionHandler, body: managed_request_body.TemporaryBody
+    ) -> None:
+        if body.closed:
+            return
+        draining = asyncio.create_task(current_drain(self))
+        try:
+            await asyncio.wait(
+                (draining, body.closed_signal()), return_when=asyncio.FIRST_COMPLETED
+            )
+            if draining.done():
+                await draining
+        finally:
+            # A complete early response can stop the upload while its socket
+            # cannot drain. Resume native terminal processing and join only
+            # this hook's drain; filesystem operations keep their own owner.
+            draining.cancel()
+            await asyncio.gather(draining, return_exceptions=True)
+
     async def hook_task(self: ConnectionHandler, hook: commands.StartHook) -> None:
         checkpoint = (
             hook
@@ -346,8 +365,9 @@ def _install_response_inspection_bridge() -> None:
             if (
                 isinstance(checkpoint, managed_request_transport.ManagedRequestBodyHook)
                 and checkpoint.stage == "replay"
+                and managed_body is not None
             ):
-                await current_drain(self)
+                await drain_managed_upload(self, managed_body)
             if isinstance(checkpoint, _WebsocketInspectionCheckpoint):
                 if checkpoint.abandoned:
                     if hook.blocking:
