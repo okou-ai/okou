@@ -3,6 +3,7 @@ import { command } from "ccstate";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
+import { nowDate } from "../../lib/time";
 import { createHostedSiteDownloadGrant$ } from "./hosted-site-download.service";
 
 /** Call only after authorizing this exact deployment or immutable share snapshot. */
@@ -17,6 +18,7 @@ export const signHostedSiteFiles$ = command(
       readonly manifest: HostedSiteManifest;
       readonly prefix: string;
       readonly viewerId?: string;
+      readonly attachment?: boolean;
     },
     signal: AbortSignal,
   ): Promise<HostedSiteFilesResponse> => {
@@ -44,6 +46,13 @@ export const signHostedSiteFiles$ = command(
             bucket,
             `${args.prefix}${file.path}`,
             true,
+            args.attachment
+              ? {
+                  filename: file.path.slice(file.path.lastIndexOf("/") + 1),
+                  responseCacheControl: "private, no-store",
+                  signingDate: nowDate(),
+                }
+              : undefined,
           ),
         );
         signal.throwIfAborted();

@@ -64,12 +64,28 @@ public enum ChatIndicator: String, Decodable, Sendable {
   case active, unread
 }
 
+/// Durable file identity and display snapshots; temporary download URLs never enter history.
+public struct ChatMessageAttachment: Equatable, Identifiable, Sendable {
+  public let id: String
+  public let filename: String
+  public let contentType: String
+  public let size: Int?
+
+  public init(id: String, filename: String, contentType: String, size: Int? = nil) {
+    self.id = id
+    self.filename = filename
+    self.contentType = contentType
+    self.size = size
+  }
+}
+
 public struct ChatMessage: Identifiable, Equatable, Sendable {
   public enum Role: String, Sendable { case user, assistant, system }
 
   public let id: String
   public let role: Role
   public let text: String
+  public let attachments: [ChatMessageAttachment]
   public let createdAt: Date
   public let runID: String?
   public let isQueued: Bool
@@ -79,6 +95,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     id: String,
     role: Role,
     text: String,
+    attachments: [ChatMessageAttachment] = [],
     createdAt: Date,
     runID: String? = nil,
     isQueued: Bool,
@@ -87,6 +104,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     self.id = id
     self.role = role
     self.text = text
+    self.attachments = attachments
     self.createdAt = createdAt
     self.runID = runID
     self.isQueued = isQueued

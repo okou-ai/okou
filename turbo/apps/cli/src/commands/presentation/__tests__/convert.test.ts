@@ -124,7 +124,13 @@ const state = {
   deckTexts: undefined as string[] | undefined,
   sourcePages: undefined as string[][] | undefined,
   clippedSource: [] as { original: string; visible: string }[][],
-  unsupported: [] as { page: number; tag: string; images: number }[],
+  unsupported: [] as {
+    page: number;
+    tag: string;
+    images: number;
+    feature?: string;
+    reason?: string;
+  }[],
   deckPages: undefined as string[][] | undefined,
   slideXml: undefined as string[] | undefined,
   textBoxes: [] as {
@@ -221,6 +227,8 @@ function fakeEval(expression: string): string {
   if (expression.includes("scored.sort")) return encoded(".stage");
   if (expression.includes("No visible slide supplies")) return "0";
   if (expression.includes("data-okou-capture-")) return "1";
+  if (expression.includes("const d = getComputedStyle(node).d"))
+    return encoded([]);
   if (expression.includes("window.__okouRestoreLayout =")) {
     return encoded({
       pages: (
@@ -891,6 +899,125 @@ describe("okou presentation convert", () => {
     expect(groups[1]).toContain(path);
     expect(slide).not.toContain("<p:pic");
   });
+
+  it("groups SVG paths and text without pictures and retains native stroke paint", async () => {
+    const path =
+      '<a:custGeom><a:pathLst><a:path w="1000" h="500"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:cubicBezTo><a:pt x="100" y="0"/><a:pt x="900" y="500"/><a:pt x="1000" y="500"/></a:cubicBezTo></a:path></a:pathLst></a:custGeom>';
+    const shape = (id: number, body: string) => {
+      return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="svg-${id}"/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${id * 100}" y="200"/><a:ext cx="1000" cy="500"/></a:xfrm>${path}<a:noFill/><a:ln w="0"><a:noFill/></a:ln></p:spPr>${body}</p:sp>`;
+    };
+    state.sourcePages = [["Editable label"], []];
+    state.slideXml = [
+      shape(2, "") +
+        shape(
+          3,
+          "<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Editable label</a:t></a:r></a:p></p:txBody>",
+        ),
+      slideXml([]),
+    ];
+    state.nativePaint = {
+      "1": {
+        "svg-2": {
+          svgGroup: 8,
+          svgStroke: {
+            color: "2563EB",
+            alpha: 0.5,
+            width: 4,
+            cap: "round",
+            join: "round",
+            miterLimit: 4,
+          },
+        },
+        "svg-3": { svgGroup: 8 },
+      },
+    };
+    await convert(["--verify"]);
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+    expect(slide).toContain('<p:cNvPr id="4" name="okou-svg-8"');
+    expect(slide).toContain('descr="Editable SVG shapes and text"');
+    expect(slide).toContain(
+      '<a:chOff x="200" y="200"/><a:chExt cx="1100" cy="500"/>',
+    );
+    expect(slide).toContain(
+      '<a:ln w="30479" cap="rnd"><a:solidFill><a:srgbClr val="2563EB"><a:alpha val="50000"/></a:srgbClr></a:solidFill><a:prstDash val="solid"/><a:round/></a:ln>',
+    );
+    expect(slide.match(/<a:cubicBezTo>/gu)).toHaveLength(2);
+    expect(slide).toContain("<a:t>Editable label</a:t>");
+    expect(slide).not.toContain("<p:pic");
+  });
+
+  it("reports source SVG retained as a picture and fails native verification for its text", async () => {
+    state.sourcePages = [["SVG label"], []];
+    state.slideXml = [
+      '<p:pic><p:nvPicPr><p:cNvPr id="2" name="Source SVG"/></p:nvPicPr></p:pic>',
+      slideXml([]),
+    ];
+    state.unsupported = [
+      {
+        page: 1,
+        tag: "svg",
+        images: 0,
+        feature: "svg-vector-image",
+        reason:
+          "Retained source SVG as a vector picture; native component editing is unavailable: SVG paint server",
+      },
+    ];
+    await expect(convert(["--verify", "--json"])).rejects.toThrow(
+      /process\.exit/u,
+    );
+    const output = String(vi.mocked(console.log).mock.calls[0]?.[0]);
+    expect(JSON.parse(output)).toMatchObject({
+      verify: { missing: ["Page 1: SVG label"], matchedStrings: 0 },
+      unsupported: [{ feature: "svg-vector-image" }],
+    });
+    expect(
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml"),
+    ).toContain('name="Source SVG"');
+  });
+
+  it.each([
+    {
+      cap: "butt",
+      join: "miter",
+      expected: 'cap="flat"',
+      ending: '<a:miter lim="400000"/>',
+    },
+    {
+      cap: "square",
+      join: "bevel",
+      expected: 'cap="sq"',
+      ending: "<a:bevel/>",
+    },
+  ])(
+    "preserves SVG $cap caps and $join joins on a self-closing line",
+    async ({ cap, join, expected, ending }) => {
+      state.slideXml = [
+        '<p:sp><p:nvSpPr><p:cNvPr id="2" name="outline"/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1000" cy="500"/></a:xfrm><a:ln/></p:spPr></p:sp>',
+        slideXml([]),
+      ];
+      state.nativePaint = {
+        "1": {
+          outline: {
+            svgStroke: {
+              color: "000000",
+              alpha: 1,
+              width: 2,
+              cap,
+              join,
+              miterLimit: 4,
+            },
+          },
+        },
+      };
+      await convert([]);
+      const slide =
+        readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
+      expect(slide).toContain(expected);
+      expect(slide).toContain(ending);
+      expect(slide).not.toContain("<a:ln/>");
+    },
+  );
 
   it("writes source-image crop and grayscale for self-closing blip nodes", async () => {
     state.slideXml = [

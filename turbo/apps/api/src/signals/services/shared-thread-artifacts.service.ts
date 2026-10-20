@@ -128,6 +128,7 @@ export const signSharedThreadHostedDownload$ = command(
     args: {
       readonly publicSlug: string;
       readonly viewerId?: string;
+      readonly attachment?: boolean;
       readonly layoutSegment: SharedThreadArtifactPolicy["publicBrand"];
       readonly target: Extract<
         SharedThreadArtifactPolicy["resources"][string],
@@ -155,6 +156,7 @@ export const signSharedThreadHostedDownload$ = command(
         },
         manifest: target.manifest,
         viewerId: args.viewerId,
+        attachment: args.attachment,
         prefix: `shared-artifacts/${args.layoutSegment}/${target.snapshotId}/${target.id}`,
       },
       signal,

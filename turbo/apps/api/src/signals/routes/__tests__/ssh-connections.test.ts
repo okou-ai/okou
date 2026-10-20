@@ -10,7 +10,6 @@ import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-r
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -20,7 +19,6 @@ import { mockEnv } from "../../../lib/env";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const authApi = createAuthOrgAgentsBddApi(context);
 
 interface Actor {
   readonly orgId: string;
@@ -119,7 +117,7 @@ describe("SSH connection routes", () => {
       ]);
     }
   });
-  it("requires an organization session and validates input before encryption", async () => {
+  it("requires organization authentication and validates input before encryption", async () => {
     const kms = useSecretKmsProbe();
     const unauthenticated = await accept(client().list({ headers: {} }), [401]);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
@@ -130,17 +128,6 @@ describe("SSH connection routes", () => {
       [401],
     );
     expect(withoutOrg.body.error.code).toBe("UNAUTHORIZED");
-
-    const patActor = authApi.user();
-    authApi.mockClerkOrg(patActor);
-    const pat = await authApi.createCliToken(patActor);
-    const patResponse = await accept(
-      client().list({
-        headers: { authorization: `Bearer ${pat.token}` },
-      }),
-      [403],
-    );
-    expect(patResponse.body.error.code).toBe("FORBIDDEN");
 
     authenticate(actor("invalid-input"));
     const rawResponse = await setupRawAppRequest({

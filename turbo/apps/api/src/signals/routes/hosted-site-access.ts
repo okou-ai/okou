@@ -16,9 +16,15 @@ import { hostedSiteViewer$ } from "../services/hosted-site-viewer.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
+import { env } from "../../lib/env";
 
 const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
+  if (env("HOSTED_SITE_ACCESS_ENABLED") !== "true") {
+    return resourceUnavailable(
+      "Website visibility management is not available",
+    );
+  }
   const auth = get(organizationAuthContext$);
   const features = await set(
     loadUserFeatureSwitchContext$,

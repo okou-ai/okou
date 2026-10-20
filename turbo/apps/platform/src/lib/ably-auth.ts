@@ -4,7 +4,13 @@ import type {
 } from "@okouai/api-contracts/contracts/trpc-contract";
 import type { AuthOptions } from "ably";
 import type { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { detach, Reason, throwIfAbort } from "../signals/utils.ts";
+import {
+  abortAfter,
+  detach,
+  onRejection,
+  Reason,
+  throwIfAbort,
+} from "../signals/utils.ts";
 import { accept } from "./accept.ts";
 import type { AblyAuthDiagnosticScope } from "./ably-auth-diagnostics.ts";
 import {
@@ -48,7 +54,7 @@ export function createAblyAuthCallback(
   rootSignal: AbortSignal,
 ): AuthCallback {
   return (_params, callback) => {
-    const signal = AbortSignal.any([rootSignal, AbortSignal.timeout(5000)]);
+    const signal = abortAfter(5000, rootSignal);
     const invocation: AuthDiagnosticContext = {
       ...scope.context,
       ablyAuthId: createAuthDiagnosticId(),
@@ -67,10 +73,24 @@ export function createAblyAuthCallback(
         try {
           signal.throwIfAborted();
           const client = createClient(invocation);
-          const res = await accept(
-            client.create({ body: {}, fetchOptions: { signal } }),
-            [200],
-            signal,
+          const res = await onRejection(
+            async () => {
+              const response = await accept(
+                client.create({ body: {}, fetchOptions: { signal } }),
+                [200],
+                signal,
+              );
+              signal.throwIfAborted();
+              return response;
+            },
+            () => {
+              rootSignal.throwIfAborted();
+              if (signal.aborted) {
+                // Downstream waits cancel with AbortError, but Ably still
+                // needs its callback completed for this invocation's deadline.
+                throw new Error("Ably authentication timed out");
+              }
+            },
           );
           recordAuthDiagnostic({
             stage: "ably_auth_api_finished",

@@ -1022,6 +1022,7 @@ export const resolvePublicArtifactUrl$ = command(
           },
           manifest: target.manifest,
           prefix: `shared-artifacts/${policy.publicBrand}/${target.snapshotId}/${target.id}`,
+          attachment: true,
         },
         signal,
       );

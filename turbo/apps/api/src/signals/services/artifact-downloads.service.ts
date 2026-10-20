@@ -78,6 +78,7 @@ const resolveSharedThreadArtifactDownload$ = command(
         layoutSegment: reference.publicBrand,
         target,
         viewerId: args.viewerId,
+        attachment: mediaType !== "text/html",
       },
       signal,
     );

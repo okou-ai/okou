@@ -344,6 +344,47 @@ test.each([false, true])(
   },
 );
 
+test.each([false, true])(
+  "Show the @ hint before adjacent text and preserve it when inserting a mention (new chat: %s)",
+  async (newChat) => {
+    await openAgentMentionWorkspace(newChat, true);
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    const user = userEvent.setup({ delay: null });
+    const hint = () => {
+      return composer.querySelector(
+        '[data-placeholder=" Search agents or chats…"]',
+      );
+    };
+
+    await fill(composer, "1231");
+    const text = composer.querySelector("p")?.firstChild;
+    if (!(text instanceof Text)) {
+      throw new Error("Composer text is unavailable");
+    }
+    window.getSelection()?.collapse(text, 0);
+    fireEvent(document, new Event("selectionchange"));
+    await user.keyboard("@");
+    await waitFor(() => {
+      expect(hint()).toBeInTheDocument();
+    });
+    expect(hint()?.nextSibling?.textContent).toBe("1231");
+    expect(composer.textContent).toBe("@1231");
+    expect(composer).toHaveFocus();
+
+    await user.keyboard("zeta");
+    expect(hint()).toBeNull();
+    await waitFor(() => {
+      expect(menuButton("Zeta Agent")).toHaveAttribute("data-active", "true");
+    });
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(agentMention(composer, ZETA_ID)).toBeInTheDocument();
+    });
+    expect(composer.textContent).toBe("Zeta Agent 1231");
+    expect(hint()).toBeNull();
+  },
+);
+
 test("Keep @ search available without its hint when the switch is off", async () => {
   await openAgentMentionWorkspace();
   const composer = await screen.findByRole("textbox", { name: "Message" });

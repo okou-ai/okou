@@ -12,9 +12,11 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise } from "../../utils";
 import { atomSubscriptionGrantRoutes } from "../atom-subscription-grants";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 
 const context = testContext();
@@ -25,11 +27,12 @@ const routes = Object.freeze([
   ...atomSubscriptionGrantRoutes,
   ...meModelProvidersListRoutes,
   ...meModelProvidersDeleteRoutes,
+  ...meModelProvidersUpsertRoutes,
 ]);
 function client() {
   return setupApp({ context, routes });
 }
-function fixture() {
+function fixture(provider: "claude-code" | "codex" = "claude-code") {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -82,14 +85,58 @@ function fixture() {
   return {
     ...actor,
     grantId: randomUUID(),
-    tokens: {
-      provider: "claude-code" as const,
-      accessToken: "sk-ant-test-granted",
-    },
+    tokens:
+      provider === "claude-code"
+        ? {
+            provider: "claude-code" as const,
+            accessToken: "sk-ant-test-granted",
+          }
+        : {
+            provider: "codex" as const,
+            accessToken: jwt({ exp: Math.floor(now() / 1000) + 7200 }),
+            refreshToken: "synthetic-grant-refresh-token",
+            idToken: jwt({
+              exp: Math.floor(now() / 1000) + 7200,
+              email: "subscriber@example.com",
+              "https://api.openai.com/auth": {
+                chatgpt_account_id: randomUUID(),
+                chatgpt_plan_type: "plus",
+              },
+            }),
+          },
   };
 }
 function jwt(payload: Record<string, unknown>) {
   return `${Buffer.from('{"alg":"RS256"}').toString("base64url")}.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.synthetic`;
+}
+
+function cancel(body: ReturnType<typeof fixture>) {
+  return client()(atomSubscriptionGrantsContract).cancel({
+    headers: { authorization: `Bearer ${M2M_TOKEN}` },
+    params: { grantId: body.grantId },
+    body: {
+      orgId: body.orgId,
+      userId: body.userId,
+      provider: body.tokens.provider,
+    },
+  });
+}
+
+function deliver(body: ReturnType<typeof fixture>) {
+  return client()(atomSubscriptionGrantsContract).deliver({
+    headers: { authorization: `Bearer ${M2M_TOKEN}` },
+    body,
+  });
+}
+
+async function subscriptions() {
+  const response = await accept(
+    client()(personalModelProvidersMainContract).list({
+      headers: { authorization: "Bearer clerk-session" },
+    }),
+    [200],
+  );
+  return response.body.modelProviders;
 }
 
 describe("Atom subscription grants", () => {
@@ -97,11 +144,13 @@ describe("Atom subscription grants", () => {
     mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", MACHINE_SECRET);
     server.use(
       http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
+        const token = request.headers.get("authorization");
         const accountId =
-          request.headers.get("authorization") ===
-          "Bearer sk-ant-another-account"
-            ? "claude-second-account"
-            : "claude-first-account";
+          token === "Bearer sk-ant-third-account"
+            ? "claude-third-account"
+            : token === "Bearer sk-ant-another-account"
+              ? "claude-second-account"
+              : "claude-first-account";
         return HttpResponse.json({
           account: {
             uuid: accountId,
@@ -354,5 +403,207 @@ describe("Atom subscription grants", () => {
       [200],
     );
     expect(listed.body.modelProviders).toHaveLength(0);
+  });
+
+  it.each(["claude-code", "codex"] as const)(
+    "cancels a delivered %s grant idempotently without allowing redelivery",
+    async (provider) => {
+      const body = fixture(provider);
+      await accept(deliver(body), [200]);
+      const cancelled = await accept(cancel(body), [200]);
+      expect(cancelled.body).toStrictEqual({
+        grantId: body.grantId,
+        status: "cancelled",
+      });
+      expect((await accept(cancel(body), [200])).body).toStrictEqual(
+        cancelled.body,
+      );
+      await expect(subscriptions()).resolves.toHaveLength(0);
+      await accept(deliver(body), [409]);
+      await expect(subscriptions()).resolves.toHaveLength(0);
+    },
+  );
+
+  it("cancels before delivery and prevents an in-flight delivery from binding the subscription", async () => {
+    const body = fixture();
+    const started = createDeferredPromise<void>(context.signal);
+    const profile = createDeferredPromise<Response>(context.signal);
+    server.use(
+      http.get("https://api.anthropic.com/api/oauth/profile", async () => {
+        started.resolve();
+        return await profile.promise;
+      }),
+    );
+    const delivery = deliver(body);
+    await started.promise;
+    await accept(cancel(body), [200]).finally(() => {
+      profile.resolve(
+        HttpResponse.json({
+          account: {
+            uuid: "claude-first-account",
+            email: "subscriber@example.com",
+            has_claude_pro: true,
+          },
+          organization: { uuid: "claude-workspace", name: "Personal" },
+        }),
+      );
+    });
+    await accept(delivery, [409]);
+    await expect(subscriptions()).resolves.toHaveLength(0);
+  });
+
+  it("keeps a cancellation receipt when delivery has not arrived yet", async () => {
+    const body = fixture();
+    await accept(cancel(body), [200]);
+    await accept(deliver(body), [409]);
+    await expect(subscriptions()).resolves.toHaveLength(0);
+  });
+
+  it.each(["active", "inactive"])(
+    "cancels only the granted %s account and leaves a usable default",
+    async (selection) => {
+      const first = fixture();
+      const second = {
+        ...first,
+        grantId: randomUUID(),
+        tokens: {
+          provider: "claude-code" as const,
+          accessToken: "sk-ant-another-account",
+        },
+      };
+      await accept(deliver(first), [200]);
+      await accept(deliver(second), [200]);
+      const before = await subscriptions();
+      const remaining = before.find((account) => {
+        return account.isActive === (selection === "inactive");
+      });
+      await accept(cancel(selection === "active" ? first : second), [200]);
+      await expect(subscriptions()).resolves.toMatchObject([
+        { id: remaining?.id, isActive: true },
+      ]);
+    },
+  );
+
+  it("does not cancel a newer grant for the same upstream account", async () => {
+    const first = fixture();
+    await accept(deliver(first), [200]);
+    const [account] = await subscriptions();
+    const second = { ...first, grantId: randomUUID() };
+    await accept(deliver(second), [200]);
+    await accept(cancel(first), [200]);
+    await accept(cancel(first), [200]);
+    await expect(subscriptions()).resolves.toMatchObject([
+      { id: account?.id, isActive: true },
+    ]);
+    await accept(cancel(second), [200]);
+    await expect(subscriptions()).resolves.toHaveLength(0);
+  });
+
+  it("keeps a connected default when two grants are cancelled concurrently", async () => {
+    const first = fixture();
+    const second = {
+      ...first,
+      grantId: randomUUID(),
+      tokens: {
+        provider: "claude-code" as const,
+        accessToken: "sk-ant-another-account",
+      },
+    };
+    const third = {
+      ...first,
+      grantId: randomUUID(),
+      tokens: {
+        provider: "claude-code" as const,
+        accessToken: "sk-ant-third-account",
+      },
+    };
+    for (const body of [first, second, third]) {
+      await accept(deliver(body), [200]);
+    }
+    const remaining = (await subscriptions()).find((account) => {
+      return account.accountEmail === "claude-third-account@example.com";
+    });
+    await Promise.all([
+      accept(cancel(first), [200]),
+      accept(cancel(second), [200]),
+    ]);
+    await expect(subscriptions()).resolves.toMatchObject([
+      { id: remaining?.id, isActive: true },
+    ]);
+  });
+
+  it("preserves the account when the recipient has reconnected it themselves", async () => {
+    const body = fixture();
+    await accept(deliver(body), [200]);
+    const [account] = await subscriptions();
+    await accept(
+      client()(personalModelProvidersMainContract).upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          type: "claude-code-oauth-token",
+          secret: "sk-ant-manually-reconnected",
+        },
+      }),
+      [200],
+    );
+    await accept(cancel(body), [200]);
+    await expect(subscriptions()).resolves.toMatchObject([
+      { id: account?.id, isActive: true },
+    ]);
+  });
+
+  it("rejects cancellation with another recipient, organization or provider", async () => {
+    const body = fixture();
+    await accept(deliver(body), [200]);
+    for (const change of [
+      { userId: "another-user" },
+      { orgId: "another-org" },
+      { provider: "codex" as const },
+    ]) {
+      await accept(
+        client()(atomSubscriptionGrantsContract).cancel({
+          headers: { authorization: `Bearer ${M2M_TOKEN}` },
+          params: { grantId: body.grantId },
+          body: {
+            orgId: body.orgId,
+            userId: body.userId,
+            provider: body.tokens.provider,
+            ...change,
+          },
+        }),
+        [409],
+      );
+    }
+    await expect(subscriptions()).resolves.toHaveLength(1);
+  });
+
+  it("requires verified M2M authentication to cancel and preserves the account on auth failures", async () => {
+    const body = fixture();
+    await accept(deliver(body), [200]);
+    await accept(
+      client()(atomSubscriptionGrantsContract).cancel({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { grantId: body.grantId },
+        body: {
+          orgId: body.orgId,
+          userId: body.userId,
+          provider: body.tokens.provider,
+        },
+      }),
+      [401],
+    );
+    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", undefined);
+    await accept(cancel(body), [503]);
+    await expect(subscriptions()).resolves.toHaveLength(1);
+  });
+
+  it("can cancel after the recipient has left the organization", async () => {
+    const body = fixture();
+    await accept(deliver(body), [200]);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [] },
+    );
+    await accept(cancel(body), [200]);
+    await expect(subscriptions()).resolves.toHaveLength(0);
   });
 });

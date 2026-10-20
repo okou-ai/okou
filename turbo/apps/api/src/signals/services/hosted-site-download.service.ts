@@ -55,9 +55,13 @@ export const createHostedSiteDownloadGrant$ = command(
     if (!policy) {
       throw new Error("Hosted site is no longer available");
     }
-    // Deploy the reader before issuing these links. An explicit policy keeps
+    // Preserve GA direct-storage downloads until #41704 activates the deployed
+    // reader and closes the old API rollback window. An explicit policy keeps
     // controlled delivery active even after the management flag is disabled.
     if (policy.revision === null) {
+      if (env("HOSTED_SITE_ACCESS_ENABLED") !== "true") {
+        return null;
+      }
       const features = await set(
         loadUserFeatureSwitchContext$,
         policy.site.orgId,

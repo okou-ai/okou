@@ -1,4 +1,5 @@
 import { createClerkClient } from "@clerk/backend";
+import { z } from "zod";
 import { hostedSiteAccessDecisionSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 
 export interface SiteAuthEnv {
@@ -9,6 +10,15 @@ export interface SiteAuthEnv {
   readonly HOST_DOMAIN: string;
   readonly OKOU_HOST_DOMAIN: string;
   readonly HOSTED_SITE_API_ORIGIN?: string;
+  /** Prepared by default; enable only after #41704 accepts every serving route. */
+  readonly HOSTED_SITE_ACCESS_ENABLED?: string;
+}
+
+const activationSchema = z.enum(["true", "false"]).default("false");
+const preparedDecisionSchema = z.object({ allowed: z.boolean() });
+
+export function hostedSiteAccessEnabled(env: SiteAuthEnv): boolean {
+  return activationSchema.parse(env.HOSTED_SITE_ACCESS_ENABLED) === "true";
 }
 
 const COOKIE_PREFIX = "__Host-okou-";
@@ -157,7 +167,12 @@ async function identity(request: Request, env: SiteAuthEnv) {
   };
 }
 
-async function decision(request: Request, endpoint: URL, token?: string) {
+async function decision(
+  request: Request,
+  env: SiteAuthEnv,
+  endpoint: URL,
+  token?: string,
+) {
   const response = await fetch(endpoint, {
     cache: "no-store",
     redirect: "manual",
@@ -166,7 +181,17 @@ async function decision(request: Request, endpoint: URL, token?: string) {
   });
   if (response.status !== 200)
     throw new Error("Hosted site authority is unavailable");
-  return hostedSiteAccessDecisionSchema.parse(await response.json());
+  const body: unknown = await response.json();
+  // Preserve the GA delivery protocol while API rollback targets predate this
+  // feature. Remove the prepared reader after #41704 establishes the API floor
+  // and activates all routes. Active readers never infer Public on an old API.
+  if (!hostedSiteAccessEnabled(env)) {
+    const { allowed } = preparedDecisionSchema.parse(body);
+    return allowed
+      ? { allowed: true as const, decision: "allow" as const }
+      : { allowed: false as const, decision: "deny" as const };
+  }
+  return hostedSiteAccessDecisionSchema.parse(body);
 }
 
 export function withSiteAuthHeaders(
@@ -197,7 +222,7 @@ export async function authorizeSiteRequest(
   | { readonly headers: Headers; readonly response?: never }
   | { readonly response: Response; readonly headers?: never }
 > {
-  const anonymous = await decision(request, endpoint);
+  const anonymous = await decision(request, env, endpoint);
   // A later visibility change must reach the Worker even for preview assets.
   if (anonymous.allowed)
     return { headers: new Headers({ "Cache-Control": "private, no-store" }) };
@@ -210,7 +235,7 @@ export async function authorizeSiteRequest(
     };
   const auth = await identity(request, env);
   if (auth.response) return auth;
-  const authenticated = await decision(request, endpoint, auth.token);
+  const authenticated = await decision(request, env, endpoint, auth.token);
   if (authenticated.allowed) return { headers: auth.headers };
   return {
     response: new Response(
@@ -231,7 +256,11 @@ export async function withHostedSiteAccess(
   siteId: string,
   serve: () => Promise<Response>,
 ): Promise<Response> {
-  if (!env.HOSTED_SITE_API_ORIGIN) return serve();
+  // Preserve existing preview/share grants during preparation. #41704 removes
+  // this branch only after every serving Worker and API rollback target is ready.
+  if (!hostedSiteAccessEnabled(env)) return serve();
+  if (!env.HOSTED_SITE_API_ORIGIN)
+    throw new Error("Hosted site authority is unavailable");
   const endpoint = new URL(
     `/api/host/sites/${encodeURIComponent(siteId)}/access`,
     env.HOSTED_SITE_API_ORIGIN,

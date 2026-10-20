@@ -17,12 +17,21 @@ final class ConversationHistoryFixture: Sendable {
     self.init(rows: (0..<count).map { Self.row($0 + 1) })
   }
 
-  init(rows initial: [String]) {
+  init(rows initial: [String], fileOrigin: URL? = nil) {
     let rows = HistoryRows(initial)
     self.rows = rows
     http = ChatHTTPFixture { request in
       let path = "/api/chat-threads/\(Self.threadID)"
       switch request.url?.path {
+      case "/api/web/file-url":
+        guard let fileOrigin else { throw URLError(.unsupportedURL) }
+        let id =
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value
+          ?? "file"
+        return ChatHTTPResponse(
+          body:
+            "{\"url\":\"\(fileOrigin)/\(id)\",\"downloadUrl\":\"\(fileOrigin)/\(id)\",\"previewImageUrl\":null}"
+        )
       case path + "/event-snapshot":
         return ChatHTTPResponse(
           status: 404,

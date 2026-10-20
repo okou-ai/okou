@@ -109,7 +109,12 @@ function environment(
   return {
     HOST_DOMAIN: "sites.vm0.io",
     OKOU_HOST_DOMAIN: "okou.app",
-    ...(configured ? { HOSTED_SITE_API_ORIGIN: "https://authority.test" } : {}),
+    ...(configured
+      ? {
+          HOSTED_SITE_API_ORIGIN: "https://authority.test",
+          HOSTED_SITE_ACCESS_ENABLED: "true",
+        }
+      : {}),
     HOSTED_SITES_BUCKET: {
       head: async () => {
         return null;
@@ -130,6 +135,57 @@ function environment(
     },
   };
 }
+
+it.each([true, false])(
+  "preserves the old API's allow=%s decision before activation",
+  async (allowed) => {
+    server.use(
+      http.get(endpoint, () => {
+        return HttpResponse.json({ allowed });
+      }),
+    );
+    const env = {
+      ...environment(),
+      HOSTED_SITE_ACCESS_ENABLED: undefined,
+    };
+    for (const alias of ["demo", `dpl-${deploymentId}`]) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await fetchWorker(
+          new Request(`https://${alias}.okou.app/`, { method }),
+          env,
+        );
+        expect(response.status).toBe(allowed ? 200 : 404);
+        expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      }
+    }
+  },
+);
+
+it("fails closed on an old API response once access enforcement is activated", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({ allowed: true });
+    }),
+  );
+  expect(
+    (await fetchWorker(new Request("https://demo.okou.app/"), environment()))
+      .status,
+  ).toBe(503);
+});
+
+it.each(["true", "invalid"])(
+  "does not serve storage-only content with activation=%s",
+  async (activation) => {
+    expect(
+      (
+        await fetchWorker(new Request("https://demo.okou.app/"), {
+          ...environment(false),
+          HOSTED_SITE_ACCESS_ENABLED: activation,
+        })
+      ).status,
+    ).toBe(503);
+  },
+);
 
 it.each(["/", "/style-12345678.css"])(
   "never reads restricted content without configured Clerk: %s",

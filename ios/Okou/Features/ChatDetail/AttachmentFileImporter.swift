@@ -5,7 +5,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-struct ImportedAttachmentFile: Transferable, Sendable {
+struct ImportedAttachmentFile: Codable, Equatable, Transferable, Sendable {
   let url: URL
   let filename: String
   let contentType: String
@@ -21,7 +21,10 @@ struct ImportedAttachmentFile: Transferable, Sendable {
     }
   }
 
-  func remove() { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+  func remove() {
+    guard url.isFileURL else { return }
+    try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+  }
 }
 
 /// Copy provider-owned URLs while access is granted; file IO and thumbnail decoding stay off main.
@@ -34,7 +37,13 @@ actor AttachmentFileImporter {
     defer { if access { source.stopAccessingSecurityScopedResource() } }
     let directory = FileManager.default.temporaryDirectory
       .appending(path: "OkouAttachments/\(UUID().uuidString)", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: directory, withIntermediateDirectories: true,
+      attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    var mutable = directory
+    var backup = URLResourceValues()
+    backup.isExcludedFromBackup = true
+    try mutable.setResourceValues(backup)
     do {
       var result: ImportedAttachmentFile?
       var failure: Error?
@@ -76,13 +85,13 @@ actor AttachmentFileImporter {
     }
   }
 
-  private func thumbnail(_ url: URL) -> Data? {
+  func thumbnail(_ url: URL, maximumPixelSize: Int = 160) -> Data? {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
       let image = CGImageSourceCreateThumbnailAtIndex(
         source, 0,
         [
           kCGImageSourceCreateThumbnailFromImageAlways: true,
-          kCGImageSourceThumbnailMaxPixelSize: 160,
+          kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
           kCGImageSourceCreateThumbnailWithTransform: true,
           kCGImageSourceShouldCacheImmediately: true,
         ] as CFDictionary)

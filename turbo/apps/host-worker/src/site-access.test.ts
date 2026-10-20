@@ -6,6 +6,7 @@ import { authorizeSiteRequest } from "./site-access";
 const endpoint = new URL("https://authority.test/api/host/sites/site/access");
 const publishableKey = `pk_live_${btoa("clerk.primary.test$")}`;
 const env = {
+  HOSTED_SITE_ACCESS_ENABLED: "true",
   HOST_DOMAIN: "sites.vm0.io",
   OKOU_HOST_DOMAIN: "okou.app",
   CLERK_PUBLISHABLE_KEY: publishableKey,
@@ -100,7 +101,11 @@ it("does not invoke Clerk for public requests, including stale cookies", async (
     new Request("https://demo.okou.app/", {
       headers: { Cookie: "__Host-okou-__session=expired" },
     }),
-    { HOST_DOMAIN: "sites.vm0.io", OKOU_HOST_DOMAIN: "okou.app" },
+    {
+      HOST_DOMAIN: "sites.vm0.io",
+      OKOU_HOST_DOMAIN: "okou.app",
+      HOSTED_SITE_ACCESS_ENABLED: "true",
+    },
     endpoint,
   );
   expect(result.response).toBeUndefined();

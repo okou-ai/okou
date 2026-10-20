@@ -111,7 +111,11 @@ function fixture(immutableContent = true) {
 describe("private HTML preview gateway", () => {
   it("enforces Site policy before preview assets and disables long browser caching", async () => {
     const f = fixture();
-    const env = { ...f.env, HOSTED_SITE_API_ORIGIN: "https://authority.test" };
+    const env = {
+      ...f.env,
+      HOSTED_SITE_API_ORIGIN: "https://authority.test",
+      HOSTED_SITE_ACCESS_ENABLED: "true",
+    };
     let allowed = true;
     server.use(
       http.get("https://authority.test/api/host/sites/site/access", () => {
@@ -134,6 +138,29 @@ describe("private HTML preview gateway", () => {
       (await fetchWorker(new Request(`${origin}/assets/site.css`), env)).status,
     ).toBe(404);
     expect(f.reads).not.toContain(`${prefix}/assets/site.css`);
+  });
+
+  it("preserves preview credentials and asset caching before activation when the API is unavailable", async () => {
+    const f = fixture();
+    server.use(
+      http.get("https://authority.test/*", () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    const env = { ...f.env, HOSTED_SITE_API_ORIGIN: "https://authority.test" };
+    const response = await fetchWorker(
+      new Request(`${origin}/assets/site.css`),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "private, max-age=31536000, must-revalidate",
+    );
+    f.grant.expiresAt = "2000-01-01T00:00:00.000Z";
+    f.objects.set(grantKey, JSON.stringify(f.grant));
+    expect(
+      (await fetchWorker(new Request(`${origin}/assets/site.css`), env)).status,
+    ).toBe(404);
   });
 
   it("serves every bundled resource and navigation with a deployment credential, without cookies", async () => {

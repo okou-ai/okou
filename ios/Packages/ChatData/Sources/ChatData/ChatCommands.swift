@@ -44,6 +44,11 @@ public actor ChatCommands {
       pinnedAt: nil, pinOrder: nil, indicator: nil)
   }
 
+  public func validateAttachment(_ id: String) async throws {
+    _ = try await client.data(
+      "/api/web/file-url", query: [URLQueryItem(name: "file_id", value: id)])
+  }
+
   public func uploadAttachment(
     file: URL, filename: String, contentType: String,
     progress: @escaping @Sendable (Double) -> Void = { _ in }
@@ -52,14 +57,21 @@ public actor ChatCommands {
       file: file, filename: filename, contentType: contentType, progress: progress)
   }
 
+  public func downloadAttachment(
+    _ attachment: ChatMessageAttachment, thumbnail: Bool = false
+  ) async throws -> ChatAttachmentFile? {
+    try await ChatAttachmentDownload(client: client).download(attachment, thumbnail: thumbnail)
+  }
+
   public func send(
     thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
+    document: ChatDraftDocument? = nil,
     clientEventID: String = UUID().uuidString
   )
     async throws -> SendReceipt
   {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !prompt.isEmpty || !attachments.isEmpty else {
+    guard !prompt.isEmpty || !attachments.isEmpty || document?.parts.isEmpty == false else {
       throw ChatError.invalidContract("Enter a message before sending.")
     }
     guard UUID(uuidString: clientEventID) != nil else {
@@ -75,8 +87,16 @@ public actor ChatCommands {
       agentId: metadata.agentId, threadId: thread.id,
       prompt: prompt.isEmpty ? "(see attached files)" : prompt,
       clientEventId: clientEventID, chatThreadSortEventId: UUID().uuidString,
-      userMessage: .init(
-        parts: (prompt.isEmpty ? [] : [.text(prompt)]) + attachments.map { .file($0) }),
+      userMessage: document
+        ?? ChatDraftDocument(
+          parts: (prompt.isEmpty
+            ? [] : [.object(["type": .string("text"), "text": .string(prompt)])])
+            + attachments.map {
+              .object([
+                "type": .string("file"), "fileId": .string($0.id),
+                "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
+              ])
+            }),
       hasTextContent: !prompt.isEmpty)
     do {
       let result: ChatSendResponse = try await client.request(
@@ -193,32 +213,8 @@ public actor ChatCommands {
     let prompt: String
     let clientEventId: String
     let chatThreadSortEventId: String
-    let userMessage: Document
+    let userMessage: ChatDraftDocument
     let hasTextContent: Bool
-    struct Document: Encodable {
-      let version = 1
-      let parts: [Part]
-      enum Part: Encodable {
-        case text(String)
-        case file(ChatAttachment)
-
-        enum Keys: String, CodingKey { case type, text, fileId, filenameSnapshot, contentType }
-
-        func encode(to encoder: Encoder) throws {
-          var container = encoder.container(keyedBy: Keys.self)
-          switch self {
-          case .text(let text):
-            try container.encode("text", forKey: .type)
-            try container.encode(text, forKey: .text)
-          case .file(let file):
-            try container.encode("file", forKey: .type)
-            try container.encode(file.id, forKey: .fileId)
-            try container.encode(file.filename, forKey: .filenameSnapshot)
-            try container.encode(file.contentType, forKey: .contentType)
-          }
-        }
-      }
-    }
     enum Keys: String, CodingKey {
       case agentId, threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
       case hasTextContent, computerUseHostId, cloudBrowserEnabled

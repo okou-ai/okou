@@ -4,6 +4,7 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { mockEnv } from "../../../lib/env";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { hostRoutes } from "../host";
@@ -33,6 +34,7 @@ function client(user?: ApiTestUser) {
 }
 
 async function enable(user: ApiTestUser, value = true) {
+  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "true");
   client(user);
   await accept(
     setupAppWithRoutes({ context, routes: featureSwitchesRoutes })(
@@ -44,6 +46,32 @@ async function enable(user: ApiTestUser, value = true) {
     [200],
   );
 }
+
+test("preparation keeps downloads public and blocks writes even with a user override", async () => {
+  const { owner, api, prepared, request } = await publish();
+  await enable(owner);
+  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "private", expectedRevision: null },
+    }),
+    [403],
+  );
+  expect(
+    (await accept(client().deliveryAuthorization(request), [200])).body.allowed,
+  ).toBeTruthy();
+  const files = await api.requestHostedSiteFiles(
+    owner,
+    `dpl-${prepared.deploymentId}`,
+    [200],
+  );
+  if (files.status !== 200) {
+    throw new Error("Expected hosted download files");
+  }
+  expect(files.body.files[0]!.downloadUrl).not.toContain("/.okou/download/");
+});
 
 async function publish() {
   const owner = createBddApi(context).user();
@@ -375,6 +403,7 @@ test("private downloads remain controlled with management disabled and stop afte
     [200],
   );
   await enable(owner, false);
+  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
   const files = await api.requestHostedSiteFiles(
     owner,
     `dpl-${prepared.deploymentId}`,
