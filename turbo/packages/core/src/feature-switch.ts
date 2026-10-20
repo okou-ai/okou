@@ -429,7 +429,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the verified Discord guild and bot DM integration.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "yuma@okou.ai",
