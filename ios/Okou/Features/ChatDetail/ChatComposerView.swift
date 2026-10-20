@@ -92,7 +92,7 @@ struct ChatComposerView: View {
 
       ChatComposerTextInput(
         text: $draft, isFocused: $isFocused,
-        acceptsImages: supportsAttachments && !isBusy && !needsUpgrade,
+        acceptsImages: !isBusy && !needsUpgrade,
         pasteImages: attachments.importPastedImages
       )
       .id(attachments.inputID)

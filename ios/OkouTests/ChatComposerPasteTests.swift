@@ -154,21 +154,22 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
   }
 
-  func testFeatureSwitchOffKeepsTextPasteAndRejectsImages() async throws {
+  func testCompactComposerKeepsPlaceholderAndNativeTextPaste() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
-    let host = UIHostingController(rootView: composer(conversation, supportsAttachments: false))
+    let host = UIHostingController(rootView: composer(conversation))
     let window = try await mount(host)
     defer { unmount(window) }
-    attach(window, name: "Compact native composer with attachments disabled")
+    attach(window, name: "Compact native composer")
     let input = try XCTUnwrap(textView(in: host.view))
-    let file = try makeImage()
-    defer { try? FileManager.default.removeItem(at: file) }
+    XCTAssertFalse(input.placeholder.isHidden)
+    XCTAssertEqual(input.placeholder.text, "Message Okou")
+    XCTAssertLessThan(input.bounds.height, UIFont.systemFont(ofSize: 16).lineHeight * 2)
     input.becomeFirstResponder()
-    input.paste(itemProviders: [try XCTUnwrap(NSItemProvider(contentsOf: file))])
     input.paste(itemProviders: [NSItemProvider(object: "text still works" as NSString)])
     try await eventually { conversation.draft == "text still works" }
+    XCTAssertTrue(input.placeholder.isHidden)
     XCTAssertFalse(conversation.attachmentDraft.hasAttachments)
     XCTAssertTrue(fixture.state.value.withLock { $0.preparations.isEmpty })
   }
@@ -346,7 +347,7 @@ final class ChatComposerPasteTests: XCTestCase {
     return window
   }
 
-  private func composer(_ conversation: ConversationStore, supportsAttachments: Bool = true)
+  private func composer(_ conversation: ConversationStore)
     -> some View
   {
     ChatComposerView(
@@ -354,7 +355,7 @@ final class ChatComposerPasteTests: XCTestCase {
       isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
       error: nil, attachmentURL: URL(string: "https://app.example.invalid")!,
       attachments: conversation.attachmentDraft,
-      supportsAttachments: supportsAttachments, submit: { await conversation.send() }, refresh: nil)
+      supportsAttachments: true, submit: { await conversation.send() }, refresh: nil)
   }
 
   private func imageData() -> Data {
