@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.53.10](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.9...sandbox-firecracker-v0.53.10) (2026-10-20)
+
 ## [0.53.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.8...sandbox-firecracker-v0.53.9) (2026-10-20)
 
 ## [0.53.8](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.7...sandbox-firecracker-v0.53.8) (2026-10-19)

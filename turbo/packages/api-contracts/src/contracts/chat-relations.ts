@@ -78,4 +78,3 @@ export const chatRelationsContract = c.router({
 export type RelatedChat = z.infer<typeof relatedChatSchema>;
 export type CreatedChatRelation = z.infer<typeof createdChatSchema>;
 export type ChatCommunication = z.infer<typeof communicationSchema>;
-export type ChatRelationMessage = z.infer<typeof messageSchema>;

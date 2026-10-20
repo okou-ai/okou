@@ -302,10 +302,16 @@ function createCatalogConnectorActivation(
         get(signals.catalogItem$),
       ]);
       signal.throwIfAborted();
-      const reconnectRequired =
-        catalogItem !== null &&
-        builtinConnectorCurrentConnectionStatus(catalogItem) ===
-          "reconnect-required";
+      const status =
+        catalogItem === null
+          ? null
+          : builtinConnectorCurrentConnectionStatus(catalogItem);
+      if (status === "unavailable") {
+        throw new Error(
+          "Connector account metadata is unavailable. Refresh and try again.",
+        );
+      }
+      const reconnectRequired = status === "reconnect-required";
       if (connected && !reconnectRequired) {
         await set(
           authorizeDirectedConnector$,
@@ -402,12 +408,16 @@ function createCatalogConnectorSignals(
       get(authorized$),
       get(catalogItem$),
     ]);
+    const status =
+      catalogItem === null
+        ? null
+        : builtinConnectorCurrentConnectionStatus(catalogItem);
     return (
       connected &&
       authorized &&
       catalogItem !== null &&
-      builtinConnectorCurrentConnectionStatus(catalogItem) !==
-        "reconnect-required"
+      status !== "reconnect-required" &&
+      status !== "unavailable"
     );
   });
 

@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import type { Ref, UIEventHandler } from "react";
 import { cn, Toggle, ToggleGroup } from "@okouai/ui";
 
 import {
@@ -32,6 +32,8 @@ export function TemplateFilterPillRow({
   layout = "wrap",
   fade,
   scrollerRef,
+  rail,
+  onScroll,
   onSelect,
 }: {
   readonly pills: readonly TemplateFilterPill[];
@@ -41,6 +43,9 @@ export function TemplateFilterPillRow({
   readonly layout?: "wrap" | "scroll";
   readonly fade?: ScrollFade;
   readonly scrollerRef?: Ref<HTMLDivElement>;
+  /** Names the row for a `RailPager` in the nearest `data-rail-root`. */
+  readonly rail?: string;
+  readonly onScroll?: UIEventHandler<HTMLDivElement>;
   readonly onSelect: (id: string) => void;
 }) {
   return (
@@ -51,6 +56,8 @@ export function TemplateFilterPillRow({
         onSelect(value[0] ?? active);
       }}
       aria-label={label}
+      data-rail={rail}
+      onScroll={onScroll}
       data-fade={fade === "none" ? undefined : fade}
       className={cn(
         "flex items-center gap-1.5",

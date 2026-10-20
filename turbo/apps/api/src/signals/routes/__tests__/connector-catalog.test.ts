@@ -134,13 +134,13 @@ describe("GET /api/connector-catalog", () => {
   });
 
   it.each([
-    ["posthog", "oauth", "auth-code"],
-    ["calendly", "oauth", "auth-code"],
-    ["monday-mcp", "automatic", "automatic"],
-    ["plaud-mcp", "automatic", "automatic"],
+    ["posthog", "oauth", "auth-code", true],
+    ["calendly", "oauth", "auth-code", true],
+    ["monday-mcp", "automatic", "automatic", false],
+    ["plaud-mcp", "automatic", "automatic", false],
   ] as const)(
     "returns public catalog metadata including %s auth methods",
-    async (connectorSlug, authMethodId, grantKind) => {
+    async (connectorSlug, authMethodId, grantKind, supportsRefresh) => {
       mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
       const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -156,7 +156,11 @@ describe("GET /api/connector-catalog", () => {
         expect.objectContaining({
           slug: connectorSlug,
           authMethods: expect.arrayContaining([
-            expect.objectContaining({ id: authMethodId, grantKind }),
+            expect.objectContaining({
+              id: authMethodId,
+              grantKind,
+              supportsRefresh,
+            }),
           ]),
         }),
       );
@@ -191,6 +195,7 @@ describe("GET /api/connector-catalog", () => {
         label: "API Key",
         description: expect.any(String),
         grantKind: "manual",
+        supportsRefresh: false,
       },
     ]);
     expect(openai?.permissionSummary).toStrictEqual({
@@ -462,6 +467,7 @@ describe("GET /api/connector-catalog", () => {
         label: "API Key",
         description: expect.any(String),
         grantKind: "manual",
+        supportsRefresh: false,
         manualFields: [
           {
             id: "apiKey",

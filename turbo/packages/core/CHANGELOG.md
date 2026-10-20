@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.773.0](https://github.com/okou-ai/okou/compare/core-v8.772.0...core-v8.773.0) (2026-10-20)
+
+
+### Features
+
+* **host:** enforce hosted site visibility in the delivery worker ([#41707](https://github.com/okou-ai/okou/issues/41707)) ([15308b6](https://github.com/okou-ai/okou/commit/15308b61db8a86f607f1400363c24449a3d233c2))
+* route document generation through the office skill ([#41735](https://github.com/okou-ai/okou/issues/41735)) ([d5d8560](https://github.com/okou-ai/okou/commit/d5d85600d5beaf338b9d5580b5be0f733814a306))
+
+
+### Refactoring
+
+* **ios:** remove dedicated feature switches ([#41675](https://github.com/okou-ai/okou/issues/41675)) ([261b88c](https://github.com/okou-ai/okou/commit/261b88cfcbd8edc9073b6ae64863b5d56e7baaa9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.579.0
+
 ## [8.772.0](https://github.com/okou-ai/okou/compare/core-v8.771.0...core-v8.772.0) (2026-10-20)
 
 

@@ -2,7 +2,10 @@ import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import { measureRail } from "../../signals/okou-page/rail-travel.ts";
+import {
+  measureRail,
+  type RailTravel,
+} from "../../signals/okou-page/rail-travel.ts";
 import { ComposerRailPager } from "./rail-pager.tsx";
 
 /**
@@ -96,6 +99,25 @@ const RAIL_FADE_OFF = cn(
   "has-[:focus-visible]:[mask-image:none]",
 );
 /**
+ * The fade a row carries for its travel, with the focus override. Exported for
+ * rows that are not `ComposerRail` items -- the document shelf's filter pills
+ * are one `ToggleGroup` -- so every row on the shelf dissolves the same 56px.
+ */
+export function composerRailFade(travel: RailTravel | undefined): string {
+  const canBack = travel?.canScrollBack ?? false;
+  const canForward = travel?.canScrollForward ?? false;
+  return cn(
+    canBack
+      ? canForward
+        ? RAIL_FADE.both
+        : RAIL_FADE.back
+      : canForward
+        ? RAIL_FADE.forward
+        : RAIL_FADE.none,
+    RAIL_FADE_OFF,
+  );
+}
+/**
  * One row of controls, rendered as a rail. Both pagers only exist while the
  * rail has somewhere to go in that direction, so the row never offers to move
  * past its own ends.
@@ -123,13 +145,6 @@ export function ComposerRail({
   const bindRail = useSet(signals.taskChips.bindRail$);
   const canBack = travel?.canScrollBack ?? false;
   const canForward = travel?.canScrollForward ?? false;
-  const fade = canBack
-    ? canForward
-      ? RAIL_FADE.both
-      : RAIL_FADE.back
-    : canForward
-      ? RAIL_FADE.forward
-      : RAIL_FADE.none;
   return (
     <div
       className="relative min-w-0"
@@ -140,7 +155,7 @@ export function ComposerRail({
       <div
         data-rail={rail}
         ref={bindRail}
-        className={cn(RAIL, gap, fade, RAIL_FADE_OFF)}
+        className={cn(RAIL, gap, composerRailFade(travel))}
         onScroll={(event) => {
           setTravel(rail, measureRail(event.currentTarget));
         }}

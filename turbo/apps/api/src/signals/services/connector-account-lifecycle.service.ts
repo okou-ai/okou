@@ -818,8 +818,14 @@ function setupAttentionCount(
   }).length;
 }
 
+interface ConnectorAccountSummaryScope {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly includeScopeMismatch?: true;
+}
+
 export function connectorAccountSummaries(
-  owner$: Computed<{ readonly orgId: string; readonly userId: string }>,
+  owner$: Computed<ConnectorAccountSummaryScope>,
 ): Computed<Promise<readonly ConnectorAccountSummary[]>> {
   const groups$ = connectorAccountSummaryGroups(owner$);
   const authLookup$ = connectorAccountAuthLookup(groups$);
@@ -906,7 +912,7 @@ export function connectorAccountSummaries(
         row,
         snapshot,
         now,
-        false,
+        args.includeScopeMismatch === true,
         markers.get(connectorAccountSetupMarkerKey(row)),
       );
       if (connection) {

@@ -53,13 +53,13 @@ export function directoryConnectorAccountProjections(
   summaries: ReadonlyMap<string, ConnectorAccountSummary> | undefined,
 ) {
   return connectors.map((connector) => {
-    const account = summaries?.get(
+    if (summaries === undefined) {
+      return connector;
+    }
+    const account = summaries.get(
       `builtin:${connector.slug}`,
     )?.defaultConnection;
-    // A known default supplies UI identity. Otherwise preserve raw metadata so
-    // existing stale-identity guards can offer management without inventing one.
-    // #41699 drops retained projections after replacement API/client drain.
-    return account ? withMemberAccount(connector, account) : connector;
+    return withMemberAccount(connector, account);
   });
 }
 
@@ -108,7 +108,8 @@ function needsAttention(
   return (
     (summary?.attentionCount ?? 0) > 0 ||
     summary?.defaultConnection === null ||
-    status === "scope-mismatch"
+    status === "scope-mismatch" ||
+    status === "unavailable"
   );
 }
 

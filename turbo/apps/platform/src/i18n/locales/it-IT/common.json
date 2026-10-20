@@ -2185,16 +2185,11 @@
       "skipAutomationEvent": "Salta evento di automazione"
     },
     "relations": {
-      "communications": "Chat",
-      "idle": "Inattiva",
+      "chats": "Chat",
       "loadFailed": "Caricamento non riuscito",
-      "messageUnavailable": "Messaggio non disponibile",
       "origin": "Da",
       "queued": "In coda",
-      "received": "Ricevuto",
       "running": "In esecuzione",
-      "sent": "Inviato",
-      "toggleMessages": "Messaggi con {{title}}",
       "unavailable": "Non disponibile",
       "untitled": "Senza titolo"
     },
@@ -2218,8 +2213,10 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
+      "empty": "Artefatti e chat correlate di questa chat compaiono qui.",
       "expand": "Espandi",
       "loadFailed": "Impossibile caricare le risorse",
+      "loading": "Caricamento risorse",
       "retry": "Riprova",
       "title": "Risorse della chat"
     },
@@ -4025,7 +4022,6 @@
   },
   "documentTemplates": {
     "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
-    "back": "Torna ai modelli",
     "categories": {
       "all": "Tutti",
       "business-record": "Documenti commerciali",
@@ -4076,7 +4072,6 @@
     "preview": "Anteprima di {{title}}",
     "previousPage": "Pagina di esempio precedente",
     "retry": "Riprova",
-    "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
     "useNamed": "Usa {{title}}"
   },
@@ -5150,6 +5145,10 @@
           "title": "Modello predefinito"
         },
         "description": "Scegli le impostazioni predefinite per le nuove chat e come inviare i messaggi.",
+        "resources": {
+          "description": "Mostra artefatti e chat correlate accanto alla conversazione quando c’è spazio.",
+          "title": "Apri risorse automaticamente"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

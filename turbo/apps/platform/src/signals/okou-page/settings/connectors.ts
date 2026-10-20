@@ -376,12 +376,22 @@ function connectorTokenExpiresAtMs(
 export function builtinConnectorCurrentConnectionStatus(
   connector: PlatformConnectorCatalogConnectItem,
   nowMs = now(),
-): PublicConnectorCatalogConnectionStatus {
+): PublicConnectorCatalogConnectionStatus | "unavailable" {
+  if (connector.connectionStatus === undefined) {
+    return "unavailable";
+  }
   if (connector.connectionStatus === "not-connected") {
     return "not-connected";
   }
-  if (!connector.authMethodSupportsRefresh) {
-    const tokenExpiresAtMs = connectorTokenExpiresAtMs(connector);
+  const tokenExpiresAtMs = connectorTokenExpiresAtMs(connector);
+  if (
+    connector.connectionStatus !== "reconnect-required" &&
+    tokenExpiresAtMs !== null &&
+    connector.authMethodSupportsRefresh === undefined
+  ) {
+    return "unavailable";
+  }
+  if (connector.authMethodSupportsRefresh === false) {
     if (tokenExpiresAtMs !== null && tokenExpiresAtMs <= nowMs) {
       return "reconnect-required";
     }
@@ -395,7 +405,7 @@ export function builtinConnectorExpiryCountdownText(
 ): string | null {
   if (
     builtinConnectorCurrentConnectionStatus(connector, nowMs) !== "connected" ||
-    connector.authMethodSupportsRefresh
+    connector.authMethodSupportsRefresh !== false
   ) {
     return null;
   }

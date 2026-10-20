@@ -411,7 +411,10 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
   );
   return testConnectorCatalogDefinitions.map((definition) => {
     const authMethods = definition.authMethods.map((method) => {
-      return method.detail;
+      return {
+        ...method.detail,
+        supportsRefresh: method.supportsRefresh,
+      };
     });
     return mockConnectorCatalogStatusItem(
       definition,
@@ -565,16 +568,28 @@ export const apiConnectorsHandlers = [
     return respond(200, { permissions });
   }),
 
-  mockApi(connectorAccountsContract.summaries, ({ respond }) => {
+  mockApi(connectorAccountsContract.summaries, ({ query, respond }) => {
     return respond(200, {
       summaries: mockConnectors.map((connector) => {
         const account = mockAccountForConnector(connector);
+        const definition = testConnectorCatalogDefinitions.find((candidate) => {
+          return candidate.connectorSlug === connector.slug;
+        });
         return {
           target: account.target,
           accountCount: 1,
           attentionCount:
             account.connectionStatus === "reconnect-required" ? 1 : 0,
-          defaultConnection: account,
+          defaultConnection:
+            query?.includeScopeMismatch === "true" && definition
+              ? {
+                  ...account,
+                  scopeMismatch: !mockConnectorHasRequestedScopes(
+                    definition,
+                    connector,
+                  ),
+                }
+              : account,
         };
       }),
     });

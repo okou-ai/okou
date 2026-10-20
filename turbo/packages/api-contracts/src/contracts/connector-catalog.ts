@@ -16,6 +16,9 @@ const publicConnectorCatalogAuthMethodSummarySchema = z.object({
   id: connectorAuthMethodIdSchema,
   label: z.string(),
   description: z.string().nullable(),
+  // Optional while prepared readers can still reach an older serving API.
+  // #41699 requires this method-owned fact after preparation and API drain.
+  supportsRefresh: z.boolean().optional(),
   grantKind: z.enum([
     "none",
     "automatic",

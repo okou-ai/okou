@@ -2145,16 +2145,11 @@
       "skipAutomationEvent": "Skip automation event"
     },
     "relations": {
-      "communications": "Chats",
-      "idle": "Idle",
+      "chats": "Chats",
       "loadFailed": "Could not load",
-      "messageUnavailable": "Message unavailable",
       "origin": "From",
       "queued": "Queued",
-      "received": "Received",
       "running": "Running",
-      "sent": "Sent",
-      "toggleMessages": "Messages with {{title}}",
       "unavailable": "Unavailable",
       "untitled": "Untitled"
     },
@@ -2177,8 +2172,10 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
+      "empty": "Artifacts and related chats from this chat appear here.",
       "expand": "Expand",
       "loadFailed": "Could not load resources",
+      "loading": "Loading resources",
       "retry": "Try again",
       "title": "Resources"
     },
@@ -3958,7 +3955,6 @@
   },
   "documentTemplates": {
     "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",
-    "back": "Back to templates",
     "categories": {
       "all": "All",
       "business-record": "Business records",
@@ -4009,7 +4005,6 @@
     "preview": "Preview {{title}}",
     "previousPage": "Previous sample page",
     "retry": "Retry",
-    "samplePages": "Sample pages: {{total}}",
     "title": "Document",
     "useNamed": "Use {{title}}"
   },
@@ -5076,6 +5071,10 @@
           "title": "Default model"
         },
         "description": "Choose defaults for new chats and how messages are sent.",
+        "resources": {
+          "description": "Show a chat's artifacts and related chats beside the conversation when there is room.",
+          "title": "Open resources automatically"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

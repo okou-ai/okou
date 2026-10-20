@@ -231,7 +231,7 @@ test.each(["messages", "artifacts"])(
   },
 );
 
-test("Share the saved preference with another chat and discard temporary state on navigation", async () => {
+test("Keep a manual close local to its chat and start each visit from the saved default", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   const first = continuityThread(91, 1, "First resources");
@@ -276,9 +276,6 @@ test("Share the saved preference with another chat and discard temporary state o
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  });
   const next = queryAllByRoleFast("link").find((link) => {
     return link.getAttribute("href") === `/chats/${second.id}`;
   });
@@ -292,14 +289,11 @@ test("Share the saved preference with another chat and discard temporary state o
     );
   });
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   await userEvent.click(resourceButton());
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
   const previous = queryAllByRoleFast("link").find((link) => {
     return link.getAttribute("href") === `/chats/${first.id}`;

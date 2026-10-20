@@ -29,7 +29,9 @@ const connectorAccountSummaries$ = computed(
   async (get): Promise<readonly ConnectorAccountSummary[]> => {
     get(internalSummariesReload$);
     const result = await accept(
-      get(apiClient$)(connectorAccountsContract).summaries(),
+      get(apiClient$)(connectorAccountsContract).summaries({
+        query: { includeScopeMismatch: "true" },
+      }),
       [200],
     );
     return result.body.summaries;

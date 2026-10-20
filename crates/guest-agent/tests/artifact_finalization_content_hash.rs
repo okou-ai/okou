@@ -20,7 +20,7 @@ fn content_hash_for_single_file(storage_id: &str, path: &str, content: &str) -> 
     sha256_hex(format!("storage:{storage_id}\n{path}:{file_hash}"))
 }
 
-fn finalization_request_has_artifact_snapshot(
+fn finalization_request_has_storage_outputs(
     req: &HttpMockRequest,
     expected_version: &str,
     expected_mount_path: &str,
@@ -29,36 +29,26 @@ fn finalization_request_has_artifact_snapshot(
     let Ok(body) = serde_json::from_slice::<serde_json::Value>(req.body_ref()) else {
         return false;
     };
-    let Some(snapshots) = body
-        .get("completion")
-        .and_then(|finalization| finalization.get("artifactSnapshots"))
-        .and_then(|value| value.as_array())
-    else {
-        return false;
-    };
-
-    let unchanged_snapshot_matches = snapshots.iter().any(|snapshot| {
-        snapshot.get("name").and_then(|value| value.as_str()) == Some("workspace")
-            && snapshot.get("version").and_then(|value| value.as_str()) == Some(expected_version)
-            && snapshot.get("mountPath").and_then(|value| value.as_str())
-                == Some(expected_mount_path)
-            && snapshot
-                .get("missingRootPolicy")
-                .and_then(|value| value.as_str())
-                == Some("fail")
-    });
-    let preserved_snapshot_matches = snapshots.iter().any(|snapshot| {
-        snapshot.get("name").and_then(|value| value.as_str()) == Some("memory")
-            && snapshot.get("version").and_then(|value| value.as_str())
-                == Some("preserved-memory-version")
-            && snapshot.get("mountPath").and_then(|value| value.as_str())
-                == Some(expected_missing_mount_path)
-            && snapshot
-                .get("missingRootPolicy")
-                .and_then(|value| value.as_str())
-                == Some("preserveParentVersion")
-    });
-    unchanged_snapshot_matches && preserved_snapshot_matches
+    body.get("completion")
+        == Some(&json!({
+            "cliAgentType": "claude-code",
+            "cliAgentSessionId": "session-abc",
+            "cliAgentSessionHistoryDisposition": "native_only",
+            "storageOutputs": [
+                {
+                    "name": "workspace",
+                    "version": expected_version,
+                    "mountPath": expected_mount_path,
+                    "missingRootPolicy": "fail",
+                },
+                {
+                    "name": "memory",
+                    "version": "preserved-memory-version",
+                    "mountPath": expected_missing_mount_path,
+                    "missingRootPolicy": "preserveParentVersion",
+                }
+            ]
+        }))
 }
 
 struct SandboxOpsOverrideGuard;
@@ -197,7 +187,7 @@ async fn unchanged_artifact_finalization_records_content_hash_timing()
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .is_true(move |req| {
-                finalization_request_has_artifact_snapshot(
+                finalization_request_has_storage_outputs(
                     req,
                     &expected_version,
                     &expected_mount_path,
