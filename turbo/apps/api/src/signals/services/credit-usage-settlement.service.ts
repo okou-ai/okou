@@ -68,6 +68,7 @@ import {
   emptySettlementReceipt,
   hasNoStandaloneUsage,
   settledEventsSql,
+  freeUsageSettlementSql,
   memberGrantDeductionsSql,
   planMemberGrantDeductions,
   planExpiryLotDeductions,
@@ -122,6 +123,43 @@ function batchFinancialPlan(
 }
 
 /**
+ * Free Official usage has no financial row to commit with its claim, so it
+ * settles in one statement without a transaction. An incomplete claim defers
+ * the whole batch exactly like a rolled-back paid batch.
+ */
+const commitFreeUsageBatch$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly batch: PreparedUsageBatch;
+      readonly financial: PreparedUsageFinancialPlan;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { orgId, batch, financial } = args;
+    const { startedAt, work } = settlementObservation(batch.prices.length);
+    const { rowCount } = await set(writeDb$).execute(
+      freeUsageSettlementSql(
+        orgId,
+        batch.events,
+        financial.charges,
+        financial.at,
+      ),
+    );
+    signal.throwIfAborted();
+    requireCompleteUsageClaim(batch.events.length, rowCount ?? 0, false);
+    Object.assign(work, { pendingEvents: batch.events.length });
+    const result = settlementReceipt(orgId, financial.priced, {
+      amount: 0,
+      work,
+      afterCredits: 0,
+    });
+    return { result, startedAt };
+  },
+);
+
+/**
  * All financial rows commit together; only plain values leave this command.
  * The pending claim prevents duplicate charging. Prices stay prepared,
  * but cash is re-read and locked before allocation.
@@ -174,6 +212,8 @@ const commitUsageBatch$ = command(
       let amount = 0;
       let afterCredits = 0;
       if (freeOnly) {
+        // Only free Social usage reaches this branch: its job receipt below
+        // must commit with the claim. Standalone free usage settles above.
         await tx.execute(settledEventsSql(charges, at));
       } else {
         const cash = usageCashQueries(orgId, charges.byUser, at);
@@ -274,11 +314,17 @@ export const settleOrgUsage$ = command(
       ? undefined
       : usageFinancialPlan(batch.priced, nowDate());
     const outcome = await settle(
-      set(
-        commitUsageBatch$,
-        { ...args, batch, financial, at: financial?.at ?? nowDate() },
-        signal,
-      ),
+      financial?.freeOnly
+        ? set(
+            commitFreeUsageBatch$,
+            { orgId: args.orgId, batch, financial },
+            signal,
+          )
+        : set(
+            commitUsageBatch$,
+            { ...args, batch, financial, at: financial?.at ?? nowDate() },
+            signal,
+          ),
     );
     signal.throwIfAborted();
     if (!outcome.ok) {
