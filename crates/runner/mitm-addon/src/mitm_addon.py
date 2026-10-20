@@ -1052,7 +1052,7 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
 def _reject_managed_openrouter_request(
     flow: http.HTTPFlow,
     classification: request_classification.FirewallAllow,
-    reason: str,
+    error: managed_openrouter.RequestRejectedError,
     *,
     terminate: bool = False,
 ) -> None:
@@ -1063,12 +1063,22 @@ def _reject_managed_openrouter_request(
     flow_metadata.set_firewall_decision(
         flow.metadata, "BLOCK", error="managed_openrouter_request_rejected"
     )
+    length_diagnostics: dict[str, object] = {}
+    if isinstance(error, managed_openrouter.BodyLengthRejectedError):
+        length_diagnostics = {
+            "content_length_kind": error.kind,
+            "content_length_limit_bytes": error.limit_bytes,
+            "declared_content_length_bytes": error.declared_bytes,
+            "declared_content_length_is_exact": error.declared_bytes is not None,
+        }
     log_proxy_entry(
         flow_metadata.proxy_log_path(flow.metadata),
         "warn",
         "Managed OpenRouter request rejected",
         type="managed_model_policy",
-        reason=reason,
+        reason=str(error),
+        rejection_phase="requestheaders" if terminate else "request",
+        **length_diagnostics,
     )
     if terminate:
         request_classification.pop_cached_classification(flow)
@@ -1081,7 +1091,7 @@ def _reject_managed_openrouter_request(
             403,
             {
                 "error": "managed_openrouter_request_rejected",
-                "reason": reason,
+                "reason": str(error),
                 "message": "Request blocked by the managed model preset policy",
             },
         )
@@ -1101,7 +1111,7 @@ def _admit_managed_openrouter_from_headers(
     try:
         managed_openrouter.admit_request(flow, classification.sandbox_info)
     except managed_openrouter.RequestRejectedError as error:
-        _reject_managed_openrouter_request(flow, classification, str(error), terminate=True)
+        _reject_managed_openrouter_request(flow, classification, error, terminate=True)
     return True
 
 
@@ -1661,7 +1671,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 try:
                     managed_policy = managed_openrouter.validate_request(flow, sandbox_info)
                 except managed_openrouter.RequestRejectedError as error:
-                    _reject_managed_openrouter_request(flow, classification, str(error))
+                    _reject_managed_openrouter_request(flow, classification, error)
                     return
             if connector_diagnostics.maybe_make_connector_owner_local_response(
                 flow,

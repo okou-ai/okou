@@ -23,6 +23,7 @@ from mitmproxy import http
 import content_length
 import flow_metadata_keys as metadata_keys
 import request_body_admission
+from logging_utils import NETWORK_LOG_MAX_SAFE_SIZE
 from request_authority import AuthorityValidationError, get_trusted_authority
 
 OWNER = "model-provider:openrouter-codex"
@@ -118,6 +119,23 @@ class RequestRejectedError(ValueError):
     """A fixed, non-secret reason suitable for a local policy response."""
 
 
+class BodyLengthRejectedError(RequestRejectedError):
+    """Retain bounded scalar evidence from the rejected declaration, never headers."""
+
+    def __init__(self, result: content_length.ContentLengthResult, values: list[str]) -> None:
+        super().__init__("body_length")
+        self.kind = "zero" if result.kind == "valid" and result.value == 0 else result.kind
+        self.limit_bytes = MAX_REQUEST_BODY_BYTES
+        self.declared_bytes: int | None = result.value if result.kind == "valid" else None
+        if result.kind == "over_limit":
+            # The admission parser can return limit + 1 as a sentinel. Reuse its
+            # bounded conversion on this rejection path to retain exact ordinary
+            # sizes without serializing arbitrary integers or raw header text.
+            diagnostic = content_length.parse(values, max_value=NETWORK_LOG_MAX_SAFE_SIZE)
+            if diagnostic.kind == "valid":
+                self.declared_bytes = diagnostic.value
+
+
 @dataclass(frozen=True, slots=True)
 class PresetPolicy:
     preset: str
@@ -184,11 +202,10 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
         raise RequestRejectedError("content_encoding")
     if flow.request.headers.get_all("Transfer-Encoding"):
         raise RequestRejectedError("transfer_encoding")
-    length = content_length.parse(
-        flow.request.headers.get_all("Content-Length"), max_value=MAX_REQUEST_BODY_BYTES
-    )
+    values = flow.request.headers.get_all("Content-Length")
+    length = content_length.parse(values, max_value=MAX_REQUEST_BODY_BYTES)
     if length.kind != "valid" or length.value == 0:
-        raise RequestRejectedError("body_length")
+        raise BodyLengthRejectedError(length, values)
     return length.value
 
 
