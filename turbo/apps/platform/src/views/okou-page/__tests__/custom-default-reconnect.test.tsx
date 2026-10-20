@@ -3,6 +3,7 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
+  connectorAccountTargetKey,
   connectorAccountsContract,
   type ConnectorAccountMutationIntent,
   type ConnectorAccountSummary,
@@ -27,10 +28,28 @@ import {
 const context = testContext();
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
-function mockSummaries(summaries: readonly ConnectorAccountSummary[]): void {
+function mockAccountReads(
+  summaries: () => readonly ConnectorAccountSummary[],
+): void {
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: [...summaries] });
+    return respond(200, { summaries: [...summaries()] });
   });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      const account = summaries().find((summary) => {
+        return (
+          connectorAccountTargetKey(summary.target) ===
+          connectorAccountTargetKey(query)
+        );
+      })?.defaultConnection;
+      return account?.id === params.connectionId
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
 }
 
 async function openConnection(
@@ -60,18 +79,22 @@ test.each([1, 2])(
       slug: "_acme-search",
       configuredFieldKeys: ["secret"],
     });
-    const account = customConnectorAccount(connector.id, {
+    let account = customConnectorAccount(connector.id, {
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",
+      configuredFieldKeys: ["secret"],
     });
-    mockSummaries([
-      {
-        target: account.target,
-        accountCount,
-        attentionCount: 1,
-        defaultConnection: account,
-      },
-    ]);
+    mockAccountReads(() => {
+      return [
+        {
+          target: account.target,
+          accountCount,
+          attentionCount:
+            account.connectionStatus === "reconnect-required" ? 1 : 0,
+          defaultConnection: account,
+        },
+      ];
+    });
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
@@ -80,13 +103,18 @@ test.each([1, 2])(
       customConnectorValuesContract.set,
       ({ body, respond }) => {
         mutations.push(body.account);
+        account = {
+          ...account,
+          connectionStatus: "connected",
+          reconnectReason: null,
+        };
         connector = {
           ...connector,
           connected: true,
           connectedAccountId: account.id,
           missingRequiredFields: [],
         };
-        return respond(200, connector);
+        return respond(200, { ...connector, connectionId: account.id });
       },
     );
     let grants: AgentCustomConnectorGrant[] = [];
@@ -128,15 +156,19 @@ test("Resolve the current default instead of stale definition identity", async (
     configuredFieldKeys: ["secret"],
     missingRequiredFields: [],
   });
-  const account = customConnectorAccount(connector.id);
-  mockSummaries([
-    {
-      target: account.target,
-      accountCount: 2,
-      attentionCount: 0,
-      defaultConnection: account,
-    },
-  ]);
+  const account = customConnectorAccount(connector.id, {
+    configuredFieldKeys: ["secret"],
+  });
+  mockAccountReads(() => {
+    return [
+      {
+        target: account.target,
+        accountCount: 2,
+        attentionCount: 0,
+        defaultConnection: account,
+      },
+    ];
+  });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
@@ -144,7 +176,7 @@ test("Resolve the current default instead of stale definition identity", async (
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
     mutations.push(body.account);
     connector = { ...connector, connectedAccountId: account.id };
-    return respond(200, connector);
+    return respond(200, { ...connector, connectionId: account.id });
   });
   const dialog = await openConnection(connector);
   await fill(within(dialog).getByLabelText("Secret"), "replacement-secret");
@@ -183,7 +215,7 @@ function installOAuthFlow(state: PreflightState, complete = false) {
       authorizationParams: {},
     },
   });
-  const account = customConnectorAccount(connector.id, {
+  let account = customConnectorAccount(connector.id, {
     authMethod: "oauth",
     connectionStatus: "reconnect-required",
     reconnectReason: "authorization_expired_or_revoked",
@@ -221,14 +253,34 @@ function installOAuthFlow(state: PreflightState, complete = false) {
     },
   );
   const completed = mockOAuthCompletions(context);
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      return (state === "expired" || connector.connected) &&
+        params.connectionId === account.id &&
+        connectorAccountTargetKey(query) ===
+          connectorAccountTargetKey(account.target)
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Account not found" },
+          });
+    },
+  );
   const attemptId = crypto.randomUUID();
   const mutations: ConnectorAccountMutationIntent[] = [];
   context.mocks.api(
     customConnectorOAuth2Contract.start,
     ({ body, respond }) => {
       mutations.push(body.account);
-      completed.set(attemptId, account.id);
+      if (complete || state === "expired") {
+        completed.set(attemptId, account.id);
+      }
       if (complete) {
+        account = {
+          ...account,
+          connectionStatus: "connected",
+          reconnectReason: null,
+        };
         connector = {
           ...connector,
           connected: true,
@@ -240,7 +292,9 @@ function installOAuthFlow(state: PreflightState, complete = false) {
         result: "authorization",
         oauthAttemptId: attemptId,
         authorizationUrl: "https://acme.test/oauth/authorize",
-        connectionId: account.id,
+        ...(body.account.intent === "reconnect"
+          ? { connectionId: account.id }
+          : {}),
       });
     },
   );

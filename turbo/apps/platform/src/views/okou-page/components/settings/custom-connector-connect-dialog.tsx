@@ -343,7 +343,7 @@ function useCustomConnectorAccountSetup(
   return { setupAvailable, missingRequiredFields, configuredFieldKeys };
 }
 
-function OrdinaryCustomConnectorConnectDialog(
+function CustomConnectorValuesConnectDialog(
   props: CustomConnectorConnectDialogProps,
 ) {
   const setup = useCustomConnectorAccountSetup(
@@ -357,16 +357,29 @@ export function CustomConnectorConnectDialog(
   props: CustomConnectorConnectDialogProps,
 ) {
   const { connector } = props;
-  return isIntegrationManagedCustomConnector(connector) ? (
-    <CustomConnectorConnectDialogContent
-      {...props}
-      setupAvailable
-      missingRequiredFields={connector.missingRequiredFields}
-      configuredFieldKeys={connector.configuredFieldKeys}
-    />
-  ) : (
-    <OrdinaryCustomConnectorConnectDialog {...props} />
-  );
+  if (isIntegrationManagedCustomConnector(connector)) {
+    return (
+      <CustomConnectorConnectDialogContent
+        {...props}
+        setupAvailable
+        missingRequiredFields={connector.missingRequiredFields}
+        configuredFieldKeys={connector.configuredFieldKeys}
+      />
+    );
+  }
+  if (connector.authMode === "oauth" || connector.authMode === "automatic") {
+    // Authorization starts resolve the account in their command; no saved
+    // field configuration is needed before opening the provider window.
+    return (
+      <CustomConnectorConnectDialogContent
+        {...props}
+        setupAvailable
+        missingRequiredFields={[]}
+        configuredFieldKeys={[]}
+      />
+    );
+  }
+  return <CustomConnectorValuesConnectDialog {...props} />;
 }
 
 function CustomConnectorConnectDialogContent({
