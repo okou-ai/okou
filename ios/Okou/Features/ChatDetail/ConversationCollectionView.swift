@@ -285,7 +285,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     var ancestor = marker.superview
     while let view = ancestor {
       if view === cell {
-        return marker.convert(marker.bounds, to: cell).intersects(cell.bounds)
+        // Reused SwiftUI content can briefly wrap at a near-zero width and overflow
+        // its measured cell. That temporary box must not become a reading anchor.
+        let rect = marker.convert(marker.bounds, to: cell)
+        let pixel = 1 / traitCollection.displayScale
+        return rect.width > 0 && rect.height > 0
+          && cell.bounds.insetBy(dx: -pixel, dy: -pixel).contains(rect)
       }
       ancestor = view.superview
     }

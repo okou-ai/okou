@@ -24,7 +24,11 @@ final class ConversationStore {
           ChatMessageAttachment(
             id: $0.id, filename: $0.filename, contentType: $0.contentType, size: $0.size)
         }, createdAt: createdAt,
-        runID: nil, isQueued: false, isError: false)
+        runID: nil, isQueued: false, isError: false,
+        userMessage: document.flatMap { draft in
+          guard let data = try? JSONEncoder().encode(draft) else { return nil }
+          return try? JSONDecoder().decode(ChatUserMessage.self, from: data)
+        })
     }
   }
 

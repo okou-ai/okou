@@ -58,40 +58,11 @@ jq -e \
   "$artifact_dir/ready.json" >/dev/null
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-package_identity="$(python3 "${script_dir}/read-okou-cli-package-identity.py" "$artifact_dir/package.tgz")"
+package_identity="$(python3 "${script_dir}/read-okou-cli-package-identity.py" "$artifact_dir/package.tgz" --verify-package)"
 if ! jq -e --argjson identity "$package_identity" \
   '.versions == $identity.versions' \
   "$artifact_dir/manifest.json" >/dev/null; then
   echo "CLI artifact identity does not match packed identity" >&2
   exit 1
 fi
-package_json="$(tar -xOf "$artifact_dir/package.tgz" package/package.json)"
-manifest_cli_version="$(jq -er '.versions.cli' "$artifact_dir/manifest.json")"
-jq -e \
-  --arg cli_version "$manifest_cli_version" '
-  .name == "@okouai/cli"
-  and .version == $cli_version
-  and .private == true
-  and (.bin | type == "object")
-  and ((.bin | keys) == ["okou"])
-  and .bin.okou == "okou.js"
-  and ((.dependencies // {}) | length == 0)
-  and ((.optionalDependencies // {}) | length == 0)
-  and ((.peerDependencies // {}) | length == 0)
-' <<< "$package_json" >/dev/null
-
-package_contents="$(tar -tzf "$artifact_dir/package.tgz")"
-if ! grep -Fxq 'package/okou.js' <<<"$package_contents"; then
-  echo "CLI package is missing the canonical okou.js implementation" >&2
-  exit 1
-fi
-if ! grep -Fxq 'package/image-resize-worker.js' <<<"$package_contents"; then
-  echo "CLI package is missing image-resize-worker.js" >&2
-  exit 1
-fi
-if ! grep -Fxq 'package/photon_rs_bg.wasm' <<<"$package_contents"; then
-  echo "CLI package is missing photon_rs_bg.wasm" >&2
-  exit 1
-fi
-
 echo "Verified CLI artifact for $expected_commit_sha"

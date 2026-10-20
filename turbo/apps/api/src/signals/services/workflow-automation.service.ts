@@ -6579,7 +6579,9 @@ function enabledWorkflowAutomationValues(
         }
       : {}),
     nextRunAt: args.nextRunAt,
-    consecutiveFailures: 0,
+    ...(args.automation.officialBlueprintKey === null
+      ? { consecutiveFailures: 0 }
+      : {}),
     updatedAt: args.now,
     ...(args.automation.officialBlueprintKey !== null
       ? {

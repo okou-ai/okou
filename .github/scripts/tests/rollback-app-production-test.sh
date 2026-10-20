@@ -5,7 +5,8 @@ work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 mkdir -p "$work_dir/bin" "$work_dir/source"
 # Real Git history: incompatible -> Telegram reader -> pre-A02 release -> Slack
-# reader -> compatible release -> later policy. Neither policy marker is a floor.
+# reader -> resource split -> compatible release -> later policy. The explicit
+# floors name the preparations, not their later policy marker commits.
 git -C "$work_dir/source" init -q -b main
 git -C "$work_dir/source" config user.email fixture@example.test
 git -C "$work_dir/source" config user.name fixture
@@ -68,13 +69,18 @@ git -C "$work_dir/source" add .
 git -C "$work_dir/source" commit -qm 'fixture authenticated bare Slack reader preparation'
 slack_reader_sha=$(git -C "$work_dir/source" rev-parse HEAD)
 git -C "$work_dir/source" tag app-v0.1029.1
+printf '{"version":"0.1029.2"}\n' > "$work_dir/source/turbo/apps/platform/package.json"
+git -C "$work_dir/source" commit -qam 'fixture Connector resource split preparation'
+connector_resource_split_sha=$(git -C "$work_dir/source" rev-parse HEAD)
+git -C "$work_dir/source" tag app-v0.1029.2
 printf '{"version":"0.1030.0"}\n' > "$work_dir/source/turbo/apps/platform/package.json"
 git -C "$work_dir/source" commit -qam 'fixture compatible release before policy'
 target_sha=$(git -C "$work_dir/source" rev-parse HEAD)
 git -C "$work_dir/source" tag app-v0.1030.0
 printf '%s\n' "$reader_sha" > "$work_dir/source/.github/rollback-floors/telegram-settings-app"
 printf '%s\n' "$slack_reader_sha" > "$work_dir/source/.github/rollback-floors/slack-settings-app"
-printf '{"minimumSupportedVersion":"0.1029.2"}\n' > "$work_dir/source/turbo/apps/api/src/lib/web-client-compatibility.json"
+printf '%s\n' "$connector_resource_split_sha" > "$work_dir/source/.github/rollback-floors/connector-resource-split"
+printf '{"minimumSupportedVersion":"0.1029.3"}\n' > "$work_dir/source/turbo/apps/api/src/lib/web-client-compatibility.json"
 git -C "$work_dir/source" add .
 git -C "$work_dir/source" commit -qm 'fixture later main policy and unreleased API floor'
 policy_sha=$(git -C "$work_dir/source" rev-parse HEAD)
@@ -168,10 +174,11 @@ if "api.vercel.com" in url:
     if "/aliases/api.okou.ai?" in url:
         counts["alias"] = counts.get("alias",0)+1
         counts_path.write_text(json.dumps(counts))
-        if case in ("policy-changed", "slack-policy-changed") and counts["alias"] == 1:
+        if case in ("policy-changed", "slack-policy-changed", "connector-policy-changed") and counts["alias"] == 1:
             source = root / "source"
             provider = "slack" if case == "slack-policy-changed" else "telegram"
-            (source / f".github/rollback-floors/{provider}-settings-app").write_text(policy+"\n")
+            floor_path = "connector-resource-split" if case == "connector-policy-changed" else f"{provider}-settings-app"
+            (source / f".github/rollback-floors/{floor_path}").write_text(policy+"\n")
             subprocess.run(["git","-C",str(source),"commit","-qam","fixture policy changes during validation"],check=True,stdout=subprocess.DEVNULL)
         answer({"alias":"api.okou.ai","projectId":"prj_fixture","deploymentId":"dpl_changed" if case == "api-changed" and counts["alias"] > 1 else "dpl_fixture"})
     if "/deployments/dpl_fixture?" in url:
@@ -213,10 +220,12 @@ result, _ = json.JSONDecoder().raw_decode(output[output.index("{"):])
 assert result["reader_floor"] == sys.argv[2]
 assert result["slack_reader_floor"] == sys.argv[3]
 PY
-# Both reader-capable releases predate the marker. Serving API, not main's
-# unreleased 0.1029.2 floor, decides whether App 0.1029.1 remains eligible.
-TARGET_COMMIT="$slack_reader_sha" run_case older-compatible pass 1
-TARGET_COMMIT="$slack_reader_sha" run_case api-floor-mismatch fail 0
+# The exact resource preparation and its descendant predate the policy marker.
+# Serving API, not main's unreleased fixture floor, determines version support.
+TARGET_COMMIT="$connector_resource_split_sha" run_case older-compatible pass 1
+TARGET_COMMIT="$connector_resource_split_sha" run_case api-floor-mismatch fail 0
+TARGET_COMMIT="$slack_reader_sha" run_case pre-resource-split fail 0
+grep -Fq 'App artifact predates the Connector resource split' "$work_dir/output"
 TARGET_COMMIT="$old_sha" run_case incompatible-0.1025 fail 0
 TARGET_COMMIT="$telegram_only_sha" run_case telegram-only-0.1029 fail 0
 TARGET_COMMIT="$branch_sha" run_case non-main-release fail 0
@@ -232,6 +241,9 @@ done
 run_case policy-changed fail 0
 git -C "$work_dir/source" reset -q --hard "$policy_sha"
 run_case slack-policy-changed fail 0
+git -C "$work_dir/source" reset -q --hard "$policy_sha"
+run_case connector-policy-changed fail 0
+grep -Fq 'App rollback policy changed during validation' "$work_dir/output"
 # Missing current-main policy must reject even when the checkout still has it.
 git -C "$work_dir/source" reset -q --hard "$policy_sha"
 git -C "$work_dir/source" rm -q .github/rollback-floors/telegram-settings-app
@@ -246,6 +258,18 @@ for scenario in missing-slack-policy invalid-slack-policy non-main-slack-policy;
   esac
   git -C "$work_dir/source" commit -qam "fixture $scenario"
   run_case "$scenario" fail 0
+done
+
+for scenario in missing-connector-policy invalid-connector-policy non-main-connector-policy; do
+  git -C "$work_dir/source" reset -q --hard "$policy_sha"
+  case "$scenario" in
+    missing-connector-policy) git -C "$work_dir/source" rm -q .github/rollback-floors/connector-resource-split ;;
+    invalid-connector-policy) printf 'not-a-commit\n' > "$work_dir/source/.github/rollback-floors/connector-resource-split" ;;
+    non-main-connector-policy) printf '%s\n' "$branch_sha" > "$work_dir/source/.github/rollback-floors/connector-resource-split" ;;
+  esac
+  git -C "$work_dir/source" commit -qam "fixture $scenario"
+  run_case "$scenario" fail 0
+  grep -Fq 'Connector resource split' "$work_dir/output"
 done
 
 # Descendants with valid releases and deployment evidence still cannot retire

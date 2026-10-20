@@ -49,10 +49,18 @@ git merge-base --is-ancestor "$floor" "$policy_main" || fail "App floor is not o
 slack_floor=$(git show "$policy_main:.github/rollback-floors/slack-settings-app")
 [[ "$slack_floor" =~ ^[0-9a-f]{40}$ ]] || fail "Missing or invalid explicit Slack App floor."
 git merge-base --is-ancestor "$slack_floor" "$policy_main" || fail "Slack App floor is not on main."
+# PR1 migrated App consumers off the legacy overview endpoints. Keep that
+# preparation eligible independently of the later contract removal.
+connector_resource_split_floor=$(git show "$policy_main:.github/rollback-floors/connector-resource-split") \
+  || fail "Cannot read the Connector resource split rollback floor from main."
+[[ "$connector_resource_split_floor" =~ ^[0-9a-f]{40}$ ]] || fail "Missing or invalid Connector resource split rollback floor."
+git merge-base --is-ancestor "$connector_resource_split_floor" "$policy_main" || fail "Connector resource split rollback floor is not on main."
 git cat-file -e "$TARGET_COMMIT^{commit}"
 git merge-base --is-ancestor "$TARGET_COMMIT" "$policy_main" || fail "App artifact is not reachable from main."
 git merge-base --is-ancestor "$floor" "$TARGET_COMMIT" || fail "App artifact predates the signed Telegram reader floor ($floor)."
 git merge-base --is-ancestor "$slack_floor" "$TARGET_COMMIT" || fail "App artifact predates the authenticated bare Slack reader floor ($slack_floor)."
+
+git merge-base --is-ancestor "$connector_resource_split_floor" "$TARGET_COMMIT" || fail "App artifact predates the Connector resource split ($connector_resource_split_floor)."
 
 # Fail closed if a later release removes a retained reader or its entry point.
 # Target source is data; no code from a rollback target is executed.
@@ -178,7 +186,7 @@ PY
 # mutation helper. A queue wait/build/policy change cannot reuse old evidence.
 refresh_main
 git diff --quiet "$policy_main" origin/main -- .github/rollback-floors/telegram-settings-app \
-  .github/rollback-floors/slack-settings-app \
+  .github/rollback-floors/slack-settings-app .github/rollback-floors/connector-resource-split \
   .github/scripts/release/resolve-app-rollback-target.sh .github/scripts/release/rollback-app-production.sh \
   .github/workflows/rollback-production.yml || fail "App rollback policy changed during validation; rerun from current main."
 git diff --quiet HEAD origin/main -- .github/scripts/release/resolve-app-rollback-target.sh \

@@ -5,7 +5,11 @@ import {
   type GoogleWorkspaceTarget,
 } from "@okouai/core/google-workspace-conversion";
 import { prepareGoogleWorkspaceImport } from "./google-workspace-import.service";
-import { prepareGoogleSlidesImport } from "./google-slides-import.service";
+import {
+  prepareGoogleSlidesImport,
+  type SlidesTextStyle,
+} from "./google-slides-import.service";
+import { applyGoogleSlidesTextStyles } from "./google-slides-text-style.service";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
   ChatThreadArtifactGoogleDriveSync,
@@ -96,6 +100,7 @@ const GOOGLE_DRIVE_THREAD_APP_PROPERTY = "vm0ThreadId";
 const GOOGLE_DRIVE_RUN_APP_PROPERTY = "vm0RunId";
 const GOOGLE_DRIVE_FILE_APP_PROPERTY = "vm0FileId";
 const GOOGLE_DRIVE_CATALOG_ARTIFACT_APP_PROPERTY = "okouArtifactId";
+const GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY = "okouTextImport";
 const GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_DRIVE_TOKEN";
 
 const driveFileSchema = z.object({
@@ -489,6 +494,11 @@ function buildStatusMap(
 ): ReadonlyMap<string, DriveSyncStatusResult> {
   const map = new Map<string, DriveSyncStatusResult>();
   for (const file of files) {
+    if (
+      file.appProperties?.[GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY] === "pending-v1"
+    ) {
+      continue;
+    }
     const runId = file.appProperties?.[GOOGLE_DRIVE_RUN_APP_PROPERTY];
     const fileId = file.appProperties?.[GOOGLE_DRIVE_FILE_APP_PROPERTY];
     if (!fileId) {
@@ -786,6 +796,7 @@ interface ArtifactS3Object {
 }
 
 interface ResolvedArtifactContent {
+  readonly textStyles?: readonly SlidesTextStyle[];
   readonly contentType: string;
   readonly file: Buffer;
   readonly filename: string;
@@ -1210,6 +1221,7 @@ async function ensureArtifactFolder(args: {
  * request, and the bytes no longer have to be copied into a combined body.
  */
 async function uploadDriveFile(args: {
+  readonly pendingTextStyles?: boolean;
   readonly accessToken: string;
   readonly parentFolderId: string;
   readonly filename: string;
@@ -1228,6 +1240,9 @@ async function uploadDriveFile(args: {
     mimeType: args.targetMimeType ?? args.contentType,
     parents: [args.parentFolderId],
     appProperties: {
+      ...(args.pendingTextStyles
+        ? { [GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY]: "pending-v1" }
+        : {}),
       [GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY]: "true",
       ...(args.threadId
         ? { [GOOGLE_DRIVE_THREAD_APP_PROPERTY]: args.threadId }
@@ -1280,6 +1295,7 @@ async function uploadDriveFile(args: {
 }
 
 async function uploadArtifactWithToken(args: {
+  readonly pendingTextStyles?: boolean;
   readonly accessToken: string;
   readonly threadId: string | null;
   readonly runId: string | null;
@@ -1298,6 +1314,7 @@ async function uploadArtifactWithToken(args: {
     return folder;
   }
   const response = await uploadDriveFile({
+    pendingTextStyles: args.pendingTextStyles,
     accessToken: args.accessToken,
     parentFolderId: folder.value,
     filename: args.filename,
@@ -1470,7 +1487,10 @@ async function findWorkspaceImport(
       "trashed = false",
     ].join(" and "),
   );
-  url.searchParams.set("fields", "files(id,name,mimeType,webViewLink)");
+  url.searchParams.set(
+    "fields",
+    "files(id,name,mimeType,webViewLink,appProperties)",
+  );
   url.searchParams.set("pageSize", "1");
   url.searchParams.set("orderBy", "createdTime desc");
   const response = await fetch(url, {
@@ -1611,6 +1631,7 @@ const uploadArtifactRefreshingToken$ = command(
         filename: params.content.filename,
         contentType: params.content.contentType,
         targetMimeType: params.targetMimeType,
+        pendingTextStyles: !!params.content.textStyles?.length,
         file: params.content.file,
       });
     };
@@ -1875,6 +1896,14 @@ const reuseWorkspaceImport$ = command(
       );
     }
     if (previous.value) {
+      if (
+        previous.value.appProperties?.[GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY] ===
+        "pending-v1"
+      ) {
+        return badRequestMessage(
+          "The previous Google Slides upload has unfinished font restoration. Check that copy in Drive before starting a new conversion; it will not be overwritten automatically.",
+        );
+      }
       const verified = await verifyWorkspaceImport(
         {
           accessToken: uploadTokens.accessToken,
@@ -1915,6 +1944,7 @@ async function finishDriveUpload(
     readonly accessToken: string;
     readonly targetMimeType: string | undefined;
     readonly conversionTarget: GoogleWorkspaceTarget | undefined;
+    readonly textStyles?: readonly SlidesTextStyle[];
   },
   signal: AbortSignal,
 ): Promise<
@@ -1961,6 +1991,39 @@ async function finishDriveUpload(
     }
   }
 
+  if (args.textStyles?.length) {
+    const failure = await applyGoogleSlidesTextStyles(
+      accessToken,
+      body.id,
+      args.textStyles,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (failure) {
+      return badRequestMessage(failure);
+    }
+    const completed = await fetch(
+      `${GOOGLE_DRIVE_FILES_URL}/${encodeURIComponent(body.id)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          appProperties: {
+            [GOOGLE_SLIDES_TEXT_IMPORT_PROPERTY]: "complete-v1",
+          },
+        }),
+        signal,
+      },
+    );
+    if (!completed.ok) {
+      return badRequestMessage(
+        "Google Slides fonts were restored, but completion could not be recorded. Check the uploaded copy before retrying.",
+      );
+    }
+  }
   return { status: 200 as const, body };
 }
 
@@ -2037,7 +2100,11 @@ const uploadResolvedArtifact$ = command(
       if (!prepared.ok) {
         return badRequestMessage(prepared.message);
       }
-      uploadContent = { ...uploadContent, file: prepared.file };
+      uploadContent = {
+        ...uploadContent,
+        file: prepared.file,
+        textStyles: prepared.textStyles,
+      };
     }
 
     const upload = await set(
@@ -2065,7 +2132,13 @@ const uploadResolvedArtifact$ = command(
     }
 
     return await finishDriveUpload(
-      { response: result.value, accessToken, targetMimeType, conversionTarget },
+      {
+        response: result.value,
+        accessToken,
+        targetMimeType,
+        conversionTarget,
+        textStyles: uploadContent.textStyles,
+      },
       signal,
     );
   },

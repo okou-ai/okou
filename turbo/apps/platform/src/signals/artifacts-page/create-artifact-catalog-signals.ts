@@ -21,7 +21,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "../api-client.ts";
-import { bestEffort, onRejection } from "../utils.ts";
+import { bestEffort } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -109,7 +109,6 @@ interface CatalogPagingState {
   readonly reloadVersion$: State<number>;
   readonly generation$: State<number>;
   readonly pages$: State<readonly ArtifactCatalogPage[]>;
-  readonly fetchedCursors$: State<ReadonlySet<string>>;
 }
 
 function createCatalogPagingSignals(paging: CatalogPagingState): {
@@ -158,52 +157,41 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const generation = get(paging.generation$);
       const kind = get(paging.kind$);
+      const pages = get(paging.pages$);
       const loaded = await get(catalog$);
       signal.throwIfAborted();
-      if (get(paging.generation$) !== generation) {
+      if (
+        get(paging.generation$) !== generation ||
+        get(paging.pages$) !== pages
+      ) {
         return;
       }
       const cursor = loaded.nextCursor;
-      if (!cursor || get(paging.fetchedCursors$).has(cursor)) {
+      if (!cursor) {
         return;
       }
-      set(paging.fetchedCursors$, (cursors) => {
-        return new Set([...cursors, cursor]);
-      });
-
       const client = get(apiClient$)(artifactCatalogContract);
-      const result = await onRejection(
-        accept(
-          client.list({
-            query: {
-              limit: ARTIFACT_CATALOG_PAGE_SIZE,
-              cursor,
-              ...(kind ? { kind } : {}),
-              ...(chatThreadId ? { chatThreadId } : {}),
-            },
-            fetchOptions: { signal },
-          }),
-          [200],
-          signal,
-        ),
-        () => {
-          if (get(paging.generation$) !== generation) {
-            return;
-          }
-          set(paging.fetchedCursors$, (cursors) => {
-            const retryableCursors = new Set(cursors);
-            retryableCursors.delete(cursor);
-            return retryableCursors;
-          });
-        },
+      const result = await accept(
+        client.list({
+          query: {
+            limit: ARTIFACT_CATALOG_PAGE_SIZE,
+            cursor,
+            ...(kind ? { kind } : {}),
+            ...(chatThreadId ? { chatThreadId } : {}),
+          },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
       );
       signal.throwIfAborted();
-      if (get(paging.generation$) !== generation) {
+      if (
+        get(paging.generation$) !== generation ||
+        get(paging.pages$) !== pages
+      ) {
         return;
       }
-      set(paging.pages$, (pages) => {
-        return [...pages, withThumbnailLoad(result.body)];
-      });
+      set(paging.pages$, [...pages, withThumbnailLoad(result.body)]);
     },
   );
 
@@ -326,13 +314,9 @@ export function createArtifactCatalogSignals(
   const internalReload$ = state(0);
   const internalGeneration$ = state(0);
   const internalPages$ = state<readonly ArtifactCatalogPage[]>([]);
-  // Cursors already handed to the server. Scroll events fire faster than a
-  // page resolves, so this keeps one request per cursor without a loading flag.
-  const internalFetchedCursors$ = state<ReadonlySet<string>>(new Set());
 
   const resetPages$ = command(({ set }) => {
     set(internalPages$, []);
-    set(internalFetchedCursors$, new Set());
     set(internalGeneration$, (generation) => {
       return generation + 1;
     });
@@ -361,7 +345,6 @@ export function createArtifactCatalogSignals(
     reloadVersion$: internalReload$,
     generation$: internalGeneration$,
     pages$: internalPages$,
-    fetchedCursors$: internalFetchedCursors$,
   });
   const selection = createCatalogSelectionSignals(
     catalog$,

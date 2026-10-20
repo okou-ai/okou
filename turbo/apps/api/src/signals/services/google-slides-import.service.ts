@@ -1,7 +1,9 @@
+import { posix } from "node:path";
 import { escapeUTF8 } from "entities";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type { Font } from "fontkit";
 import { SaxesParser } from "saxes";
+import { logger } from "../../lib/log";
 import { settle, safeSync } from "../utils";
 import {
   loadSlidesFont,
@@ -9,16 +11,83 @@ import {
   type SlidesFontFace,
 } from "./google-slides-font.service";
 
+const log = logger("api:google-slides-import");
+
 const DRAWING = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const PRESENTATION =
   "http://schemas.openxmlformats.org/presentationml/2006/main";
 const EMU_PER_POINT = 12_700;
+const TEXT_SOURCE = "https://okou.ai/presentation/text-source/v1";
+
+export interface SlidesTextStyle {
+  readonly page: number;
+  readonly shapeId: string;
+  readonly bounds: Bounds;
+  readonly text: string;
+  readonly runs: readonly {
+    readonly text: string;
+    readonly face: SlidesFontFace;
+  }[];
+}
+
+interface TextSource {
+  readonly line: string;
+  readonly runs: readonly {
+    readonly text: string;
+    readonly face: SlidesFontFace;
+  }[];
+}
+
+function sourceText(shape: XmlNode): TextSource | undefined {
+  const extensions = child(shape, PRESENTATION, "extLst");
+  const extension =
+    extensions &&
+    nodes(extensions).find((node) => {
+      return node.attributes.uri === TEXT_SOURCE;
+    });
+  const source = extension && child(extension, TEXT_SOURCE, "text");
+  if (!source) {
+    return undefined;
+  }
+  const runs = nodes(source).map((run) => {
+    const family = run.attributes.family ?? "";
+    const weight = number(run, "weight");
+    if (
+      run.uri !== TEXT_SOURCE ||
+      run.local !== "run" ||
+      !slidesFontFace(family, false, false) ||
+      !Number.isInteger(weight) ||
+      weight < 1 ||
+      weight > 1000 ||
+      !["0", "1"].includes(run.attributes.italic ?? "") ||
+      nodes(run).length
+    ) {
+      throw new Error("Invalid presentation text provenance");
+    }
+    return {
+      text: run.children.join(""),
+      face: { family, weight, italic: run.attributes.italic === "1" },
+    };
+  });
+  return { line: source.attributes.line ?? "", runs };
+}
+
+function runText(run: XmlNode): string {
+  return (
+    child(run, DRAWING, "t")
+      ?.children.filter((item): item is string => {
+        return typeof item === "string";
+      })
+      .join("") ?? ""
+  );
+}
 
 interface XmlNode {
   readonly name: string;
   readonly local: string;
   readonly uri: string;
   readonly attributes: Record<string, string>;
+  readonly attributeNamespaces?: Readonly<Record<string, string>>;
   children: (XmlNode | string)[];
 }
 
@@ -54,6 +123,11 @@ function readXml(bytes: Uint8Array): XmlNode {
       attributes: Object.fromEntries(
         Object.values(tag.attributes).map((attribute) => {
           return [attribute.name, attribute.value];
+        }),
+      ),
+      attributeNamespaces: Object.fromEntries(
+        Object.values(tag.attributes).map((attribute) => {
+          return [attribute.name, attribute.uri];
         }),
       ),
       children: [],
@@ -127,6 +201,106 @@ function bounds(shape: XmlNode): Bounds | undefined {
     result.height > 0
     ? result
     : undefined;
+}
+
+/** Page-space obstacle envelope, including rotated shapes and nested groups. */
+function obstacleBounds(shape: XmlNode): Bounds | undefined {
+  const group = shape.local === "grpSp";
+  const props = child(shape, PRESENTATION, group ? "grpSpPr" : "spPr");
+  const transform = props
+    ? child(props, DRAWING, "xfrm")
+    : child(shape, PRESENTATION, "xfrm");
+  if (
+    !transform ||
+    Object.keys(transform.attributes).some((key) => {
+      return !["rot", "flipH", "flipV"].includes(key);
+    })
+  ) {
+    return undefined;
+  }
+  const off = child(transform, DRAWING, "off"),
+    ext = child(transform, DRAWING, "ext");
+  const x = number(off, "x"),
+    y = number(off, "y"),
+    w = number(ext, "cx"),
+    h = number(ext, "cy"),
+    angle = (number(transform, "rot", 0) * Math.PI) / 10_800_000;
+  if (![x, y, w, h, angle].every(Number.isFinite) || w < 0 || h < 0) {
+    return undefined;
+  }
+  let boxes: Bounds[] = [{ x: 0, y: 0, width: w, height: h }];
+  if (group) {
+    const chOff = child(transform, DRAWING, "chOff"),
+      chExt = child(transform, DRAWING, "chExt");
+    const cx = number(chOff, "x"),
+      cy = number(chOff, "y"),
+      cw = number(chExt, "cx"),
+      ch = number(chExt, "cy");
+    if (![cx, cy, cw, ch].every(Number.isFinite) || cw <= 0 || ch <= 0) {
+      return undefined;
+    }
+    boxes = [];
+    for (const node of nodes(shape).filter((node) => {
+      return !["nvGrpSpPr", "grpSpPr", "extLst"].includes(node.local);
+    })) {
+      const box = obstacleBounds(node);
+      if (!box) {
+        return undefined;
+      }
+      boxes.push({
+        x: ((box.x - cx) * w) / cw,
+        y: ((box.y - cy) * h) / ch,
+        width: (box.width * w) / cw,
+        height: (box.height * h) / ch,
+      });
+    }
+    if (!boxes.length) {
+      return { x, y, width: w, height: h };
+    }
+  }
+  const points = boxes
+    .flatMap((box) => {
+      return [
+        [box.x, box.y],
+        [box.x + box.width, box.y],
+        [box.x, box.y + box.height],
+        [box.x + box.width, box.y + box.height],
+      ];
+    })
+    .map(([px, py]) => {
+      const dx = (px! - w / 2) * (transform.attributes.flipH === "1" ? -1 : 1),
+        dy = (py! - h / 2) * (transform.attributes.flipV === "1" ? -1 : 1);
+      return {
+        x: x + w / 2 + dx * Math.cos(angle) - dy * Math.sin(angle),
+        y: y + h / 2 + dx * Math.sin(angle) + dy * Math.cos(angle),
+      };
+    });
+  const left = Math.min(
+      ...points.map((p) => {
+        return p.x;
+      }),
+    ),
+    top = Math.min(
+      ...points.map((p) => {
+        return p.y;
+      }),
+    );
+  return {
+    x: left,
+    y: top,
+    width:
+      Math.max(
+        ...points.map((p) => {
+          return p.x;
+        }),
+      ) - left,
+    height:
+      Math.max(
+        ...points.map((p) => {
+          return p.y;
+        }),
+      ) - top,
+  };
 }
 
 function cropSide(node: XmlNode | undefined, side: string): number {
@@ -338,6 +512,7 @@ interface TextFrame {
   readonly bounds: Bounds;
   readonly insets: number;
   readonly runs: readonly TextRun[];
+  readonly source: TextSource | undefined;
 }
 
 function plainTextBox(shape: XmlNode) {
@@ -353,18 +528,16 @@ function plainTextBox(shape: XmlNode) {
   }
   const identity = child(nonvisual, PRESENTATION, "cNvPr");
   const application = child(nonvisual, PRESENTATION, "nvPr");
-  const boxProperty = child(nonvisual, PRESENTATION, "cNvSpPr");
   if (
     !identity ||
     nodes(identity).length > 0 ||
-    (application && nodes(application).length > 0) ||
-    boxProperty?.attributes.txBox !== "1"
+    (application && nodes(application).length > 0)
   ) {
     return undefined;
   }
   if (
     nodes(shape).some((node) => {
-      return !["nvSpPr", "spPr", "txBody"].includes(node.local);
+      return !["nvSpPr", "spPr", "txBody", "extLst"].includes(node.local);
     })
   ) {
     return undefined;
@@ -372,13 +545,22 @@ function plainTextBox(shape: XmlNode) {
   if (
     !child(props, DRAWING, "noFill") ||
     nodes(props).some((node) => {
-      return !["xfrm", "prstGeom", "noFill", "ln"].includes(node.local);
+      return (
+        !["xfrm", "prstGeom", "noFill", "ln", "effectLst"].includes(
+          node.local,
+        ) ||
+        (node.local === "effectLst" && nodes(node).length > 0)
+      );
     })
   ) {
     return undefined;
   }
   const line = child(props, DRAWING, "ln");
-  if (line && !child(line, DRAWING, "noFill")) {
+  if (
+    line &&
+    !child(line, DRAWING, "noFill") &&
+    (nodes(line).length > 0 || Object.keys(line.attributes).length > 0)
+  ) {
     return undefined;
   }
   return { box, props, body };
@@ -398,7 +580,13 @@ function singleLineParagraph(body: XmlNode) {
   }
   if (
     Object.keys(bodyProps.attributes).some((name) => {
-      return !["wrap", "lIns", "rIns", "tIns", "bIns", "anchor"].includes(name);
+      return (
+        !["wrap", "lIns", "rIns", "tIns", "bIns", "anchor"].includes(name) &&
+        !(
+          name === "rtlCol" &&
+          ["0", "false"].includes(bodyProps.attributes[name]!)
+        )
+      );
     })
   ) {
     return undefined;
@@ -418,10 +606,13 @@ function singleLineParagraph(body: XmlNode) {
   if (
     ppr &&
     (Object.entries(ppr.attributes).some(([name, value]) => {
-      return name !== "algn" || value !== "l";
+      return !(
+        (name === "algn" && ["l", "ctr", "r"].includes(value)) ||
+        (["indent", "marL", "marR", "lvl"].includes(name) && value === "0")
+      );
     }) ||
       nodes(ppr).some((node) => {
-        return !["lnSpc", "spcBef", "spcAft"].includes(node.local);
+        return !["lnSpc", "spcBef", "spcAft", "buNone"].includes(node.local);
       }))
   ) {
     return undefined;
@@ -458,7 +649,7 @@ function supportsAdvances(text: string, properties: XmlNode): boolean {
   );
 }
 
-function textRun(run: XmlNode): TextRun | undefined {
+function textRun(run: XmlNode, original?: SlidesFontFace): TextRun | undefined {
   const properties = child(run, DRAWING, "rPr");
   const content = child(run, DRAWING, "t");
   if (!properties || !content) {
@@ -475,11 +666,13 @@ function textRun(run: XmlNode): TextRun | undefined {
     .join("");
   const size = number(properties, "sz");
   const spacing = number(properties, "spc", 0);
-  const face = slidesFontFace(
-    latin.attributes.typeface ?? "",
-    ["1", "true"].includes(properties.attributes.b ?? ""),
-    ["1", "true"].includes(properties.attributes.i ?? ""),
-  );
+  const face =
+    original ??
+    slidesFontFace(
+      latin.attributes.typeface ?? "",
+      ["1", "true"].includes(properties.attributes.b ?? ""),
+      ["1", "true"].includes(properties.attributes.i ?? ""),
+    );
   if (
     !text ||
     !face ||
@@ -515,15 +708,40 @@ function frame(shape: XmlNode): TextFrame | undefined {
   ) {
     return undefined;
   }
+  const source = sourceText(shape);
+  let offset = 0;
   const runs: TextRun[] = [];
   for (const node of nodes(paragraph).filter((node) => {
     return node.local === "r";
   })) {
-    const run = textRun(node);
+    const text = runText(node);
+    let end = 0;
+    const original = source?.runs.find((run) => {
+      const start = end;
+      end += run.text.length;
+      return offset >= start && offset + text.length <= end;
+    });
+    const run = textRun(node, original?.face);
+    offset += text.length;
     if (!run) {
       return undefined;
     }
     runs.push(run);
+  }
+  if (
+    source &&
+    source.runs
+      .map((run) => {
+        return run.text;
+      })
+      .join("") !==
+      runs
+        .map((run) => {
+          return run.text;
+        })
+        .join("")
+  ) {
+    return undefined;
   }
   const leftInset = number(bodyProps, "lIns", 91_440);
   const rightInset = number(bodyProps, "rIns", 91_440);
@@ -545,7 +763,21 @@ function frame(shape: XmlNode): TextFrame | undefined {
     bounds: box,
     insets,
     runs,
+    source,
   };
+}
+
+function sourceLineMatches(left: TextFrame, right: TextFrame): boolean {
+  return (
+    (!left.source && !right.source) ||
+    (!!left.source?.line && left.source.line === right.source?.line)
+  );
+}
+
+function leftAligned(frame: TextFrame): boolean {
+  return (
+    (child(frame.paragraph, DRAWING, "pPr")?.attributes.algn ?? "l") === "l"
+  );
 }
 
 function inline(left: TextFrame, right: TextFrame): boolean {
@@ -555,10 +787,13 @@ function inline(left: TextFrame, right: TextFrame): boolean {
   return (
     left.insets === 0 &&
     right.insets === 0 &&
+    leftAligned(left) &&
+    leftAligned(right) &&
     a.y === b.y &&
     a.height === b.height &&
     b.x > a.x &&
-    b.x < a.x + a.width &&
+    b.x <= a.x + a.width + 3 &&
+    sourceLineMatches(left, right) &&
     [...left.runs, ...right.runs].every((run) => {
       return (
         run.size === style.size &&
@@ -604,14 +839,75 @@ function readPresentation(file: Buffer) {
     .map(([name, data]) => {
       return { name, root: readXml(data) };
     });
+  const relationships = archive["ppt/_rels/presentation.xml.rels"];
+  const ids =
+    presentation && child(readXml(presentation), PRESENTATION, "sldIdLst");
+  if (relationships && ids) {
+    const targets = new Map(
+      nodes(readXml(relationships))
+        .filter((node) => {
+          return node.attributes.TargetMode !== "External";
+        })
+        .map((node) => {
+          return [
+            node.attributes.Id,
+            posix.resolve("/ppt", node.attributes.Target ?? "").slice(1),
+          ];
+        }),
+    );
+    const order = nodes(ids).map((node) => {
+      const key = Object.keys(node.attributes).find((key) => {
+        return (
+          key.endsWith(":id") &&
+          node.attributeNamespaces?.[key] ===
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        );
+      });
+      const target = key && targets.get(node.attributes[key]);
+      if (
+        !target ||
+        !slides.some((slide) => {
+          return slide.name === target;
+        })
+      ) {
+        throw new Error("Presentation slide relationship is missing");
+      }
+      return target;
+    });
+    slides.sort((a, b) => {
+      return order.indexOf(a.name) - order.indexOf(b.name);
+    });
+    return {
+      archive,
+      slides: slides.filter((slide) => {
+        return order.includes(slide.name);
+      }),
+      slideWidth,
+      slideHeight: number(size, "cy"),
+    };
+  }
   return { archive, slides, slideWidth, slideHeight: number(size, "cy") };
 }
 
 function inlineGroups(elements: readonly XmlNode[]): TextFrame[][] {
   const clusters: TextFrame[][] = [];
+  const sourceLines = new Map<string, TextFrame[]>();
   let cluster: TextFrame[] = [];
   for (const element of elements) {
     const current = frame(element);
+    // The renderer orders objects by paint, so a bold child may follow every
+    // wrapped fragment of its parent. Only explicit provenance authorizes
+    // regrouping nonconsecutive shapes into their original visual line.
+    if (current?.source?.line) {
+      const line = sourceLines.get(current.source.line) ?? [];
+      line.push(current);
+      sourceLines.set(current.source.line, line);
+      if (cluster.length) {
+        clusters.push(cluster);
+      }
+      cluster = [];
+      continue;
+    }
     if (!current || (cluster.length && !inline(cluster.at(-1)!, current))) {
       if (cluster.length) {
         clusters.push(cluster);
@@ -624,6 +920,22 @@ function inlineGroups(elements: readonly XmlNode[]): TextFrame[][] {
   }
   if (cluster.length) {
     clusters.push(cluster);
+  }
+  for (const line of sourceLines.values()) {
+    line.sort((a, b) => {
+      return a.bounds.x - b.bounds.x;
+    });
+    let row: TextFrame[] = [];
+    for (const current of line) {
+      if (row.length && !inline(row.at(-1)!, current)) {
+        clusters.push(row);
+        row = [];
+      }
+      row.push(current);
+    }
+    if (row.length) {
+      clusters.push(row);
+    }
   }
   return clusters;
 }
@@ -725,11 +1037,18 @@ function applyGroup(
         }),
       ) - first.bounds.x,
   };
+  const width = Math.max(original.width, Math.ceil(requiredWidth));
+  const alignment =
+    child(first.paragraph, DRAWING, "pPr")?.attributes.algn ?? "l";
   const expanded: Bounds = {
     ...original,
-    width: Math.max(original.width, Math.ceil(requiredWidth)),
+    width,
+    x:
+      original.x -
+      (width - original.width) *
+        (alignment === "r" ? 1 : alignment === "ctr" ? 0.5 : 0),
   };
-  if (expanded.x + expanded.width > slide.width) {
+  if (expanded.x < 0 || expanded.x + expanded.width > slide.width) {
     return false;
   }
   const members = new Set(
@@ -751,9 +1070,13 @@ function applyGroup(
       ) {
         return false;
       }
-      const other = bounds(element);
+      if (["nvGrpSpPr", "grpSpPr"].includes(element.local)) {
+        return false;
+      }
+      const other = obstacleBounds(element);
+      // Unknown geometry cannot establish safe additional clearance.
       return (
-        other && intersects(expanded, other) && !intersects(original, other)
+        !other || (intersects(expanded, other) && !intersects(original, other))
       );
     })
   ) {
@@ -763,6 +1086,10 @@ function applyGroup(
     return false;
   }
   first.extent.attributes.cx = String(expanded.width);
+  const props = child(first.node, PRESENTATION, "spPr")!;
+  child(child(props, DRAWING, "xfrm")!, DRAWING, "off")!.attributes.x = String(
+    Math.round(expanded.x),
+  );
   // endParaRPr must remain the last child of the combined paragraph.
   const end = child(first.paragraph, DRAWING, "endParaRPr");
   first.paragraph.children = first.paragraph.children.filter((item) => {
@@ -781,6 +1108,28 @@ function applyGroup(
   if (end) {
     first.paragraph.children.push(end);
   }
+  if (first.source && group.length > 1) {
+    const ext = child(first.node, PRESENTATION, "extLst")!;
+    const text = child(
+      nodes(ext).find((node) => {
+        return node.attributes.uri === TEXT_SOURCE;
+      })!,
+      TEXT_SOURCE,
+      "text",
+    )!;
+    for (const following of group.slice(1)) {
+      const otherExt = child(following.node, PRESENTATION, "extLst")!;
+      text.children.push(
+        ...child(
+          nodes(otherExt).find((node) => {
+            return node.attributes.uri === TEXT_SOURCE;
+          })!,
+          TEXT_SOURCE,
+          "text",
+        )!.children,
+      );
+    }
+  }
   return true;
 }
 
@@ -796,20 +1145,23 @@ async function prepareSlide(
   }
   const content = child(root, PRESENTATION, "cSld");
   const tree = content && child(content, PRESENTATION, "spTree");
-  if (
-    !tree ||
-    nodes(tree).some((node) => {
-      return (
-        ["cxnSp", "grpSp", "graphicFrame", "AlternateContent"].includes(
-          node.local,
-        ) ||
-        (["sp", "pic"].includes(node.local) && !bounds(node))
-      );
-    })
-  ) {
+  if (!tree) {
     return false;
   }
   const elements = nodes(tree);
+  const unknownObstacles = elements.filter((element) => {
+    return (
+      !["nvGrpSpPr", "grpSpPr"].includes(element.local) &&
+      !obstacleBounds(element)
+    );
+  });
+  if (unknownObstacles.length) {
+    log.warn("Unresolved slide geometry prevents text-frame expansion", {
+      shapes: unknownObstacles.map((element) => {
+        return element.local;
+      }),
+    });
+  }
   let changed = false;
   for (const group of inlineGroups(elements)) {
     const measured = await measureGroup(group, fonts, signal);
@@ -823,13 +1175,68 @@ async function prepareSlide(
   return changed;
 }
 
+function normalizeSourceFonts(
+  root: XmlNode,
+  page: number,
+  fonts: ReadonlyMap<string, Font | undefined>,
+): SlidesTextStyle[] {
+  const content = child(root, PRESENTATION, "cSld");
+  const tree = content && child(content, PRESENTATION, "spTree");
+  const textStyles: SlidesTextStyle[] = [];
+  for (const shape of tree ? nodes(tree) : []) {
+    const item = frame(shape);
+    if (
+      !item?.source ||
+      item.runs.some((run) => {
+        return !fonts.get(JSON.stringify(run.face));
+      })
+    ) {
+      continue;
+    }
+    const identity = child(
+      child(shape, PRESENTATION, "nvSpPr")!,
+      PRESENTATION,
+      "cNvPr",
+    )!;
+    for (const run of item.runs) {
+      const props = child(run.node, DRAWING, "rPr")!;
+      for (const kind of ["latin", "ea", "cs"]) {
+        const font = child(props, DRAWING, kind);
+        if (font) {
+          font.attributes.typeface = run.face.family;
+        }
+      }
+      props.attributes.b = run.face.weight >= 700 ? "1" : "0";
+      props.attributes.i = run.face.italic ? "1" : "0";
+    }
+    textStyles.push({
+      page,
+      shapeId: identity.attributes.id!,
+      bounds: item.bounds,
+      text: item.runs
+        .map((run) => {
+          return run.text;
+        })
+        .join(""),
+      runs: item.runs.map((run) => {
+        return { text: run.text, face: run.face };
+      }),
+    });
+  }
+  return textStyles;
+}
+
 /** Prepare supported editable text and static picture crops for import. Other
  * shapes/archives stay owned by Google's importer; never invent a font. */
 export async function prepareGoogleSlidesImport(
   source: { readonly filename: string; readonly file: Buffer },
   signal: AbortSignal,
 ): Promise<
-  | { readonly ok: true; readonly file: Buffer }
+  | {
+      readonly ok: true;
+      readonly file: Buffer;
+      readonly textStyles?: readonly SlidesTextStyle[];
+    }
   | { readonly ok: false; readonly message: string }
 > {
   if (
@@ -855,7 +1262,8 @@ export async function prepareGoogleSlidesImport(
   }
   const fonts = new Map<string, Font | undefined>();
   let changed = false;
-  for (const slide of slides) {
+  const textStyles: SlidesTextStyle[] = [];
+  for (const [page, slide] of slides.entries()) {
     signal.throwIfAborted();
     const prepared = await settle(
       prepareSlide(slide.root, slideWidth, fonts, signal),
@@ -873,7 +1281,9 @@ export async function prepareGoogleSlidesImport(
       slideWidth,
       slideHeight,
     );
-    if (prepared.value || picturesCropped) {
+    const normalized = normalizeSourceFonts(slide.root, page, fonts);
+    textStyles.push(...normalized);
+    if (prepared.value || picturesCropped || normalized.length > 0) {
       archive[slide.name] = strToU8(xml(slide.root));
       changed = true;
     }
@@ -881,5 +1291,6 @@ export async function prepareGoogleSlidesImport(
   return {
     ok: true,
     file: changed ? Buffer.from(zipSync(archive)) : source.file,
+    textStyles,
   };
 }

@@ -20,10 +20,10 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorManualGrantContract,
   builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import {
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogPermissionDetail,

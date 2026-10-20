@@ -96,6 +96,7 @@ readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-memb
 readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
 readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-only
+readonly CONNECTOR_RESOURCE_SPLIT_PATH=.github/rollback-floors/connector-resource-split
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
 readonly VNC_CANONICAL_METADATA_PATH=.github/rollback-floors/vnc-native-networks-canonical-metadata
@@ -707,6 +708,22 @@ if ! git merge-base --is-ancestor "$guest_storage_output_completion_reader_commi
 fi
 if ! git merge-base --is-ancestor "$guest_storage_output_completion_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Guest Storage-output completion reader: ${guest_storage_output_completion_reader_commit}."
+fi
+
+# PR1 introduced /api/connectors/connected and /api/remotes/overview before
+# App consumers switched. A rollback must retain those resource endpoints even
+# when the selected API predates the later legacy overview removal.
+if ! connector_resource_split_commit=$(git show "origin/main:${CONNECTOR_RESOURCE_SPLIT_PATH}"); then
+  fail "Cannot read the Connector resource split rollback floor from main."
+fi
+if [[ ! "$connector_resource_split_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Connector resource split rollback floor."
+fi
+if ! git merge-base --is-ancestor "$connector_resource_split_commit" origin/main; then
+  fail "Connector resource split rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$connector_resource_split_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Connector resource split: ${connector_resource_split_commit}."
 fi
 
 # Resolve the squash-merged DB reader from main; pre-cutover APIs would read

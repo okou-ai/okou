@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import {
   customConnectorByIdContract,
   customConnectorProposalContract,
@@ -14,7 +14,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorOverviewRoutes } from "../connector-overview";
+import { agentConnectorAccessRoutes } from "../agent-connector-access";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
 
@@ -40,8 +40,8 @@ test("agent connector grants stay scoped to the signed-in user", async () => {
     }),
     [201],
   );
-  const client = setupApp({ context, routes: connectorOverviewRoutes })(
-    connectorOverviewContract,
+  const client = setupApp({ context, routes: agentConnectorAccessRoutes })(
+    agentConnectorAccessContract,
   );
   const grants = await accept(
     client.agent({ headers, params: { id: created.body.agentId } }),
@@ -92,7 +92,7 @@ test("a saved custom connector proposal invalidates the Agent access snapshot", 
   const routes = [
     ...agentsRoutes,
     ...customConnectorProposalRoutes,
-    ...connectorOverviewRoutes,
+    ...agentConnectorAccessRoutes,
     ...connectorAccountRoutes,
     ...customConnectorsDeleteRoutes,
   ];
@@ -171,7 +171,7 @@ test("a saved custom connector proposal invalidates the Agent access snapshot", 
 
   expect(saved.body.authorizedAgentId).toBe(agent.body.agentId);
   const access = await accept(
-    client(connectorOverviewContract).agent({
+    client(agentConnectorAccessContract).agent({
       headers,
       params: { id: agent.body.agentId },
     }),

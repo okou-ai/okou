@@ -355,7 +355,7 @@ test("Realtime authentication failure does not leave stale live updates", async 
   await expect(
     context.store.set(
       waitAblyLoopUntil$,
-      { topic: "customConnectorListChanged", loopCommand$: finishLoop$ },
+      { topic: "composerAgentConnectorsChanged", loopCommand$: finishLoop$ },
       context.signal,
     ),
   ).rejects.toThrow(/Ably connection failed/);

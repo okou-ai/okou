@@ -36,10 +36,7 @@ import {
   feishuOAuthAccountFromRows,
   feishuOAuthCredentialReadPlan,
 } from "./feishu-custom-connector.service";
-import {
-  publishCustomConnectorUserInvalidationAfterCommit,
-  type CapturedConnectorClientInvalidationAbort,
-} from "./connector-client-invalidation.service";
+import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import {
   feishuCallbackUrl,
   feishuOAuthAppCallbackUrl,
@@ -433,11 +430,10 @@ export const disconnectFeishuConnection$ = command(
       signal.throwIfAborted();
       return false;
     }
-    await publishCustomConnectorUserInvalidationAfterCommit(
-      args.userId,
-      signal,
-      postCommitAbort,
-    );
+    if (postCommitAbort) {
+      throw postCommitAbort.reason;
+    }
+    signal.throwIfAborted();
     return true;
   },
 );

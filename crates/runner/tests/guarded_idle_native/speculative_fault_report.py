@@ -22,6 +22,61 @@ PHASES = ("inputs_verified", "callback_waiting", "preparation_lost", "tail_block
           "status_published", "producers_joined")
 
 
+def validate_saving_progress(events, terminal, baseline, policy, identities, runners,
+                             sequence=1, expected_runner=None):
+    tail, pool, progress, saved, status, published, joined = [event["evidence"] for event in events]
+    coverage(tail.get("coverage"), policy, False)
+    exact(tail, {"original_exit_confirmed": True, "receiver_polled_pending": True,
+                 "coverage": tail["coverage"]}, "speculative required saving lost original exit/custody")
+    held = batch.clock(pool.get("pool_held_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
+    status_held = batch.clock(pool.get("status_held_ns"), held, events[1]["monotonic_ns"])
+    polled = batch.clock(pool.get("heartbeat_pending_ns"), status_held, events[1]["monotonic_ns"])
+    foreground.observer(pool.get("observer"), polled, events[1]["monotonic_ns"])
+    coverage(pool.get("coverage"), policy, False)
+    exact(pool, {"pool_held_ns": held, "status_held_ns": status_held, "heartbeat_pending_ns": polled,
+        "heartbeat_polled_pending": True, "observer": pool["observer"], "coverage": pool["coverage"]},
+        "speculative held-pool progress/custody missing")
+    released = batch.clock(progress.get("pool_released_ns"), events[1]["monotonic_ns"], events[2]["monotonic_ns"])
+    runner = foreground.heartbeat(progress.get("heartbeat"), sequence, released, events[2]["monotonic_ns"], (2,4096))
+    if expected_runner is not None and runner != expected_runner:
+        raise ValueError("native wait and saving changed Runner identity")
+    if runner in runners or runner[0] in identities:
+        raise ValueError("speculative heartbeat Runner generation replayed")
+    runners.add(runner)
+    identities.add(runner[0])
+    coverage(progress.get("coverage"), policy, False)
+    exact(progress, {"pool_released_ns": released, "status_held_ns": status_held,
+        "heartbeat": progress["heartbeat"], "receiver_polled_pending": True,
+        "coverage": progress["coverage"]}, "speculative held-IO/status heartbeat/custody missing")
+    released = batch.clock(saved.get("io_released_ns"), events[2]["monotonic_ns"], terminal[4]["monotonic_ns"])
+    finished = batch.clock(saved.get("saving_joined_ns"), terminal[4]["monotonic_ns"], events[3]["monotonic_ns"])
+    accounting(saved.get("accounting"), True)
+    exact(saved, {"io_released_ns": released, "saving_joined_ns": finished, "home_cache_promoted": True,
+        "original_lease_released": True, "allocated": [0,0,0], "accounting": saved["accounting"]},
+        "speculative required data/lease/accounting did not join")
+    polled = batch.clock(status.get("status_wait_polled_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
+    before, after = status.get("status_waits_before"), status.get("status_waits_after")
+    if not pressure.integer(before) or not pressure.integer(after) or after != before+1:
+        raise ValueError("speculative final status wait not positively observed")
+    if foreground.heartbeat(status.get("heartbeat"), sequence+1, polled, events[4]["monotonic_ns"], (0,0)) != runner:
+        raise ValueError("speculative final heartbeat changed Runner identity")
+    exact(status, {"status_wait_polled_ns": polled, "status_waits_before": before,
+        "status_waits_after": after, "heartbeat": status["heartbeat"],
+        "publication_polled_pending": True, "allocated": [0,0,0]}, "speculative status wait lost progress")
+    released = batch.clock(published.get("status_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
+    finished = batch.clock(published.get("publication_joined_ns"), released, events[5]["monotonic_ns"])
+    later.current_status(published.get("published_status"), baseline)
+    exact(published, {"status_released_ns": released, "publication_joined_ns": finished,
+        "published_status": published["published_status"], "regular_file": True, "allocated": [0,0,0]},
+        "speculative final current status retained inventory")
+    accounting(joined.get("accounting"), True)
+    exact(joined, {"tracker_joined": True, "accounting_joined": True, "heartbeat_joined": True,
+        "provider_joined": True, "peer_joined": True, "remaining_activation_owners": 0,
+        "remaining_finalizing_owners": 0, "allocated": [0,0,0], "accounting": joined["accounting"]},
+        "speculative callback producers remain owned")
+    return runner
+
+
 def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
@@ -53,7 +108,7 @@ def validate(directory):
         for field in ("monotonic_ns", "unix_ns"):
             if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
                 raise ValueError("speculative fault phase clocks lost ordering")
-        initial, waiting, lost, tail, pool, progress, saved, status, published, joined = [event["evidence"] for event in events]
+        initial, waiting, lost = [event["evidence"] for event in events[:3]]
         mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
         path = initial.get("status_path")
         if (not isinstance(path, str) or not pathlib.PurePosixPath(path).is_absolute()
@@ -92,53 +147,7 @@ def validate(directory):
             "original_metadata_preserved": True, "original_full_lease_active": True,
             "original_exit_polled_pending": True, "pool_empty": True, "allocated": [2,4096,1]},
             "callback loss did not preserve uncertain original/reuse refusal")
-        coverage(tail.get("coverage"), policy, False)
-        exact(tail, {"original_exit_confirmed": True, "receiver_polled_pending": True,
-                     "coverage": tail["coverage"]}, "speculative required saving lost original exit/custody")
-        held = batch.clock(pool.get("pool_held_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
-        status_held = batch.clock(pool.get("status_held_ns"), held, events[4]["monotonic_ns"])
-        polled = batch.clock(pool.get("heartbeat_pending_ns"), status_held, events[4]["monotonic_ns"])
-        foreground.observer(pool.get("observer"), polled, events[4]["monotonic_ns"])
-        coverage(pool.get("coverage"), policy, False)
-        exact(pool, {"pool_held_ns": held, "status_held_ns": status_held, "heartbeat_pending_ns": polled,
-            "heartbeat_polled_pending": True, "observer": pool["observer"], "coverage": pool["coverage"]},
-            "speculative held-pool progress/custody missing")
-        released = batch.clock(progress.get("pool_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
-        runner = foreground.heartbeat(progress.get("heartbeat"), 1, released, events[5]["monotonic_ns"], (2,4096))
-        if runner in runners or runner[0] in identities:
-            raise ValueError("speculative heartbeat Runner generation replayed")
-        runners.add(runner)
-        identities.add(runner[0])
-        coverage(progress.get("coverage"), policy, False)
-        exact(progress, {"pool_released_ns": released, "status_held_ns": status_held,
-            "heartbeat": progress["heartbeat"], "receiver_polled_pending": True,
-            "coverage": progress["coverage"]}, "speculative held-IO/status heartbeat/custody missing")
-        released = batch.clock(saved.get("io_released_ns"), events[5]["monotonic_ns"], terminal[4]["monotonic_ns"])
-        finished = batch.clock(saved.get("saving_joined_ns"), terminal[4]["monotonic_ns"], events[6]["monotonic_ns"])
-        accounting(saved.get("accounting"), True)
-        exact(saved, {"io_released_ns": released, "saving_joined_ns": finished, "home_cache_promoted": True,
-            "original_lease_released": True, "allocated": [0,0,0], "accounting": saved["accounting"]},
-            "speculative required data/lease/accounting did not join")
-        polled = batch.clock(status.get("status_wait_polled_ns"), events[6]["monotonic_ns"], events[7]["monotonic_ns"])
-        before, after = status.get("status_waits_before"), status.get("status_waits_after")
-        if not pressure.integer(before) or not pressure.integer(after) or after != before+1:
-            raise ValueError("speculative final status wait not positively observed")
-        if foreground.heartbeat(status.get("heartbeat"), 2, polled, events[7]["monotonic_ns"], (0,0)) != runner:
-            raise ValueError("speculative final heartbeat changed Runner identity")
-        exact(status, {"status_wait_polled_ns": polled, "status_waits_before": before,
-            "status_waits_after": after, "heartbeat": status["heartbeat"],
-            "publication_polled_pending": True, "allocated": [0,0,0]}, "speculative status wait lost progress")
-        released = batch.clock(published.get("status_released_ns"), events[7]["monotonic_ns"], events[8]["monotonic_ns"])
-        finished = batch.clock(published.get("publication_joined_ns"), released, events[8]["monotonic_ns"])
-        later.current_status(published.get("published_status"), baseline)
-        exact(published, {"status_released_ns": released, "publication_joined_ns": finished,
-            "published_status": published["published_status"], "regular_file": True, "allocated": [0,0,0]},
-            "speculative final current status retained inventory")
-        accounting(joined.get("accounting"), True)
-        exact(joined, {"tracker_joined": True, "accounting_joined": True, "heartbeat_joined": True,
-            "provider_joined": True, "peer_joined": True, "remaining_activation_owners": 0,
-            "remaining_finalizing_owners": 0, "allocated": [0,0,0], "accounting": joined["accounting"]},
-            "speculative callback producers remain owned")
+        validate_saving_progress(events[3:], terminal, baseline, policy, identities, runners)
     return {**result, "format": "native-speculative-fault-report-v1",
             "native_speculative_callback_loss_complete": True,
             "fault_boundary": "borrowed restore callback after joined actual production restore and original-data RPC",

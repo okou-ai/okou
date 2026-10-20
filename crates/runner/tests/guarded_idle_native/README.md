@@ -1,5 +1,58 @@
 # Guarded idle terminal fixture
 
+## Accepted native resume with public unpark awaiting HTTP
+
+`native_unpark::native_accepted_unpark_loss_preserves_required_saving` runs
+drop, observer unwind and response-relay producer unwind with genuine fresh and
+new matching-snapshot Guests. The real public Sandbox unpark enters the exact
+owned socket route. Complete request capture precedes dispatch; only a complete
+actual Firecracker 204 response establishes accepted resume. That response
+waits before original client delivery while unpark is polled Pending, then its
+borrowed observation is dropped or unwound. This proves the accepted API wait;
+it does not claim that the internal VMM command is still unfinished.
+
+The original guarded capsule remains Uncertain, retaining its backing,
+promotion, history and full lease and refusing commit/repark/incoming. The
+Sandbox retains its original readiness producers across cancelled observations.
+A borrowed real terminal-unpark observation also remains Pending before delivery
+while observation and an acknowledged heartbeat progress through held pool
+contention; the original full profile prevents another full-profile reservation.
+Cancel that terminal observation, release and join the independently owned
+response producer, then invoke ordinary covered required cleanup. A producer
+unwind is injected only after real response delivery; it is a relay task failure,
+not an invented Firecracker error. Terminal readiness still requires positive
+joining of the original API and Guest readiness producers.
+
+Only the original Sandbox receives terminal data-operation authority. Its shared
+ordinary coordinator stays Dirty, and ordinary controls, assignment and RPC
+publication remain fenced. Other dirty causes revoke terminal recovery. Unknown
+or failed readiness retains original custody; it never authorizes reuse or
+required-data deletion. Emergency Drop is not successful cleanup.
+
+The shared original saving fixture holds actual 64 MiB post-exit IO, preserves
+full lease/growth ownership, and verifies independent pool/status/IO progress,
+positive original exit, complete original home/64 KiB payload recovery, private
+runtime removal, final status/accounting and producer joins. C8 keeps its separate
+callback boundary and original witness format. Native errors retain owners and
+original files; P1 intervention always fails.
+
+Freeze the committed Host and all current canonical Guests, verify owned RootFS
+bytes and create a new actual matching snapshot. Keep the original supplied
+policy/P1 guards. Include exact raw `native_unpark_policy_json`,
+`native_terminal_artifacts` and `snapshot-preparation.json` in original evidence:
+
+```sh
+<native-test-binary> native_unpark::native_accepted_unpark_loss_preserves_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/native_unpark_report.py <p1-directory>
+```
+
+The strict reader checks original HTTP bytes/socket identity, real acceptance
+before cancellation, clock/owner/uncertainty/progress/producer attribution and
+complete saving. Synthetic real-file/CLI negatives are ordinary consumer tests,
+not native proof. Guest RPC cancellation, physical pause, full Supervisor
+shutdown, D/E and production P4 remain separate.
+
 ## Cancelled or panicked speculative restore callbacks
 
 `native_speculative_callback_loss_preserves_uncertain_owner_and_required_saving`

@@ -2,6 +2,7 @@ import { command, computed, state, type Computed } from "ccstate";
 import {
   chatRelationsContract,
   type ChatCommunication,
+  type ChatRelationMessage,
   type CreatedChatRelation,
   type RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
@@ -15,6 +16,25 @@ import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 
 export interface ChatRelationList<T> {
   readonly data$: Computed<Promise<{ readonly items: readonly T[] }>>;
+}
+
+function createMessages(
+  threadId: string,
+  peerId: string,
+  revision$: Computed<unknown>,
+): ChatRelationList<ChatRelationMessage> {
+  const data$ = computed(async (get) => {
+    get(revision$);
+    return (
+      await accept(
+        get(apiClient$)(chatRelationsContract).messages({
+          params: { id: threadId, peerId },
+        }),
+        [200],
+      )
+    ).body;
+  });
+  return { data$ };
 }
 
 type SourcePart = Extract<UserMessagePart, { type: "source" }>;
@@ -48,6 +68,8 @@ function chatOrigin(events: ChatEvent[]): ChatOrigin {
 
 export interface ResourceChat extends RelatedChat {
   readonly lastActivityAt: string;
+  /** Messages were sent or received, so the chat has a message history. */
+  readonly exchanged: boolean;
 }
 
 function createResourceChats(
@@ -65,7 +87,11 @@ function createResourceChats(
     const chats = new Map<string, ResourceChat>();
     if (created.status === "fulfilled") {
       for (const chat of created.value.items) {
-        chats.set(chat.threadId, { ...chat, lastActivityAt: chat.createdAt });
+        chats.set(chat.threadId, {
+          ...chat,
+          lastActivityAt: chat.createdAt,
+          exchanged: false,
+        });
       }
     }
     if (exchanged.status === "fulfilled") {
@@ -73,6 +99,7 @@ function createResourceChats(
         chats.set(chat.threadId, {
           ...chat,
           lastActivityAt: chat.lastMessageAt,
+          exchanged: chat.sentCount + chat.receivedCount > 0,
         });
       }
     }
@@ -87,6 +114,26 @@ function createResourceChats(
     };
   });
   return { data$ };
+}
+
+// One related chat's message history is open at a time.
+function createPeerMessages(threadId: string, revision$: Computed<unknown>) {
+  const selectedPeer$ = state<string | null>(null);
+  return {
+    selectedPeer$: computed((get) => {
+      return get(selectedPeer$);
+    }),
+    messages$: computed((get) => {
+      const peerId = get(selectedPeer$);
+      return peerId ? createMessages(threadId, peerId, revision$) : null;
+    }),
+    togglePeer$: command(({ get, set }, peerId: string) => {
+      set(selectedPeer$, get(selectedPeer$) === peerId ? null : peerId);
+    }),
+    closeMessages$: command(({ set }) => {
+      set(selectedPeer$, null);
+    }),
+  };
 }
 
 export function createChatRelationSignals(
@@ -159,6 +206,7 @@ export function createChatRelationSignals(
   return {
     origin$,
     chats: createResourceChats(children, communications),
+    ...createPeerMessages(threadId, revision$),
     retry$: command(({ set }) => {
       set(retryRevision$, (value) => {
         return value + 1;

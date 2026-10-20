@@ -169,45 +169,6 @@ async function listActiveFeishuRuns(actor: ApiTestUser): Promise<LogEntry[]> {
 
 type FeishuConnectClient = ReturnType<typeof feishuConnectClient>;
 
-function mockAuthoritativeOrganizationMembers(
-  actors: readonly ApiTestUser[],
-): void {
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    {
-      data: actors.map((actor) => {
-        return { publicUserData: { userId: actor.userId } };
-      }),
-    },
-  );
-}
-
-function clearConnectorInvalidationMocks(): void {
-  context.mocks.ably.channelGet.mockClear();
-  context.mocks.ably.publish.mockClear();
-}
-
-function expectCustomConnectorInvalidations(userIds: readonly string[]): void {
-  const channels = context.mocks.ably.publish.mock.calls.flatMap(
-    ([topic], index) => {
-      if (topic !== "customConnectorListChanged") {
-        return [];
-      }
-      const channelName = context.mocks.ably.channelGet.mock.calls[index]?.[0];
-      if (!channelName) {
-        throw new Error("Expected every Ably publication to select a channel");
-      }
-      return [channelName];
-    },
-  );
-  expect(channels.sort()).toStrictEqual(
-    userIds
-      .map((userId) => {
-        return `user:${userId}`;
-      })
-      .sort(),
-  );
-}
-
 const EXPECTED_FEISHU_OAUTH_SCOPES = [
   "offline_access",
   "contact:contact.base:readonly",
@@ -2969,12 +2930,10 @@ export function registerFeishuIntegrationTests(
             visibility: "public",
           });
         });
-        mockAuthoritativeOrganizationMembers([admin, member]);
         mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
-        clearConnectorInvalidationMocks();
         const configured = await own(() => {
           return accept(
             client.setup({
@@ -2989,12 +2948,10 @@ export function registerFeishuIntegrationTests(
             [200],
           );
         });
-        expectCustomConnectorInvalidations([admin.userId, member.userId]);
         const installationId = configured.body.installationId;
         if (!installationId) {
           throw new Error("Expected Feishu setup to return an installation id");
         }
-        clearConnectorInvalidationMocks();
         await own(() => {
           return accept(
             client.updateInstallation({
@@ -3007,7 +2964,6 @@ export function registerFeishuIntegrationTests(
             [200],
           );
         });
-        expectCustomConnectorInvalidations([admin.userId, member.userId]);
 
         const customConnectorClient = setupApp({
           context,
@@ -3316,7 +3272,6 @@ export function registerFeishuIntegrationTests(
         expect(handoffUrl.searchParams.get("code")).toBe("feishu-oauth-code");
         expect(handoffUrl.searchParams.get("state")).toBe(state);
 
-        clearConnectorInvalidationMocks();
         const callbackResponse = await own(() => {
           return oauthApp.request(
             `${feishuOauthContract.callback.path}?${new URLSearchParams({
@@ -3327,7 +3282,6 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(callbackResponse.status).toBe(200);
-        expectCustomConnectorInvalidations([member.userId]);
         await expect(callbackResponse.json()).resolves.toStrictEqual({
           redirectUrl: `${provider.appLinkOrigin}/client/bot/open?appId=${appId}`,
         });
@@ -3348,7 +3302,6 @@ export function registerFeishuIntegrationTests(
 
         const replacementOpenId = "ou_replacement_user";
         fixtureState.oauthUserOpenId = replacementOpenId;
-        clearConnectorInvalidationMocks();
         const replacementCallbackResponse = await own(() => {
           return oauthApp.request(
             `${feishuOauthContract.callback.path}?${new URLSearchParams({
@@ -3359,7 +3312,6 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(replacementCallbackResponse.status).toBe(200);
-        expectCustomConnectorInvalidations([member.userId]);
         expect(fixtureState.oauthTokenRedirectUris).toStrictEqual([
           `${APP_ORIGIN}${provider.callbackPath}`,
           `${APP_ORIGIN}${provider.callbackPath}`,
@@ -3414,7 +3366,6 @@ export function registerFeishuIntegrationTests(
         });
         expect(welcome?.msgType).toBe("interactive");
 
-        clearConnectorInvalidationMocks();
         await own(() => {
           return accept(
             client.disconnectInstallation({
@@ -3424,7 +3375,6 @@ export function registerFeishuIntegrationTests(
             [200],
           );
         });
-        expectCustomConnectorInvalidations([member.userId]);
         const disconnectedConnectorList = await own(() => {
           return accept(
             customConnectorClient.list({
@@ -3469,8 +3419,6 @@ export function registerFeishuIntegrationTests(
         ]);
 
         mocks.clerk.session(admin.userId, admin.orgId, admin.orgRole);
-        mockAuthoritativeOrganizationMembers([admin, member]);
-        clearConnectorInvalidationMocks();
         await own(() => {
           return accept(
             client.removeInstallation({
@@ -3480,7 +3428,6 @@ export function registerFeishuIntegrationTests(
             [200],
           );
         });
-        expectCustomConnectorInvalidations([admin.userId, member.userId]);
         const removedConnectorList = await own(() => {
           return accept(
             customConnectorClient.list({
@@ -4906,27 +4853,23 @@ export function registerFeishuIntegrationTests(
             return content.includes("Already connected");
           }),
         ).toBeTruthy();
-        clearConnectorInvalidationMocks();
         await own(() => {
           return postEvent(callbackUrl, directMessage(appId, "/disconnect"), {
             encrypted: true,
           });
         });
         await own(flushWaitUntilForTest);
-        expectCustomConnectorInvalidations([fixture.actor.userId]);
         expect(
           fixtureState.outboundMessages.some((message) => {
             return messageContent(message).includes("Disconnected");
           }),
         ).toBeTruthy();
-        clearConnectorInvalidationMocks();
         await own(() => {
           return postEvent(callbackUrl, directMessage(appId, "/disconnect"), {
             encrypted: true,
           });
         });
         await own(flushWaitUntilForTest);
-        expectCustomConnectorInvalidations([]);
         expect(
           fixtureState.outboundMessages.some((message) => {
             return messageContent(message).includes("You are not connected.");

@@ -138,4 +138,33 @@ for mutation in \
   cp "${tmp_dir}/valid-manifest.json" "${complete_artifact}/manifest.json"
 done
 
+# Correct external hashes must not disguise an unusable standalone installation.
+for mutation in \
+  '.private = false' \
+  '.bin = {other: "okou.js"}' \
+  '.bin.okou = "elsewhere.js"' \
+  '.dependencies = {external: "1.0.0"}' \
+  '.optionalDependencies = {external: "1.0.0"}' \
+  '.peerDependencies = {external: "1.0.0"}'; do
+  artifact_dir="${tmp_dir}/invalid-installation"
+  create_artifact "$artifact_dir" true true
+  jq "$mutation" "$artifact_dir/contents/package/package.json" >"$tmp_dir/package.json"
+  mv "$tmp_dir/package.json" "$artifact_dir/contents/package/package.json"
+  tar -czf "$artifact_dir/package.tgz" -C "$artifact_dir/contents" package
+  package_sha256="$(sha256sum "$artifact_dir/package.tgz" | cut -d ' ' -f 1)"
+  package_size="$(wc -c <"$artifact_dir/package.tgz" | tr -d '[:space:]')"
+  jq --arg sha "$package_sha256" --argjson size "$package_size" \
+    '.package.sha256 = $sha | .package.size = $size' \
+    "$artifact_dir/manifest.json" >"$tmp_dir/manifest.json"
+  mv "$tmp_dir/manifest.json" "$artifact_dir/manifest.json"
+  manifest_sha256="$(sha256sum "$artifact_dir/manifest.json" | cut -d ' ' -f 1)"
+  jq --arg sha "$manifest_sha256" '.manifestSha256 = $sha' \
+    "$artifact_dir/ready.json" >"$tmp_dir/ready.json"
+  mv "$tmp_dir/ready.json" "$artifact_dir/ready.json"
+  if bash "$verify_script" "$artifact_dir" "$commit_sha" >/dev/null 2>&1; then
+    echo "Verifier accepted invalid installation metadata: $mutation" >&2
+    exit 1
+  fi
+done
+
 echo "verify-okou-cli-artifact tests passed"

@@ -14,6 +14,7 @@ fail() {
 }
 
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -22,7 +23,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "6060606060606060606060606060606060606060" ]; then
+    if [ "${3:-}" = "$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_TARGET_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "6060606060606060606060606060606060606060" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_ON_MAIN:-1}" = "1" ]
       else
@@ -245,6 +252,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/connector-resource-split" ]; then
+      [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT-$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/guest-storage-output-completion-reader" ]; then
       [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_GUEST_STORAGE_COMPLETION_READER_COMMIT-6060606060606060606060606060606060606060}"
@@ -322,6 +334,7 @@ run_resolver() {
     GITHUB_REPOSITORY=okou-ai/okou \
     METAL_USER=ci \
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
+    MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
     VERCEL_PROJECT_ID=test-project \
@@ -338,6 +351,23 @@ assert_failure() {
   fi
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
+
+# Current-main policy must reject pre-preparation APIs before provider or host
+# access. Valid descendants still resolve through the existing success case.
+for connector_case in \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE=0|Cannot read the Connector resource split rollback floor from main" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT=|Missing or invalid Connector resource split rollback floor" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT=not-a-commit|Missing or invalid Connector resource split rollback floor" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_ON_MAIN=0|Connector resource split rollback floor is not on main" \
+  "MOCK_CONNECTOR_RESOURCE_SPLIT_TARGET_VALID=0|Rollback target predates the Connector resource split"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${connector_case#*|}" \
+    run_resolver "${tmp_dir}/connector-resource-split.output" "${connector_case%%|*}"
+  [ ! -s "${tmp_dir}/connector-resource-split.output" ] || fail "incompatible Connector API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Connector resource split policy must reject before artifact or host access"
+  fi
+done
 
 # A compatible API target must resolve its independently compatible Runner tag.
 : >"${tmp_dir}/boundaries.log"

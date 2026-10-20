@@ -16,7 +16,7 @@ jq -e '
   . as $root |
   .jobs.prepare.steps as $steps |
   ($steps | map(((.uses // "") | startswith("actions/checkout@")) and
-    .with.ref == "${{ steps.identity.outputs.head-sha }}") | index(true)) as $checkout |
+    .with.ref == "${{ github.sha }}") | index(true)) as $checkout |
   ($steps | map(.uses // "" | . == "./.github/actions/build-runner-cli") | index(true)) as $build |
   ($steps | map(((.uses // "") | startswith("actions/upload-artifact@")) and
     .with.name == "runner-cli-${{ github.run_id }}-${{ github.run_attempt }}") | index(true)) as $upload |
@@ -29,7 +29,7 @@ jq -e '
     .env.HEAD_SHA == "${{ github.sha }}" and
     .env.PRODUCER_HEAD_SHA == "${{ github.event.pull_request.head.sha || github.sha }}"
   ) and
-  $steps[$checkout].with.ref == "${{ steps.identity.outputs.head-sha }}" and
+  ([$steps[] | select((.uses // "") | startswith("actions/checkout@"))] | length == 1) and
   $steps[$build].with["source-sha"] == "${{ steps.identity.outputs.head-sha }}" and
   ($steps[$upload].with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
   $steps[$upload].with.name == "runner-cli-${{ github.run_id }}-${{ github.run_attempt }}" and

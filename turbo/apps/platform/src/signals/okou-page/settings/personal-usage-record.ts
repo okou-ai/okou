@@ -6,8 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/usage-record";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
 import { accept } from "../../../lib/accept.ts";
-import { apiClient$ } from "../../api-client.ts";
-import { onRejection, resetSignal } from "../../utils.ts";
+import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
+import { resetSignal } from "../../utils.ts";
 
 export type CreditBalanceTab = "mine" | "team";
 
@@ -85,35 +85,23 @@ export const toggleUsagePackMemberAdditions$ = command(
 
 const PAGE_SIZE = 20;
 
-type LoadUsageRecordPage = (page: number) => Promise<UsageRecordResponse>;
+interface UsageRecordQuery {
+  readonly createClient: ApiClientFactory;
+  readonly range: UsageRecordRange;
+}
 
 const usageRecordReload$ = state(0);
 const myUsageRecordPages$ = state<readonly UsageRecordResponse[]>([]);
-const myUsageRecordRequestedPages$ = state<ReadonlySet<number>>(new Set());
 const myUsageRecordGeneration$ = state(0);
 const myUsageRangeState$ = state<UsageRecordRange>("today");
 const teamUsageRangeState$ = state<UsageRecordRange>("billingPeriod");
 
 const resetMyUsageRecordPages$ = command(({ set }) => {
   set(myUsageRecordPages$, []);
-  set(myUsageRecordRequestedPages$, new Set());
   set(myUsageRecordGeneration$, (generation) => {
     return generation + 1;
   });
 });
-
-const releaseMyUsageRecordPageRequest$ = command(
-  ({ get, set }, page: number, generation: number) => {
-    if (get(myUsageRecordGeneration$) !== generation) {
-      return;
-    }
-    set(myUsageRecordRequestedPages$, (pages) => {
-      const retryablePages = new Set(pages);
-      retryablePages.delete(page);
-      return retryablePages;
-    });
-  },
-);
 
 export const myUsageRange$ = computed((get) => {
   return get(myUsageRangeState$);
@@ -134,25 +122,34 @@ export const setTeamUsageRange$ = command(
   },
 );
 
-const loadMyUsageRecordPage$ = computed((get): LoadUsageRecordPage => {
-  const range = get(myUsageRangeState$);
-  const client = get(apiClient$)(usageRecordContract);
-  return async (page) => {
-    const result = await accept(
-      client.get({
-        query: {
-          page,
-          pageSize: PAGE_SIZE,
-          scope: "mine",
-          range,
-          tz: currentTimeZone(),
-        },
-      }),
-      [200],
-    );
-    return result.body;
+const myUsageRecordQuery$ = computed((get): UsageRecordQuery => {
+  return {
+    createClient: get(apiClient$),
+    range: get(myUsageRangeState$),
   };
 });
+
+async function loadMyUsageRecordPage(
+  query: UsageRecordQuery,
+  page: number,
+  signal?: AbortSignal,
+): Promise<UsageRecordResponse> {
+  const result = await accept(
+    query.createClient(usageRecordContract).get({
+      query: {
+        page,
+        pageSize: PAGE_SIZE,
+        scope: "mine",
+        range: query.range,
+        tz: currentTimeZone(),
+      },
+      fetchOptions: { signal },
+    }),
+    [200],
+    signal,
+  );
+  return result.body;
+}
 
 function currentTimeZone(): string {
   return new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -161,7 +158,7 @@ function currentTimeZone(): string {
 const firstMyUsageRecordPage$ = computed(
   (get): Promise<UsageRecordResponse> => {
     get(usageRecordReload$);
-    return get(loadMyUsageRecordPage$)(1);
+    return loadMyUsageRecordPage(get(myUsageRecordQuery$), 1);
   },
 );
 
@@ -183,37 +180,31 @@ export const myUsageRecordAsync$ = computed(async (get) => {
 export const loadMoreUsageRecord$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const generation = get(myUsageRecordGeneration$);
+    const pages = get(myUsageRecordPages$);
     const loaded = await get(myUsageRecordAsync$);
     signal.throwIfAborted();
     if (
       get(myUsageRecordGeneration$) !== generation ||
+      get(myUsageRecordPages$) !== pages ||
       loaded.rows.length >= loaded.pagination.total
     ) {
       return;
     }
 
-    const nextPage = get(myUsageRecordPages$).length + 2;
-    if (get(myUsageRecordRequestedPages$).has(nextPage)) {
+    const nextPage = pages.length + 2;
+    const next = await loadMyUsageRecordPage(
+      get(myUsageRecordQuery$),
+      nextPage,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      get(myUsageRecordGeneration$) !== generation ||
+      get(myUsageRecordPages$) !== pages
+    ) {
       return;
     }
-    set(myUsageRecordRequestedPages$, (pages) => {
-      return new Set([...pages, nextPage]);
-    });
-
-    const loadPage = get(loadMyUsageRecordPage$);
-    const next = await onRejection(loadPage(nextPage), () => {
-      set(releaseMyUsageRecordPageRequest$, nextPage, generation);
-    });
-    if (signal.aborted) {
-      set(releaseMyUsageRecordPageRequest$, nextPage, generation);
-      return;
-    }
-    if (get(myUsageRecordGeneration$) !== generation) {
-      return;
-    }
-    set(myUsageRecordPages$, (pages) => {
-      return [...pages, next];
-    });
+    set(myUsageRecordPages$, [...pages, next]);
   },
 );
 

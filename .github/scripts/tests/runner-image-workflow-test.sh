@@ -25,10 +25,9 @@ jq -e '
   ($steps[$cache].uses | startswith("actions/cache@")) and
   $steps[$cache].if == $steps[$detect].if and
   $steps[$cache].if == "steps.identity.outputs.release-skip != '\''true'\''" and
-  $steps[$cache].with.path ==
-    "${{ runner.temp }}/runner-image-turbo-npm/_cacache\n${{ runner.temp }}/runner-image-turbo-npm/_npx\n" and
-  $steps[$cache].with.key ==
-    "runner-image-turbo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('\''scripts/changed.sh'\'') }}" and
+  $steps[$cache].with.path == $steps[$detect].env.TURBO_TOOL_DIR and
+  $steps[$cache].with.path == "${{ runner.temp }}/runner-image-turbo-tool" and
+  ($steps[$cache].with.key | contains("${{ hashFiles('\''scripts/changed.sh'\'') }}")) and
   ($steps[$cache].with | has("restore-keys") | not) and
   $steps[$detect].env.npm_config_cache == "${{ runner.temp }}/runner-image-turbo-npm" and
   $steps[$detect].env.npm_config_prefer_offline == "true" and

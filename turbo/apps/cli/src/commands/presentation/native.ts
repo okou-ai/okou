@@ -24,6 +24,19 @@ const paintSchema = z.object({
   noTextFill: z.boolean().optional(),
   grayscale: z.boolean().optional(),
   resolvedFonts: z.boolean().optional(),
+  textSource: z
+    .object({
+      line: z.string(),
+      runs: z.array(
+        z.object({
+          text: z.string(),
+          family: z.string().min(1),
+          weight: z.number().int().min(1).max(1000),
+          italic: z.boolean(),
+        }),
+      ),
+    })
+    .optional(),
   crop: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
   cells: z.array(z.array(fillSchema.nullable())).optional(),
   mathGroup: z.number().int().nonnegative().optional(),
@@ -1754,6 +1767,7 @@ export const INSTALL_NATIVE = String.raw`
     for (const item of original) {
       if (item.type === 'text') {
         item.textParts = state.fontRuns(item.textParts || [], meta, s);
+        item._nativePaint={...item._nativePaint,textSource:{line:node.__okouLineId || '',runs:state.fontProvenance(item.textParts,s)}};
         if(state.hasResolvedFont(s,meta))item._nativePaint={...item._nativePaint,resolvedFonts:true};
         delete item.options.fill;
         item.options.line = { transparency: 100 };

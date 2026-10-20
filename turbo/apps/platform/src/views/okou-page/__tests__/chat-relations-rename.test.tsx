@@ -178,25 +178,24 @@ async function setupRelationships({
 }
 
 // The parent is both the origin and a related chat, so it is listed once and
-// carries the From tag.
+// carries the From tag. Its message history makes the row a disclosure.
 function expectRelationshipTitle(chats: HTMLElement, title: string) {
   const titles = within(chats).getAllByText(title);
   expect(titles).toHaveLength(1);
-  const link = titles[0]!.closest("a");
-  expect(link).toHaveTextContent(title);
-  expect(link).toHaveTextContent("From");
-  expect(link).not.toHaveAttribute("title");
+  const row = titles[0]!.closest("button");
+  expect(row).toHaveTextContent(title);
+  expect(row).toHaveTextContent("From");
+  expect(row).toHaveAttribute("aria-expanded", "false");
+  expect(row).not.toHaveAttribute("title");
   expect(titles[0]).toBeVisible();
 }
 
 test("Show the current parent title when loading historical sources", async () => {
-  const { parent, panel, chats } = await setupRelationships({
+  const { panel, chats } = await setupRelationships({
     title: RENAMED_TITLE,
   });
   expectRelationshipTitle(chats, RENAMED_TITLE);
-  const links = queryAllByRoleFast("link", chats);
-  expect(links).toHaveLength(1);
-  expect(links[0]).toHaveAttribute("href", `/chats/${parent.id}`);
+  expect(queryAllByRoleFast("link", chats)).toHaveLength(0);
   expect(
     within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();

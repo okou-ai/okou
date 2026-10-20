@@ -72,7 +72,6 @@ import {
   userCustomConnectorGrantAgentReadPlan,
 } from "../services/user-connectors.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
-import { publishCustomConnectorUserInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
   getCustomConnectorById,
   type CustomConnectorHttpRow,
@@ -626,10 +625,7 @@ const finishFeishuOAuthConnection$ = command(
       return "account_in_use";
     }
 
-    await publishCustomConnectorUserInvalidationAfterCommit(
-      args.state.userId,
-      signal,
-    );
+    signal.throwIfAborted();
     await publishUserSignal(
       [args.state.userId],
       "composerAgentConnectorsChanged",

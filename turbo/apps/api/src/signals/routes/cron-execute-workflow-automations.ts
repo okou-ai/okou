@@ -8,6 +8,7 @@ import { executeDueStripeAutomationEvents$ } from "../services/stripe-automation
 import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-poller.service";
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
 import { reconcileProactiveSuggestions$ } from "../services/proactive-suggestions-lifecycle.service";
+import { recoverDueOfficialWorkflowSchedules$ } from "../services/official-workflow-schedule-recovery.service";
 import { settle } from "../utils";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
@@ -37,6 +38,15 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
     if (!proactive.ok) {
       log.error("Proactive Suggestions reconciliation failed", {
         error: proactive.error,
+      });
+    }
+    const recovery = await settle(
+      set(recoverDueOfficialWorkflowSchedules$, signal),
+      signal,
+    );
+    if (!recovery.ok) {
+      log.error("Official Workflow schedule recovery failed", {
+        error: recovery.error,
       });
     }
     const result = await set(executeDueWorkflowAutomations$, signal);

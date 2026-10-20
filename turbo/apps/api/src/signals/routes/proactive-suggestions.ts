@@ -65,8 +65,7 @@ const readPreference$ = command(
       enabled: eligibility.enabled,
       status: !eligibility.enabled
         ? "paused"
-        : automation?.status === "failed" ||
-            (automation?.failures && !automation.enabled)
+        : automation?.status === "failed" || automation?.failures
           ? "error"
           : automation?.enabled &&
               automation.status === "current" &&
@@ -109,7 +108,7 @@ const preferenceRoute$ = command(
         });
       signal.throwIfAborted();
       const setup = await settle(
-        set(ensureProactiveSuggestionsWorkflow$, owner, true, signal),
+        set(ensureProactiveSuggestionsWorkflow$, owner, signal),
         signal,
       );
       const preference = await set(readPreference$, owner, signal);
