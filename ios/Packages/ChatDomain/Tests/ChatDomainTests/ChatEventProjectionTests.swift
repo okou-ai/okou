@@ -54,6 +54,32 @@ final class ChatEventProjectionTests: XCTestCase {
     XCTAssertTrue(history.messages.allSatisfy { !$0.isQueued })
   }
 
+  func testActivityRunUsesFirstOccurrenceOrderRatherThanUUIDOrLatestEvent() throws {
+    let older = "f0000000-0000-4000-8000-000000000001"
+    let newer = "10000000-0000-4000-8000-000000000001"
+    let ignored = "f0000000-0000-4000-8000-000000000002"
+    let rows = [
+      event(1, type: .inputPrompt, at: 9, text: "Older", runID: older),
+      event(2, type: .inputPrompt, at: 1, text: "Newer", runID: newer),
+      event(3, type: .inputBudget, at: 10, runID: older),
+      event(4, type: .usageRecorded, at: 11, runID: ignored),
+      event(5, type: .inputBudget, at: 12, runID: ignored),
+      event(6, type: .controlRevoke, at: 13, revokes: eventID(5)),
+    ]
+    let history = try ChatEventProjection.history(rows: rows, recovering: false)
+    XCTAssertEqual(history.activeRunIDs, [newer, older])
+    XCTAssertEqual(history.activityRunID, newer)
+
+    let completed = rows + [event(7, type: .runCompleted, at: 14, runID: newer)]
+    XCTAssertEqual(
+      try ChatEventProjection.history(rows: completed, recovering: false).activityRunID, older)
+    XCTAssertNil(try ChatEventProjection.history(rows: rows, recovering: true).activityRunID)
+    let stopping = rows + [event(7, type: .controlInterrupt, at: 14, runID: newer)]
+    XCTAssertNil(try ChatEventProjection.history(rows: stopping, recovering: false).activityRunID)
+    let finished = completed + [event(8, type: .runCancelled, at: 15, runID: older)]
+    XCTAssertNil(try ChatEventProjection.history(rows: finished, recovering: false).activityRunID)
+  }
+
   private func eventID(_ id: Int) -> String {
     String(format: "10000000-0000-4000-8000-%012d", id)
   }

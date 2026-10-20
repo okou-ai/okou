@@ -28,7 +28,7 @@ final class ConversationStore {
   var draft = ""
   @ObservationIgnored lazy var attachmentDraft = AttachmentDraftStore(
     commands: commands, didFail: didFail)
-  private(set) var history: ChatHistory?
+  private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
   private(set) var pending: [PendingMessage] = []
   private(set) var messages: [ChatMessage] = []
   private(set) var visibleItems: [ConversationItem] = []
@@ -38,12 +38,15 @@ final class ConversationStore {
   private(set) var readingPosition: ConversationReadingPosition?
   private(set) var isLoading = false
   private(set) var isSending = false
-  private(set) var isStopping = false
+  private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
   private(set) var error: String?
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   let measurements = ConversationMeasurementCache()
+  let activitySummary: ConversationActivitySummary
+  private var detailOwner: UUID?
+  private var activitySummaryEnabled = false
 
   private let sync: ChatSync
   private let commands: ChatCommands
@@ -69,8 +72,13 @@ final class ConversationStore {
     didMarkRead: @escaping @MainActor () -> Void,
     didSend: @escaping @MainActor () -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
-    didSettle: @escaping @MainActor () -> Void
+    didSettle: @escaping @MainActor () -> Void,
+    activitySleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
   ) {
+    self.activitySummary = ConversationActivitySummary(
+      sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
     self.thread = thread
     self.sync = sync
     self.commands = commands
@@ -216,8 +224,32 @@ final class ConversationStore {
     await task.value
   }
 
+  func setActivitySummaryEnabled(_ enabled: Bool) {
+    activitySummaryEnabled = enabled
+    reconcileActivitySummary()
+  }
+
+  func setDetailVisible(_ visible: Bool, owner: UUID) {
+    if visible {
+      detailOwner = owner
+    } else {
+      // A previous view can disappear after its replacement has already appeared.
+      guard detailOwner == owner else { return }
+      detailOwner = nil
+    }
+    reconcileActivitySummary()
+  }
+
+  func reconcileActivitySummary() {
+    activitySummary.demand(
+      !closed && !needsUpgrade && activitySummaryEnabled && detailOwner != nil && isVisible()
+        && !isStopping
+        && history?.executionState == .running ? history?.activityRunID : nil)
+  }
+
   func close() {
     closed = true
+    activitySummary.stop()
     refreshTask?.cancel()
     sendTask?.cancel()
     stopTask?.cancel()

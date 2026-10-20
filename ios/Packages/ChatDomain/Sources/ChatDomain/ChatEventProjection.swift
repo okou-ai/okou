@@ -11,6 +11,16 @@ public enum ChatEventProjection {
           && !revoked.contains($0.id)
       }.compactMap(\.runId)
     ).subtracting(terminated)
+    // Match PWA liveRunIdsFromChatEvents: first occurrence in authoritative event
+    // order, not UUID sorting or the most recent event from an older run.
+    var seenRuns = Set<String>()
+    let orderedRuns = rows.compactMap { row -> String? in
+      guard let runID = row.runId, activeRuns.contains(runID),
+        !revoked.contains(row.id), row.eventType != .usageRecorded,
+        seenRuns.insert(runID).inserted
+      else { return nil }
+      return runID
+    }
     let queuedInputs = rows.filter {
       ($0.eventType == .inputPrompt || $0.eventType == .inputAutomation)
         && $0.runId == nil && !revoked.contains($0.id)
@@ -94,7 +104,8 @@ public enum ChatEventProjection {
     let work = ChatWorkProjection.build(rows: rows, messages: messages)
     return ChatHistory(
       messages: work.messages, executionState: state,
-      activeRunIDs: activeRuns.subtracting(interrupted).sorted(), queuedEventIDs: queuedInputs,
+      activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
+      activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
       persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections)
   }
 

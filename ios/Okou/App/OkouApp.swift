@@ -136,6 +136,7 @@ private struct WorkspaceRootView: View {
           if let conversation = store.selectedConversation {
             ChatDetailView(
               conversation: conversation, supportsAttachments: store.list.canAttachFiles,
+              supportsActivitySummary: store.list.canShowActivitySummaries,
               topContentInset: headerHeight
             )
             .id(conversation.thread.id)
