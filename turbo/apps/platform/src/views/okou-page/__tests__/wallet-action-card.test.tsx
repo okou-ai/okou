@@ -154,7 +154,6 @@ test("a workspace notification completes wallet consent and continues the owning
   const completed = await findControl("button", "Authorized");
   expect(completed).toBeDisabled();
   expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
-  expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
 });
 
 function captureContinuation() {
@@ -181,6 +180,38 @@ test("wallet consent completed before the user's click continues from the curren
   authorization.complete();
   expect(prompts).toStrictEqual([]);
   click(link);
+
+  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
+  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+});
+
+test("a failed wallet authorization check can be retried by an explicit user action", async () => {
+  let available = false;
+  context.mocks.http.get("https://login.link.com/auth", () => {
+    return HttpResponse.html("<p>Link authorization</p>");
+  });
+  context.mocks.api(walletUserContract.connectStatus, ({ respond }) => {
+    return available
+      ? respond(200, {
+          status: "authorized",
+          authorizationId: AUTHORIZATION_ID,
+        })
+      : respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Authorization temporarily unavailable",
+          },
+        });
+  });
+  const prompts = captureContinuation();
+  await openChat(TRACKED_CONNECT_URL);
+  await expect(
+    screen.findByText("Unable to check authorization. Try again."),
+  ).resolves.toBeInTheDocument();
+  const retry = await findControl("link", "Authorize Link wallet");
+
+  available = true;
+  click(retry);
 
   await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
   expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);

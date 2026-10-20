@@ -710,7 +710,7 @@ export function ArtifactCatalogPage({
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
-  const loadMore = useSet(loadMoreArtifactCatalog$);
+  const [paging, loadMore] = useLoadableSet(loadMoreArtifactCatalog$);
   const [retryLoadable, retryCatalog] = useLoadableSet(retryArtifactCatalog$);
   const retrying = retryLoadable.state === "loading";
   const pageSignal = useGet(pageSignal$);
@@ -720,7 +720,7 @@ export function ArtifactCatalogPage({
   const hasMore =
     catalog.state === "hasData" && catalog.data.nextCursor !== null;
   const handleScroll = (event: ReactUIEvent<HTMLElement>) => {
-    if (!hasMore) {
+    if (!hasMore || paging.state === "loading") {
       return;
     }
     const viewport = event.currentTarget;

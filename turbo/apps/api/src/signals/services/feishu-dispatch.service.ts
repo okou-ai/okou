@@ -28,7 +28,6 @@ import {
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import {
@@ -526,10 +525,7 @@ async function handleDisconnectCommand(
       .where(eq(feishuOrgConnections.id, args.connection.id));
     signal.throwIfAborted();
   });
-  await publishCustomConnectorUserInvalidationAfterCommit(
-    args.connection.userId,
-    signal,
-  );
+  signal.throwIfAborted();
   await (async () => {
     const plan = feishuOrgChangedAdminReadPlan(args.installation.orgId);
     const admins = await args.db

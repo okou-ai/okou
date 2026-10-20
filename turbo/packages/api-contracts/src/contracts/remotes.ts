@@ -2,10 +2,20 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { remoteHostDefaultSchema } from "./chat-remote-access";
-import { computerUseHostBriefSchema } from "./connector-overview";
+import { computerUseHostSchema } from "./computer-use";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
+
+export const computerUseHostBriefSchema = computerUseHostSchema
+  .pick({
+    id: true,
+    hostName: true,
+    displayName: true,
+    lastSeenAt: true,
+    status: true,
+  })
+  .extend({ hostName: z.string() });
 
 export const remotesOverviewSchema = z.object({
   // Computer Use is a resource list only; selection belongs to a thread.

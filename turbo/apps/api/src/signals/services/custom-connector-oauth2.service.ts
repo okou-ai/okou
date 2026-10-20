@@ -78,10 +78,7 @@ import {
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { addUserCustomConnector } from "./user-connectors.service";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
-import {
-  publishCustomConnectorUserInvalidationAfterCommit,
-  type CapturedConnectorClientInvalidationAbort,
-} from "./connector-client-invalidation.service";
+import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 import {
   customConnectorAutomaticOAuthErrorCode,
@@ -1059,11 +1056,10 @@ async function persistAutomaticNoAuthConnection(
   if (!result.connection) {
     throw new Error("Ready connector mutation did not return a connection");
   }
-  await publishCustomConnectorUserInvalidationAfterCommit(
-    args.userId,
-    signal,
-    postCommitAbort,
-  );
+  if (postCommitAbort) {
+    throw postCommitAbort.reason;
+  }
+  signal.throwIfAborted();
   if (args.agentId) {
     const authorization = await addUserCustomConnector(db, {
       orgId: args.orgId,

@@ -4,7 +4,7 @@
  * codex-rs/memories/write/src/rollout_input.rs.
  * Pi uses exact local tokens and a separate complete-request ceiling.
  */
-import { encode } from "gpt-tokenizer/encoding/o200k_base";
+import { encode } from "./memory-tokenizer";
 
 const PI_MEMORY_STAGE1_MAX_BYTES = 8 * 1024 * 1024;
 export const PI_MEMORY_STAGE1_OUTPUT_TOKENS = 32_768;

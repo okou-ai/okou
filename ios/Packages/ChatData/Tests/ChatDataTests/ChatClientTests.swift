@@ -755,14 +755,13 @@ final class ChatClientTests: XCTestCase {
     XCTAssertNil(state.withLock { $0.snapshotAuthorization })
   }
 
-  func testOldHistoryPreservesAgentMentionNamesAndOtherPartLabels() async throws {
+  func testOldHistoryPreservesStructuredAgentMentionsAndSourceContext() async throws {
     let mixedMessage = """
       {"userMessage":{"version":1,"parts":[
         {"type":"text","text":"Ask"},
         {"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Release Scout"},
         {"type":"chat_thread","threadId":"\(fixtureThread)","titleSnapshot":"Release chat"},
         {"type":"source","kind":"agent","runId":"\(fixtureRun)","threadId":"\(fixtureThread)","agentId":"\(fixtureAgent)","titleSnapshot":"Earlier run","href":"https://app.okou.ai/chats/\(fixtureThread)"},
-        {"type":"automation","workflowName":"Nightly review"},
         {"type":"file","fileId":"historical-file","filenameSnapshot":"plan.md","contentType":"text/markdown"}
       ]}}
       """.replacingOccurrences(of: "\n", with: "")
@@ -799,10 +798,14 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(
       history.messages.map(\.text),
       [
-        "Ask\nRelease Scout\nRelease chat\nEarlier run\nNightly review",
+        "AskRelease ScoutRelease chat",
         "Planner",
       ])
     XCTAssertEqual(history.messages.map(\.role), [.user, .user])
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.kind, "agent")
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.titleSnapshot, "Earlier run")
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.runId, fixtureRun)
+    XCTAssertEqual(history.messages.first?.userMessage?.bodyParts[1].agentId, fixtureAgent)
     XCTAssertEqual(
       history.messages.first?.attachments,
       [

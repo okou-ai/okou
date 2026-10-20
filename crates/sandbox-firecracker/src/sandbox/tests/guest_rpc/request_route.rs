@@ -10,7 +10,7 @@ async fn internal_unpark_client_routes_without_relaxing_cancellation_fences() {
     let (mut sandbox, mut peer) = running_rpc_sandbox(dir.path()).await;
     let entered = Arc::new(Notify::new());
     let release = Arc::new(Notify::new());
-    let api = MockFirecrackerApi::with_handler({
+    let mut api = MockFirecrackerApi::with_handler({
         let entered = Arc::clone(&entered);
         let release = Arc::clone(&release);
         move |request| {
@@ -90,4 +90,17 @@ async fn internal_unpark_client_routes_without_relaxing_cancellation_fences() {
     }
     // Dirty remains authoritative even after the independent response drain.
     assert!(sandbox.unpark().await.is_err());
+    assert!(sandbox.unpark_for_terminal_operations().await.is_err());
+    assert!(sandbox.unpark_for_terminal_operations().await.is_err());
+    assert!(sandbox.unpark_attempt.is_some());
+    assert!(sandbox.park_fence.is_some());
+    assert!(sandbox.terminal_unpark.is_none());
+    assert_eq!(
+        api.drain_requests()
+            .iter()
+            .filter(|request| { mock_request_body_json(request)["state"] == "Resumed" })
+            .count(),
+        1,
+        "failed original resume was silently reissued"
+    );
 }

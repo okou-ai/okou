@@ -76,6 +76,7 @@ use crate::snapshot_mount_namespace::{BindMount, SnapshotMountMode, build_comman
 mod guest_connection_timing;
 mod snapshot_restore;
 mod state;
+mod unpark_attempt;
 
 use snapshot_restore::{ensure_snapshot_drive_bind_target, load_snapshot_and_apply_rate_limits};
 pub(crate) use state::SandboxState;
@@ -560,6 +561,10 @@ pub struct FirecrackerSandbox {
     park_outcome: Option<SandboxParkOutcome>,
     /// Host-side normal-operation fence held while this sandbox is parked.
     park_fence: Option<NormalOperationFence>,
+    /// Accepted readiness producers survive cancellation of borrowed unpark.
+    unpark_attempt: Option<unpark_attempt::Attempt>,
+    /// Only terminal data operations may use a positively joined cancelled attempt.
+    terminal_unpark: Option<uuid::Uuid>,
     guest_rpc_endpoint: Option<crate::guest_rpc::GuestRpcEndpoint>,
     guest_duplex_endpoint: Option<crate::guest_duplex::Endpoint>,
     runtime_cancel: CancellationToken,
@@ -682,6 +687,8 @@ impl FirecrackerSandbox {
             is_parked: false,
             park_outcome: None,
             park_fence: None,
+            unpark_attempt: None,
+            terminal_unpark: None,
             guest_rpc_endpoint: None,
             guest_duplex_endpoint: None,
             runtime_cancel: CancellationToken::new(),
@@ -702,6 +709,9 @@ impl FirecrackerSandbox {
     }
 
     pub(crate) async fn terminate_process_for_cleanup(&mut self) -> bool {
+        if self.join_retained_unpark().await.is_err() {
+            return false;
+        }
         // A cancelled stop may leave Stopping with a live monitor. Cleanup
         // must still request termination when the public kill transition skips it.
         self.runtime.kill_process().await;
@@ -881,7 +891,12 @@ impl FirecrackerSandbox {
     }
 
     fn guest_operation_start_gate(&self) -> GuestOperationStartGate {
-        GuestOperationStartGate::new(Arc::clone(&self.guest), self.park_coordinator.clone())
+        let gate =
+            GuestOperationStartGate::new(Arc::clone(&self.guest), self.park_coordinator.clone());
+        match self.terminal_unpark {
+            Some(attempt) => gate.for_terminal_unpark(attempt),
+            None => gate,
+        }
     }
 
     async fn begin_guest_operation(
@@ -2477,6 +2492,7 @@ impl FirecrackerSandbox {
             ));
         }
 
+        ensure_parked_before_unpark(&self.park_coordinator)?;
         let guest_rpc_endpoint = self.bind_guest_rpc_endpoint().map_err(|error| {
             idle_transition_error(
                 SandboxIdleTransition::Unpark,
@@ -2489,37 +2505,105 @@ impl FirecrackerSandbox {
                 format!("bind private Guest channel: {error}"),
             )
         })?;
+        if self.unpark_attempt.is_none() {
+            let guest = Arc::clone(&self.guest);
+            let id = self.id.clone();
+            let api_sock = self.sock_paths.api_sock();
+            let memory_mb = self.config.resources.memory_mb;
+            let park_outcome = self.park_outcome.clone();
+            let state_rx = self.state_tx.subscribe();
+            let mut is_parked = self.is_parked;
+            self.unpark_attempt = Some(unpark_attempt::Attempt::new(
+                async move {
+                    unpark_inner(
+                        &mut is_parked,
+                        memory_mb,
+                        park_outcome.as_ref(),
+                        &api_sock,
+                        state_rx,
+                        &id,
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        SandboxError::IdleTransition { message, .. } => io::Error::other(message),
+                        error => io::Error::other(error.to_string()),
+                    })
+                },
+                async move {
+                    let guest = guest.lock().await.as_ref().cloned().ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::NotConnected,
+                            "guest connection missing during unpark resume",
+                        )
+                    })?;
+                    guest.resume_operations(GUEST_PARK_LIFECYCLE_TIMEOUT).await
+                },
+            ));
+        }
+
         let coordinator = self.park_coordinator.clone();
-        let guest = Arc::clone(&self.guest);
         let id = self.id.clone();
-        let api_sock = self.sock_paths.api_sock();
-        let memory_mb = self.config.resources.memory_mb;
-        let park_outcome = self.park_outcome.as_ref();
-        let state_rx = self.state_tx.subscribe();
-        let is_parked = &mut self.is_parked;
+        let attempt = self.unpark_attempt.as_ref().ok_or_else(|| {
+            idle_transition_error(SandboxIdleTransition::Unpark, "unpark custody missing")
+        })?;
         let park_fence = &mut self.park_fence;
         unpark_with_ready_for_operations(
             &id,
             &coordinator,
-            || unpark_inner(is_parked, memory_mb, park_outcome, &api_sock, state_rx, &id),
-            || async move {
-                let guest = guest.lock().await.as_ref().cloned().ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::NotConnected,
-                        "guest connection missing during unpark resume",
-                    )
-                })?;
-                guest.resume_operations(GUEST_PARK_LIFECYCLE_TIMEOUT).await
+            || async {
+                attempt.native.join().await.map_err(|error| {
+                    coordinator.mark_dirty(DirtyReason::new(error.to_string()));
+                    idle_transition_error(SandboxIdleTransition::Unpark, error.to_string())
+                })
             },
+            || attempt.guest.join(),
             || {
                 drop(park_fence.take());
             },
+            Some(attempt.id),
         )
         .await?;
+        self.is_parked = false;
         self.park_outcome = None;
+        self.unpark_attempt = None;
         self.guest_rpc_endpoint = Some(guest_rpc_endpoint);
         self.guest_duplex_endpoint = Some(guest_duplex_endpoint);
         Ok(())
+    }
+
+    async fn join_retained_unpark(&mut self) -> sandbox::Result<()> {
+        let Some(attempt) = &self.unpark_attempt else {
+            return Ok(());
+        };
+        let result = async {
+            attempt.native.join().await?;
+            attempt.guest.join().await
+        }
+        .await;
+        if let Err(error) = result {
+            self.park_coordinator
+                .mark_dirty(DirtyReason::new(error.to_string()));
+            return Err(idle_transition_error(
+                SandboxIdleTransition::Unpark,
+                error.to_string(),
+            ));
+        }
+        self.is_parked = false;
+        Ok(())
+    }
+
+    fn check_terminal_unpark(&self, attempt: uuid::Uuid) -> sandbox::Result<()> {
+        if self.current_state() != SandboxState::Running {
+            return Err(idle_transition_error(
+                SandboxIdleTransition::Unpark,
+                "terminal unpark backing is not running",
+            ));
+        }
+        self.park_coordinator
+            .ensure_terminal_unpark_allowed(attempt)
+            .map_err(|error| {
+                idle_transition_error(SandboxIdleTransition::Unpark, format!("{error:?}"))
+            })
     }
 }
 
@@ -2614,6 +2698,7 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn stop(&mut self) -> sandbox::Result<()> {
+        self.join_retained_unpark().await?;
         drop(self.guest_rpc_endpoint.take());
         drop(self.guest_duplex_endpoint.take());
         if !self.transition(SandboxState::Running, SandboxState::Stopping) {
@@ -2697,6 +2782,7 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn kill(&mut self) -> sandbox::Result<()> {
+        self.join_retained_unpark().await?;
         drop(self.guest_rpc_endpoint.take());
         drop(self.guest_duplex_endpoint.take());
         if !self.transition(SandboxState::Running, SandboxState::Stopping) {
@@ -2850,6 +2936,31 @@ impl Sandbox for FirecrackerSandbox {
 
     async fn unpark(&mut self) -> sandbox::Result<()> {
         self.unpark_ready_for_operations().await
+    }
+
+    async fn unpark_for_terminal_operations(&mut self) -> sandbox::Result<()> {
+        if let Some(attempt) = self.terminal_unpark {
+            return self.check_terminal_unpark(attempt);
+        }
+        let Some(attempt) = self.unpark_attempt.as_ref().map(|attempt| attempt.id) else {
+            return self.unpark_ready_for_operations().await;
+        };
+        self.check_terminal_unpark(attempt)?;
+        if self.park_fence.is_none() {
+            return Err(idle_transition_error(
+                SandboxIdleTransition::Unpark,
+                "cancelled unpark lost its original operation fence",
+            ));
+        }
+        self.join_retained_unpark().await?;
+        self.check_terminal_unpark(attempt)?;
+        // The ordinary coordinator stays Dirty. Only this Sandbox's bounded
+        // terminal data operations receive the positively joined capability.
+        self.terminal_unpark = Some(attempt);
+        self.park_outcome = None;
+        drop(self.park_fence.take());
+        self.unpark_attempt = None;
+        Ok(())
     }
 
     // -- operations --
@@ -3415,13 +3526,15 @@ enum UnparkBoundaryGuardState {
 struct UnparkBoundaryGuard {
     coordinator: ParkCoordinator,
     state: UnparkBoundaryGuardState,
+    attempt: Option<uuid::Uuid>,
 }
 
 impl UnparkBoundaryGuard {
-    fn new(coordinator: ParkCoordinator) -> Self {
+    fn new(coordinator: ParkCoordinator, attempt: Option<uuid::Uuid>) -> Self {
         Self {
             coordinator,
             state: UnparkBoundaryGuardState::FirecrackerResumeStarted,
+            attempt,
         }
     }
 
@@ -3443,13 +3556,15 @@ impl Drop for UnparkBoundaryGuard {
     fn drop(&mut self) {
         match self.state {
             UnparkBoundaryGuardState::FirecrackerResumeStarted => {
-                self.coordinator.mark_dirty(DirtyReason::new(
+                self.coordinator.mark_dirty(DirtyReason::abandoned_unpark(
                     "unpark attempt dropped during Firecracker resume before guest operations reopened",
+                    self.attempt,
                 ));
             }
             UnparkBoundaryGuardState::FirecrackerResumed => {
-                self.coordinator.mark_dirty(DirtyReason::new(
+                self.coordinator.mark_dirty(DirtyReason::abandoned_unpark(
                     "unpark attempt dropped after Firecracker resume before guest operations reopened",
+                    self.attempt,
                 ));
             }
             UnparkBoundaryGuardState::Disarmed => {}
@@ -3831,6 +3946,7 @@ async fn unpark_with_ready_for_operations<U, UF, R, RF, F>(
     unpark_firecracker: U,
     resume_guest: R,
     release_normal_operations_fence: F,
+    attempt: Option<uuid::Uuid>,
 ) -> sandbox::Result<()>
 where
     U: FnOnce() -> UF,
@@ -3862,7 +3978,7 @@ where
         return Err(error);
     }
 
-    let mut guard = UnparkBoundaryGuard::new(coordinator.clone());
+    let mut guard = UnparkBoundaryGuard::new(coordinator.clone(), attempt);
     if let Err(error) = unpark_firecracker().await {
         warn!(
             id = %log_id,

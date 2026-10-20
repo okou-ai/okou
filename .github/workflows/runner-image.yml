@@ -81,6 +81,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # CLI, Runner and Guest retain this immutable event revision.
+          ref: ${{ github.sha }}
           fetch-depth: 2
 
       - name: Resolve runner image identity
@@ -112,23 +114,22 @@ jobs:
           echo "base-ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
           echo "Base ref: ${BASE_REF}"
 
-      # Cache only the hashing tool, not the CLI's much larger pnpm store.
+      # Invoke the installed hashing tool directly on warm runs, without npx.
       # The script hash rotates the key whenever its pinned Turbo changes.
       - name: Cache Turbo executable
         id: turbo-cache
         if: steps.identity.outputs.release-skip != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ${{ runner.temp }}/runner-image-turbo-npm/_cacache
-            ${{ runner.temp }}/runner-image-turbo-npm/_npx
-          key: runner-image-turbo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/changed.sh') }}
+          path: ${{ runner.temp }}/runner-image-turbo-tool
+          key: runner-image-turbo-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/changed.sh') }}
 
       - name: Detect Turbo and Playwright runner image consumers
         id: turbo
         if: steps.identity.outputs.release-skip != 'true'
         env:
           BASE_REF: ${{ steps.base.outputs.base-ref }}
+          TURBO_TOOL_DIR: ${{ runner.temp }}/runner-image-turbo-tool
           npm_config_cache: ${{ runner.temp }}/runner-image-turbo-npm
           npm_config_prefer_offline: "true"
         run: |
@@ -287,13 +288,6 @@ jobs:
           matrix=$(.github/scripts/runner/runner-host-architecture-groups.sh matrix)
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
           echo "Configured runner host architecture groups: $(jq -r 'map(.id) | join(",") // ""' <<<"$matrix")"
-
-      # CLI, Runner and Guest use the same captured event source revision.
-      - name: Checkout source revision for CLI and Runner
-        if: steps.needed.outputs.current-runner-image-needed == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.identity.outputs.head-sha }}
 
       - name: Build private source-bound CLI input
         if: steps.needed.outputs.current-runner-image-needed == 'true'

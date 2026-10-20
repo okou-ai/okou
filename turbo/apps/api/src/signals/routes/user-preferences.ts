@@ -11,7 +11,7 @@ import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
-import { synchronizeMorningBriefTimezone$ } from "../services/morning-brief-timezone.service";
+import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recovery.service";
 
 import { badRequestMessage, conflict } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -83,19 +83,18 @@ const updateUserPreferencesInner$ = command(
       ]);
     }
     if (body.data.timezone !== undefined) {
-      const synchronized = await set(
-        synchronizeMorningBriefTimezone$,
+      const reconciled = await set(
+        reconcileExistingMorningBrief$,
         {
           orgId: auth.orgId,
           member: { userId: auth.userId, role: auth.orgRole ?? "member" },
         },
         signal,
       );
-      if (synchronized === "conflict") {
-        // The preference is saved; the Morning Brief schedule lost a race and
-        // is left unchanged. Repeating the same update re-applies it.
+      if (reconciled === "conflict") {
+        // Preferences are saved; the existing installation still needs repair.
         return conflict(
-          "Morning Brief schedule changed concurrently. Retry the time zone update.",
+          "Morning Brief could not be reconciled. Retry the time zone update.",
         );
       }
     }
@@ -204,6 +203,17 @@ const initializeUserPreferencesInner$ = command(
     // Existing members without memory are initialized here on demand; this
     // only creates missing memory or an empty HEAD and never rewrites content.
     await set(initializeMemberMemory$, identity, signal);
+    signal.throwIfAborted();
+    // An unavailable brief does not invalidate initialized preferences. Its
+    // Settings status and explicit retry remain the recovery surface.
+    await set(
+      reconcileExistingMorningBrief$,
+      {
+        orgId: auth.orgId,
+        member: { userId: auth.userId, role: auth.orgRole ?? "member" },
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (writeOutcome.kind === "unchanged") {
       const current = await get(userPreferences(identity));

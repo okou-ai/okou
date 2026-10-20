@@ -1,6 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -464,7 +464,7 @@ test.each([null, "Close"] as const)(
     const authorizationStarted = context.mocks.deferred<void>();
     const authorization = context.mocks.deferred<void>();
     let connected = false;
-    context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
+    context.mocks.api(agentConnectorAccessContract.agent, ({ respond }) => {
       return respond(200, {
         enabledConnectorSlugs: connected ? [GOOGLE_ANALYTICS_SLUG] : [],
         customConnectorIds: [],

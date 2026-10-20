@@ -7,6 +7,7 @@ import {
   userModelPreferenceContract,
   type UpdateUserModelPreferenceRequest,
 } from "@okouai/api-contracts/contracts/user-model-preference";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -373,8 +374,24 @@ test("A user can save a message-send preference in Chat settings", async () => {
   );
 });
 
-test("A user can save a time-zone preference", async () => {
+test("Saving a time zone refreshes the recovered Morning Brief preference", async () => {
   const updates = mockPreferences();
+  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+    return updates.some((update) => {
+      return update.timezone === "America/New_York";
+    })
+      ? respond(200, {
+          enabled: true,
+          status: "enabled",
+          unavailableReason: null,
+        })
+      : respond(409, {
+          error: {
+            code: "MORNING_BRIEF_STATE_CONFLICT",
+            message: "Missing time zone",
+          },
+        });
+  });
 
   await setupPage({
     context,
@@ -383,6 +400,7 @@ test("A user can save a time-zone preference", async () => {
   });
 
   const timezone = await screen.findByRole("combobox", { name: "Time zone" });
+  await screen.findByText(/Morning Brief is temporarily unavailable/u);
   expect(timezone).toHaveTextContent("UTC");
   timezone.focus();
   expect(timezone).toHaveFocus();
@@ -398,6 +416,12 @@ test("A user can save a time-zone preference", async () => {
   });
   expect(timezone).toHaveAccessibleName("Time zone");
   expect(updates).toContainEqual({ timezone: "America/New_York" });
+  await waitFor(() => {
+    expect(screen.getByRole("switch", { name: "Morning brief" })).toBeChecked();
+    expect(
+      screen.queryByText(/Morning Brief is temporarily unavailable/u),
+    ).not.toBeInTheDocument();
+  });
 });
 
 test("A failed preference save shows its error and can be retried", async () => {

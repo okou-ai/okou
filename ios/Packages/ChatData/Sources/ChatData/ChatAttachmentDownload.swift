@@ -23,7 +23,7 @@ struct ChatAttachmentDownload {
     // A rejected/expired storage signature gets one fresh authorization lookup, never a stored URL.
     for attempt in 0...1 {
       let resolved: FileURL = try await client.request(
-        "/api/web/file-url", query: [URLQueryItem(name: "file_id", value: attachment.id)])
+        "/api/web/file-url", query: [URLQueryItem(name: "file_id", value: attachment.downloadID)])
       let url: URL
       if thumbnail {
         if let preview = resolved.previewImageUrl {

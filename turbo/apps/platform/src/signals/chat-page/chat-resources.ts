@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
@@ -220,6 +220,7 @@ function createChatResourcePanelSignals() {
 export function createChatResourceSignals(
   catalog: ArtifactCatalogSignals,
   initialEventsReady$: Computed<boolean>,
+  closeMessages$: Command<void, []>,
 ) {
   const panel = createChatResourcePanelSignals();
   const content$ = computed(async (get) => {
@@ -239,6 +240,10 @@ export function createChatResourceSignals(
     toggleSection$: command(
       ({ get, set }, section: "chats" | "artifacts", trigger: HTMLElement) => {
         if (get(expandedSections$)[section]) {
+          // A collapsed preview may hide the chat whose messages are open.
+          if (section === "chats") {
+            set(closeMessages$);
+          }
           const group = trigger.closest("section");
           const scroll = trigger.closest<HTMLElement>("[data-resource-scroll]");
           if (group && scroll) {

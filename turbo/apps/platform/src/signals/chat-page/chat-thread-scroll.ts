@@ -1,6 +1,10 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { logger } from "../log.ts";
 import { onDomEventFn, onRef, waitLoopUntil } from "../utils.ts";
+import {
+  isPwaKeyboardViewportEnabled,
+  VIEWPORT_LAYOUT_EVENT,
+} from "../../lib/visual-viewport-keyboard.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
 const L = logger("AutoScroll");
@@ -18,7 +22,8 @@ export interface ThreadScrollPosition {
 
 export interface ScrollToEventOptions {
   readonly behavior: ScrollBehavior;
-  readonly viewportOffsetTop: number;
+  /** Where the event lands, as a fraction of the viewport height from its top. */
+  readonly viewportRatio: number;
   readonly preloadPreviousRenderWindow: boolean;
 }
 
@@ -740,15 +745,28 @@ function createAttachScrollContainer(
     container.addEventListener("scrollend", handleScrollEnd, {
       passive: true,
     });
-    view?.addEventListener("resize", restoreLayout, { signal });
+    // VisualViewport updates are committed by the shell before it notifies
+    // us below. A raw resize would restore against the previous shell height.
+    const restoreUnmanagedViewport = onDomEventFn(() => {
+      if (!view?.visualViewport || !isPwaKeyboardViewportEnabled()) {
+        return set(navigation.restoreScrollPosition$, signal);
+      }
+      return undefined;
+    });
+    view?.addEventListener("resize", restoreUnmanagedViewport, { signal });
+    view?.visualViewport?.addEventListener("resize", restoreUnmanagedViewport, {
+      signal,
+    });
     container.ownerDocument.fonts?.addEventListener(
       "loadingdone",
       restoreLayout,
       { signal },
     );
-    view?.visualViewport?.addEventListener("resize", restoreLayout, {
-      signal,
-    });
+    container.ownerDocument.addEventListener(
+      VIEWPORT_LAYOUT_EVENT,
+      restoreLayout,
+      { signal },
+    );
 
     signal.addEventListener(
       "abort",
@@ -861,9 +879,12 @@ export function createChatThreadScrollSignals(
         );
         signal.throwIfAborted();
       }
+      // Measure once the events are ready: a pane opened by a link has no
+      // viewport when the scroll is requested.
+      const viewportHeight = get(scroll.scrollContainer$)?.clientHeight ?? 0;
       const position: ThreadScrollPosition = {
         targetEventId: eventId,
-        viewportOffsetTop: options.viewportOffsetTop,
+        viewportOffsetTop: viewportHeight * options.viewportRatio,
       };
       await set(scroll.setThreadScrollPosition$, position, signal);
       signal.throwIfAborted();

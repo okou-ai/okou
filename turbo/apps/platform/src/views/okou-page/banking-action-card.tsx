@@ -27,18 +27,11 @@ import { i18n } from "../../i18n/index.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import type {
-  BankingBusyAction,
   BankingCardUiState,
   BankingSignals,
 } from "../../signals/chat-page/banking-action-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  Reason,
-  detach,
-  onRejection,
-  tapError,
-  withCleanup,
-} from "../../signals/utils.ts";
+import { Reason, detach } from "../../signals/utils.ts";
 
 type BankingConnection = NonNullable<
   BankingAccessRequestStatusResponse["connection"]
@@ -46,22 +39,10 @@ type BankingConnection = NonNullable<
 type BankingAccount = BankingConnection["accounts"][number];
 type BankingGrant = NonNullable<BankingAccessRequestStatusResponse["grant"]>;
 type UpdateBankingUi = (patch: Partial<BankingCardUiState>) => void;
-type StartBankingRequest = (
-  action: Exclude<BankingBusyAction, null>,
-) => boolean;
-
 type OpenBankingConnect = (
   mode: BankingConnectSessionRequest["mode"],
   institutionLoginId?: string,
 ) => void;
-type SaveBankingGrant = (
-  args: {
-    readonly accountIds: readonly string[];
-    readonly duration: BankingGrantDuration;
-  },
-  signal: AbortSignal,
-) => Promise<BankingAccessRequestStatusResponse>;
-
 const BANKING_GRANT_DURATIONS: readonly BankingGrantDuration[] = [
   "1h",
   "24h",
@@ -81,6 +62,8 @@ interface BankingCardController {
   readonly editing: boolean;
   readonly pending: boolean;
   readonly ui: BankingCardUiState;
+  readonly busy: boolean;
+  readonly error: string | null;
   readonly updateUi: UpdateBankingUi;
   readonly openConnect: OpenBankingConnect;
   readonly save: () => void;
@@ -106,193 +89,16 @@ function isBankingGrantDuration(value: string): value is BankingGrantDuration {
   });
 }
 
-function openBankingConnect(
-  {
-    mode,
-    institutionLoginId,
-    popupBlockedMessage,
-    startSession,
-    startRequest,
-    updateUi,
-  }: {
-    readonly mode: BankingConnectSessionRequest["mode"];
-    readonly institutionLoginId?: string;
-    readonly popupBlockedMessage: string;
-    readonly startSession: BankingCardControllerStartSession;
-    readonly startRequest: StartBankingRequest;
-    readonly updateUi: UpdateBankingUi;
-  },
-  pageSignal: AbortSignal,
-): void {
-  if (!startRequest("connect")) {
-    return;
-  }
-  const popup = window.open("about:blank", "_blank");
-  if (!popup) {
-    updateUi({ localError: popupBlockedMessage, busy: null });
-    return;
-  }
-  popup.opener = null;
-  detach(
-    withCleanup(
-      (async () => {
-        const url = await tapError(
-          onRejection(
-            () => {
-              return startSession({ mode, institutionLoginId }, pageSignal);
-            },
-            () => {
-              return popup.close();
-            },
-          ),
-          (error) => {
-            updateUi({ localError: errorMessage(error) });
-          },
-        );
-        if (url) {
-          popup.location.replace(url);
-        }
-      })(),
-      () => {
-        return updateUi({ busy: null });
-      },
-    ),
-    Reason.DomCallback,
-    "start Mastercard Data Connect",
-  );
-}
-
-type BankingCardControllerStartSession = (
-  args: {
-    readonly mode: BankingConnectSessionRequest["mode"];
-    readonly institutionLoginId?: string;
-  },
-  signal: AbortSignal,
-) => Promise<string>;
-
-function saveBankingGrant(
-  {
-    accountIds,
-    duration,
-    saveGrant,
-    startRequest,
-    updateUi,
-  }: {
-    readonly accountIds: ReadonlySet<string>;
-    readonly duration: BankingCardUiState["duration"];
-    readonly saveGrant: SaveBankingGrant;
-    readonly startRequest: StartBankingRequest;
-    readonly updateUi: UpdateBankingUi;
-  },
-  pageSignal: AbortSignal,
-): void {
-  if (accountIds.size === 0 || !startRequest("save")) {
-    return;
-  }
-  detach(
-    withCleanup(
-      (async () => {
-        const saved = await tapError(
-          saveGrant({ accountIds: [...accountIds], duration }, pageSignal),
-          (error) => {
-            updateUi({ localError: errorMessage(error) });
-          },
-        );
-        if (saved) {
-          updateUi({ editing: false });
-        }
-      })(),
-      () => {
-        return updateUi({ busy: null });
-      },
-    ),
-    Reason.DomCallback,
-    "save banking grant",
-  );
-}
-
-function revokeBankingGrant(
-  {
-    revokeGrant,
-    startRequest,
-    updateUi,
-  }: {
-    readonly revokeGrant: (signal: AbortSignal) => Promise<unknown>;
-    readonly startRequest: StartBankingRequest;
-    readonly updateUi: UpdateBankingUi;
-  },
-  pageSignal: AbortSignal,
-): void {
-  if (!startRequest("revoke")) {
-    return;
-  }
-  detach(
-    withCleanup(
-      (async () => {
-        const revoked = await tapError(revokeGrant(pageSignal), (error) => {
-          updateUi({ localError: errorMessage(error) });
-        });
-        if (revoked) {
-          updateUi({
-            confirmingRevoke: false,
-            editing: true,
-            selectedAccountIds: [],
-          });
-        }
-      })(),
-      () => {
-        return updateUi({ busy: null });
-      },
-    ),
-    Reason.DomCallback,
-    "revoke banking grant",
-  );
-}
-
-function continueBankingChat(
-  {
-    continueChat,
-    startRequest,
-    updateUi,
-  }: {
-    readonly continueChat: (signal: AbortSignal) => Promise<void>;
-    readonly startRequest: StartBankingRequest;
-    readonly updateUi: UpdateBankingUi;
-  },
-  pageSignal: AbortSignal,
-): void {
-  if (!startRequest("continue")) {
-    return;
-  }
-  detach(
-    withCleanup(
-      (async () => {
-        await tapError(continueChat(pageSignal), (error) => {
-          updateUi({ localError: errorMessage(error) });
-        });
-      })(),
-      () => {
-        return updateUi({ busy: null });
-      },
-    ),
-    Reason.DomCallback,
-    "continue banking chat callback",
-  );
-}
-
 function useBankingCardController(
   signals: BankingSignals,
   status: BankingAccessRequestStatusResponse,
 ): BankingCardController {
-  const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const ui = useGet(signals.uiState$);
   const updateUi = useSet(signals.updateUiState$);
-  const startRequest = useSet(signals.startRequest$);
-  const startSession = useSet(signals.startSession$);
-  const saveGrant = useSet(signals.saveGrant$);
-  const revokeGrant = useSet(signals.revokeGrant$);
-  const continueChat = useSet(signals.continue$);
+  const action = useLoadable(signals.operation$);
+  const runAction = useSet(signals.runAction$);
+  const busy = action.state === "loading";
   const activeGrant = status.grant?.status === "active" ? status.grant : null;
   const healthyAccounts =
     status.connection?.accounts.filter((account) => {
@@ -312,9 +118,6 @@ function useBankingCardController(
       return healthyAccountIds.has(accountId);
     }),
   );
-  const popupBlockedMessage = t(($) => {
-    return $.chat.banking.popupBlocked;
-  });
 
   return {
     status,
@@ -326,37 +129,41 @@ function useBankingCardController(
     editing: ui.editing ?? activeGrant === null,
     pending: status.session?.status === "pending",
     ui,
+    busy,
+    error: action.state === "hasError" ? errorMessage(action.error) : null,
     updateUi,
     openConnect: (mode, institutionLoginId) => {
-      openBankingConnect(
-        {
-          mode,
-          institutionLoginId,
-          popupBlockedMessage,
-          startSession,
-          startRequest,
-          updateUi,
-        },
-        pageSignal,
-      );
+      if (!busy) {
+        detach(
+          runAction({ type: "connect", mode, institutionLoginId }, pageSignal),
+          Reason.DomCallback,
+        );
+      }
     },
     save: () => {
-      saveBankingGrant(
-        {
-          accountIds: selectedAccountIds,
-          duration: ui.duration,
-          saveGrant,
-          startRequest,
-          updateUi,
-        },
-        pageSignal,
-      );
+      if (!busy && selectedAccountIds.size > 0) {
+        detach(
+          runAction(
+            {
+              type: "save",
+              accountIds: [...selectedAccountIds],
+              duration: ui.duration,
+            },
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
+      }
     },
     revoke: () => {
-      revokeBankingGrant({ revokeGrant, startRequest, updateUi }, pageSignal);
+      if (!busy) {
+        detach(runAction({ type: "revoke" }, pageSignal), Reason.DomCallback);
+      }
     },
     runContinue: () => {
-      continueBankingChat({ continueChat, startRequest, updateUi }, pageSignal);
+      if (!busy) {
+        detach(runAction({ type: "continue" }, pageSignal), Reason.DomCallback);
+      }
     },
     updateAccountSelection: (accountId, selected) => {
       const next = new Set(selectedAccountIds);
@@ -447,7 +254,7 @@ function LoadedBankingActionCard({
   const { t } = useTranslation();
   const controller = useBankingCardController(signals, status);
   const summary =
-    controller.ui.localError ??
+    controller.error ??
     (controller.pending
       ? t(($) => {
           return $.chat.banking.waiting;
@@ -484,7 +291,7 @@ function LoadedBankingActionCard({
           reason={signals.reason}
           compact={false}
         />
-        <BankingCardErrorMessage message={controller.ui.localError} />
+        <BankingCardErrorMessage message={controller.error} />
         <BankingCardContent controller={controller} compact={false} />
       </ChatCardDetails>
     </div>
@@ -562,8 +369,8 @@ function BankingCardContent({
   if (!connection) {
     return (
       <ConnectBankButton
-        busy={controller.ui.busy !== null}
-        connecting={controller.ui.busy === "connect"}
+        busy={controller.busy}
+        connecting={controller.busy}
         openConnect={controller.openConnect}
         compact={compact}
       />
@@ -573,7 +380,7 @@ function BankingCardContent({
     <>
       <BankingRepairNotices
         connection={connection}
-        busy={controller.ui.busy !== null}
+        busy={controller.busy}
         openConnect={controller.openConnect}
       />
       {controller.activeGrant &&
@@ -615,7 +422,7 @@ function BankingPendingNotice({
           size="sm"
           variant="outline"
           className="h-9 shrink-0"
-          disabled={controller.ui.busy !== null}
+          disabled={controller.busy}
           onClick={() => {
             controller.openConnect(
               session.mode,
@@ -771,7 +578,7 @@ function BankingRevokeConfirmation({
   readonly controller: BankingCardController;
 }) {
   const { t } = useTranslation();
-  const busy = controller.ui.busy !== null;
+  const busy = controller.busy;
   return (
     <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
       <span className="mr-auto text-xs text-muted-foreground">
@@ -811,7 +618,7 @@ function ActiveBankingGrantActions({
   readonly controller: BankingCardController;
 }) {
   const { t } = useTranslation();
-  const busy = controller.ui.busy !== null;
+  const busy = controller.busy;
   return (
     <div className="mt-3 flex flex-wrap justify-end gap-2">
       <Button
@@ -839,7 +646,7 @@ function ActiveBankingGrantActions({
         })}
       </Button>
       <Button size="sm" disabled={busy} onClick={controller.runContinue}>
-        {controller.ui.busy === "continue" ? (
+        {controller.busy ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : null}
         {t(($) => {
@@ -872,7 +679,7 @@ function BankingGrantEditor({
               key={account.id}
               account={account}
               checked={controller.selectedAccountIds.has(account.id)}
-              busy={controller.ui.busy !== null}
+              busy={controller.busy}
               onCheckedChange={(checked) => {
                 controller.updateAccountSelection(account.id, checked);
               }}
@@ -882,7 +689,7 @@ function BankingGrantEditor({
         {controller.healthyAccounts.length === 0 ? (
           <NoHealthyBankingAccounts
             canReconnect={connection.repairInstitutions.length === 0}
-            busy={controller.ui.busy !== null}
+            busy={controller.busy}
             openConnect={controller.openConnect}
           />
         ) : null}
@@ -976,7 +783,7 @@ function BankingGrantControls({
   readonly controller: BankingCardController;
 }) {
   const { t } = useTranslation();
-  const busy = controller.ui.busy !== null;
+  const busy = controller.busy;
   return (
     <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
       {controller.activeGrant &&
@@ -1001,7 +808,7 @@ function BankingGrantControls({
         disabled={controller.selectedAccountIds.size === 0 || busy}
         onClick={controller.save}
       >
-        {controller.ui.busy === "save" ? (
+        {controller.busy ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : null}
         {t(($) => {

@@ -8,14 +8,12 @@ import type { z } from "zod";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { telegramClient$ } from "./telegram-client.ts";
-import { ApiError } from "../../lib/api-error.ts";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { oauthBaseForNavigation$ } from "../fetch.ts";
-import { onRejection, resetSignal, withCleanup } from "../utils.ts";
+import { resetSignal, withCleanup } from "../utils.ts";
 import {
   openTelegramLoginTab,
   requestTelegramAuth,
-  type TelegramAuthOutcome,
 } from "./telegram-login-popup.ts";
 import { reloadTelegramBots$ } from "./telegram.ts";
 
@@ -68,15 +66,10 @@ export const linkTelegramAccount$ = command(
       }
     });
     const result = await withCleanup(
-      onRejection(
-        accept(
-          owner.client.link({ headers: {}, body, fetchOptions: { signal } }),
-          [200],
-          signal,
-        ),
-        () => {
-          set(reloadTelegramBots$);
-        },
+      accept(
+        owner.client.link({ headers: {}, body, fetchOptions: { signal } }),
+        [200],
+        signal,
       ),
       unsubscribe,
     );
@@ -86,23 +79,6 @@ export const linkTelegramAccount$ = command(
     return result.body;
   },
 );
-
-function errorOutcome(error: unknown): TelegramAuthOutcome {
-  if (error instanceof ApiError) {
-    if (error.status === 409) {
-      return "conflict";
-    }
-    if (error.status === 403) {
-      return "prerequisite";
-    }
-    if (error.status === 400) {
-      return "expired";
-    }
-    return "failed";
-  }
-  // A lost response cannot prove the server did not commit the binding.
-  return "interrupted";
-}
 
 const connectTelegramInTab$ = command(
   async (
@@ -185,7 +161,6 @@ const connectTelegramInTab$ = command(
         owner.assertCurrent();
         if (!auth) {
           await operation.finish("cancelled");
-          set(reloadTelegramBots$);
           return null;
         }
         const result = await set(
@@ -205,15 +180,7 @@ const connectTelegramInTab$ = command(
         owner.assertCurrent();
         return result;
       };
-      return await withCleanup(
-        onRejection(bind(), async (error) => {
-          set(reloadTelegramBots$);
-          if (!signal.aborted) {
-            await operation.finish(errorOutcome(error));
-          }
-        }),
-        operation.dispose,
-      );
+      return await withCleanup(bind(), operation.dispose);
     };
     return await withCleanup(connect(), unsubscribe);
   },

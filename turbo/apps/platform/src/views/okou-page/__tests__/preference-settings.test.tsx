@@ -4,6 +4,7 @@ import {
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { describe, expect, it, test } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 import {
   click,
@@ -12,8 +13,45 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
+
+test("keeps the Morning Brief switch on while the platform recovers its schedule", async () => {
+  let preference: MorningBriefPreferenceResponse = {
+    enabled: true,
+    status: "error",
+    unavailableReason: null,
+  };
+  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+    return respond(200, preference);
+  });
+  context.mocks.api(
+    morningBriefPreferenceContract.update,
+    ({ body, respond }) => {
+      preference = { ...preference, enabled: body.enabled, status: "paused" };
+      return respond(200, preference);
+    },
+  );
+  await setupPage({ context, path: "/agents?settings=preference" });
+  const card = await screen.findByTestId("morning-brief-preference");
+  await expect(
+    within(card).findByText(
+      "Temporarily unavailable. Okou will retry automatically.",
+    ),
+  ).resolves.toBeInTheDocument();
+  const toggle = within(card).getByRole("switch", { name: "Morning brief" });
+  expect(toggle).toBeChecked();
+  expect(
+    queryAllByRoleFast("button", card).find((button) => {
+      return button.textContent?.trim() === "Retry";
+    }),
+  ).toBeUndefined();
+  click(toggle);
+  await waitFor(() => {
+    expect(toggle).not.toBeChecked();
+  });
+});
 
 async function expectUnifiedSection(
   section: "preference" | "model" | "debug",
@@ -153,6 +191,66 @@ describe("unified preference settings", () => {
       expect(retry).toBeEnabled();
     });
   });
+
+  it.each([true, false])(
+    "retries reconciliation while preserving the saved enabled=%s preference",
+    async (enabled) => {
+      const requested = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      let needsReconciliation = true;
+      const preference: MorningBriefPreferenceResponse = {
+        enabled,
+        status: enabled ? "enabled" : "paused",
+        unavailableReason: null,
+      };
+      context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+        return needsReconciliation
+          ? respond(409, {
+              error: {
+                code: "MORNING_BRIEF_STATE_CONFLICT",
+                message: "Reconciliation required",
+              },
+            })
+          : respond(200, preference);
+      });
+      context.mocks.api(
+        morningBriefPreferenceContract.retry,
+        async ({ respond, withSignal }) => {
+          requested.resolve();
+          await withSignal(release.promise);
+          needsReconciliation = false;
+          return respond(200, preference);
+        },
+      );
+      await setupPage({ context, path: "/agents?settings=preference" });
+      await screen.findByText(/Morning Brief is temporarily unavailable/u);
+      const toggle = screen.getByRole("switch", { name: "Morning brief" });
+      const retry = queryAllByRoleFast("button").find((button) => {
+        return button.textContent === "Retry";
+      });
+      if (!retry) {
+        throw new Error("Expected the Morning Brief retry action");
+      }
+      expect(retry).toBeEnabled();
+      if (enabled) {
+        retry.focus();
+        await userEvent.setup({ delay: null }).keyboard("{Enter}");
+      } else {
+        click(retry);
+      }
+      await requested.promise;
+      expect(retry).toBeDisabled();
+      expect(toggle).toHaveAttribute("aria-disabled", "true");
+      release.resolve();
+      await waitFor(() => {
+        expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+        expect(toggle).toHaveAttribute("aria-checked", String(enabled));
+        expect(
+          screen.queryByText(/Morning Brief is temporarily unavailable/u),
+        ).not.toBeInTheDocument();
+      });
+    },
+  );
 });
 
 test("shows pending Morning Brief enrollment and accepts cancellation", async () => {
