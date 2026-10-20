@@ -405,7 +405,7 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
           rel="noopener noreferrer"
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "h-auto w-fit whitespace-normal text-left",
+            "h-auto min-h-9 w-fit whitespace-normal text-left",
           )}
         >
           {step.link}
