@@ -19,6 +19,7 @@
   "vars": {
     "ARTIFACT_OG_API_ORIGIN": "https://api.okou.ai",
     "HOSTED_SITE_API_ORIGIN": "https://api.okou.ai",
+    "CLERK_SIGN_IN_URL": "https://app.okou.ai/sign-in",
     // Enable only after #41704 verifies all readers and excludes old API rollbacks.
     "HOSTED_SITE_ACCESS_ENABLED": "false",
     "HOST_DOMAIN": "sites.vm0.io",
