@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Terminal, Monitor, Unplug } from "lucide-react";
-import { Button } from "@okouai/ui";
-import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
-import { SshLastCheck } from "./ssh-connection-status.tsx";
-import { VncLastCheck } from "./vnc-connection-status.tsx";
+import { Terminal, Monitor } from "lucide-react";
 
 export function RemoteConnectionSummary({
   connection,
@@ -13,12 +9,9 @@ export function RemoteConnectionSummary({
   account,
 }: {
   readonly connection: {
-    readonly id: string;
     readonly displayName: string;
     readonly host: string;
     readonly port: number;
-    readonly generation: number;
-    readonly createdAt: string;
   };
   readonly protocol: "ssh" | "vnc";
   readonly route: ReactNode;
@@ -72,58 +65,7 @@ export function RemoteConnectionSummary({
             <dd className="break-all">{account}</dd>
           </>
         )}
-        <dt className="text-muted-foreground">
-          {t(($) => {
-            return $.remoteControlSetup.checkStatus;
-          })}
-        </dt>
-        <dd>
-          {protocol === "ssh" ? (
-            <SshLastCheck
-              connectionId={connection.id}
-              generation={connection.generation}
-              createdAt={connection.createdAt}
-            />
-          ) : (
-            <VncLastCheck
-              connectionId={connection.id}
-              generation={connection.generation}
-              createdAt={connection.createdAt}
-            />
-          )}
-        </dd>
       </dl>
     </div>
-  );
-}
-export function RemoteConnectionCheckUnavailable() {
-  const { t } = useTranslation();
-  return (
-    <footer className="grid gap-5 border-t border-divider pt-5">
-      <div className="flex gap-3" role="status">
-        <Unplug
-          size={18}
-          className="mt-0.5 shrink-0 text-muted-foreground"
-          aria-hidden
-        />
-        <div className="grid gap-2">
-          <h3 className="text-sm font-medium">
-            {t(($) => {
-              return $.remoteControlSetup.checkUnavailable;
-            })}
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.checkUnavailableHelp;
-            })}
-          </p>
-        </div>
-      </div>
-      <Button disabled className={`${REMOTE_PAGE_ACTION} justify-self-end`}>
-        {t(($) => {
-          return $.remoteControlSetup.checkConnection;
-        })}
-      </Button>
-    </footer>
   );
 }

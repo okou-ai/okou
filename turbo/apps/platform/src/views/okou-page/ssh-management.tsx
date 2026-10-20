@@ -1,9 +1,6 @@
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import { RemoteAddressHelp } from "./remote-field-help.tsx";
-import {
-  RemoteConnectionSummary,
-  RemoteConnectionCheckUnavailable,
-} from "./remote-connection-summary.tsx";
+import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import {
@@ -1216,13 +1213,11 @@ function SshSaveLabel({
   uncertain,
   destructive,
   title,
-  hostEditor,
 }: {
   readonly isSaving: boolean;
   readonly uncertain: boolean;
   readonly destructive: boolean;
   readonly title: string;
-  readonly hostEditor: boolean;
 }) {
   const { t } = useTranslation();
   return isSaving
@@ -1236,7 +1231,7 @@ function SshSaveLabel({
       : destructive
         ? title
         : t(($) => {
-            return hostEditor ? $.remoteControlSetup.saveOnly : $.ssh.save;
+            return $.ssh.save;
           });
 }
 
@@ -1258,10 +1253,7 @@ function SshFormActions({
   const { t } = useTranslation();
   const close = useSet(closeSshDialog$);
   const uncertain = useGet(sshSaveUncertain$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   const dialog = useLastResolved(sshDialog$);
-  const hostEditor =
-    guided && (dialog?.kind === "create" || dialog?.kind === "edit");
   return (
     <div
       className={
@@ -1284,33 +1276,17 @@ function SshFormActions({
       )}
       <Button
         type="submit"
-        className={
-          inline && !destructive && !hostEditor ? REMOTE_PAGE_ACTION : undefined
-        }
+        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
         disabled={isSaving || (!uncertain && blocked)}
-        variant={destructive ? "destructive" : hostEditor ? "quiet" : "default"}
+        variant={destructive ? "destructive" : "default"}
       >
         <SshSaveLabel
           isSaving={isSaving}
           uncertain={uncertain}
           destructive={destructive}
           title={title}
-          hostEditor={hostEditor}
         />
       </Button>
-      {hostEditor && (
-        <Button
-          disabled
-          className={inline ? REMOTE_PAGE_ACTION : undefined}
-          title={t(($) => {
-            return $.remoteControlSetup.checkUnavailableHelp;
-          })}
-        >
-          {t(($) => {
-            return $.remoteControlSetup.saveAndCheck;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -2012,7 +1988,6 @@ export function SshHostCard({
           })}
         </Button>
       </div>
-      {detail && <RemoteConnectionCheckUnavailable />}
     </article>
   );
 }

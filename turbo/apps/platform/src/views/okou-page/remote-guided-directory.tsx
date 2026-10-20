@@ -39,8 +39,6 @@ import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { SshDialog } from "./ssh-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
-import { SshLastCheck } from "./ssh-connection-status.tsx";
-import { VncLastCheck } from "./vnc-connection-status.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
@@ -106,11 +104,6 @@ function RemoteVncConnectionRow({
                     })}
           </span>
         </span>
-        <VncLastCheck
-          connectionId={connection.id}
-          generation={connection.generation}
-          createdAt={connection.createdAt}
-        />
         <ChevronRight
           size={18}
           aria-hidden
@@ -173,11 +166,6 @@ function RemoteConnectionRows({
                       })}
                 </span>
               </span>
-              <SshLastCheck
-                connectionId={connection.id}
-                generation={connection.generation}
-                createdAt={connection.createdAt}
-              />
               <ChevronRight
                 size={18}
                 aria-hidden

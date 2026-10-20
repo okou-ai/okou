@@ -538,8 +538,8 @@ test("Direct SSH requires a name, retains input through username help and saves 
       },
     ),
   ).toStrictEqual([]);
-  expect(getAction("button", "Save and check")).toBeDisabled();
-  click(getAction("button", "Save only"));
+  expect(queryAction("button", "Save and check")).toBeNull();
+  click(getAction("button", "Save"));
   await waitFor(() => {
     return expect(requests).toHaveLength(1);
   });
@@ -551,7 +551,9 @@ test("Direct SSH requires a name, retains input through username help and saves 
       port: 22,
     }),
   ]);
-  expect(screen.getByText(/Saved, but not checked yet/u)).toBeInTheDocument();
+  expect(
+    screen.getByText("You can review and edit this connection in settings."),
+  ).toBeInTheDocument();
   expect(queryAction("link", "Open chat")).toBeNull();
   expect(getAction("link", "View connection").getAttribute("href")).toContain(
     `remoteResource=ssh%3A${savedId}`,
@@ -822,13 +824,13 @@ test("A rejected SSH save retains the entered name and does not show a success s
   await fill(screen.getByLabelText("Password"), "test-only-password");
   const name = screen.getByLabelText(/Connection name/u);
   await fill(name, "Office computer");
-  click(getAction("button", "Save only"));
+  click(getAction("button", "Save"));
   await screen.findByRole("alert");
   expect(name).toHaveValue("Office computer");
   expect(
     screen.queryByRole("heading", { name: "Connection added" }),
   ).toBeNull();
-  expect(getAction("button", "Save only")).toBeEnabled();
+  expect(getAction("button", "Save")).toBeEnabled();
 });
 
 test("VNC saves only after the separate login and server-identity steps", async () => {
@@ -885,7 +887,7 @@ test("VNC saves only after the separate login and server-identity steps", async 
   expect(screen.getByLabelText("Server certificate trust")).toHaveTextContent(
     "System certificate authorities",
   );
-  click(getAction("button", "Save only"));
+  click(getAction("button", "Save"));
   await screen.findByRole("heading", { name: "Connection added" });
   expect(getAction("link", "View connection").getAttribute("href")).toContain(
     `remoteResource=vnc%3A${savedId}`,
@@ -976,7 +978,7 @@ test("An idempotent retry keeps the connection name from the locked draft", asyn
   await fill(screen.getByLabelText("Password"), "test-only-password");
   const name = screen.getByLabelText(/Connection name/u);
   await fill(name, "Office retry");
-  click(getAction("button", "Save only"));
+  click(getAction("button", "Save"));
   await screen.findByText(
     /We couldn't confirm whether your changes were saved/u,
   );
@@ -1106,7 +1108,7 @@ test.each(["ssh", "vnc"] as const)(
       protocol === "ssh" ? 22 : 5900,
     );
     await fill(screen.getByLabelText(/Connection name/u), "Renamed device");
-    click(getAction("button", "Save only"));
+    click(getAction("button", "Save"));
     await screen.findByRole("heading", {
       name: protocol === "ssh" ? sshHost.displayName : vncHost.displayName,
     });
@@ -1143,7 +1145,7 @@ test.each(["ssh", "vnc"] as const)(
     });
     const secret = await editConnection(protocol);
     await fill(secret, "newpass");
-    click(getAction("button", "Save only"));
+    click(getAction("button", "Save"));
     const confirmation = await screen.findByRole("dialog", {
       name: "Update shared login information?",
     });
@@ -1159,7 +1161,7 @@ test.each(["ssh", "vnc"] as const)(
     });
     expect(secret).toHaveValue("newpass");
     expect(writes).toHaveLength(0);
-    click(getAction("button", "Save only"));
+    click(getAction("button", "Save"));
     const confirmAgain = await screen.findByRole("dialog", {
       name: "Update shared login information?",
     });
@@ -1292,7 +1294,7 @@ test.each(["ssh", "vnc"] as const)(
     });
     const secret = await editConnection(protocol);
     await fill(secret, "newpass");
-    click(getAction("button", "Save only"));
+    click(getAction("button", "Save"));
     const impact = await screen.findByRole("dialog", {
       name: "Update shared login information?",
     });
@@ -1308,10 +1310,10 @@ test.each(["ssh", "vnc"] as const)(
     ).toBeInTheDocument();
     click(keep);
     await waitFor(() => {
-      return expect(getAction("button", "Save only")).toBeEnabled();
+      return expect(getAction("button", "Save")).toBeEnabled();
     });
     expect(secret).toHaveValue("newpass");
-    click(getAction("button", "Save only"));
+    click(getAction("button", "Save"));
     const latestImpact = await screen.findByRole("dialog", {
       name: "Update shared login information?",
     });
@@ -1327,7 +1329,7 @@ test.each(["ssh", "vnc"] as const)(
 );
 
 test.each(["ssh", "vnc"] as const)(
-  "%s details never grant chat access or suggest a check ran while the settings service is unavailable",
+  "%s details show saved settings without check controls or chat access",
   async (protocol) => {
     mockSavedConnections();
     const host = protocol === "ssh" ? sshHost : vncHost;
@@ -1336,14 +1338,15 @@ test.each(["ssh", "vnc"] as const)(
     );
     await screen.findByRole("heading", { name: host.displayName });
     expect(
-      screen.getByRole("heading", {
+      screen.queryByRole("heading", {
         name: "Connection checks are unavailable",
       }),
-    ).toBeInTheDocument();
-    expect(getAction("button", "Check connection")).toBeDisabled();
+    ).toBeNull();
+    expect(queryAction("button", "Check connection")).toBeNull();
     expect(queryAction("link", "Check in chat")).toBeNull();
     expect(queryAction("link", "Open chat")).toBeNull();
-    expect(screen.getByText("Not checked yet")).toBeInTheDocument();
+    expect(screen.queryByText("Check status")).toBeNull();
+    expect(screen.queryByText("Not checked yet")).toBeNull();
   },
 );
 

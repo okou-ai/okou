@@ -243,13 +243,11 @@ function VncSaveLabel({
   uncertain,
   destructive,
   title,
-  hostEditor,
 }: {
   readonly saving: boolean;
   readonly uncertain: boolean;
   readonly destructive: boolean;
   readonly title: string;
-  readonly hostEditor: boolean;
 }) {
   const { t } = useTranslation();
   return saving
@@ -263,7 +261,7 @@ function VncSaveLabel({
       : destructive
         ? title
         : t(($) => {
-            return hostEditor ? $.remoteControlSetup.saveOnly : $.vnc.save;
+            return $.vnc.save;
           });
 }
 
@@ -285,11 +283,8 @@ function VncFormActions({
   const { t } = useTranslation();
   const close = useSet(closeVncDialog$);
   const uncertain = useGet(vncSaveUncertain$);
-  const guided = useGet(remoteControlGuidedEnabled$);
   const dialog = useLastResolved(vncDialog$);
   const conflict = useGet(vncConflict$);
-  const hostEditor =
-    guided && (dialog?.kind === "create" || dialog?.kind === "edit");
   return (
     <div
       className={
@@ -318,10 +313,8 @@ function VncFormActions({
       )}
       <Button
         type="submit"
-        className={
-          inline && !destructive && !hostEditor ? REMOTE_PAGE_ACTION : undefined
-        }
-        variant={destructive ? "destructive" : hostEditor ? "quiet" : "default"}
+        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
+        variant={destructive ? "destructive" : "default"}
         disabled={saving || conflict || (!uncertain && blocked)}
       >
         <VncSaveLabel
@@ -329,22 +322,8 @@ function VncFormActions({
           uncertain={uncertain}
           destructive={destructive}
           title={title}
-          hostEditor={hostEditor}
         />
       </Button>
-      {hostEditor && (
-        <Button
-          disabled
-          className={inline ? REMOTE_PAGE_ACTION : undefined}
-          title={t(($) => {
-            return $.remoteControlSetup.checkUnavailableHelp;
-          })}
-        >
-          {t(($) => {
-            return $.remoteControlSetup.saveAndCheck;
-          })}
-        </Button>
-      )}
     </div>
   );
 }

@@ -1,8 +1,5 @@
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
-import {
-  RemoteConnectionSummary,
-  RemoteConnectionCheckUnavailable,
-} from "./remote-connection-summary.tsx";
+import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
@@ -451,7 +448,6 @@ export function VncHostCard({
           })}
         </Button>
       </div>
-      {detail && <RemoteConnectionCheckUnavailable />}
     </article>
   );
 }

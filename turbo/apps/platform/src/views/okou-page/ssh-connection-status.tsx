@@ -1,4 +1,3 @@
-import { RemoteCheckHistory } from "./remote-check-history.tsx";
 import { useLoadable, useLastLoadable } from "ccstate-react";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -215,27 +214,4 @@ export function SshHostWarning({
       </div>
     </div>
   );
-}
-
-export function SshLastCheck({
-  connectionId,
-  generation,
-  createdAt,
-}: {
-  readonly connectionId: string;
-  readonly generation: number;
-  readonly createdAt: string;
-}) {
-  const status = useSshObservations();
-  const observation =
-    status.kind === "available"
-      ? status.observations.find((item) => {
-          return (
-            item.connectionId === connectionId &&
-            item.generation === generation &&
-            item.connectionCreatedAt === createdAt
-          );
-        })
-      : undefined;
-  return <RemoteCheckHistory kind={status.kind} observation={observation} />;
 }
