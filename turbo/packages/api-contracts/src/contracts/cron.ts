@@ -96,10 +96,19 @@ const cronReconcileSocialKitDownloadsResponseSchema = z.object({
 });
 
 const cronCompactChatThreadSnapshotsResponseSchema = z.object({
+  // Compaction completed; inspect gc.failed independently for cleanup failures.
   success: z.literal(true),
   scopes: z.number(),
   eventsApplied: z.number(),
   eventsPruned: z.number(),
+  gc: z.object({
+    pagesScanned: z.number().int().nonnegative(),
+    objectsScanned: z.number().int().nonnegative(),
+    deleteAttempts: z.number().int().nonnegative(),
+    objectsDeleted: z.number().int().nonnegative(),
+    deferred: z.boolean(),
+    failed: z.boolean(),
+  }),
 });
 
 export const cronProjectChatEventSearchResponseSchema = z.object({

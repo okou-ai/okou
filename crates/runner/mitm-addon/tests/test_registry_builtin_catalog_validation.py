@@ -8,6 +8,7 @@ import pytest
 
 import builtin_connector_diagnostics
 import builtin_firewall_cache
+import matching
 import registry
 import state_file
 from generated.builtin_firewall_cache import BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION
@@ -296,6 +297,107 @@ class TestRegistryBuiltinCatalogValidation:
         sandbox_info, compiled_firewalls, _ = context
         assert compiled_firewalls is not None
         assert sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://acme.example.com"
+
+    @pytest.mark.parametrize(
+        ("escape_prefix", "suffix", "expected_error", "expected_base"),
+        [
+            pytest.param("%6", "1", None, "https://a.example.com", id="one-hex-digit"),
+            pytest.param("%", "61", None, "https://a.example.com", id="two-hex-digits"),
+            pytest.param("%c3%", "bc", None, "https://xn--tda.example.com", id="utf8-byte"),
+            pytest.param("%c3%b", "c", None, "https://xn--tda.example.com", id="utf8-nibble"),
+            pytest.param("%6", "z", "resolved base URL is invalid", None, id="non-hex"),
+            pytest.param("%", "6", "resolved base URL is invalid", None, id="incomplete"),
+            pytest.param("%", "ff", "resolved base URL is invalid", None, id="invalid-utf8"),
+            pytest.param(
+                "%c3%", "ff", "resolved base URL is invalid", None, id="invalid-utf8-tail"
+            ),
+            pytest.param("%", "2f", "resolved base URL is invalid", None, id="encoded-slash"),
+            pytest.param("%", "2e", "resolved base URL is invalid", None, id="encoded-dot"),
+            pytest.param("%", "25", "resolved base URL is invalid", None, id="encoded-percent"),
+            pytest.param("%", "00", "resolved base URL is invalid", None, id="encoded-control"),
+            pytest.param("%", "7b", "resolved base URL is invalid", None, id="encoded-parameter"),
+            pytest.param(
+                "%6", "2", "host policy does not allow resolved host", None, id="unowned-host"
+            ),
+        ],
+    )
+    def test_split_hostname_escape_preserves_unrelated_catalog_connector(
+        self, tmp_path, mitm_ctx, escape_prefix, suffix, expected_error, expected_base
+    ):
+        base = "https://" + escape_prefix + "${{ vars.SUFFIX }}.example.com"
+        registry_path, cache_path = write_registry_with_cache(
+            tmp_path,
+            {
+                "10.200.0.1": builtin_sandbox("run-template", "templated", {"SUFFIX": suffix}),
+                "10.200.0.2": builtin_sandbox("run-static", "static"),
+            },
+            {
+                "templated": {
+                    "name": "templated",
+                    "apis": [
+                        {
+                            "base": base,
+                            "hostPolicy": {
+                                "kind": "providerOwned",
+                                "exactHosts": ["a.example.com", "xn--tda.example.com"],
+                            },
+                            "auth": {"headers": {"Authorization": "Bearer ${{ secrets.TOKEN }}"}},
+                            "permissions": [{"name": "read", "rules": ["GET /items"]}],
+                        }
+                    ],
+                },
+                "static": cache_firewall("static", "https://api.static.example.com"),
+            },
+        )
+
+        with mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+        ):
+            snapshot = builtin_firewall_cache.load_catalog_snapshot(str(cache_path))
+            state = registry.load_registry_state(str(registry_path))
+            template_context = registry.get_sandbox_context("10.200.0.1", str(registry_path))
+            static_context = registry.get_sandbox_context("10.200.0.2", str(registry_path))
+
+        assert snapshot.catalog is not None
+        assert snapshot.unavailable_reason is None
+        assert snapshot.catalog.firewalls["templated"]["apis"][0]["base"] == base
+        assert not isinstance(state, registry.RegistryUnavailable)
+        assert static_context is not None
+        _, static_firewalls, _ = static_context
+        allowed = matching.match_compiled_firewall_request(
+            "https://api.static.example.com/items",
+            "GET",
+            static_firewalls,
+            {"static": {"allow": ["read"], "unknownPolicy": "deny"}},
+        )
+        assert isinstance(allowed, matching.FirewallAllow)
+        assert (allowed.name, allowed.permission) == ("static", "read")
+
+        if expected_error is not None:
+            assert template_context is None
+            assert set(state.sandboxes) == {"10.200.0.2"}
+            assert set(state.invalid_sandboxes) == {"10.200.0.1"}
+            invalid = state.invalid_sandboxes["10.200.0.1"]
+            assert invalid.reason == "invalid_firewalls"
+            assert expected_error in invalid.message
+            return
+
+        assert state.invalid_sandboxes == {}
+        assert set(state.sandboxes) == {"10.200.0.1", "10.200.0.2"}
+        assert template_context is not None
+        template_info, template_firewalls, _ = template_context
+        assert template_info["firewalls"][0]["apis"][0]["base"] == (
+            "https://" + escape_prefix + suffix + ".example.com"
+        )
+        allowed = matching.match_compiled_firewall_request(
+            expected_base + "/items",
+            "GET",
+            template_firewalls,
+            {"templated": {"allow": ["read"], "unknownPolicy": "deny"}},
+        )
+        assert isinstance(allowed, matching.FirewallAllow)
+        assert (allowed.name, allowed.permission) == ("templated", "read")
 
     @pytest.mark.parametrize(
         "literal_label",

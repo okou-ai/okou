@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.16...runner-executor-v0.14.17) (2026-10-20)
+
+
+### Bug Fixes
+
+* **runner:** attribute nested codex child oom kills ([#41641](https://github.com/okou-ai/okou/issues/41641)) ([ff587f5](https://github.com/okou-ai/okou/commit/ff587f591fbf75370f90ab510b7e1dea03a16df0))
+
 ## [0.14.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.15...runner-executor-v0.14.16) (2026-10-19)
 
 

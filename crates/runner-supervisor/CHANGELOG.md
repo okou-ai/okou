@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.16...runner-supervisor-v0.18.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** prepare independent finalizing source admission ([#41683](https://github.com/okou-ai/okou/issues/41683)) ([b610ff6](https://github.com/okou-ai/okou/commit/b610ff61043274157618e3925b13a66dc56ef84b))
+
+
+### Bug Fixes
+
+* log provider image-size rejections as expected input failures ([#41635](https://github.com/okou-ai/okou/issues/41635)) ([d0bce92](https://github.com/okou-ai/okou/commit/d0bce92f6c403596f5f2210fe24051f452d53ecb))
+* **runner:** report initial cache inventory before running ([#41556](https://github.com/okou-ai/okou/issues/41556)) ([2b4d023](https://github.com/okou-ai/okou/commit/2b4d023eb3b6d97269d2bbe71a5d8395ae5c2763))
+* **runner:** retain native codex failure evidence ([#41632](https://github.com/okou-ai/okou/issues/41632)) ([4688a72](https://github.com/okou-ai/okou/commit/4688a72a87552541b43c80769a926907f5e74921))
+
 ## [0.17.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.15...runner-supervisor-v0.17.16) (2026-10-19)
 
 

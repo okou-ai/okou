@@ -1,5 +1,5 @@
 {
-  "id": "293956b3-81d7-4879-9473-2d64034857a4",
+  "id": "a31c2829-a259-43af-93f3-346d0e6dbe17",
   "prevId": "f25a70ed-42eb-4edf-b4f3-2faa61976b3c",
   "version": "7",
   "dialect": "postgresql",
@@ -6754,28 +6754,6 @@
           "method": "btree",
           "with": {}
         },
-        "chat_event_snapshots_repair_candidates_idx": {
-          "name": "chat_event_snapshots_repair_candidates_idx",
-          "columns": [
-            {
-              "expression": "archive_schema_version",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "(\n          \"chat_event_snapshots\".\"last_seq_id\" <= 0\n          OR \"chat_event_snapshots\".\"terminal_seq_id\" IS NULL\n          OR btrim(\"chat_event_snapshots\".\"object_key\") = ''\n          OR NOT (\"chat_event_snapshots\".\"object_key\" ~ '-[0-9a-f]{64}[.]ndjson[.]gz$')\n          OR \"chat_event_snapshots\".\"object_key\" ~ '^chat-events/[0-9a-f-]{36}/[0-9]+-[0-9a-f]{64}[.]ndjson[.]gz$'\n        )",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "chat_event_snapshots_thread_version_unique": {
           "name": "chat_event_snapshots_thread_version_unique",
           "columns": [
@@ -8601,6 +8579,61 @@
         "chat_thread_events_computer_access_check": {
           "name": "chat_thread_events_computer_access_check",
           "value": "NOT (\"chat_thread_events\".\"cloud_browser_enabled\" AND \"chat_thread_events\".\"computer_use_host_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.chat_thread_snapshot_gc_state": {
+      "name": "chat_thread_snapshot_gc_state",
+      "schema": "",
+      "columns": {
+        "bucket": {
+          "name": "bucket",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prefix": {
+          "name": "prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cursor_object_key": {
+          "name": "cursor_object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cycle_id": {
+          "name": "cycle_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "chat_thread_snapshot_gc_state_bucket_prefix_pk": {
+          "name": "chat_thread_snapshot_gc_state_bucket_prefix_pk",
+          "columns": [
+            "bucket",
+            "prefix"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_thread_snapshot_gc_prefix_check": {
+          "name": "chat_thread_snapshot_gc_prefix_check",
+          "value": "\"chat_thread_snapshot_gc_state\".\"prefix\" ~ '^chat-thread-snapshots/v1/[0-9a-f]{2}$'"
+        },
+        "chat_thread_snapshot_gc_cursor_check": {
+          "name": "chat_thread_snapshot_gc_cursor_check",
+          "value": "\"chat_thread_snapshot_gc_state\".\"cursor_object_key\" IS NULL OR starts_with(\"chat_thread_snapshot_gc_state\".\"cursor_object_key\", \"chat_thread_snapshot_gc_state\".\"prefix\")"
         }
       },
       "isRLSEnabled": false

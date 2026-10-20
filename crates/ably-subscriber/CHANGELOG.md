@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/okou-ai/okou/compare/ably-subscriber-v1.1.6...ably-subscriber-v2.0.0) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ably-subscriber:** TimingConfig::event_channel_capacity is removed. Event delivery uses an unbounded FIFO; callers must drain or close subscriptions.
+
+### Bug Fixes
+
+* **ably-subscriber:** align native delivery and diagnose stalls ([#41498](https://github.com/okou-ai/okou/issues/41498)) ([25a07b5](https://github.com/okou-ai/okou/commit/25a07b551a0fc655e6c243f07695f631a832f775))
+
 ## [1.1.6](https://github.com/okou-ai/okou/compare/ably-subscriber-v1.1.5...ably-subscriber-v1.1.6) (2026-10-19)
 
 
