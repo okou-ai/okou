@@ -1518,9 +1518,6 @@ export const heartbeatBodySchema = z
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldHomeStates: z.array(heldHomeStateSchema).max(1024),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
-    // This shared endpoint also accepts PAT and older Runner heartbeats without
-    // a host observation. Absence is a first-class unknown, never WSS-eligible.
-    wssIngressServiceActive: z.boolean().optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {

@@ -1,3 +1,0 @@
-overrides:
-  # E2E consumes captured local packages outside the Turbo workspace.
-  "@okouai/api-contracts>@okouai/connectors": "file:../turbo/packages/connectors"

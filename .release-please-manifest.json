@@ -23,7 +23,6 @@
   "crates/guest-telemetry": "0.3.154",
   "crates/guest-storage-apply": "0.25.27",
   "crates/guest-init": "0.20.11",
-  "crates/guest-channel-server": "0.5.4",
   "crates/claude-mock": "0.22.56",
   "crates/codex-mock": "0.12.12",
   "crates/guest-state-restore": "0.4.0",

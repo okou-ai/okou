@@ -25,7 +25,6 @@ import {
   VENDOR_GROUP_IDS,
 } from "./scripts/vendor-chunks.ts";
 import { workerDomGlobalsPlugin } from "./scripts/worker-dom-globals.ts";
-import { sandboxFileDownloadWorkerPlugin } from "./scripts/sandbox-file-download-worker.ts";
 import { SENTRY_APPLICATION_KEY } from "./src/lib/sentry-application-key.ts";
 
 const APP_ASSET_BASE = "https://static.okou.io/okou-app/";
@@ -93,8 +92,7 @@ export default defineConfig(({ command }) => ({
     clerkUiAssetPlugin(),
     runtimeBuildInfoHtmlPlugin,
     vendor.plugin,
-    sandboxFileDownloadWorkerPlugin(),
-    applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length, true),
+    applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),
     applicationResourcePriorityHtmlPlugin(),
     sharedDatabaseWorkerHtmlPlugin(),
     // Tags bundles with the application key for the runtime third-party filter.

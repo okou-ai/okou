@@ -40,7 +40,6 @@ api-contracts.workspace = true
 base64 = { workspace = true, features = ["std"] }
 clap = { workspace = true, features = ["color", "derive", "error-context", "help", "std", "suggestions", "usage"] }
 proptest = { workspace = true, features = ["std"] }
-runner-remote.workspace = true
 runner-types.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tracing-test-support.workspace = true

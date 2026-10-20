@@ -1,36 +1,20 @@
 # Provision Runner Host Dependencies
 #
 # Idempotent playbook that installs all system-level dependencies required by
-# the Okou runner on runner hosts. Safe to run repeatedly; Runner startup owns
-# creation and validation of the protected WSS namespace.
+# the Okou runner on runner hosts. Safe to run repeatedly.
 #
 # Usage:
 #   ansible-playbook -i "host1,host2," playbooks/provision-runner.yml \
 #     -e "ansible_user=ubuntu"
-#
-# Every normal run manages the dedicated Caddy ingress service; unchanged
-# deployments keep running. See ansible/README.md for DNS/TLS prerequisites.
 
 - name: Provision runner host dependencies
   hosts: all
 
   tasks:
-    # Preserve an existing canonical GID; Runner owns namespace validation.
-    - name: Create dedicated Runner Caddy access group without user memberships
+    - name: Retire host-installed Runner ingress
+      ansible.builtin.import_tasks: ../tasks/retire-runner-ingress.yml
       become: true
-      ansible.builtin.group:
-        name: okou-runner-caddy
-        system: true
-        state: present
-      register: runner_caddy_access_group
-      tags: runner_wss_host
-
-    - name: Reject a root GID for the canonical Runner Caddy access group
-      ansible.builtin.assert:
-        that:
-          - (runner_caddy_access_group.gid | int) > 0
-        fail_msg: Runner Caddy socket access must not use the root group.
-      tags: runner_wss_host
+      tags: runner_host_cleanup
 
     - name: Wait for apt lock to be released
       shell: |
@@ -193,8 +177,3 @@
     - name: Reset SSH connection to pick up new group membership
       meta: reset_connection
       when: group_change.changed
-
-    - name: Provision Runner Caddy ingress
-      ansible.builtin.import_tasks: ../tasks/provision-runner-caddy.yml
-      become: true
-      tags: runner_caddy

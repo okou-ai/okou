@@ -36,7 +36,6 @@ import {
   isSupportedFramework,
 } from "@okouai/core/frameworks";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { activityFiles } from "../../signals/activity-page/sandbox-files.ts";
 import { fetchDownloadExtra$ } from "../../signals/activity-page/activity-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
@@ -85,7 +84,6 @@ import { NoPermissionIllustration } from "./components/no-permission-illustratio
 import { formatAppNumber } from "../../i18n/format.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
-import { ActivityFilesTab } from "../activity-page/activity-files.tsx";
 
 // ---------------------------------------------------------------------------
 // Error Banner
@@ -503,7 +501,7 @@ function resolveDisplayName(
   return detail.displayName ?? detail.agentId ?? fallback;
 }
 
-type ActivityTab = "steps" | "context" | "runner" | "network" | "files";
+type ActivityTab = "steps" | "context" | "runner" | "network";
 
 function ActivityStepsContent({
   detail,
@@ -983,9 +981,6 @@ function ActivityTabContent({
   if (activeTab === "runner") {
     return <ActivityRunnerTab detail={detail} />;
   }
-  if (activeTab === "files") {
-    return <ActivityFilesTab />;
-  }
   return <ActivityNetworkTab detailId={detail.id} />;
 }
 
@@ -1003,15 +998,11 @@ function ActivityDetailContent({
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const updateParams = useSet(updateSearchParams$);
-  const filesViewport = useSet(activityFiles.virtual.scroll.setScrollViewport$);
   const showDebugTabs = features?.[FeatureSwitchKey.OkouDebug] ?? false;
   const rawTab = params.get("tab");
   const activeTab: ActivityTab =
     showDebugTabs &&
-    (rawTab === "context" ||
-      rawTab === "runner" ||
-      rawTab === "network" ||
-      rawTab === "files")
+    (rawTab === "context" || rawTab === "runner" || rawTab === "network")
       ? rawTab
       : "steps";
   const setActiveTab = (tab: ActivityTab) => {
@@ -1032,14 +1023,7 @@ function ActivityDetailContent({
 
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
-      <div
-        ref={activeTab === "files" ? filesViewport : undefined}
-        data-testid="activity-detail-viewport"
-        className={cn(
-          "flex-1 flex flex-col min-h-0 overflow-auto",
-          activeTab === "files" && "scroll-pt-12",
-        )}
-      >
+      <div className="flex-1 flex flex-col min-h-0 overflow-auto">
         <nav className="hidden md:flex shrink-0 items-center gap-1 px-4 pt-4 text-sm text-muted-foreground">
           {features?.[FeatureSwitchKey.OkouDebug] && (
             <>
@@ -1101,11 +1085,6 @@ function ActivityDetailContent({
                   <TabsTrigger value="network">
                     {t(($) => {
                       return $.activity.detail.tabs.network;
-                    })}
-                  </TabsTrigger>
-                  <TabsTrigger value="files">
-                    {t(($) => {
-                      return $.activity.detail.files.title;
                     })}
                   </TabsTrigger>
                 </TabsList>
