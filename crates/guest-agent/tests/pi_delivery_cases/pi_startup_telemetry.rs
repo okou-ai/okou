@@ -9,6 +9,7 @@
 use crate::common;
 
 use serde_json::Value;
+use shell_quote::quote_shell_arg;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -52,14 +53,24 @@ async fn pi_records_startup_success_at_first_projected_record() -> TestResult {
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let okou = install_mock_okou(tmp.path(), &serving_pi_host_script())?;
+    let okou = install_mock_okou(tmp.path(), &serving_pi_host_script(&runtime_dir))?;
 
     let output = run_pi_guest_agent(&runtime_dir, tmp.path(), &okou, "pi-startup-success").await?;
 
     assert_guest_success(&output);
     let operations = read_sandbox_operations(&runtime_dir)?;
     assert_one_startup(&operations, PI_STARTUP_ACTION, true)?;
-    assert_segment_partition(&operations)?;
+    assert_segment_partition(
+        &operations,
+        &[
+            ("pi_startup_guest_setup", true),
+            ("pi_startup_process_spawn", true),
+            ("pi_startup_spawn_to_cli_entry", true),
+            ("pi_startup_cli_initialize", true),
+            ("pi_startup_session_prepare", true),
+            ("pi_startup_runtime_ready", true),
+        ],
+    )?;
     assert!(
         operations.iter().all(|operation| {
             operation.get("action_type").and_then(Value::as_str) != Some(CODEX_STARTUP_ACTION)
@@ -86,7 +97,14 @@ async fn pi_records_startup_failure_when_the_host_never_serves() -> TestResult {
     );
     let operations = read_sandbox_operations(&runtime_dir)?;
     assert_one_startup(&operations, PI_STARTUP_ACTION, false)?;
-    assert_segment_partition(&operations)?;
+    assert_segment_partition(
+        &operations,
+        &[
+            ("pi_startup_guest_setup", true),
+            ("pi_startup_process_spawn", true),
+            ("pi_startup_spawn_to_cli_entry", false),
+        ],
+    )?;
 
     Ok(())
 }
@@ -97,7 +115,7 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let okou = install_mock_okou(tmp.path(), &serving_pi_host_script())?;
+    let okou = install_mock_okou(tmp.path(), &serving_pi_host_script(&runtime_dir))?;
 
     let output =
         run_pi_guest_agent(&runtime_dir, tmp.path(), &okou, "pi-preparation-phases").await?;
@@ -151,7 +169,10 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
     Ok(())
 }
 
-fn assert_segment_partition(operations: &[Value]) -> TestResult {
+fn assert_segment_partition(
+    operations: &[Value],
+    expected_segments: &[(&str, bool)],
+) -> TestResult {
     let startup = operations_named(operations, PI_STARTUP_ACTION);
     let total = startup.first().ok_or("missing startup operation")?["duration_ms"]
         .as_u64()
@@ -164,16 +185,29 @@ fn assert_segment_partition(operations: &[Value]) -> TestResult {
                 .is_some_and(|name| name.starts_with("pi_startup_"))
         })
         .collect();
-    assert!(!segments.is_empty(), "startup segments must be recorded");
+    assert_eq!(
+        segments.len(),
+        expected_segments.len(),
+        "unexpected startup segments: {segments:?}"
+    );
     let mut sum = 0;
     let mut names = std::collections::HashSet::new();
-    for segment in &segments {
+    for (segment, (expected_action, expected_success)) in segments.iter().zip(expected_segments) {
         assert!(
             names.insert(segment["action_type"].as_str()),
             "segment recorded twice: {segments:?}"
         );
+        assert_eq!(
+            segment["action_type"].as_str(),
+            Some(*expected_action),
+            "unexpected startup phase: {segments:?}"
+        );
         assert!(segment["ts"].as_str().is_some());
-        assert!(segment["success"].as_bool().is_some());
+        assert_eq!(
+            segment["success"].as_bool(),
+            Some(*expected_success),
+            "unexpected startup phase outcome: {segment}"
+        );
         sum += segment["duration_ms"]
             .as_u64()
             .ok_or("missing segment duration")?;
@@ -188,7 +222,7 @@ fn assert_segment_partition(operations: &[Value]) -> TestResult {
 
 /// Mock Pi host: answers the official RPC commands and reports its preparation
 /// phases on stderr the way the real sandbox CLI does.
-fn serving_pi_host_script() -> String {
+fn serving_pi_host_script(runtime_dir: &Path) -> String {
     let mut script = String::from(
         "#!/bin/sh\nset -eu\ntest \"$#\" -eq 1\ntest \"$1\" = __agent-loop\nprintf '%s' \"${OKOU_PI_PREPARATION_TIMING:-}\" > \"$HOME/preparation-timing-env.txt\"\n",
     );
@@ -200,6 +234,15 @@ fn serving_pi_host_script() -> String {
     script.push_str(
         "printf '%s\\n' '{\"type\":\"pi_preparation_timing\",\"runId\":\"run\",\"phase\":\"invented_phase\",\"durationMs\":1,\"outcome\":\"success\"}' >&2\n",
     );
+    // The guest advances its startup observer before appending the preparation
+    // operation. Wait for that acknowledgment before stdout can finish startup;
+    // writing stderr first alone does not order the guest's two readers.
+    // The existing guest-agent command timeout bounds this wait and its cleanup.
+    let sandbox_ops_file = guest_contracts::runtime_paths::sandbox_ops_log_file(runtime_dir);
+    script.push_str(&format!(
+        "while ! grep -Fq '\"action_type\":\"pi_prepare_runtime_initialize\"' {} 2>/dev/null; do\n  sleep 0.01\ndone\n",
+        quote_shell_arg(&sandbox_ops_file.to_string_lossy()),
+    ));
     script.push_str(
         r#"IFS= read -r state_command
 case "$state_command" in
