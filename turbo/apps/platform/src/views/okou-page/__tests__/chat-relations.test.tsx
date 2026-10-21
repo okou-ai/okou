@@ -355,10 +355,12 @@ test("Draw the next chat's panel only once its relationships answer", async () =
     );
   });
   // No placeholder and nothing from the previous chat while this one loads.
+  await waitFor(() => {
+    expect(buttonNamed("Resources")).toHaveAttribute("aria-busy", "true");
+  });
   expect(
     screen.queryByRole("region", { name: "Resources" }),
   ).not.toBeInTheDocument();
-  expect(buttonNamed("Resources")).toBeEnabled();
   response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");

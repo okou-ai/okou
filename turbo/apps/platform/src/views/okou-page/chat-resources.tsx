@@ -206,6 +206,9 @@ function ChatResourcesTrigger({
   const label = t(($) => {
     return $.chat.resources.title;
   });
+  const loadingLabel = t(($) => {
+    return $.chat.resources.loading;
+  });
   return (
     <TooltipProvider delay={300}>
       {/* The open panel sits below the button, where the tooltip would cover it. */}
@@ -239,25 +242,25 @@ function ChatResourcesTrigger({
                   aria-label={label}
                   aria-busy={loading}
                   aria-disabled={loading || undefined}
+                  // Why presses do nothing must not depend on hover or motion.
+                  aria-description={loading ? loadingLabel : undefined}
                 />
               }
             />
           }
         >
-          {/* A quick load finishes before the delayed pulse ever starts. */}
+          {/* A quick load finishes before the delayed pulse ever starts.
+              Without motion the icon dims instead. */}
           <Package
             size={18}
             className={cn(
-              loading && "motion-safe:animate-pulse [animation-delay:250ms]",
+              loading &&
+                "motion-safe:animate-pulse [animation-delay:250ms] motion-reduce:opacity-50",
             )}
           />
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          {loading
-            ? t(($) => {
-                return $.chat.resources.loading;
-              })
-            : label}
+          {loading ? loadingLabel : label}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

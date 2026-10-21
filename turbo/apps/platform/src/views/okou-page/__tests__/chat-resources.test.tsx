@@ -1,7 +1,7 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -29,7 +29,7 @@ import {
   setupResources,
 } from "./chat-resources-test-helpers.ts";
 
-test("Keep an empty chat's panel closed until the trigger is pressed", async () => {
+test("Keep an empty chat closed through presses while it loads, then show its hint when pressed", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   mockArtifactConversation(context, {
@@ -61,6 +61,12 @@ test("Keep an empty chat's panel closed until the trigger is pressed", async () 
     expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
   expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
+  expect(resourceButton()).toHaveAttribute(
+    "aria-description",
+    "Loading resources",
+  );
+  // Taken, this press would be an explicit open that shows the empty hint.
+  click(resourceButton());
   response.resolve();
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "false");
@@ -144,37 +150,6 @@ test("Draw a pressed panel only once its artifacts and related chats have answer
   expect(resourceButton()).not.toHaveAttribute("aria-disabled");
 });
 
-test("Ignore presses while the resources load", async () => {
-  installResourceGeometry(480);
-  context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
-  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
-    await response.promise;
-    return respond(200, {
-      artifacts: [artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf")],
-      nextCursor: null,
-    });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
-  });
-  await screen.findByTestId("chat-thread-header-title");
-  click(resourceButton());
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
-  });
-  // A loading button takes no presses, so this one cannot cancel the first.
-  click(resourceButton());
-  response.resolve();
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  expect(within(panel).getByText("report.pdf")).toBeInTheDocument();
-  expect(resourceState()).toStrictEqual({ open: true, visible: true });
-});
-
 test("Keep loading when the panel loses its room before the resources answer", async () => {
   const resize = installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
@@ -197,9 +172,13 @@ test("Keep loading when the panel loses its room before the resources answer", a
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
-  // A side panel takes the room away; a press would otherwise peek.
-  resize(200);
-  await userEvent.click(resourceButton());
+  // A side panel takes the room away. The viewport resize is an external
+  // event; let what it schedules settle before the press that would peek.
+  resize(200, false);
+  await act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+  click(resourceButton());
   response.resolve();
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "false");

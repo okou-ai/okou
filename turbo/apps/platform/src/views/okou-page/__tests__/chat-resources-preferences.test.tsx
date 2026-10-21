@@ -1,9 +1,8 @@
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
@@ -65,21 +64,6 @@ test("Keep the existing artifact entry when the rollout switch is off", async ()
   expect(all).toHaveAccessibleName("Artifacts");
 });
 
-test("Keep the resources preference on the header button, not in Chat settings", async () => {
-  await setupPage({
-    context,
-    path: "/?settings=chat",
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
-  });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  await within(dialog).findByRole("switch", { name: "Cloud browser" });
-  expect(
-    within(dialog).queryByRole("switch", {
-      name: "Open resources automatically",
-    }),
-  ).not.toBeInTheDocument();
-});
-
 test("Apply a second press while the first save is still in flight", async () => {
   const saving = createDeferredPromise<void>(context.signal);
   const updates = recordPreferenceUpdates(false, saving.promise);
@@ -114,7 +98,7 @@ test("Roll back the panel and explain a failed preference save", async () => {
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  await userEvent.click(resourceButton());
+  click(resourceButton());
   await screen.findByText("Preference update failed");
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });

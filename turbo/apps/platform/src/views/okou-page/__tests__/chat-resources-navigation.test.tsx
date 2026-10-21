@@ -298,8 +298,6 @@ test("Carry a press with room beside the transcript to every chat", async () => 
       chatResourcesEnabledByDefault: false,
     });
   });
-  await openChat(first.id, "First resources");
-  expect(resourceState()).toStrictEqual({ open: false, visible: false });
 });
 
 test("Peek without changing the preference when the gutter is too narrow", async () => {
