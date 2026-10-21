@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.1...runner-executor-v0.15.2) (2026-10-21)
+
+
+### Refactoring
+
+* **runner-executor:** own terminal prefetch process completion ([#41963](https://github.com/okou-ai/okou/issues/41963)) ([5db1c28](https://github.com/okou-ai/okou/commit/5db1c28dd4e55dcbaffef2ddd766e8338b49a7ed))
+
 ## [0.15.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.0...runner-executor-v0.15.1) (2026-10-21)
 
 ## [0.15.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.22...runner-executor-v0.15.0) (2026-10-20)
