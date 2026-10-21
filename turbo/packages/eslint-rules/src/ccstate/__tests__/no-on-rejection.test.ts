@@ -13,6 +13,22 @@ ruleTester.run("no-on-rejection", rule, {
   valid: [
     {
       filename,
+      code: 'import * as utils from "../utils.ts"; export type DeferredFactory = typeof utils.createDeferredPromise; export const isAbort = utils.isAbortError;',
+    },
+    {
+      filename,
+      code: 'import * as utils from "../utils.ts"; type Helpers = typeof utils;',
+    },
+    {
+      filename,
+      code: 'import { onRejection } from "../utils.ts"; type Callback = typeof onRejection;',
+    },
+    {
+      filename,
+      code: 'import { onRejection as observe } from "../utils.ts"; export type { observe };',
+    },
+    {
+      filename,
       code: 'import { settle } from "../utils.ts"; settle(operation);',
     },
     {
@@ -63,6 +79,11 @@ const result = onRejection(operation, callback);`,
     },
   ],
   invalid: [
+    {
+      filename,
+      code: 'import { onRejection } from "../utils.ts"; type Callback = typeof onRejection; onRejection(operation, callback);',
+      errors: [{ messageId: "noOnRejection" }],
+    },
     {
       filename,
       code: 'import * as utils from "../utils.ts"; const helpers = utils; helpers.onRejection(operation, callback);',

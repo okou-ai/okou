@@ -11,6 +11,14 @@ function propertyName(node: TSESTree.Node): string | null {
     : null;
 }
 
+function isTypeQuery(node: TSESTree.Node): boolean {
+  let parent = node.parent;
+  while (parent?.type === AST_NODE_TYPES.TSQualifiedName) {
+    parent = parent.parent;
+  }
+  return parent?.type === AST_NODE_TYPES.TSTypeQuery;
+}
+
 export default createRule({
   name: "no-on-rejection",
   defaultOptions: [],
@@ -52,13 +60,26 @@ export default createRule({
               propertyName(specifier.imported) === "onRejection"
             ) {
               for (const reference of variable.references) {
-                report(reference.identifier);
+                if (
+                  reference.isValueReference &&
+                  reference.isRead() &&
+                  !isTypeQuery(reference.identifier)
+                ) {
+                  report(reference.identifier);
+                }
               }
             }
           } else if (
             specifier?.type === AST_NODE_TYPES.ImportNamespaceSpecifier
           ) {
             for (const reference of variable.references) {
+              if (
+                !reference.isValueReference ||
+                !reference.isRead() ||
+                isTypeQuery(reference.identifier)
+              ) {
+                continue;
+              }
               const parent = reference.identifier.parent;
               if (
                 parent.type === AST_NODE_TYPES.MemberExpression &&

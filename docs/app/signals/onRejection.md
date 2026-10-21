@@ -138,8 +138,10 @@ not justify a new call:
 
 ## Lint policy and review
 
-`ccstate/no-on-rejection` rejects `onRejection` references by default, not only
-calls. It checks imported aliases, namespace access, and re-exports. Select other
+`ccstate/no-on-rejection` rejects runtime `onRejection` references by default,
+not only calls. It checks imported aliases, namespace access, and re-exports.
+Erased type queries and type-only imports/exports do not expose the helper and
+are allowed. Select other
 helpers explicitly: opaque namespace escapes, rest copies, and dynamic keys can
 hide the restricted helper and are rejected too. Preexisting references use a
 next-line exemption with the migration date
