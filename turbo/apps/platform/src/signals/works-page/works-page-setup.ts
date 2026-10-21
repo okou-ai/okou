@@ -6,7 +6,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WorksPage } from "../../views/okou-page/works-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import { onRejection } from "../utils.ts";
+import { withCleanup } from "../utils.ts";
 import { initSlackOrg$, watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchDiscordConnection$ } from "../okou-page/discord.ts";
 import { ownDiscordApprovalRoute$ } from "../okou-page/discord-oauth-approval.ts";
@@ -88,7 +88,7 @@ export const setupWorksPage$ = command(
     set(initWorksRedirect$);
     set(initSlackOrg$);
 
-    await onRejection(
+    await withCleanup(
       Promise.all([
         set(watchSlackConnection$, signal),
         set(watchTeamsConnection$, signal),
@@ -103,6 +103,5 @@ export const setupWorksPage$ = command(
       },
     );
     signal.throwIfAborted();
-    await set(hideAppSkeleton$, signal);
   },
 );
