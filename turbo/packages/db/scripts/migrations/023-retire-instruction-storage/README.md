@@ -60,7 +60,7 @@ After cleanup acceptance, retire this operator and its dedicated tests; recover
 the exact reviewed revision from Git if a later audit needs it.
 
 Run `pnpm test:instruction-storage-retirement` against a local PostgreSQL cluster
-for the native CLI acceptance suite. The existing required
-`test:migration-consistency` command includes this suite; no Workflow change is
-needed. The manifest covers registered instruction Storage; unregistered orphan
-objects require independent ownership evidence.
+for the native CLI acceptance suite. Run it explicitly when changing this
+operator; it is not part of `test:migration-consistency`. The manifest covers
+registered instruction Storage; unregistered orphan objects require independent
+ownership evidence.

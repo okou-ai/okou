@@ -20,32 +20,29 @@ against a disposable PostgreSQL 18 database with pgvector installed. Set
 pnpm -F @okouai/db test:migration-consistency
 ```
 
-PostgreSQL 18 reports `ON DELETE RESTRICT` violations as SQLSTATE `23001`
-(`restrict_violation`), where PostgreSQL 17 reports `23503`
-(`foreign_key_violation`). The SSH credential and Cloudflare Access migration
-tests accept only these two codes for deleting referenced resources and require
-the exact owner foreign-key constraint. Child ownership violations still require
-`23503`; other constraint checks retain their exact SQLSTATE expectations.
+## Validation scope
 
-## Transition validators
+`test:migration-consistency` runs `scripts/test-migration-consistency-schema.ts`
+directly. It validates snapshots and journal ordering, replays migrations,
+regenerates the current schema, compares the resulting schemas, and runs the
+permanent current-schema validators against both database shapes. CI also
+retains its separate migration immutability and JSONB contract checks.
 
-A transition validator protects an expand → contract rollout while old and new
-application versions and data shapes may coexist. Delete one only after all
-three event-based conditions are satisfied:
+The historical migration regression chain and its dedicated scripts and fixtures
+have been removed. The following transition-validator inventory is a historical
+record, not a list of supported commands or current retention requirements;
+recover retired sources from the
+[pre-cleanup revision](https://github.com/okou-ai/okou/tree/71a4cb7efd16afc2ef4417ad876e58d8984cc8cc/turbo/packages/db/scripts)
+when investigating past migrations. This cleanup does not change migration SQL,
+snapshots, production rollout or rollback requirements, and does not certify a
+production backfill or operator cleanup.
 
-1. Its target migration has shipped in a production release. Confirm that the
-   production `__drizzle_migrations.created_at` is greater than or equal to the
-   migration's `when` value in `src/migrations/meta/_journal.json`.
-2. The expand → contract cycle it covers is complete. The contract migration is
-   deployed, and no dual-write or dual-read compatibility window remains.
-3. Every invariant it asserts that still applies to the current schema has been
-   promoted to the permanent tier of the migration consistency suite.
+Migration runner timeout tests, smoke diagnostics, Pi-memory alert fixtures and
+the instruction-storage cleanup operator's native acceptance suite remain
+available as standalone commands. They are not prerequisites of schema
+consistency validation.
 
-There is no time-based retention window. Elapsed time does not determine whether
-a transition validator still protects a live rollout. The squash line advances
-to the last migration in the most recent production release. When that removes a
-referenced migration tag from the journal, the consistency suite fails and the
-expired transition validator must be deleted.
+## Historical transition validators
 
 - `scripts/test-vnc-native-network-storage.ts` preserves existing VNC rows,
   credentials, chat choices and observation identity across additive native
@@ -145,7 +142,7 @@ the current table shapes. The validator asserted only the one-time route
 consolidation and installation rebinding; the resulting canonical DM route keys
 are enforced by the integration ingress tests.
 
-### Active transition validators
+### Former transition validator inventory
 
 - `scripts/test-artifact-thread-catalog-migration.ts` replays the actual additive
   catalog migration over historical file/event/shared-snapshot fixtures. It
