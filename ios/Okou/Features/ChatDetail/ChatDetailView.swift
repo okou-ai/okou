@@ -394,7 +394,8 @@ struct ChatDetailView: View {
     case .fastMode(let enabled): label = enabled ? "Fast mode on" : "Fast mode off"
     }
     return Label(label, systemImage: "slider.horizontal.3")
-      .font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity)
+      .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+      .frame(maxWidth: .infinity, alignment: .trailing)
   }
 
 }
