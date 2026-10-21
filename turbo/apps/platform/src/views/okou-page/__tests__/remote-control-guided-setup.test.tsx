@@ -2488,64 +2488,69 @@ test.each(["directory", "details"] as const)(
       true,
       "member",
     );
-    await screen.findByText(displayName);
+    await expect(screen.findByText(displayName)).resolves.toBeInTheDocument();
 
     displayName = "Renamed in another window";
     context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
 
-    await screen.findByText(displayName);
+    await expect(screen.findByText(displayName)).resolves.toBeInTheDocument();
   },
 );
 
-test.each(["directory", "details"] as const)(
-  "Guided private network %s refreshes SSH usage changed in another window",
-  async (view) => {
-    let linked = false;
-    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-      return respond(200, {
-        configs: [
-          {
-            ...cloudflareNetwork,
-            sshHosts: linked
-              ? [{ id: sshHost.id, displayName: sshHost.displayName }]
-              : [],
-          },
-        ],
-      });
+function mockNetworkUsageChangedInAnotherWindow() {
+  let linked = false;
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, {
+      configs: [
+        {
+          ...cloudflareNetwork,
+          sshHosts: linked
+            ? [{ id: sshHost.id, displayName: sshHost.displayName }]
+            : [],
+        },
+      ],
     });
-    await page(
-      `/connectors?scope=private-network${
-        view === "details"
-          ? `&remoteResource=cloudflare:${cloudflareNetwork.id}`
-          : ""
-      }`,
-      true,
-      "member",
-    );
-    await screen.findByText(cloudflareNetwork.name);
-    if (view === "details") {
-      expect(getAction("button", "Delete Cloudflare Access")).toBeEnabled();
-    } else {
-      expect(
-        getAction("button", "Office network · Your 0 connections"),
-      ).toBeInTheDocument();
-    }
-
+  });
+  return () => {
     linked = true;
     context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
+  };
+}
 
-    if (view === "details") {
-      await screen.findByText(sshHost.displayName);
-      expect(getAction("button", "Delete Cloudflare Access")).toBeDisabled();
-    } else {
-      await waitFor(() => {
-        expect(
-          getAction("button", "Office network · Your 1 connection"),
-        ).toBeInTheDocument();
-      });
-    }
-  },
-);
+test("Guided private network directory refreshes SSH usage changed in another window", async () => {
+  const changeUsage = mockNetworkUsageChangedInAnotherWindow();
+  await page("/connectors?scope=private-network", true, "member");
+  await screen.findByText(cloudflareNetwork.name);
+  expect(
+    getAction("button", "Office network · Your 0 connections"),
+  ).toBeInTheDocument();
+
+  changeUsage();
+
+  await waitFor(() => {
+    expect(
+      getAction("button", "Office network · Your 1 connection"),
+    ).toBeInTheDocument();
+  });
+});
+
+test("Guided private network details refresh SSH usage changed in another window", async () => {
+  const changeUsage = mockNetworkUsageChangedInAnotherWindow();
+  await page(
+    `/connectors?scope=private-network&remoteResource=cloudflare:${cloudflareNetwork.id}`,
+    true,
+    "member",
+  );
+  await screen.findByText(cloudflareNetwork.name);
+  expect(getAction("button", "Delete Cloudflare Access")).toBeEnabled();
+
+  changeUsage();
+
+  await expect(
+    screen.findByText(sshHost.displayName),
+  ).resolves.toBeInTheDocument();
+  expect(getAction("button", "Delete Cloudflare Access")).toBeDisabled();
+});
 
 test("Credentials have a separate page without adding controls to the connection list", async () => {
   mockSavedConnections();
