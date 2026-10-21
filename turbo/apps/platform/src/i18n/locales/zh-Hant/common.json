@@ -2095,6 +2095,7 @@
       "received": "收到",
       "running": "執行中",
       "sent": "傳送",
+      "toggleMessages": "與 {{title}} 的訊息往來",
       "unavailable": "無法存取",
       "untitled": "未命名"
     },

@@ -2095,6 +2095,7 @@
       "received": "收到",
       "running": "运行中",
       "sent": "发出",
+      "toggleMessages": "与 {{title}} 的消息往来",
       "unavailable": "不可访问",
       "untitled": "未命名"
     },

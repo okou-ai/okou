@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -229,33 +230,13 @@ function MessageCard({
   );
 }
 
-// Received cards stay in this chat, so the other chat needs its own way in. It
-// joins the history once that has loaded, so it does not move under the pointer.
-function OpenChatLink({ peerId }: { readonly peerId: string }) {
-  const { t } = useTranslation();
-  return (
-    <Link
-      pathname={ROUTES.chat}
-      options={{ pathParams: { threadId: peerId } }}
-      className="mb-1 ml-7 flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      {t(($) => {
-        return $.chat.origins.openChat;
-      })}
-      <ArrowUpRight aria-hidden="true" size={12} />
-    </Link>
-  );
-}
-
 function MessageCards({
   id,
-  peerId,
   list,
   unavailable,
   retry,
 }: {
   readonly id: string;
-  readonly peerId: string;
   readonly list: ChatRelationList<ChatRelationMessage>;
   readonly unavailable: boolean;
   readonly retry: () => void;
@@ -265,45 +246,123 @@ function MessageCards({
   if (data.state === "loading") {
     return null;
   }
-  const openChat = unavailable ? null : <OpenChatLink peerId={peerId} />;
   if (data.state === "hasError") {
     return (
-      <>
-        <div
-          role="alert"
-          className="mb-1 ml-7 flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
-        >
-          <p>
-            {t(($) => {
-              return $.chat.relations.loadFailed;
-            })}
-          </p>
-          <Button variant="quiet" size="xs" onClick={retry}>
-            {t(($) => {
-              return $.chat.resources.retry;
-            })}
-          </Button>
-        </div>
-        {openChat}
-      </>
+      <div
+        role="alert"
+        className="mb-1 ml-7 flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
+      >
+        <p>
+          {t(($) => {
+            return $.chat.relations.loadFailed;
+          })}
+        </p>
+        <Button variant="quiet" size="xs" onClick={retry}>
+          {t(($) => {
+            return $.chat.resources.retry;
+          })}
+        </Button>
+      </div>
     );
   }
   // Indented so the text starts on the chat titles' edge.
   return (
+    <ul id={id} className="m-0 mb-1 ml-7 mt-0.5 grid list-none gap-1 p-0">
+      {data.data.items.map((message) => {
+        return (
+          <MessageCard
+            key={message.id}
+            message={message}
+            unavailable={unavailable}
+          />
+        );
+      })}
+    </ul>
+  );
+}
+
+// The title opens the chat, as on every other row; the caret in the glyph
+// slot opens its message history. Two targets, told apart by place.
+function ExchangedChatRow({
+  chat,
+  thread,
+  title,
+  titleText,
+  origin,
+}: {
+  readonly chat: ResourceChat;
+  readonly thread: ChatPanelSignals;
+  readonly title: ReactNode;
+  readonly titleText: string;
+  readonly origin: boolean;
+}) {
+  const { t } = useTranslation();
+  const signals = thread.relations;
+  const selectedPeer = useGet(signals.selectedPeer$);
+  const messages = useGet(signals.messages$);
+  const toggle = useSet(signals.togglePeer$);
+  const retry = useSet(signals.retry$);
+  const unavailable = chat.status === "unavailable";
+  const expanded = selectedPeer === chat.threadId;
+  const messagesId = `${thread.threadId}-messages-${chat.threadId}`;
+  const rowContent = (
     <>
-      <ul id={id} className="m-0 mb-1 ml-7 mt-0.5 grid list-none gap-1 p-0">
-        {data.data.items.map((message) => {
-          return (
-            <MessageCard
-              key={message.id}
-              message={message}
-              unavailable={unavailable}
-            />
-          );
-        })}
-      </ul>
-      {openChat}
+      {title}
+      {origin && <OriginTag />}
+      <ChatStatus status={chat.status} />
     </>
+  );
+  return (
+    <li>
+      <div className="relative">
+        {unavailable ? (
+          <span
+            className={cn(
+              RESOURCE_ROW_CLASS,
+              "pl-9 text-muted-foreground hover:bg-transparent",
+            )}
+          >
+            {rowContent}
+          </span>
+        ) : (
+          <Link
+            pathname={ROUTES.chat}
+            options={{ pathParams: { threadId: chat.threadId } }}
+            className={cn(RESOURCE_ROW_CLASS, "pl-9")}
+          >
+            {rowContent}
+          </Link>
+        )}
+        <Button
+          variant="quiet"
+          size="icon-xs"
+          className="absolute top-1/2 left-1.5 size-6 -translate-y-1/2 text-muted-foreground hover:bg-state-hover hover:text-foreground [&_svg]:size-3.5"
+          aria-expanded={expanded}
+          aria-controls={expanded ? messagesId : undefined}
+          aria-label={t(
+            ($) => {
+              return $.chat.relations.toggleMessages;
+            },
+            { title: titleText },
+          )}
+          onClick={() => {
+            toggle(chat.threadId);
+          }}
+        >
+          <ChevronRight
+            className={cn("transition-transform", expanded && "rotate-90")}
+          />
+        </Button>
+      </div>
+      {expanded && messages && (
+        <MessageCards
+          id={messagesId}
+          list={messages}
+          unavailable={unavailable}
+          retry={retry}
+        />
+      )}
+    </li>
   );
 }
 
@@ -317,11 +376,7 @@ function ResourceChatRow({
   readonly thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  const signals = thread.relations;
-  const selectedPeer = useGet(signals.selectedPeer$);
-  const messages = useGet(signals.messages$);
-  const toggle = useSet(signals.togglePeer$);
-  const retry = useSet(signals.retry$);
+  const meta = useGet(chatThreadMetaMap$).get(chat.threadId);
   const unavailable = chat.status === "unavailable";
   const glyph = (
     <span className={RESOURCE_GLYPH_CLASS}>
@@ -337,47 +392,24 @@ function ResourceChatRow({
   ) : (
     <ChatTitle threadId={chat.threadId} fallback={chat.title} />
   );
-  // A chat with a message history expands to it; the cards are the way in.
   if (chat.exchanged) {
-    const expanded = selectedPeer === chat.threadId;
-    const messagesId = `${thread.threadId}-messages-${chat.threadId}`;
     return (
-      <li>
-        <Button
-          variant="quiet"
-          className={cn(
-            RESOURCE_ROW_CLASS,
-            "w-full justify-start font-normal text-foreground",
-          )}
-          aria-expanded={expanded}
-          aria-controls={expanded ? messagesId : undefined}
-          onClick={() => {
-            toggle(chat.threadId);
-          }}
-        >
-          {glyph}
-          {title}
-          {origin && <OriginTag />}
-          <ChatStatus status={chat.status} />
-          <ChevronRight
-            aria-hidden="true"
-            size={14}
-            className={cn(
-              "shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-90",
-            )}
-          />
-        </Button>
-        {expanded && messages && (
-          <MessageCards
-            id={messagesId}
-            peerId={chat.threadId}
-            list={messages}
-            unavailable={unavailable}
-            retry={retry}
-          />
-        )}
-      </li>
+      <ExchangedChatRow
+        chat={chat}
+        thread={thread}
+        title={title}
+        titleText={
+          unavailable
+            ? t(($) => {
+                return $.chat.relations.unavailable;
+              })
+            : ((meta ? meta.title : chat.title) ??
+              t(($) => {
+                return $.chat.relations.untitled;
+              }))
+        }
+        origin={origin}
+      />
     );
   }
   if (unavailable) {

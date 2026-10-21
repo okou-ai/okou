@@ -2095,6 +2095,7 @@
       "received": "받음",
       "running": "실행 중",
       "sent": "보냄",
+      "toggleMessages": "{{title}}과의 메시지",
       "unavailable": "접근 불가",
       "untitled": "제목 없음"
     },

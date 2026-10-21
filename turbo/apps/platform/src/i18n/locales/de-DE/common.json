@@ -2101,6 +2101,7 @@
       "received": "Empfangen",
       "running": "Läuft",
       "sent": "Gesendet",
+      "toggleMessages": "Nachrichten mit {{title}}",
       "unavailable": "Nicht verfügbar",
       "untitled": "Unbenannt"
     },

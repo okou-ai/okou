@@ -2095,6 +2095,7 @@
       "received": "受信",
       "running": "実行中",
       "sent": "送信",
+      "toggleMessages": "{{title}} とのメッセージ",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },

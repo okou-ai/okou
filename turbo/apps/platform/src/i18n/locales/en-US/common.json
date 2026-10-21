@@ -2101,6 +2101,7 @@
       "received": "Received",
       "running": "Running",
       "sent": "Sent",
+      "toggleMessages": "Messages with {{title}}",
       "unavailable": "Unavailable",
       "untitled": "Untitled"
     },

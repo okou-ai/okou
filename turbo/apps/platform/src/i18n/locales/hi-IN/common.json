@@ -2101,6 +2101,7 @@
       "received": "प्राप्त हुआ",
       "running": "चल रहा है",
       "sent": "भेजा गया",
+      "toggleMessages": "{{title}} के साथ संदेश",
       "unavailable": "उपलब्ध नहीं",
       "untitled": "बिना शीर्षक"
     },

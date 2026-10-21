@@ -2140,6 +2140,7 @@
       "received": "Reçu",
       "running": "En cours",
       "sent": "Envoyé",
+      "toggleMessages": "Messages avec {{title}}",
       "unavailable": "Indisponible",
       "untitled": "Sans titre"
     },

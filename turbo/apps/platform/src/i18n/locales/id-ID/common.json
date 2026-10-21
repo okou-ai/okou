@@ -2095,6 +2095,7 @@
       "received": "Diterima",
       "running": "Berjalan",
       "sent": "Dikirim",
+      "toggleMessages": "Pesan dengan {{title}}",
       "unavailable": "Tidak tersedia",
       "untitled": "Tanpa judul"
     },

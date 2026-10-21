@@ -124,11 +124,17 @@ function mockMessages(items: readonly ChatRelationMessage[]) {
     return respond(200, { items: [...items] });
   });
 }
+function messagesCaret(container: HTMLElement, title: string) {
+  return queryAllByRoleFast("button", container).find((button) => {
+    return button.getAttribute("aria-label") === `Messages with ${title}`;
+  });
+}
 async function openMessages(title: string) {
   const panel = await screen.findByRole("region", { name: "Resources" });
-  const row = (await within(panel).findByText(title)).closest("button");
+  await within(panel).findByText(title);
+  const row = messagesCaret(panel, title);
   if (!row) {
-    throw new Error(`Expected a disclosure row for ${title}`);
+    throw new Error(`Expected a messages caret for ${title}`);
   }
   click(row);
   return { panel, row };
@@ -387,12 +393,14 @@ test("Show the first source and created chats with their status", async () => {
   await expect(
     within(panel).findByText("Older child"),
   ).resolves.toBeInTheDocument();
-  // Exchanged messages turn the peer row into a disclosure for its history.
-  const peer = within(panel)
-    .getByText("Existing planning chat")
-    .closest("button");
-  expect(peer).toHaveAttribute("aria-expanded", "false");
+  // The peer row opens the chat; a separate caret opens its message history.
+  const peer = within(panel).getByText("Existing planning chat").closest("a");
+  expect(peer).toHaveAttribute("href", `/chats/${PEER}`);
   expect(peer).toHaveTextContent("Running");
+  expect(messagesCaret(panel, "Existing planning chat")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   expect(child.closest("a")).not.toHaveTextContent("Running");
   expect(panel.querySelector("[title]")).toBeNull();
 });
@@ -472,10 +480,8 @@ test("List an agent origin once when it is also a related chat", async () => {
   const panel = await screen.findByRole("region", { name: "Resources" });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
   await within(chats).findByText("Research child");
-  const parent = within(chats)
-    .getByText("Existing planning chat")
-    .closest("button");
-  expect(parent).toHaveAttribute("aria-expanded", "false");
+  const parent = within(chats).getByText("Existing planning chat").closest("a");
+  expect(parent).toHaveAttribute("href", `/chats/${PEER}`);
   expect(parent).toHaveTextContent("From");
   expect(within(chats).getAllByText("From", { exact: true })).toHaveLength(1);
   expect(within(chats).getAllByRole("listitem")).toHaveLength(2);
@@ -590,58 +596,29 @@ test("Follow a sent message card to the run it started in the other chat", async
   expect(hash()).toBe(`#run-${OTHER_RUN}`);
 });
 
-test("Open a chat that only sent messages here from its expanded history", async () => {
+test("Open a related chat from its row in one click, while its caret opens the history", async () => {
   await setupRelations({
     mock: () => {
       mockCommunications(0, { receivedCount: 1 });
       mockMessages([receivedMessage("The launch plan is ready")]);
     },
   });
-  const { panel } = await openMessages("Existing planning chat");
+  const { panel, row: caret } = await openMessages("Existing planning chat");
   const reply = await within(panel).findByText("The launch plan is ready");
+  expect(caret).toHaveAttribute("aria-expanded", "true");
   expect(reply.closest("a")).toHaveAttribute(
     "href",
     `/chats/${THREAD}#run-${RUN}`,
   );
-  const open = queryAllByRoleFast("link", panel).find((link) => {
-    return link.textContent.trim() === "Open chat";
-  });
-  if (!open) {
-    throw new Error("Expected a link to the other chat");
+  const row = within(panel).getByText("Existing planning chat").closest("a");
+  if (!row) {
+    throw new Error("Expected the related chat row to be a link");
   }
-  expect(open).toHaveAttribute("href", `/chats/${PEER}`);
-  click(open);
+  expect(row).toHaveAttribute("href", `/chats/${PEER}`);
+  click(row);
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${PEER}`);
   });
-});
-
-test("Add the Open chat link only once the history has loaded", async () => {
-  const history = createDeferredPromise<void>(context.signal);
-  await setupRelations({
-    mock: () => {
-      mockCommunications(0, { receivedCount: 1 });
-      context.mocks.api(chatRelationsContract.messages, async ({ respond }) => {
-        await history.promise;
-        return respond(200, {
-          items: [receivedMessage("The launch plan is ready")],
-        });
-      });
-    },
-  });
-  const { panel, row } = await openMessages("Existing planning chat");
-  await waitFor(() => {
-    expect(row).toHaveAttribute("aria-expanded", "true");
-  });
-  const openChatLinks = () => {
-    return queryAllByRoleFast("link", panel).filter((link) => {
-      return link.textContent.trim() === "Open chat";
-    });
-  };
-  expect(openChatLinks()).toHaveLength(0);
-  history.resolve();
-  await within(panel).findByText("The launch plan is ready");
-  expect(openChatLinks()).toHaveLength(1);
 });
 
 test("Keep received messages usable when the other chat is unavailable", async () => {
@@ -654,6 +631,7 @@ test("Keep received messages usable when the other chat is unavailable", async (
   const { panel, row } = await openMessages("Unavailable");
   const reply = await within(panel).findByText("The reply is still here");
   expect(row).toHaveAttribute("aria-expanded", "true");
+  expect(within(panel).getByText("Unavailable").closest("a")).toBeNull();
   expect(reply.closest("a")).toHaveAttribute(
     "href",
     `/chats/${THREAD}#run-${RUN}`,
@@ -760,7 +738,7 @@ test("Show a queued related chat's status as text", async () => {
   const panel = await screen.findByRole("region", { name: "Resources" });
   const row = (
     await within(panel).findByText("Existing planning chat")
-  ).closest("button");
+  ).closest("a");
   expect(row).toHaveTextContent("Queued");
   expect(row).not.toHaveTextContent("Running");
 });
@@ -816,9 +794,9 @@ test("Preview three unique chats and expand the complete list", async () => {
   const chats = await within(panel).findByRole("region", { name: "Chats" });
   expect(within(chats).getAllByRole("listitem")).toHaveLength(3);
   expect(within(chats).getAllByText("Child 1")).toHaveLength(1);
-  expect(
-    within(chats).getByText("Child 1").closest("button"),
-  ).toHaveTextContent("Running");
+  expect(within(chats).getByText("Child 1").closest("a")).toHaveTextContent(
+    "Running",
+  );
   expect(within(chats).queryByText("Created")).not.toBeInTheDocument();
   click(buttonNamed("Show more", chats));
   expect(within(chats).getByText("Child 51")).toBeInTheDocument();
