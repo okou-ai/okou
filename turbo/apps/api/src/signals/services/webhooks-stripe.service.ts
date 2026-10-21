@@ -4,7 +4,10 @@ import {
   canceledPlanEntitlementProjection,
 } from "./subscription-deletion-projection";
 import { publishLegacyPlanInvoice$ } from "./legacy-plan-invoice.service";
-import { legacyPlanInvoiceAdmission } from "./legacy-plan-invoice";
+import {
+  legacyPlanInvoiceAdmission,
+  type LegacyPlanInvoice,
+} from "./legacy-plan-invoice";
 import {
   areDuplicateInitialPurchases,
   refundDuplicateSubscriptionInvoice,
@@ -2739,50 +2742,20 @@ type BindSubscriptionToCustomerOrgArgs = {
   | { readonly source: "customer.subscription.created" }
 );
 
-/**
- * A Plan invoice whose organization entitlement is held by another live
- * subscription bought concurrently as an initial purchase is a duplicate: it
- * is refunded instead of granted, whatever its tier. Read before publication
- * so neither a rejection nor a tier upgrade grants it.
- */
-async function planInvoiceIsDuplicateInitialPurchase(
-  db: Db,
-  publication: Parameters<typeof legacyPlanInvoiceAdmission>[1],
-): Promise<boolean> {
-  const [wallet] = await db
-    .select()
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, publication.orgId));
+type PlanInvoiceWallet = typeof orgMetadata.$inferSelect;
+
+function isOtherCurrentPlanWallet(
+  wallet: PlanInvoiceWallet | undefined,
+  publication: LegacyPlanInvoice,
+): wallet is PlanInvoiceWallet & { stripeSubscriptionId: string } {
   return (
     !!wallet?.stripeSubscriptionId &&
     wallet.stripeSubscriptionId !== publication.subscriptionId &&
     wallet.lastProcessedInvoiceId !== publication.invoiceId &&
     (wallet.subscriptionStatus === "active" ||
       wallet.subscriptionStatus === "trialing" ||
-      wallet.subscriptionStatus === "past_due") &&
-    (wallet.currentPeriodEnd === null || wallet.currentPeriodEnd > nowDate()) &&
-    (await areDuplicateInitialPurchases(
-      publication.subscriptionId,
-      wallet.stripeSubscriptionId,
-    ))
+      wallet.subscriptionStatus === "past_due")
   );
-}
-
-/** Refund and cancel a duplicate initial Plan purchase instead of granting it. */
-async function refundDuplicateInitialPlanPurchase(
-  db: Db,
-  invoice: InvoiceInput,
-  publication: Parameters<typeof legacyPlanInvoiceAdmission>[1],
-): Promise<boolean> {
-  // Only a subscription's first invoice can be a duplicate initial purchase.
-  if (
-    invoice.billing_reason !== "subscription_create" ||
-    !(await planInvoiceIsDuplicateInitialPurchase(db, publication))
-  ) {
-    return false;
-  }
-  await refundDuplicateSubscriptionInvoice(invoice, publication.subscriptionId);
-  return true;
 }
 
 const bindSubscriptionToCustomerOrg$ = command(
@@ -3388,7 +3361,39 @@ const handlePlanSubscriptionInvoicePaid$ = command(
       orgId: org.orgId,
       details,
     };
-    if (await refundDuplicateInitialPlanPurchase(db, invoice, publication)) {
+    const planInvoiceIsDuplicateInitialPurchase =
+      async (): Promise<boolean> => {
+        const [wallet] = await db
+          .select()
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, publication.orgId));
+        return (
+          isOtherCurrentPlanWallet(wallet, publication) &&
+          (wallet.currentPeriodEnd === null ||
+            wallet.currentPeriodEnd > nowDate()) &&
+          (await areDuplicateInitialPurchases(
+            publication.subscriptionId,
+            wallet.stripeSubscriptionId,
+          ))
+        );
+      };
+
+    const refundDuplicateInitialPlanPurchase = async (): Promise<boolean> => {
+      // Only a subscription's first invoice can be a duplicate initial purchase.
+      if (
+        invoice.billing_reason !== "subscription_create" ||
+        !(await planInvoiceIsDuplicateInitialPurchase())
+      ) {
+        return false;
+      }
+      await refundDuplicateSubscriptionInvoice(
+        invoice,
+        publication.subscriptionId,
+      );
+      return true;
+    };
+
+    if (await refundDuplicateInitialPlanPurchase()) {
       signal.throwIfAborted();
       return org.orgId;
     }
@@ -3406,11 +3411,7 @@ const handlePlanSubscriptionInvoicePaid$ = command(
     if (!result.processed) {
       // A concurrent first purchase can publish between the check above and
       // this publication; the rejected loser is then refunded here instead.
-      const refunded = await refundDuplicateInitialPlanPurchase(
-        db,
-        invoice,
-        publication,
-      );
+      const refunded = await refundDuplicateInitialPlanPurchase();
       signal.throwIfAborted();
       return refunded
         ? org.orgId

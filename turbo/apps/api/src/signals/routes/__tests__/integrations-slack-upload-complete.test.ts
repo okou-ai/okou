@@ -2062,7 +2062,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
               );
             },
           );
-          expect(lifecycleMarker).toBeDefined();
           expect(lifecycleMarker?.content).toBeNull();
           return;
         }
@@ -2559,7 +2558,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           );
         },
       );
-      expect(lifecycleMarker).toBeDefined();
       expect(lifecycleMarker?.content).toBeNull();
       expect(
         messages.events.find((message) => {

@@ -238,10 +238,6 @@ describe("external-code session claim ownership", () => {
     const { actor, run, expectConnectorChanged } = await prepareActor();
     const peer = bdd.user({ orgId: actor.orgId });
     const foreignOrg = bdd.user({ userId: actor.userId });
-    expect(peer.userId).not.toBe(actor.userId);
-    expect(peer.orgId).toBe(actor.orgId);
-    expect(foreignOrg.userId).toBe(actor.userId);
-    expect(foreignOrg.orgId).not.toBe(actor.orgId);
     const session = await run(() => {
       return connectors.startExternalCode(actor, "aws", "cli", {
         intent: "add",

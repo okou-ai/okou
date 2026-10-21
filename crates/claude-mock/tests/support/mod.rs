@@ -3,6 +3,8 @@
 #[cfg(target_os = "linux")]
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
+#[cfg(unix)]
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::process::{ChildStdin, Command, ExitStatus, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::JoinHandle;
@@ -102,6 +104,14 @@ fn missing_child_pipe(pipe_name: &str) -> std::io::Error {
 pub fn run_mock_output(command: &mut Command) -> Result<Output, Box<dyn std::error::Error>> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     wait_child_output(spawn_managed_mock_child(command)?)
+}
+
+#[cfg(unix)]
+pub fn run_mock_output_with_orphaned_stdout(
+    command: &mut Command,
+) -> Result<Output, Box<dyn std::error::Error>> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    wait_child_output_with_stdout_check(spawn_managed_mock_child(command)?, true)
 }
 
 pub fn expected_history_path(home: &std::path::Path, session_id: &str) -> std::path::PathBuf {
@@ -460,8 +470,13 @@ pub(super) fn continue_cleanup_in_background<StdoutResult, StderrResult>(
     });
 }
 
-pub fn wait_child_output(
+pub fn wait_child_output(child: ProcessGroupChild) -> Result<Output, Box<dyn std::error::Error>> {
+    wait_child_output_with_stdout_check(child, false)
+}
+
+fn wait_child_output_with_stdout_check(
     mut child: ProcessGroupChild,
+    require_open_stdout: bool,
 ) -> Result<Output, Box<dyn std::error::Error>> {
     let Some(mut child_stdout) = child.take_stdout() else {
         child.terminate();
@@ -470,6 +485,18 @@ pub fn wait_child_output(
     let Some(mut child_stderr) = child.take_stderr() else {
         child.terminate();
         return Err(missing_child_pipe("stderr").into());
+    };
+    #[cfg(unix)]
+    let stdout_witness = if require_open_stdout {
+        match child_stdout.as_fd().try_clone_to_owned() {
+            Ok(stdout) => Some(stdout),
+            Err(error) => {
+                child.terminate();
+                return Err(error.into());
+            }
+        }
+    } else {
+        None
     };
     let stdout_thread = std::thread::spawn(move || -> Result<Vec<u8>, std::io::Error> {
         let mut stdout = Vec::new();
@@ -482,7 +509,29 @@ pub fn wait_child_output(
         Ok(stderr)
     });
 
-    let status = match wait_child_status_and_cleanup_group(child) {
+    #[cfg(unix)]
+    let wait_outcome = if let Some(stdout) = stdout_witness {
+        wait_child_status_and_cleanup_group_with_observer(
+            child,
+            CHILD_EXIT_TIMEOUT,
+            CHILD_EXIT_TIMEOUT,
+            move |pid| {
+                observe_child_exit_without_reaping(pid)?;
+                // The exited leader has closed its descriptors. A writer now
+                // witnesses a descendant, before any process-group cleanup.
+                require_pipe_writer(stdout.as_fd())
+            },
+        )
+    } else {
+        wait_child_status_and_cleanup_group(child)
+    };
+    #[cfg(not(unix))]
+    let wait_outcome = {
+        let _ = require_open_stdout;
+        wait_child_status_and_cleanup_group(child)
+    };
+
+    let status = match wait_outcome {
         ChildWaitOutcome::Complete(result) => result,
         ChildWaitOutcome::CleanupPending { cleanup, error } => {
             continue_cleanup_in_background(cleanup, stdout_thread, stderr_thread, None);
@@ -505,6 +554,35 @@ pub fn wait_child_output(
         stdout,
         stderr,
     })
+}
+
+#[cfg(unix)]
+fn require_pipe_writer(stdout: BorrowedFd<'_>) -> std::io::Result<()> {
+    let mut descriptor = libc::pollfd {
+        fd: stdout.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    loop {
+        // SAFETY: descriptor is initialized, points to one live pollfd, and
+        // the owned stdout duplicate stays alive throughout this observation.
+        let result = unsafe { libc::poll(&mut descriptor, 1, 0) };
+        if result >= 0 {
+            break;
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+    // POLLHUP reports no writers even when unread JSONL remains in the pipe.
+    if descriptor.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+        return Err(std::io::Error::other(format!(
+            "orphan-pipe stdout has no writer after leader exit (poll revents={})",
+            descriptor.revents
+        )));
+    }
+    Ok(())
 }
 
 pub fn mock_stream_json_shell_output(

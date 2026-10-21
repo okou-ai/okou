@@ -142,10 +142,10 @@ export async function bestEffort(
 }
 
 /**
- * Await `p` and return undefined on non-abort rejection. If supplied,
- * `onError` runs before resolving. Abort propagates. Use as a `.catch(handler)`
- * replacement when the caller needs an optional value and may surface a side
- * effect (toast, log) on failure.
+ * Legacy-only helper: await `p` and return undefined on non-abort rejection.
+ * If supplied, `onError` runs before resolving. Abort propagates.
+ * Do not introduce new usage; propagate failures and derive UI from loadables.
+ * See docs/app/signals/tapError.md.
  */
 export async function tapError<T>(
   p: Promise<T>,

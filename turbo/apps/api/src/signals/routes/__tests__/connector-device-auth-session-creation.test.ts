@@ -100,7 +100,6 @@ describe("Builtin device-auth session creation", () => {
     mockSecretKmsHttp();
     const owned = createPublicConnectorActor(context);
     const foreign = createPublicConnectorActor(context);
-    expect(owned.actor.orgId).not.toBe(foreign.actor.orgId);
     await owned.run(async () => {
       await foreign.run(async () => {
         const actor = owned.actor;

@@ -841,7 +841,7 @@ function SpotlightSearchInput() {
   return (
     // `p-5` all round: the 20px bottom padding is what balances the air above
     // and below the filter row (see SpotlightSearchFilterBar's `mb-3`).
-    <div className="p-5">
+    <div className="shrink-0 p-5">
       <div className="relative">
         <CommandInput
           placeholder={t(($) => {
@@ -916,7 +916,7 @@ function SpotlightSearchFilterBar({
   return (
     // No divider: the search field and the list are already separated by their
     // own padding, and a full-bleed rule ran into the dialog's 24px corners.
-    <div className="mb-3 flex h-7 items-center justify-between px-5">
+    <div className="mb-3 flex h-7 shrink-0 items-center justify-between px-5">
       <ToggleGroup<ThreeColumnSearchFilter>
         aria-label={t(($) => {
           return $.sidebar.searchWorkspace;
@@ -1082,12 +1082,12 @@ function SpotlightSearchResults({
     // `px-3` pairs with each row's `pl-1` / `pr-2` to put row content on the
     // same 20px rail as the search field and the filter row, while the row's
     // hover fill still bleeds past it.
-    <CommandList className="min-h-[300px] max-h-[min(560px,65vh)] px-3 pb-4">
+    <CommandList className="min-h-0 max-h-[min(560px,65dvh)] overscroll-contain px-3 pb-4">
       {/*
         No group heading: the filter row above already names what is listed, and
         "Best matches" was labelling the only group there is.
       */}
-      <CommandGroup className="[&_[data-slot=command-group-items]]:flex [&_[data-slot=command-group-items]]:flex-col">
+      <CommandGroup className="min-h-[300px] [&_[data-slot=command-group-items]]:flex [&_[data-slot=command-group-items]]:flex-col">
         {threads.map((thread, index) => {
           return (
             <SpotlightThreadCommandItem
@@ -1180,26 +1180,26 @@ function SpotlightSearchResults({
             })}
           </div>
         ) : null}
+        {showNoResults ? (
+          // Same empty-state shape as the artifacts and workflows lists: a 96px
+          // spot illustration over a single line, centred in the list's minimum
+          // height so the dialog does not resize as results come and go.
+          <div className="flex min-h-[268px] flex-col items-center justify-center px-6 text-center">
+            <img
+              src={emptySearchImg}
+              alt=""
+              role="presentation"
+              loading="lazy"
+              className="h-24 w-24 object-contain opacity-80"
+            />
+            <p className="mt-3 text-sm font-medium text-foreground">
+              {t(($) => {
+                return $.sidebar.noResults;
+              })}
+            </p>
+          </div>
+        ) : null}
       </CommandGroup>
-      {showNoResults ? (
-        // Same empty-state shape as the artifacts and workflows lists: a 96px
-        // spot illustration over a single line, centred in the list's minimum
-        // height so the dialog does not resize as results come and go.
-        <div className="flex min-h-[268px] flex-col items-center justify-center px-6 text-center">
-          <img
-            src={emptySearchImg}
-            alt=""
-            role="presentation"
-            loading="lazy"
-            className="h-24 w-24 object-contain opacity-80"
-          />
-          <p className="mt-3 text-sm font-medium text-foreground">
-            {t(($) => {
-              return $.sidebar.noResults;
-            })}
-          </p>
-        </div>
-      ) : null}
     </CommandList>
   );
 }
@@ -1365,9 +1365,11 @@ export function ThreeColumnSearchDialog({
         return $.actions.close;
       })}
       smMaxWidth={820}
+      position="top"
+      scrollable={false}
       showCloseButton={false}
       contentClassName="gap-0"
-      commandClassName="gap-0"
+      commandClassName="min-h-0 gap-0"
       commandProps={{
         mode: "none",
         autoHighlight: true,

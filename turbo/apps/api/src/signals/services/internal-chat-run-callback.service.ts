@@ -143,8 +143,8 @@ import {
   dispatchTeamsChatDeliveryOnce$,
 } from "./internal-teams-chat-run-callback.service";
 import {
-  deliverTelegramChatAdmissionFailure,
-  dispatchTelegramChatDeliveryOnce,
+  deliverTelegramChatAdmissionFailure$,
+  dispatchTelegramChatDeliveryOnce$,
 } from "./internal-telegram-chat-run-callback.service";
 import {
   modelProviderWriteTypeForLaunch,
@@ -1002,24 +1002,15 @@ function discordReplyRequest(args: {
   };
 }
 
-async function insertTelegramChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: TelegramDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "telegram:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function telegramChatDeliveryFields(
+  target: TelegramDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "telegram:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 async function insertAgentPhoneChatDeliveryCallback(args: {
@@ -1185,12 +1176,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const telegramDeliveryCallbackId = input.telegramDelivery
-    ? await insertTelegramChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.telegramDelivery,
-        chatEventId: event.id,
+        ...telegramChatDeliveryFields(input.telegramDelivery, event.id),
       })
     : undefined;
   const agentphoneDeliveryCallbackId = input.agentphoneDelivery
@@ -1483,12 +1473,14 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const telegramDeliveryCallbackId =
     deliveryEvent && input.telegramDelivery
-      ? await insertTelegramChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.telegramDelivery,
-          chatEventId: deliveryEvent.id,
+          ...telegramChatDeliveryFields(
+            input.telegramDelivery,
+            deliveryEvent.id,
+          ),
         })
       : undefined;
   const agentphoneDeliveryCallbackId =
@@ -2549,8 +2541,15 @@ const sendQueuedAdmissionFailure$ = command(
         return;
       }
       case "Telegram": {
-        await deliverTelegramChatAdmissionFailure(
-          { ...base, target: channel.target },
+        await set(
+          deliverTelegramChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            userId: channel.userId,
+            orgId: channel.orgId,
+            chatEventId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -3087,8 +3086,8 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
           signal,
         );
       } else {
-        deliveryPromise = dispatchTelegramChatDeliveryOnce(
-          args.db,
+        deliveryPromise = set(
+          dispatchTelegramChatDeliveryOnce$,
           callbackId,
           args.status,
           signal,

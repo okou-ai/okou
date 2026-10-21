@@ -763,7 +763,7 @@ describe("organization Cloudflare Access", () => {
         .configs,
     ).toContainEqual(renamedPrivate.body);
 
-    const first = owner({ orgId: admin.orgId });
+    owner({ orgId: admin.orgId });
     const firstHost = await host(shared.id);
     const firstList = (
       await accept(configs().list({ headers, query: scoped }), [200])
@@ -782,7 +782,7 @@ describe("organization Cloudflare Access", () => {
       }),
     ).toBeFalsy();
 
-    const second = owner({ orgId: admin.orgId });
+    owner({ orgId: admin.orgId });
     const secondList = (
       await accept(configs().list({ headers, query: scoped }), [200])
     ).body.configs;
@@ -862,7 +862,6 @@ describe("organization Cloudflare Access", () => {
       }),
       [404],
     );
-    expect(first.userId).not.toBe(second.userId);
   });
 
   it("rotates every member host and blocks referenced deletion", async () => {

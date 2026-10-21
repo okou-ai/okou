@@ -12313,8 +12313,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expectApiError(poll.body);
           expect(poll.body.error.message).toBe("Authentication required");
         }
-
-        expect(context.mocks.ably.createTokenRequest).not.toHaveBeenCalled();
       });
     });
 

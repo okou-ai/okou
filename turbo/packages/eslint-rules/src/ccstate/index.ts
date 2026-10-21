@@ -63,6 +63,7 @@ import noDirectSessionStorage from "./rules/no-direct-session-storage.ts";
 import noDirectFetch from "./rules/no-direct-fetch.ts";
 import noManualPolling from "./rules/no-manual-polling.ts";
 import noEmptyPromiseCatch from "./rules/no-empty-promise-catch.ts";
+import noTapError from "./rules/no-tap-error.ts";
 import noVoidStatement from "./rules/no-void-statement.ts";
 import noAbortSwallower from "./rules/no-abort-swallower.ts";
 import noTestDelay from "./rules/no-test-delay.ts";
@@ -111,6 +112,7 @@ const plugin = {
     "no-direct-fetch": noDirectFetch,
     "no-manual-polling": noManualPolling,
     "no-empty-promise-catch": noEmptyPromiseCatch,
+    "no-tap-error": noTapError,
     "no-void-statement": noVoidStatement,
     "no-abort-swallower": noAbortSwallower,
     "no-test-delay": noTestDelay,

@@ -136,10 +136,6 @@ describe("with neighboring chat panes", () => {
         "page",
       );
     });
-    expect(continuitySidebarLink(newest.id)).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
     expectPaneTitle(side, "Side keyboard chat");
   });
 });

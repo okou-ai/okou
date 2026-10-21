@@ -2008,39 +2008,6 @@ function shouldUseCurrentAccess(args: {
   return false;
 }
 
-async function loadConnectorRefreshStateRow(
-  db: Db,
-  args: RefreshAccessTokenArgs,
-): Promise<RefreshStateRow | null> {
-  const connectorSlug = args.accessSourceKey;
-  const connectorId =
-    args.connectorAccessBySlug.get(connectorSlug)?.connectorId;
-  if (connectorId === undefined) {
-    return null;
-  }
-  const query = db
-    .select({
-      authMethod: connectors.authMethod,
-      connectorId: connectors.id,
-      storageVersion: connectors.storageVersion,
-      tokenExpiresAt: connectors.tokenExpiresAt,
-      needsReconnect: connectors.needsReconnect,
-      lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
-      reconnectReason: connectors.reconnectReason,
-    })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.id, connectorId),
-        eq(connectors.connectorSlug, connectorSlug),
-      ),
-    );
-  const rows = await query.limit(1);
-  return rows[0] ?? null;
-}
-
 async function loadRefreshState(
   db: Db,
   args: RefreshAccessTokenArgs,
@@ -2082,7 +2049,35 @@ async function loadRefreshState(
           }
           return null;
         })()
-      : await loadConnectorRefreshStateRow(db, args);
+      : await (async (): Promise<RefreshStateRow | null> => {
+          const connectorSlug = args.accessSourceKey;
+          const connectorId =
+            args.connectorAccessBySlug.get(connectorSlug)?.connectorId;
+          if (connectorId === undefined) {
+            return null;
+          }
+          const query = db
+            .select({
+              authMethod: connectors.authMethod,
+              connectorId: connectors.id,
+              storageVersion: connectors.storageVersion,
+              tokenExpiresAt: connectors.tokenExpiresAt,
+              needsReconnect: connectors.needsReconnect,
+              lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
+              reconnectReason: connectors.reconnectReason,
+            })
+            .from(connectors)
+            .where(
+              and(
+                eq(connectors.orgId, args.orgId),
+                eq(connectors.userId, args.userId),
+                eq(connectors.id, connectorId),
+                eq(connectors.connectorSlug, connectorSlug),
+              ),
+            );
+          const rows = await query.limit(1);
+          return rows[0] ?? null;
+        })();
 
   if (!row) {
     return null;
@@ -2357,18 +2352,6 @@ async function markRefreshFailure(
         eq(connectors.connectorSlug, connectorSlug),
       ),
     );
-}
-
-async function markRefreshTokenMissing(
-  args: RefreshAccessTokenArgs,
-  context: RefreshTokenContext,
-): Promise<RefreshAccessTokenResult> {
-  await markRefreshFailure(args, context, {
-    errorCode: null,
-    failureReason: "reconnect_required",
-    connectorReconnectReason: null,
-  });
-  return refreshTokenMissingResult();
 }
 
 // Refresh-failure diagnostics follow one rule: a `reconnect_required` outcome
@@ -2669,7 +2652,16 @@ async function refreshStoredAccessToken(args: {
   }
 
   if (missingRefreshInputNames(state).length > 0) {
-    return markRefreshTokenMissing(args.refreshArgs, args.prepared.context);
+    const missingRefreshArgs = args.refreshArgs;
+    const missingRefreshContext = args.prepared.context;
+    return (async (): Promise<RefreshAccessTokenResult> => {
+      await markRefreshFailure(missingRefreshArgs, missingRefreshContext, {
+        errorCode: null,
+        failureReason: "reconnect_required",
+        connectorReconnectReason: null,
+      });
+      return refreshTokenMissingResult();
+    })();
   }
 
   return refreshPreparedStoredAccessToken({

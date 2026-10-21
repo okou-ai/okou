@@ -14,7 +14,8 @@ import {
   escapeHtml,
   splitMessage,
 } from "../../lib/telegram-format";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   deleteMessage,
@@ -33,12 +34,12 @@ import {
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
 import {
-  persistTelegramReplyChainRoute,
+  persistTelegramReplyChainRoute$,
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
-import { storeTelegramBotMessage } from "./telegram-callback-persistence.service";
+import { storeTelegramBotMessage$ } from "./telegram-callback-persistence.service";
 import {
   runModelSelectionColumns,
   runModelSelectionCondition,
@@ -85,126 +86,149 @@ function telegramOwnerWhere(ownerLink: TelegramOwnerLink) {
   return eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
 }
 
-async function loadTelegramChatDeliveryContext(
-  args: {
-    readonly db: Db;
-    readonly callback: ClaimedTelegramChatDelivery;
-  },
-  signal: AbortSignal,
-) {
-  const payload = telegramChatCallbackPayloadSchema.parse(
-    args.callback.payload,
-  );
-  const [run] = await args.db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      chatThreadId: agentRuns.chatThreadId,
-      agentId: agents.id,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(agentRuns.id, args.callback.runId),
-        eq(agentRuns.triggerSource, "telegram"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run?.chatThreadId) {
-    throw new Error("Telegram chat delivery run context is unavailable");
-  }
-  const runContext: TelegramChatRunContext = {
-    userId: run.userId,
-    orgId: run.orgId,
-    chatThreadId: run.chatThreadId,
-    agentId: run.agentId,
-  };
-
-  const [event] = await args.db
-    .select({ content: canonicalChatEventContent() })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, payload.chatEventId),
-        eq(chatEvents.runId, args.callback.runId),
-        eq(chatEvents.chatThreadId, run.chatThreadId),
-        chatEventTypeIn([
-          "output.message",
-          "output.error",
-          "run.failed",
-          "run.cancelled",
-        ]),
-        isNotNull(canonicalChatEventContent()),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!event?.content) {
-    throw new Error("Telegram chat delivery message is unavailable");
-  }
-
-  let binding: TelegramOwnerBinding | undefined;
-  // Only the official shared bot can deliver run callbacks.
-  if (isOfficialTelegramBotId(payload.installationId)) {
-    const [link] = await args.db
-      .select({ id: telegramOfficialUserLinks.id })
-      .from(telegramOfficialUserLinks)
+/** Preserve the route read outcome; the existing delivery checks own cancellation. */
+const loadTelegramDeliveryRoute$ = command(
+  async (
+    { get },
+    args: {
+      readonly ownerLink: TelegramOwnerLink;
+      readonly chatId: string;
+      readonly rootMessageId: string;
+      readonly chatThreadId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const db = get(db$);
+    return await db
+      .select({ id: telegramChatThreadRoutes.id })
+      .from(telegramChatThreadRoutes)
       .where(
         and(
-          eq(telegramOfficialUserLinks.id, payload.userLinkId),
-          eq(telegramOfficialUserLinks.userId, runContext.userId),
-          eq(telegramOfficialUserLinks.orgId, runContext.orgId),
+          telegramOwnerWhere(args.ownerLink),
+          eq(telegramChatThreadRoutes.chatId, args.chatId),
+          eq(telegramChatThreadRoutes.rootMessageId, args.rootMessageId),
+          eq(telegramChatThreadRoutes.chatThreadId, args.chatThreadId),
+        ),
+      )
+      .limit(1);
+  },
+);
+
+const loadTelegramChatDeliveryContext$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly callback: ClaimedTelegramChatDelivery;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = get(db$);
+    const payload = telegramChatCallbackPayloadSchema.parse(
+      args.callback.payload,
+    );
+    const [run] = await db
+      .select({
+        userId: agentRuns.userId,
+        orgId: agentRuns.orgId,
+        chatThreadId: agentRuns.chatThreadId,
+        agentId: agents.id,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(agentRuns.id, args.callback.runId),
+          eq(agentRuns.triggerSource, "telegram"),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    const botToken = getOfficialTelegramBotConfig().botToken;
-    binding =
-      link && botToken
-        ? {
-            botToken,
-            ownerLink: { kind: "official", id: link.id },
-          }
-        : undefined;
-  }
-  signal.throwIfAborted();
-  if (binding) {
-    const routeDb = args.db;
-    const routeTarget = payload;
-    const routeOwnerLink = binding.ownerLink;
-    const routeChatThreadId = runContext.chatThreadId;
-    if (routeTarget.rootMessageId !== null) {
-      const [route] = await routeDb
-        .select({ id: telegramChatThreadRoutes.id })
-        .from(telegramChatThreadRoutes)
+    if (!run?.chatThreadId) {
+      throw new Error("Telegram chat delivery run context is unavailable");
+    }
+    const runContext: TelegramChatRunContext = {
+      userId: run.userId,
+      orgId: run.orgId,
+      chatThreadId: run.chatThreadId,
+      agentId: run.agentId,
+    };
+
+    const [event] = await db
+      .select({ content: canonicalChatEventContent() })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.id, payload.chatEventId),
+          eq(chatEvents.runId, args.callback.runId),
+          eq(chatEvents.chatThreadId, run.chatThreadId),
+          chatEventTypeIn([
+            "output.message",
+            "output.error",
+            "run.failed",
+            "run.cancelled",
+          ]),
+          isNotNull(canonicalChatEventContent()),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!event?.content) {
+      throw new Error("Telegram chat delivery message is unavailable");
+    }
+
+    let binding: TelegramOwnerBinding | undefined;
+    // Only the official shared bot can deliver run callbacks.
+    if (isOfficialTelegramBotId(payload.installationId)) {
+      const [link] = await db
+        .select({ id: telegramOfficialUserLinks.id })
+        .from(telegramOfficialUserLinks)
         .where(
           and(
-            telegramOwnerWhere(routeOwnerLink),
-            eq(telegramChatThreadRoutes.chatId, routeTarget.chatId),
-            eq(
-              telegramChatThreadRoutes.rootMessageId,
-              routeTarget.rootMessageId,
-            ),
-            eq(telegramChatThreadRoutes.chatThreadId, routeChatThreadId),
+            eq(telegramOfficialUserLinks.id, payload.userLinkId),
+            eq(telegramOfficialUserLinks.userId, runContext.userId),
+            eq(telegramOfficialUserLinks.orgId, runContext.orgId),
           ),
         )
         .limit(1);
-      const routeBindsRun = route !== undefined;
-      if (!routeBindsRun) {
-        return { payload, run: runContext, messageContent: event.content };
+      signal.throwIfAborted();
+      const botToken = getOfficialTelegramBotConfig().botToken;
+      binding =
+        link && botToken
+          ? {
+              botToken,
+              ownerLink: { kind: "official", id: link.id },
+            }
+          : undefined;
+    }
+    signal.throwIfAborted();
+    if (binding) {
+      if (payload.rootMessageId !== null) {
+        const [route] = await set(
+          loadTelegramDeliveryRoute$,
+          {
+            ownerLink: binding.ownerLink,
+            chatId: payload.chatId,
+            rootMessageId: payload.rootMessageId,
+            chatThreadId: runContext.chatThreadId,
+          },
+          signal,
+        );
+        const routeBindsRun = route !== undefined;
+        if (!routeBindsRun) {
+          return { payload, run: runContext, messageContent: event.content };
+        }
       }
     }
-  }
-  return {
-    payload,
-    run: runContext,
-    messageContent: event.content,
-    binding,
-  };
-}
+    return {
+      payload,
+      run: runContext,
+      messageContent: event.content,
+      binding,
+    };
+  },
+);
 
 async function waitForTelegramSendDelay(
   delayMs: number,
@@ -327,189 +351,242 @@ async function deleteThinkingMessageIfPresent(args: {
   );
 }
 
-async function persistTelegramChatDelivery(args: {
-  readonly db: Db;
-  readonly run: TelegramChatRunContext;
-  readonly target: TelegramDeliveryTarget;
-  readonly ownerLink: TelegramOwnerLink;
-  readonly botReplyMessageIds: readonly number[];
-  readonly responseText: string | undefined;
-  readonly status: "completed" | "failed";
-}): Promise<void> {
-  const firstMessageId = args.botReplyMessageIds[0];
-  if (firstMessageId === undefined) {
-    return;
-  }
-  await storeTelegramBotMessage({
-    db: args.db,
-    scope: {
-      orgId: args.run.orgId,
-      userLinkId: args.target.userLinkId,
+const persistTelegramChatDelivery$ = command(
+  async (
+    { set },
+    args: {
+      readonly run: Pick<TelegramChatRunContext, "orgId" | "chatThreadId">;
+      readonly target: TelegramDeliveryTarget;
+      readonly ownerLink: TelegramOwnerLink;
+      readonly botReplyMessageIds: readonly number[];
+      readonly responseText: string | undefined;
+      readonly status: "completed" | "failed";
     },
-    chatId: args.target.chatId,
-    messageId: firstMessageId,
-    text: args.responseText,
-  });
-  const replyMessageIds = args.target.isDM
-    ? args.botReplyMessageIds
-    : [firstMessageId];
-  for (const messageId of replyMessageIds) {
-    await persistTelegramReplyChainRoute({
-      db: args.db,
-      ownerLink: args.ownerLink,
+  ): Promise<"delivered"> => {
+    const firstMessageId = args.botReplyMessageIds[0];
+    if (firstMessageId === undefined) {
+      return "delivered";
+    }
+    await set(storeTelegramBotMessage$, {
+      scope: {
+        orgId: args.run.orgId,
+        userLinkId: args.target.userLinkId,
+      },
       chatId: args.target.chatId,
-      previousRootMessageId: args.target.rootMessageId,
-      isDirectMessage: args.target.isDM,
-      botReplyMessageId: String(messageId),
-      chatThreadId: args.run.chatThreadId,
-      runStatus: args.status,
-      currentTime: nowDate(),
+      messageId: firstMessageId,
+      text: args.responseText,
     });
-  }
-}
-
-async function deliverClaimedTelegramChatCallback(
-  args: {
-    readonly db: Db;
-    readonly callback: ClaimedTelegramChatDelivery;
-    readonly status: "completed" | "failed";
+    const replyMessageIds = args.target.isDM
+      ? args.botReplyMessageIds
+      : [firstMessageId];
+    for (const messageId of replyMessageIds) {
+      await set(persistTelegramReplyChainRoute$, {
+        ownerLink: args.ownerLink,
+        chatId: args.target.chatId,
+        previousRootMessageId: args.target.rootMessageId,
+        isDirectMessage: args.target.isDM,
+        botReplyMessageId: String(messageId),
+        chatThreadId: args.run.chatThreadId,
+        runStatus: args.status,
+        currentTime: nowDate(),
+      });
+    }
+    return "delivered";
   },
-  signal: AbortSignal,
-): Promise<"delivered" | "skipped_revoked"> {
-  const { payload, run, messageContent, binding } =
-    await loadTelegramChatDeliveryContext(args, signal);
-  if (!binding) {
-    return "skipped_revoked";
-  }
+);
 
-  await deleteThinkingMessageIfPresent({
-    botToken: binding.botToken,
-    target: payload,
-  });
-  signal.throwIfAborted();
-  await bestEffort(
-    sendChatAction(binding.botToken, payload.chatId, "typing"),
-    signal,
-  );
-  const footerText = await (async (): Promise<string | undefined> => {
-    // The official shared bot has no per-bot default agent, so replies never
-    // carry a "Responded by" label; only the model label is shown.
-    const db = args.db;
-    const runId = args.callback.runId;
-    const runModel = await (async () => {
-      const [row] = await db
-        .select(runModelSelectionColumns())
-        .from(agentRuns)
-        .where(runModelSelectionCondition(runId))
-        .limit(1);
-      return runModelSelectionFromRow(row);
-    })();
-    const model = runModel?.selectedModel;
-    const modelLabel = model
-      ? getRunModelDisplayName(model, runModel?.codexServiceTier)
-      : undefined;
+const deliverClaimedTelegramChatCallback$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly callback: ClaimedTelegramChatDelivery;
+      readonly status: "completed" | "failed";
+    },
+    signal: AbortSignal,
+  ): Promise<"delivered" | "skipped_revoked"> => {
+    const db = get(db$);
+    const { payload, run, messageContent, binding } = await set(
+      loadTelegramChatDeliveryContext$,
+      args,
+      signal,
+    );
+    if (!binding) {
+      return "skipped_revoked";
+    }
 
-    return modelLabel ? escapeHtml(modelLabel) : undefined;
-  })();
-  signal.throwIfAborted();
-  const responseText = args.status === "completed" ? messageContent : undefined;
-  const sent = await sendTelegramCompletionMessages(
-    {
+    await deleteThinkingMessageIfPresent({
       botToken: binding.botToken,
       target: payload,
-      htmlOutput: buildTelegramResponse(messageContent, footerText),
-    },
-    signal,
-  );
-  if (sent.kind === "telegram-error") {
-    throw new Error(
-      `Telegram API error: ${sent.description ?? `HTTP ${sent.status}`}`,
-    );
-  }
-  await persistTelegramChatDelivery({
-    db: args.db,
-    run,
-    target: payload,
-    ownerLink: binding.ownerLink,
-    botReplyMessageIds: sent.messageIds,
-    responseText,
-    status: args.status,
-  });
-  return "delivered";
-}
-
-export async function dispatchTelegramChatDeliveryOnce(
-  db: Db,
-  callbackId: string,
-  status: "completed" | "failed",
-  signal: AbortSignal,
-): Promise<void> {
-  const startedAt = now();
-  signal.throwIfAborted();
-  const [callback] = await db
-    .update(agentRunCallbacks)
-    .set({ attempts: 1, lastAttemptAt: nowDate() })
-    .where(
-      and(
-        eq(agentRunCallbacks.id, callbackId),
-        eq(agentRunCallbacks.internalKind, "telegram:chat"),
-        eq(agentRunCallbacks.status, "pending"),
-        eq(agentRunCallbacks.attempts, 0),
-      ),
-    )
-    .returning({
-      runId: agentRunCallbacks.runId,
-      payload: agentRunCallbacks.payload,
     });
-  if (!callback) {
-    return;
-  }
-  const delivery = await settleIncludingAbort(
-    deliverClaimedTelegramChatCallback(
+    signal.throwIfAborted();
+    await bestEffort(
+      sendChatAction(binding.botToken, payload.chatId, "typing"),
+      signal,
+    );
+    const footerText = await (async (): Promise<string | undefined> => {
+      // The official shared bot has no per-bot default agent, so replies never
+      // carry a "Responded by" label; only the model label is shown.
+      const runId = args.callback.runId;
+      const runModel = await (async () => {
+        const [row] = await db
+          .select(runModelSelectionColumns())
+          .from(agentRuns)
+          .where(runModelSelectionCondition(runId))
+          .limit(1);
+        return runModelSelectionFromRow(row);
+      })();
+      const model = runModel?.selectedModel;
+      const modelLabel = model
+        ? getRunModelDisplayName(model, runModel?.codexServiceTier)
+        : undefined;
+
+      return modelLabel ? escapeHtml(modelLabel) : undefined;
+    })();
+    signal.throwIfAborted();
+    const responseText =
+      args.status === "completed" ? messageContent : undefined;
+    const sent = await sendTelegramCompletionMessages(
       {
-        db,
-        callback,
-        status,
+        botToken: binding.botToken,
+        target: payload,
+        htmlOutput: buildTelegramResponse(messageContent, footerText),
       },
       signal,
-    ),
-  );
-  if (!delivery.ok) {
-    const message =
-      delivery.error instanceof Error
-        ? delivery.error.message
-        : "Unknown error";
+    );
+    if (sent.kind === "telegram-error") {
+      throw new Error(
+        `Telegram API error: ${sent.description ?? `HTTP ${sent.status}`}`,
+      );
+    }
+    return await set(persistTelegramChatDelivery$, {
+      run,
+      target: payload,
+      ownerLink: binding.ownerLink,
+      botReplyMessageIds: sent.messageIds,
+      responseText,
+      status: args.status,
+    });
+  },
+);
+
+/** Preserve the claimed outcome even if cancellation arrives during the write. */
+const claimTelegramChatDelivery$ = command(
+  async (
+    { set },
+    callbackId: string,
+    signal: AbortSignal,
+  ): Promise<readonly ClaimedTelegramChatDelivery[]> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    return await db
+      .update(agentRunCallbacks)
+      .set({ attempts: 1, lastAttemptAt: nowDate() })
+      .where(
+        and(
+          eq(agentRunCallbacks.id, callbackId),
+          eq(agentRunCallbacks.internalKind, "telegram:chat"),
+          eq(agentRunCallbacks.status, "pending"),
+          eq(agentRunCallbacks.attempts, 0),
+        ),
+      )
+      .returning({
+        runId: agentRunCallbacks.runId,
+        payload: agentRunCallbacks.payload,
+      });
+  },
+);
+
+const tryTelegramChatDelivery$ = command(
+  (
+    { set },
+    callback: ClaimedTelegramChatDelivery,
+    status: "completed" | "failed",
+    signal: AbortSignal,
+  ) => {
+    return settleIncludingAbort(
+      set(deliverClaimedTelegramChatCallback$, { callback, status }, signal),
+    );
+  },
+);
+
+/** The existing terminal write remains awaited after delivery, including abort. */
+const completeTelegramChatDelivery$ = command(
+  async (
+    { set },
+    args: {
+      readonly callbackId: string;
+      readonly runId: string;
+      readonly startedAt: number;
+    },
+    delivery: Awaited<ReturnType<typeof tryTelegramChatDelivery$.write>>,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (!delivery.ok) {
+      const message =
+        delivery.error instanceof Error
+          ? delivery.error.message
+          : "Unknown error";
+      await db
+        .update(agentRunCallbacks)
+        .set({ status: "failed", lastError: message.slice(0, 4000) })
+        .where(eq(agentRunCallbacks.id, args.callbackId));
+      recordDelivery({
+        runId: args.runId,
+        startedAt: args.startedAt,
+        success: false,
+        outcome: "failed",
+      });
+      L.warn("Canonical Telegram delivery failed", {
+        callbackId: args.callbackId,
+        runId: args.runId,
+        error: delivery.error,
+      });
+      return;
+    }
     await db
       .update(agentRunCallbacks)
-      .set({ status: "failed", lastError: message.slice(0, 4000) })
-      .where(eq(agentRunCallbacks.id, callbackId));
+      .set({ status: "delivered", deliveredAt: nowDate() })
+      .where(eq(agentRunCallbacks.id, args.callbackId));
     recordDelivery({
-      runId: callback.runId,
-      startedAt,
-      success: false,
-      outcome: "failed",
+      runId: args.runId,
+      startedAt: args.startedAt,
+      success: true,
+      outcome: delivery.value,
     });
-    L.warn("Canonical Telegram delivery failed", {
+  },
+);
+
+export const dispatchTelegramChatDeliveryOnce$ = command(
+  async (
+    { set },
+    callbackId: string,
+    status: "completed" | "failed",
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const startedAt = now();
+    const [callback] = await set(
+      claimTelegramChatDelivery$,
       callbackId,
-      runId: callback.runId,
-      error: delivery.error,
-    });
-    return;
-  }
-  await db
-    .update(agentRunCallbacks)
-    .set({ status: "delivered", deliveredAt: nowDate() })
-    .where(eq(agentRunCallbacks.id, callbackId));
-  recordDelivery({
-    runId: callback.runId,
-    startedAt,
-    success: true,
-    outcome: delivery.value,
-  });
-}
+      signal,
+    );
+    if (!callback) {
+      return;
+    }
+    const delivery = await set(
+      tryTelegramChatDelivery$,
+      callback,
+      status,
+      signal,
+    );
+    return await set(
+      completeTelegramChatDelivery$,
+      { callbackId, runId: callback.runId, startedAt },
+      delivery,
+    );
+  },
+);
 
 interface TelegramChatAdmissionFailureArgs {
-  readonly db: Db;
   readonly chatThreadId: string;
   readonly userId: string;
   readonly orgId: string;
@@ -517,114 +594,92 @@ interface TelegramChatAdmissionFailureArgs {
   readonly chatEventId: string;
 }
 
-export async function deliverTelegramChatAdmissionFailure(
-  args: TelegramChatAdmissionFailureArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const [event] = await args.db
-    .select({ content: canonicalChatEventContent() })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.chatEventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        chatEventTypeIn(["output.error"]),
-        isNotNull(canonicalChatEventContent()),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!event?.content) {
-    return;
-  }
-  let binding: TelegramOwnerBinding | undefined;
-  // Only the official shared bot can deliver run callbacks.
-  if (isOfficialTelegramBotId(args.target.installationId)) {
-    const [link] = await args.db
-      .select({ id: telegramOfficialUserLinks.id })
-      .from(telegramOfficialUserLinks)
+export const deliverTelegramChatAdmissionFailure$ = command(
+  async (
+    { get, set },
+    args: TelegramChatAdmissionFailureArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = get(db$);
+    const [event] = await db
+      .select({ content: canonicalChatEventContent() })
+      .from(chatEvents)
       .where(
         and(
-          eq(telegramOfficialUserLinks.id, args.target.userLinkId),
-          eq(telegramOfficialUserLinks.userId, args.userId),
-          eq(telegramOfficialUserLinks.orgId, args.orgId),
+          eq(chatEvents.id, args.chatEventId),
+          eq(chatEvents.chatThreadId, args.chatThreadId),
+          chatEventTypeIn(["output.error"]),
+          isNotNull(canonicalChatEventContent()),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    const botToken = getOfficialTelegramBotConfig().botToken;
-    binding =
-      link && botToken
-        ? {
-            botToken,
-            ownerLink: { kind: "official", id: link.id },
-          }
-        : undefined;
-  }
-  if (!binding) {
-    return;
-  }
-  const routeDb = args.db;
-  const routeTarget = args.target;
-  const routeOwnerLink = binding.ownerLink;
-  const routeChatThreadId = args.chatThreadId;
-  if (routeTarget.rootMessageId !== null) {
-    const [route] = await routeDb
-      .select({ id: telegramChatThreadRoutes.id })
-      .from(telegramChatThreadRoutes)
-      .where(
-        and(
-          telegramOwnerWhere(routeOwnerLink),
-          eq(telegramChatThreadRoutes.chatId, routeTarget.chatId),
-          eq(telegramChatThreadRoutes.rootMessageId, routeTarget.rootMessageId),
-          eq(telegramChatThreadRoutes.chatThreadId, routeChatThreadId),
-        ),
-      )
-      .limit(1);
-    const routeBindsRun = route !== undefined;
-    if (!routeBindsRun) {
+    if (!event?.content) {
       return;
     }
-  }
-  const sent = await sendTelegramCompletionMessages(
-    {
-      botToken: binding.botToken,
-      target: args.target,
-      htmlOutput: buildTelegramResponse(event.content),
-    },
-    signal,
-  );
-  if (sent.kind === "telegram-error") {
-    throw new Error(
-      `Telegram API error: ${sent.description ?? `HTTP ${sent.status}`}`,
+    let binding: TelegramOwnerBinding | undefined;
+    // Only the official shared bot can deliver run callbacks.
+    if (isOfficialTelegramBotId(args.target.installationId)) {
+      const [link] = await db
+        .select({ id: telegramOfficialUserLinks.id })
+        .from(telegramOfficialUserLinks)
+        .where(
+          and(
+            eq(telegramOfficialUserLinks.id, args.target.userLinkId),
+            eq(telegramOfficialUserLinks.userId, args.userId),
+            eq(telegramOfficialUserLinks.orgId, args.orgId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      const botToken = getOfficialTelegramBotConfig().botToken;
+      binding =
+        link && botToken
+          ? {
+              botToken,
+              ownerLink: { kind: "official", id: link.id },
+            }
+          : undefined;
+    }
+    if (!binding) {
+      return;
+    }
+    if (args.target.rootMessageId !== null) {
+      const [route] = await set(
+        loadTelegramDeliveryRoute$,
+        {
+          ownerLink: binding.ownerLink,
+          chatId: args.target.chatId,
+          rootMessageId: args.target.rootMessageId,
+          chatThreadId: args.chatThreadId,
+        },
+        signal,
+      );
+      const routeBindsRun = route !== undefined;
+      if (!routeBindsRun) {
+        return;
+      }
+    }
+    const sent = await sendTelegramCompletionMessages(
+      {
+        botToken: binding.botToken,
+        target: args.target,
+        htmlOutput: buildTelegramResponse(event.content),
+      },
+      signal,
     );
-  }
-  const firstMessageId = sent.messageIds[0];
-  if (firstMessageId === undefined) {
-    return;
-  }
-  await storeTelegramBotMessage({
-    db: args.db,
-    scope: {
-      orgId: args.orgId,
-      userLinkId: args.target.userLinkId,
-    },
-    chatId: args.target.chatId,
-    messageId: firstMessageId,
-    text: undefined,
-  });
-  const replyMessageIds = args.target.isDM ? sent.messageIds : [firstMessageId];
-  for (const messageId of replyMessageIds) {
-    await persistTelegramReplyChainRoute({
-      db: args.db,
+    if (sent.kind === "telegram-error") {
+      throw new Error(
+        `Telegram API error: ${sent.description ?? `HTTP ${sent.status}`}`,
+      );
+    }
+    await set(persistTelegramChatDelivery$, {
+      run: { orgId: args.orgId, chatThreadId: args.chatThreadId },
+      target: args.target,
       ownerLink: binding.ownerLink,
-      chatId: args.target.chatId,
-      previousRootMessageId: args.target.rootMessageId,
-      isDirectMessage: args.target.isDM,
-      botReplyMessageId: String(messageId),
-      chatThreadId: args.chatThreadId,
-      runStatus: "failed",
-      currentTime: nowDate(),
+      botReplyMessageIds: sent.messageIds,
+      responseText: undefined,
+      status: "failed",
     });
-  }
-}
+  },
+);
