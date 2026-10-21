@@ -64,7 +64,7 @@ async function navigateToConnectors() {
   });
 }
 
-test("Workspace creation stays shared after reopening the menu and activates its result", async () => {
+test("Failed workspace creation does not activate an organization and can be retried", async () => {
   const creation = context.mocks.deferred<{ readonly id: string }>();
   mockedClerk.createOrganization.mockImplementationOnce(() => {
     return creation.promise;
@@ -73,13 +73,14 @@ test("Workspace creation stays shared after reopening the menu and activates its
 
   click(screen.getByText("Create workspace"));
   await reopenWorkspaceMenu();
-  await expect(screen.findByText("Creating…")).resolves.toBeInTheDocument();
+  creation.reject(new Error("Clerk organization creation failed"));
 
-  creation.resolve({ id: "org_created_from_reopened_menu" });
-
+  await screen.findByText("Create workspace");
+  expect(mockedClerk.setActive).not.toHaveBeenCalled();
+  click(screen.getByText("Create workspace"));
   await waitFor(() => {
     expect(mockedClerk.setActive).toHaveBeenCalledWith({
-      organization: "org_created_from_reopened_menu",
+      organization: "new-org-id",
     });
   });
 });

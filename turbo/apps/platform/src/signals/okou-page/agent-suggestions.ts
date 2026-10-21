@@ -4,9 +4,9 @@ import {
   suggestionsContract,
   type Suggestion,
 } from "@okouai/api-contracts/contracts/suggestions";
+import { accept } from "../../lib/accept.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
-import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { currentChatAgentId$ } from "../agent-chat.ts";
@@ -17,6 +17,7 @@ import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import {
   ensureDraft$,
+  resumeThreadDraftHandoff$,
   createThreadComposerSignals,
 } from "../chat-page/create-chat-thread.ts";
 import { ensureAgentDraft$ } from "./agent-draft.ts";
@@ -29,7 +30,7 @@ import {
   messageDocumentToPrompt,
   userMessageDraftAttachments,
 } from "./user-message-document-codec.ts";
-import { detach, Reason, resetSignal, settle, withCleanup } from "../utils.ts";
+import { detach, Reason, resetSignal, withCleanup } from "../utils.ts";
 
 export const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion]) {
@@ -43,7 +44,23 @@ export const agentSuggestionsEnabled$ = computed(async (get) => {
 });
 const revision$ = state(0);
 const consumedIds$ = state<readonly string[]>([]);
-const startingSuggestion$ = state<Suggestion | null>(null);
+interface SuggestionCardContext {
+  readonly item: Suggestion;
+  // Once consumed, this card is a recoverable draft, not another consume/send.
+  readonly recoveryAgentId: string | null;
+  // Domain receipt: this consumed suggestion is already in the member's draft.
+  readonly draftApplied?: boolean;
+}
+const cardContext$ = state<SuggestionCardContext | null>(null);
+const running$ = state<Promise<void> | null>(null);
+const operation$ = state<Promise<void> | undefined>(undefined);
+export const agentSuggestionOperation$ = computed((get) => {
+  return get(operation$);
+});
+export const agentSuggestionRecoveryId$ = computed((get) => {
+  const context = get(cardContext$);
+  return context?.recoveryAgentId ? context.item.id : null;
+});
 // The panel shows one suggestion at a time. A position rather than an id, so
 // consuming the card on screen brings up the one after it, and consuming the
 // last one falls back to the one before.
@@ -70,23 +87,17 @@ const agentSuggestions$ = computed(async (get) => {
   return result.status === 200 ? result.body.suggestions : [];
 });
 export const visibleAgentSuggestions$ = computed(async (get) => {
-  const consumed = get(consumedIds$);
-  const starting = get(startingSuggestion$);
-  const index = get(index$);
-  const items = (await get(agentSuggestions$)).filter((item) => {
-    return item.id === starting?.id || !consumed.includes(item.id);
-  });
-  // Keep the initiating card visible while consumption removes it from the
-  // server pool, so its loading state stays attached to the action it owns.
-  if (
-    starting &&
-    !items.some((item) => {
-      return item.id === starting.id;
-    })
-  ) {
-    items.splice(Math.min(index, items.length), 0, starting);
+  const pinned = get(cardContext$)?.item;
+  // An accepted action owns this card until send, restore or explicit dismissal.
+  // Recovery must not depend on a fresh server pool containing a consumed entry,
+  // or even on that optional list request succeeding after navigation.
+  if (pinned) {
+    return [pinned];
   }
-  return items;
+  const consumed = get(consumedIds$);
+  return (await get(agentSuggestions$)).filter((item) => {
+    return !consumed.includes(item.id);
+  });
 });
 const reload$ = command(({ set }) => {
   set(revision$, (value) => {
@@ -130,13 +141,32 @@ export const consumeAgentSuggestion$ = command(
     set(consumedIds$, (ids) => {
       return [...ids, item.id];
     });
-    const result = await accept(
-      get(apiClient$)(suggestionsContract).consume({
-        params: { id: item.id },
-        body: {},
-        fetchOptions: { signal },
-      }),
-      [200, 409],
+    let consumed = false;
+    const result = await withCleanup(
+      (async () => {
+        const response = await accept(
+          get(apiClient$)(suggestionsContract).consume({
+            params: { id: item.id },
+            body: {},
+            fetchOptions: { signal },
+          }),
+          [200, 409],
+        );
+        consumed = true;
+        signal.throwIfAborted();
+        return response;
+      })(),
+      () => {
+        // Failed optimistic consumption is retryable; an accepted consume (or
+        // conflict) remains consumed even if this caller is then cancelled.
+        if (!consumed) {
+          set(consumedIds$, (ids) => {
+            return ids.filter((id) => {
+              return id !== item.id;
+            });
+          });
+        }
+      },
     );
     signal.throwIfAborted();
     set(reload$);
@@ -145,9 +175,6 @@ export const consumeAgentSuggestion$ = command(
 );
 const lookupSuggestionThread$ = createThreadMetaLookup();
 const resetSuggestionExecution$ = resetSignal();
-export const agentSuggestionStarting$ = computed((get) => {
-  return get(startingSuggestion$) !== null;
-});
 interface SuggestionTarget {
   readonly agentId: string;
   readonly threadId: string | null;
@@ -179,19 +206,45 @@ const runner$ = computed((get) => {
 });
 
 const restoreAgentSuggestionDraft$ = command(
-  async ({ set }, item: Suggestion, agentId: string, signal: AbortSignal) => {
+  async (
+    { get, set },
+    item: Suggestion,
+    agentId: string,
+    signal: AbortSignal,
+  ) => {
+    const target =
+      item.threadId === null ? set(ensureAgentDraft$, agentId) : null;
+    const draft =
+      item.threadId !== null
+        ? set(ensureDraft$, item.threadId)
+        : set(ensureAgentDraft$, agentId).draft;
+    if (!get(cardContext$)?.draftApplied) {
+      // Validation/application throw synchronously. Only a returned command
+      // result certifies that retry must never prepend this suggestion again.
+      const pending = set(draft.prependComposerDraft$, item.draft, signal);
+      set(cardContext$, { item, recoveryAgentId: agentId, draftApplied: true });
+      await pending;
+    } else {
+      await set(draft.reconcileComposerDraft$, signal);
+    }
     if (item.threadId !== null) {
-      const draft = set(ensureDraft$, item.threadId);
-      await set(draft.prependComposerDraft$, item.draft, signal);
+      await set(resumeThreadDraftHandoff$, item.threadId, signal);
       signal.throwIfAborted();
       set(detachedNavigateTo$, ROUTES.chat, {
         pathParams: { threadId: item.threadId },
       });
       return;
     }
-    const target = set(ensureAgentDraft$, agentId);
-    await set(target.draft.prependComposerDraft$, item.draft, signal);
+    if (!target) {
+      throw new Error("Suggestion recovery target is unavailable");
+    }
+    const hadHandoff = get(draft.composerDraftHandoff$) !== null;
     await set(target.load$, signal);
+    // A handoff load already awaits its save. After a prior save failure the
+    // marker is gone and load$ can skip local input, so retry must save it once.
+    if (!hadHandoff) {
+      await set(target.queueDraftSync$, signal);
+    }
     signal.throwIfAborted();
     set(detachedNavigateTo$, ROUTES.agentChat, {
       pathParams: { agentId },
@@ -292,37 +345,57 @@ const consumeAndRunAgentSuggestion$ = command(
     }
     const selected = await set(consumeAgentSuggestion$, item, signal);
     if (selected === null) {
+      set(cardContext$, null);
       return;
     }
-    // The consume response owns the current content and destination.
-    const result = await settle(
-      set(sendAgentSuggestion$, selected, primary, signal),
-      signal,
-    );
-    if (result.ok && result.value) {
+    // The consume response owns the current content and destination. Preserve
+    // it for recovery on both a domain refusal and a rejected send, without
+    // turning transport failures into fulfilled operations.
+    set(cardContext$, { item: selected, recoveryAgentId: primary });
+    if (await set(sendAgentSuggestion$, selected, primary, signal)) {
+      set(cardContext$, null);
+    }
+  },
+);
+
+const runAgentSuggestion$ = command(
+  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const context = get(cardContext$);
+    if (context?.item.id === item.id && context.recoveryAgentId) {
+      await set(
+        restoreAgentSuggestionDraft$,
+        context.item,
+        context.recoveryAgentId,
+        signal,
+      );
+      signal.throwIfAborted();
+      set(cardContext$, null);
       return;
     }
-    toast.error(
+    set(cardContext$, { item, recoveryAgentId: null });
+    await set(consumeAndRunAgentSuggestion$, item, signal);
+  },
+);
+
+const showAgentSuggestionRecovery$ = command(
+  ({ get, set }, item: Suggestion): void => {
+    // This is a retained consumed-draft action, not a second HTTP error report.
+    // It must survive the page that starting a new thread can unmount.
+    toast.info(
       i18n.t(($) => {
-        return $.chat.agentSuggestions.runFailed;
+        return $.chat.agentSuggestions.recoveryHint;
       }),
       {
+        id: `suggestion-recovery-${item.id}`,
         duration: Infinity,
-        description: i18n.t(($) => {
-          return $.chat.agentSuggestions.recoveryHint;
-        }),
         action: {
           label: i18n.t(($) => {
             return $.chat.agentSuggestions.restoreDraft;
           }),
           onClick: () => {
             detach(
-              set(
-                restoreAgentSuggestionDraft$,
-                selected,
-                primary,
-                get(rootSignal$),
-              ),
+              set(startAgentSuggestion$, item, get(rootSignal$)),
               Reason.DomCallback,
             );
           },
@@ -333,23 +406,71 @@ const consumeAndRunAgentSuggestion$ = command(
 );
 
 export const startAgentSuggestion$ = command(
-  async ({ get, set }, item: Suggestion, pageSignal: AbortSignal) => {
+  (
+    { get, set },
+    item: Suggestion,
+    pageSignal: AbortSignal,
+  ): Promise<void> | undefined => {
     pageSignal.throwIfAborted();
+    const running = get(running$);
+    if (running) {
+      return running;
+    }
+    const context = get(cardContext$);
     if (
-      get(startingSuggestion$) !== null ||
-      get(consumedIds$).includes(item.id)
+      get(consumedIds$).includes(item.id) &&
+      !(context?.item.id === item.id && context.recoveryAgentId)
     ) {
       return;
     }
-    set(startingSuggestion$, item);
-    // Consumption and sending belong to this accepted action, so navigating
-    // away must not interrupt the handoff between the two requests.
+    // Consumption, sending and draft recovery belong to the root-owned action,
+    // not to the card that navigation can unmount. Keep the terminal Promise
+    // observable while separately releasing exclusion and runner resources.
     const signal = set(resetSuggestionExecution$, get(rootSignal$));
-    await withCleanup(set(consumeAndRunAgentSuggestion$, item, signal), () => {
-      set(resetSuggestionExecution$);
-      get(runner$)?.composer.editor.editor.destroy();
-      set(target$, null);
-      set(startingSuggestion$, null);
-    });
+    const operation = withCleanup(
+      set(runAgentSuggestion$, item, signal),
+      () => {
+        const cancelled = signal.aborted;
+        set(resetSuggestionExecution$);
+        const runner = get(runner$);
+        if (runner) {
+          for (const attachment of get(runner.composer.draft.attachments$)) {
+            set(attachment.cancel$);
+          }
+          runner.composer.editor.editor.destroy();
+        }
+        set(target$, null);
+        // Drop the computed's memoized isolated graph as well as its target.
+        get(runner$);
+        set(running$, null);
+        const recovery = get(cardContext$);
+        if (!cancelled && recovery?.recoveryAgentId) {
+          set(showAgentSuggestionRecovery$, recovery.item);
+        } else {
+          toast.dismiss(`suggestion-recovery-${item.id}`);
+        }
+      },
+    );
+    set(running$, operation);
+    set(operation$, operation);
+    return operation;
+  },
+);
+
+export const dismissAgentSuggestion$ = command(
+  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (get(running$)) {
+      return;
+    }
+    const context = get(cardContext$);
+    if (context?.item.id === item.id) {
+      toast.dismiss(`suggestion-recovery-${item.id}`);
+      set(cardContext$, null);
+      if (context.recoveryAgentId) {
+        return;
+      }
+    }
+    await set(consumeAgentSuggestion$, item, signal);
   },
 );

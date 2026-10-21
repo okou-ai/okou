@@ -9,10 +9,16 @@ import { delay } from "signal-timers";
 
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
+import { ApiError } from "../../../lib/api-error.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { brandName$, type BrandName } from "../../branding.ts";
-import { bestEffort, resetSignal, waitLoopUntil } from "../../utils.ts";
+import {
+  bestEffort,
+  resetSignal,
+  waitLoopUntil,
+  withCleanup,
+} from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type CodexDeviceAuthDialogMode = "connect" | "reconnect";
@@ -154,7 +160,7 @@ const completeCodexDeviceAuth$ = command(
         body: { sessionToken },
         fetchOptions: { signal },
       }),
-      [200, 400, 404, 503],
+      [200, 400, 404],
     );
     signal.throwIfAborted();
     return result;
@@ -184,6 +190,7 @@ interface CodexDeviceAuthSignalContext {
   internalDialogState$: State<CodexDeviceAuthDialogState>;
   internalFlowState$: State<CodexDeviceAuthFlowState>;
   internalStartOperation$: State<Promise<boolean> | null>;
+  internalRunOperation$: State<Promise<boolean> | null>;
   resetFlowSignal$: ReturnType<typeof resetSignal>;
 }
 
@@ -263,6 +270,13 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
         },
         0,
         signal,
+        {
+          // 503 was already terminal when accepted as a domain result. Keep
+          // all previously rejected errors on the existing retry policy.
+          shouldRetryError: (error) => {
+            return !(error instanceof ApiError && error.status === 503);
+          },
+        },
       );
 
       const latest = get(ctx.internalFlowState$);
@@ -322,18 +336,27 @@ function createCodexRun$(
   startFlow$: ReturnType<typeof createCodexStartFlow$>,
   pollFlow$: ReturnType<typeof createCodexPollFlow$>,
 ) {
-  return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
-    const flowSignal = set(ctx.resetFlowSignal$, signal);
-    set(ctx.internalFlowState$, createIdleFlowState());
-    const requestId = createRequestId(ctx.scope);
-    const operation = set(startFlow$, requestId, flowSignal);
-    // Retain the actual startup result until retry or dialog-session release.
-    set(ctx.internalStartOperation$, operation);
-    if (!(await operation)) {
-      return false;
-    }
-    flowSignal.throwIfAborted();
-    return await set(pollFlow$, requestId, flowSignal);
+  const execute$ = command(
+    async ({ set }, signal: AbortSignal): Promise<boolean> => {
+      const flowSignal = set(ctx.resetFlowSignal$, signal);
+      set(ctx.internalFlowState$, createIdleFlowState());
+      const requestId = createRequestId(ctx.scope);
+      const operation = set(startFlow$, requestId, flowSignal);
+      // Retain the actual startup result until retry or dialog-session release.
+      set(ctx.internalStartOperation$, operation);
+      if (!(await operation)) {
+        return false;
+      }
+      flowSignal.throwIfAborted();
+      return await set(pollFlow$, requestId, flowSignal);
+    },
+  );
+  return command(({ set }, signal: AbortSignal) => {
+    const operation = withCleanup(set(execute$, signal), () => {
+      set(ctx.reloadProviders$);
+    });
+    set(ctx.internalRunOperation$, operation);
+    return operation;
   });
 }
 
@@ -366,12 +389,19 @@ function createCodexClose$(ctx: CodexDeviceAuthSignalContext) {
     set(ctx.internalDialogState$, createInitialDialogState());
     set(ctx.internalFlowState$, createIdleFlowState());
     set(ctx.internalStartOperation$, null);
+    set(ctx.internalRunOperation$, null);
 
     if (!sessionToken) {
+      set(ctx.reloadProviders$);
       return;
     }
 
-    await bestEffort(set(cancelCodexDeviceAuth$, sessionToken, signal), signal);
+    await withCleanup(
+      bestEffort(set(cancelCodexDeviceAuth$, sessionToken, signal), signal),
+      () => {
+        set(ctx.reloadProviders$);
+      },
+    );
     signal.throwIfAborted();
   });
 }
@@ -386,6 +416,7 @@ function createCodexDeviceAuthSignals(
     internalDialogState$: state(createInitialDialogState()),
     internalFlowState$: state<CodexDeviceAuthFlowState>(createIdleFlowState()),
     internalStartOperation$: state<Promise<boolean> | null>(null),
+    internalRunOperation$: state<Promise<boolean> | null>(null),
     resetFlowSignal$: resetSignal(),
   };
   const pollFlow$ = createCodexPollFlow$(ctx);
@@ -401,6 +432,9 @@ function createCodexDeviceAuthSignals(
     }),
     startOperation$: computed((get) => {
       return get(ctx.internalStartOperation$);
+    }),
+    runOperation$: computed((get) => {
+      return get(ctx.internalRunOperation$);
     }),
     open$: createCodexOpen$(ctx, run$),
     close$: createCodexClose$(ctx),
@@ -419,6 +453,8 @@ export const codexDeviceAuthFlowStatePersonal$ =
   personalCodexDeviceAuthSignals.flowState$;
 export const codexDeviceAuthStartOperationPersonal$ =
   personalCodexDeviceAuthSignals.startOperation$;
+export const codexDeviceAuthRunOperationPersonal$ =
+  personalCodexDeviceAuthSignals.runOperation$;
 export const openCodexDeviceAuthDialogPersonal$: Command<
   Promise<boolean>,
   [OpenPersonalCodexDeviceAuthArgs, AbortSignal]

@@ -1867,15 +1867,6 @@ export const setReceiptDownloadEndMonth$ = command(
 
 export const downloadMonthlyReceipts$ = command(
   async ({ get }, range: ReceiptDownloadRange, signal: AbortSignal) => {
-    const toastId = toast.loading(
-      i18n.t(($) => {
-        return $.billing.toasts.preparingReceiptDownload;
-      }),
-    );
-    const dismissLoadingToast = () => {
-      toast.dismiss(toastId);
-    };
-    signal.addEventListener("abort", dismissLoadingToast, { once: true });
     let downloadUrl: string | undefined;
     await withCleanup(
       (async () => {
@@ -1900,8 +1891,6 @@ export const downloadMonthlyReceipts$ = command(
         anchor.click();
       })(),
       () => {
-        signal.removeEventListener("abort", dismissLoadingToast);
-        dismissLoadingToast();
         if (downloadUrl) {
           URL.revokeObjectURL(downloadUrl);
         }

@@ -683,6 +683,14 @@ function createDraftSync(threadId: string, draft: DraftSignals) {
       }),
     );
     signal.throwIfAborted();
+    // A failed lookup is unknown, not an absent saved reference. Handoff
+    // cleanup may persist confirmed removals even when annotation rebuild fails.
+    const unresolved = infos.find((info) => {
+      return info.status === "rejected";
+    });
+    if (unresolved?.status === "rejected") {
+      throw unresolved.reason;
+    }
     const persisted = collectSuccessfulAttachmentInfos(attachments, infos).map(
       (r) => {
         const annotations = get(r.attachment.annotations$);
@@ -3631,6 +3639,28 @@ function createChatThreadComposerSignals(
     ...createThreadPendingActionSignals(options),
   });
 }
+
+// Recovery owns a finite load/save even before the destination page mounts.
+// A previous save can fail after finish cleared its merge marker, so absence
+// of that marker is not proof that the installed handoff reached storage.
+export const resumeThreadDraftHandoff$ = command(
+  async ({ get, set }, threadId: string, signal: AbortSignal) => {
+    const draft = set(ensureDraft$, threadId);
+    const sync = createDraftSync(threadId, draft);
+    const handoff = get(draft.composerDraftHandoff$);
+    if (handoff) {
+      const load$ = createThreadDraftLoad(
+        createRemoteChatThreadDraft(threadId),
+        draft,
+        sync.queueDraftSync$,
+      );
+      await set(load$, signal);
+    } else {
+      await set(draft.reconcileComposerDraft$, signal);
+      await set(sync.queueDraftSync$, signal);
+    }
+  },
+);
 
 function createThreadComposerSignalsWithContext(
   threadId: string,

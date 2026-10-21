@@ -10,7 +10,7 @@ import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { bestEffort, resetSignal } from "../../utils.ts";
+import { bestEffort, resetSignal, withCleanup } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type ClaudeCodeDeviceAuthDialogMode = "connect" | "reconnect";
@@ -196,11 +196,22 @@ function createClaudeCodeRun$(
 ) {
   return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
     const flowSignal = set(ctx.resetFlowSignal$, signal);
+    // Startup stays short; the real session owner can still end later through
+    // navigation, retry or close. Invalidate account truth at that boundary.
+    flowSignal.addEventListener(
+      "abort",
+      () => {
+        set(ctx.reloadProviders$);
+      },
+      { once: true },
+    );
     set(ctx.internalFlowState$, createIdleFlowState());
     const operation = set(startFlow$, createRequestId(ctx.scope), flowSignal);
     // Retain the actual startup result until retry or dialog-session release.
     set(ctx.internalStartOperation$, operation);
-    return await operation;
+    return await withCleanup(operation, () => {
+      set(ctx.reloadProviders$);
+    });
   });
 }
 
@@ -249,6 +260,7 @@ function createClaudeCodeSubmit$(ctx: ClaudeCodeDeviceAuthSignalContext) {
         return false;
       }
       if (current.expiresAtMs <= now()) {
+        set(ctx.reloadProviders$);
         set(ctx.internalFlowState$, {
           status: "expired",
           message: i18n.t(($) => {
@@ -268,11 +280,16 @@ function createClaudeCodeSubmit$(ctx: ClaudeCodeDeviceAuthSignalContext) {
       }
 
       set(ctx.internalFlowState$, { ...current, errorMessage: null });
-      const completed = await set(
-        completeClaudeCodeDeviceAuth$,
-        current.sessionToken,
-        current.authorizationCode,
-        signal,
+      const completed = await withCleanup(
+        set(
+          completeClaudeCodeDeviceAuth$,
+          current.sessionToken,
+          current.authorizationCode,
+          signal,
+        ),
+        () => {
+          set(ctx.reloadProviders$);
+        },
       );
       signal.throwIfAborted();
 
@@ -288,7 +305,7 @@ function createClaudeCodeSubmit$(ctx: ClaudeCodeDeviceAuthSignalContext) {
         return false;
       }
 
-      set(ctx.reloadProviders$);
+      set(ctx.resetFlowSignal$);
       toast.success(
         i18n.t(($) => {
           return $.settings.models.deviceAuth.claude.connectedToast;
@@ -312,12 +329,18 @@ function createClaudeCodeClose$(ctx: ClaudeCodeDeviceAuthSignalContext) {
     set(ctx.internalStartOperation$, null);
 
     if (!sessionToken) {
+      set(ctx.reloadProviders$);
       return;
     }
 
-    await bestEffort(
-      set(cancelClaudeCodeDeviceAuth$, sessionToken, signal),
-      signal,
+    await withCleanup(
+      bestEffort(
+        set(cancelClaudeCodeDeviceAuth$, sessionToken, signal),
+        signal,
+      ),
+      () => {
+        set(ctx.reloadProviders$);
+      },
     );
     signal.throwIfAborted();
   });

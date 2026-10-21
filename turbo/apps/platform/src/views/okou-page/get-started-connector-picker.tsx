@@ -7,7 +7,6 @@ import { oneClickConnectorCatalog$ } from "../../signals/external/connectors.ts"
 import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import {
   builtinConnectOperation$,
-  builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
   connectBuiltinConnectorOAuthAuthCode$,
   getBuiltinConnectorStatusDirectConnectMethod,
@@ -184,7 +183,6 @@ export function QuestConnectorPicker({
   const pageSignal = useGet(pageSignal$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
   const connectOperation = useLoadable(builtinConnectOperation$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectors =
     catalogLoadable.state === "hasData"
@@ -194,7 +192,6 @@ export function QuestConnectorPicker({
   const isBusy = (connector: PlatformConnectorCatalogConnectItem) => {
     return (
       connectOperation.state === "loading" ||
-      pollingAuthCodeSlug === connector.slug ||
       pollingDeviceAuthSlug === connector.slug
     );
   };

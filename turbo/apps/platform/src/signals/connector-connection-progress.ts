@@ -1,7 +1,26 @@
 import { command, computed, state, type Command } from "ccstate";
 import { onRef, resetSignal, withCleanup } from "./utils.ts";
 
-const pendingConnections$ = state<ReadonlySet<symbol>>(new Set());
+/**
+ * Null reserves ownership only during synchronous source invocation, before its
+ * actual Promise exists. It is never substituted with a feedback Promise.
+ */
+const connectionOperations$ = state<
+  ReadonlyMap<symbol, Promise<unknown> | null>
+>(new Map());
+
+/**
+ * Every join/leave invalidates this observation, including late participants.
+ * Callers own the results; one rejection must not hide other pending work.
+ */
+export const connectorConnectionOperations$ = computed((get) => {
+  const operations = [...get(connectionOperations$).values()].filter(
+    (operation): operation is Promise<unknown> => {
+      return operation !== null;
+    },
+  );
+  return Promise.allSettled(operations);
+});
 const progressDismissed$ = state(false);
 const progressDialogRequested$ = state(false);
 const connectionDialogs$ = state(0);
@@ -37,7 +56,7 @@ export const cancelConnectorConnection$ = command(
 );
 
 export const connectorConnectionPending$ = computed((get) => {
-  return get(pendingConnections$).size > 0;
+  return get(connectionOperations$).size > 0;
 });
 
 export const connectorConnectionProgressActive$ = computed((get) => {
@@ -122,21 +141,21 @@ export function withConnectorConnectionProgress<T, Args extends unknown[]>(
       const attemptArgs: [...Args, AbortSignal] = [...args];
       attemptArgs[attemptArgs.length - 1] = attemptSignal;
       const invocation = Symbol();
-      set(pendingConnections$, (pending) => {
-        return new Set([...pending, invocation]);
+      set(connectionOperations$, (operations) => {
+        return new Map([...operations, [invocation, null]]);
       });
       const release = () => {
-        set(pendingConnections$, (pending) => {
-          if (!pending.has(invocation)) {
-            return pending;
+        set(connectionOperations$, (operations) => {
+          if (!operations.has(invocation)) {
+            return operations;
           }
-          const remaining = new Set(pending);
+          const remaining = new Map(operations);
           remaining.delete(invocation);
           return remaining;
         });
         if (
           connection !== null &&
-          get(pendingConnections$).size === 0 &&
+          get(connectionOperations$).size === 0 &&
           get(activeConnection$) === connection
         ) {
           set(activeConnection$, null);
@@ -148,7 +167,14 @@ export function withConnectorConnectionProgress<T, Args extends unknown[]>(
       return await withCleanup(
         (async () => {
           // Invoke synchronously so window.open retains the click's user activation.
-          return await set(source$, ...attemptArgs);
+          const operation = set(source$, ...attemptArgs);
+          // Synchronous source cancellation may already have released it.
+          if (!attemptSignal.aborted) {
+            set(connectionOperations$, (operations) => {
+              return new Map([...operations, [invocation, operation]]);
+            });
+          }
+          return await operation;
         })(),
         () => {
           attemptSignal.removeEventListener("abort", release);

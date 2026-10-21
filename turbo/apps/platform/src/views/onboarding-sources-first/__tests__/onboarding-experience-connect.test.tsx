@@ -46,23 +46,19 @@ function connectedCodexAccount(): ModelProviderResponse {
   };
 }
 
-function mockCodexDeviceAuthStart(start: Promise<void>): void {
-  context.mocks.api(
-    codexDeviceAuthContract.start,
-    async ({ respond, withSignal }) => {
-      await withSignal(start);
-      return respond(200, {
-        sessionToken: "onboarding-codex-session",
-        type: "codex",
-        status: "pending",
-        scope: "personal",
-        browserUrl: "https://auth.openai.com/device",
-        verificationCode: "ABCD-1234",
-        expiresIn: 600,
-        interval: 1,
-      });
-    },
-  );
+function mockCodexDeviceAuthStart(): void {
+  context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
+    return respond(200, {
+      sessionToken: "onboarding-codex-session",
+      type: "codex",
+      status: "pending",
+      scope: "personal",
+      browserUrl: "https://auth.openai.com/device",
+      verificationCode: "ABCD-1234",
+      expiresIn: 600,
+      interval: 1,
+    });
+  });
 }
 
 /**
@@ -164,20 +160,14 @@ test("The guided start comes before subscription plans", async () => {
   expect(choices[2]).toContain("Claude Code");
 });
 
-test("The step shows startup and the approval code before reporting the listed subscription as connected", async () => {
+test("The step reports connected once the account lists the subscription", async () => {
   context.mocks.data.personalModelProviders([]);
-  const start = context.mocks.deferred<void>();
-  const approval = context.mocks.deferred<void>();
-  mockCodexDeviceAuthStart(start.promise);
-  context.mocks.api(
-    codexDeviceAuthContract.complete,
-    async ({ respond, withSignal }) => {
-      await withSignal(approval.promise);
-      const provider = connectedCodexAccount();
-      context.mocks.data.personalModelProviders([provider]);
-      return respond(200, { status: "complete", provider, created: true });
-    },
-  );
+  mockCodexDeviceAuthStart();
+  context.mocks.api(codexDeviceAuthContract.complete, ({ respond }) => {
+    const provider = connectedCodexAccount();
+    context.mocks.data.personalModelProviders([provider]);
+    return respond(200, { status: "complete", provider, created: true });
+  });
 
   await openExperienceStep();
 
@@ -188,10 +178,7 @@ test("The step shows startup and the approval code before reporting the listed s
   });
 
   click(getButtonByName(CONNECT_CODEX));
-  await screen.findByTestId("codex-device-auth-loading");
-  start.resolve();
-  await expect(screen.findByText("ABCD-1234")).resolves.toBeInTheDocument();
-  approval.resolve();
+
   await waitFor(() => {
     expect(getButtonByName("Connected")).toBeDisabled();
   });
@@ -225,7 +212,7 @@ test("A failed connect still lets the person retry or continue", async () => {
   closeDeviceAuthDialog();
 
   await waitFor(() => {
-    expect(getButtonByName("Try again")).toBeEnabled();
+    expect(getButtonByName(CONNECT_CODEX)).toBeEnabled();
   });
 
   click(getButtonByName("Continue"));

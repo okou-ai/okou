@@ -306,7 +306,8 @@ export function BrowserSessionPanel({
   const sessionLoadable = useLastLoadable(signals.panelSession$);
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const start = useSet(signals.start$);
-  const starting = useGet(signals.starting$);
+  const startOperation = useLoadable(signals.startOperation$);
+  const starting = startOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
   if (sessionLoadable.state === "loading") {

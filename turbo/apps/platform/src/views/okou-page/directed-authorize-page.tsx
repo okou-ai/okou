@@ -11,7 +11,6 @@ import {
   type ConnectorConnectSuccess,
   builtinConnectOperation$,
   justConnectedBuiltinSlugs$,
-  builtinPollingOAuthAuthCodeSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -228,7 +227,6 @@ function DirectedAuthorizeConnectModal({
 
 function useDirectedAuthorizeCardState() {
   const params = useDirectedAuthorizeParams();
-  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const connectOperation = useLoadable(builtinConnectOperation$);
   const [authorizeLoadable, authorize] = useLoadableSet(
     authorizeDirectedConnector$,
@@ -251,7 +249,6 @@ function useDirectedAuthorizeCardState() {
     modalKey?.signal === signal;
   return {
     params,
-    pollingConnectorSlug,
     connectOperation,
     authorizeLoadable,
     authorize,
@@ -303,7 +300,6 @@ function DirectedAuthorizeCard() {
   const { t } = useTranslation();
   const {
     params,
-    pollingConnectorSlug,
     connectOperation,
     authorizeLoadable,
     authorize,
@@ -330,7 +326,6 @@ function DirectedAuthorizeCard() {
   }
   const { connectorSlug, agentId } = params;
   const isConnecting =
-    pollingConnectorSlug === connectorSlug ||
     connectOperation.state === "loading" ||
     authorizeLoadable.state === "loading";
   const canAuthorize =

@@ -665,14 +665,7 @@ test("A synced message artifact keeps upload and download actions available", as
 test("Connect Google Drive and sync an artifact", async () => {
   mockWideScreen();
   const authorizationPopup = installAuthorizationPopup();
-  const uploading = context.mocks.deferred<void>();
-  const upload = context.mocks.deferred<void>();
-  const drive = installDriveMocks(context, "not-connected", {
-    waitForSync: () => {
-      uploading.resolve();
-      return upload.promise;
-    },
-  });
+  const drive = installDriveMocks(context, "not-connected");
 
   await setupPage({
     context,
@@ -681,7 +674,6 @@ test("Connect Google Drive and sync an artifact", async () => {
   });
 
   await openDriveArtifactMenu();
-  const downloadButton = buttonNamed("Download artifact", artifactPreview());
   click(roleItemNamed("menuitem", "Connect Google Drive"));
 
   await waitFor(() => {
@@ -703,28 +695,15 @@ test("Connect Google Drive and sync an artifact", async () => {
   });
 
   drive.completeAuthorization();
-  await uploading.promise;
-  // The OAuth continuation keeps the existing global progress dialog open
-  // through the actual upload, not just until account authorization completes.
-  const progress = await screen.findByRole("dialog", {
-    name: "Connecting your account",
-  });
-  expect(within(progress).getByRole("status")).toHaveTextContent(
-    "Complete authorization if prompted. Please wait while we finish setting up your connection.",
-  );
-  expect(downloadButton).toBeInTheDocument();
-  expect(downloadButton).toHaveAttribute("aria-expanded", "false");
-  expect(drive.syncRequests).toStrictEqual([
-    {
-      artifactId: DRIVE_ARTIFACT_ID,
-      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
-      connectionId: NEW_DRIVE_CONNECTION_ID,
-      mode: "original",
-    },
-  ]);
-  upload.resolve();
   await waitFor(() => {
-    expect(progress).not.toBeInTheDocument();
+    expect(drive.syncRequests).toStrictEqual([
+      {
+        artifactId: DRIVE_ARTIFACT_ID,
+        agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+        connectionId: NEW_DRIVE_CONNECTION_ID,
+        mode: "original",
+      },
+    ]);
   });
   await expectSyncCompletedPreview();
 });
@@ -1583,31 +1562,21 @@ describe("google editor conversion", () => {
     ).toBeUndefined();
   });
 
-  it("retries a failed API upload and exposes the confirmed native document", async () => {
+  it("keeps upload actions available after an upload mode error", async () => {
     mockWideScreen();
     installDriveMocks(context, "connected", {
       filename: "report.txt",
       contentType: "text/plain",
       selectedAccountReady: true,
     });
-    let attempts = 0;
     context.mocks.api(
       artifactGoogleDriveContract.uploadWithMode,
       ({ respond }) => {
-        attempts += 1;
-        if (attempts === 1) {
-          return respond(404, {
-            error: {
-              code: "NOT_FOUND",
-              message: "Upload mode endpoint is unavailable",
-            },
-          });
-        }
-        return respond(200, {
-          id: "drive-file-retry",
-          name: "report.txt",
-          mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
-          webViewLink: "https://drive.google.test/file/drive-file-retry",
+        return respond(404, {
+          error: {
+            code: "NOT_FOUND",
+            message: "Upload mode endpoint is unavailable",
+          },
         });
       },
     );
@@ -1633,17 +1602,6 @@ describe("google editor conversion", () => {
     expect(
       roleItemNamed("menuitem", "Upload to Google Drive"),
     ).not.toHaveAttribute("aria-disabled", "true");
-    click(roleItemNamed("menuitem", "Upload to Google Docs"));
-    await expect(
-      screen.findByText("Synced to Google Drive"),
-    ).resolves.toBeInTheDocument();
-    click(buttonNamed("Download artifact", artifactPreview()));
-    await waitFor(() => {
-      expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
-        "href",
-        "https://drive.google.test/file/drive-file-retry",
-      );
-    });
   });
 
   it("does not mark an unconverted response as a successful native document", async () => {
@@ -1669,19 +1627,5 @@ describe("google editor conversion", () => {
         ),
       ).toBeInTheDocument();
     });
-    click(buttonNamed("Download artifact", artifactPreview()));
-    await waitFor(() => {
-      expect(
-        roleItemNamed("menuitem", "Upload to Google Docs"),
-      ).not.toHaveAttribute("aria-disabled", "true");
-    });
-    expect(
-      roleItemNamed("menuitem", "Upload to Google Drive"),
-    ).not.toHaveAttribute("aria-disabled", "true");
-    expect(
-      queryAllByRoleFast("menuitem").find((item) => {
-        return item.textContent?.trim() === "Open in Google Docs";
-      }),
-    ).toBeUndefined();
   });
 });

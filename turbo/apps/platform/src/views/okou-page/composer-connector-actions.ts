@@ -4,7 +4,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import type { ComposerConnectorSignals } from "../../signals/okou-page/connectors.ts";
 import {
   builtinConnectOperation$,
-  builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
   connectBuiltinConnectorNoAuthAndSettle$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -23,7 +22,6 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
     connectBuiltinConnectorNoAuthAndSettle$,
   );
   const connectOperation = useLoadable(builtinConnectOperation$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
   return {
@@ -34,7 +32,6 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
     isConnectorConnecting: (connectorSlug: ConnectorSlug) => {
       return (
         connectOperation.state === "loading" ||
-        pollingAuthCodeSlug === connectorSlug ||
         pollingDeviceAuthSlug === connectorSlug
       );
     },

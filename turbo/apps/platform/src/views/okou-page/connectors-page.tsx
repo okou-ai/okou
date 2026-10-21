@@ -50,7 +50,6 @@ import {
   setConnectorsCategoryFilter$,
   setConnectorsConnectionFilter$,
   setConnectorsSearch$,
-  builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
   relatedCatalogItems$,
   builtinConnectorScopeReviewSelection$,
@@ -1356,7 +1355,6 @@ export function ConnectorsPage() {
   const closeAccountManager = useSet(closeBuiltinAccountManager$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
   const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectOperation = useLoadable(builtinConnectOperation$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
@@ -1490,9 +1488,7 @@ export function ConnectorsPage() {
 
   const renderCard = (c: PlatformConnectorCatalogStatusItem) => {
     const isPolling =
-      pollingAuthCodeSlug === c.slug ||
-      pollingDeviceAuthSlug === c.slug ||
-      connectOperation.state === "loading";
+      pollingDeviceAuthSlug === c.slug || connectOperation.state === "loading";
     const hasAccount =
       connectedTargetsLoadable.state === "hasData"
         ? connectedTargetsLoadable.data.has(`builtin:${c.slug}`)

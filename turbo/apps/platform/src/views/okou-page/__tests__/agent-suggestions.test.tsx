@@ -490,8 +490,11 @@ test.each([
     await screen.findByText(makeSuggestion().title);
     await fill(composer(), "Keep this draft");
     click(button(makeSuggestion().title));
-    await screen.findByText("Could not start the suggestion");
-    click(button("Restore draft"));
+    click(
+      await waitFor(() => {
+        return button("Restore draft");
+      }),
+    );
     await waitFor(() => {
       expect(pathname()).toBe(
         target === null ? `/agents/${agentId}/chat` : `/chats/${target}`,
@@ -641,8 +644,11 @@ test.each([true, false])(
     });
     await screen.findByText(suggestion.title);
     click(button(suggestion.title));
-    await screen.findByText("Could not start the suggestion");
-    expect(button("Restore draft")).toBeInTheDocument();
+    await expect(
+      waitFor(() => {
+        return button("Restore draft");
+      }),
+    ).resolves.toBeInTheDocument();
     expect(pathname()).toBe(`/agents/${agentId}/chat`);
   },
 );
@@ -742,8 +748,11 @@ test("A deleted target offers recovery without sending to another chat", async (
   });
   await screen.findByText(makeSuggestion().title);
   click(button(makeSuggestion().title));
-  await screen.findByText("Could not start the suggestion");
-  expect(button("Restore draft")).toBeInTheDocument();
+  await expect(
+    waitFor(() => {
+      return button("Restore draft");
+    }),
+  ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
 test("The switch-off and secondary-Agent home retain their ordinary starting points", async () => {

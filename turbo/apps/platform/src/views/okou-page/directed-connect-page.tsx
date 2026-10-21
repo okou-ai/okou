@@ -26,7 +26,6 @@ import {
   type ConnectorConnectSuccess,
   builtinConnectOperation$,
   justConnectedBuiltinSlugs$,
-  builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
   submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
@@ -638,7 +637,6 @@ function DirectedConnectCard() {
   const assistantName = useGet(assistantName$);
   const agentId = useGet(directedConnectAgentId$);
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectOperation = useLoadable(builtinConnectOperation$);
   const [connectLoadable, connect] = useLoadableSet(connectDirectedConnector$);
@@ -663,7 +661,6 @@ function DirectedConnectCard() {
       ? agentNameLoadable.data.displayName
       : assistantName;
   const isConnecting =
-    pollingAuthCodeSlug === connectorSlug ||
     pollingDeviceAuthSlug === connectorSlug ||
     connectOperation.state === "loading" ||
     connectLoadable.state === "loading";

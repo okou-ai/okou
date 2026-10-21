@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import type { ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import {
   connectorConnectionProgressVisible$,
+  connectorConnectionOperations$,
   cancelConnectorConnection$,
   connectorConnectionAttempt$,
 } from "../../signals/connector-connection-progress.ts";
@@ -16,6 +17,7 @@ import { ConnectorConnectionStatus } from "./connector-connection-dialog-body.ts
 
 export function ConnectorConnectionProgress() {
   const visible = useGet(connectorConnectionProgressVisible$);
+  const operations = useLoadable(connectorConnectionOperations$);
   const cancelConnection = useSet(cancelConnectorConnection$);
   const attempt = useGet(connectorConnectionAttempt$);
   const cancel = () => {
@@ -25,7 +27,7 @@ export function ConnectorConnectionProgress() {
 
   return (
     <Dialog
-      open={visible}
+      open={visible && operations.state === "loading"}
       onOpenChange={(open, details) => {
         if (!open && details.reason === "outside-press") {
           details.cancel();

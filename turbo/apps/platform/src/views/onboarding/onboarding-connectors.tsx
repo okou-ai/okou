@@ -12,7 +12,6 @@ import {
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   builtinConnectOperation$,
   justConnectedBuiltinSlugs$,
-  builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
   runBuiltinConnectorConnectSuccess$,
@@ -272,7 +271,6 @@ function SourcesConnectorGrid({
     useSelectedConnector();
   const activate = useSourceConnectorActivate(onConnectStart, onConnected);
   const connectOperation = useLoadable(builtinConnectOperation$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
   const connectorCatalogItems =
@@ -318,7 +316,6 @@ function SourcesConnectorGrid({
               connected={connected}
               busy={
                 connectOperation.state === "loading" ||
-                pollingAuthCodeSlug === connectorSlug ||
                 pollingDeviceAuthSlug === connectorSlug
               }
               onActivate={() => {
@@ -408,7 +405,6 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
     useSelectedConnector();
   const connectHandlersFor = useListConnectHandlers(setSelectedConnectorSlug);
   const connectOperation = useLoadable(builtinConnectOperation$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
 
@@ -444,7 +440,6 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
             item.connected === true || justConnectedSlugs.has(connectorSlug);
           const connecting =
             connectOperation.state === "loading" ||
-            pollingAuthCodeSlug === connectorSlug ||
             pollingDeviceAuthSlug === connectorSlug;
           const connectHandlers = connectHandlersFor(connectorSlug, item);
           return (

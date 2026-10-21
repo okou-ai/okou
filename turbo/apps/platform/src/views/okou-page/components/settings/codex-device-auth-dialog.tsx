@@ -9,6 +9,7 @@ import {
   codexDeviceAuthDialogStatePersonal$,
   codexDeviceAuthFlowStatePersonal$,
   codexDeviceAuthStartOperationPersonal$,
+  codexDeviceAuthRunOperationPersonal$,
   runCodexDeviceAuthPersonal$,
   type CodexDeviceAuthFlowState,
 } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
@@ -29,6 +30,7 @@ interface CodexDeviceAuthScopeBundle {
   dialog: CodexDeviceAuthDialogState;
   flow: CodexDeviceAuthFlowState;
   startLoadable: Loadable<boolean | null>;
+  runLoadable: Loadable<boolean | null>;
   close: (signal: AbortSignal) => Promise<void>;
   run: (signal: AbortSignal) => Promise<boolean>;
 }
@@ -44,10 +46,12 @@ function usePersonalCodexDeviceAuthBundle(): CodexDeviceAuthScopeBundle {
   const close = useSet(closeCodexDeviceAuthDialogPersonal$);
   const run = useSet(runCodexDeviceAuthPersonal$);
   const startLoadable = useLoadable(codexDeviceAuthStartOperationPersonal$);
+  const runLoadable = useLoadable(codexDeviceAuthRunOperationPersonal$);
   return {
     dialog,
     flow,
     startLoadable,
+    runLoadable,
     close,
     run,
   };
@@ -60,7 +64,7 @@ function CodexDeviceAuthDialogView({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const { dialog, flow, startLoadable, close, run } = bundle;
+  const { dialog, flow, startLoadable, runLoadable, close, run } = bundle;
   const title =
     dialog.mode === "reconnect"
       ? t(($) => {
@@ -80,6 +84,7 @@ function CodexDeviceAuthDialogView({
       <CodexDeviceAuthBody
         flow={flow}
         startLoadable={startLoadable}
+        runLoadable={runLoadable}
         mode={dialog.mode}
         onStart={() => {
           detach(run(pageSignal), Reason.DomCallback);
@@ -92,11 +97,13 @@ function CodexDeviceAuthDialogView({
 function CodexDeviceAuthBody({
   flow,
   startLoadable,
+  runLoadable,
   mode,
   onStart,
 }: {
   flow: CodexDeviceAuthFlowState;
   startLoadable: Loadable<boolean | null>;
+  runLoadable: Loadable<boolean | null>;
   mode: "connect" | "reconnect";
   onStart: () => void;
 }) {
@@ -112,7 +119,11 @@ function CodexDeviceAuthBody({
       />
     );
   }
-  if (startLoadable.state === "hasError" || flow.status !== "pending") {
+  if (
+    startLoadable.state === "hasError" ||
+    runLoadable.state === "hasError" ||
+    flow.status !== "pending"
+  ) {
     return (
       <DeviceAuthRetryContent
         message={

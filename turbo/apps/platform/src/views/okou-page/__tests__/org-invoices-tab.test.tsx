@@ -161,9 +161,6 @@ test("Download receipts for a valid month range", async () => {
   expect(buttonByText("Download ZIP")).not.toBeDisabled();
   await user.click(buttonByText("Download ZIP"));
 
-  await expect(
-    screen.findByText("Preparing receipt download..."),
-  ).resolves.toBeInTheDocument();
   receiptsReady.resolve();
   await waitFor(() => {
     expect(requestedRange).toStrictEqual({

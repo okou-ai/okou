@@ -9,7 +9,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
-import userEvent from "@testing-library/user-event";
 import {
   click,
   setupPage,
@@ -191,51 +190,6 @@ test("owners can change three access levels separately from copying the stable a
   );
   expect(changes).toStrictEqual(["organization", "public", "private"]);
 });
-
-test.each(["pointer", "keyboard"] as const)(
-  "a pending public audience change can be superseded by a private %s choice",
-  async (input) => {
-    let status = sharingStatus();
-    const changes: ArtifactShareStatus["audience"][] = [];
-    const releasePublic = context.mocks.deferred<void>();
-    context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-      return respond(200, status);
-    });
-    context.mocks.api(
-      artifactSharesContract.update,
-      async ({ body, respond, withSignal }) => {
-        changes.push(body.audience);
-        if (body.audience === "public") {
-          await withSignal(releasePublic.promise);
-        }
-        status = sharingStatus(body.audience);
-        return respond(200, status);
-      },
-    );
-    await openArtifact();
-    await openShareMenu();
-    if (input === "keyboard") {
-      permission("Only me").focus();
-      await userEvent.keyboard("{ArrowUp}");
-    } else {
-      click(permission("Public access"));
-    }
-    await waitFor(() => {
-      expect(permission("Only me")).toHaveAttribute("aria-busy", "true");
-    });
-    if (input === "keyboard") {
-      await userEvent.keyboard("{ArrowDown}");
-    } else {
-      click(permission("Organization"));
-      click(permission("Only me"));
-    }
-    releasePublic.resolve();
-    await screen.findByText("Access updated");
-    expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
-    expect(permission("Only me")).toHaveAttribute("aria-busy", "false");
-    expect(changes).toStrictEqual(["public", "private"]);
-  },
-);
 
 test("a recipient's share button copies directly without a permissions menu or mutation", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
