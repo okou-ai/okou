@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   SPUUpdaterDelegate
 {
   private static let wordmarkItem = NSToolbarItem.Identifier("okou.wordmark")
+  private static let backgroundUpdateVersionKey = "desktopBackgroundUpdateRelaunchVersion"
   private var wordmarkView: NSImageView?
   private var window: NSWindow!
   private var model: DesktopModel!
@@ -18,12 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   private var updateInstalling = false
   private var requiredCheckPending = false
   private var pendingUpdate: (() -> Void)?
+  private var automaticUpdateVersion: String?
   private var terminating = false
   private var menuRefreshPending = false
   private var lockDescriptor: Int32 = -1
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    let diagnosticRun = CommandLine.arguments.contains("--smoke-test")
+    let diagnosticRun =
+      CommandLine.arguments.contains("--smoke-test")
       || CommandLine.arguments.contains("--auth-smoke-test")
     if !diagnosticRun {
       let identifier = Bundle.main.bundleIdentifier!
@@ -79,7 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
       window.contentView = NSHostingView(rootView: DesktopView(model: model))
       window.titlebarSeparatorStyle = .none
       window.center()
-      showWindow()
+      let backgroundUpdateVersion = UserDefaults.standard.string(
+        forKey: Self.backgroundUpdateVersionKey)
+      UserDefaults.standard.removeObject(forKey: Self.backgroundUpdateVersionKey)
+      if backgroundUpdateVersion != model.version { showWindow() }
       statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
       if let url = Bundle.main.url(forResource: "trayTemplate", withExtension: "png"),
         let image = NSImage(contentsOf: url)
@@ -405,10 +411,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     error: Error?
   ) {
     updateDriver?.finishCycle()
+    automaticUpdateVersion = nil
     if let error, model.compatibility.required, !model.upgradePhase.failed {
       model.upgradePhase = .failed(DesktopUpdateDriver.failureMessage(error))
     }
-    if error != nil { updateInstalling = false }
+    if error != nil {
+      updateInstalling = false
+      UserDefaults.standard.removeObject(forKey: Self.backgroundUpdateVersionKey)
+    }
     if requiredCheckPending, model.compatibility.required, pendingUpdate == nil, !updateInstalling {
       requiredCheckPending = false
       DispatchQueue.main.async { [weak self] in self?.checkRequiredUpdate() }
@@ -419,9 +429,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     _ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
     immediateInstallationBlock: @escaping () -> Void
   ) -> Bool {
+    automaticUpdateVersion = item.versionString
     pendingUpdate = immediateInstallationBlock
     installPendingUpdateWhenIdle()
     return true
+  }
+  func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+    guard let automaticUpdateVersion, !model.compatibility.required,
+      !NSApplication.shared.isActive
+    else { return }
+    // Sparkle reopens the bundle through Launch Services. Keep only this
+    // background update's next launch in the menu bar, including across replacement.
+    UserDefaults.standard.set(automaticUpdateVersion, forKey: Self.backgroundUpdateVersionKey)
   }
   private func installPendingUpdateWhenIdle() {
     guard !terminating, !updateInstalling, !model.busy,
@@ -446,7 +465,7 @@ struct OkouApplication {
     let application = NSApplication.shared
     let delegate = AppDelegate()
     application.delegate = delegate
-    application.setActivationPolicy(.regular)
+    application.setActivationPolicy(.accessory)
     withExtendedLifetime(delegate) { application.run() }
   }
 }
