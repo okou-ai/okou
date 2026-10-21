@@ -249,6 +249,83 @@ async fn final_capture_exec_retains_real_result_and_original_normal_fence() {
 }
 
 #[tokio::test]
+async fn cancelled_final_capture_retains_original_fence_refusal_after_late_result() {
+    for terminal_held in [false, true] {
+        let (client, mut peer, mut controls, mut exchange, connection) = setup().await.unwrap();
+        controls.arm(RequestKind::Exec).unwrap();
+        let request = || ExecCaptureRequest {
+            timeout_ms: 1_000,
+            command: "true",
+            env: &[],
+            sudo: false,
+            label: "cancelled-final-preparation",
+            stdout_limit_bytes: 1024,
+            stderr_limit_bytes: 1024,
+            expected_exit_codes: &[],
+            stdin_bytes: None,
+            wait_timeout: DEADLINE,
+        };
+        let mut operation = Box::pin(client.exec_operation_capture_with_fence(request()));
+        let captured = capture(&mut controls, operation.as_mut()).await.unwrap();
+        assert!(matches!(
+            client.try_fence_normal_operations(),
+            Err(NormalOperationFenceRejection::AlreadyFenced)
+        ));
+        let result = guest_control_proto::encode_exec_result(
+            ExecTermination::Exited { exit_code: 0 },
+            3,
+            ExecCapturedOutput::Captured {
+                bytes: b"original final result",
+                truncated: false,
+            },
+            ExecCapturedOutput::Captured {
+                bytes: b"",
+                truncated: false,
+            },
+            "",
+        )
+        .unwrap();
+        let mut dispatch = Some(controls.dispatch);
+        if terminal_held {
+            dispatch.take().unwrap().send(()).unwrap();
+            assert_eq!(peer.next().await.unwrap().raw, captured.raw());
+            peer.send(MSG_EXEC_RESULT, captured.sequence(), &result)
+                .await
+                .unwrap();
+            bounded(&mut controls.response).await.unwrap().unwrap();
+        }
+        pending_once(operation.as_mut()).await;
+        status_roundtrip(&client, &mut peer).await.unwrap();
+        drop(operation);
+        assert!(matches!(
+            client.try_fence_normal_operations(),
+            Err(NormalOperationFenceRejection::NotParkable)
+        ));
+        if let Some(dispatch) = dispatch {
+            dispatch.send(()).unwrap();
+            assert_eq!(peer.next().await.unwrap().raw, captured.raw());
+            peer.send(MSG_EXEC_RESULT, captured.sequence(), &result)
+                .await
+                .unwrap();
+            bounded(&mut controls.response).await.unwrap().unwrap();
+        }
+        controls
+            .delivery
+            .send(ResponseDisposition::Deliver)
+            .unwrap();
+        let joined = bounded(exchange.join()).await.unwrap().unwrap();
+        assert_eq!(joined.request, captured);
+        status_roundtrip(&client, &mut peer).await.unwrap();
+        assert!(matches!(
+            client.try_fence_normal_operations(),
+            Err(NormalOperationFenceRejection::NotParkable)
+        ));
+        assert!(client.exec_operation_capture(request()).await.is_err());
+        finish(client, peer, connection).await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn legitimate_supervised_start_and_streamed_output_pass_before_held_terminal() {
     let (client, mut peer, mut controls, mut exchange, connection) = setup().await.unwrap();
     controls.arm(RequestKind::Exec).unwrap();
