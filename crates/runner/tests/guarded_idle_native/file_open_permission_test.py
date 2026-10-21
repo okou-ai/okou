@@ -209,6 +209,17 @@ class KernelTests(unittest.TestCase):
                     self.assertEqual(event.pid, child.pid)
                     gate.decide(event, True)
                     self.assertEqual(join(child)["exit"], 0)
+                    output = path.parent / "high-fd-qualification"
+                    capture = qualify(output, SOURCE)
+                    self.assertEqual(
+                        validate(
+                            (output / "record.json").read_bytes(),
+                            SOURCE,
+                            capture,
+                            str(output),
+                        )["original_cases"],
+                        3,
+                    )
                 finally:
                     for descriptor in padding:
                         os.close(descriptor)

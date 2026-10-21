@@ -111,8 +111,10 @@ def qualify(output, source):
             active = producer(original)
             case["producer_pid"] = active.pid
             if decision == "retire":
+                poller = select.poll()
+                poller.register(gate.fileno(), select.POLLIN)
                 require(
-                    select.select([gate], [], [], 10)[0],
+                    poller.poll(10_000) == [(gate.fileno(), select.POLLIN)],
                     "queued permission observation timed out",
                 )
                 case["cleanup"] = gate.close()
