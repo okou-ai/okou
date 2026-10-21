@@ -1,8 +1,9 @@
 use std::io::{Read, Write};
+use std::net::Shutdown;
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use guest_control_proto::ExecControlStatus;
@@ -28,7 +29,11 @@ fn assert_peer_closed(peer: &mut UnixStream) {
     }
 }
 
-fn assert_fragmented_response_timeout(fragments: &[&[u8]], interval: Duration) {
+fn assert_fragmented_response_timeout(fragments: &[&[u8]]) {
+    const REQUEST_TIMEOUT_MS: u32 = 1000;
+    const FRAGMENT_INTERVAL: Duration = Duration::from_millis(600);
+    const COMPLETION_MARGIN: Duration = Duration::from_millis(300);
+
     let (sink, mut peer) = connected_sink();
     peer.set_read_timeout(Some(PEER_TIMEOUT)).unwrap();
     peer.set_write_timeout(Some(PEER_TIMEOUT)).unwrap();
@@ -36,24 +41,26 @@ fn assert_fragmented_response_timeout(fragments: &[&[u8]], interval: Duration) {
     let (writer, mut host) = guest_writer_pair();
 
     std::thread::scope(|scope| {
+        let (completed_tx, completed_rx) = mpsc::channel();
         let worker_sink = Arc::clone(&sink);
         let worker = scope.spawn(move || {
-            forward_control_request(
-                worker_sink,
-                pending_slot,
-                owned_control_request(12, 8, 400, "m"),
-                writer.clone(),
-            );
+            let request = owned_control_request(12, 8, REQUEST_TIMEOUT_MS, "m");
+            let deadline = request.deadline;
+            forward_control_request(worker_sink, pending_slot, request, writer.clone());
+            completed_tx.send((deadline, Instant::now())).unwrap();
             writer
         });
 
         let request = process_control_ipc::read_request(&mut peer).unwrap();
         assert_eq!(request.message_id, "m");
         assert_eq!(request.payload, b"payload");
+        let observation_deadline = Instant::now()
+            + Duration::from_millis(u64::from(REQUEST_TIMEOUT_MS))
+            + COMPLETION_MARGIN;
         let mut sent = 0;
         for fragment in fragments {
             if sent > 0 {
-                std::thread::sleep(interval);
+                std::thread::sleep(FRAGMENT_INTERVAL);
             }
             match peer.write_all(fragment) {
                 Ok(()) => sent += fragment.len(),
@@ -64,8 +71,24 @@ fn assert_fragmented_response_timeout(fragments: &[&[u8]], interval: Duration) {
             }
         }
 
-        let (_, seq, status, message_id, diagnostic) = read_exec_control_result(&mut host);
+        // Keep the response incomplete: a post-decode expiry check cannot
+        // satisfy this completion oracle. Renewing each read's budget would
+        // instead keep forwarding alive until about 1600 ms.
+        let completed = completed_rx
+            .recv_timeout(observation_deadline.saturating_duration_since(Instant::now()));
+        if completed.is_err() {
+            // Unblock the worker before joining even when the deadline regresses.
+            peer.shutdown(Shutdown::Both).unwrap();
+        }
         let writer = worker.join().unwrap();
+        let (deadline, completed_at) = completed
+            .expect("forwarding must finish at the total deadline with an incomplete response");
+        assert!(
+            completed_at <= deadline + COMPLETION_MARGIN,
+            "forwarding exceeded the total deadline while the response was incomplete"
+        );
+
+        let (_, seq, status, message_id, diagnostic) = read_exec_control_result(&mut host);
         assert_eq!(seq, 12);
         assert_eq!(message_id, "m");
         assert_eq!(status, ExecControlStatus::SinkTimeout);
@@ -94,23 +117,12 @@ fn assert_fragmented_response_timeout(fragments: &[&[u8]], interval: Duration) {
 
 #[test]
 fn fragmented_control_response_prefix_cannot_extend_request_deadline() {
-    assert_fragmented_response_timeout(
-        &[
-            &RESPONSE[..1],
-            &RESPONSE[1..2],
-            &RESPONSE[2..3],
-            &RESPONSE[3..],
-        ],
-        Duration::from_millis(200),
-    );
+    assert_fragmented_response_timeout(&[&RESPONSE[..1], &RESPONSE[1..2]]);
 }
 
 #[test]
 fn fragmented_control_response_body_cannot_extend_request_deadline() {
-    let fragments: Vec<_> = std::iter::once(&RESPONSE[..4])
-        .chain(RESPONSE[4..].chunks(1))
-        .collect();
-    assert_fragmented_response_timeout(&fragments, Duration::from_millis(100));
+    assert_fragmented_response_timeout(&[&RESPONSE[..4], &RESPONSE[4..5]]);
 }
 
 #[test]
