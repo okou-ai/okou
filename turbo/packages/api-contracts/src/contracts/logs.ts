@@ -135,14 +135,6 @@ const logsListResponseSchema = z.object({
 });
 
 /**
- * Artifact information schema
- */
-const artifactSchema = z.object({
-  name: z.string().nullable(),
-  version: z.string().nullable(),
-});
-
-/**
  * Log detail response schema
  */
 const logDetailSchema = z.object({
@@ -163,9 +155,6 @@ const logDetailSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
-  // The API keeps emitting this for supported old Apps until the replacement
-  // App is live and its version floor is raised (#41332).
-  artifact: artifactSchema.optional(),
 });
 
 /**
@@ -227,7 +216,6 @@ export {
   logStatusSchema,
   logEntrySchema,
   logsListResponseSchema,
-  artifactSchema,
   logDetailSchema,
 };
 
@@ -235,5 +223,4 @@ export {
 export type LogStatus = z.infer<typeof logStatusSchema>;
 export type LogEntry = z.infer<typeof logEntrySchema>;
 export type LogsListResponse = z.infer<typeof logsListResponseSchema>;
-export type Artifact = z.infer<typeof artifactSchema>;
 export type LogDetail = z.infer<typeof logDetailSchema>;

@@ -9,8 +9,6 @@ import {
   type TriggerSource,
 } from "@okouai/api-contracts/contracts/logs";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { runResultSchema } from "@okouai/api-contracts/contracts/runs";
-import { z } from "zod";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -298,34 +296,6 @@ interface LogDetailParams {
   orgId: string;
 }
 
-const logRunResultSchema = runResultSchema
-  .pick({ storageOutputs: true })
-  .extend({
-    artifact: z.record(z.string(), z.string()).optional(),
-  });
-
-function extractArtifact(runResult: typeof agentRuns.$inferSelect.result): {
-  name: string | null;
-  version: string | null;
-} {
-  if (runResult === null) {
-    return { name: null, version: null };
-  }
-  const result = logRunResultSchema.parse(runResult);
-  if (result.storageOutputs !== undefined) {
-    const output = result.storageOutputs[0];
-    return { name: output?.name ?? null, version: output?.version ?? null };
-  }
-  // Historical results and an outgoing API can still contain only this map.
-  // Remove this reader with the deprecated LogDetail.artifact response after
-  // supported App clients no longer require that response field (#41332).
-  const name = result.artifact
-    ? (Object.keys(result.artifact)[0] ?? null)
-    : null;
-  const version = name ? (result.artifact?.[name] ?? null) : null;
-  return { name, version };
-}
-
 export function logDetail(
   params: LogDetailParams,
 ): Computed<Promise<LogDetail | null>> {
@@ -399,7 +369,6 @@ export function logDetail(
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString() ?? null,
       completedAt: run.completedAt?.toISOString() ?? null,
-      artifact: extractArtifact(run.result),
     };
   });
 }

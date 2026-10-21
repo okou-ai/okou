@@ -35,6 +35,8 @@ case "${1:-}" in
       else
         [ "${MOCK_GUEST_STORAGE_COMPLETION_READER_FLOOR_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "6161616161616161616161616161616161616161" ]; then
+      [ "${MOCK_STORAGE_DEBUG_CONTRACTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2eff576ad75d328676834643c1380ff35c2297e2" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
       [ "${MOCK_GUEST_STORAGE_COMPLETION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "c0dec0dec0dec0dec0dec0dec0dec0dec0dec0de" ]; then
@@ -226,6 +228,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *.github/rollback-floors/storage-debug-contracts* ]]; then
+      printf '%s\n' "${MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT-6161616161616161616161616161616161616161}"
     elif [[ "$*" == *.github/rollback-floors/vnc-native-networks-canonical-metadata* ]]; then
       printf '%s\n' "${MOCK_VNC_CANONICAL_METADATA_COMMIT-5757575757575757575757575757575757575757}"
     elif [[ "$*" == *.github/rollback-floors/session-conversation-runtime* ]]; then
@@ -500,6 +504,30 @@ assert_failure "predates the Guest Storage-output completion writer" \
 if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
   fail "old Guest writer must fail before Runner artifact or host access"
 fi
+
+for context_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Storage debug contract cleanup on main" \
+    run_resolver "${tmp_dir}/context-policy.output" "MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT=${context_commit}"
+  [ ! -s "${tmp_dir}/context-policy.output" ] || fail "invalid context policy must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid context policy must fail before artifact or host access"
+  fi
+done
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Storage debug contract cleanup" \
+  run_resolver "${tmp_dir}/context-floor.output" MOCK_STORAGE_DEBUG_CONTRACTS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/context-floor.output" ] || fail "pre-cleanup API must not publish outputs"
+grep -Fq '6161616161616161616161616161616161616161' "${tmp_dir}/failure.err" || fail "context floor must identify its merged cleanup"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/storage-debug-contracts" "${tmp_dir}/boundaries.log" || fail "context floor must resolve main history, not target history"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-cleanup API must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+run_resolver "${tmp_dir}/context-exact.output" "MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT=${target_commit}" >"${tmp_dir}/context-exact.log"
+[ -s "${tmp_dir}/context-exact.output" ] || fail "exact context cleanup artifact must remain eligible"
 
 for completion_reader_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"

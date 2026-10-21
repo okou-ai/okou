@@ -227,7 +227,6 @@ test("Opening Instructions keeps rich Activity logs readable", async () => {
       createdAt: "2026-09-04T09:29:00Z",
       startedAt: "2026-09-04T09:29:01Z",
       completedAt: "2026-09-04T09:29:02Z",
-      artifact: { name: null, version: null },
     });
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {

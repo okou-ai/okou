@@ -8,13 +8,10 @@ import {
   unifiedRunRequestSchema,
 } from "../runs";
 import { triggerSourceSchema } from "../logs";
-import {
-  runCreateBodySchema,
-  runContextResponseSchema,
-  runContextStorageMounts,
-} from "../run-routes";
+import { runCreateBodySchema } from "../run-routes";
+import { runContextArchiveSchema } from "../run-context-archive";
 
-describe("Run context Storage observations", () => {
+describe("Retained Run context Storage observations", () => {
   const mount = {
     name: "output",
     version: "version-1",
@@ -37,7 +34,7 @@ describe("Run context Storage observations", () => {
   ])(
     "reads the supported context Storage representation: $storage",
     ({ storage, expected }) => {
-      const context = runContextResponseSchema.parse({
+      const context = runContextArchiveSchema.parse({
         prompt: "Inspect the output",
         appendSystemPrompt: null,
         runId: "run-1",
@@ -50,7 +47,7 @@ describe("Run context Storage observations", () => {
         featureFlags: null,
         ...storage,
       });
-      expect(runContextStorageMounts(context)).toStrictEqual(expected);
+      expect(context.storageMounts).toStrictEqual(expected);
     },
   );
 });

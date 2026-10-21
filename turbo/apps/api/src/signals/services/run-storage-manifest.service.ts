@@ -29,7 +29,6 @@ import {
   type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
-import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import {
   MEMORY_ARTIFACT_NAME,
@@ -782,12 +781,6 @@ function readOnlyStorageEntryMetadata(args: {
       ...(args.plan.optional === undefined
         ? {}
         : { optional: args.plan.optional }),
-    },
-    runContextVolume: {
-      name: args.plan.name,
-      mountPath: args.plan.mountPath,
-      vasStorageName: args.plan.vasStorageName,
-      vasVersionId: args.plan.resolved.versionId,
     },
   };
 }
@@ -1632,7 +1625,6 @@ interface PreparedReadOnlyStorageEntry<
 > {
   readonly storedMount: TMount;
   readonly persistedMount: PersistedStorageMount;
-  readonly runContextVolume: NonNullable<RunContextResponse["volumes"]>[number];
 }
 
 interface PreparedWritebackStorageEntry<
@@ -1640,7 +1632,6 @@ interface PreparedWritebackStorageEntry<
 > {
   readonly storedMount: TMount;
   readonly persistedMount: PersistedStorageMount;
-  readonly runContextArtifact: NonNullable<RunContextResponse["artifact"]>;
 }
 
 interface PreparedStorageEntries<
@@ -1653,17 +1644,11 @@ interface PreparedStorageEntries<
   readonly resolvedAdditionalEntryCount: number;
 }
 
-interface RunContextStorageObservation {
-  readonly volumes: NonNullable<RunContextResponse["volumes"]>;
-  readonly artifact: Exclude<RunContextResponse["artifact"], undefined>;
-}
-
 export interface PreparedAgentRunStorage<
   TMount extends StorageMountMetadata = StoredStorageMountEntry,
 > {
   readonly storageMounts: readonly TMount[];
   readonly persistedStorageMounts: readonly PersistedStorageMount[];
-  readonly runContextStorage: RunContextStorageObservation;
 }
 
 interface ResolvedManifestArtifactInput {
@@ -2167,11 +2152,6 @@ function writebackStorageEntryMetadata(
         ? {}
         : { missingRootPolicy: artifact.missingRootPolicy }),
     },
-    runContextArtifact: {
-      mountPath: artifact.mountPath,
-      vasStorageName: artifact.name,
-      vasVersionId: resolved.versionId,
-    },
   };
   if (resolved.fileCount === 0) {
     return {
@@ -2238,14 +2218,7 @@ export async function finalizePreparedStorage<
         resolvedComposeEntryCount: args.entries.resolvedComposeEntryCount,
         resolvedAdditionalEntryCount: args.entries.resolvedAdditionalEntryCount,
       });
-      const writebackEntry = args.entries.writebackEntries[0];
       return {
-        runContextStorage: {
-          volumes: readOnlyEntries.map((entry) => {
-            return entry.runContextVolume;
-          }),
-          artifact: writebackEntry?.runContextArtifact ?? null,
-        },
         storageMounts: normalizeMountOverlay([
           ...readOnlyEntries.map((entry) => {
             return entry.storedMount;

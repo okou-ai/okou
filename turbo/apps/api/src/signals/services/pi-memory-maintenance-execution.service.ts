@@ -76,7 +76,6 @@ import { resolvePlatformMemoryPiModelConfig } from "./pi-sandbox-config";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
-import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { expandVariables } from "@okouai/core/variable-expander";
 import type { AgentRunFullLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -316,14 +315,6 @@ async function prepareMaintenanceStorage(
     "nested",
     () => {
       return Promise.resolve({
-        runContextStorage: {
-          volumes: [],
-          artifact: {
-            mountPath: artifact.mountPath,
-            vasStorageName: artifact.name,
-            vasVersionId: job.baseVersion.versionId,
-          },
-        },
         storageMounts: normalizeMountOverlay([storedMount]),
         persistedStorageMounts: normalizeMountOverlay([persistedMount]),
       });
@@ -517,7 +508,6 @@ const prepareMaintenanceLaunch$ = command(
       ...built,
       runnerGroup,
       runStorageMounts,
-      runContextStorage: storage.runContextStorage,
     };
   },
 );
@@ -1501,10 +1491,6 @@ interface MaintenanceLaunch {
   readonly secretNames: readonly string[];
   readonly secretValues: readonly string[];
   readonly runStorageMounts: readonly PersistedStorageMount[];
-  readonly runContextStorage: {
-    readonly volumes: NonNullable<RunContextResponse["volumes"]>;
-    readonly artifact: Exclude<RunContextResponse["artifact"], undefined>;
-  };
 }
 
 function maintenanceJobPayload(launch: MaintenanceLaunch) {
@@ -1556,8 +1542,6 @@ function maintenanceRunContextSnapshot(
     networkPolicyEntries: networkPoliciesRecordToEntries(
       context.networkPolicies,
     ),
-    volumes: launch.runContextStorage.volumes,
-    artifact: launch.runContextStorage.artifact,
     storageMounts: context.storageMounts.map((mount) => {
       return {
         name: mount.name,

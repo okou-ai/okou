@@ -5251,7 +5251,7 @@ interface StoredExecutionSecrets {
 
 type BuiltStoredExecutionContextDraft = Omit<
   BuiltStoredExecutionContext,
-  "context" | "persistedStorageMounts" | "runContextStorage"
+  "context" | "persistedStorageMounts"
 > & {
   readonly context: Omit<StoredExecutionContext, "storageMounts">;
 };
@@ -5453,7 +5453,6 @@ function resolveBuiltStoredExecutionContext(
   return {
     ...builtContextDraft,
     persistedStorageMounts: [...preparedStorage.persistedStorageMounts],
-    runContextStorage: preparedStorage.runContextStorage,
     context: {
       ...builtContextDraft.context,
       storageMounts: [...preparedStorage.storageMounts],
@@ -6101,7 +6100,6 @@ function runnerJobPayload(args: {
 interface BuiltStoredExecutionContext {
   readonly context: StoredExecutionContext;
   readonly persistedStorageMounts: readonly PersistedStorageMount[];
-  readonly runContextStorage: PreparedAgentRunStorage["runContextStorage"];
   readonly secretNames: readonly string[];
   // Plain secret values used for run-context redaction; values, not names.
   readonly secretValues: readonly string[];
@@ -6174,8 +6172,6 @@ function buildRunContextSnapshot(args: {
     networkPolicyEntries: networkPoliciesRecordToEntries(
       storedContext.networkPolicies,
     ),
-    volumes: args.builtContext.runContextStorage.volumes,
-    artifact: args.builtContext.runContextStorage.artifact,
     storageMounts: storedContext.storageMounts.map((mount) => {
       return {
         name: mount.name,

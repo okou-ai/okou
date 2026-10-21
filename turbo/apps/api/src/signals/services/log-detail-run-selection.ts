@@ -11,7 +11,6 @@ export function logDetailRunSelection() {
     frameworkSessionId: agentRuns.frameworkSessionId,
     launchSnapshot: agentRuns.launchSnapshot,
     prompt: agentRuns.prompt,
-    result: agentRuns.result,
     startedAt: agentRuns.startedAt,
     status: agentRuns.status,
   };

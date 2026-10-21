@@ -2370,7 +2370,6 @@ describe("RUN-04: agent run telemetry families", () => {
         },
       },
       featureFlags: { manualMorningBrief: true },
-      artifact: { vasStorageName: "art-1" },
       storageMounts: [
         {
           name: "vol-1",
@@ -2447,7 +2446,6 @@ describe("RUN-04: agent run telemetry families", () => {
         apis: [{ base: "https://historical.example.com" }],
       },
     ]);
-    expect(contextRead.body.volumes).toHaveLength(1);
 
     const noSnapshot = await api.requestRunContext(actor, bareRun.runId, [404]);
     expectApiError(noSnapshot.body);

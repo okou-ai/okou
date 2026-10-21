@@ -6,7 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@okouai/ui";
-import type { ActivityRunContext } from "../../../signals/activity-page/run-context.ts";
+import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { useTranslation } from "react-i18next";
 
 export function SectionHeader({ title }: { title: string }) {
@@ -80,7 +80,7 @@ export function KeyValueTable({
 function StorageTable({
   items,
 }: {
-  items: ActivityRunContext["storageMounts"];
+  items: RunContextResponse["storageMounts"];
 }) {
   const { t } = useTranslation();
   if (items.length === 0) {
@@ -189,7 +189,7 @@ function FeatureFlagsSection({
   );
 }
 
-function StorageSection({ context }: { context: ActivityRunContext }) {
+function StorageSection({ context }: { context: RunContextResponse }) {
   const { t } = useTranslation();
   return (
     <section>
@@ -203,7 +203,7 @@ function StorageSection({ context }: { context: ActivityRunContext }) {
   );
 }
 
-export function ContextContent({ context }: { context: ActivityRunContext }) {
+export function ContextContent({ context }: { context: RunContextResponse }) {
   const { t } = useTranslation();
   const none = t(($) => {
     return $.activity.context.none;
