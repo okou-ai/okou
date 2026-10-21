@@ -19,7 +19,8 @@ final class AuthenticationStartupTests: XCTestCase {
     await hostingPresentationFrame()
     XCTAssertNotNil(startup(in: h.view))
     XCTAssertNil(composer(in: h.view))
-    XCTAssertFalse(try text(h.window).localizedCaseInsensitiveContains("Choose a workspace"))
+    let pendingScreen = try await text(h.window)
+    XCTAssertFalse(pendingScreen.localizedCaseInsensitiveContains("Choose a workspace"))
     attach(h.window, name: "Latest membership response still pending")
     await h.fixture.memberships.releaseAll()
     await foreground.value
@@ -38,7 +39,8 @@ final class AuthenticationStartupTests: XCTestCase {
     await hostingPresentationFrame()
     XCTAssertNotNil(startup(in: h.view))
     XCTAssertNil(composer(in: h.view))
-    XCTAssertFalse(try text(h.window).localizedCaseInsensitiveContains("Choose a workspace"))
+    let pendingScreen = try await text(h.window)
+    XCTAssertFalse(pendingScreen.localizedCaseInsensitiveContains("Choose a workspace"))
     attach(h.window, name: "Single workspace activation still pending")
     await h.fixture.activation.releaseAll()
     await initial.value
@@ -194,9 +196,26 @@ final class AuthenticationStartupTests: XCTestCase {
     let fixture = try AuthenticationHTTPFixture()
     fixture.state.withLock { configure(&$0) }
     let authentication = try await fixture.authentication()
-    let h = try AuthenticationStartupHarness(fixture: fixture, authentication: authentication)
+    let h = try AuthenticationStartupHarness(
+      fixture: fixture, authentication: authentication, configuration: configuration())
     addTeardownBlock { await h.close() }
     return h
+  }
+
+  private func configuration() throws -> AppConfiguration {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "startup-configuration-\(UUID().uuidString).bundle", isDirectory: true)
+    addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let info = [
+      "CFBundleIdentifier": "ai.okou.tests.startup",
+      "CFBundleShortVersionString": "1.0.0",
+      "APIBaseURL": "https://api.example.invalid",
+      "WebBaseURL": "https://app.example.invalid",
+    ]
+    try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+      .write(to: directory.appendingPathComponent("Info.plist"))
+    return try AppConfiguration(bundle: XCTUnwrap(Bundle(url: directory)))
   }
 
   private func assertChat(_ h: AuthenticationStartupHarness) async throws {
@@ -219,16 +238,21 @@ final class AuthenticationStartupTests: XCTestCase {
   private func assertTexts(_ expected: [String], in h: AuthenticationStartupHarness) async throws
     -> String
   {
+    // Let the real startup removal finish before capturing its destination. Vision
+    // must not occupy the main actor while SwiftUI is presenting that transition.
     var observed = ""
-    let matches = { expected.allSatisfy { observed.localizedCaseInsensitiveContains($0) } }
-    // Require the complete screen's content from one frame, then reuse that successful
-    // observation for eventually's final assertion instead of running Vision again.
-    try await eventually(message: "Expected rendered text: \(expected); recognized: \(observed)") {
-      if matches() { return true }
-      observed = (try? self.text(h.window)) ?? ""
-      return matches()
-    }
-    attach(h.window, name: expected.joined(separator: "; "))
+    let deadline = ContinuousClock.now + .seconds(3)
+    repeat {
+      await hostingPresentationFrame()
+      guard startup(in: h.view) == nil else { continue }
+      observed = try await text(h.window)
+      if expected.allSatisfy({ observed.localizedCaseInsensitiveContains($0) }) {
+        attach(h.window, name: expected.joined(separator: "; "))
+        return observed
+      }
+    } while ContinuousClock.now < deadline
+    attach(h.window, name: "Unexpected screen: " + expected.joined(separator: "; "))
+    XCTFail("Expected rendered text: \(expected); recognized: \(observed)")
     return observed
   }
 
@@ -255,14 +279,17 @@ final class AuthenticationStartupTests: XCTestCase {
     }
   }
 
-  private func text(_ window: UIWindow) throws -> String {
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.recognitionLanguages = ["en-US"]
-    try VNImageRequestHandler(cgImage: try XCTUnwrap(image(window).cgImage)).perform([request])
-    // OCR line breaks follow rendered wrapping, which varies across simulator runtimes.
-    return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-      .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+  private func text(_ window: UIWindow) async throws -> String {
+    let captured = try XCTUnwrap(image(window).cgImage)
+    return try await Task.detached {
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .accurate
+      request.recognitionLanguages = ["en-US"]
+      try VNImageRequestHandler(cgImage: captured).perform([request])
+      // OCR line breaks follow rendered wrapping, which varies across simulator runtimes.
+      return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }.value
   }
 
   private func attach(_ window: UIWindow, name: String) {
@@ -294,11 +321,14 @@ private final class AuthenticationStartupHarness {
   private var tasks: [Task<Void, Never>] = []
   var view: UIView { host.view }
 
-  init(fixture: AuthenticationHTTPFixture, authentication: AuthenticationService) throws {
+  init(
+    fixture: AuthenticationHTTPFixture, authentication: AuthenticationService,
+    configuration: AppConfiguration
+  ) throws {
     self.fixture = fixture
     self.authentication = authentication
     host = UIHostingController(
-      rootView: AppRootView(authentication: authentication, configuration: try AppConfiguration()))
+      rootView: AppRootView(authentication: authentication, configuration: configuration))
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     window = UIWindow(windowScene: scene)
     window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
