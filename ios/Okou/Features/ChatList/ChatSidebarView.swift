@@ -9,6 +9,18 @@ struct ChatSidebarView: View {
   let close: () -> Void
   let newChat: (String?) -> Void
 
+  private enum ThreadFilter {
+    case recent, unread, archived
+
+    var title: LocalizedStringKey {
+      switch self {
+      case .recent: "Recent"
+      case .unread: "Unread"
+      case .archived: "Archived"
+      }
+    }
+  }
+
   @State private var showArchived = false
   @State private var renamingThread: ChatThread?
   @State private var renameTitle = ""
@@ -19,6 +31,27 @@ struct ChatSidebarView: View {
 
   private var visibleThreads: [ChatThread] {
     store.list.threads(agentID: store.selectedAgentID, archived: showArchived)
+  }
+
+  private var threadFilter: Binding<ThreadFilter> {
+    Binding(
+      get: {
+        store.list.onlyUnread
+          ? .unread : (store.list.canArchiveChats && showArchived ? .archived : .recent)
+      },
+      set: {
+        store.list.onlyUnread = $0 == .unread
+        showArchived = $0 == .archived
+      })
+  }
+
+  private var markAgentReadTitle: LocalizedStringKey {
+    if let name = store.list.agents.first(where: { $0.agentId == store.selectedAgentID })?
+      .displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty
+    {
+      return "Mark all chats for \(name) as read"
+    }
+    return "Mark all as read for this agent"
   }
 
   var body: some View {
@@ -179,9 +212,7 @@ struct ChatSidebarView: View {
 
   private var threadSection: some View {
     Section {
-      scrollingSectionHeading(
-        store.list.onlyUnread
-          ? "Unread" : (store.list.canArchiveChats && showArchived ? "Archived" : "Recent"))
+      threadMenu
       ForEach(visibleThreads) { thread in
         Button {
           store.selectChat(thread.id)
@@ -269,6 +300,48 @@ struct ChatSidebarView: View {
     }
   }
 
+  private var threadMenu: some View {
+    Menu {
+      Picker("Chats", selection: threadFilter) {
+        Text("Recent").tag(ThreadFilter.recent)
+        Text("Unread").tag(ThreadFilter.unread)
+        if store.list.canArchiveChats {
+          Text("Archived").tag(ThreadFilter.archived)
+        }
+      }
+      .pickerStyle(.inline)
+      if let agentID = store.selectedAgentID {
+        Divider()
+        Button(markAgentReadTitle, systemImage: "checkmark.message") {
+          Task { await store.list.markAgentRead(agentID) }
+        }
+        .disabled(
+          store.list.markingAgentRead || !store.list.updatingThreads.isEmpty
+            || !store.list.unreadAgentIDs.contains(agentID))
+      }
+    } label: {
+      HStack(spacing: 5) {
+        Text(threadFilter.wrappedValue.title)
+          .lineLimit(1)
+        Image(systemName: "chevron.down")
+          .font(.caption2.weight(.semibold))
+          .accessibilityHidden(true)
+      }
+      .font(.subheadline.weight(.semibold))
+      .foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Chat list")
+    .accessibilityValue(Text(threadFilter.wrappedValue.title))
+    .accessibilityAddTraits(.isHeader)
+    .accessibilityIdentifier("chat-list-filter")
+    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 0, trailing: 16))
+    .listRowSeparator(.hidden)
+    .listRowBackground(Color.clear)
+  }
+
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {
     Button(
       read ? "Mark as read" : "Mark as unread",
@@ -304,29 +377,6 @@ struct ChatSidebarView: View {
       .accessibilityIdentifier("new-chat")
       Spacer()
       Menu {
-        Button(
-          store.list.onlyUnread ? "Show all chats" : "Show unread chats",
-          systemImage: "line.3.horizontal.decrease"
-        ) {
-          store.list.onlyUnread.toggle()
-          showArchived = false
-        }
-        if let agentID = store.selectedAgentID {
-          Button("Mark all as read for this agent", systemImage: "checkmark.message") {
-            Task { await store.list.markAgentRead(agentID) }
-          }
-          .disabled(
-            store.list.markingAgentRead || !store.list.updatingThreads.isEmpty
-              || !store.list.unreadAgentIDs.contains(agentID))
-        }
-        if store.list.canArchiveChats {
-          Button(
-            showArchived ? "Show recent chats" : "Show archived chats", systemImage: "archivebox"
-          ) {
-            showArchived.toggle()
-            store.list.onlyUnread = false
-          }
-        }
         Link("Open Okou on web", destination: store.webURL)
         Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
           Task {
