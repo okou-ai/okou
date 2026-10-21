@@ -771,7 +771,13 @@ function TailscaleConfigCard({
           })}
         </p>
       )}
-      {compact && <RemoteNetworkFooter id={config.id} kind="tailscale" />}
+      {compact && (
+        <RemoteNetworkFooter
+          id={config.id}
+          name={config.name}
+          kind="tailscale"
+        />
+      )}
     </article>
   );
 }

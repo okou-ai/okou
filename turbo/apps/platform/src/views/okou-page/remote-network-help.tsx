@@ -370,7 +370,7 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
           href={step.href}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-4 py-3 text-xs text-muted-foreground hover:bg-state-hover hover:text-foreground"
+          className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-4 py-3 text-sm text-muted-foreground hover:bg-state-hover hover:text-foreground"
         >
           <span>{step.path}</span>
           <ExternalLink size={14} className="shrink-0" aria-hidden />
@@ -384,7 +384,7 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
                 key={row.label}
                 className="grid grid-cols-2 items-center gap-3 px-4 py-3"
               >
-                <dt className="text-xs text-muted-foreground">{row.label}</dt>
+                <dt className="text-sm text-muted-foreground">{row.label}</dt>
                 <dd className="flex min-w-0 items-center justify-between gap-2">
                   <span className="min-w-0 break-words text-sm">
                     {row.value}
@@ -412,11 +412,11 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
         return <p key={action}>{action}</p>;
       })}
       {step.note && (
-        <p className="text-xs text-muted-foreground">{step.note}</p>
+        <p className="text-sm text-muted-foreground">{step.note}</p>
       )}
       {step.blocker && (
         <details className="group">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md py-1 text-xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md py-1 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <ChevronRight
               size={14}
               className="shrink-0 transition-transform group-open:rotate-90"
@@ -459,7 +459,7 @@ function GuideFooter({ step }: { readonly step: number }) {
       <Button
         type="button"
         variant="quiet"
-        size="sm"
+        className="min-h-10 whitespace-normal text-left"
         onClick={() => {
           if (step > 0) {
             move(-1);
@@ -480,7 +480,7 @@ function GuideFooter({ step }: { readonly step: number }) {
       </Button>
       <Button
         type="button"
-        size="sm"
+        className="min-h-10 whitespace-normal"
         onClick={() => {
           if (lastStep) {
             close(true);
@@ -600,7 +600,7 @@ export function RemoteNetworkCredentialHelp({
                 </span>
               </DialogTitle>
               <DialogDescription
-                className="shrink-0 text-xs tabular-nums"
+                className="shrink-0 text-sm tabular-nums"
                 aria-live="polite"
               >
                 {index + 1} / {REMOTE_NETWORK_GUIDE_STEP_COUNT}

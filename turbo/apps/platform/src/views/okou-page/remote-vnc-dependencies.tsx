@@ -28,7 +28,7 @@ export function RemoteVncDependencies({
   const protective = requiresVncProtectiveRoute(editor.profile);
   return (
     <div className="grid gap-3">
-      {protective && (
+      {protective && editor.transport === "ssh" && (
         <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.sshDependency;

@@ -32,6 +32,8 @@ import {
   isVncReviewableConflict,
   vncSaveMessage$,
   vncSaveUncertain$,
+  vncAuthMethodForProfile,
+  requiresVncProtectiveRoute,
   type VncDialogState,
 } from "../../signals/vnc.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -42,6 +44,7 @@ import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { scopedTailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerberos";
 import { VncConflictReview } from "./vnc-conflict-review.tsx";
+import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
 import {
   VncCredentialFields,
   VncCredentialImpact,
@@ -507,6 +510,83 @@ function VncFormBoundary({
   );
 }
 
+function VncSetupReview() {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const ssh = useLoadable(sshConnections$);
+  const access = useLoadable(cloudflareAccessConfigs$);
+  const tailscale = useLoadable(scopedTailscaleConfigs$);
+  const networks = editor.transport === "tailscale" ? tailscale : access;
+  const network =
+    networks.state === "hasData"
+      ? networks.data?.find((config) => {
+          return config.id === editor.networkConfigId;
+        })
+      : undefined;
+  const sshConnection =
+    ssh.state === "hasData"
+      ? ssh.data?.find((connection) => {
+          return connection.id === editor.sshConnectionId;
+        })
+      : undefined;
+  const route = t(($) => {
+    return editor.transport === "ssh"
+      ? $.vnc.transport.ssh
+      : editor.transport === "tailscale"
+        ? $.tailscale.title
+        : editor.transport === "cloudflare_access"
+          ? $.cloudflareAccess.title
+          : $.remoteControlSetup.direct;
+  });
+  return (
+    <div className="grid gap-4">
+      <dl className="grid gap-4 rounded-xl bg-gray-50 p-4 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
+        <dt className="text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.connectionMethod;
+          })}
+        </dt>
+        <dd className="break-words">
+          {route}
+          {editor.transport === "ssh" && sshConnection
+            ? ` · ${sshConnection.displayName}`
+            : network &&
+                (editor.transport === "tailscale" ||
+                  editor.transport === "cloudflare_access")
+              ? ` · ${network.name}`
+              : ""}
+        </dd>
+        <dt className="text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.deviceAddress;
+          })}
+        </dt>
+        <dd className="break-all font-mono">
+          {editor.transport === "ssh" &&
+          requiresVncProtectiveRoute(editor.profile)
+            ? editor.loopbackHost
+            : editor.destinationHost}
+        </dd>
+        <dt className="text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.vncLoginMethod;
+          })}
+        </dt>
+        <dd>
+          <VncAuthenticationLabel
+            method={vncAuthMethodForProfile(editor.profile)}
+          />
+        </dd>
+      </dl>
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {t(($) => {
+          return $.remoteControlSetup.entryPermission;
+        })}
+      </p>
+    </div>
+  );
+}
+
 function VncHostFields({
   dialog,
   inline,
@@ -589,6 +669,7 @@ function VncHostFields({
         </div>
         <div data-remote-vnc-step="trust" hidden={guided && step !== "trust"}>
           <div className="grid gap-4">
+            {guided && <VncSetupReview />}
             {guided && (
               <p className="text-sm text-muted-foreground">
                 {t(($) => {

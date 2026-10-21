@@ -15,6 +15,7 @@ import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   LockKeyhole,
+  Laptop,
   Network,
   Cloud,
   Plus,
@@ -89,10 +90,10 @@ function RemoteDirectoryGroup({
         >
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
             <h3 className="text-sm font-semibold">{title}</h3>
-            <p className="text-xs text-muted-foreground">{description}</p>
+            <p className="text-sm text-muted-foreground">{description}</p>
           </div>
           {empty && (
-            <span className="shrink-0 text-xs text-muted-foreground">
+            <span className="shrink-0 text-sm text-muted-foreground">
               {t(($) => {
                 return $.remoteNetworkScope.notAdded;
               })}
@@ -128,7 +129,7 @@ function RemoteVncConnectionRow({
         </span>
         <span className="grid min-w-0 flex-1 gap-1">
           <strong className="truncate text-sm">{connection.displayName}</strong>
-          <span className="break-all text-xs text-muted-foreground">
+          <span className="break-all text-sm text-muted-foreground">
             {t(($) => {
               return $.vnc.label;
             })}{" "}
@@ -171,16 +172,14 @@ function RemoteConnectionRows({
   sshRows,
   vncRows,
   networkLabel,
-  empty,
 }: {
   readonly sshRows: readonly SshConnectionResponse[] | null;
   readonly vncRows: readonly VncConnectionResponse[] | null;
   readonly networkLabel: (type: string, id: string | undefined) => string;
-  readonly empty: boolean;
 }) {
   const { t } = useTranslation();
   const params = useGet(searchParams$);
-  if (!empty && !sshRows?.length && !vncRows?.length) {
+  if (!sshRows?.length && !vncRows?.length) {
     return null;
   }
   return (
@@ -191,7 +190,7 @@ function RemoteConnectionRows({
       description={t(($) => {
         return $.remoteNetworkScope.personalGroupHelp;
       })}
-      empty={empty}
+      empty={false}
     >
       <ul className="divide-y divide-divider">
         {sshRows?.map((connection) => {
@@ -216,7 +215,7 @@ function RemoteConnectionRows({
                     <strong className="truncate text-sm">
                       {connection.displayName}
                     </strong>
-                    <span className="break-all text-xs text-muted-foreground">
+                    <span className="break-all text-sm text-muted-foreground">
                       {t(($) => {
                         return $.ssh.label;
                       })}{" "}
@@ -261,6 +260,47 @@ function RemoteConnectionRows({
         })}
       </ul>
     </RemoteDirectoryGroup>
+  );
+}
+function RemoteConnectionEmptyState({
+  vncEnabled,
+}: {
+  readonly vncEnabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const start = useSet(enterRemoteSetup$);
+  return (
+    <Card className="flex flex-col items-center gap-5 rounded-3xl border-divider px-6 py-10 text-center sm:py-12">
+      <span className="flex size-12 items-center justify-center rounded-2xl bg-muted">
+        <Laptop size={24} aria-hidden />
+      </span>
+      <div className="grid gap-3">
+        <h3 className="text-base font-semibold">
+          {t(($) => {
+            return $.remoteControlSetup.emptyTitle;
+          })}
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return vncEnabled
+              ? $.remoteControlSetup.emptyDescription
+              : $.remoteControlSetup.emptyDescriptionSsh;
+          })}
+        </p>
+      </div>
+      <Button
+        type="button"
+        className={REMOTE_PAGE_ACTION}
+        onClick={() => {
+          start();
+        }}
+      >
+        <Plus size={16} aria-hidden />
+        {t(($) => {
+          return $.remoteControlSetup.addFirstDevice;
+        })}
+      </Button>
+    </Card>
   );
 }
 function RemoteConnectionList({
@@ -327,12 +367,15 @@ function RemoteConnectionList({
           })}
         </p>
       )}
-      <RemoteConnectionRows
-        sshRows={sshRows}
-        vncRows={vncRows}
-        networkLabel={networkLabel}
-        empty={empty}
-      />
+      {empty ? (
+        <RemoteConnectionEmptyState vncEnabled={vncEnabled} />
+      ) : (
+        <RemoteConnectionRows
+          sshRows={sshRows}
+          vncRows={vncRows}
+          networkLabel={networkLabel}
+        />
+      )}
     </div>
   );
 }
@@ -375,7 +418,7 @@ export function GuidedRemoteControlPanel({
         </Button>
       </header>
       <RemoteConnectionList vncEnabled={vncEnabled} />
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <LockKeyhole size={14} aria-hidden />
         {t(($) => {
           return $.remoteControlSetup.entryPermission;
@@ -465,7 +508,7 @@ function PrivateNetworkGroupRows({
               >
                 {config.name}
               </Link>
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
                 <span>{label}</span>
                 <span aria-hidden>·</span>
                 <Button
@@ -474,7 +517,7 @@ function PrivateNetworkGroupRows({
                     updateParams(connectionParams);
                   }}
                   aria-label={`${config.name} · ${countLabel}`}
-                  className="h-auto p-0 text-xs font-normal text-muted-foreground gap-1 hover:text-foreground"
+                  className="h-auto p-0 text-sm font-normal text-muted-foreground gap-1 hover:text-foreground"
                 >
                   {countLabel}
                   <ChevronRight size={14} aria-hidden />
@@ -617,6 +660,11 @@ export function GuidedPrivateNetworkPanel() {
               return $.remoteControlSetup.networkTitle;
             })}
           </h2>
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.networkDescription;
+            })}
+          </p>
         </div>
         <Button
           className={REMOTE_PAGE_ACTION}

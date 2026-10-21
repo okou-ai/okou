@@ -11,6 +11,7 @@ import {
   remoteSetup$,
   leaveRemoteSetup$,
   remoteControlGuidedEnabled$,
+  type RemoteSetup,
 } from "../../signals/remote-control-setup.ts";
 import { RemoteDetailPage } from "./remote-detail-page.tsx";
 import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
@@ -1349,6 +1350,15 @@ function ManagedConnectorAccessDialog() {
   );
 }
 
+function isRemoteSetupDetailPage(
+  setup: RemoteSetup | null,
+): setup is RemoteSetup {
+  // Network-origin flows keep their form owner mounted when returning to entry.
+  return (
+    setup !== null && (setup.step !== "entry" || setup.sourceNetwork !== null)
+  );
+}
+
 export function ConnectorsPage() {
   const { t } = useTranslation();
   const remoteSetup = useGet(remoteSetup$);
@@ -1580,9 +1590,10 @@ export function ConnectorsPage() {
   if (remoteResource && !remoteSetup) {
     return <RemoteResourcePage />;
   }
-  if (remoteSetup && remoteSetup.step !== "entry") {
+  if (isRemoteSetupDetailPage(remoteSetup)) {
     return (
       <RemoteDetailPage
+        network={remoteSetup.sourceNetwork !== null}
         title={t(($) => {
           return remoteSetup.protocol === "ssh"
             ? $.remoteControlSetup.sshSetup

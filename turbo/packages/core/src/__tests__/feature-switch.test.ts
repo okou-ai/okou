@@ -559,3 +559,84 @@ describe("overrides", () => {
     ).toBe(true);
   });
 });
+
+describe("remote UI rollout", () => {
+  it.each([
+    "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+    "user_3G9pYGWE2oaAQAUfb8wIwcLxwiy",
+  ])("enables remote setup for Bingjie's verified identity %s", (userId) => {
+    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
+    for (const orgId of [
+      undefined,
+      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      "external-org",
+    ]) {
+      expect(isFeatureEnabled(key, { userId, orgId })).toBe(true);
+      expect(getAllFeatureStates({ userId, orgId })[key]).toBe(true);
+      expect(isFeatureSwitchAvailable(key, { userId, orgId })).toBe(true);
+      expect(
+        getAllFeatureStates({ userId, orgId, overrides: { [key]: false } })[
+          key
+        ],
+      ).toBe(false);
+    }
+  });
+
+  it("keeps remote setup unavailable outside the verified identity allowlist", () => {
+    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
+    for (const context of [
+      {},
+      { email: "bingjie@okou.ai" },
+      { email: "bingjie@vm0.ai" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      {
+        userId: "staff-colleague",
+        email: "ethan@okou.ai",
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      },
+      { userId: "external-user", orgId: "external-org" },
+    ]) {
+      expect(isFeatureEnabled(key, context)).toBe(false);
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureSwitchAvailable(key, context)).toBe(false);
+      const overridden = { ...context, overrides: { [key]: true } };
+      expect(isFeatureEnabled(key, overridden)).toBe(false);
+      expect(getAllFeatureStates(overridden)[key]).toBe(false);
+    }
+  });
+
+  it("keeps remote UI, VNC, and Tailscale switch values independent", () => {
+    const ui = FeatureSwitchKey.RemoteControlGuidedSetup;
+    const vnc = FeatureSwitchKey.VncAccess;
+    const tailscale = FeatureSwitchKey.TailscaleAccess;
+    for (const uiEnabled of [false, true]) {
+      for (const vncEnabled of [false, true]) {
+        for (const tailscaleEnabled of [false, true]) {
+          const context = {
+            userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+            overrides: {
+              [ui]: uiEnabled,
+              [vnc]: vncEnabled,
+              [tailscale]: tailscaleEnabled,
+            },
+          };
+          const actual = getAllFeatureStates(context);
+          for (const [key, expected] of Object.entries(context.overrides)) {
+            expect(actual[key as FeatureSwitchKey]).toBe(expected);
+            expect(isFeatureEnabled(key as FeatureSwitchKey, context)).toBe(
+              expected,
+            );
+          }
+          const withoutUi = getAllFeatureStates({
+            ...context,
+            overrides: { ...context.overrides, [ui]: !uiEnabled },
+          });
+          expect({ ...actual, [ui]: undefined }).toEqual({
+            ...withoutUi,
+            [ui]: undefined,
+          });
+        }
+      }
+    }
+  });
+});

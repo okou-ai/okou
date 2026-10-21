@@ -1299,7 +1299,13 @@ function CloudflareConfigCard({
           })}
         </p>
       )}
-      {compact && <RemoteNetworkFooter id={config.id} kind="cloudflare" />}
+      {compact && (
+        <RemoteNetworkFooter
+          id={config.id}
+          name={config.name}
+          kind="cloudflare"
+        />
+      )}
     </article>
   );
 }

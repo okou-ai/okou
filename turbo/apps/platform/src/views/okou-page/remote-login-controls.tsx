@@ -44,7 +44,7 @@ export function RemoteLoginPicker({
       <Button
         type="button"
         variant="quiet"
-        className="h-auto justify-self-start px-0 text-xs"
+        className="h-auto justify-self-start px-0 text-sm"
         disabled={disabled}
         onClick={() => {
           setOpen(protocol);
@@ -89,7 +89,7 @@ export function RemoteLoginPicker({
                   <KeyRound size={18} aria-hidden />
                   <span className="grid min-w-0 flex-1 gap-1">
                     <span>{item.label}</span>
-                    <span className="text-xs font-normal text-muted-foreground">
+                    <span className="text-sm font-normal text-muted-foreground">
                       {item.description}
                     </span>
                   </span>

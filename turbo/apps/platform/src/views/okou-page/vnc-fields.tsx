@@ -1,4 +1,5 @@
 import { Info } from "lucide-react";
+import type { ReactNode } from "react";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
@@ -10,7 +11,6 @@ import {
 import {
   remoteControlGuidedEnabled$,
   remoteSetup$,
-  chooseRemoteVncProfile$,
 } from "../../signals/remote-control-setup.ts";
 import { RemoteUsernameHelp } from "./remote-editor-frame.tsx";
 import { RemoteAddressHelp, VncPasswordHelp } from "./remote-field-help.tsx";
@@ -317,7 +317,7 @@ function VncPortSettings({
   }
   return (
     <details className="border-t border-divider pt-4">
-      <summary className="cursor-pointer text-sm text-muted-foreground">
+      <summary className="cursor-pointer text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {t(($) => {
           return $.remoteControlSetup.more;
         })}
@@ -659,7 +659,7 @@ function VncProfileGuidance({ profile }: { readonly profile: VncProfile }) {
         <p>{description}</p>
       </div>
       <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer rounded-md py-1 text-[13px] text-muted-foreground hover:text-foreground">
+        <summary className="cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t(($) => {
             return $.remoteConnectionHelp.loginDifferences;
           })}
@@ -690,7 +690,7 @@ function VncProfileGuidance({ profile }: { readonly profile: VncProfile }) {
         </div>
       </details>
       <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer rounded-md py-1 text-[13px] text-muted-foreground hover:text-foreground">
+        <summary className="cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t(($) => {
             return $.remoteConnectionHelp.technicalDetails;
           })}
@@ -741,7 +741,7 @@ export function VncSecurityProfileField({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const chooseProfile = useSet(chooseRemoteVncProfile$);
+  const chooseProfile = useSet(chooseVncProfile$);
   const allItems = useVncSecurityProfileItems();
   const guided = useGet(remoteControlGuidedEnabled$);
   const group = profileGroup(profile);
@@ -765,11 +765,19 @@ export function VncSecurityProfileField({
             value={group}
             disabled={disabled}
             onValueChange={(value) => {
-              const first = allItems.find((item) => {
-                return profileGroup(item.value) === value;
-              });
-              if (first) {
-                chooseProfile(first.value);
+              const defaultProfile = {
+                apple: "apple_dh",
+                certificate: "x509_vnc",
+                rsa: "rsa_aes_ra2",
+                company: "qemu_x509_sasl",
+              } satisfies Record<string, VncProfile>;
+              if (
+                value === "apple" ||
+                value === "certificate" ||
+                value === "rsa" ||
+                value === "company"
+              ) {
+                chooseProfile(defaultProfile[value]);
               }
             }}
           >
@@ -972,20 +980,6 @@ export function VncTransportFields({
 }) {
   const profile = useGet(vncProfile$);
   const transport = useGet(vncTransport$);
-  const setup = useGet(remoteSetup$);
-  const { t } = useTranslation();
-  if (setup?.protocol === "vnc" && requiresVncProtectiveRoute(profile)) {
-    return (
-      <div className="grid gap-4">
-        <p className="text-sm">
-          {t(($) => {
-            return $.vnc.transport.ssh;
-          })}
-        </p>
-        <VncSshConnectionFields disabled={disabled} />
-      </div>
-    );
-  }
   return (
     <div className="grid min-w-0 gap-4">
       <VncNetworkFields
@@ -1499,6 +1493,36 @@ function VncClientCertificateInputs({
   );
 }
 
+function VncCredentialFormatHelp({
+  id,
+  technical = true,
+  children,
+}: {
+  readonly id: string;
+  readonly technical?: boolean;
+  readonly children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const content = (
+    <p id={id} className="text-muted-foreground">
+      {children}
+    </p>
+  );
+  return guided && technical ? (
+    <details className="text-sm">
+      <summary className="cursor-pointer text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {t(($) => {
+          return $.remoteConnectionHelp.fieldRequirements;
+        })}
+      </summary>
+      <div className="pt-2">{content}</div>
+    </details>
+  ) : (
+    content
+  );
+}
+
 function VncPasswordInput({
   method,
   optional = false,
@@ -1569,7 +1593,7 @@ function VncPasswordInput({
                 })
         }
       />
-      <p id="vnc-password-help" className="text-muted-foreground">
+      <VncCredentialFormatHelp id="vnc-password-help" technical={!classic}>
         {rsa
           ? t(($) => {
               return $.vnc.rsaAes.fieldHelp;
@@ -1591,7 +1615,7 @@ function VncPasswordInput({
                 : t(($) => {
                     return $.vnc.credential.usernamePasswordHelp;
                   })}
-      </p>
+      </VncCredentialFormatHelp>
     </div>
   );
 }
@@ -1660,7 +1684,7 @@ function VncAuthenticationInputs({
                 return $.vnc.credential.usernameHint;
               })}
             />
-            <p id="vnc-username-help" className="text-muted-foreground">
+            <VncCredentialFormatHelp id="vnc-username-help">
               {method === "rsa_aes_username_password"
                 ? t(($) => {
                     return $.vnc.rsaAes.fieldHelp;
@@ -1680,7 +1704,7 @@ function VncAuthenticationInputs({
                       : t(($) => {
                           return $.vnc.credential.usernameHelp;
                         })}
-            </p>
+            </VncCredentialFormatHelp>
           </div>
         )}
       {method !== "client_certificate" && (
@@ -1751,7 +1775,7 @@ export function VncCredentialFields({
       )}
       {credential && <VncAuthenticationMethod method={method} />}
       {connectionLogin && credential && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.keepSavedLoginHelp;
           })}

@@ -52,7 +52,7 @@ export function NetworkProviderPicker({
                 return $.tailscale.title;
               })}
             </span>
-            <span className="text-xs font-normal text-muted-foreground">
+            <span className="text-sm font-normal text-muted-foreground">
               {t(($) => {
                 return $.remoteControlSetup.networkTailscaleHelp;
               })}
@@ -78,7 +78,7 @@ export function NetworkProviderPicker({
               return $.cloudflareAccess.title;
             })}
           </span>
-          <span className="text-xs font-normal text-muted-foreground">
+          <span className="text-sm font-normal text-muted-foreground">
             {t(($) => {
               return $.remoteControlSetup.networkCloudflareHelp;
             })}

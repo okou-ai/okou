@@ -98,8 +98,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Set up and manage remote connections and private networks step by step.",
     enabled: false,
-    // The same verified product account used by PresentationConvert. No org rollout.
-    enabledUserHashes: ["032a75d8"],
+    // Bingjie's verified production and development accounts. No email or org rollout.
+    enabledUserHashes: ["032a75d8", "35679123"],
     restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ChatResourcePanel]: {

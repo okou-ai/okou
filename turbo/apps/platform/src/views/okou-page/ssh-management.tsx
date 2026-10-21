@@ -41,6 +41,7 @@ import {
 import {
   remoteSetup$,
   remoteControlGuidedEnabled$,
+  updateRemoteSetup$,
 } from "../../signals/remote-control-setup.ts";
 import {
   RemoteEditorFrame,
@@ -208,6 +209,8 @@ function GuidedSshEndpointFields({
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshConnectionModeEditor$);
+  const setup = useGet(remoteSetup$);
+  const updateSetup = useSet(updateRemoteSetup$);
   return (
     <div className="grid gap-4">
       <div className="grid gap-2">
@@ -222,7 +225,10 @@ function GuidedSshEndpointFields({
         <Input
           id="guided-ssh-host"
           name="host"
-          defaultValue={initialHost}
+          value={setup?.address ?? initialHost ?? ""}
+          onChange={(event) => {
+            updateSetup({ address: event.currentTarget.value });
+          }}
           required
           pattern=".*\S.*"
           maxLength={SSH_HOST_MAX_LENGTH}

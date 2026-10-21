@@ -18,7 +18,7 @@ import { useGet } from "ccstate-react";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 
 export const REMOTE_PAGE_ACTION =
-  "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed";
+  "min-h-10 bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed";
 
 export function RemoteEditorFrame({
   inline,
@@ -39,9 +39,11 @@ export function RemoteEditorFrame({
     return (
       <Card surface="composer" className="grid gap-6 p-5 text-sm sm:p-6">
         <header className="grid gap-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+          <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
           {description && (
-            <p className="text-sm text-muted-foreground">{description}</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {description}
+            </p>
           )}
         </header>
         {children}

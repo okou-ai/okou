@@ -4,13 +4,10 @@ import { useTranslation } from "react-i18next";
 import { Laptop, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
+import { searchParams$ } from "../../signals/route.ts";
 import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
 import { Link } from "../router/link.tsx";
-import {
-  enterRemoteSetup$,
-  updateRemoteSetup$,
-} from "../../signals/remote-control-setup.ts";
+import { enterRemoteSetup$ } from "../../signals/remote-control-setup.ts";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
 export function RemoteNetworkSummary({
   config,
@@ -35,7 +32,7 @@ export function RemoteNetworkSummary({
             })}
           </p>
         </div>
-        <span className="rounded-md border border-divider px-2 py-1 text-xs text-muted-foreground">
+        <span className="rounded-md border border-divider px-2 py-1 text-sm text-muted-foreground">
           {t(($) => {
             return config.scope === "personal"
               ? $.cloudflareAccess.personal
@@ -126,7 +123,7 @@ export function RemoteNetworkConnections({
             </span>
             <span className="grid min-w-0 flex-1 gap-1">
               <span className="truncate text-sm">{host.displayName}</span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-sm text-muted-foreground">
                 {host.protocol.toUpperCase()}
               </span>
             </span>
@@ -139,30 +136,24 @@ export function RemoteNetworkConnections({
 }
 export function RemoteNetworkFooter({
   id,
+  name,
   kind,
 }: {
   readonly id: string;
+  readonly name: string;
   readonly kind: "tailscale" | "cloudflare";
 }) {
   const { t } = useTranslation();
-  const params = useGet(searchParams$);
-  const navigate = useSet(updateSearchParams$);
   const enter = useSet(enterRemoteSetup$);
-  const update = useSet(updateRemoteSetup$);
   return (
     <footer className="flex flex-wrap items-center justify-end gap-4 border-t border-divider pt-5">
       <Button
         className={REMOTE_PAGE_ACTION}
         onClick={() => {
-          const next = new URLSearchParams(params);
-          next.delete("remoteResource");
-          next.set("scope", "remote-control");
-          navigate(next);
-          enter("ssh");
-          update({
-            networkId: id,
+          enter("ssh", {
+            id,
+            name,
             route: kind === "tailscale" ? "tailscale" : "cloudflare_access",
-            step: kind === "tailscale" ? "address" : "cf-address",
           });
         }}
       >

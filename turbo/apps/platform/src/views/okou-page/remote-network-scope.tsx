@@ -126,7 +126,7 @@ export function RemoteNetworkScopeField({
                       : $.remoteNetworkScope.members;
                   })}
                 </strong>
-                <span className="text-xs leading-5 text-muted-foreground">
+                <span className="text-sm leading-5 text-muted-foreground">
                   {t(
                     ($) => {
                       return value === "personal"
@@ -142,7 +142,7 @@ export function RemoteNetworkScopeField({
         })}
       </RadioGroup>
       {(!isAdmin || scope === "organization") && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {t(($) => {
             return !isAdmin
               ? $.remoteNetworkScope.adminRule
@@ -187,7 +187,7 @@ export function RemoteNetworkAccessSummary({
                 return $.remoteNetworkScope.onlyMe;
               })}
         </strong>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {t(($) => {
             return canManage
               ? $.remoteNetworkScope.canManage
@@ -292,7 +292,7 @@ function ScopeImpactContent({
       {needsAck && preview && (
         <>
           <PrivateNetworkAffectedMembers preview={preview} />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {t(($) => {
               return $.remoteNetworkScope.impactVisibility;
             })}

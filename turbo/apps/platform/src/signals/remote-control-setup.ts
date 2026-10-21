@@ -18,6 +18,7 @@ import {
   openSshDialog$,
   saveSsh$,
   sshDialog$,
+  sshConnectionModeEditor$,
 } from "./ssh.ts";
 import {
   closeVncDialog$,
@@ -25,10 +26,8 @@ import {
   saveVnc$,
   vncDialog$,
   vncEnabled$,
-  chooseVncProfile$,
   chooseVncTransport$,
-  vncEditor$,
-  requiresVncProtectiveRoute,
+  chooseVncNetworkConfig$,
 } from "./vnc.ts";
 import {
   closeTailscaleDialog$,
@@ -54,7 +53,6 @@ export type RemoteSetupStep =
   | "rule"
   | "oauth"
   | "prepare"
-  | "os"
   | "service"
   | "cf-address"
   | "cf-access"
@@ -64,6 +62,11 @@ export type RemoteSetupStep =
 export type RemoteSetupRoute = "direct" | "tailscale" | "cloudflare_access";
 export type RemoteSetupOs = "mac" | "windows" | "linux";
 export type RemoteVncStep = "profile" | "connection" | "login" | "trust";
+export interface RemoteSetupNetwork {
+  readonly id: string;
+  readonly name: string;
+  readonly route: "tailscale" | "cloudflare_access";
+}
 export interface RemoteSetup {
   readonly sessionKey: string;
   readonly flowId: number;
@@ -75,6 +78,7 @@ export interface RemoteSetup {
   readonly address: string;
   readonly port: string;
   readonly networkId: string;
+  readonly sourceNetwork: RemoteSetupNetwork | null;
   readonly tailscaleTags: string;
   readonly formStarted: boolean;
   readonly savedName: string;
@@ -94,6 +98,7 @@ function initialSetup(
   sessionKey: string,
   protocol: "ssh" | "vnc",
   flowId: number,
+  sourceNetwork: RemoteSetupNetwork | null = null,
 ): RemoteSetup {
   return {
     sessionKey,
@@ -101,11 +106,12 @@ function initialSetup(
     protocol,
     entryMode: "guided",
     step: "entry",
-    route: "direct",
+    route: sourceNetwork?.route ?? "direct",
     os: "mac",
     address: "",
     port: protocol === "ssh" ? "22" : "5900",
-    networkId: "",
+    networkId: sourceNetwork?.id ?? "",
+    sourceNetwork,
     tailscaleTags: "tag:okou",
     formStarted: false,
     savedName: "",
@@ -154,6 +160,7 @@ export const resetRemoteSetup$ = command(({ get, set }) => {
   });
 });
 export const leaveRemoteSetup$ = command(({ get, set }) => {
+  const sourceNetwork = get(remoteSetup$)?.sourceNetwork;
   set(resetSetupOperation$);
   set(setup$, null);
   set(flowSequence$, (value) => {
@@ -165,20 +172,57 @@ export const leaveRemoteSetup$ = command(({ get, set }) => {
   set(closeCloudflareAccessDialog$);
   const params = new URLSearchParams(get(searchParams$));
   params.delete("setup");
+  if (sourceNetwork) {
+    params.set("scope", "private-network");
+    params.set(
+      "remoteResource",
+      `${sourceNetwork.route === "tailscale" ? "tailscale" : "cloudflare"}:${sourceNetwork.id}`,
+    );
+  }
   set(updateSearchParams$, params);
 });
 export const enterRemoteSetup$ = command(
-  ({ get, set }, protocol: "ssh" | "vnc" = "ssh") => {
+  (
+    { get, set },
+    protocol: "ssh" | "vnc" = "ssh",
+    sourceNetwork: RemoteSetupNetwork | null = null,
+  ) => {
     const sessionKey = get(authenticatedSessionKey$);
+    const selectedProtocol =
+      sourceNetwork?.route === "tailscale" && !get(tailscaleEnabled$)
+        ? "vnc"
+        : protocol;
     if (
       !sessionKey ||
       !get(remoteControlGuidedEnabled$) ||
-      (protocol === "vnc" && !get(vncEnabled$))
+      (selectedProtocol === "vnc" && !get(vncEnabled$))
     ) {
       return;
     }
-    set(leaveRemoteSetup$);
-    set(setup$, initialSetup(sessionKey, protocol, get(flowSequence$)));
+    set(resetRemoteSetup$);
+    const params = new URLSearchParams(get(searchParams$));
+    params.delete("setup");
+    params.delete("remoteResource");
+    params.delete("networkConnections");
+    params.set("scope", "remote-control");
+    set(updateSearchParams$, params);
+    set(
+      setup$,
+      initialSetup(
+        sessionKey,
+        selectedProtocol,
+        get(flowSequence$),
+        sourceNetwork,
+      ),
+    );
+  },
+);
+export const chooseRemoteProtocol$ = command(
+  ({ get, set }, protocol: "ssh" | "vnc") => {
+    const current = get(remoteSetup$);
+    if (current && current.protocol !== protocol) {
+      set(enterRemoteSetup$, protocol, current.sourceNetwork);
+    }
   },
 );
 export const updateRemoteSetup$ = command(
@@ -189,17 +233,81 @@ export const updateRemoteSetup$ = command(
     }
   },
 );
-export const chooseRemoteVncProfile$ = command(
-  ({ get, set }, profile: string | null) => {
-    set(chooseVncProfile$, profile);
+const PREVIOUS_STEP: Readonly<
+  Partial<Record<RemoteSetupStep, RemoteSetupStep>>
+> = {
+  existing: "entry",
+  install: "entry",
+  address: "install",
+  tag: "address",
+  rule: "tag",
+  oauth: "rule",
+  prepare: "address",
+  service: "entry",
+  "cf-address": "existing",
+  "cf-access": "cf-address",
+  "cf-credentials": "cf-access",
+};
+function previousRemoteSetupStep(current: RemoteSetup): RemoteSetupStep {
+  if (current.step !== "login") {
     if (
-      get(remoteSetup$)?.protocol === "vnc" &&
-      requiresVncProtectiveRoute(get(vncEditor$).profile)
+      current.sourceNetwork &&
+      (current.step === "address" || current.step === "cf-address")
     ) {
-      set(chooseVncTransport$, "ssh");
+      return "entry";
     }
-  },
-);
+    return PREVIOUS_STEP[current.step] ?? "entry";
+  }
+  if (current.protocol === "vnc") {
+    return current.entryMode === "existing" ? "entry" : "service";
+  }
+  if (current.sourceNetwork && current.entryMode === "existing") {
+    return "entry";
+  }
+  if (current.route === "cloudflare_access") {
+    return current.sourceNetwork ? "cf-address" : "cf-access";
+  }
+  return current.route === "direct" || current.entryMode === "existing"
+    ? "existing"
+    : "prepare";
+}
+export const goBackRemoteSetup$ = command(({ get, set }) => {
+  const current = get(remoteSetup$);
+  if (!current) {
+    return;
+  }
+  if (current.step === "entry" || current.step === "saved") {
+    set(leaveRemoteSetup$);
+    return;
+  }
+  if (
+    current.step === "login" &&
+    current.protocol === "vnc" &&
+    current.vncStep !== "profile"
+  ) {
+    set(updateRemoteSetup$, {
+      vncStep:
+        current.vncStep === "trust"
+          ? "login"
+          : current.vncStep === "login"
+            ? "connection"
+            : "profile",
+    });
+    return;
+  }
+  if (current.step === "login" && current.protocol === "ssh") {
+    const editor = get(sshConnectionModeEditor$);
+    set(updateRemoteSetup$, {
+      networkId:
+        current.route === "cloudflare_access"
+          ? (editor.configId ?? "")
+          : current.route === "tailscale"
+            ? (editor.tailscaleConfigId ?? "")
+            : current.networkId,
+    });
+  }
+  set(updateRemoteSetup$, { step: previousRemoteSetupStep(current) });
+});
 export const beginRemoteGuide$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const current = get(remoteSetup$);
@@ -208,7 +316,13 @@ export const beginRemoteGuide$ = command(
     }
     set(updateRemoteSetup$, { entryMode: "guided" });
     if (current.protocol === "vnc") {
-      set(updateRemoteSetup$, { step: "os" });
+      set(updateRemoteSetup$, { step: "service" });
+      return;
+    }
+    if (current.sourceNetwork) {
+      set(updateRemoteSetup$, {
+        step: current.route === "tailscale" ? "address" : "cf-address",
+      });
       return;
     }
     if (!get(tailscaleEnabled$)) {
@@ -247,6 +361,8 @@ export const openRemoteLogin$ = command(
     if (current.formStarted) {
       if (current.protocol === "ssh" && current.route === "cloudflare_access") {
         set(chooseSshAccessConfig$, current.networkId);
+      } else if (current.protocol === "ssh" && current.route === "tailscale") {
+        set(chooseSshTailscaleConfig$, current.networkId);
       }
       set(updateRemoteSetup$, { step: "login" });
       return;
@@ -274,6 +390,10 @@ export const openRemoteLogin$ = command(
         throw new Error("VNC settings are unavailable");
       }
       signal.throwIfAborted();
+      if (current.sourceNetwork) {
+        set(chooseVncTransport$, current.sourceNetwork.route);
+        set(chooseVncNetworkConfig$, "rfb", current.networkId);
+      }
     }
     if (
       get(remoteSetup$)?.sessionKey === current.sessionKey &&
@@ -290,7 +410,7 @@ export const openExistingRemoteSetup$ = command(
       return;
     }
     set(updateRemoteSetup$, { entryMode: "existing" });
-    if (current.protocol === "vnc") {
+    if (current.protocol === "vnc" || current.sourceNetwork) {
       await set(openRemoteLogin$, signal);
       signal.throwIfAborted();
     } else {
