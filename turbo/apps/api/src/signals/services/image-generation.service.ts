@@ -1671,44 +1671,52 @@ const OPENAI_IMAGE_USER_ERROR_TYPE = "image_generation_user_error";
 
 // Provider strings can echo private request data. Only exact public error
 // identifiers are retained; missing and unrecognized values stay distinct.
+const openAiImageErrorTypeSchema = z.enum([
+  OPENAI_IMAGE_USER_ERROR_TYPE,
+  "invalid_request_error",
+  "authentication_error",
+  "permission_error",
+  "rate_limit_error",
+  "insufficient_quota",
+  "server_error",
+  "service_unavailable_error",
+]);
+
+const openAiImageErrorCodeSchema = z.enum([
+  "invalid_image_file",
+  "moderation_blocked",
+  "content_policy_violation",
+  "invalid_api_key",
+  "invalid_value",
+  "missing_required_parameter",
+  "model_not_found",
+  "unsupported_parameter",
+  "rate_limit_exceeded",
+  "insufficient_quota",
+  "credit_balance_exhausted",
+  "organization_spend_limit_exceeded",
+  "project_spend_limit_exceeded",
+  "organization_usage_limit_exceeded",
+  "slow_down",
+  "server_is_overloaded",
+]);
+
 const openAiImageErrorDiagnosticsSchema = z.object({
   error: z.object({
-    type: z
-      .enum([
-        OPENAI_IMAGE_USER_ERROR_TYPE,
-        "invalid_request_error",
-        "authentication_error",
-        "permission_error",
-        "rate_limit_error",
-        "insufficient_quota",
-        "server_error",
-        "service_unavailable_error",
-        "unrecognized",
-      ])
-      .nullish()
-      .catch("unrecognized"),
-    code: z
-      .enum([
-        "invalid_image_file",
-        "moderation_blocked",
-        "content_policy_violation",
-        "invalid_api_key",
-        "invalid_value",
-        "missing_required_parameter",
-        "model_not_found",
-        "unsupported_parameter",
-        "rate_limit_exceeded",
-        "insufficient_quota",
-        "credit_balance_exhausted",
-        "organization_spend_limit_exceeded",
-        "project_spend_limit_exceeded",
-        "organization_usage_limit_exceeded",
-        "slow_down",
-        "server_is_overloaded",
-        "unrecognized",
-      ])
-      .nullish()
-      .catch("unrecognized"),
+    type: z.unknown().transform((value) => {
+      if (value === undefined || value === null) {
+        return "missing";
+      }
+      const parsed = openAiImageErrorTypeSchema.safeParse(value);
+      return parsed.success ? parsed.data : "unrecognized";
+    }),
+    code: z.unknown().transform((value) => {
+      if (value === undefined || value === null) {
+        return "missing";
+      }
+      const parsed = openAiImageErrorCodeSchema.safeParse(value);
+      return parsed.success ? parsed.data : "unrecognized";
+    }),
   }),
 });
 
@@ -1834,10 +1842,10 @@ export async function generateOpenAiImage(
         model: options.model,
         providerStatus: response.status,
         providerErrorType: diagnostics.success
-          ? (diagnostics.data.error.type ?? "missing")
+          ? diagnostics.data.error.type
           : "invalid_response",
         providerErrorCode: diagnostics.success
-          ? (diagnostics.data.error.code ?? "missing")
+          ? diagnostics.data.error.code
           : "invalid_response",
         publicErrorCode: failure.response.body.error.code,
         retryPolicy: failure.retryPolicy,
