@@ -227,7 +227,12 @@ final class GeneratedResultTests: XCTestCase {
     // The rejected page and the renewed page own separate cold WebKit loads.
     // Observe the authority handoff before waiting for the replacement page.
     try await eventually(
-      timeout: .seconds(10), message: "The rejected HTML address did not renew"
+      timeout: .seconds(10),
+      message: "The rejected HTML address did not renew; "
+        + "preview: \(String(describing: viewer.preview)); "
+        + "WebKit URL/loading: \(String(describing: findWebView(host.view)?.url))/"
+        + "\(String(describing: findWebView(host.view)?.isLoading)); "
+        + "storage requests: \(fixture.state.storageRequests.withLock { $0.map(\.url) })"
     ) {
       viewer.preview?.renewedHTMLSignature == true && viewer.preview?.contentURL != nil
     }
