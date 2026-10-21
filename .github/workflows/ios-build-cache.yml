@@ -1,6 +1,6 @@
 name: iOS Build Cache
 
-# Bootstrap manually on main before the SDK upgrade consumes this cache.
+# Seed shared native caches from a trusted main dispatch.
 on:
   workflow_dispatch:
 

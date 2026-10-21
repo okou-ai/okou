@@ -10,13 +10,17 @@ runs simulator tests to recover a missing archive.
 A main merge group with changed iOS inputs also builds an **unsigned device
 Release archive**, with locked Swift packages and no production credentials.
 Standalone Swift package tests, simulator validation, and device compilation run
-in **parallel macOS jobs**. Simulator validation has a 20-minute limit; package
+in **parallel macOS jobs**. Simulator validation has a 30-minute limit; package
 tests and device compilation each retain a 15-minute limit. The merge queue has
-a 20-minute check-response window. The simulator
+a 30-minute check-response window. The simulator
 checkout retains bounded queue ancestry (32 commits; the current squash queue
 merges at most five entries); the
 archive builder needs only its own commit. Only release-only groups install an
 R2 client on macOS to resolve potential prior evidence.
+Cheap change detection selects the native jobs while the existing script
+regressions run independently on Linux. Both archive publication and the required
+gate still require those script checks to succeed. Detection and gate checkouts
+contain only their executed scripts; detection retains the bounded Git ancestry.
 The simulator job resolves locked dependencies while waiting for `simctl bootstatus`,
 then compiles after system boot readiness. Cold system-service startup must finish
 before asset compilation; requesting a boot alone does not establish readiness.
@@ -72,9 +76,12 @@ test results, signing credentials, or the rest of DerivedData. Consumers still
 perform their required builds and tests. Main-owned caches are readable by PR and
 merge-group workflows; PR-scoped caches are not the shared baseline.
 
-`IOS_BUILD_CACHE_ENABLED=true` selects the shared compiler settings for warming
-and consumers. The bootstrap leaves the existing Xcode 26 CI configuration in
-place; the SDK upgrade enables restore and these settings after main is seeded.
+`IOS_BUILD_CACHE_ENABLED=true` selects Xcode's official compiler cache settings
+for warming and simulator validation. Both use Xcode 27.1, system Git with locked
+packages, and disabled IDE indexing. Simulator validation restores the shared
+cache before building and running all required tests. A missing cache still runs
+the complete cold build. Dispatch the main workflow after its initial merge to
+create the first shared baseline.
 
 ## Immutable shared artifact storage
 

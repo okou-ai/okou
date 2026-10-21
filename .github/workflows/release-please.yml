@@ -398,17 +398,17 @@ jobs:
     name: publish-ios-testflight
     needs: release-please
     if: ${{ needs.release-please.outputs.ios_release_created == 'true' }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     environment: production
     permissions:
       contents: read
       actions: read
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_VERSION: ${{ needs.release-please.outputs.ios_version }}
       IOS_INTERNAL_GROUP_NAME: ${{ vars.IOS_INTERNAL_GROUP_NAME }}
-      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
     steps:
       - name: Notify Slack - Starting
         id: slack-start
