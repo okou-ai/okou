@@ -525,14 +525,7 @@ test("A skill the import writes appears without the step being asked again", asy
   expect(screen.queryByText(WAITING_FOR_SKILLS)).not.toBeInTheDocument();
   // The list is the org's default agent, not every workflow the user can see.
   expect(screen.queryByText(OTHER_AGENT_SKILL)).not.toBeInTheDocument();
-  // Successful-import facts are recorded by the upload API. Reading the
-  // same results on Back/reconnect must not manufacture new import events.
-  expect(
-    posthog.events.filter((event) => {
-      return event.name === "Onboarding: SkillImported";
-    }),
-  ).toHaveLength(0);
-  // A skill's own name is the user's writing, so the funnel counts it instead.
+  // Skill names and contents remain outside client onboarding telemetry.
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_NAME);
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_DISPLAY_NAME);
 

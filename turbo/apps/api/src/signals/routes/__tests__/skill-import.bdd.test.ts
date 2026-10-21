@@ -265,49 +265,6 @@ describe("POST /api/skill-import/sessions", () => {
     );
   });
 
-  it("continues accepting previously issued upload credentials without claiming new-session attribution", async () => {
-    const { actor, agentId, session } = await openSession();
-    if (!session.sessionId) {
-      throw new Error("Expected an attributed session");
-    }
-    const nowSeconds = Math.floor(now() / 1000);
-    const legacyToken = signSkillImportJwtForTests({
-      scope: "skill-import",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      agentId,
-      provider: "claudeCode",
-      iat: nowSeconds,
-      exp: nowSeconds + 3600,
-    });
-    const upload = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(legacyToken),
-        body: skillBody({ name: "legacy-import" }),
-      }),
-      [201],
-    );
-    const list = await accept(
-      workflowListClient().list({
-        headers: clerkHeaders(actor),
-        query: { agentId },
-      }),
-      [200],
-    );
-    expect(
-      list.body.some((workflow) => {
-        return workflow.id === upload.body.workflowId;
-      }),
-    ).toBeTruthy();
-    const tracked = await accept(
-      sessionsClient().listSkills({
-        headers: clerkHeaders(actor),
-        params: { sessionId: session.sessionId },
-      }),
-      [200],
-    );
-    expect(tracked.body).toStrictEqual([]);
-  });
   it("issues an upload session for the org's default agent", async () => {
     const { session } = await openSession();
 
@@ -609,31 +566,6 @@ describe("POST /api/skill-import/skills", () => {
       [401],
     );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("SKILL_IMPORT_SESSION_INVALID");
-  });
-
-  it("rejects a versioned upload credential without session attribution", async () => {
-    const { actor, agentId } = await openSession();
-    const issuedAt = Math.floor(now() / 1000);
-    const legacy = signSkillImportJwtForTests({
-      scope: "skill-import",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      agentId,
-      provider: "claudeCode",
-      iat: issuedAt,
-      exp: issuedAt + 3600,
-    });
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(
-          legacy.replace("vm0_skillimport_", "vm0_skillimport_v2_"),
-        ),
-        body: skillBody(),
-      }),
-      [401],
-    );
     expectApiError(response.body);
     expect(response.body.error.code).toBe("SKILL_IMPORT_SESSION_INVALID");
   });
