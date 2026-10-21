@@ -712,21 +712,9 @@ test.each([false, true])(
     await waitFor(() => {
       expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
     });
+    expect(screen.queryByRole("dialog")).toBeNull();
   },
 );
-
-test("Complete a custom account connection and continue once", async () => {
-  const { card, sends, authorizationUpdates } =
-    await attemptCustomMcpConnection(false, true);
-  await waitFor(() => {
-    expect(getButton("Authorized", card)).toBeDisabled();
-    expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
-  });
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(authorizationUpdates).toStrictEqual([
-    [{ customConnectorId: CUSTOM_CONNECTOR_ID, permissionNames: [] }],
-  ]);
-});
 
 test("Keep an incomplete custom MCP reconnect unauthorized without resuming", async () => {
   const { dialog, sends, authorizationUpdates } =
