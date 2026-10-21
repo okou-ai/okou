@@ -104,6 +104,7 @@ class CIProcessTests(unittest.TestCase):
         scripts.mkdir(parents=True)
         for name in (
             "ci-test.sh",
+            "prepare-package-sources.py",
             "ci-package-test.sh",
             "preboot-simulator.py",
             "run-ci-tests.sh",

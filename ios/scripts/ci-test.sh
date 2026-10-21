@@ -29,6 +29,7 @@ xcode_args=(
   -scmProvider system
   -onlyUsePackageVersionsFromResolvedFile
   -disableAutomaticPackageResolution
+  -disablePackageRepositoryCache
   -skipPackageUpdates
   # IDE source indexing is unnecessary for CI test products.
   COMPILER_INDEX_STORE_ENABLE=NO
@@ -47,6 +48,16 @@ fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
   cp "$resolved" "$build_root/Package.resolved.before"
+  python3 ios/scripts/prepare-package-sources.py "$resolved" "$build_root"
+fi
+
+# Keep the caller's Git configuration and add only this job's locked sources.
+git_config_index=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_${git_config_index}=include.path"
+export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconfig"
+export GIT_CONFIG_COUNT=$((git_config_index + 1))
+
+if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
 fi

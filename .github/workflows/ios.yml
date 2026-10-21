@@ -68,6 +68,7 @@ jobs:
           python3 ios/scripts/archive-proof.test.py
           python3 ios/scripts/archive-promotion.test.py
           python3 ios/scripts/preboot-simulator.test.py
+          python3 ios/scripts/prepare-package-sources.test.py
           python3 ios/scripts/run-ci-tests.test.py
 
   test-packages:
