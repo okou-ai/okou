@@ -644,7 +644,8 @@ async fn run_supervisor(
     let mut cancel_deliveries = FuturesUnordered::<CancelDelivery>::new();
     let mut ably_retry: RetryState<AblyConnectHandle> =
         RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX);
-    ably_retry.restart_at = Some(StdInstant::now());
+    // A supplied live subscription must not retain an already-due retry timer.
+    ably_retry.restart_at = ably.is_none().then(StdInstant::now);
     let mut disconnect = AblyDisconnectState::disconnected("connecting".to_string());
 
     loop {
