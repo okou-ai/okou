@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
@@ -19,17 +20,18 @@ import {
 import {
   AGENT_ID,
   composerWorkflow,
-  context,
   expectInlineTemplateInComposer,
   findComposerEditor,
-  mockAgent,
-  mockBillingCapabilities,
-  mockPersonalModelRoutes,
   tabByText,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../../signals/chat-page/workflow-prompt-action.ts";
+
+const context = testContext();
+const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+  createChatComposerHelpers(context);
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";

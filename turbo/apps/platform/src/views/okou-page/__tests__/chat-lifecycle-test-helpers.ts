@@ -1,15 +1,11 @@
-import { waitFor } from "@testing-library/react";
-import { expect, vi, type Mock } from "vitest";
+import { vi, type Mock } from "vitest";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   queryAllByRoleFast,
   setupPage as baseSetupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-
-export const context = testContext();
 
 export function setupPage(
   options: Parameters<typeof baseSetupPage>[0],
@@ -18,34 +14,6 @@ export function setupPage(
 }
 
 export const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-
-function replaceNavigatorProperty(property: string, value: unknown): void {
-  const descriptor = Object.getOwnPropertyDescriptor(navigator, property);
-  Object.defineProperty(navigator, property, {
-    configurable: true,
-    value,
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (descriptor) {
-        Object.defineProperty(navigator, property, descriptor);
-        return;
-      }
-      Reflect.deleteProperty(navigator, property);
-    },
-    { once: true },
-  );
-}
-
-export function mockMacUserAgentData(architecture: string): void {
-  replaceNavigatorProperty("userAgentData", {
-    platform: "macOS",
-    getHighEntropyValues: () => {
-      return Promise.resolve({ architecture, platform: "macOS" });
-    },
-  });
-}
 
 export function computerUsePermissions() {
   return {
@@ -73,138 +41,6 @@ interface TestServiceWorkerContainer {
   readonly register: () => Promise<TestServiceWorkerRegistration>;
 }
 
-export async function readSingleRichClipboardWrite(clipboard: {
-  readonly writes: ClipboardItem[][];
-}): Promise<ClipboardItem> {
-  await waitFor(() => {
-    expect(clipboard.writes).toHaveLength(1);
-    expect(clipboard.writes[0]).toHaveLength(1);
-  });
-  const item = clipboard.writes[0]?.[0];
-  if (!item) {
-    throw new Error("clipboard item not found");
-  }
-  return item;
-}
-
-export async function readClipboardItemText(
-  item: ClipboardItem,
-  type: string,
-): Promise<string> {
-  const blob = await item.getType(type);
-  return await blob.text();
-}
-
-export function parseChatClipboardPayload(html: string): {
-  text: string;
-  attachments: {
-    id: string | null;
-    url: string;
-    filename: string;
-    contentType: string;
-    size: number;
-  }[];
-  userMessage?: UserMessageDocument;
-} {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const encoded = doc.querySelector<HTMLElement>("[data-okou-chat-message]")
-    ?.dataset.okouChatMessage;
-  if (!encoded) {
-    throw new Error("chat clipboard payload not found");
-  }
-  return JSON.parse(decodeURIComponent(encoded)) as {
-    text: string;
-    attachments: {
-      id: string | null;
-      url: string;
-      filename: string;
-      contentType: string;
-      size: number;
-    }[];
-    userMessage?: UserMessageDocument;
-  };
-}
-
-export function mockPushBrowserSupport(): PushBrowserMock {
-  vi.stubGlobal("PushManager", class TestPushManager {});
-  let notificationPermission: NotificationPermission = "default";
-  vi.stubGlobal("Notification", {
-    get permission() {
-      return notificationPermission;
-    },
-    requestPermission: vi.fn<typeof Notification.requestPermission>(() => {
-      notificationPermission = "granted";
-      return Promise.resolve(notificationPermission);
-    }),
-  });
-
-  const subscriptionKeys: Record<PushEncryptionKeyName, ArrayBuffer> = {
-    p256dh: new Uint8Array([1, 2, 3]).buffer,
-    auth: new Uint8Array([4, 5, 6]).buffer,
-  };
-  const subscription = {
-    endpoint: "https://push.example.test/subscriptions/chat-send",
-    getKey: (name: PushEncryptionKeyName) => {
-      return subscriptionKeys[name] ?? null;
-    },
-  } satisfies Pick<PushSubscription, "endpoint" | "getKey">;
-  const pushManager: TestPushManager = {
-    getSubscription: vi.fn<PushManager["getSubscription"]>(() => {
-      return Promise.resolve(null);
-    }),
-    subscribe: vi.fn<PushManager["subscribe"]>(() => {
-      return Promise.resolve(subscription as PushSubscription);
-    }),
-  };
-  const registration = {
-    pushManager,
-  } satisfies TestServiceWorkerRegistration;
-  const register = vi.fn<TestServiceWorkerContainer["register"]>(() => {
-    return Promise.resolve(registration);
-  });
-  const descriptor = Object.getOwnPropertyDescriptor(
-    navigator,
-    "serviceWorker",
-  );
-  Object.defineProperty(navigator, "serviceWorker", {
-    configurable: true,
-    value: {
-      addEventListener: vi.fn<ServiceWorkerContainer["addEventListener"]>(),
-      register,
-    } satisfies TestServiceWorkerContainer,
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (descriptor) {
-        Object.defineProperty(navigator, "serviceWorker", descriptor);
-        return;
-      }
-      Reflect.deleteProperty(navigator, "serviceWorker");
-    },
-    { once: true },
-  );
-
-  return { register };
-}
-
-function mockNoBrowserSession(): void {
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
-      },
-    });
-  });
-}
-
-export function mockChatLifecycleWithoutBrowserSession(
-  options?: Parameters<typeof mockChatLifecycle>[1],
-): ReturnType<typeof mockChatLifecycle> {
-  mockNoBrowserSession();
-  return mockChatLifecycle(context, options);
-}
 export function buttonByText(
   text: string,
   container?: ParentNode,
@@ -252,4 +88,121 @@ export function activeElementIsInside(element: HTMLElement): boolean {
     (document.activeElement instanceof Node &&
       element.contains(document.activeElement))
   );
+}
+
+export function createChatLifecycleHelpers(context: TestContext) {
+  function replaceNavigatorProperty(property: string, value: unknown): void {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, property);
+    Object.defineProperty(navigator, property, {
+      configurable: true,
+      value,
+    });
+    context.signal.addEventListener(
+      "abort",
+      () => {
+        if (descriptor) {
+          Object.defineProperty(navigator, property, descriptor);
+          return;
+        }
+        Reflect.deleteProperty(navigator, property);
+      },
+      { once: true },
+    );
+  }
+
+  function mockMacUserAgentData(architecture: string): void {
+    replaceNavigatorProperty("userAgentData", {
+      platform: "macOS",
+      getHighEntropyValues: () => {
+        return Promise.resolve({ architecture, platform: "macOS" });
+      },
+    });
+  }
+
+  function mockPushBrowserSupport(): PushBrowserMock {
+    vi.stubGlobal("PushManager", class TestPushManager {});
+    let notificationPermission: NotificationPermission = "default";
+    vi.stubGlobal("Notification", {
+      get permission() {
+        return notificationPermission;
+      },
+      requestPermission: vi.fn<typeof Notification.requestPermission>(() => {
+        notificationPermission = "granted";
+        return Promise.resolve(notificationPermission);
+      }),
+    });
+
+    const subscriptionKeys: Record<PushEncryptionKeyName, ArrayBuffer> = {
+      p256dh: new Uint8Array([1, 2, 3]).buffer,
+      auth: new Uint8Array([4, 5, 6]).buffer,
+    };
+    const subscription = {
+      endpoint: "https://push.example.test/subscriptions/chat-send",
+      getKey: (name: PushEncryptionKeyName) => {
+        return subscriptionKeys[name] ?? null;
+      },
+    } satisfies Pick<PushSubscription, "endpoint" | "getKey">;
+    const pushManager: TestPushManager = {
+      getSubscription: vi.fn<PushManager["getSubscription"]>(() => {
+        return Promise.resolve(null);
+      }),
+      subscribe: vi.fn<PushManager["subscribe"]>(() => {
+        return Promise.resolve(subscription as PushSubscription);
+      }),
+    };
+    const registration = {
+      pushManager,
+    } satisfies TestServiceWorkerRegistration;
+    const register = vi.fn<TestServiceWorkerContainer["register"]>(() => {
+      return Promise.resolve(registration);
+    });
+    const descriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      "serviceWorker",
+    );
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        addEventListener: vi.fn<ServiceWorkerContainer["addEventListener"]>(),
+        register,
+      } satisfies TestServiceWorkerContainer,
+    });
+    context.signal.addEventListener(
+      "abort",
+      () => {
+        if (descriptor) {
+          Object.defineProperty(navigator, "serviceWorker", descriptor);
+          return;
+        }
+        Reflect.deleteProperty(navigator, "serviceWorker");
+      },
+      { once: true },
+    );
+
+    return { register };
+  }
+
+  function mockNoBrowserSession(): void {
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(404, {
+        error: {
+          code: "BROWSER_NOT_FOUND",
+          message: "Managed browser not found",
+        },
+      });
+    });
+  }
+
+  function mockChatLifecycleWithoutBrowserSession(
+    options?: Parameters<typeof mockChatLifecycle>[1],
+  ): ReturnType<typeof mockChatLifecycle> {
+    mockNoBrowserSession();
+    return mockChatLifecycle(context, options);
+  }
+
+  return {
+    mockMacUserAgentData,
+    mockPushBrowserSupport,
+    mockChatLifecycleWithoutBrowserSession,
+  };
 }

@@ -5,7 +5,7 @@ import {
   AUTOMATION_THREAD_ID,
   buttonByText,
   commandItemByText,
-  context,
+  createSidebarHelpers,
   createDataTransferStub,
   createThread,
   dialogAgentOrder,
@@ -13,16 +13,9 @@ import {
   INCIDENT_THREAD_ID,
   menuItemByText,
   mobileSidebar,
-  mockChatThreadSnapshot,
-  mockMobileLayout,
-  mockSidebarThreadStory,
-  mockUnreadAgents,
   openThreadMenu,
   pinnedAgentLink,
   pinnedAgentNames,
-  prepareAgents,
-  prepareDefaultAgent,
-  prepareOverflowingPinnedAgents,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
   renderTailwindUtilities,
@@ -38,6 +31,10 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  userPreferencesContract,
+  type UserPreferencesResponse,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import {
   click,
@@ -51,6 +48,18 @@ import {
   createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
 import { mockNow } from "../../../lib/time.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+
+const context = testContext();
+const {
+  mockChatThreadSnapshot,
+  mockMobileLayout,
+  mockSidebarThreadStory,
+  mockUnreadAgents,
+  prepareAgents,
+  prepareDefaultAgent,
+  prepareOverflowingPinnedAgents,
+} = createSidebarHelpers(context);
 
 test("Move to the next relevant agent with a shortcut", async () => {
   prepareAgents();
@@ -264,6 +273,76 @@ test("Pin and unpin agents without closing the pin manager", async () => {
   await expect(
     screen.findByText("Support Agent unpinned"),
   ).resolves.toBeInTheDocument();
+});
+
+test("Keep a pending pin save owned while the manager closes and reopens", async () => {
+  prepareAgents();
+  const user = userEvent.setup({ delay: null });
+  let preferences: UserPreferencesResponse = {
+    timezone: "Asia/Shanghai",
+    locale: "en-US",
+    supportedLocales: ["en-US"],
+    pinnedAgentIds: [],
+    sendMode: "enter",
+    cloudBrowserEnabledByDefault: true,
+    chatResourcesEnabledByDefault: true,
+    theme: "system",
+    colorTheme: null,
+    captureNetworkBodiesRemaining: 0,
+    memoryInitialized: true,
+  };
+  context.mocks.data.userPreferences(preferences);
+  const saving = context.mocks.deferred<void>();
+  const releaseSave = context.mocks.deferred<void>();
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      if (!saving.settled()) {
+        saving.resolve();
+        await withSignal(releaseSave.promise);
+      }
+      preferences = { ...preferences, ...body };
+      context.mocks.data.userPreferences(preferences);
+      return respond(200, preferences);
+    },
+  );
+  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const grid = await screen.findByTestId("pinned-agents-grid");
+  click(screen.getByLabelText("Pin an agent"));
+  const firstList = await screen.findByTestId("pin-agent-dialog-list");
+  click(
+    within(commandItemByText(firstList, "Research Agent")).getByText("Pin"),
+  );
+  await saving.promise;
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("pin-agent-dialog-list"),
+    ).not.toBeInTheDocument();
+  });
+  click(screen.getByLabelText("Pin an agent"));
+  const reopenedList = await screen.findByTestId("pin-agent-dialog-list");
+  expect(commandItemByText(reopenedList, "Support Agent")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+
+  releaseSave.resolve();
+  await waitFor(() => {
+    expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Research Agent"]);
+    expect(
+      commandItemByText(reopenedList, "Support Agent"),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  await user.click(commandItemByText(reopenedList, "Support Agent"));
+  await waitFor(() => {
+    expect(pinnedAgentNames(grid)).toStrictEqual([
+      "Nova",
+      "Research Agent",
+      "Support Agent",
+    ]);
+  });
 });
 
 test("Preserve the user’s pinned-agent order", async () => {

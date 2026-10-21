@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
@@ -5,15 +6,17 @@ import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
-  context,
   findLink,
   findWorkHistoryToggle,
-  installRunChat,
   promptEvent,
   queryButton,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const RUN_ID = "a0000000-0000-4000-a000-000000000294";
 

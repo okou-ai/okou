@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   claudeCodeDeviceAuthContract,
   type ClaudeCodeDeviceAuthScope,
@@ -28,15 +29,17 @@ import {
 } from "../../../mocks/handlers/api-run-models.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   NEW_CHAT_PATH,
   queryButton,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const FIXTURE_DATE = "2026-08-18T09:00:00.000Z";
 const ACTIVE_CODEX_ID = "f1000000-0000-4000-a000-000000000101";

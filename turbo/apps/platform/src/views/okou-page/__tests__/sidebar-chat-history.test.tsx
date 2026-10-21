@@ -4,22 +4,15 @@ import {
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
-  context,
+  createSidebarHelpers,
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
   mobileSidebar,
-  mockChatThreadSnapshot,
-  mockLongSidebarHistory,
-  mockMobileLayout,
-  mockSidebarThreadStory,
   mockSidebarViewport,
-  mockUnreadAgents,
   openChatListMenu,
   openThreadMenu,
-  prepareAgents,
-  prepareDefaultAgent,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
@@ -27,7 +20,6 @@ import {
   setupSidebarPage,
   sidebar,
   type SidebarThread,
-  stubSidebarTitleLayout,
   SUPPORT_AGENT_ID,
   threadLinkByTitle,
   titleFadeBox,
@@ -59,7 +51,10 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
@@ -67,6 +62,18 @@ import {
   changeChatThreadReadCursor,
   createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
+
+const context = testContext();
+const {
+  mockChatThreadSnapshot,
+  mockLongSidebarHistory,
+  mockMobileLayout,
+  mockSidebarThreadStory,
+  mockUnreadAgents,
+  prepareAgents,
+  prepareDefaultAgent,
+  stubSidebarTitleLayout,
+} = createSidebarHelpers(context);
 
 function pressArchiveShortcut(): void {
   fireEvent.keyDown(document, {

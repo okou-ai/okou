@@ -13,19 +13,25 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockChatEventRows,
   normalizeMockChatEvents,
   type MockChatEventInput,
 } from "./chat-event-test-helpers.ts";
 import {
-  context,
   findComposer,
   findFastControl,
-  installMessageExperienceChat,
   MESSAGE_EXPERIENCE_AGENT_ID,
+  createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
 
 const CREATED_AT = "2026-08-21T14:00:00.000Z";
 const FOLLOWUP_RUN_ID = "d0000000-0000-4000-a000-000000000061";

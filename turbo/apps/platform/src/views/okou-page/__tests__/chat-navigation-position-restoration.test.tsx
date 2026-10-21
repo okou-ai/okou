@@ -7,11 +7,13 @@ import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-rela
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
-  mockChatLifecycleWithoutBrowserSession,
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import {
   setupPage,
+  createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import {
@@ -19,6 +21,10 @@ import {
   normalizeMockChatEvents,
   type MockChatEventInput,
 } from "./chat-event-test-helpers.ts";
+
+const context = testContext();
+const { mockChatLifecycleWithoutBrowserSession } =
+  createChatLifecycleHelpers(context);
 
 const APP_HOST = "app.okou.ai";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";

@@ -1,12 +1,12 @@
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 
+import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import { click } from "../../../__tests__/page-helper.ts";
 import {
   assistantEvent,
-  context,
   findButton,
-  installRunChat,
+  createChatRunFixtures,
   promptEvent,
   readyChat,
   RUN_PATH,
@@ -14,7 +14,7 @@ import {
 } from "./chat-run-test-fixtures.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 
-export { context, findButton, readyChat, RUN_PATH, RUN_THREAD_ID };
+export { findButton, readyChat, RUN_PATH, RUN_THREAD_ID };
 
 export const CAPABILITY_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 export const FIRST_CAPABILITY_RUN_ID = "d0000000-0000-4000-a000-000000000811";
@@ -66,38 +66,6 @@ export function completedConversation(
       text: secondResponse,
     }),
   ];
-}
-
-export function installCapabilityChat(args: {
-  readonly events: MockChatEventInput[];
-  readonly threadTitle?: string;
-  readonly selectedModel?: string | null;
-  readonly onSend?: (send: CapturedChatSend) => void;
-}): void {
-  installRunChat({
-    chatEvents: args.events,
-    threadTitle: args.threadTitle ?? "Capability conversation",
-    ...(args.selectedModel === undefined
-      ? {}
-      : { selectedModel: args.selectedModel }),
-    onSendRequest(body) {
-      args.onSend?.({
-        prompt: body.prompt,
-        clientEventId: body.clientEventId,
-        chatThreadSortEventId: body.chatThreadSortEventId,
-        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
-        ...(body.clientThreadId === undefined
-          ? {}
-          : { clientThreadId: body.clientThreadId }),
-        ...(body.userMessage === undefined
-          ? {}
-          : { userMessage: body.userMessage }),
-        ...(body.sourceRunId === undefined
-          ? {}
-          : { sourceRunId: body.sourceRunId }),
-      });
-    },
-  });
 }
 
 function textNodeContaining(
@@ -309,4 +277,42 @@ export async function waitForSend(
     throw new Error("Captured send was unavailable");
   }
   return send;
+}
+
+export function createChatCapabilityHelpers(context: TestContext) {
+  const { installRunChat } = createChatRunFixtures(context);
+
+  function installCapabilityChat(args: {
+    readonly events: MockChatEventInput[];
+    readonly threadTitle?: string;
+    readonly selectedModel?: string | null;
+    readonly onSend?: (send: CapturedChatSend) => void;
+  }): void {
+    installRunChat({
+      chatEvents: args.events,
+      threadTitle: args.threadTitle ?? "Capability conversation",
+      ...(args.selectedModel === undefined
+        ? {}
+        : { selectedModel: args.selectedModel }),
+      onSendRequest(body) {
+        args.onSend?.({
+          prompt: body.prompt,
+          clientEventId: body.clientEventId,
+          chatThreadSortEventId: body.chatThreadSortEventId,
+          ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+          ...(body.clientThreadId === undefined
+            ? {}
+            : { clientThreadId: body.clientThreadId }),
+          ...(body.userMessage === undefined
+            ? {}
+            : { userMessage: body.userMessage }),
+          ...(body.sourceRunId === undefined
+            ? {}
+            : { sourceRunId: body.sourceRunId }),
+        });
+      },
+    });
+  }
+
+  return { installCapabilityChat };
 }

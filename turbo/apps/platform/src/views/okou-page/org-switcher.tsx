@@ -193,6 +193,17 @@ function OtherMembershipsList() {
 }
 
 function OrgDropdownContent() {
+  return (
+    <DropdownMenuContent
+      align="start"
+      className="flex max-h-[min(420px,var(--available-height))] w-72 flex-col overflow-hidden"
+    >
+      <OrgDropdownBody />
+    </DropdownMenuContent>
+  );
+}
+
+function OrgDropdownBody() {
   const clerkLoadable = useLastLoadable(clerk$);
   const pendingInvitations = useLastResolved(userInvitations$);
   const currentOrg = useLastResolved(currentOrgInfo$);
@@ -217,10 +228,7 @@ function OrgDropdownContent() {
   const hasOrgOptions = hasOtherMemberships || hasPendingInvitations;
 
   return (
-    <DropdownMenuContent
-      align="start"
-      className="flex max-h-[min(420px,var(--available-height))] w-72 flex-col overflow-hidden"
-    >
+    <>
       <div className="flex min-w-0 shrink-0 items-center gap-3 px-2 py-1.5">
         <WorkspaceLogo
           name={orgName}
@@ -256,7 +264,7 @@ function OrgDropdownContent() {
       )}
 
       <CreateWorkspaceItem />
-    </DropdownMenuContent>
+    </>
   );
 }
 

@@ -18,16 +18,19 @@ import {
 
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
+  createChatResourcesHelpers,
   RESOURCE_ARTIFACT_ID,
   installResourceGeometry,
   resourceButton,
   resourcePanel,
   resourceState,
-  setupOverflowResources,
-  setupResources,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
+const { setupOverflowResources, setupResources } =
+  createChatResourcesHelpers(context);
 
 test("Keep the resource trigger in a chat without resources and open its empty panel by default", async () => {
   installResourceGeometry(480);

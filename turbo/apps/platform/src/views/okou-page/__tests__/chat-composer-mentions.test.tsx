@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -21,7 +22,9 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { AGENT_ID, context } from "./chat-composer-test-helpers.ts";
+import { AGENT_ID } from "./chat-composer-test-helpers.ts";
+
+const context = testContext();
 
 const REVIEWER_ID = "e1000000-0000-4000-a000-000000000201";
 const ZETA_ID = "e1000000-0000-4000-a000-000000000202";

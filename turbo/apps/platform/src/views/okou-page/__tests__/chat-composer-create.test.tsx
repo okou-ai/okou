@@ -1,3 +1,8 @@
+import {
+  readClipboardItemText,
+  readSingleRichClipboardWrite,
+} from "./chat-clipboard-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
@@ -16,22 +21,20 @@ import { openTemplatePicker } from "./chat-composer-template-gallery-test-helper
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
   AGENT_ID,
-  buildRunModel,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   THREAD_ID,
   composerInlineTemplates,
-  context,
   findComposerEditor,
-  mockAgent,
-  mockBillingCapabilities,
-  mockPersonalModelRoutes,
   queryComposerModelTrigger,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
-import {
-  readClipboardItemText,
-  readSingleRichClipboardWrite,
-} from "./chat-lifecycle-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
+
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+  createChatComposerHelpers(context);
 
 function setupModels(): void {
   mockAgent();

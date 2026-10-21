@@ -4,22 +4,24 @@ import { expect, test } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { click } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
-  context,
+  createSidebarHelpers,
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   mobileSidebar,
-  mockMobileLayout,
-  mockSidebarThreadStory,
   pinnedAgentLink,
-  prepareAgents,
   RESEARCH_AGENT_ID,
   setupSidebarPage,
   sidebar,
   threadLinkByTitle,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { mockMobileLayout, mockSidebarThreadStory, prepareAgents } =
+  createSidebarHelpers(context);
 
 async function preparePinnedNavigation(layout: "horizontal" | "vertical") {
   const user = userEvent.setup({ delay: null });

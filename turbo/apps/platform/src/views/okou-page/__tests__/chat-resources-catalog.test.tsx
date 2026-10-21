@@ -11,12 +11,15 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 import { privateAttachmentUrl } from "./chat-attachment-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
+  createChatResourcesHelpers,
   RESOURCE_ARTIFACT_ID,
-  setupOverflowResources,
-  setupResources,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
+const { setupOverflowResources, setupResources } =
+  createChatResourcesHelpers(context);
 
 function artifactEntryNamed(title: string, container: HTMLElement) {
   const button = within(container).getByText(title).closest("button");

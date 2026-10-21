@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -12,10 +13,12 @@ import {
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   composerInlineTemplates,
-  context,
-  mockAgent,
   THREAD_ID,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
+
+const context = testContext();
+const { mockAgent } = createChatComposerHelpers(context);
 
 test("Replacing an inline template preserves a previously sent reference", async () => {
   const first = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];

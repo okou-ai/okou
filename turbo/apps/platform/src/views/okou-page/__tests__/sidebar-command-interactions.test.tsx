@@ -3,18 +3,20 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
   commandItemByText,
-  context,
+  createSidebarHelpers,
   pinnedAgentNames,
-  prepareAgents,
-  prepareDefaultAgent,
-  prepareOverflowingPinnedAgents,
   RESEARCH_AGENT_ID,
   setupSidebarPage,
   SUPPORT_AGENT_ID,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { prepareAgents, prepareDefaultAgent, prepareOverflowingPinnedAgents } =
+  createSidebarHelpers(context);
 
 async function openPinManager() {
   prepareAgents();

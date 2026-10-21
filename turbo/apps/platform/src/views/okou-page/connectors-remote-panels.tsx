@@ -1,4 +1,5 @@
 import { useGet, useSet } from "ccstate-react";
+import { connectorDirectoryPageSignals } from "../../signals/okou-page/settings/connector-directory-page.ts";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Filter } from "lucide-react";
 import {
@@ -104,12 +105,9 @@ function ConnectionTypeFilter({
   );
 }
 
-export function RemoteControlPanel({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+export function RemoteControlPanel() {
   const { t } = useTranslation();
+  const vncEnabled = useGet(connectorDirectoryPageSignals.vncEnabled$);
   const type = useGet(remoteControlType$);
   const selectedType = type === "vnc" && !vncEnabled ? "all" : type;
   const view = useGet(remoteControlView$);

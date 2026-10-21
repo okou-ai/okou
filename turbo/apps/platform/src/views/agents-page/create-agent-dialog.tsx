@@ -45,37 +45,86 @@ import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 
 type Visibility = "public" | "private";
 
-/**
- * The create-agent dialog lives in the app shell, not on the Agents page, so
- * the sidebar's pin manager can open it from any page. It stays mounted while
- * closed so the dialog's exit motion still plays.
- */
+interface CreateAgentInput {
+  displayName: string;
+  avatarUrl: string;
+  visibility: Visibility;
+  responsibility: string;
+}
+
+/** Keep the dialog and action owner mounted; Base UI bounds the form presence. */
 export function CreateAgentDialogContainer() {
   const { t } = useTranslation("agents");
   const open = useGet(jobsDialogOpen$);
   const setDialogOpen = useSet(setJobsDialogOpen$);
+  const setActiveTab = useSet(setJobsActiveTab$);
+  const [createLoadable, createSubagentWithSetupThreadFn] = useLoadableSet(
+    createSubagentWithSetupThread$,
+  );
+  const creating = createLoadable.state === "loading";
+  const handleCreateTeammate = async (
+    input: CreateAgentInput,
+    signal: AbortSignal,
+  ) => {
+    await createSubagentWithSetupThreadFn(input, signal);
+    setActiveTab(input.visibility);
+    setDialogOpen(false);
+    toast.success(
+      t(
+        ($) => {
+          return $.list.create.success;
+        },
+        { agentName: input.displayName },
+      ),
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={creating ? undefined : setDialogOpen}>
+      <DialogContent
+        closeLabel={t(($) => {
+          return $.actions.close;
+        })}
+        smMaxWidth={480}
+        contentClassName="p-0 gap-0 overflow-hidden"
+      >
+        <CreateAgentDialogForm
+          creating={creating}
+          onCreate={handleCreateTeammate}
+          onCancel={() => {
+            setDialogOpen(false);
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateAgentDialogForm({
+  creating,
+  onCreate,
+  onCancel,
+}: {
+  creating: boolean;
+  onCreate: (input: CreateAgentInput, signal: AbortSignal) => Promise<void>;
+  onCancel: () => void;
+}) {
   const newName = useGet(jobsNewName$);
   const setNewName = useSet(setJobsNewName$);
   const responsibility = useGet(jobsResponsibility$);
   const setResponsibility = useSet(setJobsResponsibility$);
   const visibility = useGet(jobsVisibility$);
   const setVisibility = useSet(setJobsVisibility$);
-  const setActiveTab = useSet(setJobsActiveTab$);
-  const [createLoadable, createSubagentWithSetupThreadFn] = useLoadableSet(
-    createSubagentWithSetupThread$,
-  );
-  const creating = createLoadable.state === "loading";
   const pageSignal = useGet(pageSignal$);
   const trimmedName = newName.trim();
   const trimmedResponsibility = responsibility.trim();
   const canCreate =
     trimmedName !== "" && trimmedResponsibility !== "" && !creating;
-
   const handleCreateTeammate = onDomEventFn(async (avatarUrl: string) => {
     if (!canCreate) {
       return;
     }
-    await createSubagentWithSetupThreadFn(
+    await onCreate(
       {
         displayName: trimmedName,
         avatarUrl,
@@ -84,22 +133,10 @@ export function CreateAgentDialogContainer() {
       },
       pageSignal,
     );
-    setActiveTab(visibility);
-    setDialogOpen(false);
-    toast.success(
-      t(
-        ($) => {
-          return $.list.create.success;
-        },
-        { agentName: trimmedName },
-      ),
-    );
   });
 
   return (
-    <CreateTeammateDialog
-      open={open}
-      onOpenChange={setDialogOpen}
+    <CreateTeammateDialogContent
       newName={newName}
       onNameChange={setNewName}
       responsibility={responsibility}
@@ -109,52 +146,8 @@ export function CreateAgentDialogContainer() {
       creating={creating}
       visibility={visibility}
       onVisibilityChange={setVisibility}
+      onCancel={onCancel}
     />
-  );
-}
-
-function CreateTeammateDialog({
-  open,
-  onOpenChange,
-  newName,
-  onNameChange,
-  responsibility,
-  onResponsibilityChange,
-  onConfirm,
-  canCreate,
-  creating,
-  visibility,
-  onVisibilityChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  newName: string;
-  onNameChange: (name: string) => void;
-  responsibility: string;
-  onResponsibilityChange: (responsibility: string) => void;
-  onConfirm: (avatarUrl: string) => void;
-  canCreate: boolean;
-  creating: boolean;
-  visibility: Visibility;
-  onVisibilityChange: (visibility: Visibility) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={creating ? undefined : onOpenChange}>
-      <CreateTeammateDialogContent
-        newName={newName}
-        onNameChange={onNameChange}
-        responsibility={responsibility}
-        onResponsibilityChange={onResponsibilityChange}
-        onConfirm={onConfirm}
-        onCancel={() => {
-          return onOpenChange(false);
-        }}
-        canCreate={canCreate}
-        creating={creating}
-        visibility={visibility}
-        onVisibilityChange={onVisibilityChange}
-      />
-    </Dialog>
   );
 }
 
@@ -421,13 +414,7 @@ function CreateTeammateDialogContent({
   const avatarUrl = useGet(jobsAvatarUrl$);
 
   return (
-    <DialogContent
-      closeLabel={t(($) => {
-        return $.actions.close;
-      })}
-      smMaxWidth={480}
-      contentClassName="p-0 gap-0 overflow-hidden"
-    >
+    <>
       <DialogHeader className="sr-only">
         <DialogTitle>
           {t(($) => {
@@ -489,6 +476,6 @@ function CreateTeammateDialogContent({
           </Button>
         </div>
       </form>
-    </DialogContent>
+    </>
   );
 }

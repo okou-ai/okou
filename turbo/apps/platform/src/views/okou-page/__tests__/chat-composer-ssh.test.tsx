@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
@@ -10,18 +11,21 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  context,
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
 import {
-  installComposerConnectorFixture,
   builtinConnector,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   OTHER_THREAD_ID,
   OTHER_AGENT_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 async function chooseRemoteHost(trigger: HTMLElement, optionName: string) {
   click(trigger);
