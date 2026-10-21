@@ -48,7 +48,7 @@ private struct StartupWordmark: UIViewRepresentable {
   }
 }
 
-private final class StartupWordmarkView: UIView {
+final class StartupWordmarkView: UIView {
   var animates = false {
     didSet { updateAnimations() }
   }
