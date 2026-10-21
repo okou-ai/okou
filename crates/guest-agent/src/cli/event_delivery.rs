@@ -12,10 +12,10 @@ use crate::http::{HttpAttemptFinished, HttpAttemptObserver, HttpAttemptStarted, 
 use crate::masker::SecretMasker;
 use bytes::Bytes;
 use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryActiveAttemptDiagnostic,
-    EventDeliveryActiveBatchDiagnostic, EventDeliveryDiagnostic,
-    EventDeliveryDrainTimeoutDiagnostic, EventDeliveryFailedBatchDiagnostic,
-    HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic,
+    EventDeliveryActiveAttemptDiagnostic, EventDeliveryActiveBatchDiagnostic,
+    EventDeliveryDiagnostic, EventDeliveryDrainTimeoutDiagnostic,
+    EventDeliveryFailedBatchDiagnostic, EventDeliveryResponseState, HttpAttemptFailureKind,
+    HttpCompletedAttemptDiagnostic,
 };
 use guest_telemetry::{log_info, log_warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -459,13 +459,13 @@ impl DeliveryProgress {
             let event_count = usize_to_u32(active_batch.sequences.len());
             let conservative_bytes = usize_to_u64(active_batch.conservative_bytes);
             let attempts = active_batch.completed_attempts;
-            let outcome = acceptance_outcome(&attempts);
+            let response_state = response_state(&attempts);
             self.first_failed_batch = Some(EventDeliveryFailedBatchDiagnostic {
                 first_sequence: active_batch.first_sequence,
                 last_sequence: active_batch.last_sequence,
                 event_count,
                 conservative_bytes,
-                outcome,
+                response_state,
                 attempts,
             });
         }
@@ -711,21 +711,19 @@ fn active_batch_diagnostic(active: &ActiveBatchProgress) -> EventDeliveryActiveB
                     .unwrap_or(u64::MAX),
             }
         }),
-        outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
+        response_state: EventDeliveryResponseState::Incomplete,
     }
 }
 
-fn acceptance_outcome(
-    attempts: &[HttpCompletedAttemptDiagnostic],
-) -> EventDeliveryAcceptanceOutcome {
+fn response_state(attempts: &[HttpCompletedAttemptDiagnostic]) -> EventDeliveryResponseState {
     if !attempts.is_empty()
         && attempts
             .iter()
             .all(|attempt| attempt.failure_kind == HttpAttemptFailureKind::HttpStatus)
     {
-        EventDeliveryAcceptanceOutcome::ConfirmedRejection
+        EventDeliveryResponseState::AllHttpErrors
     } else {
-        EventDeliveryAcceptanceOutcome::OutcomeUnknown
+        EventDeliveryResponseState::Incomplete
     }
 }
 

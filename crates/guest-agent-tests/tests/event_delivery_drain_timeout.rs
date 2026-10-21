@@ -4,7 +4,7 @@
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{EventDeliveryAcceptanceOutcome, HttpAttemptFailureKind};
+use guest_contracts::diagnostics::{EventDeliveryResponseState, HttpAttemptFailureKind};
 use serde_json::json;
 use std::io;
 use std::time::Duration;
@@ -96,8 +96,8 @@ async fn event_delivery_aborts_after_the_global_drain_deadline()
         .ok_or_else(|| io::Error::other("drain scenario omitted first exhausted batch"))?;
     assert_eq!(failed_batch.attempts.len(), 3);
     assert_eq!(
-        failed_batch.outcome,
-        EventDeliveryAcceptanceOutcome::OutcomeUnknown
+        failed_batch.response_state,
+        EventDeliveryResponseState::Incomplete
     );
     assert!(failed_batch.attempts.iter().all(|attempt| {
         attempt.failure_kind == HttpAttemptFailureKind::Timeout
@@ -129,8 +129,8 @@ async fn event_delivery_aborts_after_the_global_drain_deadline()
     assert_eq!(drain.carried_events > 0, drain.carried_bytes > 0);
     assert!(active_batch.conservative_bytes > 0);
     assert_eq!(
-        active_batch.outcome,
-        EventDeliveryAcceptanceOutcome::OutcomeUnknown
+        active_batch.response_state,
+        EventDeliveryResponseState::Incomplete
     );
     let active_attempt = active_batch
         .active_attempt

@@ -4,7 +4,7 @@
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{EventDeliveryAcceptanceOutcome, HttpAttemptFailureKind};
+use guest_contracts::diagnostics::{EventDeliveryResponseState, HttpAttemptFailureKind};
 use serde_json::json;
 use std::io;
 use std::time::Duration;
@@ -150,8 +150,8 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
     assert_eq!(failed_batch.event_count, failed_sequences.len() as u32);
     assert!(failed_batch.conservative_bytes > 0);
     assert_eq!(
-        failed_batch.outcome,
-        EventDeliveryAcceptanceOutcome::ConfirmedRejection
+        failed_batch.response_state,
+        EventDeliveryResponseState::AllHttpErrors
     );
     assert_eq!(failed_batch.attempts.len(), 3);
     assert_eq!(

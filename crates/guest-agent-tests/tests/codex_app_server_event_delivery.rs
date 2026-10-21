@@ -6,7 +6,7 @@
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{EventDeliveryAcceptanceOutcome, HttpAttemptFailureKind};
+use guest_contracts::diagnostics::{EventDeliveryResponseState, HttpAttemptFailureKind};
 use std::time::Duration;
 
 const RUN_ID: &str = "codex-app-server-event-delivery-test";
@@ -108,8 +108,8 @@ async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
         .first_failed_batch
         .ok_or("failed delivery omitted first failed batch")?;
     assert_eq!(
-        failed_batch.outcome,
-        EventDeliveryAcceptanceOutcome::ConfirmedRejection
+        failed_batch.response_state,
+        EventDeliveryResponseState::AllHttpErrors
     );
     assert_eq!(failed_batch.attempts.len(), 3);
     assert_eq!(

@@ -4,7 +4,7 @@
 use crate::common;
 
 use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, FailureClass, FailureDiagnostic, HttpAttemptFailureKind,
+    EventDeliveryResponseState, FailureClass, FailureDiagnostic, HttpAttemptFailureKind,
 };
 use httpmock::prelude::*;
 use serde_json::json;
@@ -44,7 +44,7 @@ async fn successful_cli_with_exhausted_event_delivery_uses_recovery_finalization
         FailureClass::EventUploadFailed
     );
     assert_eq!(run.diagnostic.cli_exit_code, Some(0));
-    assert_confirmed_event_delivery(&run.diagnostic, 500, 3)?;
+    assert_http_error_event_delivery(&run.diagnostic, 500, 3)?;
     assert_failed_batch_message(&run)?;
 
     Ok(())
@@ -72,7 +72,7 @@ async fn successful_cli_with_nonretryable_event_rejection_reports_failed_batch()
         FailureClass::EventUploadFailed
     );
     assert_eq!(run.diagnostic.cli_exit_code, Some(0));
-    assert_confirmed_event_delivery(&run.diagnostic, 400, 1)?;
+    assert_http_error_event_delivery(&run.diagnostic, 400, 1)?;
     assert_failed_batch_message(&run)?;
 
     Ok(())
@@ -93,7 +93,7 @@ async fn nonzero_cli_remains_primary_when_event_delivery_also_fails()
     assert_eq!(run.error_message, PRIMARY_CLI_ERROR);
     assert_eq!(run.diagnostic.failure_class, FailureClass::CliNonzero);
     assert_eq!(run.diagnostic.cli_exit_code, Some(1));
-    assert_confirmed_event_delivery(&run.diagnostic, 500, 3)?;
+    assert_http_error_event_delivery(&run.diagnostic, 500, 3)?;
 
     Ok(())
 }
@@ -249,7 +249,7 @@ fn assert_failed_batch_message(run: &EventFailureRun) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-fn assert_confirmed_event_delivery(
+fn assert_http_error_event_delivery(
     diagnostic: &FailureDiagnostic,
     http_status: u16,
     attempts_per_batch: usize,
@@ -268,8 +268,8 @@ fn assert_confirmed_event_delivery(
         .as_ref()
         .ok_or_else(|| io::Error::other("failure omitted first failed batch"))?;
     assert_eq!(
-        failed_batch.outcome,
-        EventDeliveryAcceptanceOutcome::ConfirmedRejection
+        failed_batch.response_state,
+        EventDeliveryResponseState::AllHttpErrors
     );
     assert_eq!(failed_batch.attempts.len(), attempts_per_batch);
     assert!(failed_batch.attempts.iter().all(|attempt| {
