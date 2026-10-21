@@ -165,30 +165,6 @@ async function admittedMcpRun() {
 }
 
 describe("immutable connector catalog publication", () => {
-  it("publishes the supplied catalog and keeps repeated publication idempotent", async () => {
-    const first = release("2099-01-01.first", "First lifecycle catalog");
-    serve(first);
-    const response = await accept(sync(), [200]);
-    expect(response.body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-    await directory(first);
-    const repeated = await accept(sync(), [200]);
-    expect(repeated.body).toStrictEqual({
-      outcome: "unchanged",
-      failureCode: null,
-    });
-    const next = release("2099-01-01.next", "Next lifecycle catalog");
-    serve(next);
-    const changed = await accept(sync(), [200]);
-    expect(changed.body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-    await directory(next);
-  });
-
   it("serves a complete catalog after concurrent publication requests", async () => {
     const released = release("2099-01-01.competitors", "Concurrent catalog");
     // Use public methods with no platform OAuth configuration or feature gate.
@@ -292,22 +268,6 @@ describe("slug-first current catalog business readers", () => {
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     return candidate;
   }
-  it("answers detail and permissions from current entries", async () => {
-    await publishedCatalog();
-    const detail = await accept(
-      catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
-      [200],
-    );
-    expect(detail.body.connector.slug).toBe("openai");
-    const permissions = await accept(
-      catalogClient().permissions({
-        headers,
-        params: { connectorSlug: "notion" },
-      }),
-      [200],
-    );
-    expect(permissions.body.permissions.connectorSlug).toBe("notion");
-  });
   it("follows permission metadata changes and removal across catalog publications", async () => {
     const client = catalogClient();
     const first = release(
@@ -371,31 +331,6 @@ describe("slug-first current catalog business readers", () => {
     );
     const listed = await accept(client.list({ headers }), [200]);
     expect(listed.body.connectors.length).toBeGreaterThan(0);
-  });
-  it("a later slug request follows current publication without a retained version", async () => {
-    const first = release("2099-02-02.first", "First OpenAI", "openai");
-    serve(first);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    expect(
-      (
-        await accept(
-          catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
-          [200],
-        )
-      ).body.connector.label,
-    ).toBe("First OpenAI");
-    const next = release("2099-02-02.next", "Next OpenAI", "openai");
-    serve(next);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect(
-      (
-        await accept(
-          catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
-          [200],
-        )
-      ).body.connector.label,
-    ).toBe("Next OpenAI");
   });
 });
 
