@@ -599,7 +599,7 @@ test("Other computer screen-sharing services retain explicit authentication and 
 });
 
 test.each(["staff-colleague", "external-user"])(
-  "A stored UI override cannot expose guided setup to %s",
+  "A stored UI opt-in enables guided setup for %s",
   async (userId) => {
     await page(
       "/connectors?scope=remote-control&setup=vnc",
@@ -608,20 +608,17 @@ test.each(["staff-colleague", "external-user"])(
       { vnc: true, tailscale: true },
       userId,
     );
-    await waitFor(() => {
-      expect(getAction("button", "Add host")).toBeInTheDocument();
-    });
-    expect(queryAction("button", "Add connection")).toBeNull();
-    expect(
-      screen.queryByRole("heading", { name: "Add remote connection" }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("heading", { name: "Personal connections" }),
-    ).toBeNull();
+    await expect(
+      screen.findByRole("heading", { name: "Add remote connection" }),
+    ).resolves.toBeInTheDocument();
+    expect(queryAction("button", "Add host")).toBeNull();
   },
 );
-test("Another account cannot open the network list or count dialog through a stored override", async () => {
+test("An opted-in account can open its network list and count dialog", async () => {
   mockSavedConnections();
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [network] });
+  });
   await page(
     `/connectors?scope=private-network&networkConnections=tailscale:${network.id}`,
     true,
@@ -629,13 +626,15 @@ test("Another account cannot open the network list or count dialog through a sto
     {},
     "other-account",
   );
-  await screen.findByRole("heading", { name: "Cloudflare Access" });
-  expect(
-    screen.queryByRole("region", { name: "Personal networks" }),
-  ).toBeNull();
-  expect(
-    screen.queryByRole("dialog", { name: "Connections using this network" }),
-  ).toBeNull();
+  await expect(
+    screen.findByRole("dialog", {
+      name: "Connections using this network",
+    }),
+  ).resolves.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await expect(
+    screen.findByRole("region", { name: "Personal networks" }),
+  ).resolves.toBeInTheDocument();
 });
 test("Switching accounts immediately removes the previous account's remote UI", async () => {
   await page();

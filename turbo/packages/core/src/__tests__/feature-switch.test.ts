@@ -596,7 +596,7 @@ describe("remote UI rollout", () => {
     expect(getAllFeatureStates(disabled)[key]).toBe(false);
   });
 
-  it("keeps remote setup unavailable outside the staff and verified identity audience", () => {
+  it("defaults remote setup off outside the rollout audience but allows opting in", () => {
     const key = FeatureSwitchKey.RemoteControlGuidedSetup;
     for (const context of [
       {},
@@ -611,10 +611,10 @@ describe("remote UI rollout", () => {
     ]) {
       expect(isFeatureEnabled(key, context)).toBe(false);
       expect(getAllFeatureStates(context)[key]).toBe(false);
-      expect(isFeatureSwitchAvailable(key, context)).toBe(false);
+      expect(isFeatureSwitchAvailable(key, context)).toBe(true);
       const overridden = { ...context, overrides: { [key]: true } };
-      expect(isFeatureEnabled(key, overridden)).toBe(false);
-      expect(getAllFeatureStates(overridden)[key]).toBe(false);
+      expect(isFeatureEnabled(key, overridden)).toBe(true);
+      expect(getAllFeatureStates(overridden)[key]).toBe(true);
     }
   });
 

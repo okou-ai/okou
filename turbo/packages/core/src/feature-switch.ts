@@ -101,7 +101,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     // Preserve the maintainer's access outside the staff organization.
     enabledUserHashes: ["032a75d8", "35679123"],
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ChatResourcePanel]: {
     maintainer: "bingjie@okou.ai",
