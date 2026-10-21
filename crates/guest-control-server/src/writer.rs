@@ -76,11 +76,7 @@ impl GuestWriter {
         if cancelled.load(Ordering::Acquire) {
             return Ok(false);
         }
-        let result = send_frame(stream.as_raw_fd(), frame, GUEST_FRAME_WRITE_DEADLINE);
-        if result.is_err() {
-            let _ = stream.shutdown(Shutdown::Both);
-        }
-        result.map(|()| true)
+        send_frame_or_shutdown(&stream, frame, GUEST_FRAME_WRITE_DEADLINE).map(|()| true)
     }
 
     /// Build and send one frame while holding the writer mutex.
@@ -93,11 +89,7 @@ impl GuestWriter {
     {
         let stream = self.stream.lock().unwrap_or_else(|e| e.into_inner());
         let frame = build_frame()?;
-        let result = send_frame(stream.as_raw_fd(), &frame, GUEST_FRAME_WRITE_DEADLINE);
-        if result.is_err() {
-            let _ = stream.shutdown(Shutdown::Both);
-        }
-        result
+        send_frame_or_shutdown(&stream, &frame, GUEST_FRAME_WRITE_DEADLINE)
     }
 
     fn write_frame_with_deadline_after_lock<F>(
@@ -111,14 +103,18 @@ impl GuestWriter {
     {
         let stream = self.stream.lock().unwrap_or_else(|e| e.into_inner());
         after_lock();
-        let result = send_frame(stream.as_raw_fd(), frame, deadline);
-        if result.is_err() {
-            // The protocol has no resync marker. After a timeout or partial
-            // write failure, keep the stream from carrying corrupted frames.
-            let _ = stream.shutdown(Shutdown::Both);
-        }
-        result
+        send_frame_or_shutdown(&stream, frame, deadline)
     }
+}
+
+fn send_frame_or_shutdown(stream: &UnixStream, frame: &[u8], deadline: Duration) -> io::Result<()> {
+    let result = send_frame(stream.as_raw_fd(), frame, deadline);
+    if result.is_err() {
+        // The protocol has no resync marker. After a timeout or partial
+        // write failure, keep the stream from carrying corrupted frames.
+        let _ = stream.shutdown(Shutdown::Both);
+    }
+    result
 }
 
 fn send_frame(fd: RawFd, frame: &[u8], deadline: Duration) -> io::Result<()> {
