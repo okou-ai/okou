@@ -103,6 +103,13 @@ test("Lab groups active feature switches", async () => {
   await setupPage({
     context,
     path: "/_/lab",
+    auth: {
+      user: { id: "data-rollout-lab-user", fullName: "Rollout Tester" },
+      organization: {
+        activeOrg: { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
     featureSwitches: { [FeatureSwitchKey.Lab]: true },
   });
 
@@ -136,6 +143,29 @@ test("Lab groups active feature switches", async () => {
     ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
+});
+
+test("Lab keeps staff-only data rollouts unavailable outside their audience", async () => {
+  await setupPage({
+    context,
+    path: "/_/lab",
+    featureSwitches: { [FeatureSwitchKey.Lab]: true },
+  });
+  await screen.findByRole("heading", { name: "Lab" });
+  await screen.findByText("Custom templates");
+  const metadata = getFeatureSwitchMetadata();
+  expect(
+    screen.queryByText(
+      metadata[FeatureSwitchKey.Commerce].displayName ??
+        FeatureSwitchKey.Commerce,
+    ),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(
+      metadata[FeatureSwitchKey.SocialDataExpansion].displayName ??
+        FeatureSwitchKey.SocialDataExpansion,
+    ),
+  ).not.toBeInTheDocument();
 });
 
 test("The maintainer can manage the remote UI switch in Lab", async () => {

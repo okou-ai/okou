@@ -46,6 +46,24 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.Commerce]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Product Data",
+    description:
+      "Search and inspect Amazon products through managed Commerce data requests.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
+  [FeatureSwitchKey.SocialDataExpansion]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Expanded Social Data",
+    description:
+      "Access Douyin and Weibo saved Social data jobs and explicitly budgeted continuation pages.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.PwaKeyboardViewport]: {
     maintainer: "bingjie@okou.ai",
     displayName: "PWA keyboard viewport",

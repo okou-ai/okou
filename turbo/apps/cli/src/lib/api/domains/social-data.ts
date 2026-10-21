@@ -1,6 +1,7 @@
 import {
   socialDataContract,
   type SocialDataCreateRequest,
+  type SocialDataContinueRequest,
   type SocialDataJobResponse,
   type SocialDataListQuery,
   type SocialDataListResponse,
@@ -71,6 +72,50 @@ export async function createSocialDataJob(
   handleError(result, "Okou Social could not create this job");
 }
 
+export async function quoteSocialDataContinuation(
+  jobId: string,
+): Promise<SocialDataQuoteResponse> {
+  const client = initClient(socialDataContract, {
+    ...(await getClientConfig()),
+    validateResponse: true,
+  });
+  const result = await client.quoteContinuation({
+    headers: {},
+    params: { jobId },
+    body: {},
+    fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  });
+  if (result.status === 200) return result.body;
+  handleError(result, "Okou Social could not quote this next page");
+}
+
+export async function continueSocialDataJob(
+  jobId: string,
+  body: SocialDataContinueRequest,
+): Promise<SocialDataJobResponse> {
+  const client = initClient(socialDataContract, {
+    ...(await getClientConfig()),
+    validateResponse: true,
+  });
+  let result;
+  try {
+    result = await client.continue({
+      headers: {},
+      params: { jobId },
+      body,
+      fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    });
+  } catch (error) {
+    throw new SocialDataRecoveryError(
+      `The next-page submission response was not received. Repeat the same continuation with --request-id ${body.requestId}; do not use a new request ID.`,
+      { requestId: body.requestId, command: "okou social jobs list --json" },
+      { cause: error },
+    );
+  }
+  if (result.status === 202) return result.body;
+  handleError(result, "Okou Social could not continue this collection");
+}
+
 export async function listSocialDataJobs(
   query: SocialDataListQuery,
 ): Promise<SocialDataListResponse> {
@@ -80,7 +125,15 @@ export async function listSocialDataJobs(
   });
   const result = await client.list({
     headers: {},
-    query,
+    query: {
+      ...query,
+      includeExpanded:
+        query.includeExpanded === undefined
+          ? undefined
+          : query.includeExpanded
+            ? "true"
+            : "false",
+    },
     fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
   });
   if (result.status === 200) return result.body;

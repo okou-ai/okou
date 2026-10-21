@@ -36,6 +36,47 @@ interface JobCapability {
 const jobCapabilities: Partial<
   Record<SocialCommandPlatform, readonly JobCapability[]>
 > = {
+  douyin: [
+    { operation: "inspect", targets: ["profile"] },
+    {
+      operation: "posts",
+      targets: ["profile"],
+      inputs: { "--sort": ["latest", "popular"] },
+    },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: { "--type": ["account"] },
+      note: "Account search only; defaults to account",
+    },
+    { operation: "comments", targets: ["video"] },
+    {
+      operation: "replies",
+      targets: ["video"],
+      note: "Requires --comment-id with the parent comment's decimal ID; no recursive replies",
+    },
+    { operation: "followers", targets: ["profile"] },
+    { operation: "following", targets: ["profile"] },
+  ],
+  weibo: [
+    {
+      operation: "inspect",
+      targets: ["numeric_profile", "custom_profile"],
+    },
+    { operation: "posts", targets: ["numeric_profile"] },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: { "--type": ["post"] },
+      note: "Realtime post search only; defaults to post",
+    },
+    { operation: "comments", targets: ["numeric_post"] },
+    {
+      operation: "replies",
+      targets: ["numeric_post"],
+      note: "Requires --comment-id with the parent comment's decimal ID; no recursive replies",
+    },
+  ],
   threads: [
     {
       operation: "inspect",
@@ -378,6 +419,21 @@ function jobSection(selected: SocialCommandPlatform) {
     details: jobCapabilities[selected] ?? [],
     note: "Explicit job controls select these capabilities. Existing commands without them use the standard capabilities above. Deployment availability is checked by the free quote API; unsupported inputs fail before execution.",
     recovery: "okou social jobs get <job-id> --wait --json",
+    ...(selected === "douyin" || selected === "weibo"
+      ? {
+          targetConstraints:
+            selected === "douyin"
+              ? "Full public HTTPS douyin.com/user/<id> or douyin.com/video/<numeric-id>; no query strings, fragments, or share links"
+              : "Full public HTTPS weibo.com/u/<numeric-id>, weibo.com/n/<name> (inspect only), or weibo.com/<numeric-user-id>/<numeric-post-id>; no query strings, fragments, or share links",
+          continuation: {
+            quote: "okou social jobs continue <job-id> --dry-run --json",
+            create:
+              "okou social jobs continue <job-id> --max-credits <credits> [--async] --json",
+            note: "Explicit one-page successor job only when continuationAvailable; immutable target, filters, and total collection limit; independent budget and request ID. No automatic recursion or retries.",
+          },
+          downloads: false,
+        }
+      : {}),
   };
 }
 

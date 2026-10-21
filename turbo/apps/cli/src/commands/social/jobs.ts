@@ -15,10 +15,12 @@ import { Command, InvalidArgumentError } from "commander";
 
 import {
   cancelSocialDataJob,
+  continueSocialDataJob,
   createSocialDataJob,
   getSocialDataJob,
   listSocialDataJobs,
   quoteSocialData,
+  quoteSocialDataContinuation,
   SocialDataRecoveryError,
 } from "../../lib/api/domains/social-data";
 import {
@@ -26,7 +28,11 @@ import {
   parseSocialTarget,
   SOCIAL_JOB_ONLY_PLATFORMS,
 } from "./intents";
-import { withSocialOutput, type SocialExportOptions } from "./output";
+import {
+  addSocialExportOptions,
+  withSocialOutput,
+  type SocialExportOptions,
+} from "./output";
 
 export interface SocialJobOptions extends SocialExportOptions {
   readonly dryRun?: boolean;
@@ -46,6 +52,7 @@ export interface SocialJobOptions extends SocialExportOptions {
   readonly thread?: boolean;
   readonly requireViews?: boolean;
   readonly language?: string;
+  readonly commentId?: string;
 }
 
 function positiveInteger(value: string): number {
@@ -64,7 +71,10 @@ function uuid(value: string): string {
   return parsed.data;
 }
 
-export function addSocialJobOptions(command: Command): void {
+export function addSocialJobOptions(
+  command: Command,
+  continuation = false,
+): void {
   command
     .option("--dry-run", "Quote this bounded data operation without billing")
     .option(
@@ -82,10 +92,17 @@ export function addSocialJobOptions(command: Command): void {
       "after",
       `
 Saved data jobs:
-  --dry-run, --max-credits, --async, or --request-id select the saved data job API.
-  Without these controls, existing Social command behavior is unchanged.
+  ${
+    continuation
+      ? "--dry-run quotes for free; creating a successor requires its own --max-credits."
+      : "--dry-run, --max-credits, --async, or --request-id select the saved data job API. Without these controls, existing Social command behavior is unchanged."
+  }
   Job capabilities differ by platform; unsupported operations and inputs fail before execution.
-  --limit bounds the total results (maximum 1000); quotes show the reserved credit ceiling.
+  ${
+    continuation
+      ? "The original total --limit (maximum 1000) cannot be overridden. Exports contain this page only; collection metadata reports cumulative progress."
+      : "--limit bounds the total results (maximum 1000); quotes show the reserved credit ceiling."
+  }
   --dry-run is free. --max-credits is enforced by the server before starting work.
   --stream and --checkpoint are unavailable for saved jobs. --dry-run and --async do not accept export options.
   Synchronous saved jobs support the command's existing export formats.
@@ -166,6 +183,7 @@ function dataRequest(
     thread: options.thread,
     requireViews: options.requireViews,
     language: options.language,
+    commentId: options.commentId,
   });
   if (!parsed.success) {
     throw new InvalidArgumentError(
@@ -348,6 +366,7 @@ export function createSocialJobsCommand(runAction: RunAction): Command {
           const query = socialDataListQuerySchema.safeParse({
             limit: options.limit,
             cursor: options.cursor,
+            includeExpanded: "true",
           });
           if (!query.success) {
             throw new InvalidArgumentError("--limit must be between 1 and 100");
@@ -387,6 +406,79 @@ export function createSocialJobsCommand(runAction: RunAction): Command {
         });
       },
     );
+  const continuation = new Command("continue")
+    .description(
+      "Continue one saved collection page with an independent budget and request ID",
+    )
+    .argument("<job-id>", "Saved Social job UUID", uuid)
+    .option("--json", "Print compact JSON")
+    .addHelpText(
+      "after",
+      "\nThe target, filters, and original total limit are immutable. Quote first with --dry-run. Creating a successor is a separately billed operation, not reading the original job. Creation requires an independent --max-credits. Exports contain this successor page only, not an aggregate of earlier jobs; collection metadata reports cumulative progress. No automatic continuation, recursion, or retry; reuse the same request ID only to recover the same successor submission.",
+    )
+    .action(async (jobId: string, options: SocialJobOptions) => {
+      await runAction(options.json === true, async () => {
+        validateOptions(options);
+        if (!options.dryRun && options.maxCredits === undefined) {
+          throw new InvalidArgumentError(
+            "Continuation creation requires an independent --max-credits; use --dry-run for a free quote",
+          );
+        }
+        const compact = options.json === true;
+        if (options.dryRun) {
+          const quote = await quoteSocialDataContinuation(jobId);
+          printJson(
+            {
+              kind: "quote",
+              ...quote,
+              ...(options.maxCredits === undefined
+                ? {}
+                : {
+                    budget: {
+                      maxCredits: options.maxCredits,
+                      fits: quote.maxCredits <= options.maxCredits,
+                    },
+                  }),
+            },
+            compact,
+          );
+          return;
+        }
+        const body = {
+          requestId: options.requestId ?? randomUUID(),
+          ...(options.maxCredits === undefined
+            ? {}
+            : { maxCredits: options.maxCredits }),
+        };
+        await withSocialOutput(options, "collection", async (write) => {
+          console.error(
+            compact
+              ? JSON.stringify({
+                  kind: "submission",
+                  requestId: body.requestId,
+                })
+              : `Social continuation request ID: ${body.requestId}`,
+          );
+          const created = await continueSocialDataJob(jobId, body);
+          if (options.async) {
+            printJson(
+              { ...created, recoveryCommand: recoveryCommand(created.jobId) },
+              compact,
+            );
+            return;
+          }
+          await withJobInterruption(created, compact, async (signal) => {
+            const result = await waitForJob(created, signal);
+            if (result.status !== "completed") process.exitCode = 1;
+            if (result.data === null) printJson(result, compact);
+            else await write({ kind: "result", ...result });
+          });
+        });
+      });
+    });
+  addSocialJobOptions(continuation, true);
+  addSocialExportOptions(continuation, "collection");
+
   const cancel = new Command("cancel")
     .description("Stop a saved data job and retain delivered results")
     .argument("<job-id>", "Saved Social job UUID", uuid)
@@ -400,5 +492,6 @@ export function createSocialJobsCommand(runAction: RunAction): Command {
     .description("Find, recover, and cancel saved Social data jobs")
     .addCommand(list)
     .addCommand(get)
+    .addCommand(continuation)
     .addCommand(cancel);
 }

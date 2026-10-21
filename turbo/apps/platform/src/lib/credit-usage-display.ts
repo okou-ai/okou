@@ -50,6 +50,11 @@ const USAGE_DISPLAY_NAMES = {
       return $.usage.displayNames.peopleSearch;
     });
   },
+  productData(): string {
+    return i18n.t(($) => {
+      return $.usage.displayNames.productData;
+    });
+  },
   seo(): string {
     return i18n.t(($) => {
       return $.usage.displayNames.seo;
@@ -90,6 +95,7 @@ const MANAGED_USAGE_KIND_DISPLAY_NAMES: Readonly<Record<string, () => string>> =
     "people-search": USAGE_DISPLAY_NAMES.peopleSearch,
     seo: USAGE_DISPLAY_NAMES.seo,
     social: USAGE_DISPLAY_NAMES.socialSearch,
+    commerce: USAGE_DISPLAY_NAMES.productData,
     finance: USAGE_DISPLAY_NAMES.finance,
     weather: USAGE_DISPLAY_NAMES.weather,
     "image-recognition": USAGE_DISPLAY_NAMES.imageRecognition,
@@ -320,11 +326,12 @@ export function buildCreditUsageDisplaySegments(
           : [{ kind: source.kind, credits: provider.credits }];
       for (const usageKind of usageKinds) {
         const entry = { ...usageKind, provider: provider.provider };
-        // Social Search is one managed capability, so every vendor behind it
-        // contributes to a single segment instead of splitting across the
-        // segment the raw breakdown happens to report.
+        // Social and commerce are managed capabilities: all their providers
+        // contribute to Connectors even when reported in the raw Other bucket.
+        const baseKind = usageKindBase(usageKind.kind);
         const target =
-          source.kind === "other" && usageKindBase(usageKind.kind) === "social"
+          source.kind === "other" &&
+          (baseKind === "social" || baseKind === "commerce")
             ? getSegment("connector")
             : segment;
         if (target !== segment) {

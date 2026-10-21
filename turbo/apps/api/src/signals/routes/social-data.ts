@@ -17,6 +17,19 @@ import {
   SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS,
 } from "../services/social-data.service";
 
+import {
+  continueSocialDataJob$,
+  quoteSocialDataContinuation$,
+} from "../services/social-data-continuation.service";
+
+const continuationQuoteBody$ = bodyResultOf(
+  socialDataContract.quoteContinuation,
+);
+const continuationBody$ = bodyResultOf(socialDataContract.continue);
+const continuationParams$ = pathParamsOf(socialDataContract.continue);
+const continuationQuoteParams$ = pathParamsOf(
+  socialDataContract.quoteContinuation,
+);
 const quoteBody$ = bodyResultOf(socialDataContract.quote);
 const createBody$ = bodyResultOf(socialDataContract.create);
 const cancelBody$ = bodyResultOf(socialDataContract.cancel);
@@ -51,6 +64,55 @@ const createSocialDataRoute$ = command(
     const response = await set(
       createSocialDataJob$,
       { auth: get(organizationAuthContext$), body: body.data },
+      signal,
+    );
+    if (response.status === 202 && response.body.billing.state === "pending") {
+      waitUntil(
+        set(
+          advanceSocialDataJob$,
+          response.body.jobId,
+          AbortSignal.timeout(SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS),
+        ),
+      );
+    }
+    return response;
+  },
+);
+
+const quoteContinuationRoute$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const body = await get(continuationQuoteBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    return await set(
+      quoteSocialDataContinuation$,
+      {
+        auth: get(organizationAuthContext$),
+        jobId: get(continuationQuoteParams$).jobId,
+      },
+      signal,
+    );
+  },
+);
+
+const continueSocialDataRoute$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const body = await get(continuationBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const response = await set(
+      continueSocialDataJob$,
+      {
+        auth: get(organizationAuthContext$),
+        jobId: get(continuationParams$).jobId,
+        body: body.data,
+      },
       signal,
     );
     if (response.status === 202 && response.body.billing.state === "pending") {
@@ -111,6 +173,14 @@ const socialDataAuth = {
 } as const;
 
 export const socialDataRoutes: readonly RouteEntry[] = [
+  {
+    route: socialDataContract.quoteContinuation,
+    handler: authRoute(socialDataAuth, quoteContinuationRoute$),
+  },
+  {
+    route: socialDataContract.continue,
+    handler: authRoute(socialDataAuth, continueSocialDataRoute$),
+  },
   {
     route: socialDataContract.quote,
     handler: authRoute(socialDataAuth, quoteSocialDataRoute$),
