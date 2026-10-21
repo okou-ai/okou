@@ -101,8 +101,6 @@ export function OnboardingIndustryPage() {
             startingPromptKey: "",
             recommendationJobId: null,
             recommendationStartedAt: null,
-            recommendationStatus: "idle",
-            recommendation: null,
           });
           captureIndustrySelected(industry);
         }}

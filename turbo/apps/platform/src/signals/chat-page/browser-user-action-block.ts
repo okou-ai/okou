@@ -118,18 +118,12 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
   readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
   readonly removeFileDraft$: Command<void, [string]>;
-  readonly operation$: Computed<Promise<void> | undefined>;
-  readonly callbackOperation$: Computed<Promise<void> | undefined>;
-  readonly entryState$: Computed<
-    "idle" | "checking" | "ready" | "unavailable" | "invalid"
-  >;
-  readonly entryAction$: Computed<BrowserInputAction | null>;
-  readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
-  readonly invalidateEntry$: Command<void, []>;
-  readonly standaloneEntryRef$: Command<
-    (() => void) | undefined,
-    [HTMLDivElement | null]
-  >;
+  /**
+   * The website check for a pending input form, or null when the website
+   * cannot take this input. Evaluated only while a pending form reads it.
+   */
+  readonly entry$: Computed<Promise<BrowserInputEntry>>;
+  readonly refreshEntry$: Command<void, []>;
   readonly subscribe$: Command<void, [AbortSignal]>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly updateChoiceDraft$: Command<
@@ -151,82 +145,63 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     (() => void) | undefined,
     [HTMLFormElement | null]
   >;
-  readonly submit$: Command<Promise<void>, [AbortSignal]>;
+  readonly submit$: Command<Promise<void>, [BrowserInputAction, AbortSignal]>;
   readonly cancel$: Command<Promise<void>, [AbortSignal]>;
   readonly continue$: Command<Promise<void>, [AbortSignal]>;
 }
 
-function createEntrySignals(
+export type BrowserInputEntry =
+  | { readonly kind: "ready"; readonly action: BrowserInputAction }
+  | { readonly kind: "unavailable" }
+  /** The website refused submitted values; only a fresh check can recover. */
+  | { readonly kind: "rejected" };
+
+async function preflightBrowserUserAction(
+  client: ApiClientFactory,
   descriptor: BrowserUserActionDescriptor,
-): Pick<
-  BrowserUserActionSignals,
-  "entryState$" | "entryAction$" | "beginEntry$" | "invalidateEntry$"
-> {
-  const internalState$ = state<
-    "idle" | "checking" | "ready" | "unavailable" | "invalid"
-  >("idle");
-  const internalAction$ = state<BrowserInputAction | null>(null);
-  const resetEntrySignal$ = resetSignal();
-  const beginEntry$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const operationSignal = set(resetEntrySignal$, signal);
-    set(internalState$, "checking");
-    set(internalAction$, null);
-    const checked = await settle(
-      accept(
-        get(apiClient$)(browserUserActionsContract).preflight({
-          params: { requestToken: descriptor.requestToken },
-          body: {},
-          fetchOptions: { signal: operationSignal },
-        }),
-        [200, 403, 404, 409, 410, 502, 503],
-        operationSignal,
-      ),
-      operationSignal,
-    );
-    signal.throwIfAborted();
-    operationSignal.throwIfAborted();
-    if (!checked.ok) {
-      set(internalState$, "unavailable");
-      return;
-    }
-    if (
-      checked.value.status === 200 &&
-      actionMatches(checked.value.body, descriptor) &&
-      checked.value.body.kind === "input" &&
-      checked.value.body.state === "pending"
-    ) {
-      set(internalAction$, checked.value.body);
-      set(internalState$, "ready");
-      return;
-    }
-    set(internalState$, "unavailable");
-  });
-  const invalidateEntry$ = command(({ set }) => {
-    set(internalAction$, null);
-    set(internalState$, "invalid");
-  });
-  return {
-    entryState$: computed((get) => {
-      return get(internalState$);
+): Promise<BrowserInputEntry> {
+  const checked = await accept(
+    client(browserUserActionsContract).preflight({
+      params: { requestToken: descriptor.requestToken },
+      body: {},
     }),
-    entryAction$: computed((get) => {
-      return get(internalAction$);
-    }),
-    beginEntry$,
-    invalidateEntry$,
-  };
+    [200, 403, 404, 409, 410, 502, 503],
+  );
+  return checked.status === 200 &&
+    actionMatches(checked.body, descriptor) &&
+    checked.body.kind === "input" &&
+    checked.body.state === "pending"
+    ? { kind: "ready", action: checked.body }
+    : { kind: "unavailable" };
 }
 
-function createStandaloneEntrySignals(
-  beginEntry$: BrowserUserActionSignals["beginEntry$"],
-): Pick<BrowserUserActionSignals, "standaloneEntryRef$"> {
-  // A standalone form checks the website whenever a pending state is shown.
-  const standaloneEntryRef$ = onRef(
-    command(async ({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
-      await set(beginEntry$, signal);
-    }),
-  );
-  return { standaloneEntryRef$ };
+function createEntrySignals(descriptor: BrowserUserActionDescriptor): Pick<
+  BrowserUserActionSignals,
+  "entry$" | "refreshEntry$"
+> & {
+  readonly rejectEntry$: Command<void, []>;
+} {
+  // Opening the form or Retry asks for a fresh check; thread notifications
+  // re-read the request without touching the website.
+  const check$ = state({ revision: 0, rejected: false });
+  const entry$ = computed(async (get): Promise<BrowserInputEntry> => {
+    const { rejected } = get(check$);
+    const client = get(apiClient$);
+    return rejected
+      ? { kind: "rejected" }
+      : await preflightBrowserUserAction(client, descriptor);
+  });
+  const refreshEntry$ = command(({ set }) => {
+    set(check$, ({ revision }) => {
+      return { revision: revision + 1, rejected: false };
+    });
+  });
+  const rejectEntry$ = command(({ set }) => {
+    set(check$, ({ revision }) => {
+      return { revision, rejected: true };
+    });
+  });
+  return { entry$, refreshEntry$, rejectEntry$ };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -781,9 +756,7 @@ interface BrowserUserActionMutationContext {
   readonly rangeDraft$: BrowserUserActionSignals["rangeDraft$"];
   readonly colorDraft$: BrowserUserActionSignals["colorDraft$"];
   readonly fileDraft$: BrowserUserActionSignals["fileDraft$"];
-  readonly entryAction$: BrowserUserActionSignals["entryAction$"];
-  readonly entryState$: BrowserUserActionSignals["entryState$"];
-  readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
+  readonly rejectEntry$: Command<void, []>;
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
   readonly deliverCallback$: Command<
     Promise<void>,
@@ -1307,13 +1280,6 @@ function isInvalidBrowserInputValueResponse(result: {
   );
 }
 
-function entryActionMatches(
-  entryAction: BrowserInputAction | null,
-  descriptor: BrowserUserActionDescriptor,
-): boolean {
-  return !entryAction || actionMatches(entryAction, descriptor);
-}
-
 function browserInputSubmissionError(error: unknown): Error {
   return error instanceof ApiError
     ? error
@@ -1357,91 +1323,101 @@ function createSubmitSignal({
   rangeDraft$,
   colorDraft$,
   fileDraft$,
-  entryAction$,
-  entryState$,
-  invalidateEntry$,
+  rejectEntry$,
   clearDraft$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["submit$"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    const request = await get(request$);
-    signal.throwIfAborted();
-    if (
-      request.kind !== "action" ||
-      request.action.kind !== "input" ||
-      request.action.state !== "pending"
-    ) {
-      return;
-    }
-    const entryState = get(entryState$);
-    if (entryState === "unavailable" || entryState === "invalid") {
-      return;
-    }
-    const entryAction = get(entryAction$);
-    if (!entryActionMatches(entryAction, descriptor)) {
-      return;
-    }
-    const action = entryState === "ready" ? entryAction : request.action;
-    if (!action || action.state !== "pending") {
-      return;
-    }
-    const prepared = await settle(
-      browserInputSubmissionValues(
-        action,
-        browserFileUploader(get(apiClient$), descriptor.requestToken, signal),
-        {
-          draft: get(draft$),
-          choiceDraft: get(choiceDraft$),
-          checkboxDraft: get(checkboxDraft$),
-          radioDraft: get(radioDraft$),
-          rangeDraft: get(rangeDraft$),
-          colorDraft: get(colorDraft$),
-          fileDraft: get(fileDraft$),
-        },
-      ),
-    );
-    signal.throwIfAborted();
-    if (!prepared.ok) {
-      throw browserInputSubmissionError(prepared.error);
-    }
-    if (!prepared.value) {
-      return;
-    }
-    const result = await set(
-      write$,
-      { kind: "apply", values: prepared.value },
-      signal,
-    );
-    signal.throwIfAborted();
-    const status: number = result.status;
-    if (isInvalidBrowserInputValueResponse(result)) {
-      set(invalidateEntry$);
-      return;
-    }
-    if (status !== 200) {
-      set(clearDraft$);
-      return;
-    }
-    if (
-      !actionMatches(result.body, descriptor) ||
-      result.body.kind !== "input"
-    ) {
-      set(clearDraft$);
-      return;
-    }
-    if (result.body.state !== "pending") {
-      set(clearDraft$);
-    }
-    if (result.body.state === "succeeded") {
-      await set(
-        deliverCallback$,
-        descriptor.callbackPrompt,
-        result.body.callbackIds.success,
+  // The form submits the action it shows: the checked one, or the requested
+  // one while a check of a form without native inputs is still pending.
+  const submit$ = command(
+    async (
+      { get, set },
+      action: BrowserInputAction,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const request = await get(request$);
+      signal.throwIfAborted();
+      if (
+        request.kind !== "action" ||
+        request.action.kind !== "input" ||
+        request.action.state !== "pending" ||
+        action.state !== "pending" ||
+        !actionMatches(action, descriptor)
+      ) {
+        return;
+      }
+      const prepared = await settle(
+        browserInputSubmissionValues(
+          action,
+          browserFileUploader(get(apiClient$), descriptor.requestToken, signal),
+          {
+            draft: get(draft$),
+            choiceDraft: get(choiceDraft$),
+            checkboxDraft: get(checkboxDraft$),
+            radioDraft: get(radioDraft$),
+            rangeDraft: get(rangeDraft$),
+            colorDraft: get(colorDraft$),
+            fileDraft: get(fileDraft$),
+          },
+        ),
+      );
+      signal.throwIfAborted();
+      if (!prepared.ok) {
+        throw browserInputSubmissionError(prepared.error);
+      }
+      if (!prepared.value) {
+        return;
+      }
+      const result = await set(
+        write$,
+        { kind: "apply", values: prepared.value },
         signal,
       );
       signal.throwIfAborted();
-    }
-  });
+      const status: number = result.status;
+      if (isInvalidBrowserInputValueResponse(result)) {
+        set(rejectEntry$);
+        return;
+      }
+      if (
+        status !== 200 ||
+        !actionMatches(result.body, descriptor) ||
+        result.body.kind !== "input"
+      ) {
+        set(clearDraft$);
+        return;
+      }
+      if (result.body.state !== "pending") {
+        set(clearDraft$);
+      }
+      if (result.body.state === "succeeded") {
+        await set(
+          deliverCallback$,
+          descriptor.callbackPrompt,
+          result.body.callbackIds.success,
+          signal,
+        );
+        signal.throwIfAborted();
+      }
+    },
+  );
+  // Upload staging is shared by request, not by the mounted form. A reopened
+  // form must await the existing submit instead of overwriting its file bytes.
+  const inFlight$ = state<Promise<void> | null>(null);
+  return command(
+    ({ get, set }, action: BrowserInputAction, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      const inFlight = get(inFlight$);
+      if (inFlight) {
+        return inFlight;
+      }
+      const operation = withCleanup(set(submit$, action, signal), () => {
+        set(inFlight$, null);
+      });
+      set(inFlight$, operation);
+      return operation;
+    },
+  );
 }
 
 function createCancelSignal({
@@ -1451,7 +1427,7 @@ function createCancelSignal({
   clearDraft$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["cancel$"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
+  const cancel$ = command(async ({ get, set }, signal: AbortSignal) => {
     const request = await get(request$);
     signal.throwIfAborted();
     if (request.kind !== "action" || request.action.state !== "pending") {
@@ -1476,6 +1452,7 @@ function createCancelSignal({
       signal.throwIfAborted();
     }
   });
+  return cancel$;
 }
 
 function createContinueSignal({
@@ -1483,7 +1460,7 @@ function createContinueSignal({
   request$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["continue$"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
+  const continue$ = command(async ({ get, set }, signal: AbortSignal) => {
     const request = await get(request$);
     signal.throwIfAborted();
     if (request.kind !== "action") {
@@ -1506,6 +1483,7 @@ function createContinueSignal({
     }
     await set(deliverCallback$, callback.prompt, callback.ids, signal);
   });
+  return continue$;
 }
 
 function createMutationSignals({
@@ -1519,9 +1497,7 @@ function createMutationSignals({
   colorDraft$,
   fileDraft$,
   clearDraft$,
-  entryAction$,
-  entryState$,
-  invalidateEntry$,
+  rejectEntry$,
 }: Pick<
   BrowserUserActionMutationContext,
   | "descriptor"
@@ -1534,33 +1510,22 @@ function createMutationSignals({
   | "colorDraft$"
   | "fileDraft$"
   | "clearDraft$"
-  | "entryAction$"
-  | "entryState$"
-  | "invalidateEntry$"
->): Pick<
-  BrowserUserActionSignals,
-  "operation$" | "callbackOperation$" | "submit$" | "cancel$" | "continue$"
-> {
-  const internalOperation$ = state<Promise<void> | undefined>(undefined);
-  const internalCallbackOperation$ = state<Promise<void> | undefined>(
-    undefined,
-  );
-  const running$ = state<Promise<void> | null>(null);
+  | "rejectEntry$"
+>): Pick<BrowserUserActionSignals, "submit$" | "cancel$" | "continue$"> {
   const write$ = createBrowserMutationSignal(descriptor);
   const deliverCallback$ = command(
-    (
+    async (
       { set },
       callbackPrompt: string,
       callbackIds: ChatActionCallbackIds,
       signal: AbortSignal,
     ): Promise<void> => {
-      const operation = set(
+      await set(
         runChatActionCallback$,
         callbackArgs(descriptor, callbackPrompt, callbackIds),
         signal,
       );
-      set(internalCallbackOperation$, operation);
-      return operation;
+      signal.throwIfAborted();
     },
   );
   const context: BrowserUserActionMutationContext = {
@@ -1574,39 +1539,15 @@ function createMutationSignals({
     rangeDraft$,
     colorDraft$,
     fileDraft$,
-    entryAction$,
-    entryState$,
-    invalidateEntry$,
+    rejectEntry$,
     clearDraft$,
     deliverCallback$,
   };
 
-  const trackOperation = (action$: Command<Promise<void>, [AbortSignal]>) => {
-    return command(({ get, set }, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const running = get(running$);
-      if (running) {
-        return running;
-      }
-      const operation = withCleanup(set(action$, signal), () => {
-        set(running$, null);
-      });
-      set(running$, operation);
-      set(internalOperation$, operation);
-      return operation;
-    });
-  };
-
   return {
-    operation$: computed((get) => {
-      return get(internalOperation$);
-    }),
-    callbackOperation$: computed((get) => {
-      return get(internalCallbackOperation$);
-    }),
-    submit$: trackOperation(createSubmitSignal(context)),
-    cancel$: trackOperation(createCancelSignal(context)),
-    continue$: trackOperation(createContinueSignal(context)),
+    submit$: createSubmitSignal(context),
+    cancel$: createCancelSignal(context),
+    continue$: createContinueSignal(context),
   };
 }
 
@@ -1614,14 +1555,11 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
-  const entrySignals = createEntrySignals(descriptor);
   const subscriptionSignals = createSubscriptionSignals(
     descriptor.threadId,
     requestSignals.refresh$,
   );
-  const standaloneEntrySignals = createStandaloneEntrySignals(
-    entrySignals.beginEntry$,
-  );
+  const { rejectEntry$, ...entrySignals } = createEntrySignals(descriptor);
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals({
     descriptor,
@@ -1634,16 +1572,13 @@ export function createBrowserUserActionSignals(
     colorDraft$: draftSignals.colorDraft$,
     fileDraft$: draftSignals.fileDraft$,
     clearDraft$: draftSignals.clearDraft$,
-    entryAction$: entrySignals.entryAction$,
-    entryState$: entrySignals.entryState$,
-    invalidateEntry$: entrySignals.invalidateEntry$,
+    rejectEntry$,
   });
   return {
     ...descriptor,
     request$: requestSignals.request$,
     ...subscriptionSignals,
     ...entrySignals,
-    ...standaloneEntrySignals,
     ...draftSignals,
     ...mutationSignals,
   };

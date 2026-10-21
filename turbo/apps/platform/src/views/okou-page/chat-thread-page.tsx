@@ -8027,8 +8027,6 @@ function PagedAssistantEventItem({
   thread: ChatPanelSignals;
   workHistory?: boolean;
 }) {
-  const retryRichEventTree = useSet(thread.retryRichEventTree$);
-  const pageSignal = useGet(pageSignal$);
   const error = chatEventDisplayError(event);
   if (error) {
     return (
@@ -8073,16 +8071,6 @@ function PagedAssistantEventItem({
           }
           tree={event.tree}
           mediaPreview
-          onRetry={
-            event.richContentError
-              ? () => {
-                  detach(
-                    retryRichEventTree(event, pageSignal),
-                    Reason.DomCallback,
-                  );
-                }
-              : undefined
-          }
         />
       </ChatAssistantMessageBody>
     );

@@ -2,7 +2,6 @@ import { cn } from "@okouai/ui";
 import type { Root } from "hast";
 import type { CSSProperties } from "react";
 
-import { i18n } from "../../i18n/index.ts";
 import {
   createPlainMarkdownTree,
   plainTextFromMarkdownTree,
@@ -87,42 +86,16 @@ function RichContentLoading({
   );
 }
 
-function RichContentError({
-  className,
-  onRetry,
-  style,
-}: {
-  readonly className?: string;
-  readonly onRetry: () => void;
-  readonly style?: CSSProperties;
-}) {
-  return (
-    <MarkdownFrame className={className} style={style}>
-      <button
-        type="button"
-        className="rounded-md border border-border px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
-        onClick={onRetry}
-      >
-        {i18n.t(($) => {
-          return $.chat.errors.recovery.tryAgain;
-        })}
-      </button>
-    </MarkdownFrame>
-  );
-}
-
 /** Renders prepared plain trees immediately and rich trees synchronously. */
 export function MarkdownEventBody({
   chatBubble = false,
   className,
-  onRetry,
   tree,
   mediaPreview,
 }: {
   /** Opt into the chat bubble treatment described above. */
   readonly chatBubble?: boolean;
   readonly className?: string;
-  readonly onRetry?: () => void;
   readonly tree: Root | undefined;
   readonly mediaPreview: boolean | "link";
 }) {
@@ -132,9 +105,6 @@ export function MarkdownEventBody({
     className,
   );
   if (tree === undefined) {
-    if (onRetry !== undefined) {
-      return <RichContentError className={frameClassName} onRetry={onRetry} />;
-    }
     return <RichContentLoading className={frameClassName} />;
   }
   const plainText = plainTextFromMarkdownTree(tree);

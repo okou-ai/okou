@@ -938,7 +938,6 @@ function withPendingAssistantGroup(
 
 interface ChatEventRenderResources {
   readonly trees: ReadonlyMap<string, Root>;
-  readonly errors: ReadonlySet<string>;
   readonly userMessageDocuments: ReadonlyMap<string, UserMessageRenderDocument>;
 }
 
@@ -954,7 +953,6 @@ function renderChatGroups(
         return {
           ...event,
           tree: resources.trees.get(event.id),
-          richContentError: resources.errors.has(event.id),
           userMessageRenderDocument:
             document?.document === chatEventUserMessage(event)
               ? document
@@ -1195,7 +1193,6 @@ function enrichedChatEventsFromSemantic(
     return {
       ...event,
       tree: undefined,
-      richContentError: false,
       isQueued,
       inputCreatedAt,
       inputOriginId,
@@ -1614,7 +1611,6 @@ interface EventTree {
   /** The same text and ID can switch from a streaming URL tail to final. */
   readonly requireUrlTerminator: boolean;
   readonly tree: Root | undefined;
-  readonly error: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
   readonly diagramCodes?: readonly string[];
 }
@@ -1709,7 +1705,6 @@ function planEventTreeUpdates(
         content: plan.content,
         requireUrlTerminator: plan.requireUrlTerminator,
         tree: plainTree,
-        error: false,
       });
       continue;
     }
@@ -1719,31 +1714,10 @@ function planEventTreeUpdates(
       content: plan.content,
       requireUrlTerminator: plan.requireUrlTerminator,
       tree: undefined,
-      error: false,
     });
     richPlans.push({ eventId: event.id, ...plan });
   }
   return { next, richPlans };
-}
-
-function markPendingEventTreesFailed(
-  current: ReadonlyMap<string, EventTree>,
-  plans: readonly RichEventTreePlan[],
-): Map<string, EventTree> | undefined {
-  let failed: Map<string, EventTree> | undefined;
-  for (const plan of plans) {
-    const entry = current.get(plan.eventId);
-    if (
-      entry?.content === plan.content &&
-      entry.requireUrlTerminator === plan.requireUrlTerminator &&
-      entry.tree === undefined &&
-      !entry.error
-    ) {
-      failed ??= new Map(current);
-      failed.set(plan.eventId, { ...entry, error: true });
-    }
-  }
-  return failed;
 }
 
 // Chat prewarms the same layout computeds that visible diagrams read, so
@@ -1765,49 +1739,8 @@ const prewarmMermaidDiagrams$ = command(
   },
 );
 
-/** Re-parse one failed rich body and await its diagrams through the same graph. */
-function createRetryRichEventTree({
-  internalEventTrees$,
-  ensureEventTrees$,
-  diagramCodesForEvents$,
-  mermaidDiagrams,
-}: {
-  readonly internalEventTrees$: State<ReadonlyMap<string, EventTree>>;
-  readonly ensureEventTrees$: Command<
-    Promise<void>,
-    [readonly ChatEvent[], AbortSignal]
-  >;
-  readonly diagramCodesForEvents$: Command<
-    readonly string[],
-    [readonly ChatEvent[]]
-  >;
-  readonly mermaidDiagrams: MermaidDiagramRegistry;
-}): Command<Promise<void>, [ChatEvent, AbortSignal]> {
-  return command(
-    async ({ get, set }, event: ChatEvent, signal: AbortSignal) => {
-      const current = get(internalEventTrees$);
-      const entry = current.get(event.id);
-      const content = chatEventTreeContent(event);
-      if (!entry?.error || content === null || entry.content !== content) {
-        return;
-      }
-      const next = new Map(current);
-      next.delete(event.id);
-      set(internalEventTrees$, next);
-      await set(ensureEventTrees$, [event], signal);
-      signal.throwIfAborted();
-      await set(
-        prewarmMermaidDiagrams$,
-        mermaidDiagrams,
-        set(diagramCodesForEvents$, [event]),
-        signal,
-      );
-    },
-  );
-}
-
 function createEventTreeSignals(registries: EventTreeRegistries) {
-  const { chatActionContext, mermaidDiagrams } = registries;
+  const { chatActionContext } = registries;
 
   const internalEventTrees$ = state<ReadonlyMap<string, EventTree>>(new Map());
   const eventTrees$ = computed((get): ReadonlyMap<string, Root> => {
@@ -1819,16 +1752,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
     }
     return trees;
   });
-  const eventTreeErrors$ = computed((get): ReadonlySet<string> => {
-    const errors = new Set<string>();
-    for (const [eventId, entry] of get(internalEventTrees$)) {
-      if (entry.error) {
-        errors.add(eventId);
-      }
-    }
-    return errors;
-  });
-
   const parseEventTree$ = createEventTreeParser(registries);
   const parseRichEventTrees$ = command(
     async (
@@ -1836,7 +1759,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       richPlans: readonly RichEventTreePlan[],
       signal: AbortSignal,
     ): Promise<void> => {
-      // Keep parser failures on the promise consumed by `settle` below.
       await Promise.resolve();
       signal.throwIfAborted();
       const pending = get(internalEventTrees$);
@@ -1846,8 +1768,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         if (
           pendingEntry?.content !== plan.content ||
           pendingEntry.requireUrlTerminator !== plan.requireUrlTerminator ||
-          pendingEntry.tree !== undefined ||
-          pendingEntry.error
+          pendingEntry.tree !== undefined
         ) {
           continue;
         }
@@ -1857,7 +1778,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
           content: plan.content,
           requireUrlTerminator: plan.requireUrlTerminator,
           tree,
-          error: false,
           diagramCodes,
         });
       }
@@ -1892,17 +1812,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         set(internalEventTrees$, next);
       }
       if (richPlans.length > 0) {
-        const result = await settle(
-          set(parseRichEventTrees$, richPlans, signal),
-          signal,
-        );
-        if (!result.ok) {
-          const pending = get(internalEventTrees$);
-          const failed = markPendingEventTreesFailed(pending, richPlans);
-          if (failed) {
-            set(internalEventTrees$, failed);
-          }
-        }
+        await set(parseRichEventTrees$, richPlans, signal);
       }
       // Only prepared cards have registered signals. Start their subscriptions
       // under the panel owner, including re-entry with already cached trees.
@@ -1921,18 +1831,9 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
     },
   );
 
-  const retryRichEventTree$ = createRetryRichEventTree({
-    internalEventTrees$,
-    ensureEventTrees$,
-    diagramCodesForEvents$,
-    mermaidDiagrams,
-  });
-
   return {
     eventTrees$,
-    eventTreeErrors$,
     ensureEventTrees$,
-    retryRichEventTree$,
     diagramCodesForEvents$,
   };
 }
@@ -1967,30 +1868,25 @@ function createPagedEventResources({
   const mermaidDiagrams = createMermaidDiagramRegistry(openDiagramLightbox$);
   const imageLoads = createImageLoadRegistry();
 
-  const {
-    eventTrees$,
-    eventTreeErrors$,
-    ensureEventTrees$,
-    retryRichEventTree$,
-    diagramCodesForEvents$,
-  } = createEventTreeSignals({
-    chatActionContext,
-    subscriptionResetCardSignals,
-    artifactCardSignals,
-    connectorCardSignals,
-    connectorAccountActionCardSignals,
-    permissionCardSignals,
-    bankingCardSignals,
-    walletCardSignals,
-    browserUserActionCardSignals,
-    computerUseAuthorizationCardSignals,
-    desktopShellAuthorizationCardSignals,
-    planUpgradeCardSignals,
-    mailDraftCardSignals,
-    browserSessionSignals,
-    mermaidDiagrams,
-    imageLoads,
-  });
+  const { eventTrees$, ensureEventTrees$, diagramCodesForEvents$ } =
+    createEventTreeSignals({
+      chatActionContext,
+      subscriptionResetCardSignals,
+      artifactCardSignals,
+      connectorCardSignals,
+      connectorAccountActionCardSignals,
+      permissionCardSignals,
+      bankingCardSignals,
+      walletCardSignals,
+      browserUserActionCardSignals,
+      computerUseAuthorizationCardSignals,
+      desktopShellAuthorizationCardSignals,
+      planUpgradeCardSignals,
+      mailDraftCardSignals,
+      browserSessionSignals,
+      mermaidDiagrams,
+      imageLoads,
+    });
 
   const internalUserMessageDocuments$ = state<
     ReadonlyMap<string, UserMessageRenderDocument>
@@ -2023,7 +1919,6 @@ function createPagedEventResources({
   const eventRenderResources$ = computed((get): ChatEventRenderResources => {
     return {
       trees: get(eventTrees$),
-      errors: get(eventTreeErrors$),
       userMessageDocuments: get(internalUserMessageDocuments$),
     };
   });
@@ -2037,7 +1932,6 @@ function createPagedEventResources({
     publicSignals: {
       browserSessionSignals,
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
-      retryRichEventTree$,
     },
   };
 }
@@ -3524,7 +3418,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     loadMoreRenderedChatGroups$: events.loadMoreRenderedChatGroups$,
     resetRenderedChatGroupsIfAtBottom$:
       events.resetRenderedChatGroupsIfAtBottom$,
-    retryRichEventTree$: events.retryRichEventTree$,
   };
 }
 

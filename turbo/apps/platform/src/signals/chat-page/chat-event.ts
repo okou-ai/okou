@@ -128,8 +128,6 @@ export interface UserMessageRenderDocument {
 export type EnrichedChatEvent = ChatEvent & {
   /** The parsed body, present once the event entered the render window. */
   tree: Root | undefined;
-  /** The current rich body failed to load and can be retried locally. */
-  richContentError: boolean;
   isQueued: boolean;
   /** The user's submission time, preserved across delivery replacement events. */
   inputCreatedAt?: string;
