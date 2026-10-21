@@ -224,7 +224,13 @@ final class GeneratedResultTests: XCTestCase {
       rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
     let window = try await mountResultHost(host)
     defer { unmount(window) }
-    try await eventually {
+    // Signature renewal cold-starts two isolated WebKit sessions before the page can finish.
+    try await eventually(
+      timeout: .seconds(10),
+      message: "HTML signature renewed: \(viewer.preview?.renewedHTMLSignature == true); "
+        + "loading: \(String(describing: findWebView(host.view)?.isLoading)); "
+        + "storage requests: \(fixture.state.storageRequests.withLock { $0.count })"
+    ) {
       guard viewer.preview?.renewedHTMLSignature == true,
         let url = viewer.preview?.contentURL, let web = findWebView(host.view)
       else { return false }
