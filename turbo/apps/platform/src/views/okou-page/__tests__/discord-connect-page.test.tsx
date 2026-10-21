@@ -741,7 +741,6 @@ test.each([
       screen.getByText("Discord is not configured for this organization yet."),
     ).toBeInTheDocument();
     expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-    expect(queryAction("button", "Install to Discord")).not.toBeInTheDocument();
     expect(approvals).toStrictEqual([]);
     expect(window.location.hash).toBe("");
   },

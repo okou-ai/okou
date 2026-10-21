@@ -886,7 +886,6 @@ describe("Discord native sends and transport failures", () => {
       });
       expect(chunks.length).toBeGreaterThan(1);
       for (const chunk of chunks) {
-        expect(chunk).toBeDefined();
         expect(chunk!.length).toBeLessThanOrEqual(2000);
         expect(chunk!.trim().length).toBeGreaterThan(0);
       }
