@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { runStatusSchema } from "./runs";
 
 /** Successful observation JSON is bounded to 2 KiB, independently of input size. */
 export const CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES = 2048;
@@ -29,16 +28,17 @@ export const chatInputStatusResponseSchema = z.discriminatedUnion("status", [
       status: z.literal("consumed"),
       /** Canonical consumption reference, usable with the existing cancel API. */
       runId: z.uuid(),
-      /** Null means the authorized Run is unavailable; no outcome is inferred. */
-      run: z
-        .object({
-          status: runStatusSchema,
-          createdAt: z.iso.datetime(),
-          startedAt: z.iso.datetime().nullable(),
-          completedAt: z.iso.datetime().nullable(),
-        })
-        .strict()
-        .nullable(),
+      /** Consumption is established, but no retained Chat terminal event was found. */
+      terminal: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      ...observationShape,
+      status: z.enum(["completed", "failed", "cancelled"]),
+      runId: z.uuid(),
+      /** Chat terminal event coordinates, not execution lifecycle timestamps. */
+      terminal: eventCoordinateSchema,
     })
     .strict(),
   z
@@ -46,7 +46,7 @@ export const chatInputStatusResponseSchema = z.discriminatedUnion("status", [
       ...observationShape,
       status: z.enum(["queued", "rejected", "revoked", "unavailable"]),
       runId: z.null(),
-      run: z.null(),
+      terminal: z.null(),
     })
     .strict(),
 ]);
@@ -75,8 +75,8 @@ export const chatInputStatusContract = c.router({
       404: apiErrorSchema,
     },
     summary:
-      "Read one original input's retained metadata and consuming Run outcome",
+      "Read one original input's retained Chat disposition and terminal evidence",
     description:
-      "Read-only, body-free observation of one original accepted input. Uses one indexed metadata statement after authorization checks; reads at most one thread, input, replacement and Run, without archive downloads. Successful JSON is at most 2 KiB. Use the MCP send eventId or native clientEventId. Native callers omitting clientEventId must obtain the original input ID once from raw history; createdAt alone is not unique. A retained replacement can establish consumption even when the original row is no longer retained. unavailable means retained metadata cannot establish the input; it does not prove queued, missing or any Run outcome. Archived-only evidence remains accessible through the existing event snapshot/raw history operations. Multiple inputs may share one Run. A null run exposes no outcome; use only the matching run.status to confirm completed, failed, timeout or cancelled.",
+      "Read-only, body-free observation of one original accepted input from retained Chat events. Does not look up execution records, download archives or paginate history. Successful JSON is at most 2 KiB. Use the MCP send eventId or native clientEventId. Native callers omitting clientEventId must obtain the original input ID once from raw history; createdAt alone is not unique. A retained replacement can establish the input's disposition even when its original row is unavailable. queued, rejected and revoked describe the input's retained disposition. consumed confirms consumption only; it does not confirm that execution is still active. completed, failed and cancelled require the same consuming runId's run.completed, run.failed or run.cancelled event in this thread. Multiple inputs may share that runId, which remains a correlation reference after execution-record deletion. terminal contains Chat event coordinates, not execution creation/start/completion times; Chat failures do not expose a separate timeout status. unavailable means retained metadata cannot establish the input; it never proves queued or completed. For archived evidence use the separate snapshot/raw-history operations.",
   },
 });

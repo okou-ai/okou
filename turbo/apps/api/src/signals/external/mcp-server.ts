@@ -771,7 +771,7 @@ function registerMutationTools(
       name: "send_chat_message",
       scope: "okou:chat:send",
       description:
-        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its queue/consumption state and matching Run outcome. Does not wait for a Run or provide safe retries after a lost acknowledgement.",
+        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its retained Chat disposition and matching terminal event. Consumption alone does not prove completion. Does not wait for execution or provide safe retries after a lost acknowledgement.",
       inputSchema: mcpSendChatMessageInputSchema,
       outputSchema: mcpSendChatMessageOutputSchema,
       annotations: writeAnnotations,
