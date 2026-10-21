@@ -4,17 +4,14 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
-import { memberAccountStatus, memberAccountSummary } from "./member-status";
+import { builtinConnectorResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
+import { readMemberAccountFacts } from "./member-status";
 
 import {
   getAgentCustomConnectorGrants,
   getAgentUserBuiltinConnectors,
 } from "../../lib/api/domains/agents";
-import {
-  getBuiltinConnector,
-  getCustomConnector,
-  listConnectorAccountConnections,
-} from "../../lib/api/domains/connectors";
+import { getCustomConnector } from "../../lib/api/domains/connectors";
 import { getOkouAgentId } from "../../lib/okou-env";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import {
@@ -158,50 +155,40 @@ async function loadCheckEvidence(
   runBound: boolean,
   agentId: string | undefined,
 ) {
-  const [definition, currentConnection, accounts, authorized, origin] =
-    await Promise.all([
-      target.kind === "custom"
-        ? getCustomConnector(target.customConnectorId)
-        : null,
-      !runBound && target.kind === "builtin"
-        ? getBuiltinConnector(target.connectorSlug)
-        : null,
-      runBound ? resolveRunConnectorAccountLookups([target]) : null,
-      agentId === undefined
-        ? null
-        : target.kind === "builtin"
-          ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
-              return slugs.includes(target.connectorSlug);
-            })
-          : getAgentCustomConnectorGrants(agentId).then((grants) => {
-              return grants.some((grant) => {
-                return grant.customConnectorId === target.customConnectorId;
-              });
-            }),
-      getPlatformOrigin(),
-    ]);
+  const [definition, accounts, authorized, origin] = await Promise.all([
+    target.kind === "custom"
+      ? getCustomConnector(target.customConnectorId)
+      : null,
+    runBound ? resolveRunConnectorAccountLookups([target]) : null,
+    agentId === undefined
+      ? null
+      : target.kind === "builtin"
+        ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
+            return slugs.includes(target.connectorSlug);
+          })
+        : getAgentCustomConnectorGrants(agentId).then((grants) => {
+            return grants.some((grant) => {
+              return grant.customConnectorId === target.customConnectorId;
+            });
+          }),
+    getPlatformOrigin(),
+  ]);
   const account = accounts === null ? null : accounts[0];
   if (account === undefined) {
     throw new Error("Missing run account lookup for connector");
   }
-  const memberAccounts =
+  const memberFacts =
     !runBound &&
     !(definition && isIntegrationManagedCustomConnector(definition))
-      ? await listConnectorAccountConnections(target, undefined, {
-          includeScopeMismatch: target.kind === "builtin",
-        })
+      ? await readMemberAccountFacts(target)
       : null;
-  const accountSummary = memberAccountSummary(target, memberAccounts);
-  const memberStatus =
-    memberAccounts === null ? null : memberAccountStatus(memberAccounts);
   return {
     definition,
-    currentConnection,
     account,
     authorized,
     origin,
-    accountSummary,
-    memberStatus,
+    accountSummary: memberFacts?.accountSummary ?? null,
+    memberStatus: memberFacts?.memberStatus ?? null,
   };
 }
 
@@ -285,7 +272,13 @@ function currentMemberConnection(
     return null;
   }
   if (target.kind === "builtin") {
-    return evidence.currentConnection;
+    const account = evidence.accountSummary?.defaultConnection;
+    return account
+      ? builtinConnectorResponseSchema.parse({
+          ...account,
+          slug: target.connectorSlug,
+        })
+      : null;
   }
   const definition = evidence.definition;
   if (definition === null) {
