@@ -1,0 +1,15 @@
+# These multi-MiB payload scenarios exercise real termination/delivery deadlines.
+# Reserve the configured slots so concurrent fixture and JSON processing does
+# not consume their deadline budget. Each scenario retains its own concurrency.
+[[profile.default.overrides]]
+filter = '''
+package(=guest-agent-tests) & (
+    test(=codex_app_server_event_delivery_byte_overload_terminates_promptly) |
+    test(=claude_code_drains_healthy_backlog_in_bounded_fifo_batches) |
+    test(=claude_code_event_delivery_byte_overload_terminates_promptly) |
+    test(=codex_app_server_delivers_buffered_notifications_before_turn_start_response) |
+    test(=codex_app_server_delivers_notification_above_former_stdout_limit) |
+    test(=codex_app_server_reduces_oversized_events_before_delivery)
+)
+'''
+threads-required = "num-test-threads"
