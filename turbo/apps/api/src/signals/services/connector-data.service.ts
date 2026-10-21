@@ -2227,44 +2227,6 @@ async function prepareConnectorTokenState(
   };
 }
 
-async function upsertConnectorTokenVariables(
-  args: {
-    readonly db: Db;
-    readonly connectorId: string;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly variables: readonly PreparedBuiltinConnectorTokenVariable[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  for (const variable of args.variables) {
-    const db = args.db;
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: variable.name,
-      value: variable.value,
-      description: null,
-      updatedDescription: null,
-    };
-    const write = connectorOwnedVariableWrite(credential);
-    const [row] = await db
-      .insert(variables)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: variables.id });
-    if (!row) {
-      throw new Error(
-        `Connector variable ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-}
-
 async function upsertPreparedConnectorTokenState(
   args: {
     readonly db: Db;
@@ -2323,17 +2285,49 @@ async function upsertPreparedConnectorTokenState(
       tokenSecretsWriteSignal.throwIfAborted();
     }
   })();
-  await upsertConnectorTokenVariables(
-    {
-      db: args.db,
-      connectorId: args.connectorId,
-      method: args.method,
-      orgId: args.orgId,
-      userId: args.userId,
-      variables: args.state.variables,
-    },
-    signal,
-  );
+  const tokenVariablesWriteArgs: {
+    readonly db: Db;
+    readonly connectorId: string;
+    readonly method: ConnectorAuthMethodRuntimeConfig;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly variables: readonly PreparedBuiltinConnectorTokenVariable[];
+  } = {
+    db: args.db,
+    connectorId: args.connectorId,
+    method: args.method,
+    orgId: args.orgId,
+    userId: args.userId,
+    variables: args.state.variables,
+  };
+  const tokenVariablesWriteSignal = signal;
+  await (async (): Promise<void> => {
+    for (const variable of tokenVariablesWriteArgs.variables) {
+      const db = tokenVariablesWriteArgs.db;
+      const credential = {
+        connectorId: tokenVariablesWriteArgs.connectorId,
+        storage: tokenVariablesWriteArgs.method.storage,
+        orgId: tokenVariablesWriteArgs.orgId,
+        userId: tokenVariablesWriteArgs.userId,
+        name: variable.name,
+        value: variable.value,
+        description: null,
+        updatedDescription: null,
+      };
+      const write = connectorOwnedVariableWrite(credential);
+      const [row] = await db
+        .insert(variables)
+        .values(write.values)
+        .onConflictDoUpdate(write.conflict)
+        .returning({ id: variables.id });
+      if (!row) {
+        throw new Error(
+          `Connector variable ${credential.name} is owned by another row`,
+        );
+      }
+      tokenVariablesWriteSignal.throwIfAborted();
+    }
+  })();
 }
 
 function isExplicitReconnectIdentityMismatch(args: {
