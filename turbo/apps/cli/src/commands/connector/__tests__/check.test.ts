@@ -734,7 +734,9 @@ describe("okou connector check command", () => {
           connectionId: SELECTED_CONNECTION_ID,
           metadata: { connectionStatus: "reconnect-required" },
         },
-        connection: null,
+        accountSummary: null,
+        memberStatus: null,
+        managedStatus: null,
         authorization: { agentId: AGENT_ID, authorized: false },
         environment: [{ name: "GITHUB_TOKEN", present: true }],
         actions: expect.arrayContaining([
@@ -802,11 +804,7 @@ describe("okou connector check command", () => {
         context: "current",
         account: null,
         authorization: null,
-        connection: {
-          id: account.id,
-          slug: "github",
-          connectionStatus: "reconnect-required",
-        },
+        managedStatus: null,
         accountSummary: {
           accountCount: 2,
           attentionCount: 1,
@@ -818,20 +816,7 @@ describe("okou connector check command", () => {
           permission: { outcome: "unavailable", basis: "not-run-scoped" },
         },
       });
-      expect(json).toHaveProperty("connection", {
-        id: account.id,
-        slug: "github",
-        authMethod: account.authMethod,
-        externalId: account.externalId,
-        externalUsername: account.externalUsername,
-        externalEmail: account.externalEmail,
-        oauthScopes: account.oauthScopes,
-        connectionStatus: account.connectionStatus,
-        reconnectReason: account.reconnectReason,
-        tokenExpiresAt: account.tokenExpiresAt,
-        createdAt: account.createdAt,
-        updatedAt: account.updatedAt,
-      });
+      expect(json).toHaveProperty("accountSummary.defaultConnection", account);
     });
 
     it.each([

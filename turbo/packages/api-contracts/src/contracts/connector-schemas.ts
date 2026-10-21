@@ -36,8 +36,8 @@ export const builtinConnectorResponseSchema = z.object({
   externalEmail: z.string().nullable(),
   oauthScopes: z.array(z.string()).nullable(),
   connectionStatus: connectorResponseConnectionStatusSchema,
-  reconnectReason: connectorReconnectReasonSchema.nullable().default(null),
-  tokenExpiresAt: z.string().nullable().default(null),
+  reconnectReason: connectorReconnectReasonSchema.nullable(),
+  tokenExpiresAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -104,9 +104,7 @@ export function guaranteedConnectorProvidedBindingNames(args: {
  */
 export const builtinConnectorListResponseSchema = z.object({
   connectors: z.array(builtinConnectorResponseSchema),
-  connectorProvidedBindings: z
-    .array(connectorProvidedBindingSchema)
-    .default([]),
+  connectorProvidedBindings: z.array(connectorProvidedBindingSchema),
 });
 
 export type BuiltinConnectorListResponse = z.infer<

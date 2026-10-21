@@ -45,6 +45,8 @@ function connectorResponse(
     externalEmail: null,
     oauthScopes: null,
     connectionStatus: "connected",
+    reconnectReason: null,
+    tokenExpiresAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -423,45 +425,42 @@ describe("okou connector connect command", () => {
     });
   });
 
-  it.each([DEFAULT_CONNECTION_ID])(
-    "normalizes builtin operation identity %s and strips credentials",
-    async (connectionId) => {
-      server.use(
-        http.post(
-          "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
-          ({ params }) => {
-            return HttpResponse.json({
-              ...connectorResponse(
-                String(params.connectorSlug),
-                "api-token",
-                DEFAULT_CONNECTION_ID,
-              ),
-              connectionId,
-              accessToken: "secret-must-not-appear",
-            });
-          },
-        ),
-      );
+  it("reports the builtin operation identity with its verified account and strips credentials", async () => {
+    const connectionId = DEFAULT_CONNECTION_ID;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
+        () => {
+          return HttpResponse.json({
+            connectionId,
+            accessToken: "secret-must-not-appear",
+          });
+        },
+      ),
+    );
 
-      await connectCommand.parseAsync([
-        "node",
-        "cli",
-        "openai",
-        "--add",
-        "--value",
-        "apiKey=sk-test",
-        "--json",
-      ]);
+    await connectCommand.parseAsync([
+      "node",
+      "cli",
+      "openai",
+      "--add",
+      "--value",
+      "apiKey=sk-test",
+      "--json",
+    ]);
 
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(JSON.parse(output)).toMatchObject({
-        slug: "openai",
-        authMethod: "api-token",
-      });
-      expect(JSON.parse(output).connectionId).toBe(DEFAULT_CONNECTION_ID);
-      expect(output).not.toContain("secret-must-not-appear");
-    },
-  );
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toMatchObject({
+      connectionId,
+      account: {
+        id: connectionId,
+        target: { kind: "builtin", connectorSlug: "openai" },
+        connectionStatus: "connected",
+        setupStatus: "complete",
+      },
+    });
+    expect(output).not.toContain("secret-must-not-appear");
+  });
 
   it("renders canonical builtin completion from its exact verified account", async () => {
     const account = connectorAccount(
@@ -488,7 +487,10 @@ describe("okou connector connect command", () => {
         "http://localhost:3000/api/connector-accounts/:connectionId",
         ({ params }) => {
           accountRequests.push(String(params.connectionId));
-          return HttpResponse.json(account);
+          return HttpResponse.json({
+            ...account,
+            accessToken: "account-secret-must-not-appear",
+          });
         },
       ),
     );
@@ -503,16 +505,11 @@ describe("okou connector connect command", () => {
     ]);
     expect(accountRequests).toStrictEqual([SIBLING_CONNECTION_ID]);
     const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(JSON.parse(output)).toMatchObject({
-      id: SIBLING_CONNECTION_ID,
+    expect(JSON.parse(output)).toStrictEqual({
       connectionId: SIBLING_CONNECTION_ID,
-      slug: "openai",
-      authMethod: "api-token",
-      externalUsername: "operated-account",
+      account,
     });
     expect(output).not.toContain("secret");
-    expect(JSON.parse(output)).not.toHaveProperty("target");
-    expect(JSON.parse(output)).not.toHaveProperty("isDefault");
   });
 
   it.each([{}, { connectionId: "secret-invalid-id" }])(
@@ -553,52 +550,52 @@ describe("okou connector connect command", () => {
     },
   );
 
-  it.each([DEFAULT_CONNECTION_ID])(
-    "normalizes custom operation identity %s and strips credentials",
-    async (connectionId) => {
-      const connector = customConnector();
-      server.use(
-        stubCustomConnectors([connector]),
-        http.get(
-          `http://localhost:3000/api/custom-connectors/${connector.id}`,
-          () => {
-            return HttpResponse.json(connector);
-          },
-        ),
-        http.put(
-          `http://localhost:3000/api/custom-connectors/${connector.id}/values`,
-          () => {
-            return HttpResponse.json({
-              ...connector,
-              connected: true,
-              missingRequiredFields: [],
-              configuredFieldKeys: ["apiKey"],
-              connectionId,
-              accessToken: "secret-must-not-appear",
-            });
-          },
-        ),
-      );
-      await connectCommand.parseAsync([
-        "node",
-        "okou",
-        `custom:${connector.id}`,
-        "--add",
-        "--value",
-        "apiKey=secret-input",
-        "--json",
-      ]);
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(JSON.parse(output)).toMatchObject({
-        id: connector.id,
-      });
-      expect(JSON.parse(output).connectionId).toBe(DEFAULT_CONNECTION_ID);
-      expect(output).not.toContain("secret-must-not-appear");
-      expect(output).not.toContain("secret-input");
-    },
-  );
+  it("reports the custom operation identity with its verified account and strips credentials", async () => {
+    const connectionId = DEFAULT_CONNECTION_ID;
+    const connector = customConnector();
+    server.use(
+      stubCustomConnectors([connector]),
+      http.get(
+        `http://localhost:3000/api/custom-connectors/${connector.id}`,
+        () => {
+          return HttpResponse.json(connector);
+        },
+      ),
+      http.put(
+        `http://localhost:3000/api/custom-connectors/${connector.id}/values`,
+        () => {
+          return HttpResponse.json({
+            ...connector,
+            connectionId,
+            accessToken: "secret-must-not-appear",
+          });
+        },
+      ),
+    );
+    await connectCommand.parseAsync([
+      "node",
+      "okou",
+      `custom:${connector.id}`,
+      "--add",
+      "--value",
+      "apiKey=secret-input",
+      "--json",
+    ]);
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toMatchObject({
+      connectionId,
+      account: {
+        id: connectionId,
+        target: { kind: "custom", customConnectorId: connector.id },
+        connectionStatus: "connected",
+        setupStatus: "complete",
+      },
+    });
+    expect(output).not.toContain("secret-must-not-appear");
+    expect(output).not.toContain("secret-input");
+  });
 
-  it("uses a canonical-only custom operation receipt", async () => {
+  it("verifies the reconnected custom account from its operation receipt", async () => {
     const connector = customConnector();
     server.use(
       stubCustomConnectors([connector]),
@@ -637,8 +634,13 @@ describe("okou connector connect command", () => {
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(JSON.parse(output)).toMatchObject({
-      id: connector.id,
       connectionId: DEFAULT_CONNECTION_ID,
+      account: {
+        id: DEFAULT_CONNECTION_ID,
+        target: { kind: "custom", customConnectorId: connector.id },
+        connectionStatus: "connected",
+        setupStatus: "complete",
+      },
     });
     expect(output).not.toContain("secret-must-not-appear");
     expect(output).not.toContain("secret-input");
@@ -654,7 +656,6 @@ describe("okou connector connect command", () => {
       label: "malformed canonical identity",
       receipt: {
         connectionId: "secret-invalid-id",
-        connectedAccountId: DEFAULT_CONNECTION_ID,
       },
     },
   ])("rejects a custom operation receipt with $label", async ({ receipt }) => {
