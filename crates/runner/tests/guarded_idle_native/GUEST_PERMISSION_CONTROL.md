@@ -38,6 +38,12 @@ completion: the Host must join the actual request terminal and the controller
 exec it already owns. Failed/uncertain cleanup cannot count as successful
 retirement.
 
+The Host retains the controller's decoded exec terminal before asserting its
+exit and capture completeness. Ordinary root exec may include shell diagnostics;
+captured, untruncated stdout/stderr are retained rather than required to be empty.
+The dedicated control acknowledgements and canonical helper outcome remain
+separate checks.
+
 ## Verification
 
 Ordinary protocol tests and explicit privileged kernel/process tests run in

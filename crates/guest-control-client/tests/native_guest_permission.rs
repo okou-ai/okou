@@ -405,13 +405,28 @@ async fn qualify(directory: &Path, allow: bool) -> TestResult<()> {
     );
     assert_eq!(field(&retired, &["denied"])?, &json!([]));
     let result = controller.wait(DEADLINE).await?;
+    let controller_terminal = format!("{result:?}");
+    write_new(
+        &directory.join("controller-terminal.txt"),
+        controller_terminal.as_bytes(),
+    )?;
     assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    assert!(!result.stream_overflowed, "controller output was lost");
     for output in [&result.stdout, &result.stderr] {
+        // Ordinary root exec can include shell-startup diagnostics. Preserve
+        // the complete terminal instead of requiring an undocumented silence
+        // contract; the independent control protocol has its own acknowledgments.
         assert!(
-            matches!(output, ExecOwnedCapturedOutput::Captured { bytes, truncated: false } if bytes.is_empty())
+            matches!(
+                output,
+                ExecOwnedCapturedOutput::Captured {
+                    truncated: false,
+                    ..
+                }
+            ),
+            "{output:?}"
         );
     }
-    let controller_terminal = format!("{result:?}");
     not_parkable(&client);
     drop(control);
     drop(control_listener);
