@@ -61,6 +61,10 @@ export function slackConnectionValues(args: SlackWorkspaceConnection) {
   const user = eq(slackOrgConnections.userId, args.userId);
   const workspace = eq(slackOrgConnections.slackWorkspaceId, args.workspaceId);
   return {
+    currentSelection: {
+      userId: slackOrgConnections.userId,
+      slackUserId: slackOrgConnections.slackUserId,
+    },
     currentWhere: and(
       workspace,
       or(user, eq(slackOrgConnections.slackUserId, args.slackUserId)),
@@ -88,6 +92,13 @@ export function slackConnectionValues(args: SlackWorkspaceConnection) {
       isNull(slackOrgInstallations.orgId),
     ),
   };
+}
+
+export function slackWorkspaceBindingValues(
+  args: SlackWorkspaceConnection,
+  at: Date,
+) {
+  return { orgId: args.orgId, installedByUserId: args.userId, updatedAt: at };
 }
 
 export function slackConnectionAdmission(

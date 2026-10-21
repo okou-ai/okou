@@ -7,9 +7,16 @@ import { command } from "ccstate";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
+import { pendingOrgCreditExpirationQuery } from "./org-credit-expiration";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
-  settleSlackRewardClaim,
+  claimNeedsSlackReward,
+  slackOrgRewardSql,
+  slackRewardGrantFailureReason,
+  slackRewardIneligibleValues,
+  slackRewardUnavailableReason,
+  unsettledSlackClaim,
   slackRewardIdentity,
   slackRewardWalletEntitlement,
 } from "./slack-installation-reward";
@@ -106,7 +113,40 @@ const commitSlackInstallation$ = command(
         .onConflictDoNothing(reward.conflict);
       // Every Slack reward writer first writes this workspace's installation
       // row, so the implicit row lock of that write orders claims per source.
-      await settleSlackRewardClaim(tx, reward, at);
+      const [claim] = await tx
+        .select()
+        .from(getStartedClaims)
+        .where(reward.where);
+      if (claimNeedsSlackReward(claim)) {
+        const awards = await tx
+          .select({ rewardKey: getStartedClaims.rewardKey })
+          .from(getStartedClaims)
+          .where(reward.awardsWhere)
+          .limit(2);
+        let reason = slackRewardUnavailableReason(reward.rewardKey, awards);
+        const [pending] = reason
+          ? []
+          : await tx
+              .select()
+              .from(pendingOrgCreditExpirationQuery(claim.orgId, at));
+        if (!reason && !pending) {
+          const granted = await settle(
+            // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: a duplicate Slack reward must roll back its credit lot and wallet increment while preserving installation; single-statement alternative: the grant CTE can fail either reward uniqueness check and PostgreSQL requires a savepoint to recover the surrounding transaction.
+            tx.transaction(async (grantTx) => {
+              await grantTx.execute(
+                slackOrgRewardSql(claim, reward.rewardKey, at),
+              );
+            }),
+          );
+          reason = slackRewardGrantFailureReason(granted);
+        }
+        if (reason) {
+          await tx
+            .update(getStartedClaims)
+            .set(slackRewardIneligibleValues(reason, at))
+            .where(unsettledSlackClaim(claim.id));
+        }
+      }
       signal.throwIfAborted();
       return installed;
     });

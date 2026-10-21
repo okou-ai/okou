@@ -87,20 +87,11 @@ export async function resolveIntegrationAgentResponsePresentation(
   ]);
   signal.throwIfAborted();
 
-  const parts: string[] = [];
-  if (agentLabel) {
-    parts.push(`Responded by ${agentLabel}`);
-  }
-  if (args.replyToMention) {
-    parts.push(`Reply to ${args.replyToMention}`);
-  }
-  if (modelLabel) {
-    parts.push(modelLabel);
-  }
-
-  return {
-    footerText: parts.length > 0 ? parts.join(" · ") : undefined,
-  };
+  return integrationAgentResponsePresentation({
+    agentLabel,
+    modelLabel,
+    replyToMention: args.replyToMention,
+  });
 }
 
 /**
@@ -131,6 +122,27 @@ export async function resolveIntegrationAdmissionFailurePresentation(
   if (args.replyToMention) {
     parts.push(`Reply to ${args.replyToMention}`);
   }
+  return {
+    footerText: parts.length > 0 ? parts.join(" · ") : undefined,
+  };
+}
+
+export function integrationAgentResponsePresentation(args: {
+  readonly agentLabel: string | undefined;
+  readonly modelLabel: string | undefined;
+  readonly replyToMention?: string;
+}): { readonly footerText: string | undefined } {
+  const parts: string[] = [];
+  if (args.agentLabel) {
+    parts.push(`Responded by ${args.agentLabel}`);
+  }
+  if (args.replyToMention) {
+    parts.push(`Reply to ${args.replyToMention}`);
+  }
+  if (args.modelLabel) {
+    parts.push(args.modelLabel);
+  }
+
   return {
     footerText: parts.length > 0 ? parts.join(" · ") : undefined,
   };
