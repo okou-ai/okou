@@ -48,7 +48,7 @@ struct PathWriteBatch {
 }
 
 impl WriterConfig {
-    pub(super) fn normalized(self) -> Self {
+    fn normalized(self) -> Self {
         Self {
             shards: self.shards.max(1),
             queue_capacity: self.queue_capacity.max(1),
@@ -63,6 +63,7 @@ impl WriterPool {
         config: WriterConfig,
         #[cfg(any(test, feature = "test-support"))] write_gate: Option<WriteGate>,
     ) -> Self {
+        let config = config.normalized();
         let mut shards = Vec::with_capacity(config.shards);
         #[cfg(test)]
         let mut tasks = Vec::with_capacity(config.shards);
