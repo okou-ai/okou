@@ -272,7 +272,7 @@ export const completeExactReconnectChatAction$ = command(
   async (
     { get, set },
     active: ActiveExactReconnectConnectorAction,
-    connectionId: string | null,
+    connectionId: string,
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();

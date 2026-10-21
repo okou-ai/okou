@@ -278,10 +278,7 @@ export const connectDirectedConnector$ = command(
       ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
       ...accountOptions,
     };
-    const onSuccess = (
-      _connectionId: string | null,
-      attemptSignal: AbortSignal,
-    ) => {
+    const onSuccess = (_connectionId: string, attemptSignal: AbortSignal) => {
       set(reloadDirectedConnectAccounts$, attemptSignal);
       return set(
         completeDirectedConnectorAction$,

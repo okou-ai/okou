@@ -276,11 +276,12 @@ const isCustomConnectorAuthorizedForTarget$ = command(
   },
 );
 
-interface CustomConnectorConnectionResult {
-  readonly connected: boolean;
+type CustomConnectorConnectionResult = {
   readonly targetAuthorized: boolean;
-  readonly connectionId: string | null;
-}
+} & (
+  | { readonly connected: true; readonly connectionId: string }
+  | { readonly connected: false; readonly connectionId: string | null }
+);
 
 async function readCustomConnectorCompletion(
   createClient: ApiClientFactory,
