@@ -10,6 +10,8 @@ import threading
 import time
 
 MAX_EXTENT_BYTES = 64 * 1024 * 1024
+MAX_SCAN_BYTES = 32 * 1024 * 1024 * 1024
+MAX_SCAN_DURATION_NS = 30 * 10**9
 CLAIMS = {
     "relevant_native_residency_complete": False,
     "native_guest_executed": False,
@@ -241,6 +243,86 @@ class FileResidency:
             "completed_monotonic_ns": completed,
             "acquisition_ns": completed - started,
             "mapping_released": True,
+        }
+
+    def scan(self, maximum_bytes, maximum_duration_ns, emit):
+        """Stream a stable original's full range as temporally distinct points.
+
+        The synchronous sink retains each completed point; its errors propagate.
+        A missing result means incomplete acquisition, even when points emitted.
+        Sink IO is included in the supplied duration budget. This is never a
+        simultaneous file snapshot, interval maximum or physical-memory credit.
+        """
+        started = time.monotonic_ns()
+        require(
+            type(maximum_bytes) is int
+            and 0 <= maximum_bytes <= MAX_SCAN_BYTES
+            and type(maximum_duration_ns) is int
+            and 0 < maximum_duration_ns <= MAX_SCAN_DURATION_NS
+            and callable(emit),
+            "invalid complete-range scan budget or sink",
+        )
+        before, authority = self._check_owner()
+        require(self._mapping is None, "an original mapping still needs cleanup")
+        require(before["size"] <= maximum_bytes, "original exceeds scan byte budget")
+        count = 0
+        resident_sum = 0
+        point_cost = 0
+        for offset in range(0, before["size"], MAX_EXTENT_BYTES):
+            require(
+                time.monotonic_ns() - started <= maximum_duration_ns,
+                "complete-range scan exceeded duration budget",
+            )
+            current, credentials = self._check_owner()
+            require(
+                current == before and credentials == authority,
+                "original changed between scan extents",
+            )
+            point = self.observe(offset, min(MAX_EXTENT_BYTES, before["size"] - offset))
+            require(
+                point["before"] == point["after"] == before
+                and point["authority"] == authority,
+                "original changed across scan acquisition",
+            )
+            resident_sum += point["resident_payload_bytes"]
+            point_cost += point["acquisition_ns"]
+            emit({"sequence": count, **point})
+            count += 1
+        after, final_authority = self._check_owner()
+        completed = time.monotonic_ns()
+        require(
+            after == before and final_authority == authority,
+            "original changed during complete-range scan",
+        )
+        require(self._mapping is None, "scan mapping still needs cleanup")
+        require(
+            completed - started <= maximum_duration_ns,
+            "complete-range scan exceeded duration budget",
+        )
+        return {
+            "format": "original-file-range-scan-v1",
+            "before": before,
+            "after": after,
+            "authority": authority,
+            "observer": {
+                "pid": self._creator[0],
+                "thread_id": self._creator[1],
+                "start_ticks": self._start_ticks,
+                "native_thread_id": self._creator_task[0],
+                "thread_start_ticks": self._creator_task[1],
+            },
+            "page_size": self.page_size,
+            "maximum_bytes": maximum_bytes,
+            "maximum_duration_ns": maximum_duration_ns,
+            "covered_bytes": before["size"],
+            "extent_count": count,
+            "resident_payload_bytes_observed_sum": resident_sum,
+            "extent_acquisition_ns_sum": point_cost,
+            "started_monotonic_ns": started,
+            "completed_monotonic_ns": completed,
+            "acquisition_ns": completed - started,
+            "original_byte_range_covered": True,
+            "claims": dict(CLAIMS),
         }
 
     def close(self):
