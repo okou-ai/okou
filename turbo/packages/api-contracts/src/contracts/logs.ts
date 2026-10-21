@@ -163,7 +163,9 @@ const logDetailSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
-  artifact: artifactSchema,
+  // The API keeps emitting this for supported old Apps until the replacement
+  // App is live and its version floor is raised (#41332).
+  artifact: artifactSchema.optional(),
 });
 
 /**

@@ -42,7 +42,7 @@
       "warningFallback": "Avviso Codex"
     },
     "context": {
-      "artifact": "Artefatto",
+      "access": "Accesso",
       "environmentMapping": "Mappatura dell'ambiente",
       "featureFlags": "Flag di funzionalità",
       "firewalls": "Firewall",
@@ -53,18 +53,20 @@
       "networkPolicies": "Politiche di rete",
       "none": "Nessuno",
       "prompt": "Prompt",
+      "readOnly": "Sola lettura",
+      "readWrite": "Lettura/scrittura",
       "runId": "ID esecuzione",
       "runtimeModel": "Modello di runtime",
       "runtimeProvider": "Provider di runtime",
       "secrets": "Segreti",
       "selectedModel": "Modello selezionato",
       "session": "Sessione",
+      "storageMounts": "Montaggi di archiviazione",
       "storageName": "Nome di archiviazione",
       "systemPrompt": "Prompt di sistema",
       "value": "Valore",
       "variables": "Variabili",
-      "version": "Versione",
-      "volumes": "Volumi"
+      "version": "Versione"
     },
     "detail": {
       "activity": "Attività",

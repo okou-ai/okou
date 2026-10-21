@@ -2029,6 +2029,26 @@ describe("RUN-04: agent run telemetry families", () => {
                       data: {
                         runId: agentRun.runId,
                         sessionId: "bdd-bounded",
+                        storageMounts: [
+                          {
+                            name: "source",
+                            version: "source-version",
+                            mountPath: "/source",
+                            writeback: false,
+                          },
+                          {
+                            name: "output",
+                            version: "output-version",
+                            mountPath: "/output",
+                            writeback: true,
+                          },
+                          {
+                            name: "memory",
+                            version: "memory-version",
+                            mountPath: "/memory",
+                            writeback: true,
+                          },
+                        ],
                       },
                     },
                   ]
@@ -2060,6 +2080,26 @@ describe("RUN-04: agent run telemetry families", () => {
       runId: agentRun.runId,
       prompt: "bounded run context",
       sessionId: "bdd-bounded",
+      storageMounts: [
+        {
+          name: "source",
+          version: "source-version",
+          mountPath: "/source",
+          writeback: false,
+        },
+        {
+          name: "output",
+          version: "output-version",
+          mountPath: "/output",
+          writeback: true,
+        },
+        {
+          name: "memory",
+          version: "memory-version",
+          mountPath: "/memory",
+          writeback: true,
+        },
+      ],
     });
 
     const expectedQuery = {
@@ -2330,6 +2370,20 @@ describe("RUN-04: agent run telemetry families", () => {
       },
       featureFlags: { manualMorningBrief: true },
       artifact: { vasStorageName: "art-1" },
+      storageMounts: [
+        {
+          name: "vol-1",
+          version: "ver-1",
+          mountPath: "/data",
+          writeback: false,
+        },
+        {
+          name: "art-1",
+          version: "art-ver-1",
+          mountPath: "/artifacts",
+          writeback: true,
+        },
+      ],
     });
     expect(contextRead.body.environment).toStrictEqual({
       NODE_ENV: "production",

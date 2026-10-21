@@ -1632,7 +1632,7 @@ interface PreparedReadOnlyStorageEntry<
 > {
   readonly storedMount: TMount;
   readonly persistedMount: PersistedStorageMount;
-  readonly runContextVolume: RunContextResponse["volumes"][number];
+  readonly runContextVolume: NonNullable<RunContextResponse["volumes"]>[number];
 }
 
 interface PreparedWritebackStorageEntry<
@@ -1654,8 +1654,8 @@ interface PreparedStorageEntries<
 }
 
 interface RunContextStorageObservation {
-  readonly volumes: RunContextResponse["volumes"];
-  readonly artifact: RunContextResponse["artifact"];
+  readonly volumes: NonNullable<RunContextResponse["volumes"]>;
+  readonly artifact: Exclude<RunContextResponse["artifact"], undefined>;
 }
 
 export interface PreparedAgentRunStorage<

@@ -6161,6 +6161,14 @@ function buildRunContextSnapshot(args: {
     ),
     volumes: args.builtContext.runContextStorage.volumes,
     artifact: args.builtContext.runContextStorage.artifact,
+    storageMounts: storedContext.storageMounts.map((mount) => {
+      return {
+        name: mount.name,
+        version: mount.versionId,
+        mountPath: mount.mountPath,
+        writeback: mount.writeback === true,
+      };
+    }),
     featureFlagEntries: featureFlagsRecordToEntries(storedContext.featureFlags),
   };
   return snapshot;

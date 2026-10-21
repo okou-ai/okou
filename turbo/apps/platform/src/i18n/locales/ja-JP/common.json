@@ -40,7 +40,7 @@
       "warningFallback": "Codex 警告"
     },
     "context": {
-      "artifact": "アーティファクト",
+      "access": "アクセス",
       "environmentMapping": "環境マッピング",
       "featureFlags": "機能フラグ",
       "firewalls": "ファイアウォール",
@@ -51,18 +51,20 @@
       "networkPolicies": "ネットワークポリシー",
       "none": "なし",
       "prompt": "プロンプト",
+      "readOnly": "読み取り専用",
+      "readWrite": "読み取り/書き込み",
       "runId": "実行ID",
       "runtimeModel": "ランタイムモデル",
       "runtimeProvider": "ランタイムプロバイダー",
       "secrets": "シークレット",
       "selectedModel": "選択されたモデル",
       "session": "セッション",
+      "storageMounts": "ストレージマウント",
       "storageName": "ストレージ名",
       "systemPrompt": "システムプロンプト",
       "value": "値",
       "variables": "変数",
-      "version": "バージョン",
-      "volumes": "ボリューム"
+      "version": "バージョン"
     },
     "detail": {
       "activity": "アクティビティ",

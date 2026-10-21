@@ -1503,8 +1503,8 @@ interface MaintenanceLaunch {
   readonly secretValues: readonly string[];
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly runContextStorage: {
-    readonly volumes: RunContextResponse["volumes"];
-    readonly artifact: RunContextResponse["artifact"];
+    readonly volumes: NonNullable<RunContextResponse["volumes"]>;
+    readonly artifact: Exclude<RunContextResponse["artifact"], undefined>;
   };
 }
 
@@ -1562,6 +1562,14 @@ function maintenanceRunContextSnapshot(
     ),
     volumes: launch.runContextStorage.volumes,
     artifact: launch.runContextStorage.artifact,
+    storageMounts: context.storageMounts.map((mount) => {
+      return {
+        name: mount.name,
+        version: mount.versionId,
+        mountPath: mount.mountPath,
+        writeback: mount.writeback === true,
+      };
+    }),
     featureFlagEntries: featureFlagsRecordToEntries(context.featureFlags),
   };
 }

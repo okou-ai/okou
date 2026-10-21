@@ -40,7 +40,7 @@
       "warningFallback": "Peringatan Codex"
     },
     "context": {
-      "artifact": "Aset",
+      "access": "Akses",
       "environmentMapping": "Pemetaan Lingkungan",
       "featureFlags": "Flag Fitur",
       "firewalls": "Firewall",
@@ -51,18 +51,20 @@
       "networkPolicies": "Kebijakan Jaringan",
       "none": "Tidak ada",
       "prompt": "Prompt",
+      "readOnly": "Hanya baca",
+      "readWrite": "Baca/tulis",
       "runId": "ID Run",
       "runtimeModel": "Model Runtime",
       "runtimeProvider": "Penyedia Runtime",
       "secrets": "Rahasia",
       "selectedModel": "Model Terpilih",
       "session": "Sesi",
+      "storageMounts": "Mount penyimpanan",
       "storageName": "Nama Penyimpanan",
       "systemPrompt": "Prompt sistem",
       "value": "Nilai",
       "variables": "Variabel",
-      "version": "Versi",
-      "volumes": "Volume"
+      "version": "Versi"
     },
     "detail": {
       "activity": "Aktivitas",

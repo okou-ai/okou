@@ -1,7 +1,8 @@
+import { runContextResponseSchema } from "@okouai/api-contracts/contracts/run-routes";
 import {
-  runContextResponseSchema,
-  type RunContextResponse,
-} from "@okouai/api-contracts/contracts/run-routes";
+  normalizeActivityRunContext,
+  type ActivityRunContext,
+} from "./run-context.ts";
 import {
   networkLogEntrySchema,
   type NetworkLogEntry,
@@ -43,9 +44,9 @@ function parseAgentEvents(value: unknown): AgentEvent[] {
   });
 }
 
-function parseRunContext(value: unknown): RunContextResponse | null {
+function parseRunContext(value: unknown): ActivityRunContext | null {
   const parsed = runContextResponseSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+  return parsed.success ? normalizeActivityRunContext(parsed.data) : null;
 }
 
 function parseNetworkLogs(value: unknown): NetworkLogEntry[] | null {
@@ -61,7 +62,7 @@ function parseNetworkLogs(value: unknown): NetworkLogEntry[] | null {
 export function parseInspectLog(jsonText: string): {
   meta: InspectLogMeta | null;
   events: AgentEvent[];
-  context: RunContextResponse | null;
+  context: ActivityRunContext | null;
   networkLogs: NetworkLogEntry[] | null;
 } | null {
   const rawValue = jsonParseOr<unknown | typeof INVALID_JSON>(

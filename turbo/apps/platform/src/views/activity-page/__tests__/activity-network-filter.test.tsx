@@ -68,7 +68,6 @@ async function openNetworkActivity() {
       createdAt: "2026-09-24T06:00:00Z",
       startedAt: "2026-09-24T06:00:00Z",
       completedAt: "2026-09-24T06:00:04Z",
-      artifact: { name: null, version: null },
     });
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {

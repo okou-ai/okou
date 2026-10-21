@@ -40,7 +40,7 @@
       "warningFallback": "Codex warning"
     },
     "context": {
-      "artifact": "Artifact",
+      "access": "Access",
       "environmentMapping": "Environment Mapping",
       "featureFlags": "Feature Flags",
       "firewalls": "Firewalls",
@@ -51,18 +51,20 @@
       "networkPolicies": "Network Policies",
       "none": "None",
       "prompt": "Prompt",
+      "readOnly": "Read only",
+      "readWrite": "Read/write",
       "runId": "Run ID",
       "runtimeModel": "Runtime Model",
       "runtimeProvider": "Runtime Provider",
       "secrets": "Secrets",
       "selectedModel": "Selected Model",
       "session": "Session",
+      "storageMounts": "Storage Mounts",
       "storageName": "Storage Name",
       "systemPrompt": "System Prompt",
       "value": "Value",
       "variables": "Variables",
-      "version": "Version",
-      "volumes": "Volumes"
+      "version": "Version"
     },
     "detail": {
       "activity": "Activity",

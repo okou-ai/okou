@@ -38,7 +38,6 @@ function makeLogDetail(overrides: Partial<LogDetail>): LogDetail {
     createdAt: "2026-03-10T14:56:00Z",
     startedAt: "2026-03-10T14:56:01Z",
     completedAt: null,
-    artifact: { name: null, version: null },
     ...overrides,
   };
 }
