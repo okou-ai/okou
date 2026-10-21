@@ -2227,48 +2227,6 @@ async function prepareConnectorTokenState(
   };
 }
 
-async function upsertConnectorTokenSecrets(
-  args: {
-    readonly db: Db;
-    readonly connectorId: string;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly secrets: readonly EncryptedBuiltinConnectorTokenSecret[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.secrets.length === 0) {
-    return;
-  }
-
-  for (const secret of args.secrets) {
-    const db = args.db;
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: secret.name,
-      encryptedValue: secret.encryptedValue,
-      description: secret.description,
-      updatedDescription: secret.description,
-    };
-    const write = connectorOwnedSecretWrite(credential);
-    const [row] = await db
-      .insert(secrets)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: secrets.id });
-    if (!row) {
-      throw new Error(
-        `Connector secret ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-}
-
 async function upsertPreparedConnectorTokenState(
   args: {
     readonly db: Db;
@@ -2280,17 +2238,53 @@ async function upsertPreparedConnectorTokenState(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  await upsertConnectorTokenSecrets(
-    {
-      db: args.db,
-      connectorId: args.connectorId,
-      method: args.method,
-      orgId: args.orgId,
-      userId: args.userId,
-      secrets: args.state.secrets,
-    },
-    signal,
-  );
+  const tokenSecretsWriteArgs: {
+    readonly db: Db;
+    readonly connectorId: string;
+    readonly method: ConnectorAuthMethodRuntimeConfig;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly secrets: readonly EncryptedBuiltinConnectorTokenSecret[];
+  } = {
+    db: args.db,
+    connectorId: args.connectorId,
+    method: args.method,
+    orgId: args.orgId,
+    userId: args.userId,
+    secrets: args.state.secrets,
+  };
+  const tokenSecretsWriteSignal = signal;
+  await (async (): Promise<void> => {
+    if (tokenSecretsWriteArgs.secrets.length === 0) {
+      return;
+    }
+
+    for (const secret of tokenSecretsWriteArgs.secrets) {
+      const db = tokenSecretsWriteArgs.db;
+      const credential = {
+        connectorId: tokenSecretsWriteArgs.connectorId,
+        storage: tokenSecretsWriteArgs.method.storage,
+        orgId: tokenSecretsWriteArgs.orgId,
+        userId: tokenSecretsWriteArgs.userId,
+        name: secret.name,
+        encryptedValue: secret.encryptedValue,
+        description: secret.description,
+        updatedDescription: secret.description,
+      };
+      const write = connectorOwnedSecretWrite(credential);
+      const [row] = await db
+        .insert(secrets)
+        .values(write.values)
+        .onConflictDoUpdate(write.conflict)
+        .returning({ id: secrets.id });
+      if (!row) {
+        throw new Error(
+          `Connector secret ${credential.name} is owned by another row`,
+        );
+      }
+      tokenSecretsWriteSignal.throwIfAborted();
+    }
+  })();
   const tokenVariablesWriteArgs: {
     readonly db: Db;
     readonly connectorId: string;
