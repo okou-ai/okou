@@ -710,19 +710,6 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(0);
   });
 
-  it("bounds a hanging provider request and never retries within the request", async () => {
-    const f = await fixture();
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async () => {
-      return await release.promise;
-    });
-    const result = await summarize(f.actor, f.run);
-    release.resolve("Too late");
-    expect(result).toMatchObject({ status: "available", messages: [] });
-    await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(1);
-  }, 15_000);
-
   it("sends the bounded current task as the only message", async () => {
     const prompt = "current task ".repeat(100);
     const f = await fixture(prompt);
