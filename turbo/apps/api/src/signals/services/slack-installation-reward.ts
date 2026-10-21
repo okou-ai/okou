@@ -7,10 +7,7 @@ import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq, notInArray, or, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
 import { isUniqueViolation } from "../../lib/pg-errors";
-import { settle } from "../utils";
-import { pendingOrgCreditExpirationQuery } from "./org-credit-expiration";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
 export function slackRewardIdentity(
@@ -115,81 +112,37 @@ export function slackRewardIneligibleValues(reason: string, at: Date) {
 }
 
 /** Terminal claims are never rewritten by a later completion. */
-function unsettledSlackClaim(id: string) {
+export function unsettledSlackClaim(id: string) {
   return and(
     eq(getStartedClaims.id, id),
     notInArray(getStartedClaims.status, ["granted", "ineligible", "rejected"]),
   );
 }
 
-/**
- * One deterministic outcome for the caller's persisted Slack claim, in the
- * caller's transaction: already terminal, ineligible, granted, or deferred.
- *
- * - A concurrent grant for the same workspace (`uq_get_started_reward_key`) or
- *   organization (`uq_get_started_slack_org`) makes the grant statement fail
- *   inside its savepoint; the unique index already names the winner, so the
- *   claim becomes ineligible without re-reading or re-running.
- * - The caller expires the organization's due lots before this transaction.
- *   A lot that crossed its deadline in between leaves the claim pending, and
- *   the next Slack completion for this source settles it.
- */
-export async function settleSlackRewardClaim(
-  tx: Tx,
-  identity: ReturnType<typeof slackRewardIdentity>,
-  at: Date,
-): Promise<void> {
-  const [claim] = await tx
-    .select()
-    .from(getStartedClaims)
-    .where(identity.where);
+/** A terminal receipt is never granted or rewritten by a later completion. */
+export function claimNeedsSlackReward(
+  claim: typeof getStartedClaims.$inferSelect | undefined,
+): claim is typeof getStartedClaims.$inferSelect {
   if (!claim) {
     throw new Error("Slack completion claim was not persisted");
   }
-  if (["granted", "ineligible", "rejected"].includes(claim.status)) {
-    return;
+  return !["granted", "ineligible", "rejected"].includes(claim.status);
+}
+
+/** Only the two financial uniqueness constraints represent a lost reward race. */
+export function slackRewardGrantFailureReason(
+  result:
+    { readonly ok: true } | { readonly ok: false; readonly error: unknown },
+): ReturnType<typeof slackRewardUnavailableReason> {
+  if (result.ok) {
+    return null;
   }
-  const awards = await tx
-    .select({ rewardKey: getStartedClaims.rewardKey })
-    .from(getStartedClaims)
-    .where(identity.awardsWhere)
-    .limit(2);
-  const reason = slackRewardUnavailableReason(identity.rewardKey, awards);
-  if (reason) {
-    await tx
-      .update(getStartedClaims)
-      .set(slackRewardIneligibleValues(reason, at))
-      .where(unsettledSlackClaim(claim.id));
-    return;
+  const error = result.error;
+  if (isUniqueViolation(error, "uq_get_started_reward_key")) {
+    return "already_redeemed";
   }
-  const [pending] = await tx
-    .select()
-    .from(pendingOrgCreditExpirationQuery(claim.orgId, at));
-  if (pending) {
-    return;
+  if (isUniqueViolation(error, "uq_get_started_slack_org")) {
+    return "limit_reached";
   }
-  const granted = await settle(
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0246; new non-billing transactions are prohibited.
-    tx.transaction(async (grantTx) => {
-      await grantTx.execute(slackOrgRewardSql(claim, identity.rewardKey, at));
-    }),
-  );
-  if (granted.ok) {
-    return;
-  }
-  const lostReason = isUniqueViolation(
-    granted.error,
-    "uq_get_started_reward_key",
-  )
-    ? "already_redeemed"
-    : isUniqueViolation(granted.error, "uq_get_started_slack_org")
-      ? "limit_reached"
-      : null;
-  if (!lostReason) {
-    throw granted.error;
-  }
-  await tx
-    .update(getStartedClaims)
-    .set(slackRewardIneligibleValues(lostReason, at))
-    .where(unsettledSlackClaim(claim.id));
+  throw error;
 }

@@ -135,8 +135,8 @@ import {
 } from "./internal-feishu-chat-run-callback.service";
 import type { InternalRunCallbackEnvelope } from "./internal-run-callback";
 import {
-  deliverSlackChatAdmissionFailure,
-  dispatchSlackChatDeliveryOnce,
+  deliverSlackChatAdmissionFailure$,
+  dispatchSlackChatDeliveryOnce$,
 } from "./internal-slack-chat-run-callback.service";
 import {
   deliverTeamsChatAdmissionFailure,
@@ -2484,8 +2484,16 @@ const sendQueuedAdmissionFailure$ = command(
     };
     switch (channel.kind) {
       case "Slack": {
-        await deliverSlackChatAdmissionFailure(
-          { ...base, agentId: channel.agentId, ...channel.target },
+        await set(
+          deliverSlackChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            orgId: channel.orgId,
+            userId: channel.userId,
+            chatEventId,
+            agentId: channel.agentId,
+            ...channel.target,
+          },
           signal,
         );
         return;
@@ -3007,6 +3015,23 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    if (args.slackDeliveryCallbackId) {
+      const delivery = await settle(
+        set(
+          dispatchSlackChatDeliveryOnce$,
+          args.slackDeliveryCallbackId,
+          signal,
+        ),
+        signal,
+      );
+      if (!delivery.ok) {
+        log.error("Failed to finalize canonical Slack delivery callback", {
+          runId: args.runId,
+          callbackId: args.slackDeliveryCallbackId,
+          error: delivery.error,
+        });
+      }
+    }
     const channels: readonly {
       readonly name: string;
       readonly callbackId: string | undefined;
@@ -3015,17 +3040,6 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
         signal: AbortSignal,
       ) => Promise<void>;
     }[] = [
-      {
-        name: "Slack",
-        callbackId: args.slackDeliveryCallbackId,
-        dispatch: (callbackId, dispatchSignal) => {
-          return dispatchSlackChatDeliveryOnce(
-            args.db,
-            callbackId,
-            dispatchSignal,
-          );
-        },
-      },
       {
         name: "Feishu",
         callbackId: args.feishuDeliveryCallbackId,
