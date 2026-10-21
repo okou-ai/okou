@@ -26,8 +26,10 @@ the compact composer animates it into a multiline field. The ChatGPT-style
 sliding sidebar contains pinned agents and recent chats scoped to the selected
 agent, with workspace switching at the top and a bottom new-chat action. Its
 settings menu provides account actions. Native list actions support pinning,
-archiving, and renaming chats; archive controls follow the existing
-`chatThreadArchiving` feature switch. Opening a new chat is local and immediate;
+archiving, and renaming chats. The chat header's native More menu also supports
+muting. Archive and mute controls follow the existing `chatThreadArchiving` and
+`chatThreadMuting` feature switches; muted chats can still be unmuted after the
+muting switch is turned off. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
 agent and the existing saved model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.

@@ -22,8 +22,6 @@ struct ChatSidebarView: View {
   }
 
   @State private var showArchived = false
-  @State private var renamingThread: ChatThread?
-  @State private var renameTitle = ""
 
   private var workspaceName: String {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
@@ -102,23 +100,6 @@ struct ChatSidebarView: View {
       )
     ) {
       ChatSearchView(workspace: store, showsArchived: showArchived, didOpen: close)
-    }
-    .alert(
-      "Rename chat",
-      isPresented: Binding(
-        get: { renamingThread != nil },
-        set: { if !$0 { renamingThread = nil } }
-      )
-    ) {
-      TextField("Chat title", text: $renameTitle)
-      Button("Cancel", role: .cancel) { renamingThread = nil }
-      Button("Save") {
-        if let thread = renamingThread {
-          Task { await store.list.rename(thread, title: renameTitle) }
-        }
-        renamingThread = nil
-      }
-      .disabled(renameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
   }
 
@@ -269,16 +250,18 @@ struct ChatSidebarView: View {
           }
           .disabled(!store.list.canPin(thread.id) || store.needsUpgrade)
           Button("Rename", systemImage: "pencil") {
-            renameTitle = thread.displayTitle
-            renamingThread = thread
+            store.list.beginRename(thread.id)
           }
+          .disabled(
+            !store.list.canUpdate(thread.id) || store.list.isSavingRename || store.needsUpgrade)
           if store.list.canArchiveChats {
             Button(
               thread.isArchived ? "Unarchive" : "Archive",
               systemImage: thread.isArchived ? "archivebox.fill" : "archivebox"
             ) {
-              Task { await store.list.setArchived(thread, archived: !thread.isArchived) }
+              Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
             }
+            .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
           }
         }
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
@@ -289,11 +272,12 @@ struct ChatSidebarView: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
           if store.list.canArchiveChats {
             Button {
-              Task { await store.list.setArchived(thread, archived: !thread.isArchived) }
+              Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
             } label: {
               Label(thread.isArchived ? "Unarchive" : "Archive", systemImage: "archivebox")
             }
             .tint(.orange)
+            .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
           }
         }
       }

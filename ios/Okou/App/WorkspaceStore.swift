@@ -17,6 +17,7 @@ final class WorkspaceStore {
   private(set) var isCreating = false
   var error: String?
   private(set) var chatLinkError: String?
+  private(set) var threadFeedback: ChatThreadFeedback?
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   var selectedThreadID: String? {
@@ -178,6 +179,7 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    threadFeedback = nil
     search.close()
     for conversation in conversations.values { conversation.close() }
     realtime?.stop()
@@ -412,6 +414,78 @@ final class WorkspaceStore {
     if !read { conversation?.setAutomaticReadSuppressed(true) }
     let succeeded = await list.setRead(thread, read: read)
     if read || !succeeded { conversation?.setAutomaticReadSuppressed(false) }
+  }
+
+  func dismissThreadFeedback(_ id: UUID) {
+    if threadFeedback?.id == id { threadFeedback = nil }
+  }
+
+  @discardableResult
+  func setArchived(
+    _ id: String, archived: Bool, leaveDetail: Bool = false,
+    restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,
+    eventID: String = UUID().uuidString.lowercased()
+  ) async -> Bool {
+    guard !closed, !needsUpgrade, list.canArchiveChats, list.canUpdate(id),
+      let thread = list.threads.first(where: { $0.id == id })
+    else { return false }
+    let leaving = archived && leaveDetail && selectedThreadID == id
+    let restore = leaving || restoreOnUndo
+    let succeeded = await list.setArchived(thread, archived: archived, eventID: eventID) {
+      // The list owns the write, so leaving the detail cannot cancel it.
+      if leaving { self.startNewChat(agentID: thread.agentID) }
+    }
+    guard !closed, !needsUpgrade else { return false }
+    if succeeded {
+      if reopenOnSuccess { selectChat(id) }
+      let message =
+        archived
+        ? (thread.isMuted
+          ? "Chat archived. It will stay archived while muted."
+          : "Chat archived. A new reply will bring it back.")
+        : "Chat unarchived."
+      threadFeedback = ChatThreadFeedback(threadID: id, message: message, actionTitle: "Undo") {
+        [weak self] in
+        guard let self else { return }
+        await self.setArchived(id, archived: !archived, reopenOnSuccess: restore)
+      }
+    } else {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: list.error ?? "The archive change was not saved.",
+        actionTitle: "Retry", persists: true
+      ) { [weak self] in
+        await self?.setArchived(
+          id, archived: archived, restoreOnUndo: restore,
+          reopenOnSuccess: reopenOnSuccess, eventID: eventID)
+      }
+    }
+    return succeeded
+  }
+
+  func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
+    guard !closed, !needsUpgrade, list.canMute(id) else { return }
+    let succeeded = await list.setMuted(id, muted: muted, markRead: markRead)
+    guard !closed, !needsUpgrade else { return }
+    if succeeded {
+      let message =
+        muted
+        ? "Chat muted. Notifications and unread badges are off; tasks keep running."
+        : "Chat unmuted. Notifications and unread badges are on."
+      let canUndo = muted || list.canMuteChats
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: message, actionTitle: canUndo ? "Undo" : nil
+      ) { [weak self] in
+        // Undo restores mute state without clearing unread replies, like the PWA.
+        await self?.setMuted(id, muted: !muted, markRead: false)
+      }
+    } else {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: list.error ?? "The mute change was not saved.",
+        actionTitle: "Retry", persists: true
+      ) { [weak self] in
+        await self?.setMuted(id, muted: muted, markRead: markRead)
+      }
+    }
   }
 
   func startNewChat(agentID: String? = nil) {

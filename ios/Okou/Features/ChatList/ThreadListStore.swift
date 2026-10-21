@@ -11,6 +11,7 @@ final class ThreadListStore {
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
   private(set) var canArchiveChats = false
+  private(set) var canMuteChats = false
   var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0
@@ -29,7 +30,16 @@ final class ThreadListStore {
   private var updateTasks: [String: Task<Void, Never>] = [:]
   private var pinTasks: [String: Task<Void, Never>] = [:]
   private var lastPinIDs: [String: String] = [:]
-  private var optimisticPins: [(id: String, change: ChatThreadChange)] = []
+  private var optimisticChanges: [(id: String, change: ChatThreadChange)] = []
+  struct RenameRequest: Identifiable {
+    let id: UUID
+    let threadID: String
+    var error: String?
+  }
+  private(set) var renameRequest: RenameRequest?
+  private(set) var isSavingRename = false
+  var renameTitle = ""
+  private var renameSessionID = UUID()
   private var closed = false
   private var blocked = false
 
@@ -104,6 +114,7 @@ final class ThreadListStore {
     }
     guard !closed, !Task.isCancelled else { return }
     canArchiveChats = switches?.effectiveSwitches["chatThreadArchiving"] == true
+    canMuteChats = switches?.effectiveSwitches["chatThreadMuting"] == true
   }
 
   var visiblePinnedAgents: [AgentRecord] {
@@ -145,7 +156,7 @@ final class ThreadListStore {
             unreadAgentIDs = Set(
               response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
           }
-          optimisticPins.removeAll { response.eventIDs.contains($0.id) }
+          optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
           projectThreads(result)
           error = nil
         } catch is CancellationError {
@@ -282,7 +293,7 @@ final class ThreadListStore {
       show(error)
       return
     }
-    optimisticPins.append(
+    optimisticChanges.append(
       (
         eventID,
         ChatThreadChange(
@@ -319,7 +330,7 @@ final class ThreadListStore {
 
   private func projectThreads(_ snapshot: [ChatThread]) {
     let result = ChatThreadReplay.sidebarOrder(
-      ChatThreadReplay.replay(snapshot: snapshot, events: optimisticPins.map(\.change)))
+      ChatThreadReplay.replay(snapshot: snapshot, events: optimisticChanges.map(\.change)))
     if threads != result { threads = result }
     didRefresh(result)
   }
@@ -328,25 +339,108 @@ final class ThreadListStore {
     error = nil
   }
 
-  func setArchived(_ thread: ChatThread, archived: Bool) async {
-    await updateThread(thread.id) { [commands] in
-      try await commands.setArchived(threadID: thread.id, archived: archived)
+  func canUpdate(_ id: String) -> Bool {
+    !closed && !blocked && !updatingThreads.contains(id) && !markingAgentRead
+      && threads.contains(where: { $0.id == id })
+  }
+
+  func canMute(_ id: String) -> Bool {
+    canUpdate(id) && (canMuteChats || threads.first(where: { $0.id == id })?.isMuted == true)
+  }
+
+  @discardableResult
+  func setArchived(
+    _ thread: ChatThread, archived: Bool, eventID: String = UUID().uuidString.lowercased(),
+    didBegin: @MainActor () -> Void = {}
+  ) async -> Bool {
+    guard canArchiveChats, canUpdate(thread.id), !Task.isCancelled else { return false }
+    if !optimisticChanges.contains(where: { $0.id == eventID }) {
+      optimisticChanges.append(
+        (
+          eventID,
+          ChatThreadChange(
+            kind: archived ? .archived : .unarchived, chatThreadId: thread.id,
+            agentId: thread.agentID, createdAt: .now)
+        ))
+    }
+    projectThreads(threads)
+    didBegin()
+    return await updateThread(thread.id) { [commands] in
+      try await commands.setArchived(threadID: thread.id, archived: archived, eventID: eventID)
     }
   }
 
-  func rename(_ thread: ChatThread, title: String) async {
+  @discardableResult
+  func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async -> Bool {
+    guard canMute(id), !Task.isCancelled else { return false }
+    readRevision += 1
+    return await updateThread(id) { [self, commands] in
+      // Replies suppressed while muted must not reappear as unread. Keep the chat
+      // muted if marking read fails; retry can safely repeat both operations.
+      if !muted && markRead {
+        let watermark = try await commands.markRead(threadID: id)
+        try Task.checkCancellation()
+        self.markRead(id, through: watermark)
+      }
+      try await commands.setMuted(
+        threadID: id, muted: muted, eventID: UUID().uuidString.lowercased())
+      readRevision += 1
+    }
+  }
+
+  @discardableResult
+  func rename(_ thread: ChatThread, title: String) async -> Bool {
+    guard canUpdate(thread.id), !Task.isCancelled else { return false }
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return }
-    await updateThread(thread.id) { [commands] in
+    let currentTitle = threads.first(where: { $0.id == thread.id })?.title
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, trimmed != currentTitle else { return true }
+    return await updateThread(thread.id) { [commands] in
       try await commands.rename(threadID: thread.id, title: trimmed)
     }
   }
 
+  func beginRename(_ id: String) {
+    guard !isSavingRename, canUpdate(id), let thread = threads.first(where: { $0.id == id }) else {
+      return
+    }
+    renameSessionID = UUID()
+    renameTitle = thread.title
+    renameRequest = RenameRequest(id: renameSessionID, threadID: id)
+  }
+
+  func cancelRename() {
+    renameSessionID = UUID()
+    renameRequest = nil
+  }
+
+  func saveRename() async {
+    guard !isSavingRename, let request = renameRequest,
+      let thread = threads.first(where: { $0.id == request.threadID })
+    else { return }
+    isSavingRename = true
+    defer { isSavingRename = false }
+    let title = renameTitle
+    renameRequest = nil
+    let succeeded = await rename(thread, title: title)
+    guard !succeeded, !closed, !blocked, renameSessionID == request.id else { return }
+    // A fast failure can be coalesced with dismissal into one UI update.
+    // Give the recovered editor a new presentation identity even in that case.
+    renameSessionID = UUID()
+    renameTitle = title
+    renameRequest = RenameRequest(
+      id: renameSessionID, threadID: request.threadID,
+      error: error ?? "The title was not saved. Try again.")
+    error = nil
+  }
+
+  @discardableResult
   private func updateThread(_ id: String, command: @escaping @MainActor () async throws -> Void)
-    async
+    async -> Bool
   {
-    guard !updatingThreads.contains(id), !closed, !blocked, !Task.isCancelled else { return }
+    guard !updatingThreads.contains(id), !closed, !blocked, !Task.isCancelled else { return false }
     updatingThreads.insert(id)
+    var succeeded = false
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
@@ -357,12 +451,15 @@ final class ThreadListStore {
         try await command()
         try Task.checkCancellation()
         guard !closed else { return }
-        await refresh()
+        error = nil
+        await refresh(waitForCurrent: true)
+        succeeded = error == nil
       } catch is CancellationError {
       } catch { show(error) }
     }
     updateTasks[id] = task
     await task.value
+    return succeeded && !closed && !blocked
   }
 
   func close() {
@@ -371,6 +468,7 @@ final class ThreadListStore {
     navigationTask?.cancel()
     for task in updateTasks.values { task.cancel() }
     for task in pinTasks.values { task.cancel() }
+    cancelRename()
   }
 
   private func show(_ failure: Error) {

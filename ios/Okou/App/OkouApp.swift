@@ -223,6 +223,13 @@ private struct WorkspaceRootView: View {
       )
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
+    .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
+    .overlay(alignment: .bottom) {
+      if let feedback = store.threadFeedback {
+        ChatThreadFeedbackView(store: store, feedback: feedback)
+          .padding(.bottom, 100)
+      }
+    }
     .task {
       store.setForeground(scenePhase == .active)
       await store.start(userID: userID, workspaceID: workspaceID)
@@ -243,7 +250,9 @@ private struct WorkspaceRootView: View {
     .alert(
       "Unable to update chats",
       isPresented: Binding(
-        get: { store.selectedConversation != nil && store.list.error != nil },
+        get: {
+          store.list.error != nil && store.list.renameRequest == nil && !store.list.isSavingRename
+        },
         set: { if !$0 { store.list.dismissError() } }
       )
     ) {
@@ -266,34 +275,7 @@ private struct WorkspaceRootView: View {
   }
 
   private var mainHeader: some View {
-    ZStack {
-      Text(
-        store.list.threads.first(where: { $0.id == store.selectedThreadID })?.displayTitle
-          ?? store.currentAgentName
-      )
-      .font(.system(size: 17, weight: .semibold))
-      .lineLimit(1)
-      .padding(.horizontal, 66)
-      HStack {
-        Button(action: openSidebar) {
-          Image(systemName: "line.3.horizontal")
-            .font(.system(size: 19, weight: .medium))
-            .frame(width: 32, height: 32)
-        }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .accessibilityLabel("Open sidebar")
-        .accessibilityIdentifier("open-sidebar")
-        Spacer()
-        if let thread = store.list.threads.first(where: { $0.id == store.selectedThreadID }) {
-          ChatThreadPinButton(
-            list: store.list, threadID: thread.id, needsUpgrade: store.needsUpgrade)
-        }
-      }
-    }
-    .buttonStyle(.plain)
-    .padding(.horizontal, 16)
-    .frame(height: headerHeight)
+    ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
   }
 
   private var newChatHome: some View {
