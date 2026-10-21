@@ -410,6 +410,13 @@ test.each([
             [200],
           );
         });
+        expect(managed.body.allocations).toStrictEqual([
+          expect.objectContaining({
+            memberId: actor.userId,
+            usagePackUsd: 50,
+            pendingChange: null,
+          }),
+        ]);
         const credits = await readCredits();
         expect(credits).toMatchObject({
           purchasedCredits: 20_000 + purchased,
