@@ -11,6 +11,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { socialDataRoutes } from "../social-data";
 import { cronReconcileSocialKitDownloadRoutes } from "../cron-reconcile-socialkit-downloads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -141,6 +142,9 @@ async function execute(
     }),
     [200],
   );
+  // A live create-request claim can make cron return before its owner finishes.
+  // Wait for that registered work before asserting the public terminal result.
+  await flushWaitUntilForTest();
   return accept(
     setup.social.get({
       headers: authenticate(setup.actor),
