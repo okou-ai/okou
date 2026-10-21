@@ -800,6 +800,116 @@ test("refreshes rotating credentials only on the backend and isolates requests f
   expect(credentials.body.error.code).toBe("WALLET_AUTHORIZATION_CHANGED");
 });
 
+test("refreshes wallet settings before loading cards and transactions in parallel", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler({ expiresIn: 30 }));
+  await connect(fixture);
+  const refreshStarted = createDeferredPromise<void>(context.signal);
+  const finishRefresh = createDeferredPromise<void>(context.signal);
+  let refreshes = 0;
+  server.use(
+    http.post("https://login.link.com/auth/token", async ({ request }) => {
+      expect(new URLSearchParams(await request.text()).get("grant_type")).toBe(
+        "refresh_token",
+      );
+      refreshes += 1;
+      refreshStarted.resolve();
+      await finishRefresh.promise;
+      return HttpResponse.json({
+        access_token: "wallet-new-access-fixture",
+        refresh_token: "wallet-new-refresh-fixture",
+        token_type: "Bearer",
+        expires_in: 3600,
+        scope: "payment_methods.agentic userinfo:read",
+        authorization_details: [
+          { type: "source", actions: ["read_link_transactions"] },
+        ],
+      });
+    }),
+    http.get("https://api.link.com/payment-details", ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer wallet-new-access-fixture",
+      );
+      return HttpResponse.json({ payment_details: [] });
+    }),
+    http.get("https://api.link.com/transactions", ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer wallet-new-access-fixture",
+      );
+      return HttpResponse.json({ data: [], has_more: false });
+    }),
+  );
+  const loading = userClient().status({ headers: sessionHeaders });
+  onTestFinished(async () => {
+    if (!finishRefresh.settled()) {
+      finishRefresh.resolve();
+    }
+    await loading;
+  });
+  await expect(
+    Promise.race([
+      (async () => {
+        await loading;
+        return "ready";
+      })(),
+      (async () => {
+        await refreshStarted.promise;
+        return "refreshing";
+      })(),
+    ]),
+  ).resolves.toBe("refreshing");
+  finishRefresh.resolve();
+  const status = await accept(loading, [200]);
+  expect(status.headers.get("cache-control")).toBe("no-store");
+  expect(status.body).toMatchObject({
+    connected: true,
+    connectionStatus: "connected",
+    authorization: {
+      capabilities: { paymentMethods: true, transactions: true },
+    },
+  });
+  const [cards, transactions] = await Promise.all([
+    accept(
+      userClient().paymentMethods({ headers: sessionHeaders, query: {} }),
+      [200],
+    ),
+    accept(
+      userClient().activity({ headers: sessionHeaders, query: {} }),
+      [200],
+    ),
+  ]);
+  expect(cards.body.data).toStrictEqual([]);
+  expect(transactions.body.data).toStrictEqual([]);
+  // A rotating refresh credential must be consumed only once by the page load.
+  expect(refreshes).toBe(1);
+});
+
+test("wallet settings report the permissions returned by a credential refresh", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler({ expiresIn: 30 }));
+  await connect(fixture);
+  server.use(tokenHandler({ scope: "userinfo:read", actions: [] }));
+  const status = await accept(
+    userClient().status({ headers: sessionHeaders }),
+    [200],
+  );
+  expect(status.body).toMatchObject({
+    connected: true,
+    authorization: {
+      capabilities: {
+        payments: false,
+        paymentMethods: false,
+        transactions: false,
+      },
+      sourceActions: [],
+    },
+  });
+  await accept(
+    userClient().activity({ headers: sessionHeaders, query: {} }),
+    [403],
+  );
+});
+
 test("keeps the existing wallet usable when a reconnect is started and declined", async () => {
   const fixture = await carrier();
   server.use(tokenHandler());
@@ -1511,56 +1621,65 @@ test.each([
   },
 );
 
-test("finishes revocation if disconnect races a rotating refresh, without resurrecting access", async () => {
-  const fixture = await carrier();
-  server.use(tokenHandler({ expiresIn: 30 }));
-  await connect(fixture);
-  const refreshStarted = createDeferredPromise<void>(context.signal);
-  const finishRefresh = createDeferredPromise<void>(context.signal);
-  onTestFinished(() => {
-    if (!finishRefresh.settled()) {
-      finishRefresh.resolve();
-    }
-  });
-  server.use(
-    http.post("https://login.link.com/auth/revoke", () => {
-      return new HttpResponse(null, { status: 200 });
-    }),
-  );
-  server.use(
-    http.post("https://login.link.com/auth/token", async () => {
-      refreshStarted.resolve();
-      await finishRefresh.promise;
-      return HttpResponse.json({
-        access_token: "wallet-new-access-fixture",
-        refresh_token: "wallet-new-refresh-fixture",
-        token_type: "Bearer",
-        expires_in: 3600,
-        scope: "payment_methods.agentic",
-      });
-    }),
-  );
-  const creation = client().createSpend({
-    headers: fixture.headers,
-    body: purchase(),
-  });
-  await refreshStarted.promise;
-  const unconfirmed = await accept(
-    client().disconnect({ headers: fixture.headers, body: {} }),
-    [503],
-  );
-  expect(unconfirmed.body.error.code).toBe("WALLET_REVOCATION_UNCONFIRMED");
-  finishRefresh.resolve();
-  await accept(creation, [409]);
-  expect(
-    (await accept(client().status({ headers: fixture.headers }), [200])).body
-      .connected,
-  ).toBeFalsy();
-  await accept(
-    client().disconnect({ headers: fixture.headers, body: {} }),
-    [200],
-  );
-});
+test.each(["spend", "settings"] as const)(
+  "finishes revocation if disconnect races a rotating refresh from %s, without resurrecting access",
+  async (operation) => {
+    const fixture = await carrier();
+    server.use(tokenHandler({ expiresIn: 30 }));
+    await connect(fixture);
+    const refreshStarted = createDeferredPromise<void>(context.signal);
+    const finishRefresh = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!finishRefresh.settled()) {
+        finishRefresh.resolve();
+      }
+    });
+    server.use(
+      http.post("https://login.link.com/auth/revoke", () => {
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+    server.use(
+      http.post("https://login.link.com/auth/token", async () => {
+        refreshStarted.resolve();
+        await finishRefresh.promise;
+        return HttpResponse.json({
+          access_token: "wallet-new-access-fixture",
+          refresh_token: "wallet-new-refresh-fixture",
+          token_type: "Bearer",
+          expires_in: 3600,
+          scope: "payment_methods.agentic",
+        });
+      }),
+    );
+    const creation =
+      operation === "settings"
+        ? accept(userClient().status({ headers: sessionHeaders }), [409])
+        : accept(
+            client().createSpend({
+              headers: fixture.headers,
+              body: purchase(),
+            }),
+            [409],
+          );
+    await refreshStarted.promise;
+    const unconfirmed = await accept(
+      client().disconnect({ headers: fixture.headers, body: {} }),
+      [503],
+    );
+    expect(unconfirmed.body.error.code).toBe("WALLET_REVOCATION_UNCONFIRMED");
+    finishRefresh.resolve();
+    await creation;
+    expect(
+      (await accept(client().status({ headers: fixture.headers }), [200])).body
+        .connected,
+    ).toBeFalsy();
+    await accept(
+      client().disconnect({ headers: fixture.headers, body: {} }),
+      [200],
+    );
+  },
+);
 
 test("cannot attest approval when Link omits the bound amount, currency or merchant", async () => {
   const fixture = await carrier();
@@ -1769,46 +1888,55 @@ test("identifies OAuth client rejection separately from a wallet needing consent
   expect(rejected.body.error.message).toContain("provider: invalid_client");
 });
 
-test("requires reconnecting when Link explicitly rejects a rotating refresh grant", async () => {
-  const fixture = await carrier();
-  server.use(tokenHandler({ expiresIn: 30 }));
-  await connect(fixture);
-  const notificationsBefore = countPublishedTo(context.mocks, {
-    channel: `user:${fixture.actor.userId}`,
-    topic: "wallet:changed",
-  });
-  server.use(
-    http.post("https://login.link.com/auth/token", () => {
-      return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
-    }),
-  );
-  const rejected = await accept(
-    client().createSpend({ headers: fixture.headers, body: purchase() }),
-    [409],
-  );
-  expect(rejected.body.error.code).toBe("WALLET_RECONNECT_REQUIRED");
-  expect(rejected.body.error.message).toContain("operation: oauth_refresh");
-  expect(rejected.body.error.message).toContain("provider: invalid_grant");
-  const status = await accept(
-    client().status({ headers: fixture.headers }),
-    [200],
-  );
-  expect(status.body.connected).toBeFalsy();
-  expect(
-    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
-      .body,
-  ).toMatchObject({
-    connected: false,
-    connectionStatus: "reconnect-required",
-    scopeChange: null,
-  });
-  expect(
-    countPublishedTo(context.mocks, {
+test.each(["spend", "settings"] as const)(
+  "requires reconnecting when Link explicitly rejects a rotating refresh grant from %s",
+  async (operation) => {
+    const fixture = await carrier();
+    server.use(tokenHandler({ expiresIn: 30 }));
+    await connect(fixture);
+    const notificationsBefore = countPublishedTo(context.mocks, {
       channel: `user:${fixture.actor.userId}`,
       topic: "wallet:changed",
-    }),
-  ).toBe(notificationsBefore + 1);
-});
+    });
+    server.use(
+      http.post("https://login.link.com/auth/token", () => {
+        return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
+      }),
+    );
+    const rejected =
+      operation === "settings"
+        ? await accept(userClient().status({ headers: sessionHeaders }), [409])
+        : await accept(
+            client().createSpend({
+              headers: fixture.headers,
+              body: purchase(),
+            }),
+            [409],
+          );
+    expect(rejected.body.error.code).toBe("WALLET_RECONNECT_REQUIRED");
+    expect(rejected.body.error.message).toContain("operation: oauth_refresh");
+    expect(rejected.body.error.message).toContain("provider: invalid_grant");
+    const status = await accept(
+      client().status({ headers: fixture.headers }),
+      [200],
+    );
+    expect(status.body.connected).toBeFalsy();
+    expect(
+      (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+        .body,
+    ).toMatchObject({
+      connected: false,
+      connectionStatus: "reconnect-required",
+      scopeChange: null,
+    });
+    expect(
+      countPublishedTo(context.mocks, {
+        channel: `user:${fixture.actor.userId}`,
+        topic: "wallet:changed",
+      }),
+    ).toBe(notificationsBefore + 1);
+  },
+);
 
 test("keeps Link credentials and provider free text out of diagnostic responses", async () => {
   const fixture = await carrier();
