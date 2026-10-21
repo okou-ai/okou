@@ -564,8 +564,9 @@ impl GuestProcessWaiter {
     }
 }
 
-/// Backend-owned future that resolves after a best-effort process cancel request
-/// has been sent to the guest.
+/// Backend-owned future for a best-effort process cancellation operation.
+///
+/// Successful completion may be a no-op; see [`GuestProcessCancelHandle::cancel`].
 pub type GuestProcessCancelFuture =
     Pin<Box<dyn Future<Output = std::io::Result<()>> + Send + 'static>>;
 
@@ -579,8 +580,8 @@ pub struct GuestProcessCancelHandle {
 impl GuestProcessCancelHandle {
     /// Construct a one-shot handle from provider-owned cancellation logic.
     ///
-    /// `cancel` must own the backend state needed to send a best-effort
-    /// cancellation request. The closure receives the host-side timeout when
+    /// `cancel` must own the backend state needed to perform best-effort
+    /// cancellation. The closure receives the host-side timeout when
     /// [`Self::cancel`] consumes this handle; its completion does not observe
     /// the terminal [`ProcessExit`].
     pub fn new<F>(cancel: F) -> Self
@@ -594,13 +595,19 @@ impl GuestProcessCancelHandle {
 
     /// Consume this handle and run the provider's cancellation operation.
     ///
-    /// `timeout` bounds how long the provider should spend sending the
-    /// best-effort cancellation request. Consuming `self` ensures that the
+    /// `timeout` bounds how long the provider should spend on the
+    /// best-effort cancellation operation. Consuming `self` ensures that the
     /// provider operation can run at most once.
     ///
-    /// A successful result only confirms that the cancellation request was
-    /// sent; it does not report process termination. Observe the terminal
-    /// result separately by passing the containing [`GuestProcessHandle`] to
+    /// A successful result means the best-effort cancellation operation
+    /// completed. The provider may return `Ok(())` without sending a request
+    /// when cancellation no longer applies to the original process route, for
+    /// example when the original operation is terminal and its route has been
+    /// reused by a newer operation.
+    ///
+    /// `Ok(())` alone confirms neither that a cancellation request was sent nor
+    /// that the process terminated. Observe the terminal result separately by
+    /// passing the containing [`GuestProcessHandle`] to
     /// [`Sandbox::wait_process`](crate::Sandbox::wait_process).
     pub async fn cancel(self, timeout: Duration) -> std::io::Result<()> {
         (self.cancel)(timeout).await
