@@ -40,7 +40,7 @@ import {
 import { waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
-  readConnectorAccountCount,
+  hasSavedConnectorAccounts,
   resolveCustomConnectorAccountMutation,
   readConnectorOAuthCompletion,
   readConnectorAccountCompletion,
@@ -396,10 +396,10 @@ const setCustomConnectorValuesForTarget$ = command(
     signal: AbortSignal,
   ): Promise<CustomConnectorConnectionResult> => {
     const createClient = get(apiClient$);
-    const initialAccountCount =
+    const hadSavedAccounts =
       args.authorizationTarget.kind === "visible-agents" &&
       args.account.intent === "add"
-        ? await readConnectorAccountCount(
+        ? await hasSavedConnectorAccounts(
             createClient,
             { kind: "custom", customConnectorId: args.id },
             signal,
@@ -447,7 +447,7 @@ const setCustomConnectorValuesForTarget$ = command(
         connector,
         accountComplete: connected,
         target: args.authorizationTarget,
-        initialAccountCount,
+        hadSavedAccounts,
       },
       signal,
     );
@@ -570,7 +570,7 @@ const authorizeCompletedCustomConnectorTarget$ = command(
       readonly connector: CustomConnectorResponse | undefined;
       readonly accountComplete: boolean;
       readonly target: CustomConnectorAuthorizationTarget;
-      readonly initialAccountCount: number | undefined;
+      readonly hadSavedAccounts: boolean | undefined;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -579,7 +579,7 @@ const authorizeCompletedCustomConnectorTarget$ = command(
     }
     if (
       args.target.kind === "visible-agents" &&
-      args.initialAccountCount !== 0
+      args.hadSavedAccounts !== false
     ) {
       return false;
     }
@@ -657,7 +657,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
   ): Promise<CustomConnectorConnectionResult> => {
     const authWindow = openCustomConnectorAuthorizationWindow(signal);
     let navigated = false;
-    let initialAccountCount: number | undefined;
+    let hadSavedAccounts: boolean | undefined;
     const { startResult, account } = await withCleanup(
       (async () => {
         const createClient = get(apiClient$);
@@ -668,10 +668,10 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
           signal,
         );
         signal.throwIfAborted();
-        initialAccountCount =
+        hadSavedAccounts =
           args.authorizationTarget.kind === "visible-agents" &&
           account.intent === "add"
-            ? await readConnectorAccountCount(
+            ? await hasSavedConnectorAccounts(
                 createClient,
                 { kind: "custom", customConnectorId: args.id },
                 signal,
@@ -718,7 +718,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
           connector: startResult.connector,
           accountComplete: connected,
           target: args.authorizationTarget,
-          initialAccountCount,
+          hadSavedAccounts,
         },
         signal,
       );
@@ -766,7 +766,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         connector,
         accountComplete: connected,
         target: args.authorizationTarget,
-        initialAccountCount,
+        hadSavedAccounts,
       },
       signal,
     );
