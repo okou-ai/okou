@@ -40,8 +40,9 @@ pub(crate) fn file_sha256(path: &Path) -> TestResult<String> {
         let wanted = (limit - total).min((BUFFER_BLOCKS * BLOCK_BYTES - prefix) as u64) as usize;
         let count_blocks = (prefix + wanted).div_ceil(BLOCK_BYTES);
         let count = {
-            let mut vectors: Vec<_> = blocks[..count_blocks]
+            let mut vectors: Vec<_> = blocks
                 .iter_mut()
+                .take(count_blocks)
                 .map(|block| IoSliceMut::new(&mut block.0))
                 .collect();
             rustix::io::preadv(&file, &mut vectors, offset).map_err(io::Error::from)?
@@ -57,10 +58,12 @@ pub(crate) fn file_sha256(path: &Path) -> TestResult<String> {
         }
         let mut skip = prefix;
         let mut remaining = count;
-        for block in &blocks[..count_blocks] {
+        for block in blocks.iter().take(count_blocks) {
             let length = remaining.min(BLOCK_BYTES);
             if skip < length {
-                hash.update(&block.0[skip..length]);
+                hash.update(block.0.get(skip..length).ok_or_else(|| {
+                    io::Error::other("native artifact read exceeded its aligned block")
+                })?);
             }
             skip = skip.saturating_sub(length);
             remaining -= length;
