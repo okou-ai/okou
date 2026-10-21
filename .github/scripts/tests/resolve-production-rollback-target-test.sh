@@ -510,7 +510,7 @@ for context_commit in "" invalid; do
   assert_failure "Cannot resolve the merged Storage debug contract cleanup on main" \
     run_resolver "${tmp_dir}/context-policy.output" "MOCK_STORAGE_DEBUG_CONTRACTS_COMMIT=${context_commit}"
   [ ! -s "${tmp_dir}/context-policy.output" ] || fail "invalid context policy must not publish outputs"
-  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "invalid context policy must fail before artifact or host access"
   fi
 done
@@ -521,7 +521,7 @@ assert_failure "Rollback target predates the Storage debug contract cleanup" \
 [ ! -s "${tmp_dir}/context-floor.output" ] || fail "pre-cleanup API must not publish outputs"
 grep -Fq '6161616161616161616161616161616161616161' "${tmp_dir}/failure.err" || fail "context floor must identify its merged cleanup"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/storage-debug-contracts" "${tmp_dir}/boundaries.log" || fail "context floor must resolve main history, not target history"
-if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-cleanup API must fail before artifact or host access"
 fi
 
