@@ -1,5 +1,13 @@
 # Guarded idle terminal fixture
 
+## Original-file open-permission controls
+
+[The owned Linux permission gate](FILE_OPEN_PERMISSION.md) holds actual original
+inode opens using kernel permission events and PIDFD identity. It supplies
+explicit allow/deny and retirement controls for isolated test producers. Its
+qualification does not establish actual Guest/helper execution or any native
+transition, saving, lease or cleanup-IO acceptance below.
+
 ## Guest quiesce cancellation and retained Dirty custody
 
 `quiesce::native_quiesce_loss_retains_original_uncertainty` exercises the

@@ -415,6 +415,11 @@ jobs:
       - name: Test complete original-file range evidence
         run: python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_residency_scan_test.py'
 
+      - name: Test original-file open-permission ownership
+        run: |
+          python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_open_permission_test.py'
+          sudo env OKOU_TEST_OPEN_PERMISSION_KERNEL=1 python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_open_permission_test.py'
+
       - name: Run actionlint
         run: ./actionlint
 
