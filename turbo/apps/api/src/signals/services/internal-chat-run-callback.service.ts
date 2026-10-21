@@ -957,24 +957,15 @@ async function insertFeishuChatDeliveryCallback(args: {
   });
 }
 
-async function insertTeamsChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: TeamsDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "teams:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function teamsChatDeliveryFields(
+  target: TeamsDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "teams:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 /**
@@ -1154,12 +1145,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const teamsDeliveryCallbackId = input.teamsDelivery
-    ? await insertTeamsChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.teamsDelivery,
-        chatEventId: event.id,
+        ...teamsChatDeliveryFields(input.teamsDelivery, event.id),
       })
     : undefined;
   const discordTarget = input.discordDelivery;
@@ -1451,12 +1441,11 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const teamsDeliveryCallbackId =
     deliveryEvent && input.teamsDelivery
-      ? await insertTeamsChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.teamsDelivery,
-          chatEventId: deliveryEvent.id,
+          ...teamsChatDeliveryFields(input.teamsDelivery, deliveryEvent.id),
         })
       : undefined;
   const discordTarget = input.discordDelivery;
