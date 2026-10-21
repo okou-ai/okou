@@ -12,8 +12,8 @@ import type {
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
-import { animationFrame } from "signal-timers";
-import { createDeferredPromise, withCleanup } from "../utils.ts";
+import { delay } from "signal-timers";
+import { withCleanup } from "../utils.ts";
 
 // ---------------------------------------------------------------------------
 // Page-level coordinator for the thread-owned utility sidebar. Sidebar state
@@ -43,15 +43,19 @@ export const activeThreadSidebar$ = computed(
         return {
           thread,
           target,
-          animateEntry:
-            get(thread.sidebar.animateEntry$) &&
-            !(target.type === "email-draft" && target.fromMailList),
+          animateEntry: get(thread.sidebar.animateEntry$),
         };
       }
     }
     return null;
   },
 );
+
+export const threadMailNavigating$ = computed((get) => {
+  return [get(currentLeftThread$), get(currentRightThread$)].some((thread) => {
+    return thread !== null && get(thread.mail.navigating$);
+  });
+});
 
 export const activeThreadSidebarFullscreen$ = computed((get) => {
   const active = get(activeThreadSidebar$);
@@ -163,19 +167,12 @@ export const openThreadMailDraft$ = command(
 // Named browser snapshots morph the anchored list into the existing detail
 // panel, and reverse the same path on Back. Reduced motion moves immediately.
 async function waitForMailLayout(signal: AbortSignal): Promise<void> {
-  // React commits the popup first; Floating UI positions it on the next frame.
-  // Capture the settled bounds, without its separate entrance animation.
-  for (let frame = 0; frame < 2; frame += 1) {
-    const ready = createDeferredPromise<void>(signal);
-    animationFrame(
-      () => {
-        ready.resolve();
-      },
-      { signal },
-    );
-    await ready.promise;
-    signal.throwIfAborted();
-  }
+  // Let React and Floating UI finish their queued layout work. Rendering is
+  // paused inside a view-transition update, so animation frames cannot run.
+  await delay(0, { signal });
+  signal.throwIfAborted();
+  await delay(0, { signal });
+  signal.throwIfAborted();
 }
 
 const moveThreadMail$ = command(
