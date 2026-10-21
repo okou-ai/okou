@@ -501,6 +501,8 @@ export function parseSocialTarget(input: string): SocialUrlTarget {
  * here but have no SocialKit tool binding.
  */
 export const SOCIAL_JOB_ONLY_PLATFORMS = [
+  "douyin",
+  "weibo",
   "threads",
   "wechat",
   "xiaohongshu",
@@ -545,6 +547,10 @@ export function parseSearchPlatform(value: string): SocialCommandPlatform {
 }
 
 const JOB_ONLY_HOSTS: ReadonlyMap<string, SocialJobOnlyPlatform> = new Map([
+  ["douyin.com", "douyin"],
+  ["www.douyin.com", "douyin"],
+  ["weibo.com", "weibo"],
+  ["www.weibo.com", "weibo"],
   ["mp.weixin.qq.com", "wechat"],
   ["threads.com", "threads"],
   ["threads.net", "threads"],
@@ -569,6 +575,32 @@ export function parseJobOnlyTarget(
     return null;
   }
   const platform = JOB_ONLY_HOSTS.get(url.hostname.toLowerCase());
+  if (platform === "douyin" || platform === "weibo") {
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.search ||
+      url.hash
+    ) {
+      throw new InvalidArgumentError(
+        `${platform} requires a full public HTTPS URL without credentials, a custom port, query strings, or fragments`,
+      );
+    }
+    const path = url.pathname;
+    const supported =
+      platform === "douyin"
+        ? /^\/(?:user\/[A-Za-z0-9_-]+|video\/[0-9]+)\/?$/u.test(path)
+        : /^\/(?:u\/[0-9]+|n\/[^/]+|[0-9]+\/[0-9]+)\/?$/u.test(path);
+    if (!supported) {
+      throw new InvalidArgumentError(
+        platform === "douyin"
+          ? "Use a full public douyin.com/user/<id> or douyin.com/video/<id> HTTPS URL; TikTok and shortened share links are different targets"
+          : "Use a full public weibo.com/u/<id> or weibo.com/n/<name> profile, or weibo.com/<numeric-user-id>/<numeric-post-id> HTTPS URL",
+      );
+    }
+  }
   return platform ? { platform, url: url.href } : null;
 }
 

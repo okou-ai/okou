@@ -400,13 +400,13 @@ test("Credit usage formats unknown image-provider names for people to read", asy
   expect(screen.getByText("Acme Vision Pro")).toBeInTheDocument();
 });
 
-test("Credit usage merges every Social Search vendor into one row and preserves model totals", async () => {
+test("Credit usage merges Social and Product Data by kind while preserving model and legacy rows", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000805",
     "a0000000-0000-4000-a000-000000000805",
     {
       version: 1,
-      totalCredits: 102,
+      totalCredits: 137,
       settledAt: "2026-08-14T12:00:02.000Z",
       breakdown: [
         {
@@ -416,13 +416,15 @@ test("Credit usage merges every Social Search vendor into one row and preserves 
         },
         {
           kind: "social",
-          credits: 51,
+          credits: 56,
           providers: [
             { provider: "monid/x", credits: 3 },
             { provider: "monid/instagram", credits: 7 },
             { provider: "monid/tiktok", credits: 11 },
             { provider: "monid/youtube", credits: 13 },
             { provider: "monid/facebook", credits: 17 },
+            { provider: "monid/dy", credits: 2 },
+            { provider: "monid/weibo", credits: 3 },
           ],
         },
         {
@@ -450,17 +452,40 @@ test("Credit usage merges every Social Search vendor into one row and preserves 
           credits: 19,
           providers: [{ provider: "socialkit", credits: 19 }],
         },
+        {
+          kind: "commerce",
+          credits: 7,
+          providers: [{ provider: "dataforseo", credits: 7 }],
+        },
+        {
+          kind: "commerce/dataforseo/provider_cost_usd_micros",
+          credits: 11,
+          providers: [{ provider: "dataforseo", credits: 11 }],
+        },
+        {
+          kind: "legacy-data",
+          credits: 8,
+          providers: [{ provider: "unknown", credits: 8 }],
+        },
+        {
+          kind: "finance",
+          credits: 4,
+          providers: [{ provider: "apidojo", credits: 4 }],
+        },
       ],
     },
   );
 
-  await openUsage("102");
+  await openUsage("137");
 
   const details = screen.getByRole("dialog");
   for (const [label, credits] of [
-    // The X connector stays its own row; only kind "social" collapses.
+    // Managed kinds collapse independently; the X connector remains separate.
     ["X", "12"],
-    ["Social Search", "75"],
+    ["Social Data", "80"],
+    ["Product Data", "18"],
+    ["Legacy Data", "8"],
+    ["Finance", "4"],
     ["GPT 5.6 Sol", "6"],
     ["GPT 5.6 Luna", "9"],
   ]) {
@@ -468,7 +493,8 @@ test("Credit usage merges every Social Search vendor into one row and preserves 
       `${label}${credits}`,
     );
   }
-  expect(within(details).getByText("102")).toBeInTheDocument();
+  expect(within(details).getByText("137")).toBeInTheDocument();
+  expect(within(details).queryByText(/dataforseo/iu)).not.toBeInTheDocument();
   expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
   expect(within(details).queryByText(/socialkit/iu)).not.toBeInTheDocument();
   for (const platform of ["Instagram", "TikTok", "YouTube", "Facebook"]) {
@@ -591,7 +617,7 @@ test("Credit usage names each model row from the server catalog, keeping retired
 });
 
 test.each(["en-US", "zh-Hans"] as const)(
-  "Credit usage merges catalog aliases and every Auto preset in %s",
+  "Credit usage shows managed labels and merges catalog aliases and Auto presets in %s",
   async (locale) => {
     const providers = [
       ["auto", 1],
@@ -612,7 +638,7 @@ test.each(["en-US", "zh-Hans"] as const)(
       "a0000000-0000-4000-a000-000000000808",
       {
         version: 1,
-        totalCredits: 78,
+        totalCredits: 99,
         settledAt: "2026-08-14T12:00:02.000Z",
         breakdown: [
           {
@@ -625,13 +651,28 @@ test.each(["en-US", "zh-Hans"] as const)(
               };
             }),
           },
+          {
+            kind: "social",
+            credits: 4,
+            providers: [
+              { provider: "monid/dy", credits: 1 },
+              { provider: "monid/weibo", credits: 3 },
+            ],
+          },
+          {
+            kind: "commerce",
+            credits: 17,
+            providers: [{ provider: "dataforseo", credits: 17 }],
+          },
         ],
       },
       locale,
     );
-    await openUsage("78");
+    await openUsage("99");
     const details = screen.getByRole("dialog");
     for (const [label, credits] of [
+      ["Social Data", "4"],
+      ["Product Data", "17"],
       ["Auto", "15"],
       ["GPT 6 Luna", "13"],
       ["Claude Sonnet 4.6", "27"],
@@ -643,7 +684,7 @@ test.each(["en-US", "zh-Hans"] as const)(
       );
     }
     expect(document.documentElement.lang).toBe(locale);
-    expect(within(details).getByText("78")).toBeInTheDocument();
+    expect(within(details).getByText("99")).toBeInTheDocument();
     expect(within(details).queryByText(/@preset\//u)).not.toBeInTheDocument();
   },
 );

@@ -81,6 +81,7 @@ export function socialExportCapabilities(mode: SocialOutputMode) {
 export function addSocialExportOptions(
   command: Command,
   mode: SocialOutputMode,
+  domain = "Social",
 ): void {
   command
     .option(
@@ -104,12 +105,12 @@ Export:
   --select addresses data fields, or each collection item; use dot paths for nested fields.
   Paths use letters, digits, _, $, or -, start with a letter, _, or $, and have at most 8 segments / 128 characters.
   Selected JSON keys keep the path name. Missing fields are omitted; null stays null.
-  CSV requires --output and --select on posts/search/comments. Columns follow --select order.
+  CSV requires --output and --select on collection commands. Columns follow --select order.
   CSV uses UTF-8 and CRLF, quotes strings, and encodes nested values as compact JSON.
   Missing CSV fields are empty cells; null is literal null. Spreadsheet-active strings gain a leading apostrophe.
   File exports print a metadata-only JSON receipt; retain it for status, source limits, warnings, errors, language when available, and consumed credits, especially on partial results.
   --stream cannot be combined with --output, --select, --format, or --overwrite. Existing files require explicit --overwrite.
-  If export formatting or writing fails after retrieval, the full result is recovered on stdout. Save it without repeating the billed Social request.
+  If export formatting or writing fails after retrieval, the full result is recovered on stdout. Save it without repeating the billed ${domain} request.
   Output paths are local to this runtime. Use okou web upload-file to deliver the file in web chat.`,
     );
   if (mode === "transcript") {
@@ -211,7 +212,7 @@ function validateOptions(options: SocialExportOptions, mode: SocialOutputMode) {
   if (format === "csv") {
     if (mode !== "collection" || options.output === undefined || !fields) {
       throw new InvalidArgumentError(
-        "CSV requires posts/search/comments with --output and --select",
+        "CSV requires a collection command with --output and --select",
       );
     }
     return { format, fields } as const;
@@ -232,7 +233,7 @@ function fieldValue(row: unknown, field: string): unknown {
 
 function projectRow(row: unknown, fields: readonly string[]) {
   if (!isRecord(row)) {
-    throw new Error("Selected Social data must be an object");
+    throw new Error("Selected data must be an object");
   }
   return Object.fromEntries(
     fields
@@ -247,9 +248,7 @@ function projectRow(row: unknown, fields: readonly string[]) {
 
 function collectionData(data: unknown) {
   if (!isRecord(data) || !Array.isArray(data.items)) {
-    throw new Error(
-      "Social CSV/collection selection requires reviewed data.items",
-    );
+    throw new Error("CSV/collection selection requires reviewed data.items");
   }
   const items: readonly unknown[] = data.items;
   return { ...data, items };
@@ -286,7 +285,7 @@ function csvCell(value: unknown): string {
 function csvOutput(output: TerminalOutput, fields: readonly string[]): string {
   const { items } = collectionData(output.data);
   const rows = items.map((row) => {
-    if (!isRecord(row)) throw new Error("Social CSV rows must be objects");
+    if (!isRecord(row)) throw new Error("CSV rows must be objects");
     return fields
       .map((field) => {
         return csvCell(fieldValue(row, field));
@@ -349,6 +348,7 @@ export async function withSocialOutput(
   options: SocialExportOptions,
   mode: SocialOutputMode,
   action: (write: (output: TerminalOutput) => Promise<void>) => Promise<void>,
+  domain = "Social",
 ): Promise<void> {
   const { format, fields } = validateOptions(options, mode);
   const compact = options.json === true || options.stream === true;
@@ -392,7 +392,7 @@ export async function withSocialOutput(
         // Provider work has already completed; keep the full envelope recoverable.
         printJson(output, compact);
         throw new SocialExportError(
-          `Cannot export Social results${file ? ` to ${JSON.stringify(file.destination)}` : ""}: ${errorMessage(error)}. Retrieved results are on stdout; save them without repeating the Social request.`,
+          `Cannot export ${domain} results${file ? ` to ${JSON.stringify(file.destination)}` : ""}: ${errorMessage(error)}. Retrieved results are on stdout; save them without repeating the ${domain} request.`,
           { cause: error },
         );
       }
@@ -427,7 +427,7 @@ export async function withSocialOutput(
         });
       } catch (error) {
         // Cleanup must not replace the request/export error or truncate stdout.
-        const message = `Could not clean Social export staging file ${JSON.stringify(file.staging)}: ${errorMessage(error)}. Check this local path and remove any remaining file after restoring directory access.`;
+        const message = `Could not clean ${domain} export staging file ${JSON.stringify(file.staging)}: ${errorMessage(error)}. Check this local path and remove any remaining file after restoring directory access.`;
         console.error(
           compact
             ? JSON.stringify({

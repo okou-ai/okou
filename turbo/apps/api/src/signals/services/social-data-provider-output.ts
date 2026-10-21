@@ -4,10 +4,12 @@ import type {
 } from "@okouai/api-contracts/contracts/social-data";
 
 import {
-  SocialDataProviderError,
   threadsHandle,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
+
+import { SocialDataProviderError } from "./social-data-provider-error";
+import { projectChinaOutput } from "./social-data-provider-china-output";
 
 type ObjectValue = Readonly<Record<string, unknown>>;
 
@@ -519,6 +521,10 @@ function projectRecord(
     case "wechat": {
       return projectWechat(row, plan.format);
     }
+    case "douyin":
+    case "weibo": {
+      return invalidOutput(); // These typed adapters own their envelope and row validation.
+    }
   }
 }
 
@@ -697,6 +703,9 @@ export function projectSocialDataProviderOutput(
   plan: SocialDataProviderPlan,
   output: unknown,
 ): SocialDataResult {
+  if (plan.request.platform === "douyin" || plan.request.platform === "weibo") {
+    return projectChinaOutput(plan, output);
+  }
   let rows: readonly unknown[];
   const tikhubRows = tikhubOutputRows(plan, output);
   if (tikhubRows) {

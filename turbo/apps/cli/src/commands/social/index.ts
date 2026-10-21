@@ -1711,7 +1711,7 @@ const searchCommand = new Command()
   .option("--date <date>", "Platform-supported publication window")
   .option(
     "--type <type>",
-    "YouTube result type: video or shorts; saved WeChat jobs: article, account, or video",
+    "YouTube: video or shorts; saved WeChat jobs: article, account, or video; Douyin: account; Weibo: post",
   )
   .option(
     "--limit <count>",
@@ -1790,6 +1790,51 @@ const commentsCommand = new Command()
       },
     );
   });
+
+function jobOnlyCollectionCommand(
+  operation: "replies" | "followers" | "following",
+): Command {
+  const command = new Command(operation)
+    .description(
+      operation === "replies"
+        ? "List one bounded page of replies to a selected public comment"
+        : `List one bounded page of public ${operation} (Douyin only)`,
+    )
+    .argument(
+      "<url>",
+      operation === "replies" ? "Public post URL" : "Public profile URL",
+    )
+    .option(
+      "--limit <count>",
+      "Maximum total items across this collection (1-1000)",
+      positiveInteger,
+      DEFAULT_COLLECTION_LIMIT,
+    )
+    .option("--json", "Print compact JSON")
+    .action(async (url: string, options: SocialJobOptions) => {
+      await runSocialAction(options.json === true, async () => {
+        if (!usesSocialJobs(options)) {
+          throw new InvalidArgumentError(
+            `${operation} requires a saved data job control: --dry-run, --max-credits, --async, or --request-id`,
+          );
+        }
+        await printSocialJob(operation, url, options);
+      });
+    });
+  if (operation === "replies") {
+    command.requiredOption(
+      "--comment-id <id>",
+      "Decimal ID of the parent comment (not the post ID); no recursive collection",
+    );
+  }
+  addSocialExportOptions(command, "collection");
+  addSocialJobOptions(command);
+  return command;
+}
+
+const repliesCommand = jobOnlyCollectionCommand("replies");
+const followersCommand = jobOnlyCollectionCommand("followers");
+const followingCommand = jobOnlyCollectionCommand("following");
 
 const resumeCollectionCommand = new Command()
   .name("resume")
@@ -2188,6 +2233,9 @@ export const socialCommand = new Command()
   .addCommand(postsCommand)
   .addCommand(searchCommand)
   .addCommand(commentsCommand)
+  .addCommand(repliesCommand)
+  .addCommand(followersCommand)
+  .addCommand(followingCommand)
   .addCommand(resumeCollectionCommand)
   .addCommand(transcriptCommand)
   .addCommand(summarizeCommand)
@@ -2231,7 +2279,10 @@ Examples:
 
 Notes:
   - URL commands detect LinkedIn, X, Facebook, Instagram, TikTok, and YouTube automatically
-  - Threads, WeChat Official Account, and Xiaohongshu URLs are recognized only with a saved data job control
+  - Douyin, Weibo, Threads, WeChat Official Account, and Xiaohongshu URLs are recognized only with a saved data job control
+  - Douyin/Weibo require full public HTTPS URLs; short links and TikTok URLs are not interchangeable
+  - Replies fetch a selected comment's replies only; followers/following are Douyin-only saved jobs
+  - Douyin/Weibo media downloads are not supported; social download uses the standard download service
   - Commands use reviewed managed capabilities without exposing provider operation names
   - capabilities is offline; status separately checks reported service health without credits
   - Capability details distinguish total limits, page limits, source constraints, and supported inputs

@@ -5,17 +5,20 @@ import {
   socialDataCreateRequestSchema,
   socialDataJobResponseSchema,
   type SocialDataCreateRequest,
+  type SocialDataProviderCursor,
   type SocialDataJobResponse,
   type SocialDataListQuery,
   type SocialDataListResponse,
   type SocialDataQuoteResponse,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql, notInArray } from "drizzle-orm";
 
 import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
@@ -36,9 +39,38 @@ import {
 } from "./social-data-provider";
 import {
   prepareSocialDataProviderPlan,
-  SocialDataProviderError,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
+
+import { SocialDataProviderError } from "./social-data-provider-error";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import {
+  completedSocialDataPage,
+  socialDataCollectionView,
+} from "./social-data-collection";
+
+const expandedSocialAccess$ = command(
+  async ({ set }, auth: Actor, signal: AbortSignal) => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    return isFeatureEnabled(FeatureSwitchKey.SocialDataExpansion, context);
+  },
+);
+
+function expandedRequest(request: SocialDataRequest): boolean {
+  return (
+    request.platform === "douyin" ||
+    request.platform === "weibo" ||
+    request.operation === "replies" ||
+    request.operation === "followers" ||
+    request.operation === "following"
+  );
+}
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -46,7 +78,7 @@ const BILLING_CATEGORY = "provider_cost_usd_micros";
 type Actor = AuthContext & { readonly orgId: string };
 type Job = typeof socialDataJobs.$inferSelect;
 type ErrorStatus = 400 | 402 | 403 | 404 | 409 | 422 | 429 | 502 | 503;
-interface ErrorResponse {
+export interface ErrorResponse {
   readonly status: ErrorStatus;
   readonly body: {
     readonly error: { readonly code: string; readonly message: string };
@@ -119,6 +151,7 @@ function publicJob(job: Job): SocialDataJobResponse {
     operation: job.operation,
     status: job.status,
     data: job.result,
+    collection: socialDataCollectionView(job),
     billing: {
       state: job.creditsCharged === null ? "pending" : "settled",
       creditsCharged: job.creditsCharged ?? 0,
@@ -150,8 +183,9 @@ function requestWhere(auth: Actor, body: SocialDataCreateRequest) {
 function replayJob(
   job: Job,
   body: SocialDataCreateRequest,
+  sourceJobId: string | null = null,
 ): CreatedResponse | ErrorResponse {
-  return isDeepStrictEqual(job.request, body)
+  return job.sourceJobId === sourceJobId && isDeepStrictEqual(job.request, body)
     ? { status: 202, body: publicJob(job) }
     : errorResponse(
         409,
@@ -186,17 +220,31 @@ async function loadPricing(db: Db, platform: SocialDataRequest["platform"]) {
 export const quoteSocialData$ = command(
   async (
     { set },
-    args: { readonly auth: Actor; readonly body: SocialDataRequest },
+    args: {
+      readonly auth: Actor;
+      readonly body: SocialDataRequest;
+      readonly cursor?: SocialDataProviderCursor;
+    },
     signal: AbortSignal,
   ): Promise<
     | { readonly status: 200; readonly body: SocialDataQuoteResponse }
     | ErrorResponse
   > => {
+    if (
+      expandedRequest(args.body) &&
+      !(await set(expandedSocialAccess$, args.auth, signal))
+    ) {
+      return errorResponse(
+        403,
+        "FORBIDDEN",
+        "This Social data platform is not available.",
+      );
+    }
     const db = set(writeDb$);
     const result = await settle(
       (async () => {
         const estimate = await inspectSocialDataProviderPlan(
-          prepareSocialDataProviderPlan(args.body),
+          prepareSocialDataProviderPlan(args.body, args.cursor),
           signal,
         );
         signal.throwIfAborted();
@@ -296,6 +344,7 @@ async function admitJob(
     readonly body: SocialDataCreateRequest;
     readonly plan: SocialDataProviderPlan;
     readonly estimate: SocialDataProviderQuote;
+    readonly source?: Job;
   },
   signal: AbortSignal,
 ): Promise<CreatedResponse | ErrorResponse> {
@@ -314,7 +363,21 @@ async function admitJob(
     .where(requestWhere(args.auth, args.body));
   signal.throwIfAborted();
   if (duplicate) {
-    return replayJob(duplicate, args.body);
+    return replayJob(duplicate, args.body, args.source?.id ?? null);
+  }
+  if (args.source) {
+    const [successor] = await tx
+      .select({ id: socialDataJobs.id })
+      .from(socialDataJobs)
+      .where(eq(socialDataJobs.sourceJobId, args.source.id));
+    signal.throwIfAborted();
+    if (successor) {
+      return errorResponse(
+        409,
+        "SOCIAL_DATA_PAGE_ALREADY_CONTINUED",
+        "This page already has a continuation. Recover it from saved jobs; do not submit it again.",
+      );
+    }
   }
   const request = requestOf(args.body);
   const pricing = await loadPricing(tx, request.platform);
@@ -348,6 +411,9 @@ async function admitJob(
       request: args.body,
       providerName: args.plan.provider,
       providerEndpoint: args.plan.endpoint,
+      sourceJobId: args.source?.id,
+      providerCursor: args.plan.cursor,
+      collectionProgress: args.source?.collectionProgress,
       estimatedCostUsdMicros: args.estimate.estimatedCostUsdMicros,
       unitPrice: pricing.unitPrice,
       unitSize: pricing.unitSize,
@@ -365,7 +431,11 @@ async function admitJob(
 export const createSocialDataJob$ = command(
   async (
     { set },
-    args: { readonly auth: Actor; readonly body: SocialDataCreateRequest },
+    args: {
+      readonly auth: Actor;
+      readonly body: SocialDataCreateRequest;
+      readonly source?: Job;
+    },
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
     const db = set(writeDb$);
@@ -375,11 +445,38 @@ export const createSocialDataJob$ = command(
       .where(requestWhere(args.auth, args.body));
     signal.throwIfAborted();
     if (existing) {
-      return replayJob(existing, args.body);
+      return replayJob(existing, args.body, args.source?.id ?? null);
+    }
+    if (
+      expandedRequest(args.body) &&
+      !(await set(expandedSocialAccess$, args.auth, signal))
+    ) {
+      return errorResponse(
+        403,
+        "FORBIDDEN",
+        "This Social data platform is not available.",
+      );
+    }
+    if (args.source) {
+      const [successor] = await db
+        .select({ id: socialDataJobs.id })
+        .from(socialDataJobs)
+        .where(eq(socialDataJobs.sourceJobId, args.source.id));
+      signal.throwIfAborted();
+      if (successor) {
+        return errorResponse(
+          409,
+          "SOCIAL_DATA_PAGE_ALREADY_CONTINUED",
+          "This page already has a continuation. Recover it from saved jobs; do not submit it again.",
+        );
+      }
     }
     const result = await settle(
       (async () => {
-        const plan = prepareSocialDataProviderPlan(requestOf(args.body));
+        const plan = prepareSocialDataProviderPlan(
+          requestOf(args.body),
+          args.source?.nextProviderCursor ?? undefined,
+        );
         const estimate = await inspectSocialDataProviderPlan(plan, signal);
         signal.throwIfAborted();
         // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0249; new non-billing transactions are prohibited.
@@ -403,6 +500,7 @@ function claimedWhere(claim: Claim) {
 function jobPlan(job: Job): SocialDataProviderPlan {
   const plan = prepareSocialDataProviderPlan(
     requestOf(socialDataCreateRequestSchema.parse(job.request)),
+    job.providerCursor ?? undefined,
   );
   if (
     plan.provider !== job.providerName ||
@@ -545,7 +643,7 @@ async function saveClaimOutcome(
     .set({
       status: "completed",
       actualCostUsdMicros: outcome.actualCostUsdMicros,
-      result: outcome.data,
+      ...completedSocialDataPage(claim.job, outcome),
       error: null,
       updatedAt: nowDate(),
     })
@@ -755,6 +853,9 @@ export const listSocialDataJobs$ = command(
     if (args.query.cursor && !cursor) {
       return errorResponse(404, "NOT_FOUND", "Social data cursor not found.");
     }
+    const includeExpanded =
+      args.query.includeExpanded &&
+      (await set(expandedSocialAccess$, args.auth, signal));
     const rows = await db
       .select()
       .from(socialDataJobs)
@@ -762,6 +863,16 @@ export const listSocialDataJobs$ = command(
         and(
           eq(socialDataJobs.orgId, args.auth.orgId),
           eq(socialDataJobs.userId, args.auth.userId),
+          includeExpanded
+            ? undefined
+            : and(
+                notInArray(socialDataJobs.platform, ["douyin", "weibo"]),
+                notInArray(socialDataJobs.operation, [
+                  "replies",
+                  "followers",
+                  "following",
+                ]),
+              ),
           cursor
             ? or(
                 lt(socialDataJobs.createdAt, cursor.createdAt),

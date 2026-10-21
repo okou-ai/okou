@@ -1,21 +1,19 @@
 import {
   socialDataRequestSchema,
   type SocialDataRequest,
+  type SocialDataProviderCursor,
 } from "@okouai/api-contracts/contracts/social-data";
+import {
+  douyinPlan,
+  weiboPlan,
+  withSocialDataCursor,
+} from "./social-data-provider-china";
 
-export class SocialDataProviderError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status: 400 | 422 | 429 | 502 | 503 = 502,
-  ) {
-    super(message);
-    this.name = "SocialDataProviderError";
-  }
-}
+import { SocialDataProviderError } from "./social-data-provider-error";
 
 export interface SocialDataProviderPlan {
   readonly request: SocialDataRequest;
+  readonly cursor?: SocialDataProviderCursor;
   /** Apify runs Actors; TikHub proxies vendor APIs with per-call pricing. */
   readonly provider: "apify" | "tikhub";
   readonly endpoint: string;
@@ -43,7 +41,17 @@ export interface SocialDataProviderPlan {
     | "threads-profile"
     | "wechat-article"
     | "wechat-comment"
-    | "wechat-search";
+    | "wechat-search"
+    | "douyin-user"
+    | "douyin-user-search"
+    | "douyin-post"
+    | "douyin-comment"
+    | "douyin-followers"
+    | "douyin-following"
+    | "weibo-user"
+    | "weibo-post"
+    | "weibo-search"
+    | "weibo-comment";
 }
 
 /** Recent posts and Reels carried by one Instagram profile lookup. */
@@ -165,6 +173,8 @@ function targetUrl(request: SocialDataRequest): URL {
       "www.threads.net",
     ],
     wechat: ["mp.weixin.qq.com"],
+    douyin: ["douyin.com", "www.douyin.com"],
+    weibo: ["weibo.com", "www.weibo.com"],
   };
   if (!hosts[request.platform].includes(host) || url.hash) {
     unsupported("Use a full public URL belonging to the selected platform.");
@@ -693,8 +703,35 @@ function xPlan(request: SocialDataRequest): SocialDataProviderPlan {
   return plan(request, "/apidojo/tweet-scraper", body, "x-post");
 }
 
+const PLATFORM_OPERATIONS: Readonly<
+  Record<
+    SocialDataRequest["platform"],
+    readonly SocialDataRequest["operation"][]
+  >
+> = {
+  instagram: ["inspect", "posts", "comments"],
+  tiktok: ["inspect", "posts", "search", "comments"],
+  youtube: ["inspect", "posts", "search", "comments", "transcript"],
+  facebook: ["inspect", "posts", "search", "comments"],
+  x: ["inspect", "posts", "search", "comments"],
+  xiaohongshu: ["inspect", "posts", "search", "comments"],
+  threads: ["inspect", "search"],
+  wechat: ["inspect", "search", "comments"],
+  douyin: [
+    "inspect",
+    "posts",
+    "search",
+    "comments",
+    "replies",
+    "followers",
+    "following",
+  ],
+  weibo: ["inspect", "posts", "search", "comments", "replies"],
+};
+
 export function prepareSocialDataProviderPlan(
   input: SocialDataRequest,
+  cursor?: SocialDataProviderCursor,
 ): SocialDataProviderPlan {
   const parsed = socialDataRequestSchema.safeParse(input);
   if (!parsed.success) {
@@ -705,7 +742,22 @@ export function prepareSocialDataProviderPlan(
     );
   }
   const request = parsed.data;
+  if (!PLATFORM_OPERATIONS[request.platform].includes(request.operation)) {
+    return unsupported(
+      "This operation is unavailable for the selected platform.",
+    );
+  }
+  return withSocialDataCursor(platformPlan(request), cursor);
+}
+
+function platformPlan(request: SocialDataRequest): SocialDataProviderPlan {
   switch (request.platform) {
+    case "douyin": {
+      return douyinPlan(request);
+    }
+    case "weibo": {
+      return weiboPlan(request);
+    }
     case "instagram": {
       return instagramPlan(request);
     }

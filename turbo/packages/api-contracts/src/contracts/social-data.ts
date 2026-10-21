@@ -16,6 +16,8 @@ export const socialDataPlatformSchema = z.enum([
   "xiaohongshu",
   "threads",
   "wechat",
+  "douyin",
+  "weibo",
 ]);
 
 export const socialDataOperationSchema = z.enum([
@@ -24,6 +26,9 @@ export const socialDataOperationSchema = z.enum([
   "search",
   "comments",
   "transcript",
+  "replies",
+  "followers",
+  "following",
 ]);
 
 const safeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -48,7 +53,11 @@ const socialDataInputSchema = z
     kind: z.enum(["posts", "reels"]).optional(),
     sort: z.string().trim().min(1).max(32).optional(),
     date: z.string().trim().min(1).max(64).optional(),
-    type: z.enum(["video", "shorts", "article", "account"]).optional(),
+    type: z.enum(["video", "shorts", "article", "account", "post"]).optional(),
+    commentId: z
+      .string()
+      .regex(/^\d{1,128}$/u)
+      .optional(),
     hashtag: z.boolean().optional(),
     fullDetails: z.boolean().optional(),
     refresh: z.boolean().optional(),
@@ -65,6 +74,13 @@ function validateTarget(
   input: z.infer<typeof socialDataInputSchema>,
   context: z.RefinementCtx,
 ) {
+  if ((input.operation === "replies") !== (input.commentId !== undefined)) {
+    context.addIssue({
+      code: "custom",
+      message: "commentId is required only for replies",
+      path: ["commentId"],
+    });
+  }
   if (input.operation === "search") {
     if (input.query === undefined || input.url !== undefined) {
       context.addIssue({
@@ -89,6 +105,16 @@ export const socialDataCreateRequestSchema = socialDataInputSchema
     maxCredits: positiveInteger.optional(),
   })
   .superRefine(validateTarget);
+
+export const socialDataContinueRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    maxCredits: positiveInteger.optional(),
+  })
+  .strict();
+export type SocialDataContinueRequest = z.infer<
+  typeof socialDataContinueRequestSchema
+>;
 
 export const socialDataQuoteResponseSchema = z.object({
   platform: socialDataPlatformSchema,
@@ -121,10 +147,15 @@ export const socialDataRecordSchema = z.object({
   duration: z.number().nonnegative().optional(),
   mediaUrls: z.array(z.url()).optional(),
   parentId: z.string().optional(),
+  authorId: z.string().optional(),
+  authorUrl: publicUrl.optional(),
 });
 
 export const socialDataResultSchema = z.union([
-  z.object({ items: z.array(socialDataRecordSchema) }),
+  z.object({
+    items: z.array(socialDataRecordSchema),
+    pagination: z.object({ hasMore: z.boolean().nullable() }).optional(),
+  }),
   z.object({
     transcript: z.string(),
     segments: z
@@ -139,6 +170,31 @@ export const socialDataResultSchema = z.union([
     language: z.string().optional(),
   }),
 ]);
+
+/** Internal persisted continuation state; never accepted as public request input. */
+export const socialDataProviderCursorSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("douyin-cursor"), value: safeInteger }).strict(),
+  z
+    .object({ kind: z.literal("douyin-max-cursor"), value: safeInteger })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("douyin-max-time"),
+      value: z.string().regex(/^\d{1,128}$/u),
+      sourceType: z.literal(1).optional(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("weibo-page"), value: positiveInteger }).strict(),
+  z
+    .object({
+      kind: z.literal("weibo-max-id"),
+      value: z.string().regex(/^\d{1,128}$/u),
+    })
+    .strict(),
+]);
+export type SocialDataProviderCursor = z.infer<
+  typeof socialDataProviderCursorSchema
+>;
 
 export const socialDataJobStatusSchema = z.enum([
   "pending",
@@ -156,6 +212,16 @@ export const socialDataJobResponseSchema = z.object({
   operation: socialDataOperationSchema,
   status: socialDataJobStatusSchema,
   data: socialDataResultSchema.nullable(),
+  collection: z
+    .object({
+      requestedItems: positiveInteger.max(SOCIAL_DATA_MAX_RESULTS),
+      itemsReturned: safeInteger,
+      cumulativeItemsReturned: safeInteger,
+      hasMore: z.boolean().nullable(),
+      continuationAvailable: z.boolean(),
+      sourceJobId: z.uuid().optional(),
+    })
+    .optional(),
   billing: z.object({
     state: z.enum(["pending", "settled"]),
     creditsCharged: safeInteger,
@@ -170,6 +236,13 @@ export const socialDataJobResponseSchema = z.object({
 export const socialDataListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.uuid().optional(),
+  // New clients opt in; old clients must not receive unsupported enum values.
+  includeExpanded: z
+    .enum(["true", "false"])
+    .transform((value) => {
+      return value === "true";
+    })
+    .optional(),
 });
 
 export const socialDataListResponseSchema = z.object({
@@ -240,6 +313,26 @@ export const socialDataContract = c.router({
     pathParams: z.object({ jobId: z.uuid() }),
     responses: { 200: socialDataJobResponseSchema, ...errors },
     summary: "Read a saved Social data job without starting another operation",
+  },
+  quoteContinuation: {
+    method: "POST",
+    path: "/api/social/data/jobs/:jobId/continue/quote",
+    headers: authHeadersSchema,
+    pathParams: z.object({ jobId: z.uuid() }),
+    body: z.object({}).strict(),
+    responses: { 200: socialDataQuoteResponseSchema, ...errors },
+    summary:
+      "Quote one explicit next page without starting a provider operation",
+  },
+  continue: {
+    method: "POST",
+    path: "/api/social/data/jobs/:jobId/continue",
+    headers: authHeadersSchema,
+    pathParams: z.object({ jobId: z.uuid() }),
+    body: socialDataContinueRequestSchema,
+    responses: { 202: socialDataJobResponseSchema, ...errors },
+    summary:
+      "Create one independently budgeted next page of a saved collection",
   },
   cancel: {
     method: "POST",

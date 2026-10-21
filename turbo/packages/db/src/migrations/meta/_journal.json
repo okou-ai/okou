@@ -2528,6 +2528,13 @@
       "when": 1792549455905,
       "tag": "1438_hosted_site_browser_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 1439,
+      "version": "7",
+      "when": 1792591984564,
+      "tag": "1439_thin_hemingway",
+      "breakpoints": true
     }
   ]
 }

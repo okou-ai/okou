@@ -11,10 +11,14 @@ import {
 } from "../utils";
 import {
   prepareSocialDataProviderPlan,
-  SocialDataProviderError,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
+import { SocialDataProviderError } from "./social-data-provider-error";
 import { projectSocialDataProviderOutput } from "./social-data-provider-output";
+import {
+  extractChinaContinuation,
+  type SocialDataProviderContinuation,
+} from "./social-data-provider-china-output";
 
 const API_BASE = "https://api.monid.ai/v1";
 const RESPONSE_LIMIT_BYTES = 8 * 1024 * 1024;
@@ -58,11 +62,15 @@ const runSchema = z.object({
   billedUnits: z.number().finite().nonnegative().optional(),
 });
 
-const parameterSchema = z.object({
+const typedParameterSchema = z.object({
   type: z.string().optional(),
   enum: z.array(z.unknown()).optional(),
   minimum: z.number().optional(),
   maximum: z.number().optional(),
+});
+
+const parameterSchema = typedParameterSchema.extend({
+  anyOf: z.array(typedParameterSchema).min(1).optional(),
 });
 
 const inputSchemaShape = z.object({
@@ -95,6 +103,8 @@ export interface SocialDataProviderRun {
   readonly actualCostUsdMicros?: number;
   readonly billedUnits?: number;
   readonly stoppable?: boolean;
+  readonly nextCursor?: SocialDataProviderPlan["cursor"];
+  readonly hasMore?: boolean;
   readonly errorCode?: string;
   readonly errorMessage?: string;
 }
@@ -252,7 +262,7 @@ async function request(
 }
 
 function checkedPlan(plan: SocialDataProviderPlan): SocialDataProviderPlan {
-  const checked = prepareSocialDataProviderPlan(plan.request);
+  const checked = prepareSocialDataProviderPlan(plan.request, plan.cursor);
   if (!isDeepStrictEqual(checked, plan)) {
     throw new SocialDataProviderError(
       "SOCIAL_DATA_INVALID_PLAN",
@@ -261,6 +271,49 @@ function checkedPlan(plan: SocialDataProviderPlan): SocialDataProviderPlan {
     );
   }
   return checked;
+}
+
+export function extractSocialDataProviderContinuation(
+  plan: SocialDataProviderPlan,
+  rawOutput: unknown,
+): SocialDataProviderContinuation {
+  return extractChinaContinuation(checkedPlan(plan), rawOutput);
+}
+
+function matchesTypedParameter(
+  value: unknown,
+  parameter: z.infer<typeof typedParameterSchema>,
+): boolean {
+  if (parameter.enum && !parameter.enum.includes(value)) {
+    return false;
+  }
+  switch (parameter.type) {
+    case "string": {
+      return typeof value === "string";
+    }
+    case "boolean": {
+      return typeof value === "boolean";
+    }
+    case "array": {
+      return Array.isArray(value);
+    }
+    case "null": {
+      return value === null;
+    }
+    case "integer":
+    case "number": {
+      return (
+        typeof value === "number" &&
+        Number.isFinite(value) &&
+        (parameter.type !== "integer" || Number.isInteger(value)) &&
+        (parameter.minimum === undefined || value >= parameter.minimum) &&
+        (parameter.maximum === undefined || value <= parameter.maximum)
+      );
+    }
+    default: {
+      return false;
+    }
+  }
 }
 
 function inspectionMatchesInput(
@@ -288,30 +341,20 @@ function inspectionMatchesInput(
     if (parameter.enum && !parameter.enum.includes(value)) {
       return false;
     }
-    switch (parameter.type) {
-      case "string": {
-        return typeof value === "string";
-      }
-      case "boolean": {
-        return typeof value === "boolean";
-      }
-      case "array": {
-        return Array.isArray(value);
-      }
-      case "integer":
-      case "number": {
-        return (
-          typeof value === "number" &&
-          Number.isFinite(value) &&
-          (parameter.type !== "integer" || Number.isInteger(value)) &&
-          (parameter.minimum === undefined || value >= parameter.minimum) &&
-          (parameter.maximum === undefined || value <= parameter.maximum)
-        );
-      }
-      default: {
-        return false;
-      }
+    if (parameter.anyOf !== undefined) {
+      // Every branch must declare a type; an untyped branch cannot broaden a quote.
+      return (
+        parameter.anyOf.every((branch) => {
+          return branch.type !== undefined;
+        }) &&
+        (parameter.type === undefined ||
+          matchesTypedParameter(value, parameter)) &&
+        parameter.anyOf.some((branch) => {
+          return matchesTypedParameter(value, branch);
+        })
+      );
     }
+    return matchesTypedParameter(value, parameter);
   });
 }
 
@@ -338,6 +381,9 @@ export async function inspectSocialDataProviderPlan(
     !parsed.success ||
     parsed.data.provider !== checked.provider ||
     parsed.data.endpoint !== checked.endpoint ||
+    ((checked.request.platform === "douyin" ||
+      checked.request.platform === "weibo") &&
+      parsed.data.price.type !== "PER_CALL") ||
     !inspectionMatchesInput(checked.input.body, parsed.data.input.body) ||
     !inspectionMatchesInput(
       checked.input.queryParams,
@@ -447,6 +493,7 @@ async function normalizeRun(
         state: "completed",
         actualCostUsdMicros,
         data: output.value,
+        ...extractSocialDataProviderContinuation(plan, run.output),
       };
     }
   }

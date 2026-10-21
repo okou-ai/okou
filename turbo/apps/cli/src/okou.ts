@@ -92,6 +92,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   "people-search": "people-search:read",
   "web-search": "web-search:read",
   social: "social:read",
+  commerce: "commerce:read",
   finance: "finance:read",
   seo: "seo:read",
   banking: "banking:read",
@@ -468,6 +469,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Retrieve public social data through managed Okou services",
     load: async () => {
       return (await import("./commands/social")).socialCommand;
+    },
+  },
+  {
+    name: "commerce",
+    description:
+      "Retrieve public Amazon product data through managed Okou Commerce",
+    load: async () => {
+      return (await import("./commands/commerce")).commerceCommand;
     },
   },
   {

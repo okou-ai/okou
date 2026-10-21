@@ -96,6 +96,7 @@ describe("Okou CLI program", () => {
       "web-search",
       "people-search",
       "social",
+      "commerce",
       "finance",
       "seo",
       "banking",
@@ -130,8 +131,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 53 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(53);
+  it("should have exactly 54 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(54);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });
@@ -259,6 +260,12 @@ describe("Okou CLI lazy command loading", () => {
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
+      label: "Commerce help invocation",
+      argv: ["node", "okou", "commerce", "--help"],
+      expectedName: "commerce",
+      expectedHelpCode: "commander.helpDisplayed",
+    },
+    {
       label: "direct canonical invocation",
       argv: ["node", "okou", "social", "--help"],
       expectedName: "social",
@@ -282,7 +289,9 @@ describe("Okou CLI lazy command loading", () => {
               ? "lark:write"
               : expectedName === "artifact"
                 ? "artifact:read"
-                : "social:read",
+                : expectedName === "commerce"
+                  ? "commerce:read"
+                  : "social:read",
         ]),
       );
       let helpOutput = "";

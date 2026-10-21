@@ -46,6 +46,18 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.Commerce]: {
+    maintainer: "ethan@okou.ai",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
+  [FeatureSwitchKey.SocialDataExpansion]: {
+    maintainer: "ethan@okou.ai",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.PwaKeyboardViewport]: {
     maintainer: "bingjie@okou.ai",
     displayName: "PWA keyboard viewport",
