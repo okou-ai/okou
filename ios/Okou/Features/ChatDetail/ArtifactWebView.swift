@@ -60,7 +60,8 @@ struct ArtifactWebView: UIViewRepresentable {
       guard let url = action.request.url else { return .cancel }
       let sameOrigin =
         url.scheme == initialURL.scheme && url.host == initialURL.host
-        && url.port == initialURL.port
+        && (url.port ?? (url.scheme == "https" ? 443 : 80))
+          == (initialURL.port ?? (initialURL.scheme == "https" ? 443 : 80))
       let isNetwork =
         url.scheme == "https"
         || (url.scheme == "http" && ["127.0.0.1", "localhost", "::1"].contains(url.host ?? ""))

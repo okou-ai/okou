@@ -23,7 +23,7 @@ final class ChatArtifactTests: XCTestCase {
       "//app.okou.ai" + path,
       "/artifacts/invalid.png", "/artifacts/\(reference).HTML", "/artifacts/\(reference).html?x=1",
       "javascript:alert(1)", "https://example.com/report.pdf",
-      "https://static.okou.ai/unlisted.html",
+      "https://static.okou.ai/unlisted.html", "https://demo.sites.vm7.io/",
       "https://not-okou.app/page", "https://files.sites.vm7.io/ordinary.html",
     ] { XCTAssertNil(ChatArtifactReference.parse(value, webURL: webURL, apiURL: apiURL), value) }
     let legacy = try XCTUnwrap(
@@ -35,8 +35,22 @@ final class ChatArtifactTests: XCTestCase {
     for value in [
       "https://a.okou.io/abcdefgh12.pdf", "https://files.sites.vm7.io/1234567890abcdef12345678.pdf",
       "https://cdn.okou.io/artifacts/user/id/report.pdf", "/f/user/id/report.pdf",
-      "https://demo.okou.app/", "https://demo.sites.vm0.io/", "https://demo.sites.vm7.io/",
+      "https://demo.okou.app/", "https://demo.sites.vm0.io/",
+      "https://www.okou.ai/f/reader/id/report.pdf",
+      "https://platform.okou.ai/f/reader/id/report.pdf",
+      "https://a.okou.io/abcdefgh12.tar.gz",
     ] { XCTAssertNotNil(ChatArtifactReference.parse(value, webURL: webURL, apiURL: apiURL), value) }
+  }
+
+  func testHostedSiteRecognitionUsesTheConfiguredEnvironment() throws {
+    let preview = URL(string: "https://app.vm7.ai")!
+    let api = URL(string: "https://api.vm7.ai")!
+    XCTAssertNotNil(
+      ChatArtifactReference.parse("https://demo.sites.vm7.io/", webURL: preview, apiURL: api))
+    XCTAssertNil(
+      ChatArtifactReference.parse("https://demo.okou.app/", webURL: preview, apiURL: api))
+    XCTAssertNil(
+      ChatArtifactReference.parse("https://demo.sites.vm0.io/", webURL: preview, apiURL: api))
   }
 
   func testAuthorizedDownloadRenewsRejectedSignatureAndNeverSendsAppCredentialsToStorage()

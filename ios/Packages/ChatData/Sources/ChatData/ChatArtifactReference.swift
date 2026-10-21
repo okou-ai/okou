@@ -42,9 +42,10 @@ public enum ChatArtifactReference {
     let shortOrigin = ["https://a.okou.io:443", "https://files.sites.vm7.io:443"].contains(
       origin(url))
     let publication =
-      path.wholeMatch(of: #/\/(?:[0-9a-z]{10}|[a-f0-9]{24})\.[a-z0-9]{1,12}/#) != nil
+      path.wholeMatch(of: #/\/[0-9a-z]{10}\.[^/]+/#) != nil
+      || path.wholeMatch(of: #/\/[a-f0-9]{24}\.[a-z0-9]{1,12}/#) != nil
     let trusted =
-      sameOrigin(url, webURL) || sameOrigin(url, apiURL)
+      platformOrigins(webURL, apiURL).contains(origin(url))
       || ["cdn.vm0.io", "cdn.okou.io", "cdn.vm7.io", "app.okou.ai"].contains(url.host ?? "")
       || isPreviewPlatform(url.host ?? "")
     let explicitOrigin = value.contains("://")
@@ -59,7 +60,7 @@ public enum ChatArtifactReference {
     if ChatOfficialArtifactPreviews.urls.contains(url.absoluteString) {
       return ChatArtifact(source: .published(url), filename: url.lastPathComponent)
     }
-    if isHostedSite(url) {
+    if isHostedSite(url, webURL: webURL) {
       return ChatArtifact(
         source: .published(url), filename: url.host ?? "Web page", contentType: "text/html")
     }
@@ -71,8 +72,8 @@ public enum ChatArtifactReference {
     let user = segments[1]
     let storageUser =
       user == "user" || user.hasPrefix("user_") || user.hasPrefix("user-") ? user : "user_" + user
-    guard let host = webURL.host else { return nil }
-    let production = host == "okou.ai" || host.hasSuffix(".okou.ai")
+    guard webURL.host != nil else { return nil }
+    let production = isProduction(webURL)
     var components = URLComponents()
     components.scheme = "https"
     components.host = production ? "cdn.vm0.io" : "cdn.vm7.io"
@@ -94,9 +95,30 @@ public enum ChatArtifactReference {
       && host.range(of: #"(^|-)(platform|app|www|api)\."#, options: .regularExpression) != nil
   }
 
-  private static func isHostedSite(_ url: URL) -> Bool {
+  private static func isProduction(_ url: URL) -> Bool {
+    guard let host = url.host else { return false }
+    return host == "okou.ai" || host.hasSuffix(".okou.ai")
+  }
+
+  private static func platformOrigins(_ webURL: URL, _ apiURL: URL) -> Set<String> {
+    var origins: Set<String> = []
+    for base in [webURL, apiURL] {
+      origins.insert(origin(base))
+      for service in ["api", "www", "app", "platform"] {
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.host = base.host?.replacingOccurrences(
+          of: #"(^|-)(platform|app|www|api)\."#,
+          with: "$1" + service + ".", options: .regularExpression)
+        if let url = components?.url { origins.insert(origin(url)) }
+      }
+    }
+    return origins
+  }
+
+  private static func isHostedSite(_ url: URL, webURL: URL) -> Bool {
     guard let host = url.host, host != "files.sites.vm7.io" else { return false }
-    return ["okou.app", "sites.vm0.io", "sites.vm7.io"].contains { domain in
+    let domains = isProduction(webURL) ? ["okou.app", "sites.vm0.io"] : ["sites.vm7.io"]
+    return domains.contains { domain in
       guard host.hasSuffix("." + domain) else { return false }
       let slug = String(host.dropLast(domain.count + 1))
       return slug.wholeMatch(of: #/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/#) != nil
