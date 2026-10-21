@@ -617,6 +617,11 @@ and final measurement acceptance remain in #39998.
 
 ## Current P1 diagnostic contract
 
+The [original-file residency tool](file_residency.md) observes bounded original
+file extents across replacement, unlink and growth, with strict original-file
+qualification/replay. Its point observations retain the separate full native
+residency, cold-input and interval-coverage gates.
+
 The separate [owned charged-memory window tool](charged_windows.md) qualifies
 isolated kernel counters with a bounded disposable workload and strict original
 file replay. Its charge scope and false native/full-residency claims do not
