@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
@@ -102,37 +101,6 @@ describe("Runner claim-time Agent instructions", () => {
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "public",
       });
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        queued.runId,
-      );
-      expect(claim.agentInstructions).toBe("");
-    });
-  });
-
-  it("leaves new jobs pending for older or unidentified Runners", async () => {
-    const owned = await publicChatActor(context);
-    await owned.run(async () => {
-      const queued = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
-        prompt: "require an inline reader",
-        model: "auto",
-      });
-      await api.requestClaimRunnerJob(
-        true,
-        queued.runId,
-        [404],
-        {},
-        { "X-Client-Version": "0.234.17" },
-      );
-      await api.requestRawClaimRunnerJob(true, queued.runId, [404], {
-        runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 1 },
-        capabilities: { piModelConfigGenerations: [2, 3, 5] },
-        nativeContinuationSupported: true,
-      });
-      await expect(
-        api.readRun(owned.actor, queued.runId),
-      ).resolves.toMatchObject({ status: "pending" });
       const { claim } = await owned.claimChatRun(
         owned.runnerGroup,
         queued.runId,

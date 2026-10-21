@@ -147,7 +147,6 @@ describe("live chat SSH Run inventory", () => {
         body: {
           runnerIdentity,
           capabilities: { piModelConfigGenerations: [1, 2, 3] },
-          nativeContinuationSupported: true,
         },
       }),
       [200],

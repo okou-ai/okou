@@ -958,7 +958,6 @@ export function createChatEventsFixture(context: TestContext) {
     if (tier === "fast") {
       const oldClaim = await api.requestClaimRunnerJob(true, runId, [404], {
         capabilities: { piModelConfigGenerations: [1, 2] },
-        nativeContinuationSupported: true,
       });
       expectApiError(oldClaim.body);
       await expect(api.readRun(actor, runId)).resolves.toMatchObject({
@@ -969,7 +968,6 @@ export function createChatEventsFixture(context: TestContext) {
       capabilities: {
         piModelConfigGenerations: tier === "fast" ? [1, 2, 3] : [1, 2],
       },
-      nativeContinuationSupported: true,
     });
   }
 

@@ -1316,8 +1316,6 @@ export const runnersJobClaimContract = c.router({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),
       capabilities: runnerClaimCapabilitiesSchema,
-      // Top-level so outgoing APIs can strip this additive advertisement.
-      nativeContinuationSupported: z.literal(true).optional(),
       telemetry: runnerClaimTelemetrySchema.optional(),
       installedVersions: runnerInstalledVersionsSchema.optional(),
     }),

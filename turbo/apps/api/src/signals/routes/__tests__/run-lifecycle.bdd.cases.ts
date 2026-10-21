@@ -2618,7 +2618,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [400],
           {
             capabilities: { piModelConfigGenerations: [1, 2, 3] },
-            nativeContinuationSupported: true,
           },
         );
         expectApiError(rejected.body);
@@ -2656,7 +2655,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             },
             runnerHostname: "x".repeat(256),
             capabilities: { piModelConfigGenerations: [1, 2, 3] },
-            nativeContinuationSupported: true,
           },
         );
         expectApiError(invalidHostname.body);
@@ -2864,7 +2862,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               heartbeatGeneration: 1,
             },
             capabilities: { piModelConfigGenerations: [1, 2, 3] },
-            nativeContinuationSupported: true,
             telemetry: {
               pollReason: "future-runner-reason",
               jobDiscoveredToClaimRequestMs: -1,
@@ -6185,7 +6182,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 capabilities: {
                   piModelConfigGenerations: olderRunnerGenerations,
                 },
-                nativeContinuationSupported: true,
               },
             );
             expectApiError(olderClaim.body);
@@ -6198,7 +6194,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
             const capableClaim = await api.claimRunnerJob(run.runId, {
               capabilities: { piModelConfigGenerations: [2, 3, 5] },
-              nativeContinuationSupported: true,
             });
             ownedRuns.rememberClaim(run.runId, capableClaim.sandboxToken);
             expect(capableClaim).toMatchObject({
