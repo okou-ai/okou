@@ -14,6 +14,8 @@ private final class NativeHelperStandardError: @unchecked Sendable {
       byteCount == 65_536 ? "stderrBytes>=65536" : "stderrBytes=\(byteCount)"
     }
   }
+
+  var count: Int { lock.withLock { byteCount } }
 }
 
 public actor NativeProcess {
@@ -61,7 +63,10 @@ public actor NativeProcess {
       if data.isEmpty { handle.readabilityHandler = nil }
     }
     child.terminationHandler = { _ in Task { await self.exited(generation: current) } }
-    try child.run()
+    do { try child.run() } catch {
+      reportFailure(.launch)
+      throw error
+    }
     process = child
     input = stdin.fileHandleForWriting
     output = stdout.fileHandleForReading
@@ -81,6 +86,7 @@ public actor NativeProcess {
       try await withCheckedThrowingContinuation { continuation in
         pending[id] = continuation
         do { try input?.write(contentsOf: data) } catch {
+          reportFailure(.write)
           stop(error: DesktopFailure("accessibility_unavailable", "Native helper write failed"))
           return
         }
@@ -105,25 +111,28 @@ public actor NativeProcess {
       buffer.removeSubrange(...newline)
       let response: JSONValue
       do { response = try JSONDecoder().decode(JSONValue.self, from: line) } catch {
-        protocolFailure("invalid JSON", responseBytes: line.count)
+        protocolFailure(.invalidJSON, reason: "invalid JSON", responseBytes: line.count)
         return
       }
       guard let number = response["id"].number, let responseId = Int(exactly: number) else {
-        protocolFailure("missing or invalid request ID", responseBytes: line.count)
+        protocolFailure(
+          .missingRequestID, reason: "missing or invalid request ID", responseBytes: line.count)
         return
       }
       timeouts.removeValue(forKey: responseId)?.cancel()
       pending.removeValue(forKey: responseId)?.resume(returning: response)
     }
     if buffer.count > 32 * 1024 * 1024 {
+      reportFailure(.responseLimit, responseBytes: buffer.count)
       stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
     }
   }
-  private func protocolFailure(_ reason: String, responseBytes: Int) {
+  private func protocolFailure(_ failure: NativeHelperFailure, reason: String, responseBytes: Int) {
     // Never include helper output or decoder descriptions: either can contain private app data.
     let diagnostics = "responseBytes=\(responseBytes), \(standardError.summary)"
     let message = "Native helper protocol failure: \(reason) (\(diagnostics))."
     logger.error("\(message, privacy: .public)")
+    reportFailure(failure, responseBytes: responseBytes)
     stop(
       error: DesktopFailure(
         "accessibility_unavailable",
@@ -131,6 +140,7 @@ public actor NativeProcess {
   }
   private func expire(_ id: Int) {
     guard pending[id] != nil else { return }
+    reportFailure(.timeout)
     stop(
       error: DesktopFailure(
         "command_timeout",
@@ -140,7 +150,15 @@ public actor NativeProcess {
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
   private func exited(generation current: Int) {
     guard current == generation else { return }
+    reportFailure(.unexpectedExit, exitStatus: process?.terminationStatus)
     stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
+  }
+  private func reportFailure(
+    _ reason: NativeHelperFailure, responseBytes: Int? = nil, exitStatus: Int32? = nil
+  ) {
+    DesktopTelemetry.captureHelperFailure(
+      reason, pendingRequests: pending.count, stderrBytes: standardError.count,
+      responseBytes: responseBytes, exitStatus: exitStatus)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(error: Error) {
