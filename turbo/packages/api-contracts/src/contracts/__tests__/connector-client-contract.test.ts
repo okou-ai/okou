@@ -168,6 +168,25 @@ describe("connector client response contracts", () => {
     },
   );
 
+  it("validates complete builtin metadata and binding inventories", () => {
+    const response = { connectors: [connector], connectorProvidedBindings: [] };
+    expect(builtinConnectorListResponseSchema.parse(response)).toStrictEqual(
+      response,
+    );
+    for (const field of ["reconnectReason", "tokenExpiresAt"]) {
+      expect(
+        builtinConnectorListResponseSchema.safeParse({
+          ...response,
+          connectors: [{ ...connector, [field]: undefined }],
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      builtinConnectorListResponseSchema.safeParse({ connectors: [connector] })
+        .success,
+    ).toBe(false);
+  });
+
   it("parses canonical response payloads", () => {
     expect(builtinConnectorResponseSchema.parse(connector)).toStrictEqual(
       connector,

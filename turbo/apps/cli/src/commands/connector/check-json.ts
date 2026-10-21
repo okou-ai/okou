@@ -3,8 +3,10 @@ import type {
   ConnectorCheckTargetAwareDiagnosticResult,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
-import { builtinConnectorResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
+import {
+  customConnectorManagedStatusSchema,
+  isIntegrationManagedCustomConnector,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { readMemberAccountFacts } from "./member-status";
 
 import {
@@ -262,45 +264,6 @@ function checkConnectionActions(
   return connectionActions;
 }
 
-/** Keep the CLI's current-member output separate from admitted Run account facts. */
-function currentMemberConnection(
-  target: ConnectorAccountTarget,
-  evidence: Awaited<ReturnType<typeof loadCheckEvidence>>,
-  runBound: boolean,
-) {
-  if (runBound) {
-    return null;
-  }
-  if (target.kind === "builtin") {
-    const account = evidence.accountSummary?.defaultConnection;
-    return account
-      ? builtinConnectorResponseSchema.parse({
-          ...account,
-          slug: target.connectorSlug,
-        })
-      : null;
-  }
-  const definition = evidence.definition;
-  if (definition === null) {
-    return null;
-  }
-  if (isIntegrationManagedCustomConnector(definition)) {
-    return {
-      connected: definition.connected,
-      connectionId: definition.connectedAccountId ?? null,
-      missingRequiredFields: definition.missingRequiredFields,
-    };
-  }
-  const account = evidence.accountSummary?.defaultConnection;
-  return account
-    ? {
-        connected: evidence.memberStatus === "connected",
-        connectionId: account.id,
-        missingRequiredFields: account.missingRequiredFields,
-      }
-    : null;
-}
-
 export async function printConnectorCheckJson(
   request: ConnectorCheckRequestBody,
   diagnostic: ConnectorCheckTargetAwareDiagnosticResult,
@@ -396,7 +359,12 @@ export async function printConnectorCheckJson(
         account,
         accountSummary: evidence.accountSummary,
         memberStatus: evidence.memberStatus,
-        connection: currentMemberConnection(target, evidence, runBound),
+        managedStatus:
+          !runBound &&
+          definition !== null &&
+          isIntegrationManagedCustomConnector(definition)
+            ? customConnectorManagedStatusSchema.parse(definition)
+            : null,
         authorization: agentId === undefined ? null : { agentId, authorized },
         guidance: [
           "Routing and permission diagnostics describe current intended state; they do not confirm that the runner has applied the latest update.",

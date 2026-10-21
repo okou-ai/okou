@@ -75,15 +75,6 @@ describe("connector connect safe input and custom member accounts", () => {
           });
           return HttpResponse.json({
             connectionId: ID,
-            slug: "openai",
-            authMethod: "api-token",
-            externalId: null,
-            externalUsername: null,
-            externalEmail: null,
-            oauthScopes: null,
-            connectionStatus: "connected",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
             clientSecret: SECRET,
             token: SECRET,
             sessionToken: SECRET,
@@ -101,7 +92,13 @@ describe("connector connect safe input and custom member accounts", () => {
       "--json",
     ]);
     const output = log.mock.calls.flat().join("\n");
-    expect(JSON.parse(output)).toMatchObject({ id: ID, slug: "openai" });
+    expect(JSON.parse(output)).toMatchObject({
+      connectionId: ID,
+      account: {
+        id: ID,
+        target: { kind: "builtin", connectorSlug: "openai" },
+      },
+    });
     expect(output).not.toContain(SECRET);
   });
 
@@ -130,7 +127,6 @@ describe("connector connect safe input and custom member accounts", () => {
           });
           return HttpResponse.json({
             ...connector,
-            connected: true,
             connectionId: ID,
           });
         },
@@ -172,7 +168,6 @@ describe("connector connect safe input and custom member accounts", () => {
             });
             return HttpResponse.json({
               ...connector,
-              connected: true,
               connectionId: ID,
               values: [{ key: "apiKey", value: SECRET }],
               password: SECRET,
@@ -193,7 +188,10 @@ describe("connector connect safe input and custom member accounts", () => {
       const output = log.mock.calls.flat().join("\n");
       expect(JSON.parse(output)).toMatchObject({
         connectionId: ID,
-        kind: connector.kind,
+        account: {
+          id: ID,
+          target: { kind: "custom", customConnectorId: connector.id },
+        },
       });
       expect(output).not.toContain(SECRET);
     },
@@ -220,7 +218,6 @@ describe("connector connect safe input and custom member accounts", () => {
           });
           return HttpResponse.json({
             ...connector,
-            connected: true,
             connectionId: ID,
           });
         },

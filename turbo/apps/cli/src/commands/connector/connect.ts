@@ -110,7 +110,7 @@ async function connectCustom(
     connectionId,
   });
   if (
-    connectedAccount?.connectionStatus !== "connected" ||
+    connectedAccount.connectionStatus !== "connected" ||
     connectedAccount.setupStatus !== "complete"
   )
     throw new Error(
@@ -118,7 +118,9 @@ async function connectCustom(
     );
   if (!options.json)
     console.log(chalk.green(`✓ ${connector.displayName} connected`));
-  console.log(JSON.stringify(result, null, 2));
+  console.log(
+    JSON.stringify({ connectionId, account: connectedAccount }, null, 2),
+  );
 }
 
 export const connectCommand = addAccountMutationOptions(
@@ -148,7 +150,7 @@ export const connectCommand = addAccountMutationOptions(
       .default([])
       .conflicts("input"),
   )
-  .option("--json", "Print whitelisted connection metadata as JSON")
+  .option("--json", "Print the connection receipt and verified account as JSON")
   .addHelpText(
     "after",
     `
@@ -198,7 +200,7 @@ Examples:
         connectionId: connector.connectionId,
       });
       if (
-        connectedAccount?.connectionStatus !== "connected" ||
+        connectedAccount.connectionStatus !== "connected" ||
         connectedAccount.setupStatus !== "complete"
       )
         throw new Error(
@@ -208,19 +210,8 @@ Examples:
         console.log(
           JSON.stringify(
             {
-              id: connectedAccount.id,
-              slug: metadata.slug,
-              authMethod: connectedAccount.authMethod,
-              externalId: connectedAccount.externalId,
-              externalUsername: connectedAccount.externalUsername,
-              externalEmail: connectedAccount.externalEmail,
-              oauthScopes: connectedAccount.oauthScopes,
-              connectionStatus: connectedAccount.connectionStatus,
-              reconnectReason: connectedAccount.reconnectReason,
-              tokenExpiresAt: connectedAccount.tokenExpiresAt,
-              createdAt: connectedAccount.createdAt,
-              updatedAt: connectedAccount.updatedAt,
-              connectionId: connectedAccount.id,
+              connectionId: connector.connectionId,
+              account: connectedAccount,
             },
             null,
             2,
