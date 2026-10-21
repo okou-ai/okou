@@ -740,6 +740,7 @@ const settleJobAttempt$ = command(
     signal.throwIfAborted();
     if (attempt.ok) {
       await publishOnboardingRecommendationChangedSafely(job.userId);
+      signal.throwIfAborted();
       return;
     }
     const errorMessage =
@@ -760,6 +761,7 @@ const settleJobAttempt$ = command(
       signal.throwIfAborted();
       persistenceSignal.throwIfAborted();
       await publishOnboardingRecommendationChangedSafely(job.userId);
+      signal.throwIfAborted();
       return;
     }
     await set(
