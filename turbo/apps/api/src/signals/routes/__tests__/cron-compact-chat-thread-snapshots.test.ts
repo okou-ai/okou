@@ -8,8 +8,9 @@ import {
 } from "@aws-sdk/client-s3";
 import { chatThreadSnapshotArchiveSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronCompactChatThreadSnapshotsContract } from "@okouai/api-contracts/contracts/cron";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -20,6 +21,7 @@ import { cronCompactChatThreadSnapshotsRoutes } from "../cron-compact-chat-threa
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const initialTime = "2026-10-10T00:00:00.000Z";
@@ -81,7 +83,7 @@ async function initialize() {
   return { objects, send, compact };
 }
 
-it("publishes scoped sidebars with pinned and archived threads", async () => {
+test("publishes scoped sidebars with pinned and archived threads", async () => {
   mockEnv("CRON_SECRET", "test-cron-secret");
   mockEnv(
     "R2_USER_STORAGES_BUCKET_NAME",
@@ -120,6 +122,14 @@ it("publishes scoped sidebars with pinned and archived threads", async () => {
     title: "Other organization thread",
   });
   await chat.pinThread(actor, pinned.id);
+  if (!actor.orgId) {
+    throw new Error("Expected the sidebar actor to belong to an organization");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+    { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  );
   await chat.requestSetThreadArchived(actor, archived.id, true, [204]);
 
   const objects = new Map<string, Buffer>();
