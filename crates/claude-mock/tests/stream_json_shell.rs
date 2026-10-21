@@ -7,6 +7,8 @@ use std::process::Stdio;
 #[cfg(unix)]
 use std::io::Read;
 #[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::process::Command;
 #[cfg(unix)]
 use std::sync::mpsc;
@@ -20,7 +22,7 @@ use serde_json::Value;
 use support::kill_pid_file;
 #[cfg(unix)]
 use support::{
-    ChildWaitOutcome, continue_cleanup_in_background,
+    ChildWaitOutcome, continue_cleanup_in_background, run_mock_output_with_orphaned_stdout,
     wait_child_status_and_cleanup_group_with_observer,
 };
 use support::{
@@ -610,7 +612,7 @@ fn orphan_pipe_does_not_block_output_wait() -> Result<(), Box<dyn std::error::Er
     command
         .env("HOME", home.path())
         .args(["--output-format", "stream-json", "--", "@orphan-pipe"]);
-    let output = run_mock_output(&mut command)?;
+    let output = run_mock_output_with_orphaned_stdout(&mut command)?;
 
     assert!(
         output.status.success(),
@@ -624,6 +626,33 @@ fn orphan_pipe_does_not_block_output_wait() -> Result<(), Box<dyn std::error::Er
         events.iter().map(event_kind).collect::<Vec<_>>(),
         ["system/init", "result/success"]
     );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn orphan_pipe_rejects_child_startup_failure() -> Result<(), Box<dyn std::error::Error>> {
+    for (case, non_executable_sleep) in [("missing sleep", false), ("non-executable sleep", true)] {
+        let home = tempfile::tempdir()?;
+        if non_executable_sleep {
+            let sleep = home.path().join("sleep");
+            fs::write(&sleep, b"not executable")?;
+            fs::set_permissions(&sleep, fs::Permissions::from_mode(0o644))?;
+        }
+        let mut command = mock_claude();
+        command
+            .env("HOME", home.path())
+            .env("PATH", home.path())
+            .args(["--output-format", "stream-json", "--", "@orphan-pipe"]);
+        let output = run_mock_output(&mut command)?;
+
+        assert_eq!(output.status.code(), Some(1), "{case}");
+        assert!(output.stdout.is_empty(), "{case}: published success output");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("start orphan-pipe child:"),
+            "{case}: missing startup diagnostic"
+        );
+    }
     Ok(())
 }
 
