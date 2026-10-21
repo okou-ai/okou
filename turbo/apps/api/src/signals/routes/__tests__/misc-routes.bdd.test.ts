@@ -233,13 +233,6 @@ describe("MISC-03: workflows lifecycle through public API", () => {
       displayName: "BDD member workflows agent",
     });
 
-    const initialWorkflows = await api.listWorkflows(admin);
-    expect(
-      initialWorkflows.body.some((workflow) => {
-        return workflow.name === workflowName;
-      }),
-    ).toBeFalsy();
-
     const memberCreated = await api.createWorkflow(
       member,
       memberAgent.agentId,

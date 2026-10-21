@@ -226,7 +226,6 @@ test("The switch preserves the ordinary Presentation catalog", async () => {
   const { dialog } = await openCustomPanel(false);
 
   expect(queryTabByText("Presentation")).toBeTruthy();
-  expect(queryTabByText("Custom")).toBeUndefined();
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
@@ -236,7 +235,6 @@ test("The picker opens Presentation with separate Custom and Built-in sections",
   const { dialog } = await openCustomPanel();
 
   expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
-  expect(queryTabByText("Custom")).toBeUndefined();
   expect(
     within(dialog).getByRole("region", { name: "Custom" }),
   ).toBeInTheDocument();

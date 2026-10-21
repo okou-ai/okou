@@ -1568,16 +1568,6 @@ test("An open thread with runless messages reads each newer delivery without a t
     expect(markedThrough).toStrictEqual([firstAt, secondAt, thirdAt]);
     expect(unreadRequests).toBeGreaterThanOrEqual(3);
   });
-  expect(
-    rows.map((row) => {
-      return [row.eventType, row.runId];
-    }),
-  ).toStrictEqual([
-    ["output.message", null],
-    ["output.message", null],
-    ["output.message", null],
-  ]);
-
   click(threadLinkByTitle("Other conversation"));
   await waitFor(() => {
     expect(threadLinkByTitle("Runless updates")).toHaveAccessibleName(

@@ -46,6 +46,10 @@ interface CommandDialogProps extends Omit<
     typeof DialogContent
   >["smMaxWidth"];
   readonly showCloseButton?: boolean;
+  readonly position?: React.ComponentProps<typeof DialogContent>["position"];
+  readonly scrollable?: React.ComponentProps<
+    typeof DialogContent
+  >["scrollable"];
   /** Where focus goes when the dialog closes; `false` leaves it for a hand-off. */
   readonly finalFocus?: React.ComponentProps<
     typeof DialogContent
@@ -62,6 +66,8 @@ function CommandDialog({
   maxWidth,
   smMaxWidth,
   showCloseButton,
+  position,
+  scrollable,
   finalFocus,
   commandClassName,
   commandProps,
@@ -74,6 +80,8 @@ function CommandDialog({
         maxWidth={maxWidth}
         smMaxWidth={smMaxWidth}
         showCloseButton={showCloseButton}
+        position={position}
+        scrollable={scrollable}
         finalFocus={finalFocus}
         contentClassName={cn("overflow-hidden p-0", contentClassName)}
       >

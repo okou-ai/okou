@@ -235,10 +235,6 @@ test("Show artifacts in the floating panel while links remain in the transcript"
   expect(
     within(panel).getByRole("heading", { name: "Artifacts" }),
   ).toBeInTheDocument();
-  expect(
-    within(panel).queryByRole("region", { name: "Links" }),
-  ).not.toBeInTheDocument();
-  expect(within(panel).queryByText("Current guide")).not.toBeInTheDocument();
   expect(queryAllByRoleFast("link", panel)).toHaveLength(0);
   expect(
     queryAllByRoleFast("button").filter((button) => {

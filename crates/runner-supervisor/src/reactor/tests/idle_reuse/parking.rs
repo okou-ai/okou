@@ -24,19 +24,36 @@ fn context_with_session_opt(
 
 #[tokio::test(start_paused = true)]
 async fn job_with_session_parks_sandbox() {
-    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let park_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_park_lifecycle_gate(park_gate.clone());
+    let (config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
     let run_handle = tokio::spawn(run(config));
 
     let run_id = RunId::new_v4();
     let ctx = context_with_session_opt(run_id, Some("sess-1"));
     push_job(&env, run_id, "vm0/default", Some(ctx));
 
+    park_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("sandbox park should reach the lifecycle gate");
     let c = env
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await;
     assert!(c.is_some(), "job should complete");
     assert_eq!(c.unwrap().exit_code, 0);
+
+    // Completion reporting can finish before the sandbox is parked.
+    assert_eq!(env.idle_pool.lock().await.len(), 0);
+    park_gate.release_one();
+    wait_idle_pool_reuse_keys(
+        &env.idle_pool,
+        &["thread:idle-sess-1"],
+        Duration::from_secs(5),
+    )
+    .await;
 
     let pool = env.idle_pool.lock().await;
     assert_eq!(

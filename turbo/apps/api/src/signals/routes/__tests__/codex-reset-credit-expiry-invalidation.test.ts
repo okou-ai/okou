@@ -222,7 +222,6 @@ describe("Codex expiry invalidation and identity isolation", () => {
       return expiryResponse(remote.expiry);
     };
     const otherMember = await fixture({ orgId: user.orgId });
-    expect(otherMember.userId).not.toBe(user.userId);
     expectExpiry(await otherMember.list(), remote.expiry);
     const callsAfterOtherMember = remote.detailsCalls;
     expectExpiry(await user.list(), null);

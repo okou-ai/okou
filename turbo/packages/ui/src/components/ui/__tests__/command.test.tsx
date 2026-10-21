@@ -215,41 +215,55 @@ describe("Command", () => {
     expect(input).toHaveValue("br");
   });
 
-  it("lets Escape close its parent command dialog", async () => {
-    const user = userEvent.setup({ delay: null });
+  it.each(["center", "top"] as const)(
+    "keeps search focus and Escape dismissal in a %s-anchored command dialog",
+    async (position) => {
+      const user = userEvent.setup({ delay: null });
 
-    function DialogCommand() {
-      const [open, setOpen] = useState(true);
-      const [query, setQuery] = useState("");
-      return (
-        <CommandDialog
-          open={open}
-          onOpenChange={setOpen}
-          commandProps={{
-            mode: "none",
-            value: query,
-            onValueChange: setQuery,
-          }}
-        >
-          <DialogTitle>Choose a target</DialogTitle>
-          <DialogDescription>Select one target</DialogDescription>
-          <CommandInput aria-label="Dialog search" />
-          <CommandList>
-            <CommandItem value="alpha">Alpha</CommandItem>
-          </CommandList>
-        </CommandDialog>
+      function DialogCommand() {
+        const [open, setOpen] = useState(true);
+        const [query, setQuery] = useState("");
+        return (
+          <CommandDialog
+            open={open}
+            onOpenChange={setOpen}
+            position={position}
+            scrollable={position !== "top"}
+            commandProps={{
+              mode: "none",
+              value: query,
+              onValueChange: setQuery,
+            }}
+          >
+            <DialogTitle>Choose a target</DialogTitle>
+            <DialogDescription>Select one target</DialogDescription>
+            <CommandInput aria-label="Dialog search" />
+            <CommandList>
+              <CommandItem value="alpha">Alpha</CommandItem>
+            </CommandList>
+          </CommandDialog>
+        );
+      }
+
+      render(<DialogCommand />);
+      const input = screen.getByRole("combobox", { name: "Dialog search" });
+      await user.click(input);
+      await user.type(input, "alpha");
+      expect(input).toHaveFocus();
+      expect(input).toHaveValue("alpha");
+      expect(
+        document.querySelector('[data-slot="dialog-viewport"]'),
+      ).toHaveClass(position === "top" ? "items-start" : "items-center");
+      expect(document.querySelector('[data-slot="dialog-inner"]')).toHaveClass(
+        position === "top" ? "overflow-hidden!" : "overflow-y-auto!",
       );
-    }
+      await user.keyboard("{Escape}");
 
-    render(<DialogCommand />);
-    const input = screen.getByRole("combobox", { name: "Dialog search" });
-    await user.click(input);
-    await user.keyboard("{Escape}");
-
-    expect(
-      screen.queryByRole("dialog", { name: "Choose a target" }),
-    ).toBeNull();
-  });
+      expect(
+        screen.queryByRole("dialog", { name: "Choose a target" }),
+      ).toBeNull();
+    },
+  );
 
   it("activates a command once with a pointer click", async () => {
     const user = userEvent.setup({ delay: null });
