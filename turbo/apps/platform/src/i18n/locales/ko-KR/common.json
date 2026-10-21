@@ -512,8 +512,7 @@
         "websiteAria": "웹사이트 아티팩트 표시"
       },
       "kindIcon": "{{kind}} 아티팩트",
-      "loading": "아티팩트 로딩 중",
-      "retry": "다시 시도"
+      "loading": "아티팩트 로딩 중"
     },
     "fileBadges": {
       "artwork": "ART",

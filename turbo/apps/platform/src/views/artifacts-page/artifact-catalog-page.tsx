@@ -21,7 +21,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { LoadErrorSection, surfaceVariants, cn } from "@okouai/ui";
+import { surfaceVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -29,7 +29,6 @@ import {
   artifactCatalogSidebar,
   loadMoreArtifactCatalog$,
   openArtifact$,
-  retryArtifactCatalog$,
   scrollArtifactCardIntoViewRef$,
   selectedArtifactCatalogKind$,
   setArtifactCatalogKind$,
@@ -543,34 +542,19 @@ export function ArtifactCatalogSkeleton({
   );
 }
 
-/**
- * The catalog surfaces render their own instance of these signals, so the retry
- * arrives as a prop. Binding one scope's reload here would leave the thread
- * sidebar showing a failure while a different catalog refetched.
- */
-export function ArtifactCatalogError({
-  onRetry,
-  pending,
-}: {
-  readonly onRetry: () => void;
-  readonly pending: boolean;
-}) {
+export function ArtifactCatalogError() {
   const { t } = useTranslation();
-  // Reading the first page again is the whole recovery, so the message carries
-  // the action instead of asking for a browser reload. Both catalog surfaces
-  // keep this message mounted while the re-read runs and let the button report
-  // it, rather than one swapping in a skeleton and the other changing nothing.
   return (
-    <LoadErrorSection
-      message={t(($) => {
-        return $.artifacts.catalog.error;
-      })}
-      retryLabel={t(($) => {
-        return $.artifacts.catalog.retry;
-      })}
-      onRetry={onRetry}
-      pending={pending}
-    />
+    <div
+      role="status"
+      className="rounded-xl border border-dashed border-border bg-card px-6 py-12 text-center"
+    >
+      <p className="text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.artifacts.catalog.error;
+        })}
+      </p>
+    </div>
   );
 }
 
@@ -711,8 +695,6 @@ export function ArtifactCatalogPage({
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
   const [paging, loadMore] = useLoadableSet(loadMoreArtifactCatalog$);
-  const [retryLoadable, retryCatalog] = useLoadableSet(retryArtifactCatalog$);
-  const retrying = retryLoadable.state === "loading";
   const pageSignal = useGet(pageSignal$);
   const catalog = useLoadable(artifactCatalog$);
   const artifacts = catalog.state === "hasData" ? catalog.data.artifacts : [];
@@ -771,18 +753,8 @@ export function ArtifactCatalogPage({
           className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
         >
           <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
-            {catalog.state === "hasError" ||
-            (retrying && catalog.state === "loading") ? (
-              <ArtifactCatalogError
-                pending={retrying}
-                onRetry={() => {
-                  detach(
-                    retryCatalog(pageSignal),
-                    Reason.DomCallback,
-                    "artifact catalog retry",
-                  );
-                }}
-              />
+            {catalog.state === "hasError" ? (
+              <ArtifactCatalogError />
             ) : catalog.state === "loading" ? (
               <ArtifactCatalogSkeleton
                 layout={sharedConversationLayout ? "list" : "grid"}

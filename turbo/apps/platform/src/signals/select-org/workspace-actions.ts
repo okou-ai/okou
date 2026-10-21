@@ -1,7 +1,10 @@
-import { command } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { clerk$, prepareCreatedOrgOnboarding$ } from "../auth.ts";
 import { refreshCreatedOrganizationsCount$ } from "../org.ts";
-import { refreshUserInvitations$ } from "../user-invitations.ts";
+import {
+  refreshUserInvitations$,
+  userInvitations$,
+} from "../user-invitations.ts";
 import { withCleanup } from "../utils.ts";
 
 export interface WorkspaceInvitation {
@@ -14,7 +17,7 @@ export interface WorkspaceInvitation {
   readonly accept: () => Promise<unknown>;
 }
 
-export const joinWorkspace$ = command(
+const joinWorkspace$ = command(
   async (
     { get, set },
     invitation: WorkspaceInvitation,
@@ -40,7 +43,7 @@ export const joinWorkspace$ = command(
   },
 );
 
-export const createWorkspace$ = command(
+const performCreateWorkspace$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const clerk = await get(clerk$);
     signal.throwIfAborted();
@@ -60,3 +63,39 @@ export const createWorkspace$ = command(
     );
   },
 );
+
+const internalWorkspaceCreation$ = state<Promise<void> | undefined>(undefined);
+
+export const workspaceCreation$ = computed((get) => {
+  return get(internalWorkspaceCreation$);
+});
+
+export const createWorkspace$ = command(({ set }, signal: AbortSignal) => {
+  const request = set(performCreateWorkspace$, signal);
+  set(internalWorkspaceCreation$, request);
+  return request;
+});
+
+function createWorkspaceInvitationActions(invitation: WorkspaceInvitation) {
+  const internalRequest$ = state<Promise<void> | undefined>(undefined);
+  return {
+    invitation,
+    request$: computed((get) => {
+      return get(internalRequest$);
+    }),
+    join$: command(({ set }, signal: AbortSignal) => {
+      const request = set(joinWorkspace$, invitation, signal);
+      set(internalRequest$, request);
+      return request;
+    }),
+  };
+}
+
+export type WorkspaceInvitationActions = ReturnType<
+  typeof createWorkspaceInvitationActions
+>;
+
+export const workspaceInvitations$ = computed(async (get) => {
+  const invitations = await get(userInvitations$);
+  return invitations.map(createWorkspaceInvitationActions);
+});

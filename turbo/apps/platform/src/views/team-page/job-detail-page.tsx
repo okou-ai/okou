@@ -59,22 +59,13 @@ import {
 } from "../../signals/okou-page/job-detail/instructions";
 import { updateAgentSettings$ } from "../../signals/okou-page/job-detail/settings";
 import { deleteAgentAndReturnToList$ } from "../../signals/okou-page/job-detail/actions.ts";
-import {
-  agentAuthorizedConnectors$,
-  toggleAgentConnector$,
-} from "../../signals/okou-page/job-detail/connectors";
+import { agentAuthorizedConnectors$ } from "../../signals/okou-page/job-detail/connectors";
 import {
   agentActiveTab$,
   setAgentActiveTab$,
 } from "../../signals/okou-page/job-detail/agent-name";
 import { Link } from "../router/link.tsx";
-import {
-  bestEffort,
-  detach,
-  onDomEventFn,
-  Reason,
-  withCleanup,
-} from "../../signals/utils.ts";
+import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { AgentAvatarImg } from "../okou-page/sidebar-shared.tsx";
 import { openAvatarMaker$ } from "../../signals/okou-page/settings/avatar-maker.ts";
 import {
@@ -117,8 +108,8 @@ import {
   focusPermSearchRef$,
   permSearchActive$,
   setPermSearchActive$,
-  permSavingConnectorSlug$,
-  setPermSavingConnectorSlug$,
+  permissionToggleActions$,
+  type PermissionToggleActions,
 } from "../../signals/okou-page/job-detail-page.ts";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-contracts";
 import type {
@@ -496,7 +487,63 @@ interface ConnectedPermissionConnector extends PermissionConnectorCardItem {
   readonly hasPermissions: boolean;
 }
 
+function ConnectedPermissionConnectorRow({
+  toggleActions,
+  connector,
+  enabled,
+  disabled,
+  canManagePermissions,
+  onManage,
+  isLast,
+}: {
+  toggleActions: PermissionToggleActions;
+  connector: ConnectedPermissionConnector;
+  enabled: boolean;
+  disabled: boolean;
+  canManagePermissions: boolean;
+  onManage: (connectorSlug: ConnectorSlug) => void;
+  isLast: boolean;
+}) {
+  const { t } = useTranslation("agents");
+  const pageSignal = useGet(pageSignal$);
+  const [toggleLoadable, toggleConnector] = useLoadableSet(
+    toggleActions.toggle$,
+  );
+  const canToggleConnector = useSet(toggleActions.canToggle$);
+  return (
+    <ConnectorCard
+      variant="permission"
+      connector={connector}
+      enabled={enabled}
+      disabled={disabled}
+      onToggle={onDomEventFn(async (checked) => {
+        // Do not reset this row's loadable for an ignored same-tick click.
+        if (!canToggleConnector()) {
+          return;
+        }
+        const request = toggleConnector(connector.slug, checked, pageSignal);
+        if (!request) {
+          return;
+        }
+        await request;
+        toast.success(
+          t(($) => {
+            return $.authorization.connectorsSaved;
+          }),
+        );
+      })}
+      loading={toggleLoadable.state === "loading"}
+      showManage={canManagePermissions && connector.hasPermissions}
+      onManage={() => {
+        return onManage(connector.slug);
+      }}
+      isLast={isLast}
+    />
+  );
+}
+
 function ConnectedConnectorPermissions({
+  toggleActions,
   status,
   filteredConnectors,
   authorizedSet,
@@ -504,11 +551,11 @@ function ConnectedConnectorPermissions({
   setSearch,
   searchActive,
   setSearchActive,
-  savingConnectorSlug,
+  toggleBusy,
   canManagePermissions,
-  onToggle,
   onManage,
 }: {
+  toggleActions: PermissionToggleActions;
   status: ReactNode;
   filteredConnectors: readonly ConnectedPermissionConnector[];
   authorizedSet: ReadonlySet<string>;
@@ -516,9 +563,8 @@ function ConnectedConnectorPermissions({
   setSearch: (value: string) => void;
   searchActive: boolean;
   setSearchActive: (active: boolean) => void;
-  savingConnectorSlug: ConnectorSlug | null;
+  toggleBusy: boolean;
   canManagePermissions: boolean;
-  onToggle: (connectorSlug: ConnectorSlug, checked: boolean) => Promise<void>;
   onManage: (connectorSlug: ConnectorSlug) => void;
 }) {
   const { t } = useTranslation("agents");
@@ -599,19 +645,14 @@ function ConnectedConnectorPermissions({
           (filteredConnectors.length > 0 ? (
             filteredConnectors.map((c, i) => {
               return (
-                <ConnectorCard
+                <ConnectedPermissionConnectorRow
                   key={c.slug}
-                  variant="permission"
+                  toggleActions={toggleActions}
                   connector={c}
                   enabled={authorizedSet.has(c.slug)}
-                  onToggle={onDomEventFn(async (checked) => {
-                    await onToggle(c.slug, checked);
-                  })}
-                  loading={savingConnectorSlug === c.slug}
-                  showManage={canManagePermissions && c.hasPermissions}
-                  onManage={() => {
-                    return onManage(c.slug);
-                  }}
+                  disabled={toggleBusy}
+                  canManagePermissions={canManagePermissions}
+                  onManage={onManage}
                   isLast={i === filteredConnectors.length - 1}
                 />
               );
@@ -708,9 +749,8 @@ function JobPermissionsTab({
   const connectorsLoadable = useLastLoadable(agentAuthorizedConnectors$);
   const authorizedConnectors =
     connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
-  const [toggleLoadable, toggleConnector] = useLoadableSet(
-    toggleAgentConnector$,
-  );
+  const toggleActions = useGet(permissionToggleActions$);
+  const toggleLoadable = useLoadable(toggleActions.request$);
   const pageSignal = useGet(pageSignal$);
   const userGrantsLoadable = useLoadable(currentAgentUserPermissionGrants$);
   const userGrants =
@@ -728,8 +768,6 @@ function JobPermissionsTab({
   const setSearch = useSet(setPermSearch$);
   const searchActive = useGet(permSearchActive$);
   const setSearchActive = useSet(setPermSearchActive$);
-  const savingConnectorSlug = useGet(permSavingConnectorSlug$);
-  const setSavingConnectorSlug = useSet(setPermSavingConnectorSlug$);
   const toggleError = loadableErrorMessage(
     toggleLoadable,
     t(($) => {
@@ -757,31 +795,6 @@ function JobPermissionsTab({
     return matchesConnectorSearch(search, c);
   });
   const authorizedSet = new Set(authorizedConnectors);
-
-  const handleToggle = async (
-    targetConnectorSlug: ConnectorSlug,
-    checked: boolean,
-  ) => {
-    if (savingConnectorSlug !== null) {
-      return;
-    }
-    setSavingConnectorSlug(targetConnectorSlug);
-    await withCleanup(
-      bestEffort(
-        (async () => {
-          await toggleConnector(targetConnectorSlug, checked, pageSignal);
-          toast.success(
-            t(($) => {
-              return $.authorization.connectorsSaved;
-            }),
-          );
-        })(),
-      ),
-      () => {
-        setSavingConnectorSlug(null);
-      },
-    );
-  };
 
   const status =
     overviewLoadable.state === "hasError" ? (
@@ -814,6 +827,8 @@ function JobPermissionsTab({
       ) : (
         <>
           <ConnectedConnectorPermissions
+            key={agentId}
+            toggleActions={toggleActions}
             status={status}
             filteredConnectors={filteredConnectors}
             authorizedSet={authorizedSet}
@@ -821,9 +836,8 @@ function JobPermissionsTab({
             setSearch={setSearch}
             searchActive={searchActive}
             setSearchActive={setSearchActive}
-            savingConnectorSlug={savingConnectorSlug}
+            toggleBusy={toggleLoadable.state === "loading"}
             canManagePermissions={canManagePermissions}
-            onToggle={handleToggle}
             onManage={setConnectorSlug}
           />
           <AgentPermissionsDrawer
