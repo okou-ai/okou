@@ -194,9 +194,6 @@ if args[:2] == ['local', 'submit']:
     request = {'job_id': run_id, 'prompt': prompt}
     temporary = job.with_suffix('.tmp')
     temporary.write_text(json.dumps(request))
-    temporary.replace(job)
-    if scenario == 'ambiguous-request' and number == 1:
-        (jobs / 'duplicate.job').write_text(json.dumps({'job_id': 'duplicate', 'prompt': prompt}))
     if scenario == 'early-exit' and number == 1:
         sys.exit(7)
     claims = queue / 'claims'
@@ -212,7 +209,7 @@ if args[:2] == ['local', 'submit']:
         guest_prompt = prompt.replace(fifo, str(root / f'other-fifo-{number}'))
     if scenario == 'no-reader-release':
         guest_prompt = f'rm -f {fifo} && mkfifo {fifo}'
-    guest = subprocess.Popen(['/bin/sh', '-c', guest_prompt], stdout=subprocess.DEVNULL, start_new_session=True)
+    guest = subprocess.Popen(['/bin/sh', '-c', guest_prompt], stdout=subprocess.DEVNULL)
     (root / f'client-{number}.json').write_text(json.dumps({'owner': owner, 'pid': os.getpid(), 'guest_pid': guest.pid, 'fifo': fifo}))
     def interrupted(_signum, _frame):
         stop_guest(guest.pid)
@@ -221,8 +218,20 @@ if args[:2] == ['local', 'submit']:
     signal.signal(signal.SIGTERM, interrupted)
     if scenario != 'preparing-only':
         update(owner, lambda s: [r.update(phase='running') for r in s['active_runs'] if r['sandbox_id'] == sandbox_id])
+    # Publish only after cleanup can retire this submission and its guest.
+    if scenario == 'ambiguous-request' and number == 1:
+        # Expose both matches together so a poll cannot bind to just one.
+        staged = jobs.with_name('ambiguous')
+        staged.mkdir()
+        temporary.replace(staged / job.name)
+        (staged / 'duplicate.job').write_text(json.dumps({'job_id': 'duplicate', 'prompt': prompt}))
+        staged.replace(jobs)
+    else:
+        temporary.replace(job)
     try:
-        result = guest.wait(timeout=10)
+        # FIFO release or worker cleanup owns the held workload's lifetime.
+        # A second deadline can turn a missing-FIFO case into an early exit.
+        result = guest.wait()
     finally:
         stop_guest(guest.pid)
     if scenario in ('stalled-completion', 'no-reader-release'):
@@ -311,8 +320,28 @@ def cleanup_case(case):
 
 def run_case(scenario, failure, case, binary):
     environment = {**os.environ, 'PATH': f'{binary}:{os.environ["PATH"]}', 'UPGRADE_CASE': str(case), 'UPGRADE_SCENARIO': scenario}
-    result = subprocess.run(['bash', os.environ['UPGRADE_WORKER'], '/fake/bin', 'test'], env=environment, text=True, capture_output=True, timeout=20)
-    output = result.stdout + result.stderr
+    with subprocess.Popen(
+        ['bash', os.environ['UPGRADE_WORKER'], '/fake/bin', 'test'],
+        env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        start_new_session=True,
+    ) as result:
+        try:
+            stdout, stderr = result.communicate(timeout=20)
+        except BaseException as error:
+            # Stop owned clients/guests before draining inherited output pipes.
+            # Normal leak assertions below still run before fallback cleanup.
+            try:
+                cleanup_case(case)
+            finally:
+                try:
+                    os.killpg(result.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                stdout, stderr = result.communicate()
+            if isinstance(error, subprocess.TimeoutExpired):
+                raise AssertionError(f'{scenario}: worker exceeded {error.timeout}s case watchdog\n{stdout}{stderr}') from error
+            raise
+    output = stdout + stderr
     assert (result.returncode == 0) == (failure is None), f'{scenario}: unexpected exit {result.returncode}\n{output}'
     if failure:
         assert failure in output and '=== Upgrade test passed ===' not in output, f'{scenario}: missing failure\n{output}'
