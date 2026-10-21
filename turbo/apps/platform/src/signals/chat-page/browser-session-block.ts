@@ -18,7 +18,7 @@ import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
-import { onRef, settle, setLoop, withCleanup } from "../utils.ts";
+import { onRef, settle, setLoop } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -39,8 +39,6 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly screenshotImageLoad: ImageLoadSignals;
   readonly session$: Computed<Promise<BrowserSession | null>>;
   readonly panelSession$: Computed<Promise<BrowserSession | null>>;
-  readonly starting$: Computed<boolean>;
-  readonly fittingWindow$: Computed<boolean>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -226,32 +224,22 @@ function createFitWindowSignals(
   descriptor: BrowserSessionDescriptor,
   sessionOverride$: State<BrowserSession | null | undefined>,
   browserFitDom: BrowserFitDomSignals,
-): Pick<BrowserSessionSignals, "fittingWindow$" | "fitViewport$"> {
-  const fittingWindowState$ = state(false);
+): Pick<BrowserSessionSignals, "fitViewport$"> {
   const fitViewport$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      if (get(fittingWindowState$)) {
-        return;
-      }
       const aspectRatio = set(browserFitDom.viewportAspectRatio$);
       if (aspectRatio === null) {
         return;
       }
-      set(fittingWindowState$, true);
       const fitted = await settle(
-        withCleanup(
-          accept(
-            get(apiClient$)(browserContract).resizeByThread({
-              params: { threadId: descriptor.threadId },
-              body: { aspectRatio },
-              fetchOptions: { signal },
-            }),
-            [200, 404],
-            signal,
-          ),
-          () => {
-            set(fittingWindowState$, false);
-          },
+        accept(
+          get(apiClient$)(browserContract).resizeByThread({
+            params: { threadId: descriptor.threadId },
+            body: { aspectRatio },
+            fetchOptions: { signal },
+          }),
+          [200, 404],
+          signal,
         ),
         signal,
       );
@@ -264,12 +252,7 @@ function createFitWindowSignals(
       }
     },
   );
-  return {
-    fittingWindow$: computed((get) => {
-      return get(fittingWindowState$);
-    }),
-    fitViewport$,
-  };
+  return { fitViewport$ };
 }
 
 interface BrowserMutationSignalContext {
@@ -282,13 +265,8 @@ function createStartBrowserSignals({
   descriptor,
   sessionOverride$,
   reload$,
-}: BrowserMutationSignalContext): Pick<
-  BrowserSessionSignals,
-  "starting$" | "start$"
-> {
-  const startingState$ = state(false);
+}: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "start$"> {
   const start$ = command(async ({ get, set }, signal: AbortSignal) => {
-    set(startingState$, true);
     const started = await settle(
       accept(
         get(apiClient$)(browserContract).open({
@@ -301,19 +279,13 @@ function createStartBrowserSignals({
       ),
       signal,
     );
-    set(startingState$, false);
     if (started.ok) {
       set(sessionOverride$, started.value.body.browser);
       return;
     }
     set(reload$);
   });
-  return {
-    starting$: computed((get) => {
-      return get(startingState$);
-    }),
-    start$,
-  };
+  return { start$ };
 }
 
 function createCloseBrowserSignals({
@@ -404,7 +376,7 @@ export function createBrowserSessionSignals(
   });
 
   const browserFitDom = createBrowserFitDomSignals();
-  const { fittingWindow$, fitViewport$ } = createFitWindowSignals(
+  const { fitViewport$ } = createFitWindowSignals(
     descriptor,
     sessionOverride$,
     browserFitDom,
@@ -469,7 +441,6 @@ export function createBrowserSessionSignals(
     panelSession$: session$,
     ...startSignals,
     ...closeSignals,
-    fittingWindow$,
     reload$,
     reloadPanel$: reload$,
     fitViewport$,

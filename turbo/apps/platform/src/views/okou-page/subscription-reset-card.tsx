@@ -8,17 +8,23 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import {
+  type Loadable,
+  useGet,
+  useLastLoadable,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type {
   SubscriptionResetActionState,
+  SubscriptionResetOutcome,
   SubscriptionResetSignals,
 } from "../../signals/chat-page/subscription-reset-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 import {
   fallbackSubscriptionUsage,
@@ -51,6 +57,18 @@ function resetSupported(account: ModelProviderResponse | null): boolean {
     account?.type === "codex-oauth-token" &&
     account.subscriptionResetSupported === true
   );
+}
+
+function resetActionState(
+  attempt: Loadable<SubscriptionResetOutcome | null>,
+): SubscriptionResetActionState {
+  if (attempt.state === "loading") {
+    return "loading";
+  }
+  if (attempt.state === "hasError") {
+    return isAbortError(attempt.error) ? "idle" : "error";
+  }
+  return attempt.data ?? "idle";
 }
 
 function useResetNotice(
@@ -133,7 +151,9 @@ function SubscriptionResetCardContent({
 }) {
   const loadable = useLoadable(signals.status$);
   const last = useLastLoadable(signals.status$);
-  const actionState = useGet(signals.actionState$);
+  const attempt = useLoadable(signals.attempt$);
+  const confirm = useSet(signals.confirm$);
+  const actionState = resetActionState(attempt);
   const status =
     loadable.state === "hasData"
       ? loadable.data
@@ -162,7 +182,7 @@ function SubscriptionResetCardContent({
           loading={refreshing && !account}
         />
         <SubscriptionResetControls
-          signals={signals}
+          confirm={confirm}
           account={account}
           actionState={actionState}
           refreshing={refreshing}
@@ -373,14 +393,14 @@ function SubscriptionResetDetails({
 }
 
 function SubscriptionResetControls({
-  signals,
+  confirm,
   account,
   actionState,
   refreshing,
   readFailed,
   notice,
 }: {
-  readonly signals: SubscriptionResetSignals;
+  readonly confirm: (signal: AbortSignal) => Promise<unknown>;
   readonly account: ModelProviderResponse | null;
   readonly actionState: SubscriptionResetActionState;
   readonly refreshing: boolean;
@@ -389,7 +409,6 @@ function SubscriptionResetControls({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const [, confirm] = useLoadableSet(signals.confirm$);
   const creditLabel = useResetCreditLabel(account);
   const pending = actionState === "loading";
   const credits = account?.subscriptionResetCredits;

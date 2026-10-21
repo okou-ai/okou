@@ -1,7 +1,7 @@
 // The skill import prompt and its imported list, shared by the onboarding
 // skills step and the workflows page's import dialog.
 import type { Command } from "ccstate";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
@@ -12,7 +12,7 @@ import type {
   SkillImportProvider,
   SkillImportSignals,
 } from "../../signals/skill-import/skill-import.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import { SkillImportGuide } from "./skill-import-guide.tsx";
 
 /** The prompt itself: long, read in full, and selectable where it stands. */
@@ -309,13 +309,15 @@ export function SkillImportPanel({
   readonly promptToggle?: SkillImportPromptToggle;
 }) {
   const state = useGet(signals.state$);
+  const preparation = useLoadable(signals.preparation$);
   const { t } = useTranslation();
-  const pending =
-    state.status === "failed" ? (
-      <SkillImportPromptFailed retry$={retry$} />
-    ) : (
-      <SkillImportPromptPending />
-    );
+  const failed =
+    preparation.state === "hasError" && !isAbortError(preparation.error);
+  const pending = failed ? (
+    <SkillImportPromptFailed retry$={retry$} />
+  ) : (
+    <SkillImportPromptPending />
+  );
 
   if (promptToggle) {
     // Until a skill arrives, copying is the one thing to do; after that,

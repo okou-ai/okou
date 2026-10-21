@@ -10,7 +10,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { resetPersonalCodexAccountSubscriptionUsage$ } from "../external/personal-model-providers.ts";
 import { personalModelProviderAccountRevision$ } from "../external/third-party-subscriptions.ts";
-import { settle, withCleanup } from "../utils.ts";
+import { withCleanup } from "../utils.ts";
 import type { ChatActionParseResult } from "./chat-action-context.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
@@ -25,17 +25,18 @@ export type SubscriptionResetStatus =
   | { readonly kind: "unavailable" }
   | { readonly kind: "ready"; readonly account: ModelProviderResponse };
 
-type ResetOutcome =
+export type SubscriptionResetOutcome =
   ResetPersonalModelProviderSubscriptionUsageResponse["outcome"];
 
 export type SubscriptionResetActionState =
-  "idle" | "loading" | "error" | ResetOutcome;
+  "idle" | "loading" | "error" | SubscriptionResetOutcome;
 
 export interface SubscriptionResetSignals extends SubscriptionResetDescriptor {
   readonly status$: Computed<Promise<SubscriptionResetStatus>>;
-  readonly actionState$: Computed<SubscriptionResetActionState>;
+  /** The latest reset attempt, shared by every card for this request. */
+  readonly attempt$: Computed<Promise<SubscriptionResetOutcome> | null>;
   readonly refresh$: Command<void, []>;
-  readonly confirm$: Command<Promise<void>, [AbortSignal]>;
+  readonly confirm$: Command<Promise<SubscriptionResetOutcome>, [AbortSignal]>;
 }
 
 export function parseSubscriptionResetUrl(
@@ -77,9 +78,11 @@ export function createSubscriptionResetSignals(
   descriptor: SubscriptionResetDescriptor,
 ): SubscriptionResetSignals {
   const revision$ = state(0);
-  const internalActionState$ = state<SubscriptionResetActionState>("idle");
-  const actionState$ = computed((get) => {
-    return get(internalActionState$);
+  const internalAttempt$ = state<Promise<SubscriptionResetOutcome> | null>(
+    null,
+  );
+  const attempt$ = computed((get) => {
+    return get(internalAttempt$);
   });
   const status$ = computed(async (get): Promise<SubscriptionResetStatus> => {
     get(revision$);
@@ -100,56 +103,43 @@ export function createSubscriptionResetSignals(
       return revision + 1;
     });
   });
+  // Cards repeating this request read progress, failure and outcome from the
+  // same attempt; the idempotency key makes a retry safe.
   const confirm$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const state = get(internalActionState$);
-      if (state !== "idle" && state !== "error") {
-        return;
-      }
-      set(internalActionState$, "loading");
-      await withCleanup(
-        (async () => {
-          const status = await get(status$);
-          signal.throwIfAborted();
-          if (
-            status.kind !== "ready" ||
-            status.account.type !== "codex-oauth-token" ||
-            status.account.subscriptionResetSupported !== true ||
-            status.account.needsReconnect ||
-            (state !== "error" &&
-              !(
-                status.account.subscriptionResetCredits &&
-                status.account.subscriptionResetCredits > 0
-              ))
-          ) {
-            set(internalActionState$, "error");
-            set(refresh$);
-            return;
-          }
-          const result = await settle(
-            set(
-              resetPersonalCodexAccountSubscriptionUsage$,
-              {
-                id: descriptor.accountId,
-                idempotencyKey: descriptor.idempotencyKey,
-              },
-              signal,
-            ),
-            signal,
-          );
-          signal.throwIfAborted();
-          set(internalActionState$, result.ok ? result.value.outcome : "error");
+    ({ get, set }, signal: AbortSignal): Promise<SubscriptionResetOutcome> => {
+      const attempt = (async () => {
+        const status = await get(status$);
+        signal.throwIfAborted();
+        if (
+          status.kind !== "ready" ||
+          status.account.type !== "codex-oauth-token" ||
+          status.account.subscriptionResetSupported !== true ||
+          status.account.needsReconnect
+        ) {
           set(refresh$);
-        })(),
-        () => {
-          set(internalActionState$, (current) => {
-            return current === "loading" ? "error" : current;
-          });
-        },
-      );
+          throw new Error("Subscription reset is no longer available");
+        }
+        const result = await withCleanup(
+          set(
+            resetPersonalCodexAccountSubscriptionUsage$,
+            {
+              id: descriptor.accountId,
+              idempotencyKey: descriptor.idempotencyKey,
+            },
+            signal,
+          ),
+          () => {
+            set(refresh$);
+          },
+        );
+        signal.throwIfAborted();
+        return result.outcome;
+      })();
+      set(internalAttempt$, attempt);
+      return attempt;
     },
   );
-  return { ...descriptor, status$, actionState$, refresh$, confirm$ };
+  return { ...descriptor, status$, attempt$, refresh$, confirm$ };
 }
 
 export function createSubscriptionResetCardSignalsRegistry() {

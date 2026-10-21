@@ -54,7 +54,7 @@ const POLL_TEST_INTERVAL_MS = 100;
  */
 const SESSION_MIN_REMAINING_MS = 5 * 60 * 1000;
 
-type SkillImportStatus = "preparing" | "ready" | "failed";
+type SkillImportStatus = "preparing" | "ready";
 
 export interface SkillImportState {
   readonly status: SkillImportStatus;
@@ -68,11 +68,13 @@ export interface SkillImportState {
 
 export interface SkillImportSignals {
   readonly state$: Computed<SkillImportState>;
+  /** The latest preparation, whose failure the panel offers to retry. */
+  readonly preparation$: Computed<Promise<string> | null>;
   /**
    * Prepares the import: the baseline the imported list is read against, the
    * session the prompt is built from, and the poll that keeps the list
    * current while the given signal lives. A failure is reported through
-   * `state$`, never thrown, so it cannot hold back whatever surrounds it.
+   * `preparation$`, never thrown, so it cannot hold back whatever surrounds it.
    */
   readonly enter$: Command<Promise<void>, [AbortSignal]>;
   /**
@@ -293,7 +295,10 @@ export function createSkillImportSignals(
   );
 
   const internalSession$ = state<SkillImportSession | null>(null);
-  const internalFailed$ = state(false);
+  const internalPreparation$ = state<Promise<string> | null>(null);
+  const preparation$ = computed((get) => {
+    return get(internalPreparation$);
+  });
   const { internalCopied$, copyPrompt$ } = createPromptCopy(
     internalSession$,
     provider$,
@@ -309,7 +314,7 @@ export function createSkillImportSignals(
       return { status: "ready", prompt: session.prompt, copied, imported };
     }
     return {
-      status: get(internalFailed$) ? "failed" : "preparing",
+      status: "preparing",
       prompt: null,
       copied,
       imported,
@@ -371,10 +376,10 @@ export function createSkillImportSignals(
 
   const enter$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
-      set(internalFailed$, false);
-      const prepared = await settle(set(prepare$, signal), signal);
+      const preparation = set(prepare$, signal);
+      set(internalPreparation$, preparation);
+      const prepared = await settle(preparation, signal);
       if (!prepared.ok) {
-        set(internalFailed$, true);
         return;
       }
       const agentId = prepared.value;
@@ -407,5 +412,5 @@ export function createSkillImportSignals(
     set(internalCopied$, false);
   });
 
-  return { state$, enter$, copyPrompt$, reset$ };
+  return { state$, preparation$, enter$, copyPrompt$, reset$ };
 }
