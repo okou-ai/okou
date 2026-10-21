@@ -1,16 +1,20 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import { deserialize, serialize } from "node:v8";
 import { MemoryFS, PGlite, type PGliteOptions } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import { drizzle as nativeDrizzle } from "drizzle-orm/node-postgres";
+import { Client, Pool } from "pg";
 import { Parser } from "tar";
 import { z } from "zod";
 import { API_DATABASE_SEED_FILES } from "./database-seeds";
+import type { ApiDb } from "../lib/db-types";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 
@@ -55,12 +59,14 @@ const driverParsers = Object.freeze({
   },
 });
 
-/** Build the migrated, seeded baseline once in the run's global setup. */
-export async function createPgliteSnapshot(): Promise<Blob> {
-  const engine = new PGlite({
-    extensions: { pgcrypto, btree_gin, btree_gist },
-    parsers: driverParsers,
-  });
+interface BaselineDatabase {
+  exec: (sql: string) => Promise<unknown>;
+  query: (sql: string, values: unknown[]) => Promise<{ rows: unknown }>;
+}
+
+// Both engines replay the same canonical isolated baseline, never a shared
+// database that a business case may already have mutated.
+async function initializeBaseline(engine: BaselineDatabase): Promise<void> {
   const replayUuidBatch = async (statement: string, name: string) => {
     let cursor: string | null = null;
     while (true) {
@@ -77,95 +83,108 @@ export async function createPgliteSnapshot(): Promise<Blob> {
       cursor = nextCursor;
     }
   };
-  return await releaseAfter(
-    (async () => {
-      const directory = new URL(
-        "../../../../packages/db/src/migrations/",
-        import.meta.url,
-      );
-      const files = (await readdir(directory))
-        .filter((name) => {
-          return /^\d+.*\.sql$/.test(name);
-        })
-        .sort();
-      const journal = JSON.parse(
-        await readFile(new URL("meta/_journal.json", directory), "utf8"),
-      ) as {
-        entries: { tag: string; when: number }[];
-      };
-      await engine.exec(
-        "CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)",
-      );
-      for (const name of files) {
-        const original = await readFile(new URL(name, directory), "utf8");
-        // These two unsupported
-        // extension declarations have no dependent table/constraint behavior.
-        let sql = original;
-        if (name === "1078_baseline.sql") {
-          sql = sql
-            .replace(
-              "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;",
-              "",
-            )
-            .replace(
-              "COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';",
-              "",
-            );
-        }
-        sql = sql.replace(
-          "CREATE EXTENSION IF NOT EXISTS pgstattuple WITH SCHEMA public;",
+  const directory = new URL(
+    "../../../../packages/db/src/migrations/",
+    import.meta.url,
+  );
+  const files = (await readdir(directory))
+    .filter((name) => {
+      return /^\d+.*\.sql$/.test(name);
+    })
+    .sort();
+  const journal = JSON.parse(
+    await readFile(new URL("meta/_journal.json", directory), "utf8"),
+  ) as {
+    entries: { tag: string; when: number }[];
+  };
+  await engine.exec(
+    "CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)",
+  );
+  for (const name of files) {
+    const original = await readFile(new URL(name, directory), "utf8");
+    // Keep the existing isolated baseline's extension omissions identical on
+    // both engines; they have no dependent table/constraint behavior.
+    let sql = original;
+    if (name === "1078_baseline.sql") {
+      sql = sql
+        .replace(
+          "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;",
+          "",
+        )
+        .replace(
+          "COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';",
           "",
         );
-        if (sql.includes("-- okou:non-transactional")) {
-          for (const statement of sql.split("--> statement-breakpoint")) {
-            if (statement.includes("-- okou:batch-by-uuid")) {
-              await replayUuidBatch(statement, name);
-            } else {
-              await engine.exec(statement);
-            }
-          }
-        } else if (
-          /\b(?:CREATE|DROP) (?:UNIQUE )?INDEX CONCURRENTLY\b/.test(sql)
-        ) {
-          if (sql.includes("$$")) {
-            throw new Error(
-              "Concurrent migration requires SQL-aware statement boundaries",
-            );
-          }
-          for (const statement of sql.split(";")) {
-            if (statement.trim()) {
-              await engine.exec(statement);
-            }
-          }
-        } else if (sql.includes("-- okou:batch-by-uuid")) {
-          for (const statement of sql.split("--> statement-breakpoint")) {
-            if (!statement.includes("-- okou:batch-by-uuid")) {
-              await engine.exec(statement);
-              continue;
-            }
-            await replayUuidBatch(statement, name);
-          }
+    }
+    sql = sql.replace(
+      "CREATE EXTENSION IF NOT EXISTS pgstattuple WITH SCHEMA public;",
+      "",
+    );
+    if (sql.includes("-- okou:non-transactional")) {
+      for (const statement of sql.split("--> statement-breakpoint")) {
+        if (statement.includes("-- okou:batch-by-uuid")) {
+          await replayUuidBatch(statement, name);
         } else {
-          await engine.exec(sql);
+          await engine.exec(statement);
         }
-        const metadata = journal.entries.find((entry) => {
-          return `${entry.tag}.sql` === name;
-        });
-        if (!metadata) {
-          throw new Error(`Missing migration journal entry: ${name}`);
-        }
-        await engine.query(
-          "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
-          [createHash("sha256").update(original).digest("hex"), metadata.when],
+      }
+    } else if (/\b(?:CREATE|DROP) (?:UNIQUE )?INDEX CONCURRENTLY\b/.test(sql)) {
+      if (sql.includes("$$")) {
+        throw new Error(
+          "Concurrent migration requires SQL-aware statement boundaries",
         );
       }
-      await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
-      for (const file of API_DATABASE_SEED_FILES) {
-        await engine.exec(await readFile(file, "utf8"));
+      for (const statement of sql.split(";")) {
+        if (statement.trim()) {
+          await engine.exec(statement);
+        }
       }
+    } else if (sql.includes("-- okou:batch-by-uuid")) {
+      for (const statement of sql.split("--> statement-breakpoint")) {
+        if (!statement.includes("-- okou:batch-by-uuid")) {
+          await engine.exec(statement);
+          continue;
+        }
+        await replayUuidBatch(statement, name);
+      }
+    } else {
+      await engine.exec(sql);
+    }
+    const metadata = journal.entries.find((entry) => {
+      return `${entry.tag}.sql` === name;
+    });
+    if (!metadata) {
+      throw new Error(`Missing migration journal entry: ${name}`);
+    }
+    await engine.query(
+      "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+      [createHash("sha256").update(original).digest("hex"), metadata.when],
+    );
+  }
+  await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
+  for (const file of API_DATABASE_SEED_FILES) {
+    await engine.exec(await readFile(file, "utf8"));
+  }
+}
+
+/** Build the migrated, seeded baseline once in the run's global setup. */
+async function createPgliteSnapshot(): Promise<Blob> {
+  const engine = new PGlite({
+    extensions: { pgcrypto, btree_gin, btree_gist },
+    parsers: driverParsers,
+  });
+  return await releaseAfter(
+    (async () => {
+      await initializeBaseline(engine);
       // Checkpoint the seeded baseline to reduce WAL recovery when restoring cases.
       await engine.exec("CHECKPOINT");
-      return await engine.dumpDataDir();
+      const image = await engine.dumpDataDir("none");
+      const snapshot = await readSnapshotFiles(
+        Buffer.from(await image.arrayBuffer()),
+      );
+      // Decode the physical archive once for the run. Workers only read the
+      // indexed files; every case still receives its own writable copies.
+      return new Blob([serialize(snapshot)]);
     })(),
     async () => {
       await engine.close();
@@ -184,6 +203,24 @@ interface SnapshotFiles {
   readonly files: readonly SnapshotFile[];
 }
 
+const snapshotPathSchema = z
+  .string()
+  .startsWith("/pglite/data/")
+  .refine((path) => {
+    return !path.split("/").includes("..");
+  }, "Invalid snapshot path");
+
+const snapshotSchema = z.object({
+  directories: z.array(snapshotPathSchema),
+  files: z.array(
+    z.object({
+      path: snapshotPathSchema,
+      data: z.instanceof(Uint8Array),
+      modifiedAt: z.number().int(),
+    }),
+  ),
+});
+
 // Decode immutable files once. Each engine still owns separate writable copies.
 const snapshots = singleton(() => {
   return new Map<string, Promise<SnapshotFiles>>();
@@ -197,8 +234,7 @@ const postgresModule = singleton(async () => {
   return await WebAssembly.compile(new Uint8Array(bytes));
 });
 
-async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
-  const bytes = await readFile(path);
+async function readSnapshotFiles(bytes: Buffer): Promise<SnapshotFiles> {
   const directories: string[] = [];
   const files: SnapshotFile[] = [];
   const parser = new Parser({
@@ -237,10 +273,15 @@ async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
           );
           return;
         }
+        const [singleChunk] = chunks;
         files.push({
           path: target,
-          // Engines copy these image bytes before taking mutable ownership.
-          data: new Uint8Array(Buffer.concat(chunks)),
+          // These image views stay immutable. Each engine still copies them
+          // before taking writable ownership in SnapshotMemoryFS.
+          data:
+            chunks.length === 1 && singleChunk
+              ? singleChunk
+              : Buffer.concat(chunks),
           modifiedAt: Math.floor(entry.mtime.getTime() / 1000),
         });
       });
@@ -255,11 +296,17 @@ async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
   return { directories, files };
 }
 
+async function readIndexedSnapshot(path: string): Promise<SnapshotFiles> {
+  const bytes = await readFile(path);
+  const decoded: unknown = deserialize(bytes);
+  return snapshotSchema.parse(decoded);
+}
+
 function snapshotFiles(path: string): Promise<SnapshotFiles> {
   const images = snapshots();
   let files = images.get(path);
   if (!files) {
-    files = readSnapshotFiles(path);
+    files = readIndexedSnapshot(path);
     images.set(path, files);
   }
   return files;
@@ -290,13 +337,243 @@ class SnapshotMemoryFS extends MemoryFS {
   }
 }
 
-export interface PgliteTestDatabase {
+interface PgliteTestDatabase {
   readonly database: PgliteDatabase;
   readonly close: () => Promise<void>;
 }
 
+export interface IsolatedTestDatabase {
+  readonly database: ApiDb | PgliteDatabase;
+  readonly close: () => Promise<void>;
+}
+
+const namespaceSchema = z.string().regex(/^oa_[a-f0-9]{32}$/);
+const descriptorSchema = z.discriminatedUnion("backend", [
+  z.object({ backend: z.literal("pglite"), path: z.string() }).strict(),
+  z
+    .object({
+      backend: z.literal("postgres"),
+      connectionString: z.url(),
+      namespace: namespaceSchema,
+    })
+    .strict(),
+]);
+
+function databaseUrl(connectionString: string, name: string): string {
+  const url = new URL(connectionString);
+  url.pathname = `/${name}`;
+  return url.toString();
+}
+
+// Names are generated and validated here, never derived from case input.
+function identifier(name: string): string {
+  if (!/^oa_[a-f0-9]{32}_(?:template|case_[a-f0-9]{16})$/.test(name)) {
+    throw new Error("Invalid isolated database identifier");
+  }
+  return `"${name}"`;
+}
+
+async function withNativeClient<T>(
+  connectionString: string,
+  work: (client: Client) => Promise<T>,
+): Promise<T> {
+  const client = new Client({ connectionString });
+  const errors: Error[] = [];
+  client.on("error", (error: Error) => {
+    errors.push(error);
+  });
+  return await releaseAfter(
+    (async () => {
+      await client.connect();
+      return await work(client);
+    })(),
+    async () => {
+      await releaseAfter(client.end(), () => {
+        if (errors.length) {
+          return Promise.reject(
+            new AggregateError(errors, "Isolated database connection failed"),
+          );
+        }
+        return Promise.resolve();
+      });
+    },
+  );
+}
+
+async function dropDatabase(connectionString: string, name: string) {
+  await withNativeClient(connectionString, async (client) => {
+    await client.query(`DROP DATABASE IF EXISTS ${identifier(name)}`);
+  });
+}
+
+// CREATE is never retried. A conflicting database is not ours to remove;
+// otherwise reconcile a possibly completed creation by dropping only our name.
+async function createDatabase(
+  connectionString: string,
+  name: string,
+  template: string,
+): Promise<boolean> {
+  const created = await settleIncludingAbort(async () => {
+    await withNativeClient(connectionString, async (client) => {
+      const source =
+        template === "template0" ? "template0" : identifier(template);
+      await client.query(
+        `CREATE DATABASE ${identifier(name)} TEMPLATE ${source}`,
+      );
+    });
+  });
+  if (!created.ok) {
+    const code = z.object({ code: z.string() }).safeParse(created.error);
+    if (code.success && code.data.code === "42501") {
+      return false;
+    }
+    if (code.success && code.data.code === "42P04") {
+      throw created.error;
+    }
+    return await releaseAfter(Promise.reject(created.error), async () => {
+      await dropDatabase(connectionString, name);
+    });
+  }
+  return true;
+}
+
+export interface ApiDatabaseSnapshot {
+  readonly path: string;
+  readonly close: () => Promise<void>;
+}
+
+/** Freeze a run's backend once, retaining environments without CREATEDB. */
+export async function createApiDatabaseSnapshot(
+  directory: string,
+  connectionString: string,
+): Promise<ApiDatabaseSnapshot> {
+  const namespace = namespaceSchema.parse(
+    `oa_${randomUUID().replaceAll("-", "")}`,
+  );
+  const template = `${namespace}_template`;
+  const capable = await withNativeClient(connectionString, async (client) => {
+    const result = await client.query(
+      "SELECT rolcreatedb OR rolsuper AS capable FROM pg_roles WHERE rolname = current_user",
+    );
+    return z.tuple([z.object({ capable: z.boolean() })]).parse(result.rows)[0]
+      .capable;
+  });
+  const native =
+    capable && (await createDatabase(connectionString, template, "template0"));
+  const close = async () => {
+    if (native) {
+      // Prefix comparison is literal (LIKE would treat underscores as wildcards).
+      const cases = await withNativeClient(connectionString, async (client) => {
+        const result = await client.query(
+          "SELECT datname FROM pg_database WHERE starts_with(datname, $1)",
+          [`${namespace}_case_`],
+        );
+        return z.array(z.object({ datname: z.string() })).parse(result.rows);
+      });
+      for (const { datname } of cases) {
+        await dropDatabase(connectionString, datname);
+      }
+      await dropDatabase(connectionString, template);
+    }
+  };
+  const initialized = await settleIncludingAbort(async () => {
+    const path = join(directory, "database.json");
+    if (native) {
+      await withNativeClient(
+        databaseUrl(connectionString, template),
+        async (client) => {
+          await initializeBaseline({
+            exec: async (sql) => {
+              return await client.query(sql);
+            },
+            query: async (sql, values) => {
+              return await client.query(sql, values);
+            },
+          });
+        },
+      );
+      await writeFile(
+        path,
+        JSON.stringify({ backend: "postgres", connectionString, namespace }),
+        { mode: 0o600 },
+      );
+    } else {
+      const image = await createPgliteSnapshot();
+      const imagePath = join(directory, "seeded.tar");
+      await writeFile(imagePath, new Uint8Array(await image.arrayBuffer()), {
+        mode: 0o600,
+      });
+      await writeFile(
+        path,
+        JSON.stringify({ backend: "pglite", path: imagePath }),
+        {
+          mode: 0o600,
+        },
+      );
+    }
+    return { path, close };
+  });
+  if (!initialized.ok) {
+    return await releaseAfter(Promise.reject(initialized.error), close);
+  }
+  return initialized.value;
+}
+
+export async function createIsolatedDatabase(
+  path: string,
+): Promise<IsolatedTestDatabase> {
+  const decoded: unknown = JSON.parse(await readFile(path, "utf8"));
+  const descriptor = descriptorSchema.parse(decoded);
+  if (descriptor.backend === "pglite") {
+    return await createPgliteDatabase(descriptor.path);
+  }
+  const { connectionString, namespace } = descriptor;
+  const name = `${namespace}_case_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  if (
+    !(await createDatabase(connectionString, name, `${namespace}_template`))
+  ) {
+    // Capability is frozen by global setup; never switch an individual case.
+    throw new Error(
+      "Isolated database creation permission changed during the run",
+    );
+  }
+  const pool = new Pool({
+    connectionString: databaseUrl(connectionString, name),
+  });
+  const errors: Error[] = [];
+  pool.on("error", (error: Error) => {
+    errors.push(error);
+  });
+  let closing: Promise<void> | undefined;
+  const close = () => {
+    closing ??= releaseAfter(
+      releaseAfter(pool.end(), async () => {
+        await dropDatabase(connectionString, name);
+      }),
+      () => {
+        if (errors.length) {
+          return Promise.reject(
+            new AggregateError(errors, "Isolated database pool failed"),
+          );
+        }
+        return Promise.resolve();
+      },
+    );
+    return closing;
+  };
+  const ready = await settleIncludingAbort(async () => {
+    const result = await pool.query("SHOW TimeZone");
+    z.object({ TimeZone: z.literal("UTC") }).parse(result.rows[0]);
+    return { database: nativeDrizzle(pool), close };
+  });
+  if (!ready.ok) {
+    return await releaseAfter(Promise.reject(ready.error), close);
+  }
+  return ready.value;
+}
+
 /** Fork the run's seeded image; cleanup belongs to the enclosing case owner. */
-export async function createPgliteDatabase(
+async function createPgliteDatabase(
   snapshotPath: string,
 ): Promise<PgliteTestDatabase> {
   const [snapshot, pgliteWasmModule] = await Promise.all([

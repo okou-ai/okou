@@ -460,8 +460,7 @@ test("A conflicting consumption does not send or change the home draft", async (
   expect(composer()).toHaveTextContent("Keep this draft");
   expect(screen.queryByText("Restore draft")).not.toBeInTheDocument();
 });
-test("A failed suggestion preserves unmounted structured recovery and cannot overwrite a newer mounted edit", async () => {
-  const pool = mockPool([{ ...makeSuggestion(), threadId }]);
+function mockFailedSuggestionRecovery(holdRecovery: boolean) {
   mockChatLifecycle(context, { threadId, threadTitle: "Recovery target" });
   let persisted: ChatThreadDraft = {
     draftUserMessage: {
@@ -477,7 +476,6 @@ test("A failed suggestion preserves unmounted structured recovery and cannot ove
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, persisted);
   });
-  let holdRecovery = false;
   let heldRecovery = false;
   let unmountedRecoveryRoute: string | null = null;
   context.mocks.api(
@@ -522,6 +520,23 @@ test("A failed suggestion preserves unmounted structured recovery and cannot ove
       error: { code: "INTERNAL_SERVER_ERROR", message: "Send failed" },
     });
   });
+  return {
+    recoveryStarted,
+    releaseRecovery,
+    recoveryFinished,
+    newerCommitted,
+    get unmountedRecoveryRoute() {
+      return unmountedRecoveryRoute;
+    },
+    get attempts() {
+      return attempts;
+    },
+  };
+}
+
+test("A failed suggestion preserves structured recovery before the target editor mounts", async () => {
+  mockPool([{ ...makeSuggestion(), threadId }]);
+  const recovery = mockFailedSuggestionRecovery(false);
   await setupPage({
     context,
     path: `/agents/${agentId}/chat`,
@@ -533,7 +548,7 @@ test("A failed suggestion preserves unmounted structured recovery and cannot ove
   await waitFor(() => {
     return button("Restore draft");
   });
-  // First recover with no target editor: storage, not a later rich mount,
+  // Recover with no target editor: storage, not a later rich mount,
   // must preserve the reference through the pre-navigation write.
   click(button("Restore draft"));
   await waitFor(() => {
@@ -543,7 +558,7 @@ test("A failed suggestion preserves unmounted structured recovery and cannot ove
   const client = context.store.get(apiClient$)(chatThreadDraftContract);
   const restored = await client.get({ params: { id: threadId } });
   expect(restored.status).toBe(200);
-  expect(unmountedRecoveryRoute).toBe(`/agents/${agentId}/chat`);
+  expect(recovery.unmountedRecoveryRoute).toBe(`/agents/${agentId}/chat`);
   expect(restored.body).toStrictEqual({
     draftUserMessage: {
       version: 1,
@@ -565,7 +580,18 @@ test("A failed suggestion preserves unmounted structured recovery and cannot ove
     expect(pathname()).toBe(`/agents/${agentId}/chat`);
     expect(composer()).toHaveTextContent("Keep this draft");
   });
-  holdRecovery = true;
+  expect(recovery.attempts).toBe(1);
+});
+
+test("A failed refreshed suggestion cannot overwrite a newer mounted edit during recovery", async () => {
+  const pool = mockPool([]);
+  const recovery = mockFailedSuggestionRecovery(true);
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await fill(composer(), "Keep this draft");
   pool.publish({
     ...makeSuggestion(),
     id: "a0000000-0000-4000-a000-000000000002",
@@ -577,26 +603,27 @@ test("A failed suggestion preserves unmounted structured recovery and cannot ove
   await waitFor(() => {
     return button("Restore draft");
   });
-  // The second retained action survives navigation to the ordinary panel.
+  // The retained failed action survives navigation to the ordinary panel.
   click(await screen.findByText("Recovery target"));
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${threadId}`);
     expect(composer()).toHaveTextContent("Existing target draft");
   });
   click(button("Restore draft"));
-  await recoveryStarted.promise;
+  await recovery.recoveryStarted.promise;
   expect(composer()).toHaveTextContent("Referenced decision");
   expect(composer()).toHaveTextContent("Existing target draft");
   await fill(composer(), "Newest ordinary draft");
-  await newerCommitted.promise;
-  releaseRecovery.resolve();
-  await recoveryFinished.promise;
+  await recovery.newerCommitted.promise;
+  recovery.releaseRecovery.resolve();
+  await recovery.recoveryFinished.promise;
   click(button("New chat"));
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${agentId}/chat`);
     expect(composer()).toHaveTextContent("Keep this draft");
   });
   // Read the public persisted draft, not the still-cached local editor state.
+  const client = context.store.get(apiClient$)(chatThreadDraftContract);
   const response = await client.get({ params: { id: threadId } });
   expect(response.status).toBe(200);
   expect(response.body).toStrictEqual({
@@ -606,7 +633,7 @@ test("A failed suggestion preserves unmounted structured recovery and cannot ove
     },
     draftAttachments: null,
   });
-  expect(attempts).toBe(2);
+  expect(recovery.attempts).toBe(1);
 });
 test("A failed new-chat suggestion offers draft recovery without automatically sending again", async () => {
   mockPool([{ ...makeSuggestion(), threadId: null }]);

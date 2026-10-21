@@ -1,9 +1,12 @@
 import { restoreGlobalSetupEnvironment } from "./global-setup-env";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestProject } from "vitest/node";
-import { createPgliteSnapshot } from "../test-fixtures/pglite-database";
+import {
+  createApiDatabaseSnapshot,
+  type ApiDatabaseSnapshot,
+} from "../test-fixtures/pglite-database";
 import { Client } from "pg";
 import { z } from "zod";
 import { env } from "../lib/env";
@@ -14,8 +17,26 @@ import { API_DATABASE_SNAPSHOT } from "./database-snapshot";
 
 export async function setup(project: TestProject) {
   const directory = await mkdtemp(join(tmpdir(), "okou-api-database-"));
+  let snapshot: ApiDatabaseSnapshot | undefined;
   const cleanup = async () => {
-    await rm(directory, { recursive: true, force: true });
+    const closed = await settleIncludingAbort(async () => {
+      await snapshot?.close();
+    });
+    const removed = await settleIncludingAbort(() => {
+      return rm(directory, { recursive: true, force: true });
+    });
+    if (!closed.ok) {
+      if (!removed.ok) {
+        throw new AggregateError(
+          [closed.error, removed.error],
+          "Database and temporary directory cleanup failed",
+        );
+      }
+      throw closed.error;
+    }
+    if (!removed.ok) {
+      throw removed.error;
+    }
   };
   const initialized = await settleIncludingAbort(async () => {
     // Startup owns one short-lived connection. Never initialize the app pool:
@@ -38,14 +59,18 @@ export async function setup(project: TestProject) {
       return client.end();
     });
     await client.end();
-    const image = await createPgliteSnapshot();
-    const path = join(directory, "seeded.tar");
-    await writeFile(path, new Uint8Array(await image.arrayBuffer()));
-    project.provide(API_DATABASE_SNAPSHOT, path);
+    snapshot = await createApiDatabaseSnapshot(directory, env("DATABASE_URL"));
+    project.provide(API_DATABASE_SNAPSHOT, snapshot.path);
   });
   restoreGlobalSetupEnvironment();
   if (!initialized.ok) {
-    await cleanup();
+    const cleaned = await settleIncludingAbort(cleanup);
+    if (!cleaned.ok) {
+      throw new AggregateError(
+        [initialized.error, cleaned.error],
+        "Database initialization and cleanup failed",
+      );
+    }
     throw initialized.error;
   }
   return cleanup;

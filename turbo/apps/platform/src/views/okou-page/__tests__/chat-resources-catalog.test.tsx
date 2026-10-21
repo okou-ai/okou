@@ -3,7 +3,7 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
   artifactSummary,
   buttonNamed,
@@ -248,7 +248,7 @@ test("Show more resources until the last page, then collapse with the same contr
   const artifacts = within(panel).getByRole("region", { name: "Artifacts" });
   const viewport = resourceViewport(panel);
   fireEvent.scroll(viewport, { target: { scrollTop: 2000 } });
-  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(3);
+  expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(3);
   const more = buttonNamed("Show more", artifacts);
   click(more);
   await within(artifacts).findByText("report-60.pdf");
@@ -263,7 +263,7 @@ test("Show more resources until the last page, then collapse with the same contr
 
   click(more);
   await within(artifacts).findByText("report-120.pdf");
-  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(120);
+  expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(120);
   expect(more).toHaveTextContent("Show more");
   expect(
     within(artifacts).queryByText("report-121.pdf"),
@@ -271,15 +271,15 @@ test("Show more resources until the last page, then collapse with the same contr
 
   click(more);
   await within(artifacts).findByText("report-125.pdf");
-  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(125);
+  expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(125);
   expect(more).toHaveTextContent("Collapse");
   expect(within(artifacts).queryByText("Show more")).not.toBeInTheDocument();
   click(more);
-  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(3);
+  expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(3);
   expect(more).toHaveTextContent("Show more");
   click(more);
   await within(artifacts).findByText("report-125.pdf");
-  expect(within(artifacts).getAllByRole("listitem")).toHaveLength(125);
+  expect(queryAllByRoleFast("listitem", artifacts)).toHaveLength(125);
   expect(more).toHaveTextContent("Collapse");
 });
 
