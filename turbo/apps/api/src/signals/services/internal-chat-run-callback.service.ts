@@ -2144,36 +2144,6 @@ async function runTerminalChatCallbackSideEffects(args: {
   });
 }
 
-async function chatThreadForRunFromDb(
-  db: Db,
-  runId: string,
-): Promise<ChatThreadForRunRow | null> {
-  const [row] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      userId: chatThreads.userId,
-      orgId: agentRuns.orgId,
-      agentId: agents.id,
-      title: chatThreads.title,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-
-  if (!row?.chatThreadId) {
-    return null;
-  }
-  return {
-    chatThreadId: row.chatThreadId,
-    userId: row.userId,
-    orgId: row.orgId,
-    agentId: row.agentId,
-    title: row.title,
-  };
-}
-
 export interface QueuedMessageModelRouteError {
   readonly code: string;
   readonly message: string;
@@ -2730,7 +2700,34 @@ async function loadTerminalChatCallback(
     return null;
   }
 
-  const chatThread = await chatThreadForRunFromDb(args.db, args.runId);
+  const db = args.db;
+  const runId = args.runId;
+  const chatThread = await (async (): Promise<ChatThreadForRunRow | null> => {
+    const [row] = await db
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        userId: chatThreads.userId,
+        orgId: agentRuns.orgId,
+        agentId: agents.id,
+        title: chatThreads.title,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
+      .limit(1);
+
+    if (!row?.chatThreadId) {
+      return null;
+    }
+    return {
+      chatThreadId: row.chatThreadId,
+      userId: row.userId,
+      orgId: row.orgId,
+      agentId: row.agentId,
+      title: row.title,
+    };
+  })();
   signal.throwIfAborted();
   if (!chatThread) {
     log.debug("Skipping terminal chat callback for missing chat thread", {
