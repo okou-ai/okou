@@ -316,7 +316,8 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
     let claim = tokio::spawn(async move {
         let candidate = discovering.discover().await.unwrap();
         assert_eq!(candidate.run_id(), run_id);
-        discovering.claim(candidate).await
+        let claimed = discovering.claim(candidate).await;
+        (claimed, tokio::time::Instant::now())
     });
     tokio::time::timeout(Duration::from_secs(5), initial_rx)
         .await
@@ -353,10 +354,12 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
             .await
             .is_none()
     );
+    let (claimed, claimed_at) =
+        join_raw_http_task(claim, "preferred claim during silent connection").await;
+    assert!(claimed.is_some());
     assert!(
-        join_raw_http_task(claim, "preferred claim during silent connection")
-            .await
-            .is_some()
+        claimed_at < expires,
+        "preferred claim must finish before expiry"
     );
     {
         let queue = queue.lock().unwrap();
