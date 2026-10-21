@@ -1,6 +1,6 @@
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { brandName$ } from "../../../../signals/branding.ts";
 import {
   claudeCodeDeviceAuthDialogStatePersonal$,
   claudeCodeDeviceAuthFlowStatePersonal$,
+  claudeCodeDeviceAuthStartOperationPersonal$,
   closeClaudeCodeDeviceAuthDialogPersonal$,
   runClaudeCodeDeviceAuthPersonal$,
   setClaudeCodeDeviceAuthAuthorizationCodePersonal$,
@@ -31,6 +32,7 @@ type ClaudeCodeDeviceAuthDialogState = {
 interface ClaudeCodeDeviceAuthScopeBundle {
   dialog: ClaudeCodeDeviceAuthDialogState;
   flow: ClaudeCodeDeviceAuthFlowState;
+  startLoadable: Loadable<boolean | null>;
   close: (signal: AbortSignal) => Promise<void>;
   run: (signal: AbortSignal) => Promise<boolean>;
   submit: (signal: AbortSignal) => Promise<boolean>;
@@ -47,7 +49,10 @@ function usePersonalClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundl
   const dialog = useGet(claudeCodeDeviceAuthDialogStatePersonal$);
   const flow = useGet(claudeCodeDeviceAuthFlowStatePersonal$);
   const close = useSet(closeClaudeCodeDeviceAuthDialogPersonal$);
-  const [, run] = useLoadableSet(runClaudeCodeDeviceAuthPersonal$);
+  const run = useSet(runClaudeCodeDeviceAuthPersonal$);
+  const startLoadable = useLoadable(
+    claudeCodeDeviceAuthStartOperationPersonal$,
+  );
   const [submitLoadable, submit] = useLoadableSet(
     submitClaudeCodeDeviceAuthPersonal$,
   );
@@ -57,6 +62,7 @@ function usePersonalClaudeCodeDeviceAuthBundle(): ClaudeCodeDeviceAuthScopeBundl
   return {
     dialog,
     flow,
+    startLoadable,
     close,
     run,
     submit,
@@ -72,8 +78,16 @@ function ClaudeCodeDeviceAuthDialogView({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const { dialog, flow, close, run, submit, submitting, setAuthorizationCode } =
-    bundle;
+  const {
+    dialog,
+    flow,
+    startLoadable,
+    close,
+    run,
+    submit,
+    submitting,
+    setAuthorizationCode,
+  } = bundle;
   const title =
     dialog.mode === "reconnect"
       ? t(($) => {
@@ -92,6 +106,7 @@ function ClaudeCodeDeviceAuthDialogView({
     >
       <ClaudeCodeDeviceAuthBody
         flow={flow}
+        startLoadable={startLoadable}
         mode={dialog.mode}
         onStart={() => {
           detach(run(pageSignal), Reason.DomCallback);
@@ -108,6 +123,7 @@ function ClaudeCodeDeviceAuthDialogView({
 
 function ClaudeCodeDeviceAuthBody({
   flow,
+  startLoadable,
   mode,
   onStart,
   onSubmit,
@@ -115,6 +131,7 @@ function ClaudeCodeDeviceAuthBody({
   submitting,
 }: {
   flow: ClaudeCodeDeviceAuthFlowState;
+  startLoadable: Loadable<boolean | null>;
   mode: "connect" | "reconnect";
   onStart: () => void;
   onSubmit: () => void;
@@ -122,47 +139,42 @@ function ClaudeCodeDeviceAuthBody({
   submitting: boolean;
 }) {
   const { t } = useTranslation();
-  switch (flow.status) {
-    case "starting": {
-      return (
-        <DeviceAuthLoadingContent
-          testId="claude-code-device-auth-loading"
-          label={t(($) => {
-            return $.settings.models.deviceAuth.claude.preparing;
-          })}
-        />
-      );
-    }
-    case "pending": {
-      return (
-        <ClaudeCodeDeviceAuthPendingForm
-          flow={flow}
-          onSubmit={onSubmit}
-          setAuthorizationCode={setAuthorizationCode}
-          submitting={submitting}
-        />
-      );
-    }
-    case "idle":
-    case "expired": {
-      return (
-        <DeviceAuthRetryContent
-          message={flow.status === "idle" ? undefined : flow.message}
-          testId="claude-code-device-auth-start"
-          onStart={onStart}
-          label={
-            mode === "reconnect"
-              ? t(($) => {
-                  return $.settings.models.deviceAuth.claude.reconnectAction;
-                })
-              : t(($) => {
-                  return $.settings.models.deviceAuth.claude.signIn;
-                })
-          }
-        />
-      );
-    }
+  if (startLoadable.state === "loading") {
+    return (
+      <DeviceAuthLoadingContent
+        testId="claude-code-device-auth-loading"
+        label={t(($) => {
+          return $.settings.models.deviceAuth.claude.preparing;
+        })}
+      />
+    );
   }
+  if (startLoadable.state === "hasError" || flow.status !== "pending") {
+    return (
+      <DeviceAuthRetryContent
+        message={flow.status === "expired" ? flow.message : undefined}
+        testId="claude-code-device-auth-start"
+        onStart={onStart}
+        label={
+          mode === "reconnect"
+            ? t(($) => {
+                return $.settings.models.deviceAuth.claude.reconnectAction;
+              })
+            : t(($) => {
+                return $.settings.models.deviceAuth.claude.signIn;
+              })
+        }
+      />
+    );
+  }
+  return (
+    <ClaudeCodeDeviceAuthPendingForm
+      flow={flow}
+      onSubmit={onSubmit}
+      setAuthorizationCode={setAuthorizationCode}
+      submitting={submitting}
+    />
+  );
 }
 
 function ClaudeCodeDeviceAuthPendingForm({

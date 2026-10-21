@@ -1226,7 +1226,9 @@ function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
     targets.state === "hasData" &&
     targets.data.has(`builtin:${connector.slug}`);
   const inventoryStatus = connectorInventoryStatus(targets.state);
-  const busy = useGet(signals.busy$);
+  const operation = useLoadable(signals.operation$);
+  const polling = useGet(signals.polling$);
+  const busy = polling || operation.state === "loading";
   const accountConnectHandlers = useBuiltinConnectorConnectHandlers();
   const openAccountManager = useSet(signals.openAccountManager$);
   const manageAccess = useSet(signals.manageAccess$);
@@ -1306,7 +1308,6 @@ function useBuiltinConnectorConnectHandlers() {
     attemptSignal: AbortSignal,
   ): Promise<void> => {
     await runConnectSuccess(
-      connector.slug,
       (completedConnectionId, continuationSignal) => {
         return finishAccountConnection(
           {
@@ -1319,6 +1320,7 @@ function useBuiltinConnectorConnectHandlers() {
         );
       },
       connectionId,
+      connector.slug,
       attemptSignal,
     );
   };

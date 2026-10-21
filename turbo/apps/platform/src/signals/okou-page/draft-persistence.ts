@@ -3,9 +3,11 @@ import type {
   ImageAnnotation,
   PersistedAttachment,
   UserMessageInputDocument,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   textToMessageDocument,
+  restoredMessageToDraftDocument,
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
 
@@ -22,6 +24,7 @@ export interface DraftPersistencePayload {
 interface DraftPersistenceSource {
   readonly input: string;
   readonly editorDocument: EditorDocumentSnapshot | null;
+  readonly restoredUserMessage: UserMessageDocument | null;
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly attachments: readonly DraftAttachmentSnapshot[];
 }
@@ -58,6 +61,14 @@ export function buildDraftPersistencePayload(
     }
     if (serialized) {
       userMessage = serialized.userMessage;
+    }
+  } else if (source.restoredUserMessage) {
+    userMessage = restoredMessageToDraftDocument(
+      source.restoredUserMessage,
+      source.attachments,
+    );
+    if (!userMessage && hasFallbackUserMessageDraft) {
+      throw new Error("Failed to serialize restored composer draft");
     }
   } else if (hasFallbackUserMessageDraft) {
     userMessage = textToMessageDocument(

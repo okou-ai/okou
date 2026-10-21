@@ -212,7 +212,7 @@ test("A failed connect still lets the person retry or continue", async () => {
   closeDeviceAuthDialog();
 
   await waitFor(() => {
-    expect(getButtonByName("Try again")).toBeEnabled();
+    expect(getButtonByName(CONNECT_CODEX)).toBeEnabled();
   });
 
   click(getButtonByName("Continue"));

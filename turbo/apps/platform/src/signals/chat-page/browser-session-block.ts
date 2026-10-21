@@ -18,7 +18,7 @@ import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
-import { onRef, settle, setLoop, withCleanup } from "../utils.ts";
+import { onRef, setLoop, withCleanup } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -39,8 +39,8 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly screenshotImageLoad: ImageLoadSignals;
   readonly session$: Computed<Promise<BrowserSession | null>>;
   readonly panelSession$: Computed<Promise<BrowserSession | null>>;
-  readonly starting$: Computed<boolean>;
-  readonly fittingWindow$: Computed<boolean>;
+  readonly startOperation$: Computed<Promise<void> | null>;
+  readonly fitWindowOperation$: Computed<Promise<void> | null>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -226,47 +226,57 @@ function createFitWindowSignals(
   descriptor: BrowserSessionDescriptor,
   sessionOverride$: State<BrowserSession | null | undefined>,
   browserFitDom: BrowserFitDomSignals,
-): Pick<BrowserSessionSignals, "fittingWindow$" | "fitViewport$"> {
-  const fittingWindowState$ = state(false);
-  const fitViewport$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      if (get(fittingWindowState$)) {
-        return;
-      }
-      const aspectRatio = set(browserFitDom.viewportAspectRatio$);
-      if (aspectRatio === null) {
-        return;
-      }
-      set(fittingWindowState$, true);
-      const fitted = await settle(
-        withCleanup(
-          accept(
-            get(apiClient$)(browserContract).resizeByThread({
-              params: { threadId: descriptor.threadId },
-              body: { aspectRatio },
-              fetchOptions: { signal },
-            }),
-            [200, 404],
-            signal,
-          ),
-          () => {
-            set(fittingWindowState$, false);
-          },
-        ),
+): Pick<BrowserSessionSignals, "fitWindowOperation$" | "fitViewport$"> {
+  // Retain the last result for loadable consumers; only running$ gates execution.
+  const operation$ = state<Promise<void> | null>(null);
+  const running$ = state<Promise<void> | null>(null);
+  const resize$ = command(
+    async (
+      { get, set },
+      aspectRatio: number,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const fitted = await accept(
+        get(apiClient$)(browserContract).resizeByThread({
+          params: { threadId: descriptor.threadId },
+          body: { aspectRatio },
+          fetchOptions: { signal },
+        }),
+        [200, 404],
         signal,
       );
-      if (fitted.ok && fitted.value.status === 200) {
-        set(sessionOverride$, fitted.value.body.browser);
-        set(
-          browserFitDom.syncFitActionForScreen$,
-          fitted.value.body.browser.screen,
-        );
+      signal.throwIfAborted();
+      if (fitted.status === 200) {
+        set(sessionOverride$, fitted.body.browser);
+        set(browserFitDom.syncFitActionForScreen$, fitted.body.browser.screen);
       }
     },
   );
+  const fitViewport$ = command(({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const active = get(running$);
+    if (active) {
+      return active;
+    }
+    const aspectRatio = set(browserFitDom.viewportAspectRatio$);
+    if (aspectRatio === null) {
+      return Promise.resolve();
+    }
+    const operation: Promise<void> = withCleanup(
+      set(resize$, aspectRatio, signal),
+      () => {
+        if (get(running$) === operation) {
+          set(running$, null);
+        }
+      },
+    );
+    set(running$, operation);
+    set(operation$, operation);
+    return operation;
+  });
   return {
-    fittingWindow$: computed((get) => {
-      return get(fittingWindowState$);
+    fitWindowOperation$: computed((get) => {
+      return get(operation$);
     }),
     fitViewport$,
   };
@@ -284,12 +294,13 @@ function createStartBrowserSignals({
   reload$,
 }: BrowserMutationSignalContext): Pick<
   BrowserSessionSignals,
-  "starting$" | "start$"
+  "startOperation$" | "start$"
 > {
-  const startingState$ = state(false);
-  const start$ = command(async ({ get, set }, signal: AbortSignal) => {
-    set(startingState$, true);
-    const started = await settle(
+  // Retain the last result for loadable consumers; only running$ gates execution.
+  const operation$ = state<Promise<void> | null>(null);
+  const running$ = state<Promise<void> | null>(null);
+  const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const started = await withCleanup(
       accept(
         get(apiClient$)(browserContract).open({
           params: { threadId: descriptor.threadId },
@@ -299,18 +310,34 @@ function createStartBrowserSignals({
         [200],
         signal,
       ),
-      signal,
+      () => {
+        set(reload$);
+      },
     );
-    set(startingState$, false);
-    if (started.ok) {
-      set(sessionOverride$, started.value.body.browser);
-      return;
+    signal.throwIfAborted();
+    set(sessionOverride$, started.body.browser);
+  });
+  const start$ = command(({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const active = get(running$);
+    if (active) {
+      return active;
     }
-    set(reload$);
+    const operation: Promise<void> = withCleanup(
+      set(openBrowser$, signal),
+      () => {
+        if (get(running$) === operation) {
+          set(running$, null);
+        }
+      },
+    );
+    set(running$, operation);
+    set(operation$, operation);
+    return operation;
   });
   return {
-    starting$: computed((get) => {
-      return get(startingState$);
+    startOperation$: computed((get) => {
+      return get(operation$);
     }),
     start$,
   };
@@ -318,9 +345,10 @@ function createStartBrowserSignals({
 
 function createCloseBrowserSignals({
   descriptor,
+  reload$,
 }: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "close$"> {
-  const close$ = command(async ({ get }, signal: AbortSignal) => {
-    await settle(
+  const close$ = command(async ({ get, set }, signal: AbortSignal) => {
+    await withCleanup(
       accept(
         get(apiClient$)(browserContract).close({
           params: { threadId: descriptor.threadId },
@@ -330,8 +358,11 @@ function createCloseBrowserSignals({
         [200],
         signal,
       ),
-      signal,
+      () => {
+        set(reload$);
+      },
     );
+    signal.throwIfAborted();
   });
   return { close$ };
 }
@@ -404,7 +435,7 @@ export function createBrowserSessionSignals(
   });
 
   const browserFitDom = createBrowserFitDomSignals();
-  const { fittingWindow$, fitViewport$ } = createFitWindowSignals(
+  const { fitWindowOperation$, fitViewport$ } = createFitWindowSignals(
     descriptor,
     sessionOverride$,
     browserFitDom,
@@ -469,7 +500,7 @@ export function createBrowserSessionSignals(
     panelSession$: session$,
     ...startSignals,
     ...closeSignals,
-    fittingWindow$,
+    fitWindowOperation$,
     reload$,
     reloadPanel$: reload$,
     fitViewport$,

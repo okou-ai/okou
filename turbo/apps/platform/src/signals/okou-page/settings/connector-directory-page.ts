@@ -13,8 +13,7 @@ import { filteredDirectoryCustomConnectors$ } from "./connector-directory-custom
 import {
   connectorCatalogDiscovery$,
   filteredConnectorCatalogItems$,
-  builtinConnectFlowSlug$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinConnectExecution$,
   builtinPollingOAuthDeviceAuthSlug$,
 } from "./connectors.ts";
 
@@ -24,15 +23,14 @@ function createDirectoryCardSignals(
   return {
     connector,
     targets$: connectedConnectorTargetKeys$,
-    busy$: computed((get) => {
-      const authCode = get(builtinPollingOAuthAuthCodeSlug$);
-      const deviceAuth = get(builtinPollingOAuthDeviceAuthSlug$);
-      const flow = get(builtinConnectFlowSlug$);
-      return (
-        authCode === connector.slug ||
-        deviceAuth === connector.slug ||
-        flow === connector.slug
-      );
+    operation$: computed((get) => {
+      const execution = get(builtinConnectExecution$);
+      return execution?.connectorSlug === connector.slug
+        ? execution.operation
+        : null;
+    }),
+    polling$: computed((get) => {
+      return get(builtinPollingOAuthDeviceAuthSlug$) === connector.slug;
     }),
     openAccountManager$: command(({ get, set }) => {
       set(openBuiltinAccountManager$, connector, get(pageSignal$));

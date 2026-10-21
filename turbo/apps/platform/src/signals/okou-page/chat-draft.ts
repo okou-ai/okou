@@ -7,7 +7,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { resetSignal, settle } from "../utils.ts";
+import { resetSignal } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -33,7 +33,6 @@ import {
 } from "./user-message-document-codec.ts";
 import { i18n } from "../../i18n/index.ts";
 import { flattenAnnotatedImage } from "./flatten-annotated-image.ts";
-import { logger } from "../log.ts";
 import {
   createAttachmentPreviewSignals,
   type AttachmentPreviewSignals,
@@ -57,8 +56,6 @@ function uploadFileInfo(
 ): FileInfo {
   return { id: file.id, url: file.url, contentType };
 }
-
-const log = logger("chat-draft");
 
 const MULTIPART_UPLOAD_THRESHOLD_BYTES = 5 * 1024 * 1024;
 
@@ -271,139 +268,147 @@ const uploadFileToStorage$ = command(
   },
 );
 
-export type AttachmentAnnotationUploadStatus =
-  "idle" | "pending" | "uploaded" | "failed";
-
-type AttachmentAnnotationUploadState =
-  | { readonly status: "idle" }
-  | { readonly status: "pending" }
-  | { readonly status: "uploaded"; readonly fileId: string }
-  | { readonly status: "failed" };
+function createUploadAnnotatedCopy(
+  args: {
+    readonly filename: string;
+    readonly fileInfo$: Computed<Promise<FileInfo | null>>;
+    readonly reloadFailedResource$?: Command<Promise<void>, [AbortSignal]>;
+  },
+  annotatedFileId$: State<string | null>,
+) {
+  return command(
+    async (
+      { get, set },
+      annotations: ImageAnnotation,
+      retryOriginal: boolean,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (retryOriginal && args.reloadFailedResource$) {
+        await set(args.reloadFailedResource$, signal);
+      }
+      const original = await get(args.fileInfo$);
+      signal.throwIfAborted();
+      if (!original) {
+        throw new Error("Original image is unavailable");
+      }
+      const preview = createAttachmentPreviewSignals(original.url);
+      const [resourceUrl, shareUrl] = await Promise.all([
+        get(preview.resourceUrl$),
+        get(preview.shareUrl$),
+      ]);
+      signal.throwIfAborted();
+      const flattened = await flattenAnnotatedImage(
+        shareUrl ?? resourceUrl,
+        annotations,
+        args.filename,
+        signal,
+      );
+      const uploaded = await set(uploadFileToStorage$, flattened.file, signal);
+      // Replacement, removal and teardown must not install an older derivative.
+      signal.throwIfAborted();
+      set(annotatedFileId$, uploaded.id);
+    },
+  );
+}
 
 function createAttachmentAnnotationSignals(args: {
   readonly filename: string;
   readonly fileInfo$: Computed<Promise<FileInfo | null>>;
+  readonly reloadFailedResource$?: Command<Promise<void>, [AbortSignal]>;
   readonly initialAnnotations?: ImageAnnotation;
   readonly initialAnnotatedFileId?: string;
 }) {
   const internalAnnotations$ = state<ImageAnnotation | null>(
     args.initialAnnotations ?? null,
   );
-  // Marks without their annotated copy mean the copy is MISSING, not that
-  // making it failed. Reporting `failed` here put a retry badge on a draft
-  // nothing had been attempted for, and the user reads that as an error they
-  // caused. `restoreAttachments$` regenerates the copy instead, so the state
-  // that describes it is `pending`.
-  const initialUploadState: AttachmentAnnotationUploadState =
-    args.initialAnnotations && args.initialAnnotatedFileId
-      ? { status: "uploaded", fileId: args.initialAnnotatedFileId }
-      : args.initialAnnotations
-        ? { status: "pending" }
-        : { status: "idle" };
-  const internalUploadState$ =
-    state<AttachmentAnnotationUploadState>(initialUploadState);
+  // A derivative is a fact about this exact annotation version, not a request
+  // status. Restored marks without a copy have no operation until reconciliation
+  // actually starts one.
+  const internalAnnotatedFileId$ = state<string | null>(
+    isAnnotationMeaningful(args.initialAnnotations ?? null)
+      ? (args.initialAnnotatedFileId ?? null)
+      : null,
+  );
+  // Keep the actual terminal promise so chips mounted after the editor closes
+  // can still observe its result. Replacing or removing the attachment aborts
+  // the old work through its existing owner, not through a local hook.
+  const internalAnnotationOperation$ = state<Promise<void> | null>(null);
   const resetUploadSignal$ = resetSignal();
 
   const annotations$ = computed((get) => {
     return get(internalAnnotations$);
   });
-  const annotatedFileId$ = computed((get): string | null => {
-    const upload = get(internalUploadState$);
-    return upload.status === "uploaded" ? upload.fileId : null;
+  const annotatedFileId$ = computed((get) => {
+    return get(internalAnnotatedFileId$);
   });
-  const annotationUploadStatus$ = computed(
-    (get): AttachmentAnnotationUploadStatus => {
-      return get(internalUploadState$).status;
-    },
-  );
+  const annotationOperation$ = computed((get) => {
+    return get(internalAnnotationOperation$);
+  });
   const annotationReady$ = computed((get): boolean => {
     return (
       !isAnnotationMeaningful(get(internalAnnotations$)) ||
-      get(internalUploadState$).status === "uploaded"
+      get(internalAnnotatedFileId$) !== null
     );
   });
 
-  const confirmAnnotations$ = command(
-    async (
-      { get, set },
+  const uploadAnnotatedCopy$ = createUploadAnnotatedCopy(
+    args,
+    internalAnnotatedFileId$,
+  );
+
+  const setAnnotations$ = command(
+    (
+      { set },
       annotations: ImageAnnotation | null,
+      retryOriginal: boolean,
       parentSignal: AbortSignal,
     ): Promise<void> => {
+      parentSignal.throwIfAborted();
       const signal = set(resetUploadSignal$, parentSignal);
       set(internalAnnotations$, annotations);
+      set(internalAnnotatedFileId$, null);
       if (!annotations || !isAnnotationMeaningful(annotations)) {
-        set(internalUploadState$, { status: "idle" });
-        return;
+        set(internalAnnotationOperation$, null);
+        return Promise.resolve();
       }
-
-      set(internalUploadState$, { status: "pending" });
-      const rendered = await settle(
-        (async () => {
-          const original = await get(args.fileInfo$);
-          signal.throwIfAborted();
-          if (!original) {
-            throw new Error("Original image is unavailable");
-          }
-          // A presigned resource URL can render in an image element while its
-          // response remains unreadable to fetch because of CORS. Flattening
-          // needs the bytes. Private storage must allow authenticated app origins
-          // through R2 CORS; public inputs retain their existing CDN URL.
-          const preview = createAttachmentPreviewSignals(original.url);
-          const [resourceUrl, shareUrl] = await Promise.all([
-            get(preview.resourceUrl$),
-            get(preview.shareUrl$),
-          ]);
-          signal.throwIfAborted();
-          const flattened = await flattenAnnotatedImage(
-            shareUrl ?? resourceUrl,
-            annotations,
-            args.filename,
-            signal,
-          );
-          return await set(uploadFileToStorage$, flattened.file, signal);
-        })(),
+      const operation = set(
+        uploadAnnotatedCopy$,
+        annotations,
+        retryOriginal,
         signal,
       );
-      if (!rendered.ok) {
-        set(internalUploadState$, { status: "failed" });
-        // Five different steps land on that one state — the original going
-        // missing, the read, the decode, the encode and the upload. Dropping
-        // `rendered.error` left the retry badge as the only evidence any of
-        // them had happened, so a failure that reproduced every time was
-        // indistinguishable from a flaky one. Warn rather than error: the
-        // attachment keeps its marks and the badge retries in place, so this
-        // is a recoverable condition the user is already being shown.
-        log.warn("annotation flatten failed", args.filename, rendered.error);
-        return;
-      }
-      set(internalUploadState$, {
-        status: "uploaded",
-        fileId: rendered.value.id,
-      });
+      set(internalAnnotationOperation$, operation);
+      return operation;
     },
   );
 
+  const confirmAnnotations$ = command(
+    ({ set }, annotations: ImageAnnotation | null, signal: AbortSignal) => {
+      return set(setAnnotations$, annotations, false, signal);
+    },
+  );
   const retryAnnotationUpload$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const annotations = get(internalAnnotations$);
-      if (!annotations || !isAnnotationMeaningful(annotations)) {
+      if (
+        !annotations ||
+        !isAnnotationMeaningful(annotations) ||
+        get(internalAnnotatedFileId$) !== null
+      ) {
         return;
       }
-      await set(confirmAnnotations$, annotations, signal);
+      await set(setAnnotations$, annotations, true, signal);
     },
   );
 
-  const cancelAnnotationUpload$ = command(({ get, set }) => {
+  const cancelAnnotationUpload$ = command(({ set }) => {
     set(resetUploadSignal$);
-    if (get(internalUploadState$).status === "pending") {
-      set(internalUploadState$, { status: "failed" });
-    }
   });
 
   return {
     annotations$,
     annotatedFileId$,
-    annotationUploadStatus$,
+    annotationOperation$,
     annotationReady$,
     confirmAnnotations$,
     retryAnnotationUpload$,
@@ -422,6 +427,8 @@ export interface ChatAttachment {
   imageLoad: ImageLoadSignals;
   /** Reactive file info (id + url) — loading while uploading, hasData when done. */
   fileInfo$: Computed<Promise<FileInfo | null>>;
+  /** Explicit retry only: invalidate a rejected original lookup, not a 404. */
+  reloadFailedResource$?: Command<Promise<void>, [AbortSignal]>;
   preview$: Computed<Promise<AttachmentPreviewSignals | null>>;
   /** Whether the annotated derivative required by a send is available. */
   annotationReady$: Computed<boolean>;
@@ -431,7 +438,8 @@ export interface ChatAttachment {
   upload$: Command<Promise<void>, [AbortSignal]>;
   annotations$: Computed<ImageAnnotation | null>;
   annotatedFileId$: Computed<string | null>;
-  annotationUploadStatus$: Computed<AttachmentAnnotationUploadStatus>;
+  /** Actual decode/render/upload operation, retained through success or failure. */
+  annotationOperation$: Computed<Promise<void> | null>;
   confirmAnnotations$: Command<
     Promise<void>,
     [ImageAnnotation | null, AbortSignal]
@@ -505,7 +513,11 @@ export interface DraftSignals {
   readInput$: Command<string, []>;
   setInput$: Command<void, [string]>;
   appendInput$: Command<void, [string]>;
-  prependComposerDraft$: Command<Promise<void>, [ComposerDraft, AbortSignal]>;
+  prependComposerDraft$: Command<
+    Promise<boolean> | undefined,
+    [ComposerDraft, AbortSignal]
+  >;
+  reconcileComposerDraft$: Command<Promise<boolean>, [AbortSignal]>;
   composerDraftHandoff$: Computed<{
     readonly needsRemoteMerge: boolean;
   } | null>;
@@ -515,6 +527,7 @@ export interface DraftSignals {
   >;
   setInputSyncTarget$: Command<void, [DraftInputSyncTarget | null]>;
   takeRestoredUserMessage$: Command<UserMessageDocument | null, []>;
+  peekRestoredUserMessage$: Command<UserMessageDocument | null, []>;
   readEditorDocument$: Command<EditorDocumentSnapshot | null, []>;
   setEditorDocument$: Command<void, [EditorDocumentSnapshot | null]>;
   generationTemplate$: Computed<GenerationTemplateRequest | undefined>;
@@ -587,7 +600,9 @@ export type RestorableAttachment = Omit<PersistedAttachment, "url"> & {
 export function createRestoredAttachment(
   persisted: RestorableAttachment,
 ): ChatAttachment {
+  const resourceRevision$ = state(0);
   const restored$ = computed(async (get) => {
+    get(resourceRevision$);
     const client = get(apiClient$)(webFilesContract);
     const resolved = await accept(
       client.fileUrl({
@@ -619,9 +634,26 @@ export function createRestoredAttachment(
   const fileInfo$ = computed(async (get): Promise<FileInfo | null> => {
     return (await get(restored$))?.fileInfo ?? null;
   });
+  const reloadFailedResource$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      signal.throwIfAborted();
+      const [result] = await Promise.allSettled([get(restored$)]);
+      signal.throwIfAborted();
+      if (result?.status === "rejected") {
+        set(resourceRevision$, (revision) => {
+          return revision + 1;
+        });
+        // Re-read after invalidation: this is a new lookup, whose failure must
+        // remain visible to both recovery and annotation operation callers.
+        await get(restored$);
+        signal.throwIfAborted();
+      }
+    },
+  );
   const annotation = createAttachmentAnnotationSignals({
     filename: persisted.filename,
     fileInfo$,
+    reloadFailedResource$,
     ...(persisted.annotations
       ? { initialAnnotations: persisted.annotations }
       : {}),
@@ -646,6 +678,7 @@ export function createRestoredAttachment(
     size: persisted.size,
     imageLoad: createImageLoadSignals(),
     fileInfo$,
+    reloadFailedResource$,
     preview$: computed(async (get) => {
       return (await get(restored$))?.preview ?? null;
     }),
@@ -682,7 +715,9 @@ function reportUnavailableAttachments(filenames: readonly string[]): string {
   return message;
 }
 
-function createDraftInputSignals() {
+function createDraftInputSignals(
+  draftDocument: ReturnType<typeof createDraftDocumentSignals>,
+) {
   const internalInput$ = state<string | undefined>(undefined);
   const hasLocalInput$ = computed((get) => {
     return get(internalInput$) !== undefined;
@@ -716,6 +751,7 @@ function createDraftInputSignals() {
     },
   );
   const setInput$ = command(({ set }, value: string) => {
+    set(draftDocument.setRestoredUserMessage$, null);
     set(syncInput$, value);
     set(internalInput$, value);
   });
@@ -783,9 +819,9 @@ function createDraftDocumentSignals() {
  *
  * Then rebuilds any annotated copy the draft is missing. Both restore paths —
  * `seed$` on page load and `restoreAttachments$` on paste — end here, and an
- * attachment that reaches either one without the rebuild is stuck: marks with
- * no copy start as `pending`, so nothing would move that state and the
- * composer would refuse to send with no affordance to fix it.
+ * attachment with meaningful marks but no copy is not sendable. The rebuild
+ * starts a real operation rather than treating that missing resource fact as
+ * an upload already in progress.
  */
 function createReconcileRestoredAttachments(
   internalAttachments$: State<ChatAttachment[]>,
@@ -830,10 +866,14 @@ function createReconcileRestoredAttachments(
       // left running: both callers use the result solely to decide whether to
       // re-save, and that save should land after the copy exists rather than
       // persisting the same marks-without-copy shape again.
-      await Promise.all(
+      // Wait for every copy before the caller saves, even when one fails. A
+      // fail-fast aggregate would persist before successful siblings install
+      // their file IDs. Individual operation promises still retain rejection.
+      const rebuilt = await Promise.allSettled(
         candidates
           .filter((attachment) => {
             return (
+              currentAttachments.includes(attachment) &&
               !unavailable.includes(attachment) &&
               get(attachment.annotatedFileId$) === null
             );
@@ -843,6 +883,11 @@ function createReconcileRestoredAttachments(
           }),
       );
       signal.throwIfAborted();
+      for (const result of rebuilt) {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+      }
       return unavailable.length > 0;
     },
   );
@@ -882,27 +927,20 @@ function createDraftLifecycleSignals({
   });
 
   const seed$ = command(
-    async (
-      { set },
-      value: DraftSeed,
-      signal: AbortSignal,
-    ): Promise<boolean> => {
+    ({ set }, value: DraftSeed, signal: AbortSignal): Promise<boolean> => {
+      signal.throwIfAborted();
       set(draftDocument.setEditorDocument$, null);
-      set(draftDocument.setRestoredUserMessage$, value.userMessage);
       set(internalGenerationTemplate$, value.generationTemplate);
       set(internalAttachments$, value.attachments);
       set(draftInput.setInput$, value.content);
+      set(draftDocument.setRestoredUserMessage$, value.userMessage);
       if (
         value.userMessage &&
         set(draftInput.syncUserMessage$, value.userMessage)
       ) {
         set(draftDocument.takeRestoredUserMessage$);
       }
-      return await set(
-        reconcileRestoredAttachments$,
-        value.attachments,
-        signal,
-      );
+      return set(reconcileRestoredAttachments$, value.attachments, signal);
     },
   );
 
@@ -946,50 +984,81 @@ function createComposerDraftPrepend(
     readonly needsRemoteMerge: boolean;
   } | null>,
 ) {
-  return command(
-    async ({ get, set }, value: ComposerDraft, signal: AbortSignal) => {
-      if (!value.draftUserMessage) {
-        return;
+  return command(({ get, set }, value: ComposerDraft, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (!value.draftUserMessage) {
+      throw new Error("Missing suggestion composer document");
+    }
+    const hadLocalDraft =
+      get(draftInput.hasLocalInput$) ||
+      get(internalGenerationTemplate$) !== undefined ||
+      get(internalAttachments$).length > 0;
+    const current =
+      set(draftDocument.readEditorDocument$)?.toMessageDocument({
+        selectedTemplate: get(internalGenerationTemplate$),
+      }) ??
+      set(draftDocument.peekRestoredUserMessage$) ??
+      (get(draftInput.input$).trim()
+        ? {
+            version: 1 as const,
+            parts: [{ type: "text" as const, text: get(draftInput.input$) }],
+          }
+        : null);
+    const document = prependMessageDocument(value.draftUserMessage, current);
+    const content = messageDocumentToPrompt(document);
+    if (content === null) {
+      throw new Error("Invalid suggestion composer document");
+    }
+    const prior = get(composerDraftHandoffState$);
+    set(composerDraftHandoffState$, {
+      needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
+    });
+    // seed$ installs the draft synchronously. A returned Promise means the
+    // handoff was applied; rejection only describes remaining reconciliation.
+    return set(
+      seed$,
+      {
+        content,
+        userMessage: document,
+        generationTemplate: get(internalGenerationTemplate$),
+        attachments: [
+          ...get(internalAttachments$),
+          ...(value.draftAttachments ?? []).map(createRestoredAttachment),
+        ],
+      },
+      signal,
+    );
+  });
+}
+
+function createComposerDraftReconcile(
+  internalAttachments$: State<ChatAttachment[]>,
+  reconcileRestoredAttachments$: Command<
+    Promise<boolean>,
+    [readonly ChatAttachment[], AbortSignal]
+  >,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const reloads = await Promise.allSettled(
+      get(internalAttachments$).map((attachment) => {
+        return attachment.reloadFailedResource$
+          ? set(attachment.reloadFailedResource$, signal)
+          : undefined;
+      }),
+    );
+    signal.throwIfAborted();
+    for (const result of reloads) {
+      if (result.status === "rejected") {
+        throw result.reason;
       }
-      const hadLocalDraft =
-        get(draftInput.hasLocalInput$) ||
-        get(internalGenerationTemplate$) !== undefined ||
-        get(internalAttachments$).length > 0;
-      const current =
-        set(draftDocument.readEditorDocument$)?.toMessageDocument({
-          selectedTemplate: get(internalGenerationTemplate$),
-        }) ??
-        set(draftDocument.peekRestoredUserMessage$) ??
-        (get(draftInput.input$).trim()
-          ? {
-              version: 1 as const,
-              parts: [{ type: "text" as const, text: get(draftInput.input$) }],
-            }
-          : null);
-      const document = prependMessageDocument(value.draftUserMessage, current);
-      const content = messageDocumentToPrompt(document);
-      if (content === null) {
-        throw new Error("Invalid suggestion composer document");
-      }
-      const prior = get(composerDraftHandoffState$);
-      set(composerDraftHandoffState$, {
-        needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
-      });
-      await set(
-        seed$,
-        {
-          content,
-          userMessage: document,
-          generationTemplate: get(internalGenerationTemplate$),
-          attachments: [
-            ...get(internalAttachments$),
-            ...(value.draftAttachments ?? []).map(createRestoredAttachment),
-          ],
-        },
-        signal,
-      );
-    },
-  );
+    }
+    return set(
+      reconcileRestoredAttachments$,
+      get(internalAttachments$),
+      signal,
+    );
+  });
 }
 
 function createComposerDraftHandoffSignals({
@@ -999,6 +1068,7 @@ function createComposerDraftHandoffSignals({
   internalAttachments$,
   clear$,
   seed$,
+  reconcileRestoredAttachments$,
 }: {
   draftInput: ReturnType<typeof createDraftInputSignals>;
   draftDocument: ReturnType<typeof createDraftDocumentSignals>;
@@ -1006,7 +1076,15 @@ function createComposerDraftHandoffSignals({
   internalAttachments$: State<ChatAttachment[]>;
   clear$: Command<void, []>;
   seed$: Command<Promise<boolean>, [DraftSeed, AbortSignal]>;
+  reconcileRestoredAttachments$: Command<
+    Promise<boolean>,
+    [readonly ChatAttachment[], AbortSignal]
+  >;
 }) {
+  const reconcileComposerDraft$ = createComposerDraftReconcile(
+    internalAttachments$,
+    reconcileRestoredAttachments$,
+  );
   const composerDraftHandoffState$ = state<{
     readonly needsRemoteMerge: boolean;
   } | null>(null);
@@ -1039,9 +1117,11 @@ function createComposerDraftHandoffSignals({
       if (!handoff) {
         return false;
       }
-      // The merge is applied synchronously by seed$ before reconciliation.
-      // Consume the handoff once, even if reconciling an attachment fails.
-      set(composerDraftHandoffState$, null);
+      // Retain an applied-merge checkpoint until reconciliation succeeds.
+      // Retrying must reconcile the installed resources, not merge them again.
+      // An empty remote draft is also a completed merge decision: cleanup may
+      // save the local handoff before a later reconciliation failure is retried.
+      set(composerDraftHandoffState$, { needsRemoteMerge: false });
       if (handoff.needsRemoteMerge && restored) {
         const localInput = get(draftInput.input$);
         const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
@@ -1072,12 +1152,15 @@ function createComposerDraftHandoffSignals({
           );
         }
       }
+      await set(reconcileComposerDraft$, signal);
       signal.throwIfAborted();
+      set(composerDraftHandoffState$, null);
       return true;
     },
   );
 
   return {
+    reconcileComposerDraft$,
     composerDraftHandoff$,
     clearWithComposerDraftHandoff$,
     prependComposerDraft$,
@@ -1086,8 +1169,8 @@ function createComposerDraftHandoffSignals({
 }
 
 export function createDraftSignals(): DraftSignals {
-  const draftInput = createDraftInputSignals();
   const draftDocument = createDraftDocumentSignals();
+  const draftInput = createDraftInputSignals(draftDocument);
   const internalGenerationTemplate$ = state<
     GenerationTemplateRequest | undefined
   >(undefined);
@@ -1183,6 +1266,7 @@ export function createDraftSignals(): DraftSignals {
   });
 
   const {
+    reconcileComposerDraft$,
     composerDraftHandoff$,
     clearWithComposerDraftHandoff$,
     prependComposerDraft$,
@@ -1194,14 +1278,17 @@ export function createDraftSignals(): DraftSignals {
     internalAttachments$,
     clear$,
     seed$,
+    reconcileRestoredAttachments$,
   });
 
   return {
     ...draftInput,
+    reconcileComposerDraft$,
     prependComposerDraft$,
     composerDraftHandoff$,
     finishComposerDraftHandoff$,
     takeRestoredUserMessage$: draftDocument.takeRestoredUserMessage$,
+    peekRestoredUserMessage$: draftDocument.peekRestoredUserMessage$,
     readEditorDocument$: draftDocument.readEditorDocument$,
     setEditorDocument$: draftDocument.setEditorDocument$,
     generationTemplate$,

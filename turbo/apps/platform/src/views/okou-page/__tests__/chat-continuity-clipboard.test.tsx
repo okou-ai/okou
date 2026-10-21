@@ -223,9 +223,7 @@ test("Persist pasted text and attachments after the copied file resolves", async
   await expect(screen.findByLabelText("Send")).resolves.toBeEnabled();
 });
 
-async function pasteWithUnavailableAttachment(
-  status: 404 | 403,
-): Promise<HTMLElement> {
+async function pasteWithMissingAttachment(): Promise<HTMLElement> {
   const thread = continuityThread(
     20,
     1,
@@ -241,8 +239,8 @@ async function pasteWithUnavailableAttachment(
     threads: [thread],
   });
   context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
-    return respond(status, {
-      error: { code: "FILE_UNAVAILABLE", message: "File cannot be read" },
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "File not found" },
     });
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
@@ -288,7 +286,7 @@ async function pasteWithUnavailableAttachment(
 }
 
 test("Pasted text is saved when attachment restoration returns 404", async () => {
-  const composer = await pasteWithUnavailableAttachment(404);
+  const composer = await pasteWithMissingAttachment();
   expect(composer).toHaveTextContent(
     "Keep the earlier draft. Pasted text survives",
   );
@@ -297,13 +295,6 @@ test("Pasted text is saved when attachment restoration returns 404", async () =>
       "unreadable-copy.txt is no longer available. Upload it again to send.",
     ),
   ).resolves.toBeInTheDocument();
-});
-
-test("Pasted text is saved when attachment restoration returns 403", async () => {
-  const composer = await pasteWithUnavailableAttachment(403);
-  expect(composer).toHaveTextContent(
-    "Keep the earlier draft. Pasted text survives",
-  );
 });
 
 test("Paste plain and multi-line text at the current draft position", async () => {
