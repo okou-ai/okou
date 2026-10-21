@@ -737,6 +737,61 @@ test("Authorize visible agents only for the first manual account", async () => {
   ).toBeChecked();
 });
 
+test("Keep device authorization waiting between approval checks", async () => {
+  const checked = context.mocks.deferred<void>();
+  mockConnectors(context, []);
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "base44",
+      label: "Base44",
+      authMethods: [
+        {
+          id: "oauth",
+          label: "OAuth",
+          description: "Sign in with Base44 to grant access.",
+          grantKind: "device-auth",
+          supportsRefresh: true,
+          manualFields: [],
+          startOptions: [],
+        },
+      ],
+    }),
+  ]);
+  context.mocks.api(
+    builtinConnectorOauthDeviceAuthSessionContract.poll,
+    async ({ respond, withSignal }) => {
+      await withSignal(checked.promise);
+      return respond(200, { status: "pending", interval: 60 });
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Connect Base44");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Base44" });
+  click(getConnectorAction("button", "Connect Base44", dialog));
+  await waitFor(() => {
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Checking for approval...",
+    );
+  });
+  checked.resolve();
+  await waitFor(() => {
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "Waiting for approval. Keep this dialog open.",
+    );
+  });
+  expect(
+    within(dialog).getByTestId("connector-oauth-device-code"),
+  ).toHaveTextContent("OKOU-DEVICE");
+  click(within(dialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Connect Base44")).toBeEnabled();
+  });
+});
+
 test("Connect through device authorization", async () => {
   const approval = context.mocks.deferred<void>();
   const permissions = context.mocks.deferred<void>();

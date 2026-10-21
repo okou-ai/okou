@@ -708,7 +708,7 @@ export type BuiltinConnectorOAuthDeviceAuthState =
       readonly requestId: string;
     }
   | (ActiveConnectorOAuthDeviceAuthState & {
-      readonly status: "pending" | "polling";
+      readonly status: "pending";
     })
   | {
       readonly status: "denied" | "expired" | "error";
@@ -759,6 +759,8 @@ const internalConnectorExternalCodeState$ =
   state<BuiltinConnectorExternalCodeState>(
     createIdleConnectorExternalCodeState(),
   );
+const connectorOAuthDeviceAuthPollOperation$ =
+  state<Promise<PollConnectorOAuthDeviceAuthIterationOutcome> | null>(null);
 const resetConnectorOAuthDeviceAuthFlowSignal$ = resetSignal();
 const resetConnectorExternalCodeFlowSignal$ = resetSignal();
 const connectorOAuthDeviceAuthStartOptionValues$ = state<
@@ -780,6 +782,7 @@ export const setSelectedBuiltinConnectorSlug$ = command(
     const deviceAuthCurrent = get(internalConnectorOAuthDeviceAuthState$);
     if (connectorSlug !== deviceAuthCurrent.connectorSlug) {
       set(resetConnectorOAuthDeviceAuthFlowSignal$);
+      set(connectorOAuthDeviceAuthPollOperation$, null);
       set(
         internalConnectorOAuthDeviceAuthState$,
         createIdleConnectorOAuthDeviceAuthState(connectorSlug),
@@ -800,6 +803,13 @@ export const builtinConnectorOAuthDeviceAuthState$ = computed((get) => {
   return get(internalConnectorOAuthDeviceAuthState$);
 });
 
+export const builtinConnectorOAuthDeviceAuthPollOperation$ = computed((get) => {
+  const current = get(internalConnectorOAuthDeviceAuthState$);
+  return current.status === "pending"
+    ? get(connectorOAuthDeviceAuthPollOperation$)
+    : null;
+});
+
 export const builtinConnectorExternalCodeState$ = computed((get) => {
   return get(internalConnectorExternalCodeState$);
 });
@@ -807,11 +817,7 @@ export const builtinConnectorExternalCodeState$ = computed((get) => {
 function connectorOAuthDeviceAuthStateIsActive(
   state: BuiltinConnectorOAuthDeviceAuthState,
 ): boolean {
-  return (
-    state.status === "starting" ||
-    state.status === "pending" ||
-    state.status === "polling"
-  );
+  return state.status === "starting" || state.status === "pending";
 }
 
 function connectorExternalCodeStateIsActive(
@@ -1316,9 +1322,7 @@ export const builtinPollingOAuthAuthCodeSlug$ = computed((get) => {
 
 export const builtinPollingOAuthDeviceAuthSlug$ = computed((get) => {
   const current = get(internalConnectorOAuthDeviceAuthState$);
-  return current.status === "pending" || current.status === "polling"
-    ? current.connectorSlug
-    : null;
+  return current.status === "pending" ? current.connectorSlug : null;
 });
 
 export const builtinConnectOperation$ = computed((get) => {
@@ -1464,10 +1468,10 @@ function isCurrentConnectorOAuthDeviceAuthRequest(
   authMethod: ConnectorAuthMethodId,
   requestId: string,
 ): state is ActiveConnectorOAuthDeviceAuthState & {
-  readonly status: "pending" | "polling";
+  readonly status: "pending";
 } {
   return (
-    (state.status === "pending" || state.status === "polling") &&
+    state.status === "pending" &&
     state.connectorSlug === connectorSlug &&
     state.authMethod === authMethod &&
     state.requestId === requestId
@@ -1476,6 +1480,7 @@ function isCurrentConnectorOAuthDeviceAuthRequest(
 
 export const clearBuiltinConnectorOAuthDeviceAuth$ = command(({ set }) => {
   set(resetConnectorOAuthDeviceAuthFlowSignal$);
+  set(connectorOAuthDeviceAuthPollOperation$, null);
   set(
     internalConnectorOAuthDeviceAuthState$,
     createIdleConnectorOAuthDeviceAuthState(),
@@ -1490,7 +1495,7 @@ export const openBuiltinConnectorOAuthDeviceAuthVerificationPage$ = command(
   ): boolean => {
     const current = get(internalConnectorOAuthDeviceAuthState$);
     if (
-      (current.status !== "pending" && current.status !== "polling") ||
+      current.status !== "pending" ||
       current.connectorSlug !== connectorSlug ||
       current.authMethod !== authMethod
     ) {
@@ -1531,18 +1536,19 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
     }: PollConnectorOAuthDeviceAuthIterationArgs,
     signal: AbortSignal,
   ): Promise<PollConnectorOAuthDeviceAuthIterationOutcome> => {
+    const isCurrentRequest = (state: BuiltinConnectorOAuthDeviceAuthState) => {
+      return isCurrentConnectorOAuthDeviceAuthRequest(
+        state,
+        connectorSlug,
+        authMethod,
+        requestId,
+      );
+    };
     let connectorStateChanged = false;
     return await withCleanup(
       (async () => {
         const current = get(internalConnectorOAuthDeviceAuthState$);
-        if (
-          !isCurrentConnectorOAuthDeviceAuthRequest(
-            current,
-            connectorSlug,
-            authMethod,
-            requestId,
-          )
-        ) {
+        if (!isCurrentRequest(current)) {
           return { stop: true };
         }
 
@@ -1550,11 +1556,6 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
         if (remainingMs <= 0) {
           return { stop: true, expired: true };
         }
-
-        set(internalConnectorOAuthDeviceAuthState$, {
-          ...current,
-          status: "polling",
-        });
 
         const pollResponse = await accept(
           client.poll({
@@ -1569,14 +1570,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
         }
 
         const latest = get(internalConnectorOAuthDeviceAuthState$);
-        if (
-          !isCurrentConnectorOAuthDeviceAuthRequest(
-            latest,
-            connectorSlug,
-            authMethod,
-            requestId,
-          )
-        ) {
+        if (!isCurrentRequest(latest)) {
           return { stop: true };
         }
 
@@ -1598,6 +1592,10 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
           ) {
             return { stop: true };
           }
+          signal.throwIfAborted();
+          if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
+            return { stop: true };
+          }
           await set(
             finishConnectorConnection$,
             connectorSlug,
@@ -1608,6 +1606,10 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
             },
             signal,
           );
+          signal.throwIfAborted();
+          if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
+            return { stop: true };
+          }
           set(
             internalConnectorOAuthDeviceAuthState$,
             createIdleConnectorOAuthDeviceAuthState(),
@@ -1636,17 +1638,10 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
         );
         set(internalConnectorOAuthDeviceAuthState$, {
           ...latest,
-          status: "pending",
           pollIntervalMs,
           errorMessage: null,
         });
 
-        const nextRemainingMs = latest.expiresAtMs - now();
-        if (nextRemainingMs <= 0) {
-          return { stop: true, expired: true };
-        }
-        await delay(Math.min(pollIntervalMs, nextRemainingMs), { signal });
-        signal.throwIfAborted();
         return { stop: false };
       })(),
       () => {
@@ -1689,7 +1684,11 @@ const pollConnectorOAuthDeviceAuth$ = command(
 
     await waitLoopUntil(
       async (sig) => {
-        const outcome = await set(
+        sig.throwIfAborted();
+        if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
+          return true;
+        }
+        const operation = set(
           pollConnectorOAuthDeviceAuthOnce$,
           {
             client,
@@ -1700,6 +1699,10 @@ const pollConnectorOAuthDeviceAuth$ = command(
           },
           sig,
         );
+        // Observe only this HTTP request and its response handling, not the
+        // interval spent waiting for the user's device authorization.
+        set(connectorOAuthDeviceAuthPollOperation$, operation);
+        const outcome = await operation;
         sig.throwIfAborted();
         if (outcome.connectionId) {
           connectionId = outcome.connectionId;
@@ -1707,7 +1710,23 @@ const pollConnectorOAuthDeviceAuth$ = command(
         if (outcome.expired) {
           expired = true;
         }
-        return outcome.stop;
+        if (outcome.stop) {
+          return true;
+        }
+        const current = get(internalConnectorOAuthDeviceAuthState$);
+        if (!isCurrentRequest(current)) {
+          return true;
+        }
+        const remainingMs = current.expiresAtMs - now();
+        if (remainingMs <= 0) {
+          expired = true;
+          return true;
+        }
+        await delay(Math.min(current.pollIntervalMs, remainingMs), {
+          signal: sig,
+        });
+        sig.throwIfAborted();
+        return false;
       },
       0,
       signal,
@@ -1754,6 +1773,7 @@ const connectConnectorOAuthDeviceAuth$ = command(
     > => {
       requestId = createConnectorOAuthDeviceAuthRequestId(connectorSlug);
       const flowSignal = set(resetConnectorOAuthDeviceAuthFlowSignal$, signal);
+      set(connectorOAuthDeviceAuthPollOperation$, null);
       set(internalConnectorOAuthDeviceAuthState$, {
         status: "starting",
         connectorSlug,
@@ -1824,9 +1844,7 @@ const connectConnectorOAuthDeviceAuth$ = command(
         if (
           requestId === null ||
           current.connectorSlug !== connectorSlug ||
-          (current.status !== "starting" &&
-            current.status !== "pending" &&
-            current.status !== "polling") ||
+          (current.status !== "starting" && current.status !== "pending") ||
           current.authMethod !== authMethod ||
           current.requestId !== requestId
         ) {

@@ -94,9 +94,27 @@ function providerSection(settings: HTMLElement, name = "Claude"): HTMLElement {
   return section;
 }
 
-test("Offer a direct connection action in each empty provider section and keep it after cancelling authorization", async () => {
+test("Offer direct provider connections and allow a fresh attempt after closing during startup", async () => {
   mockAutoMode();
   context.mocks.data.personalModelProviders([]);
+  const initialStart = context.mocks.deferred<void>();
+  let firstAttempt = true;
+  context.mocks.api(
+    claudeCodeDeviceAuthContract.start,
+    async ({ respond, withSignal }) => {
+      if (firstAttempt) {
+        await withSignal(initialStart.promise);
+      }
+      return respond(200, {
+        sessionToken: "fresh-claude-session",
+        type: "claude-code",
+        status: "pending",
+        scope: "personal",
+        browserUrl: "https://claude.ai/oauth/authorize",
+        expiresIn: 60,
+      });
+    },
+  );
   const settings = await openSettings();
   await waitFor(() => {
     return expect(button("Connect account", settings)).toBeEnabled();
@@ -119,8 +137,23 @@ test("Offer a direct connection action in each empty provider section and keep i
     }),
   ).toHaveLength(2);
   click(button("Connect account", providerSection(settings)));
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  const preparing = await screen.findByTestId(
+    "claude-code-device-auth-loading",
+  );
+  const startupDialog = preparing.closest<HTMLElement>('[role="dialog"]');
+  if (!startupDialog) {
+    throw new Error("Authorization dialog not found");
+  }
+  click(within(startupDialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("claude-code-device-auth-loading"),
+    ).not.toBeInTheDocument();
+  });
+  firstAttempt = false;
+  click(button("Connect account", providerSection(settings)));
   const input = await screen.findByTestId("claude-code-device-auth-code");
+  initialStart.resolve();
   const authorization = input.closest('[role="dialog"]');
   if (!(authorization instanceof HTMLElement)) {
     throw new Error("Authorization dialog not found");
@@ -232,21 +265,34 @@ test("Keep expired accounts in management and expose their existing reconnect fl
   ).resolves.toBeInTheDocument();
 });
 
-test("Connect ChatGPT directly without selecting a provider from a menu", async () => {
+test("Connect ChatGPT directly and keep its code visible while approval is pending", async () => {
   mockAutoMode();
   context.mocks.data.personalModelProviders([]);
-  context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
-    return respond(200, {
-      sessionToken: "mock-personal-codex-session",
-      type: "codex",
-      status: "pending",
-      scope: "personal",
-      browserUrl: "https://auth.openai.com/codex/device",
-      verificationCode: "TEST-CODE",
-      expiresIn: 900,
-      interval: 5,
-    });
-  });
+  const start = context.mocks.deferred<void>();
+  const approval = context.mocks.deferred<void>();
+  context.mocks.api(
+    codexDeviceAuthContract.complete,
+    async ({ respond, withSignal }) => {
+      await withSignal(approval.promise);
+      return respond(200, { status: "pending", errorMessage: null });
+    },
+  );
+  context.mocks.api(
+    codexDeviceAuthContract.start,
+    async ({ respond, withSignal }) => {
+      await withSignal(start.promise);
+      return respond(200, {
+        sessionToken: "mock-personal-codex-session",
+        type: "codex",
+        status: "pending",
+        scope: "personal",
+        browserUrl: "https://auth.openai.com/codex/device",
+        verificationCode: "TEST-CODE",
+        expiresIn: 900,
+        interval: 5,
+      });
+    },
+  );
   const settings = await openSettings();
   click(
     button("Connect account", providerSection(settings, "ChatGPT (Codex)")),
@@ -254,9 +300,122 @@ test("Connect ChatGPT directly without selecting a provider from a menu", async 
   const authorization = await screen.findByRole("dialog", {
     name: "Connect Codex",
   });
-  expect(within(authorization).getByText("TEST-CODE")).toBeInTheDocument();
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  await within(authorization).findByTestId("codex-device-auth-loading");
+  start.resolve();
+  await expect(
+    within(authorization).findByText("TEST-CODE"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(authorization).getByTestId("codex-device-auth-open"),
+  ).toHaveAttribute("href", "https://auth.openai.com/codex/device");
+  click(within(authorization).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Connect Codex" }),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    button("Connect account", providerSection(settings, "ChatGPT (Codex)")),
+  ).toBeEnabled();
 });
+
+test.each([
+  ["Claude", "claude-code-device-auth"],
+  ["ChatGPT (Codex)", "codex-device-auth"],
+] as const)(
+  "%s shows startup and retry progress from the same authorization operation",
+  async (provider, testId) => {
+    mockAutoMode();
+    context.mocks.data.personalModelProviders([]);
+    const initialStart = context.mocks.deferred<void>();
+    const retryStart = context.mocks.deferred<void>();
+    const approval = context.mocks.deferred<void>();
+    let failStart = true;
+    context.mocks.api(
+      claudeCodeDeviceAuthContract.start,
+      async ({ respond, withSignal }) => {
+        await withSignal((failStart ? initialStart : retryStart).promise);
+        if (failStart) {
+          return respond(503, {
+            error: {
+              code: "UNAVAILABLE",
+              message: "Authorization unavailable",
+            },
+          });
+        }
+        return respond(200, {
+          sessionToken: "retry-claude-session",
+          type: "claude-code",
+          status: "pending",
+          scope: "personal",
+          browserUrl: "https://claude.ai/oauth/authorize",
+          expiresIn: 60,
+        });
+      },
+    );
+    context.mocks.api(
+      codexDeviceAuthContract.start,
+      async ({ respond, withSignal }) => {
+        await withSignal((failStart ? initialStart : retryStart).promise);
+        if (failStart) {
+          return respond(503, {
+            error: {
+              code: "UNAVAILABLE",
+              message: "Authorization unavailable",
+            },
+          });
+        }
+        return respond(200, {
+          sessionToken: "retry-codex-session",
+          type: "codex",
+          status: "pending",
+          scope: "personal",
+          browserUrl: "https://auth.openai.com/codex/device",
+          verificationCode: "RETRY-CODE",
+          expiresIn: 60,
+          interval: 1,
+        });
+      },
+    );
+    context.mocks.api(
+      codexDeviceAuthContract.complete,
+      async ({ respond, withSignal }) => {
+        await withSignal(approval.promise);
+        return respond(200, { status: "pending", errorMessage: null });
+      },
+    );
+    const settings = await openSettings();
+    click(button("Connect account", providerSection(settings, provider)));
+    const preparing = await screen.findByTestId(`${testId}-loading`);
+    const authorization = preparing.closest<HTMLElement>('[role="dialog"]');
+    if (!authorization) {
+      throw new Error("Authorization dialog not found");
+    }
+    initialStart.resolve();
+    const retry = await within(authorization).findByTestId(`${testId}-start`);
+    expect(retry).toBeEnabled();
+    failStart = false;
+    click(retry);
+    await within(authorization).findByTestId(`${testId}-loading`);
+    retryStart.resolve();
+    await expect(
+      within(authorization).findByTestId(`${testId}-code`),
+    ).resolves.toBeInTheDocument();
+    expect(within(authorization).getByTestId(`${testId}-open`)).toHaveAttribute(
+      "href",
+      provider === "Claude"
+        ? "https://claude.ai/oauth/authorize"
+        : "https://auth.openai.com/codex/device",
+    );
+    click(within(authorization).getByLabelText("Close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId(`${testId}-code`)).not.toBeInTheDocument();
+    });
+    expect(
+      button("Connect account", providerSection(settings, provider)),
+    ).toBeEnabled();
+  },
+);
 
 test("Disable only the provider that has reached the ten-account limit", async () => {
   mockAutoMode();

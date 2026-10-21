@@ -1,3 +1,4 @@
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -284,6 +285,10 @@ test("Choose an account for a custom MCP connector", async () => {
 test("Choose which connector account a chat uses", async () => {
   const user = userEvent.setup({ delay: null });
   const accounts = githubAccounts();
+  const preferenceSaved = context.mocks.deferred<void>();
+  const preferenceReading = context.mocks.deferred<void>();
+  const reopenedPreferenceReading = context.mocks.deferred<void>();
+  let readingSavedPreference = false;
   const fixture = installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
@@ -291,6 +296,28 @@ test("Choose which connector account a chat uses", async () => {
     threadId: SCOUT_THREAD_ID,
   });
 
+  context.mocks.api(
+    chatThreadConnectorSelectionContract.get,
+    async ({ respond }) => {
+      const selection = fixture.threadSelectionUpdates.at(-1)?.selection;
+      if (selection && fixture.clearedThreadSelections.length === 0) {
+        if (readingSavedPreference) {
+          reopenedPreferenceReading.resolve();
+        } else {
+          readingSavedPreference = true;
+          preferenceReading.resolve();
+        }
+        await preferenceSaved.promise;
+        return respond(200, {
+          selections: [selection],
+          selectedConnections: accounts.filter((account) => {
+            return account.id === selection.connectionId;
+          }),
+        });
+      }
+      return respond(200, { selections: [], selectedConnections: [] });
+    },
+  );
   await setupPage({
     locale: "en-US",
     context,
@@ -304,17 +331,44 @@ test("Choose which connector account a chat uses", async () => {
     "GitHub · Account for this chat",
   );
   await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
+  // The accepted write still owns the menu until its preference read settles.
+  const choices = within(chooser).getByRole("listbox");
+  await waitFor(() => {
+    expect(choices).toHaveAttribute("aria-busy", "true");
+  });
+  expect(
+    within(chooser).getByRole("option", { name: /Use default/u }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await preferenceReading.promise;
+  click(await findFastControl("button", "Back", chooser));
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Account for this chat", { selector: "span" }),
+    ).toBeNull();
+  });
+  chooser = await openAccountChooser(user, "GitHub · Account for this chat");
+  expect(within(chooser).getByRole("listbox")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  // Reopening must read the accepted server preference under the new owner.
+  await reopenedPreferenceReading.promise;
+  preferenceSaved.resolve();
+  await waitFor(() => {
+    const currentChooser = screen.getByLabelText("Account for this chat");
+    expect(
+      within(currentChooser).getByRole("option", { name: /Personal/u }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(currentChooser).getByRole("option", { name: /Use default/u }),
+    ).toHaveAttribute("aria-selected", "false");
+  });
+  // Query the live popup: a captured portal can outlive its menu session.
+  // The old save may settle, but only the reopened menu can accept or close it.
+  chooser = screen.getByLabelText("Account for this chat");
   await expect(
     findFastControl("button", "GitHub · Selected account: Personal"),
   ).resolves.toBeVisible();
-  await expect(
-    findFastControl("button", "Add connectors"),
-  ).resolves.toBeVisible();
-
-  chooser = await openAccountChooser(
-    user,
-    "GitHub · Selected account: Personal",
-  );
   await user.click(
     within(chooser).getByRole("option", { name: /Use default/u }),
   );

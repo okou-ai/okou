@@ -10,7 +10,7 @@ import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { bestEffort, resetSignal, withCleanup } from "../../utils.ts";
+import { bestEffort, resetSignal } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type ClaudeCodeDeviceAuthDialogMode = "connect" | "reconnect";
@@ -44,7 +44,6 @@ type ActiveClaudeCodeDeviceAuthFlowState = {
 
 type ClaudeCodeDeviceAuthFlowState =
   | { readonly status: "idle" }
-  | { readonly status: "starting"; readonly requestId: string }
   | ActiveClaudeCodeDeviceAuthFlowState
   | { readonly status: "expired"; readonly message: string };
 
@@ -66,13 +65,6 @@ function createRequestId(scope: ClaudeCodeDeviceAuthScope): string {
 
 function secondsToMilliseconds(seconds: number): number {
   return seconds * 1000;
-}
-
-function isCurrentStarting(
-  stateValue: ClaudeCodeDeviceAuthFlowState,
-  requestId: string,
-): boolean {
-  return stateValue.status === "starting" && stateValue.requestId === requestId;
 }
 
 function isCurrentActive(
@@ -160,80 +152,56 @@ interface ClaudeCodeDeviceAuthSignalContext {
   reloadProviders$: Command<void, []>;
   internalDialogState$: State<ClaudeCodeDeviceAuthDialogState>;
   internalFlowState$: State<ClaudeCodeDeviceAuthFlowState>;
+  internalStartOperation$: State<Promise<boolean> | null>;
   resetFlowSignal$: ReturnType<typeof resetSignal>;
 }
 
-function createClaudeCodeRunFlow$(ctx: ClaudeCodeDeviceAuthSignalContext) {
+function createClaudeCodeStartFlow$(ctx: ClaudeCodeDeviceAuthSignalContext) {
   return command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const requestId = createRequestId(ctx.scope);
-      set(ctx.internalFlowState$, { status: "starting", requestId });
-
-      return await withCleanup(
-        (async () => {
-          const dialog = get(ctx.internalDialogState$);
-          const startArgs: {
-            readonly scope: ClaudeCodeDeviceAuthScope;
-            readonly mode?: ClaudeCodeDeviceAuthMode;
-            readonly modelProviderId?: string;
-          } = {
-            scope: "personal",
-            mode: dialog.mode === "reconnect" ? "reconnect" : "add",
-            ...(dialog.modelProviderId
-              ? { modelProviderId: dialog.modelProviderId }
-              : {}),
-          };
-
-          const started = await set(
-            startClaudeCodeDeviceAuth$,
-            startArgs,
-            signal,
-          );
-          signal.throwIfAborted();
-
-          if (!isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
-            return false;
-          }
-          set(ctx.internalFlowState$, {
-            status: "pending",
-            requestId,
-            sessionToken: started.sessionToken,
-            browserUrl: started.browserUrl,
-            expiresAtMs: now() + secondsToMilliseconds(started.expiresIn),
-            authorizationCode: "",
-            errorMessage: null,
-          });
-          return true;
-        })(),
-        () => {
-          if (isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
-            set(ctx.internalFlowState$, createIdleFlowState());
-          }
+    async (
+      { get, set },
+      requestId: string,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const dialog = get(ctx.internalDialogState$);
+      const started = await set(
+        startClaudeCodeDeviceAuth$,
+        {
+          scope: ctx.scope,
+          mode: dialog.mode === "reconnect" ? "reconnect" : "add",
+          ...(dialog.modelProviderId
+            ? { modelProviderId: dialog.modelProviderId }
+            : {}),
         },
+        signal,
       );
+      signal.throwIfAborted();
+      set(ctx.internalFlowState$, {
+        status: "pending",
+        requestId,
+        sessionToken: started.sessionToken,
+        browserUrl: started.browserUrl,
+        expiresAtMs: now() + secondsToMilliseconds(started.expiresIn),
+        authorizationCode: "",
+        errorMessage: null,
+      });
+      return true;
     },
   );
 }
 
 function createClaudeCodeRun$(
   ctx: ClaudeCodeDeviceAuthSignalContext,
-  runFlow$: ReturnType<typeof createClaudeCodeRunFlow$>,
+  startFlow$: ReturnType<typeof createClaudeCodeStartFlow$>,
 ) {
-  return command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const flowSignal = set(ctx.resetFlowSignal$, signal);
-      flowSignal.addEventListener(
-        "abort",
-        () => {
-          if (get(ctx.internalFlowState$).status === "starting") {
-            set(ctx.internalFlowState$, createIdleFlowState());
-          }
-        },
-        { once: true },
-      );
-      return await set(runFlow$, flowSignal);
-    },
-  );
+  return command(async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const flowSignal = set(ctx.resetFlowSignal$, signal);
+    set(ctx.internalFlowState$, createIdleFlowState());
+    const operation = set(startFlow$, createRequestId(ctx.scope), flowSignal);
+    // Retain the actual startup result until retry or dialog-session release.
+    set(ctx.internalStartOperation$, operation);
+    return await operation;
+  });
 }
 
 function createClaudeCodeOpen$(
@@ -328,6 +296,7 @@ function createClaudeCodeSubmit$(ctx: ClaudeCodeDeviceAuthSignalContext) {
       );
       set(ctx.internalDialogState$, createInitialDialogState());
       set(ctx.internalFlowState$, createIdleFlowState());
+      set(ctx.internalStartOperation$, null);
       return true;
     },
   );
@@ -340,6 +309,7 @@ function createClaudeCodeClose$(ctx: ClaudeCodeDeviceAuthSignalContext) {
     set(ctx.resetFlowSignal$);
     set(ctx.internalDialogState$, createInitialDialogState());
     set(ctx.internalFlowState$, createIdleFlowState());
+    set(ctx.internalStartOperation$, null);
 
     if (!sessionToken) {
       return;
@@ -364,10 +334,11 @@ function createClaudeCodeDeviceAuthSignals(
     internalFlowState$: state<ClaudeCodeDeviceAuthFlowState>(
       createIdleFlowState(),
     ),
+    internalStartOperation$: state<Promise<boolean> | null>(null),
     resetFlowSignal$: resetSignal(),
   };
-  const runFlow$ = createClaudeCodeRunFlow$(ctx);
-  const run$ = createClaudeCodeRun$(ctx, runFlow$);
+  const startFlow$ = createClaudeCodeStartFlow$(ctx);
+  const run$ = createClaudeCodeRun$(ctx, startFlow$);
 
   return {
     dialogState$: computed((get) => {
@@ -375,6 +346,9 @@ function createClaudeCodeDeviceAuthSignals(
     }),
     flowState$: computed((get) => {
       return get(ctx.internalFlowState$);
+    }),
+    startOperation$: computed((get) => {
+      return get(ctx.internalStartOperation$);
     }),
     open$: createClaudeCodeOpen$(ctx, run$),
     setAuthorizationCode$: createClaudeCodeSetAuthorizationCode$(ctx),
@@ -393,6 +367,8 @@ export const claudeCodeDeviceAuthDialogStatePersonal$ =
   personalClaudeCodeDeviceAuthSignals.dialogState$;
 export const claudeCodeDeviceAuthFlowStatePersonal$ =
   personalClaudeCodeDeviceAuthSignals.flowState$;
+export const claudeCodeDeviceAuthStartOperationPersonal$ =
+  personalClaudeCodeDeviceAuthSignals.startOperation$;
 export const openClaudeCodeDeviceAuthDialogPersonal$: Command<
   Promise<boolean>,
   [OpenPersonalClaudeCodeDeviceAuthArgs, AbortSignal]

@@ -15,7 +15,6 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
   const [authorization, setAuthorization] = useLoadableSet(
     signals.setConnectorAuthorization$,
   );
-  const savingAccount = useGet(signals.accounts.saving$);
   const commitAccountSelection = useSet(signals.accounts.commitSelection$);
   const [browserAuth, connectBrowserAuth] = useLoadableSet(
     connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -30,7 +29,6 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
   return {
     savingAuthorization: authorization.state === "loading",
     setAuthorization,
-    savingAccount,
     commitAccountSelection,
     connecting: browserAuth.state === "loading" || noAuth.state === "loading",
     isConnectorConnecting: (connectorSlug: ConnectorSlug) => {

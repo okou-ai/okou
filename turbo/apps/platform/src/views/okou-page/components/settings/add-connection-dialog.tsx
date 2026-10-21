@@ -37,6 +37,7 @@ import {
   builtinPollingOAuthAuthCodeSlug$,
   builtinConnectorExternalCodeState$,
   builtinConnectorOAuthDeviceAuthState$,
+  builtinConnectorOAuthDeviceAuthPollOperation$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
   connectBuiltinConnectorNoAuthAndSettle$,
@@ -258,9 +259,7 @@ function connectorOAuthDeviceAuthFlowIsActive(
 ): boolean {
   return (
     state.connectorSlug === connectorSlug &&
-    (state.status === "starting" ||
-      state.status === "pending" ||
-      state.status === "polling")
+    (state.status === "starting" || state.status === "pending")
   );
 }
 
@@ -528,13 +527,8 @@ function OAuthAuthCodeConnectMethodContent(props: ConnectMethodContentProps) {
   );
 }
 
-function getOAuthDeviceAuthStatusText(
-  state: Extract<
-    BuiltinConnectorOAuthDeviceAuthState,
-    { readonly status: "pending" | "polling" }
-  >,
-): string {
-  if (state.status === "polling") {
+function getOAuthDeviceAuthStatusText(isChecking: boolean): string {
+  if (isChecking) {
     return i18n.t(($) => {
       return $.connectors.connectDialog.device.checking;
     });
@@ -550,11 +544,14 @@ function OAuthDeviceAuthCodePanel({
 }: {
   state: Extract<
     BuiltinConnectorOAuthDeviceAuthState,
-    { readonly status: "pending" | "polling" }
+    { readonly status: "pending" }
   >;
   onOpenVerificationPage: () => void;
 }) {
   const { t } = useTranslation();
+  const pollLoadable = useLoadable(
+    builtinConnectorOAuthDeviceAuthPollOperation$,
+  );
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
@@ -601,7 +598,7 @@ function OAuthDeviceAuthCodePanel({
         })}
       </Button>
       <p className="text-xs text-muted-foreground" role="status">
-        {getOAuthDeviceAuthStatusText(state)}
+        {getOAuthDeviceAuthStatusText(pollLoadable.state === "loading")}
       </p>
     </div>
   );
@@ -880,7 +877,7 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
     );
   }
 
-  if (current?.status === "pending" || current?.status === "polling") {
+  if (current?.status === "pending") {
     return (
       <OAuthDeviceAuthCodePanel
         state={current}
