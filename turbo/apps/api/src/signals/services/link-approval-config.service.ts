@@ -25,9 +25,9 @@ export const linkApprovalEnabled$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return (
-      isFeatureEnabled(FeatureSwitchKey.LinkWallet, context) &&
-      isFeatureEnabled(FeatureSwitchKey.LinkWalletApprovalContinuation, context)
+    return isFeatureEnabled(
+      FeatureSwitchKey.LinkWalletApprovalContinuation,
+      context,
     );
   },
 );

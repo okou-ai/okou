@@ -41,8 +41,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["banking:read", FeatureSwitchKey.Banking],
-  ["wallet:read", FeatureSwitchKey.LinkWallet],
-  ["wallet:write", FeatureSwitchKey.LinkWallet],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
