@@ -60,10 +60,10 @@ import {
   chooseVncTrust$,
   replaceVncAuthentication$,
   vncEditor$,
+  vncDialog$,
   vncProfile$,
   vncTransport$,
   vncCredentialSelection$,
-  vncDialog$,
   vncCredentials$,
   invalidateVnc$,
   mountVncSecret$,
@@ -2116,8 +2116,8 @@ function useVncCredentialSelection() {
   const login =
     guided &&
     dialog?.kind === "edit" &&
-    dialog.loginCredential?.id === editor.selection &&
-    vncCredentialMatchesProfile(dialog.loginCredential, editor.profile)
+    dialog.loginCredential?.id === selection &&
+    vncCredentialMatchesProfile(dialog.loginCredential, profile)
       ? dialog.loginCredential
       : null;
   const compatibleCredentials =
@@ -2147,7 +2147,8 @@ function useVncCredentialSelection() {
     });
   return {
     credentials,
-    editor,
+    selection,
+    profile,
     guided,
     login,
     choose,
@@ -2195,7 +2196,7 @@ function VncSavedLoginPicker({
 
 function VncCredentialMenu({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const { guided, credentials, credentialItems, editor, choose } =
+  const { guided, credentials, credentialItems, selection, choose } =
     useVncCredentialSelection();
   return (
     <div
@@ -2221,7 +2222,7 @@ function VncCredentialMenu({ disabled }: { readonly disabled: boolean }) {
       ) : (
         <Select
           items={credentialItems}
-          value={editor.selection}
+          value={selection}
           onValueChange={(value, details) => {
             if (value === null) {
               details.cancel();
@@ -2264,7 +2265,7 @@ export function VncCredentialSelection({
 }) {
   const { t } = useTranslation();
   const {
-    editor,
+    selection,
     guided,
     login,
     choose,
@@ -2312,7 +2313,7 @@ export function VncCredentialSelection({
           connectionLogin
         />
       )}
-      {guided && !login && editor.selection && editor.selection !== "new" && (
+      {guided && !login && selection && selection !== "new" && (
         <RemoteSelectedLogin
           disabled={disabled}
           label={
@@ -2339,7 +2340,7 @@ export function VncCredentialSelection({
           }}
         />
       )}
-      {editor.selection === "new" && (
+      {selection === "new" && (
         <div
           className={
             guided

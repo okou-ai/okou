@@ -116,9 +116,7 @@ test("Lab groups active feature switches", async () => {
     alpha: "Alpha",
     internal: "Internal",
   } as const;
-  const keys = Object.values(FeatureSwitchKey).filter((key) => {
-    return key !== FeatureSwitchKey.RemoteControlGuidedSetup;
-  });
+  const keys = Object.values(FeatureSwitchKey);
   for (const key of keys) {
     const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
     expect(
@@ -126,7 +124,6 @@ test("Lab groups active feature switches", async () => {
     ).toBeInTheDocument();
   }
   expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
-  expect(screen.queryByText("Remote control guided setup")).toBeNull();
   expect(
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
@@ -141,7 +138,7 @@ test("Lab groups active feature switches", async () => {
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
 
-test("Only Bingjie can manage the remote UI switch in Lab", async () => {
+test("The maintainer can manage the remote UI switch in Lab", async () => {
   await setupPage({
     context,
     path: "/_/lab",
@@ -198,6 +195,7 @@ test("Maintainer filters narrow the feature list", async () => {
 test.each([
   FeatureSwitchKey.TestOauthConnector,
   FeatureSwitchKey.PwaKeyboardViewport,
+  FeatureSwitchKey.RemoteControlGuidedSetup,
 ])("Toggle and reset a Lab override: %s", async (featureKey) => {
   const user = userEvent.setup();
   const updatedSwitches: Record<string, boolean>[] = [];
