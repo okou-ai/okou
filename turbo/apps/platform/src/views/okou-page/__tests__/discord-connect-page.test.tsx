@@ -674,14 +674,16 @@ test("A failed Discord status request exposes the error page and its back link",
       error: { code: "FORBIDDEN", message: "Discord access denied" },
     });
   });
-  await setupPage({
-    context,
-    path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
-  });
-  expect(
-    screen.getByRole("heading", { name: "Connection failed" }),
-  ).toBeInTheDocument();
+  await expect(
+    setupPage({
+      context,
+      path,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+    }),
+  ).rejects.toThrow("Discord access denied");
+  await expect(
+    screen.findByRole("heading", { name: "Connection failed" }),
+  ).resolves.toBeInTheDocument();
   expect(getAction("link", "Back to settings")).toHaveAttribute(
     "href",
     "/works",

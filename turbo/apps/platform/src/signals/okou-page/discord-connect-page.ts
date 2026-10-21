@@ -7,7 +7,6 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { pathname$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { bestEffort } from "../utils.ts";
 import { watchDiscordConnection$ } from "./discord.ts";
 import {
   approveDiscordAuthorization$,
@@ -28,11 +27,9 @@ export const setupDiscordConnectPage$ = command(
             return $.works.discord.connectTitle;
           }),
     );
-    // The view owns status loading and errors, so a failed read must not leave
-    // its error state behind the bootstrap skeleton.
     await Promise.all([
       set(hideAppSkeleton$, signal),
-      bestEffort(set(watchDiscordConnection$, signal), signal),
+      set(watchDiscordConnection$, signal),
       set(approveDiscordAuthorization$, signal),
     ]);
   },

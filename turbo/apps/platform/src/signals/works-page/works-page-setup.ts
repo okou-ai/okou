@@ -6,6 +6,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WorksPage } from "../../views/okou-page/works-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
+import { onRejection } from "../utils.ts";
 import { initSlackOrg$, watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchDiscordConnection$ } from "../okou-page/discord.ts";
 import { ownDiscordApprovalRoute$ } from "../okou-page/discord-oauth-approval.ts";
@@ -87,17 +88,21 @@ export const setupWorksPage$ = command(
     set(initWorksRedirect$);
     set(initSlackOrg$);
 
-    await Promise.all([
-      set(watchSlackConnection$, signal),
-      set(watchTeamsConnection$, signal),
-      set(watchDiscordConnection$, signal),
-      set(initWechat$, signal),
-      set(watchGithubIntegration$, signal),
-      set(watchTelegramConnection$, signal),
-      set(watchAgentPhoneConnection$, signal),
-    ]);
+    await onRejection(
+      Promise.all([
+        set(watchSlackConnection$, signal),
+        set(watchTeamsConnection$, signal),
+        set(watchDiscordConnection$, signal),
+        set(initWechat$, signal),
+        set(watchGithubIntegration$, signal),
+        set(watchTelegramConnection$, signal),
+        set(watchAgentPhoneConnection$, signal),
+      ]),
+      async () => {
+        await set(hideAppSkeleton$, signal);
+      },
+    );
     signal.throwIfAborted();
-
     await set(hideAppSkeleton$, signal);
   },
 );
