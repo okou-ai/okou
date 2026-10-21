@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 import uuid
@@ -114,6 +115,62 @@ class AcquisitionTests(unittest.TestCase):
                         pool.submit(method).result()
             self.assertTrue(owner.observe(0, self.page)["mapping_released"])
 
+    def test_finished_creator_thread_does_not_transfer_authority(self):
+        # A subprocess owns the orphaned descriptor until normal process exit:
+        # neither a successor thread nor this test may retire the dead owner's FD.
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                textwrap.dedent(
+                    """\
+                    import json
+                    import os
+                    import sys
+                    import threading
+                    from file_residency import FileResidency
+
+                    owners = []
+                    outcomes = {}
+                    with open(sys.argv[1], "rb") as source:
+                        info = os.fstat(source.fileno())
+                        def create():
+                            outcomes["creator_ident"] = threading.get_ident()
+                            owners.append(FileResidency(
+                                source.fileno(), (info.st_dev, info.st_ino)))
+                        creator = threading.Thread(target=create)
+                        creator.start()
+                        creator.join()
+                        def use():
+                            outcomes["successor_ident"] = threading.get_ident()
+                            for label, action in [
+                                ("observe", lambda: owners[0].observe(0, 4096)),
+                                ("close", owners[0].close),
+                            ]:
+                                try:
+                                    action()
+                                    outcomes[label] = "accepted"
+                                except ValueError as error:
+                                    outcomes[label] = str(error)
+                        successor = threading.Thread(target=use)
+                        successor.start()
+                        successor.join()
+                    print(json.dumps(outcomes))
+                    """
+                ),
+                str(self.path),
+            ],
+            cwd=OWNER,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        outcomes = json.loads(result.stdout)
+        self.assertEqual(outcomes["observe"], "foreign observation owner")
+        self.assertEqual(outcomes["close"], "foreign close owner")
+
     def test_filesystem_credential_mismatch_refuses_without_leaking_duplicate(self):
         before = len(os.listdir("/proc/self/fd"))
         uid = os.geteuid()
@@ -121,6 +178,61 @@ class AcquisitionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "filesystem uid mismatch"):
                 acquisition.FileResidency(self.fd, self.identity)
         self.assertEqual(len(os.listdir("/proc/self/fd")), before)
+
+    def test_overflow_uid_cannot_claim_an_unmapped_file_owner(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                textwrap.dedent(
+                    """\
+                    import ctypes
+                    import errno
+                    import json
+                    import os
+                    from pathlib import Path
+                    import sys
+                    from file_residency import FileResidency
+
+                    uid = os.geteuid()
+                    overflow = int(Path('/proc/sys/kernel/overflowuid').read_text())
+                    libc = ctypes.CDLL(None, use_errno=True)
+                    if libc.unshare(0x10000000) != 0:
+                        error = ctypes.get_errno()
+                        if error in (errno.EPERM, errno.EACCES, errno.EINVAL, errno.ENOSYS):
+                            print('user namespace unavailable: errno ' + str(error))
+                            sys.exit(77)
+                        raise OSError(error, 'unshare')
+                    try:
+                        Path('/proc/self/uid_map').write_text(f'{overflow} {uid} 1\\n')
+                    except PermissionError as error:
+                        print('user namespace uid mapping unavailable: ' + str(error))
+                        sys.exit(77)
+                    with open('/proc/self/exe', 'rb') as source:
+                        info = os.fstat(source.fileno())
+                        try:
+                            with FileResidency(source.fileno(), (info.st_dev, info.st_ino)):
+                                outcome = 'accepted'
+                        except ValueError as error:
+                            outcome = str(error)
+                    print(json.dumps({'uid': os.geteuid(), 'owner': info.st_uid,
+                                      'overflow': overflow, 'outcome': outcome}))
+                    """
+                ),
+            ],
+            cwd=OWNER,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        outcome = json.loads(result.stdout)
+        self.assertEqual(outcome["uid"], outcome["overflow"])
+        self.assertEqual(outcome["owner"], outcome["overflow"])
+        self.assertEqual(outcome["outcome"], "ambiguous overflow uid authority")
 
     def test_failed_query_releases_mapping_and_keeps_original_usable(self):
         with acquisition.FileResidency(self.fd, self.identity) as owner:
@@ -273,6 +385,14 @@ class ReplayTests(unittest.TestCase):
     def test_changed_during_acquisition_is_refused(self):
         self.mutate_event(lambda events: events[0]["after"].update(size=0))
         with self.assertRaisesRegex(ValueError, "mutated during"):
+            self.validate()
+
+    def test_overflow_uid_cannot_certify_original_authority(self):
+        uid = self.capture()["host"]["effective_uid"]
+        self.mutate_event(
+            lambda events: events[0]["authority"].update(overflow_uid=uid)
+        )
+        with self.assertRaisesRegex(ValueError, "overflow uid authority"):
             self.validate()
 
     def test_boolean_cannot_hide_an_original_numeric_metadata_change(self):

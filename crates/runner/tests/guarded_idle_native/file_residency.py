@@ -66,7 +66,21 @@ def credentials():
     values = [int(value) for value in rows[0]]
     uid = os.geteuid()
     require(values[1] == values[3] == uid, "effective/filesystem uid mismatch")
-    return {"effective_uid": uid, "filesystem_uid": values[3]}
+    # Unmapped inode owners are reported as overflowuid. In a user namespace
+    # that value can also be a mapped caller UID, making st_uid equality unsafe.
+    with open("/proc/sys/kernel/overflowuid", "rb") as stream:
+        raw_overflow = stream.read(33)
+    require(
+        len(raw_overflow) <= 32 and raw_overflow.strip().isdigit(),
+        "invalid kernel overflow uid",
+    )
+    overflow = int(raw_overflow)
+    require(overflow < 2**32 and uid != overflow, "ambiguous overflow uid authority")
+    return {
+        "effective_uid": uid,
+        "filesystem_uid": values[3],
+        "overflow_uid": overflow,
+    }
 
 
 class FileResidency:
@@ -84,6 +98,8 @@ class FileResidency:
             "invalid expected original identity",
         )
         self._creator = (os.getpid(), threading.get_ident())
+        # Numeric thread identifiers may be reused after a creator exits.
+        self._creator_thread = threading.current_thread()
         process = Path("/proc/self/stat").read_text()
         self._start_ticks = int(process.rsplit(") ", 1)[1].split()[19])
         self._identity = expected_identity
@@ -115,7 +131,8 @@ class FileResidency:
 
     def _check_owner(self):
         require(
-            self._creator == (os.getpid(), threading.get_ident()),
+            self._creator == (os.getpid(), threading.get_ident())
+            and self._creator_thread is threading.current_thread(),
             "foreign observation owner",
         )
         require(
@@ -210,7 +227,9 @@ class FileResidency:
 
     def close(self):
         require(
-            self._creator == (os.getpid(), threading.get_ident()), "foreign close owner"
+            self._creator == (os.getpid(), threading.get_ident())
+            and self._creator_thread is threading.current_thread(),
+            "foreign close owner",
         )
         if self._fd is None:
             return

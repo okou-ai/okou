@@ -6,7 +6,13 @@ only that original extent read-only/shared and queries Linux `mincore` without
 touching its payload. Offsets are page-aligned; each nonempty extent is inside
 the current file size and at most 64 MiB. Before/after metadata and matching
 effective/filesystem UID checks refuse mutation, foreign authority and descriptor
-substitution. The creating process and thread own observations and cleanup.
+substitution. The creating process and thread own observations and cleanup;
+retained thread-object identity prevents a recycled numeric thread ID from
+transferring that authority after the creating thread exits.
+The effective UID must differ from the kernel's `overflowuid`, recorded with
+each authority snapshot: unmapped inode owners can otherwise share that reported
+number with a mapped namespace user. This ambiguous UID is unsupported even for
+a truly owned file; matching numbers cannot establish original-file authority.
 
 The original descriptor survives pathname replacement, rename, unlink and growth
 between observations. The caller retains its own descriptor independently.
@@ -27,7 +33,8 @@ charged-window and native report formats/interpretations remain unchanged.
 
 ## Qualify and replay
 
-Use 64-bit Linux with procfs, mincore and permission to lock at most 64 KiB of
+Use 64-bit Linux with readable procfs (including `kernel/overflowuid`), mincore
+and permission to lock at most 64 KiB of
 new private file pages. The qualification supports page sizes up to 16 KiB.
 It creates only a new canonical output directory and small disposable owned files.
 It neither requires KVM/root/cgroup delegation nor changes existing workloads,
@@ -79,3 +86,8 @@ source-bound component evidence. Complete process/backing/file/cache/kernel/NBD/
 shared/outside-charge scope, genuine native phase/overlap windows, cold lineage,
 interval coverage, matching Host/Guest/images and conservative supplied envelopes
 retain their independent native acceptance gates.
+
+The UID-alias regression uses a disposable user namespace in a joined subprocess;
+only that fixture is explicitly skipped when the kernel denies namespace creation
+or its UID mapping.
+Acquisition and reader refusal never fall back to guessed ownership or residency.

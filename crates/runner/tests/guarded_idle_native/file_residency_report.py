@@ -265,10 +265,17 @@ def replay(root, invocation, source_sha256):
             (meta["device"], meta["inode"]) == original and meta["uid"] == uid,
             "foreign original identity/authority",
         )
-        fields(event["authority"], "effective_uid filesystem_uid")
+        fields(event["authority"], "effective_uid filesystem_uid overflow_uid")
         require(
-            all(integer(event["authority"][key]) == uid for key in event["authority"]),
+            all(
+                integer(event["authority"][key]) == uid
+                for key in ("effective_uid", "filesystem_uid")
+            ),
             "effective/filesystem uid mismatch",
+        )
+        overflow = integer(event["authority"]["overflow_uid"])
+        require(
+            overflow < 2**32 and overflow != uid, "ambiguous overflow uid authority"
         )
         expected_size = (3 if index == 3 else 2) * page + 3
         require(
