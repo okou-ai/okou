@@ -11,7 +11,7 @@ import { command } from "ccstate";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 
 export type AgentPhoneChannel = "imessage" | "sms" | "mms";
@@ -299,46 +299,50 @@ function displayLabel(row: {
   return plainLabel(row.agentDisplayName) ?? row.agentName;
 }
 
-async function resolveComposeLabel(
-  db: ReadonlyDb,
-  composeId: string,
-): Promise<string | undefined> {
-  const [row] = await db
-    .select({
-      agentDisplayName: agents.displayName,
-      agentName: agents.name,
-    })
-    .from(agents)
-    .where(eq(agents.id, composeId))
-    .limit(1);
-  return row ? displayLabel(row) : undefined;
-}
+const resolveComposeLabel$ = command(
+  async ({ get }, composeId: string): Promise<string | undefined> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        agentDisplayName: agents.displayName,
+        agentName: agents.name,
+      })
+      .from(agents)
+      .where(eq(agents.id, composeId))
+      .limit(1);
+    return row ? displayLabel(row) : undefined;
+  },
+);
 
-export async function resolveOrgDefaultComposeId(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<string | null> {
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return metadata?.defaultAgentId ?? null;
-}
+export const resolveOrgDefaultComposeId$ = command(
+  async ({ get }, orgId: string): Promise<string | null> => {
+    const db = get(db$);
+    const [metadata] = await db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    return metadata?.defaultAgentId ?? null;
+  },
+);
 
-export async function resolveAgentPhoneReplyFooterText(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly composeId: string;
-}): Promise<string | undefined> {
-  const orgDefaultComposeId = await resolveOrgDefaultComposeId(
-    args.db,
-    args.orgId,
-  );
-  if (!orgDefaultComposeId || args.composeId === orgDefaultComposeId) {
-    return undefined;
-  }
+export const resolveAgentPhoneReplyFooterText$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly composeId: string;
+    },
+  ): Promise<string | undefined> => {
+    const orgDefaultComposeId = await set(
+      resolveOrgDefaultComposeId$,
+      args.orgId,
+    );
+    if (!orgDefaultComposeId || args.composeId === orgDefaultComposeId) {
+      return undefined;
+    }
 
-  const label = await resolveComposeLabel(args.db, args.composeId);
-  return label ? `Responded by ${label}` : undefined;
-}
+    const label = await set(resolveComposeLabel$, args.composeId);
+    return label ? `Responded by ${label}` : undefined;
+  },
+);

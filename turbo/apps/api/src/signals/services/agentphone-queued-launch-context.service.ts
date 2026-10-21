@@ -6,7 +6,8 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
+import { command } from "ccstate";
 import {
   agentphoneDeliveryTargetSchema,
   type AgentPhoneDeliveryTarget,
@@ -78,113 +79,118 @@ function requiredAgentPhoneLaunchContext(
   };
 }
 
-async function loadAgentPhoneLaunchContext(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
+const loadAgentPhoneLaunchContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly eventId: string;
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+  ) => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        messageText: chatAgentphoneContext.messageText,
+        threadContext: chatAgentphoneContext.threadContext,
+        messageId: chatAgentphoneContext.messageId,
+        rootMessageId: chatAgentphoneContext.rootMessageId,
+        conversationId: chatAgentphoneContext.conversationId,
+        groupId: chatAgentphoneContext.groupId,
+        channel: chatAgentphoneContext.channel,
+        isGroup: chatAgentphoneContext.isGroup,
+        phoneHandle: chatAgentphoneContext.phoneHandle,
+        fromNumber: chatAgentphoneContext.fromNumber,
+        toNumber: chatAgentphoneContext.toNumber,
+        userLinkId: chatAgentphoneContext.userLinkId,
+        agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
+        agentId: agents.id,
+      })
+      .from(chatEvents)
+      .innerJoin(
+        chatAgentphoneContext,
+        and(
+          eq(chatAgentphoneContext.id, chatEvents.contextId),
+          eq(chatAgentphoneContext.chatThreadId, chatEvents.chatThreadId),
+        ),
+      )
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .innerJoin(
+        agentphoneUserLinks,
+        and(
+          eq(agentphoneUserLinks.id, chatAgentphoneContext.userLinkId),
+          eq(agentphoneUserLinks.userId, args.userId),
+          eq(agentphoneUserLinks.orgId, args.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(chatEvents.id, args.eventId),
+          eq(chatEvents.chatThreadId, args.chatThreadId),
+          eq(chatEvents.contextType, "agentphone"),
+        ),
+      )
+      .limit(1);
+    return requiredAgentPhoneLaunchContext(row);
   },
-) {
-  const [row] = await db
-    .select({
-      messageText: chatAgentphoneContext.messageText,
-      threadContext: chatAgentphoneContext.threadContext,
-      messageId: chatAgentphoneContext.messageId,
-      rootMessageId: chatAgentphoneContext.rootMessageId,
-      conversationId: chatAgentphoneContext.conversationId,
-      groupId: chatAgentphoneContext.groupId,
-      channel: chatAgentphoneContext.channel,
-      isGroup: chatAgentphoneContext.isGroup,
-      phoneHandle: chatAgentphoneContext.phoneHandle,
-      fromNumber: chatAgentphoneContext.fromNumber,
-      toNumber: chatAgentphoneContext.toNumber,
-      userLinkId: chatAgentphoneContext.userLinkId,
-      agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
-      agentId: agents.id,
-    })
-    .from(chatEvents)
-    .innerJoin(
-      chatAgentphoneContext,
-      and(
-        eq(chatAgentphoneContext.id, chatEvents.contextId),
-        eq(chatAgentphoneContext.chatThreadId, chatEvents.chatThreadId),
-      ),
-    )
-    .innerJoin(
-      chatThreads,
-      and(
-        eq(chatThreads.id, chatEvents.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .innerJoin(
-      agentphoneUserLinks,
-      and(
-        eq(agentphoneUserLinks.id, chatAgentphoneContext.userLinkId),
-        eq(agentphoneUserLinks.userId, args.userId),
-        eq(agentphoneUserLinks.orgId, args.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        eq(chatEvents.contextType, "agentphone"),
-      ),
-    )
-    .limit(1);
-  return requiredAgentPhoneLaunchContext(row);
-}
+);
 
-export async function loadAgentPhoneQueuedLaunchMaterial(
-  db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-): Promise<AgentPhoneQueuedLaunchMaterial | null> {
-  const context = await loadAgentPhoneLaunchContext(db, args);
-  if (!context) {
-    return null;
-  }
-  return {
-    prompt: context.messageText,
-    appendSystemPrompt: buildAgentPhonePrompt(
-      {
-        sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
-        phoneHandle: context.phoneHandle,
+export const loadAgentPhoneQueuedLaunchMaterial$ = command(
+  async (
+    { set },
+    args: {
+      readonly eventId: string;
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+  ): Promise<AgentPhoneQueuedLaunchMaterial | null> => {
+    const context = await set(loadAgentPhoneLaunchContext$, args);
+    if (!context) {
+      return null;
+    }
+    return {
+      prompt: context.messageText,
+      appendSystemPrompt: buildAgentPhonePrompt(
+        {
+          sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
+          phoneHandle: context.phoneHandle,
+          conversationId: context.conversationId,
+          channel: context.channel,
+          isGroup: context.isGroup,
+          messageId: context.messageId,
+          agentphoneAgentId: context.agentphoneAgentId,
+        },
+        resolveIntegrationNotePrompt({
+          triggerSource: "agentphone",
+          featureSwitchContext: args.featureSwitchContext,
+        }),
+        context.threadContext,
+      ),
+      agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
+        messageId: context.messageId,
         conversationId: context.conversationId,
+        ...(context.isGroup ? { groupId: context.groupId } : {}),
         channel: context.channel,
         isGroup: context.isGroup,
-        messageId: context.messageId,
+        rootMessageId: context.rootMessageId,
+        phoneHandle: context.phoneHandle,
+        fromNumber: context.fromNumber,
+        toNumber: context.toNumber,
+        userLinkId: context.userLinkId,
+        agentId: context.agentId,
         agentphoneAgentId: context.agentphoneAgentId,
-      },
-      resolveIntegrationNotePrompt({
-        triggerSource: "agentphone",
-        featureSwitchContext: args.featureSwitchContext,
       }),
-      context.threadContext,
-    ),
-    agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
-      messageId: context.messageId,
-      conversationId: context.conversationId,
-      ...(context.isGroup ? { groupId: context.groupId } : {}),
-      channel: context.channel,
-      isGroup: context.isGroup,
-      rootMessageId: context.rootMessageId,
-      phoneHandle: context.phoneHandle,
-      fromNumber: context.fromNumber,
-      toNumber: context.toNumber,
-      userLinkId: context.userLinkId,
-      agentId: context.agentId,
-      agentphoneAgentId: context.agentphoneAgentId,
-    }),
-    userInfoExtras: { agentphoneHandle: context.phoneHandle },
-  };
-}
+      userInfoExtras: { agentphoneHandle: context.phoneHandle },
+    };
+  },
+);

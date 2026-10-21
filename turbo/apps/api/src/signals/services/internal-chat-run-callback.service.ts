@@ -63,7 +63,7 @@ import {
   agentphoneDeliveryTargetSchema,
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
-import { loadAgentPhoneQueuedLaunchMaterial } from "./agentphone-queued-launch-context.service";
+import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
   followupsEventIdForRun,
   integrationCompletionFallbackEventIdForRun,
@@ -1004,24 +1004,15 @@ function telegramChatDeliveryFields(
   };
 }
 
-async function insertAgentPhoneChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: AgentPhoneDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "agentphone:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function agentPhoneChatDeliveryFields(
+  target: AgentPhoneDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "agentphone:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 async function publishAssistantErrorEventSignals(args: {
@@ -1174,12 +1165,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const agentphoneDeliveryCallbackId = input.agentphoneDelivery
-    ? await insertAgentPhoneChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.agentphoneDelivery,
-        chatEventId: event.id,
+        ...agentPhoneChatDeliveryFields(input.agentphoneDelivery, event.id),
       })
     : undefined;
   return {
@@ -1474,12 +1464,14 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const agentphoneDeliveryCallbackId =
     deliveryEvent && input.agentphoneDelivery
-      ? await insertAgentPhoneChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.agentphoneDelivery,
-          chatEventId: deliveryEvent.id,
+          ...agentPhoneChatDeliveryFields(
+            input.agentphoneDelivery,
+            deliveryEvent.id,
+          ),
         })
       : undefined;
   return {
@@ -3717,7 +3709,7 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "agentphone": {
-        const material = await loadAgentPhoneQueuedLaunchMaterial(db, source);
+        const material = await set(loadAgentPhoneQueuedLaunchMaterial$, source);
         signal.throwIfAborted();
         return material
           ? {
