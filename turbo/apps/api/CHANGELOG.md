@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.760.3](https://github.com/okou-ai/okou/compare/api-v1.760.2...api-v1.760.3) (2026-10-21)
+
+
+### Refactoring
+
+* **api:** inline terminal chat thread reader ([#41969](https://github.com/okou-ai/okou/issues/41969)) ([dab240f](https://github.com/okou-ai/okou/commit/dab240fa4afa9a3cf36ad6034a5bc204b6ae919b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.583.1
+    * @okouai/core bumped to 8.774.9
+    * @okouai/db bumped to 1.353.3
+    * @okouai/pi-agent-runtime bumped to 1.50.39
+
 ## [1.760.2](https://github.com/okou-ai/okou/compare/api-v1.760.1...api-v1.760.2) (2026-10-21)
 
 
