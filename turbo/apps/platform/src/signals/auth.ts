@@ -374,6 +374,7 @@ export const setupClerkUser$ = command(
     let pending: DeferredPromise<UserResource | null> | null = initialPending;
     set(internalClerkUser$, initialPending.promise);
 
+    // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: propagate initialization failure to the initial-user deferred.
     const clerk = await onRejection(get(clerk$), (error) => {
       signal.throwIfAborted();
       pending = null;

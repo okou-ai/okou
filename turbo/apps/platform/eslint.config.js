@@ -112,6 +112,7 @@ export default [
       "ccstate/require-client-signal": "error",
       "ccstate/command-async-signal": "error",
       "ccstate/no-command-in-command": "error",
+      "ccstate/no-on-rejection": "error",
       "ccstate/no-computed-signal": "error",
       "ccstate/no-getter-setter-params": "error",
       "ccstate/no-accessor-escape": "error",
@@ -310,7 +311,8 @@ export default [
   // - .then/.catch: production code must await and surface state via ccstate
   //   loadables; centralized helpers wrap legitimate Promise primitive usage.
   //   Do not swallow failures with tapError (see docs/app/signals/tapError.md).
-  //   See issue #13535 for the primitive boundary.
+  //   onRejection requires explicit review via ccstate/no-on-rejection; see
+  //   docs/app/signals/onRejection.md and issue #13535 for the primitive boundary.
   {
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
@@ -343,7 +345,7 @@ export default [
         {
           selector: "CallExpression[callee.property.name='catch']",
           message:
-            "Promise.catch is not allowed. Propagate errors and derive UI from loadables; see docs/app/signals/tapError.md.",
+            "Promise.catch is not allowed. Let accept errors propagate and derive UI from loadables. See docs/app/signals/onRejection.md for infrastructure exceptions and docs/app/signals/tapError.md for swallowing misuses.",
         },
         {
           selector: "NewExpression[callee.name='Date'][arguments.length=0]",
