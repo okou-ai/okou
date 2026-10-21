@@ -61,6 +61,8 @@ import http_header_syntax
 import http_local_responses
 import http_network_log
 import managed_openrouter
+import managed_upload
+import managed_upload_runtime
 import matching
 import mitmproxy_compat
 import model_websocket_usage
@@ -818,6 +820,13 @@ def client_disconnected(client: connection.Client) -> None:
 
 
 def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
+    try:
+        return _requestheaders(flow)
+    finally:
+        managed_upload_runtime.headers_classified(flow)
+
+
+def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
     """Handle request-header-only decisions before mitmproxy buffers bodies."""
     request_end_stream = mitmproxy_compat.take_request_end_stream(flow)
     request_header_fields = flow.request.headers.fields
@@ -866,9 +875,9 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             raise
         if bounded_classification is not None and _admit_managed_openrouter_from_headers(
-            flow, bounded_classification
+            flow, bounded_classification, request_end_stream=request_end_stream
         ):
-            return None
+            return _authorize_managed_upload(flow, bounded_classification)
         if (
             isinstance(bounded_classification, request_classification.FirewallBlock)
             and bounded_classification.firewall_block.aws_sigv4_body_pending
@@ -897,8 +906,10 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             flow,
             defer_unresolved_public_destination=True,
         )
-    if _admit_managed_openrouter_from_headers(flow, classification):
-        return None
+    if _admit_managed_openrouter_from_headers(
+        flow, classification, request_end_stream=request_end_stream
+    ):
+        return _authorize_managed_upload(flow, classification)
     if (
         isinstance(classification, request_classification.FirewallBlock)
         and classification.firewall_block.aws_sigv4_body_pending
@@ -1075,9 +1086,12 @@ def _reject_managed_openrouter_request(
     error: managed_openrouter.RequestRejectedError,
     *,
     terminate: bool = False,
+    rejection_phase: Literal["requestheaders", "request"] = "request",
 ) -> None:
     prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
-    flow.request.stream = False
+    upload = managed_upload.get(flow)
+    if upload is None or not callable(flow.request.stream):
+        flow.request.stream = False
     flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
     flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
     flow_metadata.set_firewall_decision(
@@ -1097,9 +1111,17 @@ def _reject_managed_openrouter_request(
         "Managed OpenRouter request rejected",
         type="managed_model_policy",
         reason=str(error),
-        rejection_phase="requestheaders" if terminate else "request",
+        rejection_phase=rejection_phase,
         **length_diagnostics,
     )
+    if upload is not None and callable(flow.request.stream):
+        upload.phase = managed_upload.Phase.REJECTED
+        upload.failure = str(error)
+        upload.validator = None
+        upload.tail = b""
+        upload.ready.set()
+        # Native response ownership survives a later upload rejection.
+        return
     if terminate:
         request_classification.pop_cached_classification(flow)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
@@ -1118,7 +1140,10 @@ def _reject_managed_openrouter_request(
 
 
 def _admit_managed_openrouter_from_headers(
-    flow: http.HTTPFlow, classification: request_classification.RequestClassification
+    flow: http.HTTPFlow,
+    classification: request_classification.RequestClassification,
+    *,
+    request_end_stream: bool | None,
 ) -> bool:
     """Intercept managed auth before every header-phase streaming fast path."""
     if (
@@ -1129,10 +1154,38 @@ def _admit_managed_openrouter_from_headers(
     _start_request_timing(flow)
     _prebind_requestheaders_upstream_destination(flow, classification)
     try:
-        managed_openrouter.admit_request(flow, classification.sandbox_info)
+        managed_openrouter.admit_request(
+            flow, classification.sandbox_info, request_end_stream=request_end_stream
+        )
+        upload = managed_upload.get(flow)
+        if upload is not None:
+            managed_upload_runtime.register(upload)
     except managed_openrouter.RequestRejectedError as error:
-        _reject_managed_openrouter_request(flow, classification, error, terminate=True)
+        # Known EOF lets the native local response complete without a body wait.
+        _reject_managed_openrouter_request(
+            flow,
+            classification,
+            error,
+            terminate=request_end_stream is not True,
+            rejection_phase="requestheaders",
+        )
     return True
+
+
+def _authorize_managed_upload(
+    flow: http.HTTPFlow, classification: request_classification.RequestClassification
+) -> Awaitable[None] | None:
+    if managed_upload.get(flow) is None or classification.kind != "firewall_allow":
+        return None
+    return _try_firewall_request_stream_from_headers(
+        flow,
+        classification=classification,
+        metadata_snapshot={},
+        request_end_stream=False,
+        capture_body=classification.sandbox_info.get("captureNetworkBodies") is True,
+        aws_sigv4_buffered_fallback=None,
+        managed_policy=managed_openrouter.policy_for_sandbox(classification.sandbox_info),
+    )
 
 
 def _admit_buffered_public_destination_request(
@@ -1258,6 +1311,7 @@ async def _try_firewall_request_stream_from_headers(
     request_end_stream: bool | None,
     capture_body: bool,
     aws_sigv4_buffered_fallback: _BufferedRequestBodyCheck | None,
+    managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> None:
     allow = classification.firewall_allow
     sandbox_info = classification.sandbox_info
@@ -1270,6 +1324,11 @@ async def _try_firewall_request_stream_from_headers(
 
     def fall_back() -> None:
         restore_request_state()
+        if managed_policy is not None:
+            managed_openrouter.release_from_flow(flow)
+            flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+            flow.kill()
+            return
         if aws_sigv4_buffered_fallback is None:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             return
@@ -1306,10 +1365,15 @@ async def _try_firewall_request_stream_from_headers(
                     allow,
                     expected_run_id=expected_run_id,
                     expected_request=expected_request,
+                    expected_managed_policy=managed_policy,
                 )
             ),
         )
     except (asyncio.CancelledError, Exception):
+        if managed_policy is not None:
+            managed_openrouter.release_from_flow(flow)
+            if flow.killable:
+                flow.kill()
         restore_request_state()
         _restore_request_headers_probe_metadata(flow, metadata_snapshot)
         raise
@@ -1318,6 +1382,7 @@ async def _try_firewall_request_stream_from_headers(
         # A local response waits for body EOF. Preserve auth diagnostics, but
         # kill before mitmproxy sends 100 Continue or consumes the rejected body.
         flow.response = None
+        managed_openrouter.release_from_flow(flow)
         release_aws_sigv4_request_inspection(flow)
         request_classification.pop_cached_classification(flow)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
@@ -1347,6 +1412,23 @@ async def _try_firewall_request_stream_from_headers(
                 capture_body=capture_body,
                 inspect_body=usage.needs_connector_request_body_inspection(flow),
             )
+            if managed_policy is not None:
+                upload = managed_upload.get(flow)
+                if upload is None or not callable(flow.request.stream):
+                    fall_back()
+                    return
+                upload.observe = flow.request.stream
+                upload.authorized = lambda: _firewall_authorization_is_current_for_requestheaders(
+                    flow,
+                    allow,
+                    expected_run_id=expected_run_id,
+                    expected_request=expected_request,
+                    expected_managed_policy=managed_policy,
+                )
+                upload.on_reject = lambda reason: _reject_managed_openrouter_request(
+                    flow, classification, managed_openrouter.RequestRejectedError(reason)
+                )
+                flow.request.stream = upload
     except (asyncio.CancelledError, Exception):
         _release_terminal_flow_state(flow, release_tracking=True)
         restore_request_state()
@@ -1482,6 +1564,7 @@ def _firewall_authorization_is_current_for_requestheaders(
     *,
     expected_run_id: str,
     expected_request: _FirewallRequestIdentity,
+    expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
         flow, original_authority=expected_request.authority
@@ -1493,6 +1576,11 @@ def _firewall_authorization_is_current_for_requestheaders(
     )
     return (
         current_allow is not None
+        and (
+            allow.name != managed_openrouter.OWNER
+            or managed_openrouter.policy_for_sandbox(current_allow.sandbox_info)
+            == expected_managed_policy
+        )
         and _firewall_request_identity_is_current(flow, expected_request)
         and _connector_auth_destination_is_current(flow, current_allow)
         and _builtin_host_policy_error_for_firewall_allow(flow, current_allow.firewall_allow)
@@ -1621,7 +1709,12 @@ async def request(flow: http.HTTPFlow) -> None:
     connector_intent.capture_and_strip(flow)
 
     if flow.response is not None or flow.error is not None:
-        managed_openrouter.release_from_flow(flow)
+        # An early provider response can overlap streamed EOF. Keep upload
+        # transport ownership until its drain or terminal response boundary.
+        if flow.error is not None:
+            managed_openrouter.release_from_flow(flow)
+        elif managed_upload.get(flow) is not None:
+            flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
@@ -2320,6 +2413,7 @@ def done():
 
 
 def _drain_addon_workers() -> None:
+    managed_upload.close_all()
     try:
         runner_flush_lifecycle.drain_and_close()
     finally:

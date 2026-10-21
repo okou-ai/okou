@@ -151,6 +151,32 @@ forwarded bytes before EOF and terminal network/usage records, and verify
 bounded retention and admission with capture on/off. They do not measure live
 production proxy RSS.
 
+When removing managed upload admissions, isolate count, individual size and
+aggregate bytes in separate native cases. Generate bounded input and hash
+provider bytes incrementally; keep SSEs live after uploads to check retention.
+Exercise both HTTP versions, zero windows/stream slots, queued cancellation,
+empty DATA versus EOF, discarded-event counts, real blocked TCP writers and
+split early responses. Cover EOF in request headers as well as the last DATA
+event. Header cancellation must cover ordinary and eager task
+scheduling, including cleanup after the public hook released its parser.
+Interleave response headers before upload EOF with valid completion, policy or
+authorization rejection, and a blocked upload writer. Verify response bytes,
+privacy/accounting and terminal cleanup across both completion orders.
+
+Compare suspected detector backpressure regressions with detection disabled on
+the same forwarding path. Isolate upstream H2 protocol capacity from blocked TCP
+writes: use a zero upload window with writable sockets, and verify a response
+larger than the client's initial receive window still progresses through genuine
+`WINDOW_UPDATE` frames. Include an already-uploaded sibling SSE and ordinary/eager
+scheduling. Existing native queue or TCP-drain behavior is not evidence that a
+detector introduced it; measure detector retention separately from native buffers.
+
+Compare resources on identical baseline-eligible inputs in fresh pinned
+processes. Separate untraced CPU from traced allocations and report process RSS,
+Python allocations, SSE retention and synchronized event-loop progress. Newly
+accepted oversized inputs prove admission behavior, not comparative savings.
+Keep run-specific measurements in the owning issue/PR rather than this guide.
+
 Run the same static checks used by CI:
 
 ```bash

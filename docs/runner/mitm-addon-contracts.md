@@ -716,6 +716,59 @@ their embedded-addon behavior until replaced. Native dependency coverage in
 byte accounting, capture privacy, admission and terminal release; cryptographic
 TLS verification remains covered by the native auth-wait suites.
 
+## Managed policy streaming
+
+Managed preset requests select public `request.stream` before body accumulation,
+after endpoint/header checks and stream-safe credential resolution. The JSON
+scanner validates every value while capturing only bounded policy scalars.
+Object frames own exact decoded duplicate-key identity, including escaped keys;
+normal usage extraction keeps its existing duplicate semantics.
+Headers that already establish EOF reject before credential resolution: native
+framing skips the stream callback, and managed policy requires a nonempty body.
+Known EOF lets the local rejection response complete without waiting for data.
+
+Each upload validates a chunk before forwarding it. It finishes JSON at declared
+length and releases its parser, retaining one final byte until true EOF, trailer
+checks and current authorization succeed. Failure clears parser/tail immediately
+and discards/counts subsequent bytes without generating native empty-data events.
+Cancellation uses native EOF, timeout or disconnect; it need not reset mid-upload.
+Headers and valid prefixes may already reach the provider, and their effects
+cannot be recalled. Successful body bytes and Content-Length remain exact.
+
+Managed requests have no count, body-size or aggregate admission reservation.
+Depth 128, work 262,144 units, keys 4,096 raw bytes and numbers 4,300 raw bytes bound
+parser state; long tokens and work accounting can differ from buffered validation.
+Opaque value strings can exceed 32 MiB. Capture remains optional and capped at
+64 KiB per flow. Detector-owned retention does not grow with opaque prompt bytes;
+total memory can scale with active flows and native transport queues. SSE retains
+no complete upload or parser in the detector.
+
+The exact-version compatibility owner closes public-stream gaps at native EOF,
+H2 queued/unallocated cancellation and early response completion. Pending uploads
+belong to connection readers. H1 header waits include `HookCompleted`, and native
+upstream capacity gates H1 ingress outside the event lock. H2 client readers do
+not wait for managed header completion or upload capacity: the same reader must
+process response `WINDOW_UPDATE`, reset and sibling frames. H2 keeps native
+receive credit, protocol buffers and TCP backpressure; the detector does not
+establish a global bound on those queues or correct native TCP-drain stalls.
+A provider reader drains its matching downstream writer independently of the
+blocked upload writer. Parsed EOF and empty protocol queues do not release pending
+transport ownership before the owning socket drain.
+
+A provider response can begin before upload EOF. Later upload rejection preserves
+that native response object; final authorization uses a predicate that cannot
+replace it with a local response. The request hook keeps upload transport
+ownership through drain or terminal response even when response headers already
+exist, and records completed receive accounting independently of response timing.
+
+These seams preserve native framing, verified TLS, connection selection and
+terminal hooks. Compare suspected transport regressions against the same native
+forwarding path without detection. Dependency upgrades require re-auditing these
+owners and regressions.
+Runner/addon ship together; older artifacts keep their embedded behavior until
+replaced, and normal artifact rollback restores it. No alternate buffered path,
+transparent retry, replay or body worker pool is provided.
+
 ## Header-phase credential-resolution failures
 
 If credential resolution fails while preparing a request for authenticated

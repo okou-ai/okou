@@ -1,4 +1,4 @@
-"""Production-hook enforcement before platform credentials are resolved."""
+"""Public managed header auth, streamed policy and terminal ownership."""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
@@ -10,94 +10,111 @@ from mitmproxy.flow import Error
 import auth
 import flow_metadata_keys as metadata_keys
 import managed_openrouter as managed
+import managed_upload
 import mitm_addon
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.managed_openrouter_helpers import (
     PI_ATTRIBUTION_HEADERS,
+    authorize_headers,
     model_config,
     payload,
     request,
     sandbox,
 )
 from tests.request_handler_helpers import _write_registry
-from tests.upstream_connection_helpers import seed_server_binding
+from tests.upstream_connection_helpers import mark_connected_tls_upstream, seed_server_binding
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("large", [False, True])
-async def test_no_auth_or_stream_until_the_complete_body_passes(
+async def test_stream_auth_and_original_bytes_without_raw_body_retention(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, large
 ):
     info = sandbox(tmp_path, dialect)
-    path = _write_registry(tmp_path, sandbox_info=info)
-    body = payload(dialect)
-    body["messages" if dialect == "openai-completions" else "input"][0]["content"] = "x" * (
-        100_000 if large else 1
+    registry = _write_registry(tmp_path, sandbox_info=info)
+    value = payload(dialect)
+    value["messages" if dialect == "openai-completions" else "input"][0]["content"] = (
+        "x" * 100_000 if large else "x"
     )
-    flow = request(real_flow, body, dialect)
-    raw = flow.request.raw_content
-    flow.request.raw_content = None
+    flow = request(real_flow, value, dialect)
+    raw, flow.request.raw_content = flow.request.raw_content, None
     flow.request.headers["X-Okou-Connector-Intent"] = "openrouter"
     flow.request.headers["Accept-Encoding"] = "gzip, zstd, br"
     with (
-        mitm_ctx(registry_path=str(path)),
-        fake_firewall_headers(headers={"Authorization": "Bearer managed-token"}) as auth_fetch,
+        mitm_ctx(registry_path=str(registry)),
+        fake_firewall_headers(headers={"Authorization": "Bearer managed-token"}) as fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
-        auth_fetch.assert_not_called()
+        await authorize_headers(flow)
+        fetch.assert_awaited_once()
         assert flow.error is None
-        assert flow.request.stream is False
+        assert callable(flow.request.stream)
         assert "X-Okou-Connector-Intent" not in flow.request.headers
-        assert flow.request.headers["Authorization"] == "Bearer sandbox-placeholder"
-        flow.request.raw_content = raw
-        await mitm_addon.request(flow)
-        auth_fetch.assert_awaited_once()
-        assert flow.response is None
-        assert flow.request.raw_content == raw
         assert flow.request.headers["Authorization"] == "Bearer managed-token"
+        mark_connected_tls_upstream(
+            flow,
+            sni="openrouter.ai",
+            server_address=("openrouter.ai", 443),
+            peername=("104.18.32.47", 443),
+        )
+        assert flow.request.stream(raw) == raw[:-1]
+        upload = managed_upload.get(flow)
+        assert upload is not None
+        assert upload.validator is None
+        assert upload.tail == raw[-1:]
+        assert flow.request.stream(b"") == raw[-1:]
+        await mitm_addon.request(flow)
+        assert flow.error is None
+        assert flow.response is None
+        assert flow.request.raw_content is None
+        assert upload.tail == b""
         assert flow.request.headers["Accept-Encoding"] == "gzip, br"
-        for name, value in PI_ATTRIBUTION_HEADERS:
-            assert flow.request.headers[name] == value
-        assert managed.admission_state_for_tests()[0] == 1
+        for key, value in PI_ATTRIBUTION_HEADERS:
+            assert flow.request.headers[key] == value
         flow.response = http.Response.make(200, b"{}", {"Content-Type": "application/json"})
         mitm_addon.response(flow)
-    assert managed.admission_state_for_tests() == (0, 0)
+        assert managed_upload.get(flow) is None
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize(
-    "override", [{"model": "@preset/another"}, {"provider": {}}, {"preset": "@preset/another"}]
+    "override",
+    [
+        {"model": "@preset/another"},
+        {"provider": {}},
+        {"preset": "@preset/another"},
+    ],
 )
-async def test_invalid_body_never_resolves_or_injects_platform_auth(
+async def test_stream_policy_failure_discards_without_capture_or_billing(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, dialect, override
 ):
-    path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))
-    body = {**payload(dialect), **override}
-    flow = request(real_flow, body, dialect)
-    with (
-        mitm_ctx(registry_path=str(path)),
-        fake_firewall_headers(headers={"Authorization": "Bearer must-not-appear"}) as auth_fetch,
-    ):
-        assert mitm_addon.requestheaders(flow) is None
-        await mitm_addon.request(flow)
-        auth_fetch.assert_not_called()
-        assert flow.response is not None
-        assert flow.response.status_code == 403
-        assert flow.response.json()["error"] == "managed_openrouter_request_rejected"
-        assert flow.request.headers["Authorization"] == "Bearer sandbox-placeholder"
+    registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))
+    flow = request(real_flow, {**payload(dialect), **override}, dialect)
+    raw, flow.request.raw_content = flow.request.raw_content, None
+    with mitm_ctx(registry_path=str(registry)), fake_firewall_headers() as fetch:
+        await authorize_headers(flow)
+        fetch.assert_awaited_once()
+        assert callable(flow.request.stream)
+        assert flow.request.stream(raw) == ()
+        assert flow.request.stream(b"later-private-input") == ()
+        assert flow.response is None
         assert flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] is True
-        mitm_addon.response(flow)
-    assert managed.admission_state_for_tests() == (0, 0)
+        assert flow.metadata[metadata_keys.FIREWALL_BILLABLE] is False
+        upload = managed_upload.get(flow)
+        assert upload is not None
+        assert upload.failure is not None
+        assert upload.validator is None
+        assert upload.tail == b""
+        mitm_addon.error(flow)
+        assert managed_upload.get(flow) is None
 
 
 @pytest.mark.parametrize(
     "case", ["policy", "length", "encoding", "header", "transfer", "websocket"]
 )
-async def test_header_phase_fails_closed_without_auth_or_body_retention(
+async def test_invalid_headers_terminate_before_credentials_and_buffering(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, case
 ):
-    info = sandbox(tmp_path)
-    flow = request(real_flow)
+    info, flow = sandbox(tmp_path), request(real_flow)
     if case == "policy":
         info.pop("piModelConfig")
     elif case == "length":
@@ -105,70 +122,68 @@ async def test_header_phase_fails_closed_without_auth_or_body_retention(
     elif case == "encoding":
         flow.request.headers["Content-Encoding"] = "gzip"
     elif case == "header":
-        flow.request.headers["x-OPENROUTER-preset"] = "untrusted"
+        flow.request.headers["X-OpenRouter-Preset"] = "untrusted"
     elif case == "transfer":
         flow.request.headers["Transfer-Encoding"] = "chunked"
     else:
         flow.request.method = "GET"
         flow.request.headers["Upgrade"] = "websocket"
         flow.request.headers["Connection"] = "upgrade"
-    path = _write_registry(tmp_path, sandbox_info=info)
+    registry = _write_registry(tmp_path, sandbox_info=info)
     flow.request.raw_content = None
-    with mitm_ctx(registry_path=str(path)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(flow) is None
+    with mitm_ctx(registry_path=str(registry)), fake_firewall_headers() as fetch:
+        await authorize_headers(flow)
         await mitm_addon.request(flow)
+        fetch.assert_not_called()
     assert flow.error is not None
     assert flow.request.stream is False
-    auth_fetch.assert_not_called()
-    assert managed.admission_state_for_tests() == (0, 0)
+    assert managed_upload.get(flow) is None
 
 
-async def test_changed_captured_preset_during_auth_cannot_authorize_an_old_request(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+async def test_preset_change_during_header_auth_rejects_original_request(
+    tmp_path, real_flow, mitm_ctx
 ):
     info = sandbox(tmp_path)
-    path = _write_registry(tmp_path, sandbox_info=info)
+    registry = _write_registry(tmp_path, sandbox_info=info)
     flow = request(real_flow)
+    flow.request.raw_content = None
 
-    async def resolve(*_args, **_kwargs):
-        replacement = {**info, "piModelConfig": model_config(preset="@preset/new")}
-        _write_registry(tmp_path, sandbox_info=replacement)
+    async def changed(*_args, **_kwargs):
+        _write_registry(
+            tmp_path, sandbox_info={**info, "piModelConfig": model_config(preset="@preset/new")}
+        )
         return firewall_auth_response(headers={"Authorization": "Bearer must-not-appear"})
 
     with (
-        mitm_ctx(registry_path=str(path)),
-        patch.object(auth, "get_firewall_headers", AsyncMock(side_effect=resolve)),
+        mitm_ctx(registry_path=str(registry)),
+        patch.object(auth, "get_firewall_headers", AsyncMock(side_effect=changed)),
     ):
-        assert mitm_addon.requestheaders(flow) is None
-        await mitm_addon.request(flow)
-        assert flow.response is not None
-        assert flow.response.status_code == 409
-        assert flow.response.json()["error"] == "firewall_authorization_changed"
+        await authorize_headers(flow)
+        assert flow.error is not None
+        assert flow.response is None
         assert flow.request.headers["Authorization"] == "Bearer sandbox-placeholder"
-        mitm_addon.response(flow)
-    assert managed.admission_state_for_tests() == (0, 0)
+        assert managed_upload.get(flow) is None
 
 
-async def test_cancelled_auth_releases_the_retained_body(tmp_path, real_flow, mitm_ctx):
-    path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
+async def test_header_auth_cancellation_releases_parser(tmp_path, real_flow, mitm_ctx):
+    registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
     flow = request(real_flow)
+    flow.request.raw_content = None
     with (
-        mitm_ctx(registry_path=str(path)),
+        mitm_ctx(registry_path=str(registry)),
         patch.object(auth, "get_firewall_headers", AsyncMock(side_effect=asyncio.CancelledError)),
+        pytest.raises(asyncio.CancelledError),
     ):
-        assert mitm_addon.requestheaders(flow) is None
-        with pytest.raises(asyncio.CancelledError):
-            await mitm_addon.request(flow)
-    assert managed.admission_state_for_tests() == (0, 0)
+        await authorize_headers(flow)
+    assert managed_upload.get(flow) is None
 
 
 @pytest.mark.parametrize("ip_target", [False, True])
-async def test_existing_upstream_binding_cannot_skip_managed_body_admission(
+async def test_existing_binding_still_selects_policy_stream(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, ip_target
 ):
-    path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
+    registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
     flow = request(real_flow)
-    length = len(flow.request.raw_content)
     flow.request.raw_content = None
     if ip_target:
         flow.request.host = "203.0.113.10"
@@ -183,42 +198,15 @@ async def test_existing_upstream_binding_cannot_skip_managed_body_admission(
         original_address=("203.0.113.10", 443),
     )
     flow.server_conn.address = ("openrouter.ai", 443)
-    with mitm_ctx(registry_path=str(path)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(flow) is None
+    with mitm_ctx(registry_path=str(registry)), fake_firewall_headers() as fetch:
+        await authorize_headers(flow)
+        fetch.assert_awaited_once()
         assert flow.error is None
-        assert flow.request.stream is False
-        assert managed.admission_state_for_tests() == (1, length)
-        auth_fetch.assert_not_called()
-        flow.error = Error("client disconnected during body")
+        assert callable(flow.request.stream)
+        flow.error = Error("client disconnected during upload")
         mitm_addon.error(flow)
-    assert managed.admission_state_for_tests() == (0, 0)
-
-
-@pytest.mark.parametrize("limit", ["MAX_ADMITTED_REQUESTS", "MAX_ADMITTED_BODY_BYTES"])
-async def test_saturation_and_partial_body_error_release_capacity_without_auth(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, monkeypatch, limit
-):
-    path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
-    first, blocked, replacement = (request(real_flow) for _ in range(3))
-    length = len(first.request.raw_content)
-    monkeypatch.setattr(managed, limit, 1 if limit == "MAX_ADMITTED_REQUESTS" else length)
-    for flow in (first, blocked, replacement):
-        flow.request.raw_content = None
-    with mitm_ctx(registry_path=str(path)), fake_firewall_headers() as auth_fetch:
-        assert mitm_addon.requestheaders(first) is None
-        assert managed.admission_state_for_tests() == (1, length)
-        assert mitm_addon.requestheaders(blocked) is None
-        assert blocked.error is not None
-        assert managed.admission_state_for_tests() == (1, length)
-        first.error = Error("client disconnected during body")
-        mitm_addon.error(first)
-        mitm_addon.error(first)
-        assert managed.admission_state_for_tests() == (0, 0)
-        assert mitm_addon.requestheaders(replacement) is None
-        assert replacement.error is None
-        mitm_addon.error(replacement)
-        auth_fetch.assert_not_called()
-    assert managed.admission_state_for_tests() == (0, 0)
+        mitm_addon.error(flow)
+    assert managed_upload.get(flow) is None
 
 
 @pytest.mark.parametrize("owner", ["openrouter", "model-provider:claude-code-oauth-token"])
@@ -229,15 +217,15 @@ async def test_other_credential_owners_keep_their_own_request_policy(
     info["firewalls"][0]["firewall"]["name"] = owner
     info["networkPolicies"][owner] = info["networkPolicies"].pop(managed.OWNER)
     info.pop("piModelConfig")
-    path = _write_registry(tmp_path, sandbox_info=info)
+    registry = _write_registry(tmp_path, sandbox_info=info)
     flow = request(real_flow, {"model": "user-chosen-model", "provider": {"sort": "price"}})
     with (
-        mitm_ctx(registry_path=str(path)),
-        fake_firewall_headers(headers={"Authorization": "Bearer owner-token"}) as auth_fetch,
+        mitm_ctx(registry_path=str(registry)),
+        fake_firewall_headers(headers={"Authorization": "Bearer owner-token"}) as fetch,
     ):
         await mitm_addon.request(flow)
-        auth_fetch.assert_awaited_once()
+        fetch.assert_awaited_once()
         assert flow.response is None
         assert flow.request.headers["Authorization"] == "Bearer owner-token"
         assert flow.metadata[metadata_keys.FIREWALL_NAME] == owner
-    assert managed.admission_state_for_tests() == (0, 0)
+    assert managed_upload.get(flow) is None

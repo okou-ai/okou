@@ -2,10 +2,11 @@
 
 The Runner writes piModelConfig from the API-owned execution context into its
 private registry. It is request policy, not proof of the sandbox caller's identity.
-Caller/connector-owner isolation is a separate boundary. No request may bypass
-this policy through header-phase auth or request streaming.
+Caller/connector-owner isolation is a separate boundary. Streaming validates
+before forwarding each chunk, with final authorization at true EOF. Previously
+delivered headers and body prefixes cannot be recalled after a later rejection.
 
-Managed requests use bounded, identity-encoded JSON with a declared length.
+Managed requests use incremental, identity-encoded JSON with a declared length.
 Only Pi's supported content/protocol/output/cache fields are forwarded; preset,
 model-list, provider, plugin and server-tool routing overrides are rejected.
 The response remains eligible for the ordinary SSE streaming path. Runner and
@@ -13,7 +14,6 @@ this private registry reader ship together; old Runner artifacts must drain for
 enforcement. No API writer or persisted-context generation changes are needed.
 """
 
-import json
 import math
 import re
 from dataclasses import dataclass
@@ -21,22 +21,19 @@ from dataclasses import dataclass
 from mitmproxy import http
 
 import content_length
-import flow_metadata_keys as metadata_keys
-import request_body_admission
+import managed_upload
 from logging_utils import NETWORK_LOG_MAX_SAFE_SIZE
 from request_authority import AuthorityValidationError, get_trusted_authority
+from usage.json_selective import JsonSelectiveExtractor, JsonValueKind, Path
 
 OWNER = "model-provider:openrouter-codex"
 HOST = "openrouter.ai"
-MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024
-MAX_ADMITTED_REQUESTS = 16
-MAX_ADMITTED_BODY_BYTES = 128 * 1024 * 1024
 _MAX_JSON_DEPTH = 128
 _MAX_JSON_WORK = 262_144
+_TOOL_ITEM_DEPTH = 2
+_TOOL_TYPE_DEPTH = 3
 _HTTPS_PORT = 443
 _PRESET = re.compile(r"@preset/[A-Za-z0-9_.-]{1,504}\Z")
-_JSON_STRUCTURE = re.compile(rb'["{}\[\],:]')
-_JSON_STRING = re.compile(rb'["\\]')
 _CAPTURED_POLICY = "_managed_openrouter_captured_policy"
 _HEADERS = frozenset(
     (
@@ -108,32 +105,20 @@ _PATHS = {
     "openai-completions": "/api/v1/chat/completions",
     "openai-responses": "/api/v1/responses",
 }
-_budget = request_body_admission.RequestBodyAdmissionBudget(
-    metadata_key=metadata_keys.MANAGED_OPENROUTER_BODY_ADMISSION,
-    negative_size_message="Managed model request body size cannot be negative",
-    already_attached_message="Managed model body admission is already attached",
-)
 
 
-class RequestRejectedError(ValueError):
+class RequestRejectedError(managed_upload.UploadRejectedError):
     """A fixed, non-secret reason suitable for a local policy response."""
 
 
 class BodyLengthRejectedError(RequestRejectedError):
     """Retain bounded scalar evidence from the rejected declaration, never headers."""
 
-    def __init__(self, result: content_length.ContentLengthResult, values: list[str]) -> None:
+    def __init__(self, result: content_length.ContentLengthResult) -> None:
         super().__init__("body_length")
         self.kind = "zero" if result.kind == "valid" and result.value == 0 else result.kind
-        self.limit_bytes = MAX_REQUEST_BODY_BYTES
+        self.limit_bytes = NETWORK_LOG_MAX_SAFE_SIZE
         self.declared_bytes: int | None = result.value if result.kind == "valid" else None
-        if result.kind == "over_limit":
-            # The admission parser can return limit + 1 as a sentinel. Reuse its
-            # bounded conversion on this rejection path to retain exact ordinary
-            # sizes without serializing arbitrary integers or raw header text.
-            diagnostic = content_length.parse(values, max_value=NETWORK_LOG_MAX_SAFE_SIZE)
-            if diagnostic.kind == "valid":
-                self.declared_bytes = diagnostic.value
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,94 +188,119 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
     if flow.request.headers.get_all("Transfer-Encoding"):
         raise RequestRejectedError("transfer_encoding")
     values = flow.request.headers.get_all("Content-Length")
-    length = content_length.parse(values, max_value=MAX_REQUEST_BODY_BYTES)
+    length = content_length.parse(values, max_value=NETWORK_LOG_MAX_SAFE_SIZE)
     if length.kind != "valid" or length.value == 0:
-        raise BodyLengthRejectedError(length, values)
+        raise BodyLengthRejectedError(length)
     return length.value
 
 
-def admit_request(flow: http.HTTPFlow, sandbox: dict) -> None:
-    """Reserve capacity before mitmproxy starts native request-body buffering."""
+def admit_request(
+    flow: http.HTTPFlow, sandbox: dict, *, request_end_stream: bool | None = None
+) -> None:
+    """Select incremental validation before native request-body buffering."""
     policy = policy_for_sandbox(sandbox)
     if policy is None:
         raise RequestRejectedError("captured_policy")
     length = _validate_headers(flow, policy)
+    # Native framing skips request.stream when HEADERS already ended the
+    # request. A managed request must carry a nonempty JSON document.
+    if request_end_stream is True:
+        raise RequestRejectedError("incomplete_body")
     release_from_flow(flow)
-    try:
-        admission = _budget.reserve(
-            length,
-            max_admitted_count=MAX_ADMITTED_REQUESTS,
-            max_admitted_body_bytes=MAX_ADMITTED_BODY_BYTES,
-        )
-    except (
-        request_body_admission.RequestBodyAdmissionCountSaturatedError,
-        request_body_admission.RequestBodyAdmissionByteSaturatedError,
-    ) as error:
-        raise RequestRejectedError("body_admission") from error
-    try:
-        _budget.attach_to_flow(flow, admission)
-    except BaseException:
-        _budget.release(admission)
-        raise
+    managed_upload.attach(flow, managed_upload.Upload(flow, length, _PresetDocument(policy)))
     flow.metadata[_CAPTURED_POLICY] = _CapturedPolicy(sandbox["runId"], policy)
     flow.request.stream = False
 
 
-def _check_json_structure(body: bytes) -> None:
-    """Bound container/scalar allocation before stdlib JSON materialization.
+class _PresetChecks:
+    """Only policy scalars are captured; the main scanner owns JSON structure."""
 
-    Only syntax outside strings counts as structure. Escaped quote scanning is
-    bounded too; braces or field names in prompts never become policy inputs.
-    This is a resource guard; json.loads owns authoritative syntax validation.
-    """
-    position = depth = work = 0
-    while match := _JSON_STRUCTURE.search(body, position):
-        work += 1
-        if work > _MAX_JSON_WORK:
-            raise RequestRejectedError("json_work")
-        token = body[match.start()]
-        position = match.end()
-        if token == ord('"'):
-            while string_match := _JSON_STRING.search(body, position):
-                work += 1
-                if work > _MAX_JSON_WORK:
-                    raise RequestRejectedError("json_work")
-                position = string_match.end()
-                if body[string_match.start()] == ord('"'):
-                    break
-                position += 1
-            else:
-                raise RequestRejectedError("json")
-        elif token in (ord("{"), ord("[")):
-            depth += 1
-            if depth > _MAX_JSON_DEPTH:
-                raise RequestRejectedError("json_depth")
-        elif token in (ord("}"), ord("]")):
-            depth -= 1
+    def __init__(self, policy: PresetPolicy) -> None:
+        self.policy = policy
+        self.model_matches = False
+        self.tier_matches = policy.service_tier is None
+
+    def value_start(self, path: Path, kind: JsonValueKind) -> int | None:
+        expected = None
+        reason = "model"
+        if not path and kind != "object":
+            raise RequestRejectedError("json_object")
+        if len(path) == 1 and path[0] not in _FIELDS[self.policy.dialect]:
+            raise RequestRejectedError("request_fields")
+        if path == ("model",):
+            expected = self.policy.preset
+        elif path == ("service_tier",):
+            if self.policy.service_tier is None:
+                raise RequestRejectedError("service_tier")
+            expected, reason = self.policy.service_tier, "service_tier"
+        elif (path == ("tools",) and kind != "array") or (
+            len(path) == _TOOL_ITEM_DEPTH and path[0] == "tools" and kind != "object"
+        ):
+            raise RequestRejectedError("server_tools")
+        elif len(path) == _TOOL_TYPE_DEPTH and path[0] == "tools" and path[2] == "type":
+            expected, reason = "function", "server_tools"
+        if expected is not None:
+            if kind != "string":
+                raise RequestRejectedError(reason)
+            # ASCII policy values may arrive entirely as six-byte JSON escapes.
+            return 6 * len(expected)
+        return None
+
+    def scalar(self, path: Path, value: object) -> None:
+        if isinstance(value, float) and not math.isfinite(value):
+            raise RequestRejectedError("json_number")
+        if path == ("model",):
+            if value != self.policy.preset:
+                raise RequestRejectedError("model")
+            self.model_matches = True
+        elif path == ("service_tier",):
+            if value != self.policy.service_tier:
+                raise RequestRejectedError("service_tier")
+            self.tier_matches = True
+        elif len(path) == _TOOL_TYPE_DEPTH and path[0] == "tools" and path[2] == "type":
+            if value != "function":
+                raise RequestRejectedError("server_tools")
+
+    def object_end(self, path: Path, members: set[str]) -> None:
+        if len(path) == _TOOL_ITEM_DEPTH and path[0] == "tools" and "type" not in members:
+            raise RequestRejectedError("server_tools")
 
 
-def _json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise RequestRejectedError("duplicate_json_key")
-        result[key] = value
-    return result
+class _PresetDocument:
+    def __init__(self, policy: PresetPolicy) -> None:
+        self.checks = _PresetChecks(policy)
+        self.parser = JsonSelectiveExtractor(
+            document_policy=self.checks,
+            max_depth=_MAX_JSON_DEPTH,
+            max_work_units=_MAX_JSON_WORK,
+            max_key_bytes=4096,
+            max_number_bytes=4300,
+        )
 
+    def feed(self, chunk: bytes) -> None:
+        self.parser.feed(chunk)
+        if not self.parser.accepts_more_input():
+            self.finish()
 
-def _reject_constant(_value: str) -> object:
-    raise RequestRejectedError("json_constant")
-
-
-def _finite_float(value: str) -> float:
-    result = float(value)
-    if not math.isfinite(result):
-        raise RequestRejectedError("json_number")
-    return result
+    def finish(self) -> None:
+        result = self.parser.finish()
+        if not result.complete:
+            reason = {
+                "duplicate object key": "duplicate_json_key",
+                "max depth exceeded": "json_depth",
+                "work limit exceeded": "json_work",
+                "key limit exceeded": "json_key",
+                "number limit exceeded": "json_number",
+            }.get(result.error or "", "json")
+            raise RequestRejectedError(reason)
+        if not self.checks.model_matches:
+            raise RequestRejectedError("model")
+        if not self.checks.tier_matches:
+            raise RequestRejectedError("service_tier")
 
 
 def validate_request(flow: http.HTTPFlow, sandbox: dict) -> PresetPolicy:
-    """Validate complete, original bytes before any managed auth resolution."""
+    """Validate policy binding and completed streaming, or already supplied bytes."""
     policy = policy_for_sandbox(sandbox)
     if policy is None:
         raise RequestRejectedError("captured_policy")
@@ -300,52 +310,29 @@ def validate_request(flow: http.HTTPFlow, sandbox: dict) -> PresetPolicy:
     if flow.request.trailers:
         raise RequestRejectedError("trailers")
     length = _validate_headers(flow, policy)
+    upload = managed_upload.get(flow)
+    if upload is not None:
+        if upload.failure is not None:
+            raise RequestRejectedError(upload.failure)
+        if upload.phase is managed_upload.Phase.COMPLETE:
+            if upload.length != length or flow.request.raw_content not in (None, b""):
+                raise RequestRejectedError("incomplete_body")
+            return policy
     body = flow.request.raw_content
     if flow.request.stream or body is None or len(body) != length:
         raise RequestRejectedError("incomplete_body")
-    _check_json_structure(body)
-    try:
-        payload: object = json.loads(
-            body.decode("utf-8"),
-            object_pairs_hook=_json_object,
-            parse_constant=_reject_constant,
-            parse_float=_finite_float,
-        )
-    except RequestRejectedError:
-        raise
-    except (ValueError, RecursionError) as error:
-        raise RequestRejectedError("json") from error
-    if not isinstance(payload, dict):
-        raise RequestRejectedError("json_object")
-    if payload.get("model") != policy.preset:
-        raise RequestRejectedError("model")
-    # Even an empty provider object replaces the preset's provider field under
-    # OpenRouter's shallow merge. Unknown fields and all alternate selectors
-    # are rejected, rather than guessing whether an override is harmless.
-    if not payload.keys() <= _FIELDS[policy.dialect]:
-        raise RequestRejectedError("request_fields")
-    if policy.service_tier is None:
-        if "service_tier" in payload:
-            raise RequestRejectedError("service_tier")
-    elif payload.get("service_tier") != policy.service_tier:
-        raise RequestRejectedError("service_tier")
-    tools = payload.get("tools", [])
-    if not isinstance(tools, list) or any(
-        not isinstance(tool, dict) or tool.get("type") != "function" for tool in tools
-    ):
-        raise RequestRejectedError("server_tools")
+    document = _PresetDocument(policy)
+    for offset in range(0, len(body), managed_upload.PARSE_SLICE):
+        document.feed(body[offset : offset + managed_upload.PARSE_SLICE])
+    document.finish()
     return policy
 
 
 def release_from_flow(flow: http.HTTPFlow) -> None:
-    """Release only when the retaining flow completes or is abandoned."""
-    _budget.release_from_flow(flow)
+    """Release remaining upload state idempotently on terminal hooks."""
+    managed_upload.release(flow)
     flow.metadata.pop(_CAPTURED_POLICY, None)
 
 
-def admission_state_for_tests() -> tuple[int, int]:
-    return _budget.state_for_tests()
-
-
 def reset_for_tests() -> None:
-    _budget.reset_for_tests()
+    managed_upload.close_all()

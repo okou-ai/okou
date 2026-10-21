@@ -3,6 +3,7 @@
 import pytest
 
 import managed_openrouter as managed
+import managed_upload
 from tests.managed_openrouter_helpers import PRESET, model_config, payload, request
 
 
@@ -172,19 +173,25 @@ def test_deep_json_fails_closed(real_flow):
         managed.validate_request(request(real_flow, body), {"piModelConfig": model_config()})
 
 
-def test_admission_counts_retained_bytes_and_releases_once(real_flow, monkeypatch):
-    monkeypatch.setattr(managed, "MAX_ADMITTED_REQUESTS", 1)
+def test_header_validation_has_no_count_or_declared_byte_reservation(real_flow):
     info = {"runId": "run-1", "piModelConfig": model_config()}
-    first, second = request(real_flow), request(real_flow)
-    managed.admit_request(first, info)
-    assert managed.admission_state_for_tests() == (1, len(first.request.raw_content))
-    with pytest.raises(managed.RequestRejectedError, match="body_admission"):
-        managed.admit_request(second, info)
-    managed.release_from_flow(first)
-    managed.release_from_flow(first)
-    assert managed.admission_state_for_tests() == (0, 0)
-    managed.admit_request(second, info)
-    managed.release_from_flow(second)
+    flows = [request(real_flow) for _ in range(20)]
+    uploads = []
+    for flow in flows:
+        flow.request.headers["Content-Length"] = str(40 * 1024 * 1024)
+        flow.request.raw_content = None
+        managed.admit_request(flow, info)
+        upload = managed_upload.get(flow)
+        assert upload is not None
+        uploads.append(upload)
+        assert flow.request.raw_content is None
+    for flow, upload in zip(flows, uploads, strict=True):
+        managed.release_from_flow(flow)
+        managed.release_from_flow(flow)
+        assert managed_upload.get(flow) is None
+        assert upload.phase is managed_upload.Phase.CLOSED
+        assert upload.validator is None
+        assert upload.tail == b""
 
 
 def test_policy_is_bound_to_the_header_phase_run(real_flow):

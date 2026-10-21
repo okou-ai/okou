@@ -1,166 +1,281 @@
-"""Native HTTP-state proof that managed inference waits for full validation."""
+"""Fresh native wire proof of streamed policy and exact successful bytes."""
 
+import asyncio
+import hashlib
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from mitmproxy import http
 from mitmproxy.addons.proxyserver import Proxyserver
-from mitmproxy.proxy import commands, events
-from mitmproxy.proxy.layers.http import (
-    GetHttpConnection,
-    GetHttpConnectionCompleted,
-    HTTPMode,
-    HttpStream,
-    SendHttp,
-)
-from mitmproxy.proxy.layers.http._events import (
-    RequestData,
-    RequestEndOfMessage,
-    RequestHeaders,
-    RequestTrailers,
-    ResponseEndOfMessage,
-    ResponseHeaders,
-)
-from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
-from mitmproxy.test import taddons, tutils
+from mitmproxy.proxy import events
+from mitmproxy.test import taddons
 
-import managed_openrouter as managed
+import managed_upload
 import mitm_addon
-from tests.managed_openrouter_helpers import PATHS, PI_ATTRIBUTION_HEADERS, PRESET, sandbox
-from tests.mitmproxy_http_framing_helpers import start_http_layer
+from logging_utils import flush_log_path
+from tests.managed_openrouter_helpers import PATHS, PRESET, sandbox
+from tests.managed_wire_helpers import WireSession
 from tests.request_handler_helpers import _write_registry
-from tests.upstream_connection_helpers import mark_connected_tls_upstream
-
-
-async def _finish_hooks(context, stream, pending):
-    observed = []
-    queue = list(pending)
-    while queue:
-        command = queue.pop(0)
-        observed.append(command)
-        if isinstance(command, commands.StartHook):
-            await context.master.addons.invoke_addon(mitm_addon, command)
-            queue.extend(stream.handle_event(events.HookCompleted(command, None)))
-    return observed
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
-@pytest.mark.parametrize("http2", [False, True], ids=["http1", "http2"])
-@pytest.mark.parametrize("case", ["late-override", "trailers", "accepted"])
-async def test_complete_body_is_validated_before_any_upstream_request(
-    tmp_path, fake_firewall_headers, dialect, http2, case
+@pytest.mark.parametrize("client_h2", [False, True])
+@pytest.mark.parametrize("provider_h2", [False, True])
+@pytest.mark.parametrize(
+    "case", ["valid", "routing", "duplicate", "number", "utf8", "incomplete", "trailing", "changed"]
+)
+async def test_native_stream_validates_before_forwarding_and_finishes_once(
+    tmp_path, fake_firewall_headers, dialect, client_h2, provider_h2, case
 ):
-    path = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))
-    # The policy-changing field is deliberately beyond the diagnostic prefix.
+    info = sandbox(tmp_path, dialect)
+    info["captureNetworkBodies"] = True
+    registry = _write_registry(tmp_path, sandbox_info=info)
     key = b"messages" if dialect == "openai-completions" else b"input"
-    body = b'{"' + key + b'":[{"role":"user","content":"' + b"x" * 100_000
-    body += b'"}],"model":"' + PRESET.encode() + b'","stream":true'
-    body += b',"provider":{}}' if case == "late-override" else b"}"
+    prefix = b'{"model":"' + PRESET.encode() + b'","' + key + b'":[{"content":"'
+    prompt = b"private-prompt-canary" + b"x" * 100_000
+    suffix = b'"}]}'
+    if case == "routing":
+        suffix = b'"}],"provider":{}}'
+    elif case == "duplicate":
+        suffix = b'"}],"metadata":{"x":1,"\\u0078":2}}'
+    elif case == "number":
+        suffix = b'"}],"metadata":{"n":1e999}}'
+    elif case == "utf8":
+        suffix = b"\xff" + suffix
+    elif case == "incomplete":
+        suffix = suffix[:-1]
+    elif case == "trailing":
+        suffix += b"[]"
+    complete = prefix + prompt + suffix
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as context,
-        fake_firewall_headers(headers={"Authorization": "Bearer synthetic-managed"}) as auth_fetch,
+        fake_firewall_headers(headers={"Authorization": "Bearer fresh-wire"}) as fetch,
     ):
         context.options.update(
-            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(path)
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
         )
-        _, layer = start_http_layer(
-            context,
-            alpn=b"h2" if http2 else b"http/1.1",
-            host="openrouter.ai",
-            mode=HTTPMode.transparent,
-        )
-        stream = HttpStream(layer.context.fork(), 1)
-        list(stream.handle_event(events.Start()))
-        req = tutils.treq(
-            scheme=b"https",
-            method=b"POST",
-            host=b"openrouter.ai",
-            port=443,
-            path=PATHS[dialect].encode(),
-            http_version=b"HTTP/2.0" if http2 else b"HTTP/1.1",
-            headers=http.Headers(
-                (
-                    (b"Host", b"openrouter.ai"),
-                    (b"Content-Type", b"application/json"),
-                    (b"Content-Length", str(len(body)).encode()),
-                )
-            ),
-            content=None,
-        )
-        for name, value in PI_ATTRIBUTION_HEADERS:
-            req.headers[name] = value
-        if http2:
-            req.authority = "openrouter.ai"
-        pending = list(stream.handle_event(RequestHeaders(1, req, end_stream=False)))
-        hook = next(c for c in pending if isinstance(c, HttpRequestHeadersHook))
-        flow = hook.flow
-        mark_connected_tls_upstream(
-            flow,
-            sni="openrouter.ai",
-            server_address=("openrouter.ai", 443),
-            peername=("104.18.32.47", 443),
-        )
-        await context.master.addons.invoke_addon(mitm_addon, hook)
-        observed = list(stream.handle_event(events.HookCompleted(hook, None)))
-        assert not any(isinstance(c, (GetHttpConnection, SendHttp)) for c in observed)
-        assert flow.request.stream is False
-        auth_fetch.assert_not_called()
-        for fragment in (body[:80_000], body[80_000:]):
-            pending = list(stream.handle_event(RequestData(1, fragment)))
-            assert not any(isinstance(c, (GetHttpConnection, SendHttp)) for c in pending)
-            observed.extend(pending)
-            auth_fetch.assert_not_called()
-        if case == "trailers":
-            pending = list(
-                stream.handle_event(
-                    RequestTrailers(1, http.Headers([(b"X-OpenRouter-Preset", b"other")]))
-                )
-            )
-            assert not any(isinstance(c, (GetHttpConnection, SendHttp)) for c in pending)
-        pending = list(stream.handle_event(RequestEndOfMessage(1)))
-        request_hook = next(c for c in pending if isinstance(c, HttpRequestHook))
-        await context.master.addons.invoke_addon(mitm_addon, request_hook)
-        pending = list(stream.handle_event(events.HookCompleted(request_hook, None)))
-        if case != "accepted":
-            observed.extend(await _finish_hooks(context, stream, pending))
-            auth_fetch.assert_not_called()
-            assert flow.response is not None
-            assert flow.response.status_code == 403
-            assert not any(isinstance(c, GetHttpConnection) for c in observed)
-            assert not any(
-                isinstance(c, SendHttp) and isinstance(c.event, (RequestHeaders, RequestData))
-                for c in observed
-            )
+        peer = WireSession(context, client_h2=client_h2, provider_h2=provider_h2)
+        await peer.start(len(complete), dialect)
+        assert peer.request_headers[b"authorization"] == b"Bearer fresh-wire"
+        if client_h2:
+            await peer.write(b"")
+        await peer.write(prefix)
+        await peer.write(prompt)
+        assert peer.received == len(prefix) + len(prompt)
+        assert peer.flow.request.raw_content is None
+        if case == "changed":
+            info["piModelConfig"]["model"] = "@preset/changed"
+            _write_registry(tmp_path, sandbox_info=info)
+        await peer.write(suffix, final=True)
+        fetch.assert_awaited_once()
+        assert peer.flow.request.raw_content is None
+        if case == "valid":
+            assert peer.upstream_ended
+            assert peer.received == len(complete)
+            assert peer.digest.digest() == hashlib.sha256(complete).digest()
+            upload = managed_upload.get(peer.flow)
+            assert upload is not None
+            assert upload.validator is None
+            assert upload.tail == b""
+            await peer.respond()
+            assert peer.flow.live
+            assert peer.flow.error is None
+            await peer.respond(first=False, final=True)
+            assert b"data: {}" in peer.response
+            assert peer.flow.response is not None
+            assert peer.flow.response.status_code == 200
         else:
-            auth_fetch.assert_awaited_once()
-            connection = next(c for c in pending if isinstance(c, GetHttpConnection))
-            sent = list(
-                stream.handle_event(
-                    GetHttpConnectionCompleted(connection, (flow.server_conn, None))
-                )
-            )
-            heads = [
-                c.event
-                for c in sent
-                if isinstance(c, SendHttp) and isinstance(c.event, RequestHeaders)
+            assert not peer.upstream_ended
+            assert peer.received < len(complete)
+            assert peer.flow.error is not None
+            if provider_h2:
+                assert peer.upstream_reset
+            else:
+                assert peer.flow.server_conn in peer.closed
+        assert not peer.flow.live
+        assert not peer.native.streams
+        assert managed_upload.get(peer.flow) is None
+        if case == "routing":
+            network = Path(info["networkLogPath"])
+            assert await asyncio.to_thread(flush_log_path, str(network))
+            saved = await asyncio.to_thread(network.read_text)
+            [entry] = [json.loads(line) for line in saved.splitlines()]
+            assert entry["request_size"] == len(complete)
+            assert "request_body" not in entry
+            assert "private-prompt-canary" not in saved
+
+
+@pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
+@pytest.mark.parametrize("declared_length", [10, 40 * 1024 * 1024], ids=["small", "large"])
+async def test_headers_eof_rejects_nonempty_body_before_credentials(
+    tmp_path, fake_firewall_headers, dialect, declared_length
+):
+    info = sandbox(tmp_path, dialect)
+    registry = _write_registry(tmp_path, sandbox_info=info)
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as context,
+        fake_firewall_headers() as fetch,
+    ):
+        context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
+        )
+        peer = WireSession(context, client_h2=True)
+        peer.guest.initiate_connection()
+        await peer.drive()
+        peer.guest.send_headers(
+            1,
+            [
+                (b":method", b"POST"),
+                (b":scheme", b"https"),
+                (b":authority", b"openrouter.ai"),
+                (b":path", PATHS[dialect].encode()),
+                (b"content-type", b"application/json"),
+                (b"content-length", str(declared_length).encode()),
+            ],
+            end_stream=True,
+        )
+        try:
+            await peer.drive(events.DataReceived(peer.client, peer.guest.data_to_send()))
+            fetch.assert_not_awaited()
+            assert not peer.request_headers
+            assert peer.response_status == 403
+            assert json.loads(peer.response)["reason"] == "incomplete_body"
+            assert peer.response_ended
+            assert peer.flow.error is None
+            assert not peer.flow.live
+            assert not peer.native.streams
+            assert managed_upload.get(peer.flow) is None
+            proxy = Path(info["proxyLogPath"])
+            assert await asyncio.to_thread(flush_log_path, str(proxy))
+            saved = await asyncio.to_thread(proxy.read_text)
+            [policy] = [
+                row
+                for line in saved.splitlines()
+                if (row := json.loads(line)).get("type") == "managed_model_policy"
             ]
-            assert len(heads) == 1
-            assert heads[0].request.headers["Authorization"] == "Bearer synthetic-managed"
-            for name, value in PI_ATTRIBUTION_HEADERS:
-                assert heads[0].request.headers[name] == value
-            assert (
-                b"".join(
-                    c.event.data
-                    for c in sent
-                    if isinstance(c, SendHttp) and isinstance(c.event, RequestData)
-                )
-                == body
-            )
-            pending = list(
-                stream.handle_event(ResponseHeaders(1, http.Response.make(200), end_stream=False))
-            )
-            await _finish_hooks(context, stream, pending)
-            pending = list(stream.handle_event(ResponseEndOfMessage(1)))
-            await _finish_hooks(context, stream, pending)
-    assert managed.admission_state_for_tests() == (0, 0)
+            assert policy["rejection_phase"] == "requestheaders"
+        finally:
+            peer.close()
+
+
+@pytest.mark.parametrize("provider_h2", [False, True])
+async def test_native_trailers_cannot_release_final_managed_byte(
+    tmp_path, fake_firewall_headers, provider_h2
+):
+    registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
+    raw = b'{"model":"' + PRESET.encode() + b'","messages":[]}'
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as context,
+        fake_firewall_headers(),
+    ):
+        context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
+        )
+        peer = WireSession(context, client_h2=True, provider_h2=provider_h2)
+        await peer.start(len(raw), "openai-completions")
+        await peer.write(raw)
+        assert peer.received == len(raw) - 1
+        assert not peer.upstream_ended
+        peer.guest.send_headers(1, [(b"x-openrouter-preset", b"other")], end_stream=True)
+        await peer.drive(events.DataReceived(peer.client, peer.guest.data_to_send()))
+        assert peer.flow.error is not None
+        assert peer.received == len(raw) - 1
+        assert not peer.upstream_ended
+        assert not peer.flow.live
+        assert not peer.native.streams
+        assert managed_upload.get(peer.flow) is None
+
+
+async def test_completed_stream_can_reuse_native_http1_connection(tmp_path, fake_firewall_headers):
+    registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
+    raw = b'{"model":"' + PRESET.encode() + b'","messages":[]}'
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as context,
+        fake_firewall_headers(),
+    ):
+        context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
+        )
+        peer = WireSession(context)
+        for index in range(2):
+            if index:
+                peer.http1.start_next_cycle()
+                peer.digest = hashlib.sha256()
+                peer.received = 0
+                peer.upstream_ended = False
+            await peer.start(len(raw), "openai-completions")
+            await peer.write(raw, final=True)
+            assert peer.upstream_ended
+            assert peer.received == len(raw)
+            assert peer.digest.digest() == hashlib.sha256(raw).digest()
+            await peer.respond(final=True)
+            assert not peer.flow.live
+            assert not peer.native.streams
+            assert managed_upload.get(peer.flow) is None
+        assert not peer.closed
+
+
+@pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
+@pytest.mark.parametrize("client_h2", [False, True])
+@pytest.mark.parametrize("provider_h2", [False, True])
+@pytest.mark.parametrize("ending", ["response", "request", "authorization"])
+async def test_policy_rejection_preserves_an_already_streaming_provider_response(
+    tmp_path, fake_firewall_headers, dialect, client_h2, provider_h2, ending
+):
+    info = sandbox(tmp_path, dialect)
+    info["captureNetworkBodies"] = True
+    registry = _write_registry(tmp_path, sandbox_info=info)
+    prefix = b'{"model":"' + PRESET.encode() + b'","messages":[]'
+    if dialect == "openai-responses":
+        prefix = prefix.replace(b'"messages"', b'"input"')
+    rejected = b',"provider":{}' if ending != "authorization" else b""
+    remaining = b"}"
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as context,
+        fake_firewall_headers(),
+    ):
+        context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
+        )
+        peer = WireSession(context, client_h2=client_h2, provider_h2=provider_h2)
+        try:
+            await peer.start(len(prefix) + len(rejected) + len(remaining), dialect)
+            await peer.write(prefix)
+            await peer.respond()
+            assert b"data: {}" in peer.response
+            if ending == "authorization":
+                info["piModelConfig"]["model"] = "@preset/changed"
+                _write_registry(tmp_path, sandbox_info=info)
+            else:
+                await peer.write(rejected)
+            assert peer.received == len(prefix)
+            assert not peer.upstream_ended
+            if ending == "response":
+                await peer.respond(first=False, final=True)
+                assert peer.response.count(b"data: {}") == 2
+                assert peer.flow.error is None
+                observed = len(prefix) + len(rejected)
+            else:
+                await peer.write(remaining, final=True)
+                assert peer.response.count(b"data: {}") == 1
+                assert peer.flow.error is not None
+                observed = len(prefix) + len(rejected) + len(remaining)
+            assert peer.flow.response is not None
+            assert peer.flow.response.status_code == 200
+            assert not peer.flow.live
+            assert not peer.native.streams
+            assert managed_upload.get(peer.flow) is None
+            network = Path(info["networkLogPath"])
+            assert await asyncio.to_thread(flush_log_path, str(network))
+            saved = await asyncio.to_thread(network.read_text)
+            [entry] = [json.loads(line) for line in saved.splitlines()]
+            assert entry["request_size"] == observed
+            assert "request_body" not in entry
+        finally:
+            peer.close()

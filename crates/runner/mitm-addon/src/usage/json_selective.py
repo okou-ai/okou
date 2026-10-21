@@ -20,7 +20,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Literal, TypeVar, cast
+from typing import Literal, Protocol, TypeVar, cast
 
 
 class _PathMarker(Enum):
@@ -36,6 +36,23 @@ WildcardPath = tuple[str, ...]
 _ScalarPath = TypeVar("_ScalarPath", bound=Path)
 ScalarKind = Literal["string", "int", "bool"]
 ScalarOverflowPolicy = Literal["error", "discard"]
+JsonValueKind = Literal["object", "array", "string", "number", "literal"]
+
+
+class JsonDocumentPolicy(Protocol):
+    """Optional full-document validation, independent of usage observations.
+
+    A value start may select a string using a raw-byte capture limit. Object
+    frames retain exact decoded member identities and reject duplicates in this
+    mode. Unselected strings still use the scanner's bounded discard path.
+    Policy exceptions reject the document; callers must discard the parser.
+    """
+
+    def value_start(self, path: Path, kind: JsonValueKind) -> int | None: ...
+    def scalar(self, path: Path, value: object) -> None: ...
+    def object_end(self, path: Path, members: set[str]) -> None: ...
+
+
 _JsonStringScanner = Callable[[str, int, bool], tuple[str, int]]
 # `scanstring` is the stdlib JSON string scanner, but typeshed does not expose it.
 _SCAN_JSON_STRING = cast(_JsonStringScanner, vars(json.decoder)["scanstring"])
@@ -212,11 +229,12 @@ class _Frame:
     pending_key: PathSegment | None = None
     count_path: Path | None = None
     wildcard_counts: list[tuple[WildcardPath, str]] = field(default_factory=list)
+    members: set[str] | None = None
 
 
 @dataclass
 class _StringState:
-    role: Literal["key", "selected", "skip"]
+    role: Literal["key", "selected", "skip", "policy"]
     path: Path | None
     max_bytes: int
     raw: bytearray | None
@@ -301,6 +319,7 @@ class JsonSelectiveExtractor:
         max_number_bytes: int = 128,
         max_wildcard_keys: int = 256,
         max_work_units: int | None = None,
+        document_policy: JsonDocumentPolicy | None = None,
     ) -> None:
         """Create an extractor for selected JSON observations.
 
@@ -340,6 +359,7 @@ class JsonSelectiveExtractor:
         self.max_number_bytes = max_number_bytes
         self.max_wildcard_keys = max_wildcard_keys
         self.max_work_units = max_work_units
+        self._document_policy = document_policy
         _validate_extractor_config(
             self.scalar_fields,
             self.array_count_paths,
@@ -544,7 +564,10 @@ class JsonSelectiveExtractor:
                 )
                 return i + 1
             if frame.collect_keys is None:
-                collect_keys = frame.path in self._exact_key_collection_paths
+                collect_keys = (
+                    self._document_policy is not None
+                    or frame.path in self._exact_key_collection_paths
+                )
                 if not collect_keys and self._wildcard_key_collection_paths:
                     collect_keys = _matches_any_path_pattern(
                         self._wildcard_key_collection_paths, frame.path
@@ -621,6 +644,20 @@ class JsonSelectiveExtractor:
             consistency = self._scalar_consistency.setdefault(path, _ScalarConsistency())
             consistency.occurrences += 1
         b = chunk[i]
+        string_limit = None
+        if self._document_policy is not None:
+            kind: JsonValueKind
+            if b == ord("{"):
+                kind = "object"
+            elif b == ord("["):
+                kind = "array"
+            elif b == ord('"'):
+                kind = "string"
+            elif b in b"-0123456789":
+                kind = "number"
+            else:
+                kind = "literal"
+            string_limit = self._document_policy.value_start(path, kind)
         if b == ord("{"):
             self._start_object(path, from_array=from_array)
             return i + 1
@@ -629,7 +666,11 @@ class JsonSelectiveExtractor:
             return i + 1
         if b == ord('"'):
             field = self.scalar_fields.get(path)
-            if field and field.kind == "string":
+            if string_limit is not None:
+                self._string = _StringState(
+                    role="policy", path=path, max_bytes=string_limit, raw=bytearray()
+                )
+            elif field and field.kind == "string":
                 self._string = _StringState(
                     role="selected",
                     path=path,
@@ -651,7 +692,7 @@ class JsonSelectiveExtractor:
             self._number = _NumberState(
                 path=path,
                 selected=selected,
-                raw=bytearray() if selected else None,
+                raw=bytearray() if selected or self._document_policy is not None else None,
                 max_bytes=min(self.max_number_bytes, field.max_bytes)
                 if selected and field
                 else self.max_number_bytes,
@@ -685,7 +726,14 @@ class JsonSelectiveExtractor:
             return
         if not from_array and path in self.object_presence_paths:
             self.object_present.add(path)
-        self._stack.append(_Frame(kind="object", path=path, state="key_or_end"))
+        self._stack.append(
+            _Frame(
+                kind="object",
+                path=path,
+                state="key_or_end",
+                members=set() if self._document_policy is not None else None,
+            )
+        )
 
     def _start_array(self, path: Path) -> None:
         if len(self._stack) >= self.max_depth:
@@ -784,7 +832,9 @@ class JsonSelectiveExtractor:
         if not self._stack:
             self._error = "unexpected container end"
             return i + 1
-        self._stack.pop()
+        frame = self._stack.pop()
+        if self._document_policy is not None and frame.members is not None:
+            self._document_policy.object_end(frame.path, frame.members)
         self._value_complete()
         return i + 1
 
@@ -948,6 +998,9 @@ class JsonSelectiveExtractor:
             return
         state.raw.append(b)
         if len(state.raw) > state.max_bytes:
+            if state.role == "key" and self._document_policy is not None:
+                self._error = "key limit exceeded"
+                return
             if state.role == "key" or state.overflow_policy == "discard":
                 state.raw = None
                 return
@@ -967,12 +1020,20 @@ class JsonSelectiveExtractor:
             self._error = "invalid string"
             return
         if state.role == "key":
-            if _contains_surrogate(value):
-                value = _UNKNOWN_KEY
             if not self._stack or self._stack[-1].kind != "object":
                 self._error = "object key outside object"
                 return
             frame = self._stack[-1]
+            if frame.members is not None:
+                if not isinstance(value, str):
+                    self._error = "invalid object key"
+                    return
+                if value in frame.members:
+                    self._error = "duplicate object key"
+                    return
+                frame.members.add(value)
+            if _contains_surrogate(value):
+                value = _UNKNOWN_KEY
             frame.pending_key = value
             frame.state = "colon"
             return
@@ -980,6 +1041,10 @@ class JsonSelectiveExtractor:
             self._error = "missing selected string path"
             return
         if state.raw is None:
+            self._value_complete()
+            return
+        if state.role == "policy" and self._document_policy is not None:
+            self._document_policy.scalar(state.path, value)
             self._value_complete()
             return
         if _contains_surrogate(value):
@@ -1102,7 +1167,7 @@ class JsonSelectiveExtractor:
         if state.phase not in ("zero", "int", "frac", "exp_digits"):
             self._error = "invalid number"
             return
-        if not state.selected:
+        if not state.selected and self._document_policy is None:
             self._value_complete()
             return
         try:
@@ -1111,6 +1176,8 @@ class JsonSelectiveExtractor:
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             self._error = "invalid number"
             return
+        if self._document_policy is not None:
+            self._document_policy.scalar(state.path, value)
         if state.selected and isinstance(value, int) and not isinstance(value, bool):
             field = self.scalar_fields[state.path]
             if field.max_int_value is not None and value > field.max_int_value:
@@ -1151,6 +1218,10 @@ class JsonSelectiveExtractor:
             self._slow_work_bytes_remaining -= i - start
         if not self._error and state.offset == len(state.literal):
             self._literal = None
+            if self._document_policy is not None:
+                self._document_policy.scalar(
+                    state.path, {b"true": True, b"false": False, b"null": None}[state.literal]
+                )
             if state.selected_value is not None:
                 self._record_scalar_consistency(state.path, state.selected_value)
                 self.values[state.path] = state.selected_value
