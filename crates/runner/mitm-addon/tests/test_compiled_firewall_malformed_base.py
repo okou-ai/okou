@@ -590,34 +590,19 @@ def test_malformed_base_authority_respects_base_path_scope(base, matched_url):
     [
         {
             "apis": [
-                {
-                    "base": GITHUB_BASE,
-                    "permissions": [
-                        {"name": "repo-read", "rules": [REPO_RULE]},
-                    ],
-                }
+                firewall_api(GITHUB_BASE, [firewall_permission("repo-read", REPO_RULE)]),
             ],
         },
         {
             "name": 123,
             "apis": [
-                {
-                    "base": GITHUB_BASE,
-                    "permissions": [
-                        {"name": "repo-read", "rules": [REPO_RULE]},
-                    ],
-                }
+                firewall_api(GITHUB_BASE, [firewall_permission("repo-read", REPO_RULE)]),
             ],
         },
         {
             "name": "",
             "apis": [
-                {
-                    "base": GITHUB_BASE,
-                    "permissions": [
-                        {"name": "repo-read", "rules": [REPO_RULE]},
-                    ],
-                }
+                firewall_api(GITHUB_BASE, [firewall_permission("repo-read", REPO_RULE)]),
             ],
         },
     ],
@@ -643,3 +628,18 @@ def test_malformed_firewall_name_fails_closed_after_base_match(firewall):
     assert isinstance(matched, matching.FirewallBlock)
     assert matched.permissions == ()
     assert matched.reason == "malformed_firewall_config"
+
+
+def test_valid_firewall_name_allows_matching_request():
+    compiled_firewalls = compile_firewalls_or_fail(_github_firewalls(GITHUB_BASE))
+    policies = _github_policies(unknown_policy="deny")
+
+    matched = matching.match_compiled_firewall_request(
+        REPO_URL,
+        "GET",
+        compiled_firewalls,
+        policies,
+    )
+
+    assert isinstance(matched, matching.FirewallAllow)
+    assert matched.permission == "repo-read"
