@@ -1634,58 +1634,6 @@ function modelProviderRefreshOutputTargets(
   );
 }
 
-async function loadModelProviderSourceStates(args: {
-  readonly db: Db;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly providerKeys: readonly string[];
-  readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
-}): Promise<Map<string, RefreshSourceState>> {
-  const result = new Map<string, RefreshSourceState>();
-  if (args.providerKeys.length === 0) {
-    return result;
-  }
-
-  const sourceLookups = args.providerKeys.flatMap((providerKey) => {
-    const lookup = modelProviderSourceLookup({
-      providerKey,
-      userId: args.userId,
-      metadataByAccessSource: args.metadataByAccessSource,
-    });
-    return lookup ? [lookup] : [];
-  });
-  const exactEntries = await Promise.all(
-    sourceLookups.map(async (lookup) => {
-      const [row] = await args.db
-        .select({
-          tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-          needsReconnect: modelProviderAccounts.needsReconnect,
-        })
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.id, lookup.sourceId),
-            eq(modelProviderAccounts.orgId, args.orgId),
-            eq(modelProviderAccounts.userId, lookup.userId),
-            eq(modelProviderAccounts.type, lookup.providerType),
-          ),
-        )
-        .limit(1);
-      return row
-        ? ([lookup.providerKey, refreshSourceStateFromRow(row)] as const)
-        : null;
-    }),
-  );
-  for (const entry of exactEntries) {
-    if (entry) {
-      result.set(...entry);
-    }
-  }
-
-  return result;
-}
-
 function connectorSlugsForAccessSources(args: {
   readonly accessSourceKeys: readonly string[];
   readonly metadataByAccessSource: ReadonlyMap<string, SecretConnectorMetadata>;
@@ -1733,14 +1681,60 @@ async function loadAccessSourceStates(args: {
     }
   }
 
-  const modelProviderStates = await loadModelProviderSourceStates({
+  const modelStateArgs = {
     featureSwitchContext: args.featureSwitchContext,
     db: args.db,
     orgId: args.orgId,
     userId: args.userId,
     providerKeys,
     metadataByAccessSource: args.metadataByAccessSource,
-  });
+  };
+  const modelProviderStates = await (async (): Promise<
+    Map<string, RefreshSourceState>
+  > => {
+    const result = new Map<string, RefreshSourceState>();
+    if (modelStateArgs.providerKeys.length === 0) {
+      return result;
+    }
+
+    const sourceLookups = modelStateArgs.providerKeys.flatMap((providerKey) => {
+      const lookup = modelProviderSourceLookup({
+        providerKey,
+        userId: modelStateArgs.userId,
+        metadataByAccessSource: modelStateArgs.metadataByAccessSource,
+      });
+      return lookup ? [lookup] : [];
+    });
+    const exactEntries = await Promise.all(
+      sourceLookups.map(async (lookup) => {
+        const [row] = await modelStateArgs.db
+          .select({
+            tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+            needsReconnect: modelProviderAccounts.needsReconnect,
+          })
+          .from(modelProviderAccounts)
+          .where(
+            and(
+              eq(modelProviderAccounts.id, lookup.sourceId),
+              eq(modelProviderAccounts.orgId, modelStateArgs.orgId),
+              eq(modelProviderAccounts.userId, lookup.userId),
+              eq(modelProviderAccounts.type, lookup.providerType),
+            ),
+          )
+          .limit(1);
+        return row
+          ? ([lookup.providerKey, refreshSourceStateFromRow(row)] as const)
+          : null;
+      }),
+    );
+    for (const entry of exactEntries) {
+      if (entry) {
+        result.set(...entry);
+      }
+    }
+
+    return result;
+  })();
   for (const [providerKey, state] of modelProviderStates) {
     merged.set(providerKey, state);
   }
