@@ -356,7 +356,7 @@ function builtinConnection(
 ): Omit<
   ConnectorAccountConnection,
   keyof ReturnType<typeof connectorAccountSetup>
-> | null {
+> {
   const parsedSlug = connectorSlugSchema.safeParse(row.connectorSlug);
   if (!parsedSlug.success) {
     throw new Error("Stored connector account has an invalid builtin identity");
@@ -527,7 +527,7 @@ function projectConnection(
       now,
       includeBuiltinScopeMismatch,
     );
-    return connection ? { ...connection, ...setup } : null;
+    return { ...connection, ...setup };
   }
   const connection = customConnection(row, now);
   return connection ? { ...connection, ...setup } : null;
