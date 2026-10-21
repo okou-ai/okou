@@ -420,6 +420,11 @@ jobs:
           python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_open_permission_test.py'
           sudo env OKOU_TEST_OPEN_PERMISSION_KERNEL=1 python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_open_permission_test.py'
 
+      - name: Test cancellation-independent Guest permission control
+        run: |
+          python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'guest_permission_control_test.py'
+          sudo env OKOU_TEST_OPEN_PERMISSION_KERNEL=1 python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'guest_permission_control_test.py'
+
       - name: Run actionlint
         run: ./actionlint
 
