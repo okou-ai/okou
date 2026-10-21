@@ -108,6 +108,13 @@ package_job = ios['jobs']['test-packages']
 assert test_job['needs'] == ['detect', 'prepare-package-sources']
 assert ios['jobs']['prepare-package-sources']['needs'] == 'detect'
 assert archive_job['needs'] == package_job['needs'] == 'detect'
+source_upload = next(step for step in ios['jobs']['prepare-package-sources']['steps'] if step.get('uses', '').startswith('actions/upload-artifact'))['with']
+source_download = next(step for step in native if step.get('uses', '').startswith('actions/download-artifact'))['with']
+for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
+    uploaded = source_upload['name'].replace('${{ github.run_attempt }}', str(upload_attempt))
+    downloaded = source_download['name'].replace('${{ github.run_attempt }}', str(download_attempt))
+    assert uploaded == downloaded
+assert source_upload['overwrite'] is True
 assert test_job['env'] == archive_job['env'] == package_job['env']
 assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
