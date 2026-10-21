@@ -22,7 +22,7 @@ use guest_control_client::{
     NormalOperationFenceRejection,
 };
 use guest_control_proto::{
-    Decoder, ExecOutputPolicy, ExecTermination, GuestStateRestoreTimezone,
+    Decoder, ExecCapturedOutput, ExecOutputPolicy, ExecTermination, GuestStateRestoreTimezone,
     MSG_GUEST_STATE_RESTORE_RESULT, decode_guest_state_restore_request,
     decode_guest_state_restore_result,
 };
@@ -371,10 +371,25 @@ async fn qualify(directory: &Path, allow: bool) -> TestResult<()> {
         .ok_or_else(|| io::Error::other("missing restore terminal"))?;
     let result = decode_guest_state_restore_result(&message.payload)?;
     assert_eq!(
-        matches!(result.termination, ExecTermination::Exited { exit_code: 0 }),
-        allow
+        result.termination,
+        ExecTermination::Exited {
+            exit_code: if allow { 0 } else { 1 }
+        }
     );
-    assert!(matches!(result.termination, ExecTermination::Exited { .. }));
+    let ExecCapturedOutput::Captured {
+        bytes,
+        truncated: false,
+    } = result.stderr
+    else {
+        return Err(io::Error::other("canonical helper stderr was lost or truncated").into());
+    };
+    if allow {
+        assert!(bytes.is_empty());
+    } else {
+        let diagnostic = std::str::from_utf8(bytes)?;
+        assert!(diagnostic.contains("guest timezone sync failed"));
+        assert!(diagnostic.contains("os error 1"));
+    }
     controls
         .delivery
         .send(ResponseDisposition::Deliver)
@@ -396,6 +411,7 @@ async fn qualify(directory: &Path, allow: bool) -> TestResult<()> {
             matches!(output, ExecOwnedCapturedOutput::Captured { bytes, truncated: false } if bytes.is_empty())
         );
     }
+    let controller_terminal = format!("{result:?}");
     not_parkable(&client);
     drop(control);
     drop(control_listener);
@@ -404,7 +420,7 @@ async fn qualify(directory: &Path, allow: bool) -> TestResult<()> {
     bounded(connection.join()).await??;
     let record = json!({"schema": "native-guest-permission-v1", "allow": allow,
         "source_commit": option_env!("OKOU_TEST_BUILD_SOURCE_SHA"), "event": event,
-        "request_sequence": request.sequence(), "controller_joined": true, "wire_exchange_joined": true,
+        "request_sequence": request.sequence(), "controller_joined": true, "controller_terminal": controller_terminal, "wire_exchange_joined": true,
         "connection_joined": true, "not_parkable_retained": true, "vm_containment_only": true,
         "runner_saving_established": false, "full_lease_cleanup_established": false,
         "snapshot_matrix_established": false, "contention_io_established": false});
