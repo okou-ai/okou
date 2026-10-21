@@ -610,6 +610,7 @@
     },
     "sharing": {
       "accessLabel": "アクセスできるユーザー",
+      "copied": "コピーしました",
       "copyLink": "リンクをコピー",
       "loadFailed": "権限を読み込めませんでした",
       "loadingPermissions": "権限を読み込み中",

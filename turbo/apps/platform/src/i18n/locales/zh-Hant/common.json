@@ -610,6 +610,7 @@
     },
     "sharing": {
       "accessLabel": "誰可以訪問",
+      "copied": "已複製",
       "copyLink": "複製連結",
       "loadFailed": "無法載入權限",
       "loadingPermissions": "正在載入權限",

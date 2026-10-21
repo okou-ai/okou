@@ -629,6 +629,7 @@
     },
     "sharing": {
       "accessLabel": "Quem pode acessar",
+      "copied": "Copiado",
       "copyLink": "Copiar link",
       "loadFailed": "Não foi possível carregar as permissões",
       "loadingPermissions": "Carregando permissões",

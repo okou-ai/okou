@@ -59,6 +59,13 @@ async function openSite(enabled = true) {
   await screen.findByTestId("artifact-dialog-site-frame");
 }
 
+// The published address is the share menu's title link.
+function siteAddress(address: string): HTMLElement | undefined {
+  return queryAllByRoleFast("link").find((link) => {
+    return link.textContent?.trim() === address;
+  });
+}
+
 async function openShare() {
   await waitFor(() => {
     expect(queryButtonByName("Share")).toBeDefined();
@@ -93,7 +100,9 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
     response.resolve();
   }
 
-  await screen.findByText("current-report.okou.app");
+  await waitFor(() => {
+    expect(siteAddress("current-report.okou.app")).toBeInTheDocument();
+  });
   expect(getButtonByName("Copy link")).toBeEnabled();
   click(getButtonByName("Copy link"));
   await waitFor(() => {
@@ -128,6 +137,11 @@ test("published sites customize their address in Share and copy the saved URL wi
   await fill(input, "launch-report");
   await screen.findByText("Available");
   expect(
+    screen.getByText(
+      "The old URL will stop working. Update any links you have shared.",
+    ),
+  ).toBeInTheDocument();
+  expect(
     fireEvent.keyDown(input, {
       key: "Enter",
       isComposing: false,
@@ -137,7 +151,16 @@ test("published sites customize their address in Share and copy the saved URL wi
   expect(input).toHaveValue("launch-report");
   click(getButtonByName("Save"));
   await screen.findByText("Website URL updated");
-  await screen.findByText("launch-report.okou.app");
+  await waitFor(() => {
+    expect(siteAddress("launch-report.okou.app")).toHaveAttribute(
+      "href",
+      "https://launch-report.okou.app",
+    );
+  });
+  expect(siteAddress("launch-report.okou.app")).toHaveAttribute(
+    "target",
+    "_blank",
+  );
   expect(getButtonByName("Customize URL")).toHaveFocus();
   await waitFor(() => {
     expect(
@@ -147,8 +170,9 @@ test("published sites customize their address in Share and copy the saved URL wi
   const clipboard = context.mocks.browser.clipboardWriteText();
   click(getButtonByName("Copy link"));
   await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual(["https://launch-report.okou.app"]);
+    expect(queryButtonByName("Copied")).toBeDefined();
   });
+  expect(clipboard.writes).toStrictEqual(["https://launch-report.okou.app"]);
 });
 
 test("invalid and occupied addresses cannot be saved and cancel discards the draft", async () => {
@@ -170,9 +194,10 @@ test("invalid and occupied addresses cannot be saved and cancel discards the dra
   expect(getButtonByName("Save")).toBeDisabled();
   await fill(input, "taken-report");
   await screen.findByText("This address is already taken");
+  expect(input).toHaveAttribute("aria-invalid", "true");
   expect(getButtonByName("Save")).toBeDisabled();
   click(getButtonByName("Cancel"));
-  expect(screen.getByText("weekly-report.okou.app")).toBeInTheDocument();
+  expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
   expect(screen.queryByLabelText("Website URL")).not.toBeInTheDocument();
   expect(getButtonByName("Customize URL")).toHaveFocus();
 });
@@ -201,7 +226,7 @@ test("a save conflict keeps the draft and current shared address", async () => {
   await screen.findByText(/Could not save/);
   expect(screen.getByLabelText("Website URL")).toHaveValue("taken-report");
   click(getButtonByName("Cancel"));
-  expect(screen.getByText("weekly-report.okou.app")).toBeInTheDocument();
+  expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
 });
 
 test("an unavailable address check disables saving and a new draft can retry", async () => {
@@ -280,7 +305,9 @@ test("a failed save retains the draft and can retry without replacing the curren
   unavailable = false;
   click(getButtonByName("Save"));
   await screen.findByText("Website URL updated");
-  await screen.findByText("launch-report.okou.app");
+  await waitFor(() => {
+    expect(siteAddress("launch-report.okou.app")).toBeInTheDocument();
+  });
 });
 
 test("a settings failure disables copying until Retry resolves the current address", async () => {
@@ -303,7 +330,9 @@ test("a settings failure disables copying until Retry resolves the current addre
   expect(queryButtonByName("Customize URL")).toBeUndefined();
   unavailable = false;
   click(getButtonByName("Retry"));
-  await screen.findByText("weekly-report.okou.app");
+  await waitFor(() => {
+    expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
+  });
   expect(getButtonByName("Copy link")).toBeEnabled();
   click(getButtonByName("Copy link"));
   await waitFor(() => {
@@ -319,7 +348,9 @@ test("other people's sites offer Published and copying without URL editing", asy
   });
   await openSite();
   await openShare();
-  await screen.findByText("weekly-report.okou.app");
+  await waitFor(() => {
+    expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
+  });
   expect(queryButtonByName("Customize URL")).toBeUndefined();
   expect(queryAllByRoleFast("radio")).toHaveLength(0);
 });
