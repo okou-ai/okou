@@ -1221,30 +1221,6 @@ export const signStorageManifestPresignedUrls$ = command(
   },
 );
 
-async function persistPreparedStoragePresignedUrls(
-  db: Db,
-  prepared: PreparedStoragePresignedUrls,
-): Promise<ReadonlyMap<string, StoragePresignedUrlResult>> {
-  const persist = async () => {
-    await upsertCacheValues(db, prepared.freshValues);
-  };
-  if (prepared.timing) {
-    await onRejection(
-      prepared.timing.measure(
-        "api_dispatch_prepare_storage_manifest_cache_upsert_misses",
-        persist,
-      ),
-      () => {
-        prepared.timing?.flush();
-      },
-    );
-    prepared.timing.flush();
-  } else {
-    await persist();
-  }
-  return prepared.results;
-}
-
 function resolveStoragePresignedUrls<TRequest extends object>(args: {
   readonly db: Db;
   readonly scope: StoragePresignedUrlCacheScope;
@@ -1274,7 +1250,29 @@ function resolveStoragePresignedUrls<TRequest extends object>(args: {
       requests,
       signingRequests,
     );
-    return await persistPreparedStoragePresignedUrls(args.db, prepared);
+    const persistDb = args.db;
+    return await (async (): Promise<
+      ReadonlyMap<string, StoragePresignedUrlResult>
+    > => {
+      const persist = async () => {
+        await upsertCacheValues(persistDb, prepared.freshValues);
+      };
+      if (prepared.timing) {
+        await onRejection(
+          prepared.timing.measure(
+            "api_dispatch_prepare_storage_manifest_cache_upsert_misses",
+            persist,
+          ),
+          () => {
+            prepared.timing?.flush();
+          },
+        );
+        prepared.timing.flush();
+      } else {
+        await persist();
+      }
+      return prepared.results;
+    })();
   });
 }
 
