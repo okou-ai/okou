@@ -1,10 +1,6 @@
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import type { ReactNode } from "react";
-import {
-  remoteControlGuidedEnabled$,
-  remoteSetup$,
-  updateRemoteSetup$,
-} from "../../signals/remote-control-setup.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { RemoteNetworkCredentialHelp } from "./remote-network-help.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -75,13 +71,6 @@ function TailscaleTags({
   readonly guided: boolean;
 }) {
   const { t } = useTranslation();
-  const setup = useGet(remoteSetup$);
-  const updateSetup = useSet(updateRemoteSetup$);
-  const wizard =
-    guided &&
-    !config &&
-    setup?.protocol === "ssh" &&
-    setup.route === "tailscale";
   return (
     <div className="grid gap-2">
       <label className="grid gap-2">
@@ -92,17 +81,9 @@ function TailscaleTags({
           name="tailscaleTags"
           required
           maxLength={1200}
-          {...(wizard
-            ? {
-                value: setup.tailscaleTags,
-                onChange: (event) => {
-                  updateSetup({ tailscaleTags: event.target.value });
-                },
-              }
-            : {
-                defaultValue:
-                  config?.tags.join(", ") ?? (guided ? "tag:okou" : undefined),
-              })}
+          defaultValue={
+            config?.tags.join(", ") ?? (guided ? "tag:okou" : undefined)
+          }
           aria-describedby="tailscale-tags-help"
         />
       </label>

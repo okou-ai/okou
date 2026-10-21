@@ -183,10 +183,95 @@ function VncRebindWarning({
   );
 }
 
-export function VncHostProfileDetails({
+function VncHostIdentity({
   connection,
 }: {
   readonly connection: VncConnectionResponse;
+}) {
+  const { t } = useTranslation();
+  const profile = vncProfileForConnection(connection);
+  const certificateMethod =
+    "clientCertificateAuthentication" in connection
+      ? connection.clientCertificateAuthentication
+      : undefined;
+  return (
+    <dl className="grid grid-cols-[minmax(6rem,auto)_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm leading-relaxed sm:grid-cols-[7.25rem_minmax(0,1fr)]">
+      {"credentialName" in connection && (
+        <>
+          <dt className="text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.loginHeading;
+            })}
+          </dt>
+          <dd className="min-w-0 break-words">{connection.credentialName}</dd>
+        </>
+      )}
+      <dt className="text-muted-foreground">
+        {t(($) => {
+          return $.remoteControlSetup.vncLoginMethod;
+        })}
+      </dt>
+      <dd className="min-w-0 break-words">
+        <VncProfileLabel profile={profile} />
+      </dd>
+      <dt className="text-muted-foreground">
+        {t(($) => {
+          return $.vnc.credential.authentication;
+        })}
+      </dt>
+      <dd className="min-w-0 break-words">
+        <VncAuthenticationLabel
+          method={certificateMethod ?? vncAuthMethodForProfile(profile)}
+        />
+      </dd>
+      {isX509Security(connection.security) && (
+        <>
+          <dt className="text-muted-foreground">
+            {t(($) => {
+              return $.vnc.security.serverName;
+            })}
+          </dt>
+          <dd className="min-w-0 break-all">
+            {connection.security.serverName ?? connection.host}
+          </dd>
+          <dt className="text-muted-foreground">
+            {t(($) => {
+              return $.vnc.security.title;
+            })}
+          </dt>
+          <dd className="min-w-0 break-words">
+            {connection.security.trust.mode === "system"
+              ? t(($) => {
+                  return $.vnc.security.system;
+                })
+              : t(($) => {
+                  return $.vnc.security.custom;
+                })}
+          </dd>
+        </>
+      )}
+      {"serverKeySha256" in connection.security && (
+        <>
+          <dt className="text-muted-foreground">
+            {t(($) => {
+              return $.vnc.rsaAes.pin;
+            })}
+          </dt>
+          <dd className="min-w-0 break-all font-mono text-xs leading-6">
+            {connection.security.serverKeySha256}
+          </dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
+export function VncHostProfileDetails({
+  connection,
+  detail = false,
+}: {
+  readonly connection: VncConnectionResponse;
+  readonly detail?: boolean;
 }) {
   const { t } = useTranslation();
   const certificateMethod =
@@ -196,6 +281,7 @@ export function VncHostProfileDetails({
   const profile = vncProfileForConnection(connection);
   return (
     <>
+      {detail && <VncHostIdentity connection={connection} />}
       {certificateMethod ? (
         <VncClientCertificateWarning />
       ) : connection.security.type === "x509_none" ? (
@@ -203,12 +289,14 @@ export function VncHostProfileDetails({
       ) : null}
       {"serverKeySha256" in connection.security && (
         <>
-          <p className="break-all font-mono text-xs">
-            {t(($) => {
-              return $.vnc.rsaAes.pin;
-            })}
-            : {connection.security.serverKeySha256}
-          </p>
+          {!detail && (
+            <p className="break-all font-mono text-xs">
+              {t(($) => {
+                return $.vnc.rsaAes.pin;
+              })}
+              : {connection.security.serverKeySha256}
+            </p>
+          )}
           <p className="text-sm text-muted-foreground">
             {t(($) => {
               return isVncRsaAesAuthenticationOnly(connection.security.type)
@@ -220,26 +308,28 @@ export function VncHostProfileDetails({
           </p>
         </>
       )}
-      <p className="text-sm text-muted-foreground">
-        <VncProfileLabel profile={profile} />
-        {" · "}
-        <VncAuthenticationLabel
-          method={certificateMethod ?? vncAuthMethodForProfile(profile)}
-        />
-        {isX509Security(connection.security) ? (
-          <>
-            {" "}
-            {" · "}{" "}
-            {connection.security.trust.mode === "system"
-              ? t(($) => {
-                  return $.vnc.security.system;
-                })
-              : t(($) => {
-                  return $.vnc.security.custom;
-                })}
-          </>
-        ) : null}
-      </p>
+      {!detail && (
+        <p className="text-sm text-muted-foreground">
+          <VncProfileLabel profile={profile} />
+          {" · "}
+          <VncAuthenticationLabel
+            method={certificateMethod ?? vncAuthMethodForProfile(profile)}
+          />
+          {isX509Security(connection.security) ? (
+            <>
+              {" "}
+              {" · "}{" "}
+              {connection.security.trust.mode === "system"
+                ? t(($) => {
+                    return $.vnc.security.system;
+                  })
+                : t(($) => {
+                    return $.vnc.security.custom;
+                  })}
+            </>
+          ) : null}
+        </p>
+      )}
     </>
   );
 }
@@ -312,39 +402,43 @@ function VncHostSecurity({
     >
       <summary
         hidden={!detail}
-        className="cursor-pointer text-sm text-muted-foreground"
+        className="cursor-pointer rounded-md text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {t(($) => {
           return $.remoteControlSetup.securityAndPermissions;
         })}
       </summary>
-      <div className={detail ? "grid gap-3 pt-3" : "grid gap-3"}>
-        <VncHostRouteDetails
-          connection={connection}
-          sshConnection={sshConnection}
-        />
-        <p className="break-all text-sm">
-          {t(($) => {
-            return $.vnc.transport.destination;
-          })}
-          {": "}
-          {destination}
-        </p>
-        {isX509Security(connection.security) ? (
-          <p className="break-all text-sm">
-            {t(($) => {
-              return $.vnc.security.serverName;
-            })}
-            {": "}
-            {connection.security.serverName ?? connection.host}
-          </p>
-        ) : null}
-        {"credentialName" in connection && (
-          <p className="break-all text-sm text-muted-foreground">
-            {connection.credentialName}
-          </p>
+      <div className={detail ? "grid gap-5 pt-5" : "grid gap-3"}>
+        {!detail && (
+          <>
+            <VncHostRouteDetails
+              connection={connection}
+              sshConnection={sshConnection}
+            />
+            <p className="break-all text-sm">
+              {t(($) => {
+                return $.vnc.transport.destination;
+              })}
+              {": "}
+              {destination}
+            </p>
+            {isX509Security(connection.security) ? (
+              <p className="break-all text-sm">
+                {t(($) => {
+                  return $.vnc.security.serverName;
+                })}
+                {": "}
+                {connection.security.serverName ?? connection.host}
+              </p>
+            ) : null}
+            {"credentialName" in connection && (
+              <p className="break-all text-sm text-muted-foreground">
+                {connection.credentialName}
+              </p>
+            )}
+          </>
         )}
-        <VncHostProfileDetails connection={connection} />
+        <VncHostProfileDetails connection={connection} detail={detail} />
         <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       </div>
     </details>

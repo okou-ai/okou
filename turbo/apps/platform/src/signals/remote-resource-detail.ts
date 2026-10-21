@@ -1,7 +1,5 @@
 import { closeSshDialog$ } from "./ssh.ts";
 import { closeVncDialog$, vncEnabled$ } from "./vnc.ts";
-import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
-import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { command, computed } from "ccstate";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
 import {
@@ -9,6 +7,7 @@ import {
   remoteNetworkPicker$,
   selectedRemoteNetworkProvider$,
   setRemoteNetworkPicker$,
+  startComputerSetup$,
 } from "./remote-control-setup.ts";
 import {
   closeTailscaleDialog$,
@@ -16,8 +15,6 @@ import {
   tailscaleDialog$,
   tailscaleConfigs$,
   tailscaleSettingsEnabled$,
-  openTailscaleDialog$,
-  replaceTailscaleCredentials$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
@@ -25,36 +22,7 @@ import {
   cloudflareAccessDialog$,
   cloudflareAccessConfigs$,
   cloudflareAccessSummary$,
-  openCloudflareAccessDialog$,
-  replaceCloudflareAccessToken$,
 } from "./cloudflare-access.ts";
-
-export const editRemoteTailscaleCredentials$ = command(
-  async ({ get, set }, config: TailscaleConfig, signal: AbortSignal) => {
-    await set(openTailscaleDialog$, "edit", config, signal);
-    signal.throwIfAborted();
-    const dialog = await get(tailscaleDialog$);
-    signal.throwIfAborted();
-    if (dialog?.kind === "edit" && dialog.config?.id === config.id) {
-      set(replaceTailscaleCredentials$, true);
-    }
-  },
-);
-export const editRemoteCloudflareCredentials$ = command(
-  async (
-    { get, set },
-    config: ScopedCloudflareAccessConfig,
-    signal: AbortSignal,
-  ) => {
-    await set(openCloudflareAccessDialog$, "edit", config, signal);
-    signal.throwIfAborted();
-    const dialog = await get(cloudflareAccessDialog$);
-    signal.throwIfAborted();
-    if (dialog?.kind === "edit" && dialog.config?.id === config.id) {
-      set(replaceCloudflareAccessToken$, true);
-    }
-  },
-);
 
 export const privateNetworkDirectorySummary$ = computed(async (get) => {
   if (!get(remoteControlGuidedEnabled$)) {
@@ -172,10 +140,13 @@ export const remoteNetworkPage$ = computed(async (get) => {
   }
   return null;
 });
-export const closeRemoteNetworkPage$ = command(({ set }) => {
+export const closeRemoteNetworkPage$ = command(({ get, set }) => {
   set(setRemoteNetworkPicker$, false);
   set(closeTailscaleDialog$);
   set(closeCloudflareAccessDialog$);
+  if (get(searchParams$).get("setup") === "computer") {
+    set(startComputerSetup$);
+  }
 });
 
 export const saveRemoteTailscale$ = command(

@@ -1,10 +1,16 @@
 import type { ReactNode } from "react";
 import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
+import {
+  IconButton,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@okouai/ui";
+import { CircleHelp } from "lucide-react";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 
-function FieldHelp({
+export function RemoteFieldHelp({
   title,
   children,
 }: {
@@ -18,9 +24,15 @@ function FieldHelp({
   return (
     <Popover>
       <PopoverTrigger
-        render={<Button type="button" variant="quiet" size="sm" />}
+        render={
+          <IconButton
+            type="button"
+            aria-label={title}
+            className="size-7 text-muted-foreground"
+          />
+        }
       >
-        {title}
+        <CircleHelp size={16} aria-hidden />
       </PopoverTrigger>
       <PopoverContent className="grid max-h-96 w-80 max-w-[calc(100vw-2rem)] gap-3 overflow-y-auto text-sm leading-6">
         {children}
@@ -37,7 +49,7 @@ export function RemoteAddressHelp({
 }) {
   const { t } = useTranslation();
   return (
-    <FieldHelp
+    <RemoteFieldHelp
       title={t(($) => {
         return $.remoteConnectionHelp.addressWhere;
       })}
@@ -68,23 +80,23 @@ export function RemoteAddressHelp({
           </ul>
         </>
       ) : route === "cloudflare_access" ? (
-        <>
-          <p>
+        <ul className="grid list-disc gap-3 pl-5 marker:text-muted-foreground">
+          <li>
             {t(($) => {
               return $.remoteControlSetup.cfAddressActions;
             })}
-          </p>
-          <p>
+          </li>
+          <li>
             {t(($) => {
               return $.remoteControlSetup.cfAddressHelp;
             })}
-          </p>
-          <p className="text-muted-foreground">
+          </li>
+          <li className="text-muted-foreground">
             {t(($) => {
               return $.remoteControlSetup.cfAddressMissing;
             })}
-          </p>
-        </>
+          </li>
+        </ul>
       ) : route === "ssh" ? (
         <p>
           {t(($) => {
@@ -92,20 +104,49 @@ export function RemoteAddressHelp({
           })}
         </p>
       ) : (
-        <>
-          <p>
+        <ul className="grid list-disc gap-3 pl-5 marker:text-muted-foreground">
+          <li>
             {t(($) => {
               return $.remoteConnectionHelp.directAddress;
             })}
-          </p>
-          <p className="text-muted-foreground">
+          </li>
+          <li className="text-muted-foreground">
             {t(($) => {
               return $.remoteConnectionHelp.homeAddress;
             })}
-          </p>
-        </>
+          </li>
+        </ul>
       )}
-    </FieldHelp>
+    </RemoteFieldHelp>
+  );
+}
+
+export function SshPrivateKeyHelp() {
+  const { t } = useTranslation();
+  return (
+    <RemoteFieldHelp
+      title={t(($) => {
+        return $.remoteConnectionHelp.privateKeyWhere;
+      })}
+    >
+      <ul className="grid list-disc gap-3 pl-5 marker:text-muted-foreground">
+        <li>
+          {t(($) => {
+            return $.remoteConnectionHelp.privateKeyLocal;
+          })}
+        </li>
+        <li>
+          {t(($) => {
+            return $.remoteConnectionHelp.privateKeyCloud;
+          })}
+        </li>
+        <li className="text-muted-foreground">
+          {t(($) => {
+            return $.remoteConnectionHelp.privateKeyMissing;
+          })}
+        </li>
+      </ul>
+    </RemoteFieldHelp>
   );
 }
 
@@ -146,7 +187,7 @@ export function RemoteConnectionMethodHelp() {
     ],
   ];
   return (
-    <FieldHelp
+    <RemoteFieldHelp
       title={t(($) => {
         return $.remoteConnectionHelp.methodWhere;
       })}
@@ -161,35 +202,37 @@ export function RemoteConnectionMethodHelp() {
           );
         })}
       </dl>
-    </FieldHelp>
+    </RemoteFieldHelp>
   );
 }
 
 export function VncPasswordHelp({ apple }: { readonly apple: boolean }) {
   const { t } = useTranslation();
   return (
-    <FieldHelp
+    <RemoteFieldHelp
       title={t(($) => {
         return $.remoteConnectionHelp.passwordWhere;
       })}
     >
-      <p>
-        {t(($) => {
-          return $.remoteConnectionHelp.passwordSource;
-        })}
-      </p>
-      <p>
-        {t(($) => {
-          return apple
-            ? $.remoteConnectionHelp.passwordMac
-            : $.remoteConnectionHelp.passwordSoftware;
-        })}
-      </p>
-      <p className="text-muted-foreground">
-        {t(($) => {
-          return $.remoteConnectionHelp.passwordMissing;
-        })}
-      </p>
-    </FieldHelp>
+      <ul className="grid list-disc gap-3 pl-5 marker:text-muted-foreground">
+        <li>
+          {t(($) => {
+            return $.remoteConnectionHelp.passwordSource;
+          })}
+        </li>
+        <li>
+          {t(($) => {
+            return apple
+              ? $.remoteConnectionHelp.passwordMac
+              : $.remoteConnectionHelp.passwordSoftware;
+          })}
+        </li>
+        <li className="text-muted-foreground">
+          {t(($) => {
+            return $.remoteConnectionHelp.passwordMissing;
+          })}
+        </li>
+      </ul>
+    </RemoteFieldHelp>
   );
 }

@@ -27,6 +27,7 @@ function TailscaleConfigGroup({
   readonly configs: readonly TailscaleConfig[];
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   const scoped = configs.filter((config) => {
     return config.scope === scope;
   });
@@ -51,7 +52,7 @@ function TailscaleConfigGroup({
           </SelectItem>
         );
       })}
-      {scope === "personal" && (
+      {!guided && scope === "personal" && (
         <SelectItem value="new">
           {t(($) => {
             return $.tailscale.createNew;
@@ -79,12 +80,16 @@ export function TailscaleSelection({
           return { value: config.id, label: config.name };
         })
       : []),
-    {
-      value: "new",
-      label: t(($) => {
-        return $.tailscale.createNew;
-      }),
-    },
+    ...(!guided
+      ? [
+          {
+            value: "new",
+            label: t(($) => {
+              return $.tailscale.createNew;
+            }),
+          },
+        ]
+      : []),
   ];
   return (
     <fieldset className="grid min-w-0 gap-4">
@@ -158,16 +163,18 @@ export function TailscaleSelection({
           </div>
         )
       )}
-      {editor.tailscaleConfigId === "new" && (
+      {!guided && editor.tailscaleConfigId === "new" && (
         <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
           <TailscaleFields config={null} disabled={disabled} />
         </div>
       )}
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return guided
-            ? $.remoteConnectionHelp.tailscaleRoute
-            : $.tailscale.addressHelp;
+          return guided && available?.length === 0
+            ? $.remoteControlSetup.networkManagementHelp
+            : guided
+              ? $.remoteConnectionHelp.tailscaleRoute
+              : $.tailscale.addressHelp;
         })}
       </p>
     </fieldset>

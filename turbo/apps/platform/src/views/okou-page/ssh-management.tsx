@@ -1,5 +1,5 @@
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
-import { RemoteAddressHelp } from "./remote-field-help.tsx";
+import { RemoteAddressHelp, SshPrivateKeyHelp } from "./remote-field-help.tsx";
 import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
@@ -38,6 +38,8 @@ import {
   chooseSshConnectionMode$,
   usesTailscaleNetwork,
 } from "../../signals/ssh.ts";
+import { RemoteConnectionNetwork } from "./remote-connection-network.tsx";
+import { ComputerNetworkSummary } from "./remote-computer-setup.tsx";
 import {
   remoteSetup$,
   remoteControlGuidedEnabled$,
@@ -212,9 +214,9 @@ function GuidedSshEndpointFields({
   const setup = useGet(remoteSetup$);
   const updateSetup = useSet(updateRemoteSetup$);
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       <div className="grid gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
           <label htmlFor="guided-ssh-host">
             {t(($) => {
               return $.remoteControlSetup.address;
@@ -245,6 +247,43 @@ function GuidedSshEndpointFields({
   );
 }
 
+function GuidedSshConnectionName() {
+  const { t } = useTranslation();
+  const setup = useGet(remoteSetup$);
+  return (
+    <details className="text-sm">
+      <summary className="w-fit cursor-pointer rounded-md py-1 text-muted-foreground hover:text-foreground">
+        {t(($) => {
+          return $.remoteControlSetup.optionalName;
+        })}
+      </summary>
+      <div className="mt-3 grid gap-2">
+        <input type="hidden" name="displayName" />
+        <Input
+          name="connectionLabel"
+          aria-label={t(($) => {
+            return $.remoteControlSetup.name;
+          })}
+          aria-describedby="ssh-connection-name-help"
+          placeholder={
+            setup?.address ||
+            t(($) => {
+              return $.remoteControlSetup.namePlaceholder;
+            })
+          }
+          pattern=".*\S.*"
+          maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
+        />
+        <p id="ssh-connection-name-help" className="text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.automaticNameHelp;
+          })}
+        </p>
+      </div>
+    </details>
+  );
+}
+
 function GuidedSshAdvancedFields({
   initialPort,
   disabled,
@@ -254,17 +293,18 @@ function GuidedSshAdvancedFields({
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshConnectionModeEditor$);
+  const setup = useGet(remoteSetup$);
   const fixedPort =
     editor.mode === "cloudflare_access" || editor.mode === "tailscale_ssh";
   return (
-    <details className="border-t border-divider pt-3">
-      <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
+    <details>
+      <summary className="w-fit cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground">
         {t(($) => {
           return $.remoteControlSetup.more;
         })}
       </summary>
       <div className="mt-4 grid gap-4">
-        <SshConnectionType disabled={disabled} />
+        {!setup?.fromComputer && <SshConnectionType disabled={disabled} />}
         <label className="grid gap-2">
           {t(($) => {
             return $.ssh.port;
@@ -390,11 +430,14 @@ function PrivateKeyFields({
     <>
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-2">
-          <label htmlFor="ssh-private-key">
-            {t(($) => {
-              return $.ssh.privateKey;
-            })}
-          </label>
+          <div className="flex items-center gap-1">
+            <label htmlFor="ssh-private-key">
+              {t(($) => {
+                return $.ssh.privateKey;
+              })}
+            </label>
+            <SshPrivateKeyHelp />
+          </div>
           <label
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
@@ -532,34 +575,39 @@ function SshAuthenticationFields({
   const chooseMethod = useSet(chooseSshAuthMethod$);
   return (
     <>
-      <div hidden={guided} className="grid gap-2">
-        <span id="ssh-auth-method-label">
-          {t(($) => {
-            return $.ssh.credential.authentication;
-          })}
-        </span>
-        <SegmentControl
-          className="justify-self-start"
-          disabled={disabled}
-          aria-labelledby="ssh-auth-method-label"
-          value={editor.method}
-          onValueChange={chooseMethod}
-        >
-          <SegmentControlItem value="private_key">
+      {!guided && (
+        <div className="grid gap-2">
+          <span id="ssh-auth-method-label">
             {t(($) => {
-              return $.ssh.privateKey;
+              return $.ssh.credential.authentication;
             })}
-          </SegmentControlItem>
-          <SegmentControlItem value="password">
-            {t(($) => {
-              return $.ssh.credential.password;
-            })}
-          </SegmentControlItem>
-        </SegmentControl>
-      </div>
+          </span>
+          <SegmentControl
+            className="justify-self-start"
+            disabled={disabled}
+            aria-labelledby="ssh-auth-method-label"
+            value={editor.method}
+            onValueChange={chooseMethod}
+          >
+            <SegmentControlItem value="private_key">
+              {t(($) => {
+                return $.ssh.privateKey;
+              })}
+            </SegmentControlItem>
+            <SegmentControlItem value="password">
+              {t(($) => {
+                return $.ssh.credential.password;
+              })}
+            </SegmentControlItem>
+          </SegmentControl>
+        </div>
+      )}
       {editor.method === "password" ? (
         <div key="password" className="grid gap-2">
-          <label htmlFor="ssh-password">
+          <label
+            htmlFor="ssh-password"
+            className={guided ? "flex min-h-7 items-center" : undefined}
+          >
             {t(($) => {
               return $.ssh.credential.password;
             })}
@@ -590,7 +638,10 @@ function SshAuthenticationFields({
             autoComplete="new-password"
           />
           {guided && (
-            <p id="ssh-password-help" className="text-sm text-muted-foreground">
+            <p
+              id="ssh-password-help"
+              className="text-sm leading-relaxed text-muted-foreground"
+            >
               {t(($) => {
                 return $.remoteControlSetup.passwordHelp;
               })}
@@ -651,11 +702,11 @@ function CredentialFields({
           />
         </label>
       )}
-      {guided && (!credential || editor.replace || connectionLogin) && (
+      {guided && !connectionLogin && (!credential || editor.replace) && (
         <GuidedSshAuthenticationMethod disabled={disabled} />
       )}
       <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex min-h-7 items-center gap-1">
           <label htmlFor="ssh-login-username">
             {t(($) => {
               return $.ssh.username;
@@ -829,10 +880,8 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
     useSshCredentialSelection();
   return (
     <fieldset
-      className={cn(
-        "grid min-w-0 gap-4",
-        guided && "border-y border-divider py-5",
-      )}
+      className="grid min-w-0 gap-5"
+      aria-labelledby={guided ? "ssh-login-heading" : undefined}
     >
       <legend hidden={guided} className="mb-3 text-sm font-semibold">
         <label htmlFor="ssh-selected-credential">
@@ -842,14 +891,19 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
         </label>
       </legend>
       {guided && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold">
+        <>
+          <h3 id="ssh-login-heading" className="text-base font-semibold">
             {t(($) => {
-              return $.remoteControlSetup.sshLoginMethod;
+              return $.remoteControlSetup.loginHeading;
             })}
           </h3>
-          <SshSavedLoginPicker disabled={disabled} />
-        </div>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            {(login || editor.selection === "new") && (
+              <GuidedSshAuthenticationMethod disabled={disabled} />
+            )}
+            <SshSavedLoginPicker disabled={disabled} />
+          </div>
+        </>
       )}
       <div
         hidden={
@@ -1135,8 +1189,7 @@ function useCreateDialogCopy() {
   const editor = useGet(sshConnectionModeEditor$);
   const setup = useGet(remoteSetup$);
   const existingTailscale =
-    setup?.entryMode === "existing" &&
-    (editor.mode === "tailscale" || editor.mode === "tailscale_ssh");
+    editor.mode === "tailscale" || editor.mode === "tailscale_ssh";
   return {
     title: t(($) => {
       return editor.mode === "direct" || existingTailscale
@@ -1144,11 +1197,13 @@ function useCreateDialogCopy() {
         : $.remoteControlSetup.loginTitle;
     }),
     description: t(($) => {
-      return existingTailscale
-        ? $.remoteControlSetup.tailscaleDescription
-        : editor.mode === "direct"
-          ? $.remoteControlSetup.directDescription
-          : $.remoteControlSetup.loginDescription;
+      return setup?.fromComputer
+        ? $.remoteComputerSetup.sshReady
+        : existingTailscale
+          ? $.remoteControlSetup.tailscaleDescription
+          : editor.mode === "direct"
+            ? $.remoteControlSetup.directDescription
+            : $.remoteControlSetup.loginDescription;
     }),
   };
 }
@@ -1282,11 +1337,13 @@ function SshSaveLabel({
   uncertain,
   destructive,
   title,
+  createConnection,
 }: {
   readonly isSaving: boolean;
   readonly uncertain: boolean;
   readonly destructive: boolean;
   readonly title: string;
+  readonly createConnection: boolean;
 }) {
   const { t } = useTranslation();
   return isSaving
@@ -1300,7 +1357,7 @@ function SshSaveLabel({
       : destructive
         ? title
         : t(($) => {
-            return $.ssh.save;
+            return createConnection ? $.remoteControlSetup.add : $.ssh.save;
           });
 }
 
@@ -1327,7 +1384,7 @@ function SshFormActions({
     <div
       className={
         inline
-          ? "mt-2 flex shrink-0 justify-end gap-2 border-t border-divider pt-5"
+          ? "mt-2 flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-divider pt-5"
           : "flex shrink-0 justify-end gap-2"
       }
     >
@@ -1354,6 +1411,7 @@ function SshFormActions({
           uncertain={uncertain}
           destructive={destructive}
           title={title}
+          createConnection={!!inline && dialog?.kind === "create"}
         />
       </Button>
     </div>
@@ -1363,10 +1421,11 @@ function SshFormActions({
 function hasResourceSelection(
   resources: readonly { readonly id: string }[] | null,
   selection: string | null,
+  allowCreate = true,
 ) {
   return (
     resources !== null &&
-    (selection === "new" ||
+    ((allowCreate && selection === "new") ||
       resources.some((resource) => {
         return resource.id === selection;
       }))
@@ -1379,15 +1438,17 @@ function useTailscaleSelectionBlocked(
   configId: string | null,
 ) {
   const configs = useLoadable(tailscaleConfigs$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   return (
     hostEditor &&
     (mode === "tailscale" || mode === "tailscale_ssh") &&
     (configs.state !== "hasData" ||
-      !hasResourceSelection(configs.data, configId))
+      !hasResourceSelection(configs.data, configId, !guided))
   );
 }
 
 function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
+  const guided = useGet(remoteControlGuidedEnabled$);
   const configs = useLoadable(cloudflareAccessConfigs$);
   const connectionEditor = useGet(sshConnectionModeEditor$);
   const conflict = useGet(sshConflict$);
@@ -1411,7 +1472,7 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
     hostEditor &&
     connectionEditor.mode === "cloudflare_access" &&
     (configs.state !== "hasData" ||
-      !hasResourceSelection(configs.data, connectionEditor.configId));
+      !hasResourceSelection(configs.data, connectionEditor.configId, !guided));
   const invalidCredential =
     hostEditor &&
     connectionEditor.mode !== "tailscale_ssh" &&
@@ -1512,6 +1573,15 @@ function SshRebindNotice({
     </>
   );
 }
+function SshSetupNetwork({ disabled }: { readonly disabled: boolean }) {
+  const setup = useGet(remoteSetup$);
+  return setup?.fromComputer ? (
+    <ComputerNetworkSummary />
+  ) : (
+    <RemoteConnectionNetwork disabled={disabled} />
+  );
+}
+
 function SshHostFields({
   dialog,
   inline,
@@ -1565,10 +1635,15 @@ function SshHostFields({
           )}
         </>
       ) : (
-        <>
-          {inlineCreate && tailscale && (
-            <TailscaleSelection disabled={fieldsDisabled} />
+        <div className="grid min-w-0 gap-5">
+          {inlineCreate && (
+            <h3 className="text-base font-semibold">
+              {t(($) => {
+                return $.remoteControlSetup.deviceHeading;
+              })}
+            </h3>
           )}
+          {inlineCreate && <SshSetupNetwork disabled={fieldsDisabled} />}
           {inlineCreate ? (
             <GuidedSshEndpointFields initialHost={initialHost} />
           ) : (
@@ -1577,13 +1652,14 @@ function SshHostFields({
               disabled={fieldsDisabled}
             />
           )}
-          {connectionEditor.mode === "cloudflare_access" && (
+          {!inlineCreate && connectionEditor.mode === "cloudflare_access" && (
             <AccessSelection disabled={fieldsDisabled} />
           )}
           {tailscale && !inlineCreate && (
             <TailscaleSelection disabled={fieldsDisabled} />
           )}
-        </>
+          {inlineCreate && <GuidedSshConnectionName />}
+        </div>
       )}
       <TailscaleSshLogin
         connection={dialog.connection}
@@ -1604,13 +1680,10 @@ function SshHostFields({
         />
       </fieldset>
       {inlineCreate && (
-        <>
-          <SshConnectionName connection={null} />
-          <GuidedSshAdvancedFields
-            initialPort={initialPort}
-            disabled={fieldsDisabled}
-          />
-        </>
+        <GuidedSshAdvancedFields
+          initialPort={initialPort}
+          disabled={fieldsDisabled}
+        />
       )}
     </>
   );

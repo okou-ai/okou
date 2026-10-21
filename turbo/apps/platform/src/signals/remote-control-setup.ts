@@ -1,9 +1,8 @@
-import {
-  openRemoteNetworkGuide$,
-  closeRemoteNetworkGuide$,
-} from "./remote-network-guide.ts";
+import { openRemoteNetworkGuide$ } from "./remote-network-guide.ts";
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { SSH_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/contracts/ssh-connections";
+import { VNC_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
@@ -18,9 +17,10 @@ import {
   openSshDialog$,
   saveSsh$,
   sshDialog$,
-  sshConnectionModeEditor$,
+  sshConnections$,
 } from "./ssh.ts";
 import {
+  clearVncSaveMessage$,
   closeVncDialog$,
   openVncDialog$,
   saveVnc$,
@@ -28,40 +28,30 @@ import {
   vncEnabled$,
   chooseVncTransport$,
   chooseVncNetworkConfig$,
+  chooseVncProfile$,
+  vncEditor$,
+  vncTransport$,
 } from "./vnc.ts";
 import {
   closeTailscaleDialog$,
   openTailscaleDialog$,
-  saveTailscale$,
   tailscaleConfigs$,
+  scopedTailscaleConfigs$,
   tailscaleDialog$,
   tailscaleEnabled$,
-  tailscaleFieldsFromForm,
+  tailscaleSettingsEnabled$,
+  retryTailscale$,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
   openCloudflareAccessDialog$,
-  saveCloudflareAccess$,
   cloudflareAccessDialog$,
+  cloudflareAccessConfigs$,
+  retryCloudflareAccess$,
 } from "./cloudflare-access.ts";
 
-export type RemoteSetupStep =
-  | "entry"
-  | "existing"
-  | "install"
-  | "address"
-  | "tag"
-  | "rule"
-  | "oauth"
-  | "prepare"
-  | "service"
-  | "cf-address"
-  | "cf-access"
-  | "cf-credentials"
-  | "login"
-  | "saved";
+export type RemoteSetupStep = "entry" | "computer-network" | "login" | "saved";
 export type RemoteSetupRoute = "direct" | "tailscale" | "cloudflare_access";
-export type RemoteSetupOs = "mac" | "windows" | "linux";
 export type RemoteVncStep = "profile" | "connection" | "login" | "trust";
 export interface RemoteSetupNetwork {
   readonly id: string;
@@ -72,19 +62,18 @@ export interface RemoteSetup {
   readonly sessionKey: string;
   readonly flowId: number;
   readonly protocol: "ssh" | "vnc";
-  readonly entryMode: "guided" | "existing";
   readonly step: RemoteSetupStep;
   readonly route: RemoteSetupRoute;
-  readonly os: RemoteSetupOs;
   readonly address: string;
   readonly port: string;
   readonly networkId: string;
   readonly sourceNetwork: RemoteSetupNetwork | null;
-  readonly tailscaleTags: string;
+  readonly fromComputer: boolean;
   readonly formStarted: boolean;
   readonly savedName: string;
   readonly savedId: string;
   readonly vncStep: RemoteVncStep;
+  readonly computerScreenService: "mac" | "other" | null;
 }
 
 const setup$ = state<RemoteSetup | null>(null);
@@ -100,27 +89,27 @@ function initialSetup(
   protocol: "ssh" | "vnc",
   flowId: number,
   sourceNetwork: RemoteSetupNetwork | null = null,
+  fromComputer = false,
 ): RemoteSetup {
   return {
     sessionKey,
     flowId,
     protocol,
-    entryMode: "guided",
     step: "entry",
     route: sourceNetwork?.route ?? "direct",
-    os: "mac",
     address: "",
     port: protocol === "ssh" ? "22" : "5900",
     networkId: sourceNetwork?.id ?? "",
     sourceNetwork,
-    tailscaleTags: "tag:okou",
+    fromComputer,
     formStarted: false,
     savedName: "",
     savedId: "",
     vncStep: "profile",
+    computerScreenService: null,
   };
 }
-export const remoteSetup$ = computed((get) => {
+export const remoteSetup$ = computed((get): RemoteSetup | null => {
   const sessionKey = get(authenticatedSessionKey$);
   if (
     !get(remoteControlGuidedEnabled$) ||
@@ -134,17 +123,79 @@ export const remoteSetup$ = computed((get) => {
     return current;
   }
   const deepLink = get(searchParams$).get("setup");
+  if (deepLink === "computer" && get(tailscaleSettingsEnabled$)) {
+    return {
+      ...initialSetup(sessionKey, "ssh", get(flowSequence$)),
+      step: "computer-network",
+    };
+  }
   if (deepLink === "ssh" || (deepLink === "vnc" && get(vncEnabled$))) {
     return initialSetup(sessionKey, deepLink, get(flowSequence$));
   }
   return null;
 });
-export const remoteSetupTailscaleTags$ = computed((get) => {
-  return (
-    get(remoteSetup$)
-      ?.tailscaleTags.split(/[,\s]+/u)
-      .filter(Boolean) ?? []
-  );
+const remoteSetupTailscaleAllowed$ = computed((get) => {
+  const setup = get(remoteSetup$);
+  return setup?.protocol === "vnc" || get(tailscaleEnabled$);
+});
+export const remoteComputerNetworks$ = computed(
+  async (get): Promise<readonly RemoteSetupNetwork[]> => {
+    const configs = await get(tailscaleConfigs$);
+    if (!configs) {
+      throw new Error("Saved Tailscale networks are unavailable");
+    }
+    return configs.map(({ id, name }) => {
+      return { id, name, route: "tailscale" };
+    });
+  },
+);
+/** Only saved networks are available here; provisioning belongs to private networks. */
+export const remoteSetupNetworks$ = computed(
+  async (get): Promise<readonly RemoteSetupNetwork[]> => {
+    const allowTailscale = get(remoteSetupTailscaleAllowed$);
+    const [tailscale, access] = await Promise.all([
+      allowTailscale ? get(tailscaleConfigs$) : Promise.resolve([]),
+      get(cloudflareAccessConfigs$),
+    ]);
+    if (!tailscale || !access) {
+      throw new Error("Saved networks are unavailable");
+    }
+    return [
+      ...tailscale.map(({ id, name }): RemoteSetupNetwork => {
+        return {
+          id,
+          name,
+          route: "tailscale",
+        };
+      }),
+      ...access.map(({ id, name }): RemoteSetupNetwork => {
+        return {
+          id,
+          name,
+          route: "cloudflare_access",
+        };
+      }),
+    ];
+  },
+);
+export const retryRemoteSetupNetworks$ = command(
+  ({ set }, signal: AbortSignal) => {
+    set(retryTailscale$, signal);
+    set(retryCloudflareAccess$, signal);
+  },
+);
+
+export const remoteVncConnectionOptionsAvailable$ = computed(async (get) => {
+  const transport = get(vncTransport$);
+  if (transport === "direct") {
+    return true;
+  }
+  const options = await (transport === "ssh"
+    ? get(sshConnections$)
+    : transport === "tailscale"
+      ? get(scopedTailscaleConfigs$)
+      : get(cloudflareAccessConfigs$));
+  return options !== null && options.length > 0;
 });
 
 export const resetRemoteSetup$ = command(({ get, set }) => {
@@ -161,7 +212,8 @@ export const resetRemoteSetup$ = command(({ get, set }) => {
   });
 });
 export const leaveRemoteSetup$ = command(({ get, set }) => {
-  const sourceNetwork = get(remoteSetup$)?.sourceNetwork;
+  const current = get(remoteSetup$);
+  const sourceNetwork = current?.fromComputer ? null : current?.sourceNetwork;
   set(resetSetupOperation$);
   set(setup$, null);
   set(flowSequence$, (value) => {
@@ -187,6 +239,7 @@ export const enterRemoteSetup$ = command(
     { get, set },
     protocol: "ssh" | "vnc" = "ssh",
     sourceNetwork: RemoteSetupNetwork | null = null,
+    fromComputer?: boolean,
   ) => {
     const sessionKey = get(authenticatedSessionKey$);
     const selectedProtocol =
@@ -214,6 +267,7 @@ export const enterRemoteSetup$ = command(
         selectedProtocol,
         get(flowSequence$),
         sourceNetwork,
+        fromComputer,
       ),
     );
   },
@@ -222,82 +276,78 @@ export const chooseRemoteProtocol$ = command(
   ({ get, set }, protocol: "ssh" | "vnc") => {
     const current = get(remoteSetup$);
     if (current && current.protocol !== protocol) {
-      set(enterRemoteSetup$, protocol, current.sourceNetwork);
+      set(
+        enterRemoteSetup$,
+        protocol,
+        current.sourceNetwork,
+        current.fromComputer,
+      );
     }
   },
 );
+export const startComputerSetup$ = command(({ get, set }) => {
+  if (
+    !get(remoteControlGuidedEnabled$) ||
+    !get(authenticatedSessionKey$) ||
+    !get(tailscaleSettingsEnabled$)
+  ) {
+    return;
+  }
+  set(resetRemoteSetup$);
+  const params = new URLSearchParams(get(searchParams$));
+  params.set("scope", "remote-control");
+  params.set("setup", "computer");
+  params.delete("remoteResource");
+  params.delete("networkConnections");
+  set(updateSearchParams$, params);
+});
 export const updateRemoteSetup$ = command(
   ({ get, set }, patch: Partial<Omit<RemoteSetup, "sessionKey">>) => {
     const current = get(remoteSetup$);
     if (current) {
+      if (
+        current.protocol === "vnc" &&
+        patch.vncStep !== undefined &&
+        patch.vncStep !== current.vncStep
+      ) {
+        set(clearVncSaveMessage$);
+      }
       set(setup$, { ...current, ...patch });
     }
   },
 );
-export const startNewRemoteNetwork$ = command(({ get, set }) => {
-  const current = get(remoteSetup$);
-  if (current?.step !== "install" || current.route !== "tailscale") {
-    return;
-  }
-  set(closeTailscaleDialog$);
-  set(updateRemoteSetup$, {
-    networkId: "new",
-    tailscaleTags: "tag:okou",
-    step: "address",
-  });
-});
-const PREVIOUS_STEP: Readonly<
-  Partial<Record<RemoteSetupStep, RemoteSetupStep>>
-> = {
-  existing: "entry",
-  install: "entry",
-  address: "install",
-  tag: "address",
-  rule: "tag",
-  oauth: "rule",
-  prepare: "address",
-  service: "entry",
-  "cf-address": "existing",
-  "cf-access": "cf-address",
-  "cf-credentials": "cf-access",
-};
-function previousRemoteSetupStep(current: RemoteSetup): RemoteSetupStep {
-  if (current.step !== "login") {
-    if (
-      current.sourceNetwork &&
-      (current.step === "address" || current.step === "cf-address")
-    ) {
-      return "entry";
+export const chooseComputerScreenService$ = command(
+  ({ get, set }, service: "mac" | "other") => {
+    const current = get(remoteSetup$);
+    if (!current?.fromComputer || current.protocol !== "vnc") {
+      return;
     }
-    return PREVIOUS_STEP[current.step] ?? "entry";
-  }
-  if (current.protocol === "vnc") {
-    return current.entryMode === "existing" ? "entry" : "service";
-  }
-  if (current.sourceNetwork && current.entryMode === "existing") {
-    return "entry";
-  }
-  if (current.route === "cloudflare_access") {
-    return current.sourceNetwork ? "cf-address" : "cf-access";
-  }
-  return current.route === "direct" || current.entryMode === "existing"
-    ? "existing"
-    : "prepare";
-}
+    set(chooseVncProfile$, service === "mac" ? "apple_dh" : "x509_vnc");
+    set(updateRemoteSetup$, { computerScreenService: service });
+  },
+);
 export const goBackRemoteSetup$ = command(({ get, set }) => {
   const current = get(remoteSetup$);
   if (!current) {
+    return;
+  }
+  if (current.step === "entry" && current.fromComputer) {
+    set(startComputerSetup$);
+    set(updateRemoteSetup$, {
+      route: current.route,
+      networkId: current.networkId,
+    });
     return;
   }
   if (current.step === "entry" || current.step === "saved") {
     set(leaveRemoteSetup$);
     return;
   }
-  if (
-    current.step === "login" &&
-    current.protocol === "vnc" &&
-    current.vncStep !== "profile"
-  ) {
+  if (current.step === "computer-network") {
+    set(enterRemoteSetup$);
+    return;
+  }
+  if (current.protocol === "vnc" && current.vncStep !== "profile") {
     set(updateRemoteSetup$, {
       vncStep:
         current.vncStep === "trust"
@@ -308,62 +358,20 @@ export const goBackRemoteSetup$ = command(({ get, set }) => {
     });
     return;
   }
-  if (current.step === "login" && current.protocol === "ssh") {
-    const editor = get(sshConnectionModeEditor$);
-    set(updateRemoteSetup$, {
-      networkId:
-        current.route === "cloudflare_access"
-          ? (editor.configId ?? "")
-          : current.route === "tailscale"
-            ? (editor.tailscaleConfigId ?? "")
-            : current.networkId,
-    });
-  }
-  set(updateRemoteSetup$, { step: previousRemoteSetupStep(current) });
+  // Returning to the entry starts a fresh attempt, without hidden login drafts.
+  const { route, networkId } = current;
+  set(
+    enterRemoteSetup$,
+    current.protocol,
+    current.sourceNetwork,
+    current.fromComputer,
+  );
+  set(updateRemoteSetup$, {
+    route,
+    networkId,
+    step: "entry",
+  });
 });
-export const beginRemoteGuide$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const current = get(remoteSetup$);
-    if (!current) {
-      return;
-    }
-    set(updateRemoteSetup$, { entryMode: "guided" });
-    if (current.protocol === "vnc") {
-      set(updateRemoteSetup$, { step: "service" });
-      return;
-    }
-    if (current.sourceNetwork) {
-      set(updateRemoteSetup$, {
-        step: current.route === "tailscale" ? "address" : "cf-address",
-      });
-      return;
-    }
-    if (!get(tailscaleEnabled$)) {
-      return;
-    }
-    set(updateRemoteSetup$, {
-      route: "tailscale",
-      step: "install",
-      ...(current.route !== "tailscale"
-        ? { address: "", networkId: "", formStarted: false }
-        : {}),
-    });
-    const networks = await get(tailscaleConfigs$);
-    signal.throwIfAborted();
-    if (
-      get(remoteSetup$)?.sessionKey === current.sessionKey &&
-      get(remoteSetup$)?.flowId === current.flowId &&
-      get(remoteSetup$)?.step === "install" &&
-      !get(remoteSetup$)?.networkId &&
-      networks?.length === 1
-    ) {
-      set(updateRemoteSetup$, {
-        networkId: networks[0]!.id,
-        tailscaleTags: networks[0]!.tags.join(", "),
-      });
-    }
-  },
-);
 export const openRemoteLogin$ = command(
   async ({ get, set }, parentSignal: AbortSignal) => {
     const signal = set(resetSetupOperation$, parentSignal);
@@ -403,8 +411,8 @@ export const openRemoteLogin$ = command(
         throw new Error("VNC settings are unavailable");
       }
       signal.throwIfAborted();
-      if (current.sourceNetwork) {
-        set(chooseVncTransport$, current.sourceNetwork.route);
+      if (current.route !== "direct") {
+        set(chooseVncTransport$, current.route);
         set(chooseVncNetworkConfig$, "rfb", current.networkId);
       }
     }
@@ -416,116 +424,20 @@ export const openRemoteLogin$ = command(
     }
   },
 );
-export const openExistingRemoteSetup$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const current = get(remoteSetup$);
-    if (!current) {
-      return;
-    }
-    set(updateRemoteSetup$, { entryMode: "existing" });
-    if (current.protocol === "vnc" || current.sourceNetwork) {
-      await set(openRemoteLogin$, signal);
-      signal.throwIfAborted();
-    } else {
-      set(updateRemoteSetup$, { step: "existing" });
-    }
-  },
-);
-
-export const openRemoteNetwork$ = command(
-  async (
-    { get, set },
-    kind: "tailscale" | "cloudflare_access",
-    parentSignal: AbortSignal,
-  ) => {
-    const signal = set(resetSetupOperation$, parentSignal);
-    const current = get(remoteSetup$);
-    if (!current) {
-      return;
-    }
-    if (kind === "tailscale") {
-      const dialog = await get(tailscaleDialog$);
-      signal.throwIfAborted();
-      if (!dialog) {
-        await set(openTailscaleDialog$, "create", null, signal);
-      }
-      signal.throwIfAborted();
-      if (
-        get(remoteSetup$)?.sessionKey === current.sessionKey &&
-        get(remoteSetup$)?.flowId === current.flowId
-      ) {
-        set(updateRemoteSetup$, { step: "oauth" });
-      }
-    } else {
-      const dialog = await get(cloudflareAccessDialog$);
-      signal.throwIfAborted();
-      if (!dialog) {
-        await set(openCloudflareAccessDialog$, "create", null, signal);
-      }
-      signal.throwIfAborted();
-      if (
-        get(remoteSetup$)?.sessionKey === current.sessionKey &&
-        get(remoteSetup$)?.flowId === current.flowId
-      ) {
-        set(updateRemoteSetup$, { step: "cf-credentials" });
-      }
-    }
-    signal.throwIfAborted();
-  },
-);
-export const saveRemoteTailscale$ = command(
-  async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
-    const current = get(remoteSetup$);
-    if (!current) {
-      return;
-    }
-    const tags = tailscaleFieldsFromForm(form).tags;
-    const savedId = await set(saveTailscale$, form, signal);
-    signal.throwIfAborted();
-    if (
-      !savedId ||
-      get(remoteSetup$)?.sessionKey !== current.sessionKey ||
-      get(remoteSetup$)?.flowId !== current.flowId
-    ) {
-      return;
-    }
-    set(updateRemoteSetup$, {
-      step: "prepare",
-      networkId: savedId,
-      tailscaleTags: tags.join(", "),
-    });
-    return savedId;
-  },
-);
-export const saveRemoteCloudflare$ = command(
-  async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
-    const current = get(remoteSetup$);
-    if (!current) {
-      return;
-    }
-    const savedId = await set(saveCloudflareAccess$, form, signal);
-    signal.throwIfAborted();
-    if (
-      savedId &&
-      get(remoteSetup$)?.sessionKey === current.sessionKey &&
-      get(remoteSetup$)?.flowId === current.flowId
-    ) {
-      set(updateRemoteSetup$, {
-        step: "cf-access",
-        networkId: savedId,
-      });
-      await set(openRemoteLogin$, signal);
-      signal.throwIfAborted();
-    }
-    return savedId;
-  },
-);
-function connectionName(form: HTMLFormElement) {
+function connectionName(form: HTMLFormElement, defaultName?: string) {
   const field = form.elements.namedItem("displayName");
   if (!(field instanceof HTMLInputElement)) {
     throw new Error("Missing connection name field");
   }
   // An uncertain save locks controls; FormData omits those disabled inputs.
+  if (defaultName !== undefined) {
+    const label = form.elements.namedItem("connectionLabel");
+    if (!(label instanceof HTMLInputElement)) {
+      throw new Error("Missing optional connection name field");
+    }
+    // Keep the editable label empty so a changed address gets a fresh default.
+    field.value = label.value.trim() || defaultName;
+  }
   return field.value.trim();
 }
 
@@ -542,7 +454,10 @@ export const saveRemoteSsh$ = command(
     if (!current) {
       return;
     }
-    const name = connectionName(form);
+    const name = connectionName(
+      form,
+      current.address.trim().slice(0, SSH_DISPLAY_NAME_MAX_LENGTH),
+    );
     nameRemoteCredential(form, name);
     const savedId = await set(saveSsh$, form, signal);
     signal.throwIfAborted();
@@ -567,7 +482,14 @@ export const saveRemoteVnc$ = command(
     if (!current) {
       return;
     }
-    const name = connectionName(form);
+    const name = connectionName(
+      form,
+      current.fromComputer
+        ? get(vncEditor$)
+            .destinationHost.trim()
+            .slice(0, VNC_DISPLAY_NAME_MAX_LENGTH)
+        : undefined,
+    );
     nameRemoteCredential(form, name);
     const savedId = await set(saveVnc$, form, signal);
     signal.throwIfAborted();
@@ -633,15 +555,24 @@ export const chooseRemoteNetworkProvider$ = command(
     );
   },
 );
-export const returnToRemoteNetworkProvider$ = command(({ set }) => {
-  set(closeRemoteNetworkGuide$, true);
-  set(networkPicker$, true);
-});
-
-export const openRemoteDependencySsh$ = command(
-  async ({ set }, parentSignal: AbortSignal) => {
-    const signal = set(resetSetupOperation$, parentSignal);
-    await set(openSshDialog$, "create", null, signal);
+export const addComputerNetwork$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (
+      get(remoteSetup$)?.step !== "computer-network" ||
+      !get(tailscaleSettingsEnabled$)
+    ) {
+      return;
+    }
+    await set(chooseRemoteNetworkProvider$, "tailscale", "tag:okou", signal);
     signal.throwIfAborted();
+    const dialog = await get(tailscaleDialog$);
+    signal.throwIfAborted();
+    if (dialog?.kind !== "create") {
+      throw new Error("Tailscale settings are unavailable");
+    }
+    const params = new URLSearchParams(get(searchParams$));
+    params.set("scope", "private-network");
+    params.set("setup", "computer");
+    set(updateSearchParams$, params);
   },
 );

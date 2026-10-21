@@ -1,17 +1,14 @@
-import { editRemoteTailscaleCredentials$ } from "../../signals/remote-resource-detail.ts";
 import {
   RemoteNetworkScopeField,
   RemoteNetworkScopeConfirmation,
 } from "./remote-network-scope.tsx";
 import {
   RemoteNetworkSummary,
-  RemoteNetworkFooter,
+  RemoteNetworkDeleteAction,
 } from "./remote-network-summary.tsx";
 import { useRemoteNetworkSaveLabel } from "./remote-network-help.tsx";
-import {
-  remoteControlGuidedEnabled$,
-  remoteSetup$,
-} from "../../signals/remote-control-setup.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import { remoteNetworkScopeStatus$ } from "../../signals/remote-network-scope.ts";
 import {
   RemoteEditorFrame,
   useRemoteNetworkEditorVisible,
@@ -549,7 +546,7 @@ function TailscaleFormActions({
     <div
       className={
         inline
-          ? "mt-2 flex shrink-0 justify-end gap-2 border-t border-divider pt-5"
+          ? "mt-2 flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-5"
           : "flex shrink-0 justify-end gap-2"
       }
     >
@@ -585,7 +582,6 @@ export function TailscaleDialog({
   readonly inline?: boolean;
   readonly saveAction?: typeof saveTailscale$;
 } = {}) {
-  const { t } = useTranslation();
   const dialog = useLastResolved(tailscaleDialog$);
   const uncertain = useGet(tailscaleSaveUncertain$);
   const close = useSet(closeTailscaleDialog$);
@@ -593,9 +589,8 @@ export function TailscaleDialog({
   const [saving, save] = useLoadableSet(saveAction);
   const signal = useGet(pageSignal$);
   const { title, description } = useOperationCopy(dialog?.kind);
-  const setup = useGet(remoteSetup$);
-  const wizard = inline && setup?.step === "oauth";
   const blocked = useOperationBlocked(dialog?.kind, dialog?.config ?? null);
+  const scopeStatus = useGet(remoteNetworkScopeStatus$);
   const visible = useRemoteNetworkEditorVisible(inline, dialog);
   if (!dialog || !visible) {
     return null;
@@ -606,20 +601,8 @@ export function TailscaleDialog({
     <RemoteEditorFrame
       key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
       inline={inline}
-      title={
-        wizard
-          ? t(($) => {
-              return $.remoteControlSetup.oauthTitle;
-            })
-          : title
-      }
-      description={
-        wizard
-          ? t(($) => {
-              return $.remoteControlSetup.oauthDescription;
-            })
-          : description
-      }
+      title={title}
+      description={description}
       busy={busy}
       onClose={close}
     >
@@ -631,7 +614,7 @@ export function TailscaleDialog({
         aria-busy={busy}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!busy && (uncertain || !blocked)) {
+          if (!busy && !scopeStatus.error && (uncertain || !blocked)) {
             detach(save(event.currentTarget, signal), Reason.DomCallback);
           }
         }}
@@ -639,19 +622,19 @@ export function TailscaleDialog({
         <DialogBody className="grid gap-4">
           <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
           <TailscaleReview dialog={dialog} isSaving={busy} />
+          <RemoteNetworkScopeConfirmation
+            provider="tailscale"
+            configId={dialog.config?.id}
+          />
         </DialogBody>
         <TailscaleFormActions
           inline={inline}
           busy={busy}
           uncertain={uncertain}
-          blocked={blocked}
+          blocked={blocked || !!scopeStatus.error}
           destructive={dialog.kind === "delete"}
           edit={edit}
           title={title}
-        />
-        <RemoteNetworkScopeConfirmation
-          provider="tailscale"
-          configId={dialog.config?.id}
         />
       </form>
     </RemoteEditorFrame>
@@ -673,7 +656,6 @@ function TailscaleConfigCard({
 }) {
   const { t } = useTranslation();
   const open = useSet(openTailscaleDialog$);
-  const updateCredentials = useSet(editRemoteTailscaleCredentials$);
   const signal = useGet(pageSignal$);
   return (
     <article
@@ -702,7 +684,7 @@ function TailscaleConfigCard({
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            variant={compact ? "quiet" : "outline"}
+            variant={compact ? "neutral" : "outline"}
             onClick={() => {
               return detach(open("edit", config, signal), Reason.DomCallback);
             }}
@@ -713,19 +695,6 @@ function TailscaleConfigCard({
                 : $.tailscale.edit;
             })}
           </Button>
-          {compact && (
-            <Button
-              type="button"
-              variant="quiet"
-              onClick={() => {
-                detach(updateCredentials(config, signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.remoteControlSetup.networkUpdateCredentials;
-              })}
-            </Button>
-          )}
           {admin && !compact && (
             <Button
               type="button"
@@ -750,33 +719,17 @@ function TailscaleConfigCard({
                   })}
             </Button>
           )}
-          <Button
-            type="button"
-            variant={compact ? "quiet" : "outline"}
+          <RemoteNetworkDeleteAction
+            label={t(($) => {
+              return $.tailscale.delete;
+            })}
+            compact={compact}
             disabled={privateNetworkHostCount(config) > 0}
             onClick={() => {
               return detach(open("delete", config, signal), Reason.DomCallback);
             }}
-          >
-            {t(($) => {
-              return $.tailscale.delete;
-            })}
-          </Button>
+          />
         </div>
-      )}
-      {canManage && privateNetworkHostCount(config) > 0 && (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.vnc.native.inUse;
-          })}
-        </p>
-      )}
-      {compact && (
-        <RemoteNetworkFooter
-          id={config.id}
-          name={config.name}
-          kind="tailscale"
-        />
       )}
     </article>
   );

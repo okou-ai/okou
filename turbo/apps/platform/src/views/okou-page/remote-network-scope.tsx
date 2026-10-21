@@ -1,4 +1,4 @@
-import { ArrowRight, LockKeyhole, Network } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -141,12 +141,10 @@ export function RemoteNetworkScopeField({
           );
         })}
       </RadioGroup>
-      {(!isAdmin || scope === "organization") && (
+      {!isAdmin && (
         <p className="text-sm text-muted-foreground">
           {t(($) => {
-            return !isAdmin
-              ? $.remoteNetworkScope.adminRule
-              : $.remoteNetworkScope.separateConnections;
+            return $.remoteNetworkScope.adminRule;
           })}
         </p>
       )}
@@ -160,42 +158,23 @@ export function RemoteNetworkAccessSummary({
 }) {
   const { t } = useTranslation();
   const organization = useRemoteNetworkOrganization();
-  const admin = useLoadable(isOrgAdmin$);
-  const canManage =
-    scope === "personal" || (admin.state === "hasData" && admin.data);
   return (
-    <section className="flex items-start gap-3 rounded-lg border border-divider bg-gray-50 p-4 text-sm">
-      <span className="rounded-lg bg-card p-2">
-        {scope === "organization" ? (
-          <Network size={20} aria-hidden />
-        ) : (
-          <LockKeyhole size={20} aria-hidden />
-        )}
-      </span>
-      <div className="grid gap-1.5">
-        <span className="text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.scope;
-          })}
-        </span>
-        <strong className="font-medium">
-          {scope === "organization"
-            ? `${organization} · ${t(($) => {
-                return $.remoteNetworkScope.members;
-              })}`
-            : t(($) => {
-                return $.remoteNetworkScope.onlyMe;
-              })}
-        </strong>
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return canManage
-              ? $.remoteNetworkScope.canManage
-              : $.remoteNetworkScope.canUse;
-          })}
-        </p>
-      </div>
-    </section>
+    <>
+      <dt className="text-muted-foreground">
+        {t(($) => {
+          return $.cloudflareAccess.scope;
+        })}
+      </dt>
+      <dd className="break-words">
+        {scope === "organization"
+          ? `${organization} · ${t(($) => {
+              return $.remoteNetworkScope.members;
+            })}`
+          : t(($) => {
+              return $.remoteNetworkScope.onlyMe;
+            })}
+      </dd>
+    </>
   );
 }
 function useScopeReview() {
@@ -230,6 +209,25 @@ function useScopeReview() {
   };
 }
 
+function ScopeChangeError({
+  error,
+}: {
+  readonly error: ReturnType<typeof useScopeReview>["error"];
+}) {
+  const { t } = useTranslation();
+  return error ? (
+    <p role="alert" className="text-sm text-muted-foreground">
+      {t(($) => {
+        return error === "uncertain"
+          ? $.remoteNetworkScope.scopeUncertain
+          : error === "conflict"
+            ? $.remoteNetworkScope.scopeConflict
+            : $.remoteNetworkScope.scopeUnavailable;
+      })}
+    </p>
+  ) : null;
+}
+
 function ScopeImpactContent({
   review,
 }: {
@@ -238,8 +236,7 @@ function ScopeImpactContent({
   const { t } = useTranslation();
   const organization = useRemoteNetworkOrganization();
   const acknowledge = useSet(acknowledgeRemoteNetworkScope$);
-  const { pending, status, restricting, preview, needsAck, error, impact } =
-    review;
+  const { pending, status, preview, needsAck, error, impact } = review;
   if (!pending) {
     return null;
   }
@@ -248,41 +245,31 @@ function ScopeImpactContent({
       <p className="font-medium">{pending.config.name}</p>
       <div className="flex items-center justify-between gap-3 rounded-lg border border-divider bg-gray-50 p-4">
         <span>
-          {restricting
-            ? `${organization} · ${t(($) => {
-                return $.remoteNetworkScope.members;
-              })}`
-            : t(($) => {
-                return $.remoteNetworkScope.onlyMe;
-              })}
+          {`${organization} · ${t(($) => {
+            return $.remoteNetworkScope.members;
+          })}`}
         </span>
         <ArrowRight size={16} className="shrink-0" aria-hidden />
         <strong className="font-medium">
-          {restricting
-            ? t(($) => {
-                return $.remoteNetworkScope.onlyMe;
-              })
-            : `${organization} · ${t(($) => {
-                return $.remoteNetworkScope.members;
-              })}`}
+          {t(($) => {
+            return $.remoteNetworkScope.onlyMe;
+          })}
         </strong>
       </div>
       <p>
         {t(($) => {
-          return restricting
-            ? $.remoteNetworkScope.restrictHelp
-            : $.remoteNetworkScope.separateConnections;
+          return $.remoteNetworkScope.restrictHelp;
         })}
       </p>
       <PrivateNetworkHostReferences config={pending.config} />
-      {restricting && impact.state === "loading" && (
+      {impact.state === "loading" && (
         <p role="status">
           {t(($) => {
             return $.remoteNetworkScope.reviewLoading;
           })}
         </p>
       )}
-      {restricting && impact.state !== "loading" && !preview && (
+      {impact.state !== "loading" && !preview && (
         <p role="alert">
           {t(($) => {
             return $.remoteNetworkScope.scopeUnavailable;
@@ -313,17 +300,7 @@ function ScopeImpactContent({
           </label>
         </>
       )}
-      {error && (
-        <p role="alert">
-          {t(($) => {
-            return error === "uncertain"
-              ? $.remoteNetworkScope.scopeUncertain
-              : error === "conflict"
-                ? $.remoteNetworkScope.scopeConflict
-                : $.remoteNetworkScope.scopeUnavailable;
-          })}
-        </p>
-      )}
+      <ScopeChangeError error={error} />
     </DialogBody>
   );
 }
@@ -338,6 +315,7 @@ export function RemoteNetworkScopeConfirmation({
   const { t } = useTranslation();
   const review = useScopeReview();
   const { pending, status, restricting, blocked } = review;
+  const draft = useGet(remoteNetworkScopeDraft$);
   const cancel = useSet(cancelRemoteNetworkScope$);
   const approve = useSet(approveRemoteNetworkScope$);
   if (
@@ -345,6 +323,9 @@ export function RemoteNetworkScopeConfirmation({
     pending.provider !== provider ||
     pending.configId !== configId
   ) {
+    if (draft?.provider === provider && draft.configId === configId) {
+      return <ScopeChangeError error={status.error} />;
+    }
     return status.savedId === configId ? (
       <p role="status" className="text-sm">
         {t(($) => {
@@ -352,6 +333,9 @@ export function RemoteNetworkScopeConfirmation({
         })}
       </p>
     ) : null;
+  }
+  if (!restricting) {
+    return <ScopeChangeError error={review.error} />;
   }
   return (
     <Dialog
@@ -366,9 +350,7 @@ export function RemoteNetworkScopeConfirmation({
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
-              return restricting
-                ? $.remoteNetworkScope.restrictTitle
-                : $.remoteNetworkScope.shareTitle;
+              return $.remoteNetworkScope.restrictTitle;
             })}
           </DialogTitle>
         </DialogHeader>
@@ -391,9 +373,7 @@ export function RemoteNetworkScopeConfirmation({
             onClick={approve}
           >
             {t(($) => {
-              return restricting
-                ? $.remoteNetworkScope.restrictAction
-                : $.remoteNetworkScope.shareAction;
+              return $.remoteNetworkScope.restrictAction;
             })}
           </Button>
         </div>

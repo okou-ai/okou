@@ -46,9 +46,9 @@ export function RemoteSecretInput(
         }}
       >
         {visible ? (
-          <EyeOff size={16} aria-hidden />
-        ) : (
           <Eye size={16} aria-hidden />
+        ) : (
+          <EyeOff size={16} aria-hidden />
         )}
       </IconButton>
     </span>

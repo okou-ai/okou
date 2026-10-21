@@ -11,9 +11,14 @@ import {
 import {
   remoteControlGuidedEnabled$,
   remoteSetup$,
+  chooseComputerScreenService$,
 } from "../../signals/remote-control-setup.ts";
 import { RemoteUsernameHelp } from "./remote-editor-frame.tsx";
-import { RemoteAddressHelp, VncPasswordHelp } from "./remote-field-help.tsx";
+import {
+  RemoteAddressHelp,
+  RemoteFieldHelp,
+  VncPasswordHelp,
+} from "./remote-field-help.tsx";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -154,6 +159,41 @@ export function VncDisplayNameField({
 }) {
   const { t } = useTranslation();
   const guided = useGet(remoteControlGuidedEnabled$);
+  const setup = useGet(remoteSetup$);
+  const editor = useGet(vncEditor$);
+  if (!connection && setup?.fromComputer && setup.protocol === "vnc") {
+    return (
+      <details className="text-sm">
+        <summary className="w-fit cursor-pointer rounded-md py-1 text-muted-foreground hover:text-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.optionalName;
+          })}
+        </summary>
+        <div className="mt-3 grid gap-2">
+          <input type="hidden" name="displayName" />
+          <Input
+            name="connectionLabel"
+            maxLength={VNC_DISPLAY_NAME_MAX_LENGTH}
+            aria-label={t(($) => {
+              return $.remoteControlSetup.name;
+            })}
+            aria-describedby="vnc-connection-name-help"
+            placeholder={
+              editor.destinationHost ||
+              t(($) => {
+                return $.remoteControlSetup.namePlaceholder;
+              })
+            }
+          />
+          <p id="vnc-connection-name-help" className="text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.automaticNameHelp;
+            })}
+          </p>
+        </div>
+      </details>
+    );
+  }
   return (
     <label className="grid gap-2 text-sm">
       <span>
@@ -316,8 +356,8 @@ function VncPortSettings({
     return <VncPortField connection={connection} />;
   }
   return (
-    <details className="border-t border-divider pt-4">
-      <summary className="cursor-pointer text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <details>
+      <summary className="w-fit cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {t(($) => {
           return $.remoteControlSetup.more;
         })}
@@ -645,12 +685,63 @@ function useVncLoginDescription(profile: VncProfile) {
   return descriptions[profile];
 }
 
-function VncProfileGuidance({ profile }: { readonly profile: VncProfile }) {
+function VncLoginDifferences() {
+  const { t } = useTranslation();
+  return (
+    <div className="grid gap-3 text-sm text-muted-foreground">
+      <ul className="grid list-disc gap-2 pl-4">
+        <li>
+          {t(($) => {
+            return $.remoteConnectionHelp.certificateGroup;
+          })}
+        </li>
+        <li>
+          {t(($) => {
+            return $.remoteConnectionHelp.rsaGroup;
+          })}
+        </li>
+        <li>
+          {t(($) => {
+            return $.remoteConnectionHelp.companyGroup;
+          })}
+        </li>
+      </ul>
+      <p>
+        {t(($) => {
+          return $.remoteControlSetup.vncProfileConfirm;
+        })}
+      </p>
+    </div>
+  );
+}
+
+function VncProfileGuidance({
+  profile,
+  compact = false,
+}: {
+  readonly profile: VncProfile;
+  readonly compact?: boolean;
+}) {
   const { t } = useTranslation();
   const guided = useGet(remoteControlGuidedEnabled$);
   const description = useVncLoginDescription(profile);
   if (!guided) {
     return <VncSecurityProfileHelp profile={profile} />;
+  }
+  if (compact) {
+    return (
+      <div className="flex items-start justify-between gap-3 text-sm leading-relaxed text-muted-foreground">
+        <p>{description}</p>
+        <RemoteFieldHelp
+          title={t(($) => {
+            return $.remoteConnectionHelp.technicalDetails;
+          })}
+        >
+          <VncSecurityProfileHelp profile={profile} />
+          <VncLoginDifferences />
+        </RemoteFieldHelp>
+      </div>
+    );
   }
   return (
     <>
@@ -664,29 +755,8 @@ function VncProfileGuidance({ profile }: { readonly profile: VncProfile }) {
             return $.remoteConnectionHelp.loginDifferences;
           })}
         </summary>
-        <div className="grid gap-3 pt-3 text-sm text-muted-foreground">
-          <ul className="grid list-disc gap-2 pl-4">
-            <li>
-              {t(($) => {
-                return $.remoteConnectionHelp.certificateGroup;
-              })}
-            </li>
-            <li>
-              {t(($) => {
-                return $.remoteConnectionHelp.rsaGroup;
-              })}
-            </li>
-            <li>
-              {t(($) => {
-                return $.remoteConnectionHelp.companyGroup;
-              })}
-            </li>
-          </ul>
-          <p>
-            {t(($) => {
-              return $.remoteControlSetup.vncProfileConfirm;
-            })}
-          </p>
+        <div className="pt-3">
+          <VncLoginDifferences />
         </div>
       </details>
       <details className="border-t border-divider pt-4">
@@ -733,12 +803,105 @@ function useVncServiceGroups() {
   ];
 }
 
+export function ComputerScreenService({
+  disabled,
+}: {
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const setup = useGet(remoteSetup$);
+  const profile = useGet(vncProfile$);
+  const choose = useSet(chooseComputerScreenService$);
+  const items = [
+    {
+      value: "mac",
+      label: t(($) => {
+        return $.remoteControlSetup.appleGroup;
+      }),
+    },
+    {
+      value: "other",
+      label: t(($) => {
+        return $.remoteComputerSetup.otherScreenService;
+      }),
+    },
+  ];
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-2">
+        <label htmlFor="computer-screen-service">
+          {t(($) => {
+            return $.remoteComputerSetup.screenService;
+          })}
+        </label>
+        <Select
+          items={items}
+          value={setup?.computerScreenService ?? null}
+          disabled={disabled}
+          onValueChange={(value) => {
+            if (value === "mac" || value === "other") {
+              choose(value);
+            }
+          }}
+        >
+          <SelectTrigger id="computer-screen-service">
+            <SelectValue
+              placeholder={t(($) => {
+                return $.remoteComputerSetup.selectScreenService;
+              })}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+      {setup?.computerScreenService === "mac" && (
+        <>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {t(($) => {
+              return $.remoteComputerSetup.macScreenReady;
+            })}
+          </p>
+          <details className="text-sm">
+            <summary className="w-fit cursor-pointer text-muted-foreground hover:text-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.more;
+              })}
+            </summary>
+            <div className="grid gap-4 pt-4">
+              <VncSecurityProfileField
+                profile={profile}
+                disabled={disabled}
+                showServiceGroup={false}
+              />
+            </div>
+          </details>
+        </>
+      )}
+      {setup?.computerScreenService === "other" && (
+        <VncSecurityProfileField profile={profile} disabled={disabled} />
+      )}
+    </div>
+  );
+}
+
 export function VncSecurityProfileField({
   profile,
   disabled,
+  showServiceGroup = true,
+  compact = false,
 }: {
   readonly profile: VncProfile;
   readonly disabled: boolean;
+  readonly showServiceGroup?: boolean;
+  readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
@@ -753,39 +916,88 @@ export function VncSecurityProfileField({
   const groups = useVncServiceGroups();
   return (
     <>
-      {guided && (
-        <div className="grid gap-2">
-          <label htmlFor="vnc-service-group">
+      <div className={compact ? "grid gap-4 sm:grid-cols-2" : "grid gap-4"}>
+        {guided && showServiceGroup && (
+          <div className="grid gap-2">
+            <label htmlFor="vnc-service-group">
+              {t(($) => {
+                return $.remoteControlSetup.vncGroup;
+              })}
+            </label>
+            <Select
+              items={groups}
+              value={group}
+              disabled={disabled}
+              onValueChange={(value) => {
+                const defaultProfile = {
+                  apple: "apple_dh",
+                  certificate: "x509_vnc",
+                  rsa: "rsa_aes_ra2",
+                  company: "qemu_x509_sasl",
+                } satisfies Record<string, VncProfile>;
+                if (
+                  value === "apple" ||
+                  value === "certificate" ||
+                  value === "rsa" ||
+                  value === "company"
+                ) {
+                  chooseProfile(defaultProfile[value]);
+                }
+              }}
+            >
+              <SelectTrigger id="vnc-service-group">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((item) => {
+                  return (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div className="grid min-w-0 content-start gap-2">
+          <label htmlFor="vnc-profile" className="text-sm">
             {t(($) => {
-              return $.remoteControlSetup.vncGroup;
+              return guided
+                ? $.remoteControlSetup.vncLoginMethod
+                : $.vnc.security.profileLabel;
             })}
           </label>
           <Select
-            items={groups}
-            value={group}
-            disabled={disabled}
-            onValueChange={(value) => {
-              const defaultProfile = {
-                apple: "apple_dh",
-                certificate: "x509_vnc",
-                rsa: "rsa_aes_ra2",
-                company: "qemu_x509_sasl",
-              } satisfies Record<string, VncProfile>;
+            items={profileItems}
+            value={profile}
+            onValueChange={(value, details) => {
               if (
-                value === "apple" ||
-                value === "certificate" ||
-                value === "rsa" ||
-                value === "company"
+                value !== "x509_none" &&
+                value !== "x509_vnc" &&
+                value !== "client_certificate_none" &&
+                value !== "client_certificate_vnc" &&
+                value !== "x509_plain" &&
+                value !== "qemu_x509_sasl" &&
+                !(value !== null && isVncKerberosMethod(value)) &&
+                value !== "apple_vnc_password" &&
+                value !== "apple_dh" &&
+                value !== "apple_srp" &&
+                value !== "apple_rsa_srp" &&
+                !isRsaAesProfile(value)
               ) {
-                chooseProfile(defaultProfile[value]);
+                details.cancel();
+                return;
               }
+              chooseProfile(value);
             }}
+            disabled={disabled}
           >
-            <SelectTrigger id="vnc-service-group">
+            <SelectTrigger id="vnc-profile">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {groups.map((item) => {
+              {profileItems.map((item) => {
                 return (
                   <SelectItem key={item.value} value={item.value}>
                     {item.label}
@@ -795,53 +1007,8 @@ export function VncSecurityProfileField({
             </SelectContent>
           </Select>
         </div>
-      )}
-      <label htmlFor="vnc-profile" className="text-sm">
-        {t(($) => {
-          return guided
-            ? $.remoteControlSetup.vncLoginMethod
-            : $.vnc.security.profileLabel;
-        })}
-      </label>
-      <Select
-        items={profileItems}
-        value={profile}
-        onValueChange={(value, details) => {
-          if (
-            value !== "x509_none" &&
-            value !== "x509_vnc" &&
-            value !== "client_certificate_none" &&
-            value !== "client_certificate_vnc" &&
-            value !== "x509_plain" &&
-            value !== "qemu_x509_sasl" &&
-            !(value !== null && isVncKerberosMethod(value)) &&
-            value !== "apple_vnc_password" &&
-            value !== "apple_dh" &&
-            value !== "apple_srp" &&
-            value !== "apple_rsa_srp" &&
-            !isRsaAesProfile(value)
-          ) {
-            details.cancel();
-            return;
-          }
-          chooseProfile(value);
-        }}
-        disabled={disabled}
-      >
-        <SelectTrigger id="vnc-profile">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {profileItems.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-      <VncProfileGuidance profile={profile} />
+      </div>
+      <VncProfileGuidance profile={profile} compact={compact} />
     </>
   );
 }
@@ -858,12 +1025,39 @@ function SshConnectionLabel({
   );
 }
 
+function VncSshConnectionHelp({ isEmpty }: { readonly isEmpty: boolean }) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return (
+    <>
+      {isEmpty && (
+        <p id="vnc-ssh-empty-help" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return guided
+              ? $.remoteConnectionHelp.sshEmptyHelp
+              : $.vnc.transport.empty;
+          })}
+        </p>
+      )}
+      {!guided && (
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {t(($) => {
+            return $.vnc.transport.sshHelp;
+          })}
+        </p>
+      )}
+    </>
+  );
+}
+
 function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
   const connections = useLoadable(sshConnections$);
   const chooseConnection = useSet(chooseVncSshConnection$);
   const retry = useSet(invalidateSsh$);
+  const isEmpty =
+    connections.state === "hasData" && connections.data?.length === 0;
   const connectionItems =
     connections.state === "hasData" && connections.data !== null
       ? connections.data.map((connection) => {
@@ -916,16 +1110,10 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
             return $.vnc.transport.unavailable;
           })}
         </p>
-      ) : connections.data.length === 0 ? (
-        <p role="alert" className="text-sm">
-          {t(($) => {
-            return $.vnc.transport.empty;
-          })}
-        </p>
       ) : (
         <Select
           items={connectionItems}
-          value={editor.sshConnectionId}
+          value={editor.sshConnectionId || null}
           onValueChange={(value, details) => {
             if (
               !connectionItems.some((item) => {
@@ -937,12 +1125,18 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
             }
             chooseConnection(value);
           }}
-          disabled={disabled}
+          disabled={disabled || isEmpty}
         >
-          <SelectTrigger id="vnc-ssh-connection" className="min-w-0">
+          <SelectTrigger
+            id="vnc-ssh-connection"
+            className="min-w-0"
+            aria-describedby={isEmpty ? "vnc-ssh-empty-help" : undefined}
+          >
             <SelectValue
               placeholder={t(($) => {
-                return $.vnc.transport.select;
+                return isEmpty
+                  ? $.remoteConnectionHelp.sshEmptyPlaceholder
+                  : $.vnc.transport.select;
               })}
             />
           </SelectTrigger>
@@ -964,19 +1158,17 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
           })}
         </p>
       )}
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.transport.sshHelp;
-        })}
-      </p>
+      <VncSshConnectionHelp isEmpty={isEmpty} />
     </div>
   );
 }
 
 export function VncTransportFields({
   disabled,
+  hideConnectionDetails = false,
 }: {
   readonly disabled: boolean;
+  readonly hideConnectionDetails?: boolean;
 }) {
   const profile = useGet(vncProfile$);
   const transport = useGet(vncTransport$);
@@ -986,6 +1178,7 @@ export function VncTransportFields({
         role="rfb"
         disabled={disabled}
         protectedRoute={requiresVncProtectiveRoute(profile)}
+        hideConnectionDetails={hideConnectionDetails}
       />
       {transport === "ssh" && <VncSshConnectionFields disabled={disabled} />}
     </div>
@@ -1523,12 +1716,44 @@ function VncCredentialFormatHelp({
   );
 }
 
+function useVncPasswordFormatHelp(method: VncCredentialResponse["authMethod"]) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const classic =
+    method === "vnc_password" || method === "client_certificate_vnc_password";
+  const rsa =
+    method === "rsa_aes_password" || method === "rsa_aes_username_password";
+  return rsa
+    ? t(($) => {
+        return $.vnc.rsaAes.fieldHelp;
+      })
+    : classic
+      ? t(($) => {
+          return guided
+            ? $.remoteConnectionHelp.passwordFormat
+            : $.vnc.credential.passwordHelp;
+        })
+      : method === "apple_dh_username_password"
+        ? t(($) => {
+            return $.vnc.credential.appleDhFieldHelp;
+          })
+        : method === "qemu_scram_sha256"
+          ? t(($) => {
+              return $.vnc.credential.qemuScramPasswordHelp;
+            })
+          : t(($) => {
+              return $.vnc.credential.usernamePasswordHelp;
+            });
+}
+
 function VncPasswordInput({
   method,
   optional = false,
+  compact = false,
 }: {
   readonly method: VncCredentialResponse["authMethod"];
   readonly optional?: boolean;
+  readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
   const guided = useGet(remoteControlGuidedEnabled$);
@@ -1538,8 +1763,9 @@ function VncPasswordInput({
     method === "vnc_password" || method === "client_certificate_vnc_password";
   const rsa =
     method === "rsa_aes_password" || method === "rsa_aes_username_password";
+  const formatHelp = useVncPasswordFormatHelp(method);
   return (
-    <div className="grid gap-2 text-sm">
+    <div className="grid content-start gap-2 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label htmlFor="vnc-password">
           {classic
@@ -1552,6 +1778,17 @@ function VncPasswordInput({
         </label>
         {classic && (
           <VncPasswordHelp apple={profile === "apple_vnc_password"} />
+        )}
+        {compact && !classic && (
+          <RemoteFieldHelp
+            title={`${t(($) => {
+              return $.vnc.credential.usernamePassword;
+            })} · ${t(($) => {
+              return $.remoteConnectionHelp.fieldRequirements;
+            })}`}
+          >
+            <p>{formatHelp}</p>
+          </RemoteFieldHelp>
         )}
       </div>
       <RemoteSecretInput
@@ -1593,29 +1830,92 @@ function VncPasswordInput({
                 })
         }
       />
-      <VncCredentialFormatHelp id="vnc-password-help" technical={!classic}>
-        {rsa
+      {compact && !classic ? (
+        <p id="vnc-password-help" className="sr-only">
+          {formatHelp}
+        </p>
+      ) : (
+        <VncCredentialFormatHelp id="vnc-password-help" technical={!classic}>
+          {formatHelp}
+        </VncCredentialFormatHelp>
+      )}
+    </div>
+  );
+}
+
+function VncUsernameInput({
+  credential,
+  method,
+  compact,
+}: {
+  readonly credential: VncCredentialResponse | null;
+  readonly method: VncCredentialResponse["authMethod"];
+  readonly compact: boolean;
+}) {
+  const { t } = useTranslation();
+  const formatHelp =
+    method === "rsa_aes_username_password"
+      ? t(($) => {
+          return $.vnc.rsaAes.fieldHelp;
+        })
+      : method === "apple_dh_username_password"
+        ? t(($) => {
+            return $.vnc.credential.appleDhFieldHelp;
+          })
+        : method === "apple_rsa_srp_username_password"
           ? t(($) => {
-              return $.vnc.rsaAes.fieldHelp;
+              return $.vnc.credential.appleRsaSrpUsernameHelp;
             })
-          : classic
+          : method === "qemu_scram_sha256"
             ? t(($) => {
-                return guided
-                  ? $.remoteConnectionHelp.passwordFormat
-                  : $.vnc.credential.passwordHelp;
+                return $.vnc.credential.qemuScramUsernameHelp;
               })
-            : method === "apple_dh_username_password"
-              ? t(($) => {
-                  return $.vnc.credential.appleDhFieldHelp;
-                })
-              : method === "qemu_scram_sha256"
-                ? t(($) => {
-                    return $.vnc.credential.qemuScramPasswordHelp;
-                  })
-                : t(($) => {
-                    return $.vnc.credential.usernamePasswordHelp;
-                  })}
-      </VncCredentialFormatHelp>
+            : t(($) => {
+                return $.vnc.credential.usernameHelp;
+              });
+  return (
+    <div className="grid content-start gap-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <label htmlFor="vnc-username">
+          {t(($) => {
+            return $.vnc.credential.username;
+          })}
+        </label>
+        <RemoteUsernameHelp>
+          {compact && <p className="text-muted-foreground">{formatHelp}</p>}
+        </RemoteUsernameHelp>
+      </div>
+      <Input
+        id="vnc-username"
+        name="username"
+        required
+        maxLength={
+          method === "apple_dh_username_password"
+            ? APPLE_DH_FIELD_MAX_BYTES
+            : method === "apple_rsa_srp_username_password"
+              ? APPLE_RSA_SRP_USERNAME_MAX_BYTES
+              : VNC_USERNAME_MAX_BYTES
+        }
+        defaultValue={
+          credential && "username" in credential ? credential.username : ""
+        }
+        pattern={
+          method === "qemu_scram_sha256" ? "(?!.*[,=])[!-~]{1,255}" : undefined
+        }
+        aria-describedby="vnc-username-help"
+        placeholder={t(($) => {
+          return $.vnc.credential.usernameHint;
+        })}
+      />
+      {compact ? (
+        <p id="vnc-username-help" className="sr-only">
+          {formatHelp}
+        </p>
+      ) : (
+        <VncCredentialFormatHelp id="vnc-username-help">
+          {formatHelp}
+        </VncCredentialFormatHelp>
+      )}
     </div>
   );
 }
@@ -1624,15 +1924,18 @@ function VncAuthenticationInputs({
   credential,
   method,
   optional = false,
+  compact = false,
 }: {
   readonly credential: VncCredentialResponse | null;
   readonly method: VncCredentialResponse["authMethod"];
   readonly optional?: boolean;
+  readonly compact?: boolean;
 }) {
-  const { t } = useTranslation();
   const certificate =
     method === "client_certificate" ||
     method === "client_certificate_vnc_password";
+  const hasUsername =
+    method !== "vnc_password" && method !== "rsa_aes_password" && !certificate;
   if (isVncKerberosMethod(method)) {
     return (
       <div key={method} className="grid gap-4">
@@ -1644,71 +1947,26 @@ function VncAuthenticationInputs({
     );
   }
   return (
-    <div key={method} className="grid gap-4">
+    <div
+      key={method}
+      className={
+        compact && hasUsername ? "grid gap-4 sm:grid-cols-2" : "grid gap-4"
+      }
+    >
       {certificate && <VncClientCertificateInputs optional={optional} />}
-      {method !== "vnc_password" &&
-        method !== "rsa_aes_password" &&
-        !certificate && (
-          <div className="grid gap-2 text-sm">
-            <div className="flex items-center justify-between gap-2">
-              <label htmlFor="vnc-username">
-                {t(($) => {
-                  return $.vnc.credential.username;
-                })}
-              </label>
-              <RemoteUsernameHelp />
-            </div>
-            <Input
-              id="vnc-username"
-              name="username"
-              required
-              maxLength={
-                method === "apple_dh_username_password"
-                  ? APPLE_DH_FIELD_MAX_BYTES
-                  : method === "apple_rsa_srp_username_password"
-                    ? APPLE_RSA_SRP_USERNAME_MAX_BYTES
-                    : VNC_USERNAME_MAX_BYTES
-              }
-              defaultValue={
-                credential && "username" in credential
-                  ? credential.username
-                  : ""
-              }
-              pattern={
-                method === "qemu_scram_sha256"
-                  ? "(?!.*[,=])[!-~]{1,255}"
-                  : undefined
-              }
-              aria-describedby="vnc-username-help"
-              placeholder={t(($) => {
-                return $.vnc.credential.usernameHint;
-              })}
-            />
-            <VncCredentialFormatHelp id="vnc-username-help">
-              {method === "rsa_aes_username_password"
-                ? t(($) => {
-                    return $.vnc.rsaAes.fieldHelp;
-                  })
-                : method === "apple_dh_username_password"
-                  ? t(($) => {
-                      return $.vnc.credential.appleDhFieldHelp;
-                    })
-                  : method === "apple_rsa_srp_username_password"
-                    ? t(($) => {
-                        return $.vnc.credential.appleRsaSrpUsernameHelp;
-                      })
-                    : method === "qemu_scram_sha256"
-                      ? t(($) => {
-                          return $.vnc.credential.qemuScramUsernameHelp;
-                        })
-                      : t(($) => {
-                          return $.vnc.credential.usernameHelp;
-                        })}
-            </VncCredentialFormatHelp>
-          </div>
-        )}
+      {hasUsername && (
+        <VncUsernameInput
+          credential={credential}
+          method={method}
+          compact={compact}
+        />
+      )}
       {method !== "client_certificate" && (
-        <VncPasswordInput method={method} optional={optional} />
+        <VncPasswordInput
+          method={method}
+          optional={optional}
+          compact={compact}
+        />
       )}
     </div>
   );
@@ -1773,14 +2031,32 @@ export function VncCredentialFields({
           profile={editor.profile}
         />
       )}
-      {credential && <VncAuthenticationMethod method={method} />}
-      {connectionLogin && credential && (
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {t(($) => {
-            return $.remoteControlSetup.keepSavedLoginHelp;
-          })}
-        </p>
-      )}
+      {credential &&
+        (connectionLogin ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>
+              {t(($) => {
+                return $.vnc.credential.authentication;
+              })}
+            </span>
+            <span className="text-foreground">
+              <VncAuthenticationLabel method={method} />
+            </span>
+            <RemoteFieldHelp
+              title={t(($) => {
+                return $.remoteControlSetup.loginHeading;
+              })}
+            >
+              <p>
+                {t(($) => {
+                  return $.remoteControlSetup.keepSavedLoginHelp;
+                })}
+              </p>
+            </RemoteFieldHelp>
+          </div>
+        ) : (
+          <VncAuthenticationMethod method={method} />
+        ))}
       {credential && !connectionLogin && (
         <VncAuthenticationReplacement
           disabled={disabled}
@@ -1792,6 +2068,7 @@ export function VncCredentialFields({
           credential={credential}
           method={method}
           optional={connectionLogin && credential !== null}
+          compact={connectionLogin && credential !== null}
         />
       )}
     </div>

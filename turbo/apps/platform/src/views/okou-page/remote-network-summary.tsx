@@ -1,14 +1,14 @@
 import { RemoteNetworkAccessSummary } from "./remote-network-scope.tsx";
-import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Laptop, ChevronRight, Plus } from "lucide-react";
-import { Button } from "@okouai/ui";
 import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { searchParams$ } from "../../signals/route.ts";
-import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
-import { Link } from "../router/link.tsx";
-import { enterRemoteSetup$ } from "../../signals/remote-control-setup.ts";
-import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
+import {
+  Button,
+  IconButton,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@okouai/ui";
+import { Info } from "lucide-react";
 export function RemoteNetworkSummary({
   config,
   kind,
@@ -21,27 +21,18 @@ export function RemoteNetworkSummary({
   const { t } = useTranslation();
   return (
     <div className="grid gap-6">
-      <header className="flex items-start justify-between gap-4">
-        <div className="grid gap-2">
-          <h2 className="text-lg font-semibold">{config.name}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return kind === "tailscale"
-                ? $.tailscale.title
-                : $.cloudflareAccess.title;
-            })}
-          </p>
-        </div>
-        <span className="rounded-md border border-divider px-2 py-1 text-sm text-muted-foreground">
+      <header className="grid gap-2">
+        <h2 className="break-words text-lg font-semibold">{config.name}</h2>
+        <p className="text-sm text-muted-foreground">
           {t(($) => {
-            return config.scope === "personal"
-              ? $.cloudflareAccess.personal
-              : $.cloudflareAccess.organization;
+            return kind === "tailscale"
+              ? $.tailscale.title
+              : $.cloudflareAccess.title;
           })}
-        </span>
+        </p>
       </header>
-      <RemoteNetworkAccessSummary scope={config.scope} />
       <dl className="grid grid-cols-[7.25rem_minmax(0,1fr)] gap-x-6 gap-y-4 text-sm">
+        <RemoteNetworkAccessSummary scope={config.scope} />
         <dt className="text-muted-foreground">
           {t(($) => {
             return $.remoteControlSetup.networkCredentials;
@@ -75,7 +66,6 @@ export function RemoteNetworkConnections({
   readonly showHeading?: boolean;
 }) {
   const { t } = useTranslation();
-  const params = useGet(searchParams$);
   const hosts = [
     ...config.sshHosts.map((host) => {
       return { ...host, protocol: "ssh" as const };
@@ -104,64 +94,73 @@ export function RemoteNetworkConnections({
           })}
         </p>
       )}
-      {hosts.map((host) => {
-        return (
-          <Link
-            key={`${host.protocol}:${host.id}`}
-            pathname="/connectors"
-            options={{
-              searchParams: remoteResourceSearchParams(
-                params,
-                host.protocol,
-                host.id,
-              ),
-            }}
-            className="flex items-center gap-3 rounded-lg py-3 hover:bg-gray-50"
-          >
-            <span className="rounded-lg bg-gray-50 p-2">
-              <Laptop size={20} aria-hidden />
-            </span>
-            <span className="grid min-w-0 flex-1 gap-1">
-              <span className="truncate text-sm">{host.displayName}</span>
-              <span className="text-sm text-muted-foreground">
-                {host.protocol.toUpperCase()}
-              </span>
-            </span>
-            <ChevronRight size={16} aria-hidden />
-          </Link>
-        );
-      })}
+      {hosts.length > 0 && (
+        <ul
+          aria-label={t(($) => {
+            return $.remoteControlSetup.linkedConnections;
+          })}
+          className="grid list-disc gap-2 pl-5 text-sm leading-6 marker:text-muted-foreground"
+        >
+          {hosts.map((host) => {
+            return (
+              <li key={`${host.protocol}:${host.id}`} className="break-words">
+                {host.displayName}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
-export function RemoteNetworkFooter({
-  id,
-  name,
-  kind,
+
+export function RemoteNetworkDeleteAction({
+  label,
+  disabled,
+  compact,
+  onClick,
 }: {
-  readonly id: string;
-  readonly name: string;
-  readonly kind: "tailscale" | "cloudflare";
+  readonly label: string;
+  readonly disabled: boolean;
+  readonly compact: boolean;
+  readonly onClick: () => void;
 }) {
   const { t } = useTranslation();
-  const enter = useSet(enterRemoteSetup$);
   return (
-    <footer className="flex flex-wrap items-center justify-end gap-4 border-t border-divider pt-5">
+    <div className="flex items-center gap-1">
       <Button
-        className={REMOTE_PAGE_ACTION}
-        onClick={() => {
-          enter("ssh", {
-            id,
-            name,
-            route: kind === "tailscale" ? "tailscale" : "cloudflare_access",
-          });
-        }}
+        type="button"
+        variant={compact ? "neutral" : "outline"}
+        disabled={disabled}
+        onClick={onClick}
       >
-        <Plus size={16} aria-hidden />
-        {t(($) => {
-          return $.remoteControlSetup.add;
-        })}
+        {label}
       </Button>
-    </footer>
+      {disabled && (
+        <Popover>
+          <PopoverTrigger
+            render={
+              <IconButton
+                type="button"
+                aria-label={t(($) => {
+                  return $.remoteControlSetup.networkDeleteInfo;
+                })}
+                className="size-7 text-muted-foreground"
+              />
+            }
+          >
+            <Info size={16} aria-hidden />
+          </PopoverTrigger>
+          <PopoverContent
+            aria-label={label}
+            className="w-80 max-w-[calc(100vw-2rem)] text-sm leading-6"
+          >
+            {t(($) => {
+              return $.vnc.native.inUse;
+            })}
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
   );
 }

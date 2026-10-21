@@ -1,80 +1,24 @@
-import { useGet, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui";
-import {
-  remoteControlGuidedEnabled$,
-  setRemoteNetworkPicker$,
-  openRemoteDependencySsh$,
-} from "../../signals/remote-control-setup.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { vncEditor$, requiresVncProtectiveRoute } from "../../signals/vnc.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 
-export function RemoteVncDependencies({
-  disabled,
-}: {
-  readonly disabled: boolean;
-}) {
+export function RemoteVncProtectionNotice() {
   const { t } = useTranslation();
   const enabled = useGet(remoteControlGuidedEnabled$);
   const editor = useGet(vncEditor$);
-  const [opening, open] = useLoadableSet(openRemoteDependencySsh$);
-  const network = useSet(setRemoteNetworkPicker$);
-  const signal = useGet(pageSignal$);
-  if (!enabled) {
+  if (
+    !enabled ||
+    editor.transport !== "ssh" ||
+    !requiresVncProtectiveRoute(editor.profile)
+  ) {
     return null;
   }
-  const protective = requiresVncProtectiveRoute(editor.profile);
   return (
-    <div className="grid gap-3">
-      {protective && editor.transport === "ssh" && (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.remoteControlSetup.sshDependency;
-          })}
-        </p>
-      )}
-      {editor.transport === "ssh" && (
-        <Button
-          type="button"
-          variant="outline"
-          className="justify-self-start"
-          disabled={disabled || opening.state === "loading"}
-          onClick={() => {
-            detach(open(signal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.remoteControlSetup.addSsh;
-          })}
-        </Button>
-      )}
-      {(editor.transport === "tailscale" ||
-        editor.transport === "cloudflare_access" ||
-        editor.kdcTransport === "tailscale" ||
-        editor.kdcTransport === "cloudflare_access") && (
-        <Button
-          type="button"
-          variant="outline"
-          className="justify-self-start"
-          disabled={disabled}
-          onClick={() => {
-            network(true);
-          }}
-        >
-          {t(($) => {
-            return $.remoteControlSetup.addNetworkInline;
-          })}
-        </Button>
-      )}
-      {opening.state === "hasError" && (
-        <p role="alert">
-          {t(($) => {
-            return $.remoteControlSetup.failedLoad;
-          })}
-        </p>
-      )}
-    </div>
+    <p className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.remoteControlSetup.sshDependency;
+      })}
+    </p>
   );
 }

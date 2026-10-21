@@ -142,7 +142,7 @@ function matchingScopeDraft(
     draft.scope !== config.scope
   );
 }
-function matchingScopeConfirmation(
+function matchingScopeChange(
   pending: ScopeChange | null,
   draft: ScopeDraft,
   config: ScopedCloudflareAccessConfig,
@@ -192,14 +192,14 @@ export const applyRemoteNetworkScope$ = command(
     if (draft !== get(remoteNetworkScopeDraft$)) {
       return null;
     }
-    const pending = get(remoteNetworkScopeChange$);
-    if (!matchingScopeConfirmation(pending, draft, config)) {
-      set(pending$, { ...draft, config });
+    let pending = get(remoteNetworkScopeChange$);
+    if (!matchingScopeChange(pending, draft, config)) {
+      pending = { ...draft, config };
+      set(pending$, pending);
       set(approved$, false);
       set(acknowledged$, null);
-      return null;
     }
-    if (!get(approved$)) {
+    if (pending.scope === "personal" && !get(approved$)) {
       return null;
     }
     const preview = await get(remoteNetworkScopeImpact$);

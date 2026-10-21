@@ -440,7 +440,10 @@ const editor$ = state<Editor>({
   replace: false,
 });
 const uncertain$ = state(false);
-const saveMessage$ = state<string | null>(null);
+const notice$ = state<{
+  readonly code: string;
+  readonly source: "save" | "rsa-import" | "kerberos-import";
+} | null>(null);
 const conflict$ = state(false);
 const reviewedVersion$ = state<number | null>(null);
 const resetSave$ = resetSignal();
@@ -495,7 +498,15 @@ export const vncSaveUncertain$ = computed((get) => {
   return get(uncertain$);
 });
 export const vncSaveMessage$ = computed((get) => {
-  return get(saveMessage$);
+  return get(notice$)?.code ?? null;
+});
+export const vncNoticeSource$ = computed((get) => {
+  return get(notice$)?.source ?? "save";
+});
+export const clearVncSaveMessage$ = command(({ get, set }) => {
+  if (!get(editorLocked$)) {
+    set(notice$, null);
+  }
 });
 export const vncConflict$ = computed((get) => {
   return get(conflict$);
@@ -553,7 +564,7 @@ function isSameVncDialog(current: VncDialogState, reviewed: VncDialogState) {
 export const vncConflictReview$ = computed(
   async (get): Promise<VncConflictReviewState | null> => {
     const dialog = await get(vncDialog$);
-    const message = get(saveMessage$);
+    const message = get(vncSaveMessage$);
     if (
       !dialog ||
       !get(conflict$) ||
@@ -608,7 +619,7 @@ export const acceptVncConflictReview$ = command(
   ) => {
     const current = await get(vncDialog$);
     signal.throwIfAborted();
-    const message = get(saveMessage$);
+    const message = get(vncSaveMessage$);
     if (
       !current ||
       get(dialog$) !== current ||
@@ -629,7 +640,7 @@ export const acceptVncConflictReview$ = command(
     ) {
       set(dialog$, { ...current, loginCredential: reviewed.loginCredential });
       set(conflict$, false);
-      set(saveMessage$, null);
+      set(notice$, null);
       return;
     }
     set(resetRsaImport$);
@@ -641,12 +652,13 @@ export const acceptVncConflictReview$ = command(
         : reviewed.credential.revision,
     );
     set(conflict$, false);
-    set(saveMessage$, null);
+    set(notice$, null);
   },
 );
 export const chooseVncCredential$ = command(
   ({ get, set }, selection: string | null) => {
     if (selection !== null && !get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(resetKerberosImport$);
       set(editor$, (current) => {
         return { ...current, selection };
@@ -671,6 +683,7 @@ export const chooseVncProfile$ = command(
         profile === "apple_rsa_srp" ||
         isRsaAesProfile(profile))
     ) {
+      set(clearVncSaveMessage$);
       set(resetRsaImport$);
       set(resetKerberosImport$);
       set(editor$, (current): Editor => {
@@ -701,6 +714,7 @@ export const chooseVncProfile$ = command(
 export const chooseVncLoopbackHost$ = command(
   ({ get, set }, host: string | null) => {
     if (!get(editorLocked$) && (host === "127.0.0.1" || host === "::1")) {
+      set(clearVncSaveMessage$);
       const loopbackHost: Editor["loopbackHost"] = host;
       set(editor$, (current): Editor => {
         return { ...current, loopbackHost };
@@ -787,7 +801,10 @@ export const importVncRsaKey$ = command(
     ) {
       // The displayed public-key draft must still be the material inspected.
       // Do not associate a late old fingerprint with a newly edited PEM.
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, {
+        code: VNC_ERROR_CODES.INVALID_INPUT,
+        source: "rsa-import",
+      });
       return;
     }
     set(editor$, (current) => {
@@ -797,12 +814,13 @@ export const importVncRsaKey$ = command(
         rsaImportedModulusBits: result.body.modulusBits,
       };
     });
-    set(saveMessage$, null);
+    set(notice$, null);
   },
 );
 
 export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {
   if (!get(editorLocked$) && (trust === "system" || trust === "custom_ca")) {
+    set(clearVncSaveMessage$);
     set(editor$, (current): Editor => {
       return { ...current, trust };
     });
@@ -819,6 +837,7 @@ export const chooseVncTransport$ = command(
       (transport !== "direct" ||
         !requiresVncProtectiveRoute(get(editor$).profile))
     ) {
+      set(clearVncSaveMessage$);
       set(editor$, (current): Editor => {
         return {
           ...current,
@@ -836,6 +855,7 @@ export const chooseVncTransport$ = command(
 export const chooseVncSshConnection$ = command(
   ({ get, set }, sshConnectionId: string | null) => {
     if (sshConnectionId !== null && !get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(editor$, (current): Editor => {
         return { ...current, sshConnectionId };
       });
@@ -846,6 +866,7 @@ export const chooseVncKdcSsh$ = command(({ get, set }, id: string | null) => {
   if (id === null || get(editorLocked$)) {
     return;
   }
+  set(clearVncSaveMessage$);
   set(editor$, (current): Editor => {
     return {
       ...current,
@@ -864,6 +885,7 @@ export const chooseVncKdcTransport$ = command(
         transport === "cloudflare_access" ||
         transport === "tailscale")
     ) {
+      set(clearVncSaveMessage$);
       set(editor$, (current): Editor => {
         return { ...current, kdcTransport: transport, kdcNetworkConfigId: "" };
       });
@@ -873,6 +895,7 @@ export const chooseVncKdcTransport$ = command(
 export const chooseVncNetworkConfig$ = command(
   ({ get, set }, role: "rfb" | "kdc", id: string | null) => {
     if (id !== null && !get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(editor$, (current) => {
         return role === "rfb"
           ? { ...current, networkConfigId: id }
@@ -895,6 +918,7 @@ export const editVncOriginTls$ = command(
     >,
   ) => {
     if (!get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(editor$, (current) => {
         return { ...current, ...fields };
       });
@@ -913,6 +937,7 @@ export const replaceVncAuthentication$ = command(
     if (get(editorLocked$)) {
       return;
     }
+    set(clearVncSaveMessage$);
     set(editor$, (current) => {
       return { ...current, replace };
     });
@@ -927,7 +952,7 @@ export const closeVncDialog$ = command(({ set }) => {
   set(resetRsaImport$);
   set(dialog$, null);
   set(uncertain$, false);
-  set(saveMessage$, null);
+  set(notice$, null);
   set(conflict$, false);
   set(reviewedVersion$, null);
   set(editor$, {
@@ -1026,7 +1051,10 @@ export const importVncKerberos$ = command(
     }
     field.value = "";
     if (file.size === 0 || file.size > 65_536) {
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, {
+        code: VNC_ERROR_CODES.INVALID_INPUT,
+        source: "kerberos-import",
+      });
       return;
     }
     const principal = [
@@ -1074,7 +1102,7 @@ export const importVncKerberos$ = command(
               ).bytes
             : canonicalKerberosKeytab(bytes, initiator);
           field.value = encodeAndClearKerberosMaterial(canonical);
-          set(saveMessage$, null);
+          set(notice$, null);
         })(),
         () => {
           bytes?.fill(0);
@@ -1084,7 +1112,10 @@ export const importVncKerberos$ = command(
     );
     if (!result.ok) {
       field.value = "";
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, {
+        code: VNC_ERROR_CODES.INVALID_INPUT,
+        source: "kerberos-import",
+      });
     }
   },
 );
@@ -1788,14 +1819,14 @@ const prepareVncFormSave$ = command(
         ? vncLoginPatch(form, dialog.loginCredential, editor.profile)
         : null;
     if (login && !login.success) {
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, { code: VNC_ERROR_CODES.INVALID_INPUT, source: "save" });
       return;
     }
     const request = dialog.kind.endsWith("-credential")
       ? credentialRequest(clients, dialog, form, editor, signal)
       : connectionRequest(clients, dialog, form, editor, signal);
     if (!request) {
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, { code: VNC_ERROR_CODES.INVALID_INPUT, source: "save" });
       return;
     }
     return { dialog, clients, editor, login, request };
@@ -1822,7 +1853,7 @@ const handleVncSaveFailure$ = command(
       return;
     }
     set(uncertain$, false);
-    set(saveMessage$, code);
+    set(notice$, { code, source: "save" });
     if (
       status === 404 &&
       code === VNC_ERROR_CODES.UNAVAILABLE &&
@@ -1857,7 +1888,7 @@ export const saveVnc$ = command(
     }
     const { dialog, clients, editor, login, request } = prepared;
     const retrying = get(uncertain$);
-    set(saveMessage$, null);
+    set(notice$, null);
     set(uncertain$, true);
     let result = await accept<
       Awaited<ReturnType<typeof request>>,

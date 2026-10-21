@@ -582,17 +582,30 @@ describe("remote UI rollout", () => {
     }
   });
 
-  it("keeps remote setup unavailable outside the verified identity allowlist", () => {
+  it("enables remote setup for the staff organization with an opt-out", () => {
+    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
+    const context = {
+      userId: "staff-colleague",
+      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+    };
+    expect(isFeatureEnabled(key, context)).toBe(true);
+    expect(getAllFeatureStates(context)[key]).toBe(true);
+    expect(isFeatureSwitchAvailable(key, context)).toBe(true);
+    const disabled = { ...context, overrides: { [key]: false } };
+    expect(isFeatureEnabled(key, disabled)).toBe(false);
+    expect(getAllFeatureStates(disabled)[key]).toBe(false);
+  });
+
+  it("keeps remote setup unavailable outside the staff and verified identity audience", () => {
     const key = FeatureSwitchKey.RemoteControlGuidedSetup;
     for (const context of [
       {},
       { email: "bingjie@okou.ai" },
       { email: "bingjie@vm0.ai" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
       {
         userId: "staff-colleague",
         email: "ethan@okou.ai",
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+        orgId: "external-org",
       },
       { userId: "external-user", orgId: "external-org" },
     ]) {

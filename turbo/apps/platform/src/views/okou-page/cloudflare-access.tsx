@@ -1,4 +1,3 @@
-import { editRemoteCloudflareCredentials$ } from "../../signals/remote-resource-detail.ts";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import type { ReactNode, ClipboardEvent } from "react";
 import {
@@ -7,16 +6,14 @@ import {
 } from "./remote-network-scope.tsx";
 import {
   RemoteNetworkSummary,
-  RemoteNetworkFooter,
+  RemoteNetworkDeleteAction,
 } from "./remote-network-summary.tsx";
 import {
   RemoteNetworkCredentialHelp,
   useRemoteNetworkSaveLabel,
 } from "./remote-network-help.tsx";
-import {
-  remoteControlGuidedEnabled$,
-  remoteSetup$,
-} from "../../signals/remote-control-setup.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import { remoteNetworkScopeStatus$ } from "../../signals/remote-network-scope.ts";
 import {
   RemoteEditorFrame,
   useRemoteNetworkEditorVisible,
@@ -503,7 +500,7 @@ function CloudflareAccessFormActions({
     <div
       className={
         inline
-          ? "mt-2 flex shrink-0 justify-end gap-2 border-t border-divider pt-5"
+          ? "mt-2 flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-5"
           : "flex shrink-0 justify-end gap-2"
       }
     >
@@ -682,7 +679,6 @@ export function CloudflareAccessDialog({
   readonly inline?: boolean;
   readonly saveAction?: typeof saveCloudflareAccess$;
 } = {}) {
-  const { t } = useTranslation();
   const dialog = useLastResolved(cloudflareAccessDialog$);
   const close = useSet(closeCloudflareAccessDialog$);
   const [saving, save] = useLoadableSet(saveAction);
@@ -691,8 +687,7 @@ export function CloudflareAccessDialog({
   const conflict = useGet(cloudflareAccessConflict$);
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
   const { title, description } = useCloudflareAccessDialogCopy(dialog?.kind);
-  const setup = useGet(remoteSetup$);
-  const wizard = inline && setup?.step === "cf-credentials";
+  const scopeStatus = useGet(remoteNetworkScopeStatus$);
   const isSaving = saving.state === "loading";
   const visible = useRemoteNetworkEditorVisible(inline, dialog);
   if (!dialog || !visible) {
@@ -703,13 +698,7 @@ export function CloudflareAccessDialog({
     <RemoteEditorFrame
       key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
       inline={inline}
-      title={
-        wizard
-          ? t(($) => {
-              return $.remoteControlSetup.cfAccessTitle;
-            })
-          : title
-      }
+      title={title}
       description={description}
       busy={isSaving}
       onClose={close}
@@ -722,7 +711,7 @@ export function CloudflareAccessDialog({
         aria-busy={isSaving}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!isSaving && (uncertain || !conflict)) {
+          if (!isSaving && !scopeStatus.error && (uncertain || !conflict)) {
             detach(save(event.currentTarget, signal), Reason.DomCallback);
           }
         }}
@@ -734,17 +723,17 @@ export function CloudflareAccessDialog({
           />
           <CloudflareAccessConflictReview />
           <CloudflareAccessSaveNotice isSaving={isSaving} />
+          <RemoteNetworkScopeConfirmation
+            provider="cloudflare"
+            configId={dialog.config?.id}
+          />
         </DialogBody>
         <CloudflareAccessFormActions
           isSaving={isSaving}
           inline={inline}
-          blocked={isSaving || !!conflict}
+          blocked={isSaving || !!conflict || !!scopeStatus.error}
           destructive={destructive}
           title={title}
-        />
-        <RemoteNetworkScopeConfirmation
-          provider="cloudflare"
-          configId={dialog.config?.id}
         />
       </form>
     </RemoteEditorFrame>
@@ -1199,7 +1188,6 @@ function CloudflareConfigCard({
   const openConversion = useSet(openCloudflareAccessConversion$);
   const openPromotion = useSet(openCloudflareAccessPromotion$);
   const openDeletion = useSet(openCloudflareAccessDeletion$);
-  const updateCredentials = useSet(editRemoteCloudflareCredentials$);
   const signal = useGet(pageSignal$);
   return (
     <article
@@ -1220,7 +1208,7 @@ function CloudflareConfigCard({
       {canManage && (
         <div className="flex flex-wrap gap-2">
           <Button
-            variant={compact ? "quiet" : "outline"}
+            variant={compact ? "neutral" : "outline"}
             onClick={() => {
               return detach(open("edit", config, signal), Reason.DomCallback);
             }}
@@ -1231,19 +1219,6 @@ function CloudflareConfigCard({
                 : $.cloudflareAccess.edit;
             })}
           </Button>
-          {compact && (
-            <Button
-              type="button"
-              variant="quiet"
-              onClick={() => {
-                detach(updateCredentials(config, signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.remoteControlSetup.networkUpdateCredentials;
-              })}
-            </Button>
-          )}
           {scope === "personal" && canPromote && !compact && (
             <Button
               variant="outline"
@@ -1274,8 +1249,11 @@ function CloudflareConfigCard({
               })}
             </Button>
           )}
-          <Button
-            variant={compact ? "quiet" : "outline"}
+          <RemoteNetworkDeleteAction
+            label={t(($) => {
+              return $.cloudflareAccess.delete;
+            })}
+            compact={compact}
             disabled={privateNetworkHostCount(config) > 0}
             onClick={() => {
               return detach(
@@ -1285,26 +1263,8 @@ function CloudflareConfigCard({
                 Reason.DomCallback,
               );
             }}
-          >
-            {t(($) => {
-              return $.cloudflareAccess.delete;
-            })}
-          </Button>
+          />
         </div>
-      )}
-      {canManage && privateNetworkHostCount(config) > 0 && (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.vnc.native.inUse;
-          })}
-        </p>
-      )}
-      {compact && (
-        <RemoteNetworkFooter
-          id={config.id}
-          name={config.name}
-          kind="cloudflare"
-        />
       )}
     </article>
   );

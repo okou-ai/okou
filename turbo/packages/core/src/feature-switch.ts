@@ -98,7 +98,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Set up and manage remote connections and private networks step by step.",
     enabled: false,
-    // Bingjie's verified production and development accounts. No email or org rollout.
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    // Preserve the maintainer's access outside the staff organization.
     enabledUserHashes: ["032a75d8", "35679123"],
     restrictOverridesToAudience: true,
   },

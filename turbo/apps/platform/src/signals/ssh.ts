@@ -521,8 +521,17 @@ const initializeSshSelection$ = command(
       return;
     }
     const items = result.value;
+    const allowCreate =
+      resource === "credential" ||
+      !get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
     const selection =
-      items.length === 0 ? "new" : items.length === 1 ? items[0]!.id : "";
+      items.length === 0
+        ? allowCreate
+          ? "new"
+          : ""
+        : items.length === 1
+          ? items[0]!.id
+          : "";
     if (resource === "credential") {
       set(credentialEditor$, (current) => {
         return {

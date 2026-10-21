@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { KeyRound, ChevronRight, History, Check } from "lucide-react";
+import { KeyRound, ChevronRight, Check } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -51,7 +51,6 @@ export function RemoteLoginPicker({
           setOpen(protocol);
         }}
       >
-        <History size={16} aria-hidden />
         {t(($) => {
           return $.remoteControlSetup.useSavedLogin;
         })}

@@ -1593,11 +1593,16 @@ export function ConnectorsPage() {
   if (isRemoteSetupDetailPage(remoteSetup)) {
     return (
       <RemoteDetailPage
-        network={remoteSetup.sourceNetwork !== null}
+        network={
+          remoteSetup.sourceNetwork !== null && !remoteSetup.fromComputer
+        }
         title={t(($) => {
-          return remoteSetup.protocol === "ssh"
-            ? $.remoteControlSetup.sshSetup
-            : $.remoteControlSetup.vncSetup;
+          return remoteSetup.step === "computer-network" ||
+            (remoteSetup.step === "entry" && remoteSetup.fromComputer)
+            ? $.remoteComputerSetup.title
+            : remoteSetup.protocol === "ssh"
+              ? $.remoteControlSetup.sshSetup
+              : $.remoteControlSetup.vncSetup;
         })}
         onBack={leaveSetup}
       >

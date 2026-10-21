@@ -3,7 +3,10 @@ import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 export type NetworkGuideProvider = "tailscale" | "cloudflare";
-export const REMOTE_NETWORK_GUIDE_STEP_COUNT = 3;
+const REMOTE_NETWORK_GUIDE_STEP_COUNT = Object.freeze({
+  tailscale: 4,
+  cloudflare: 3,
+});
 interface NetworkGuide {
   readonly sessionKey: string | null;
   readonly provider: NetworkGuideProvider;
@@ -44,7 +47,10 @@ export const moveRemoteNetworkGuide$ = command(
         ...current,
         step: Math.max(
           0,
-          Math.min(REMOTE_NETWORK_GUIDE_STEP_COUNT - 1, current.step + delta),
+          Math.min(
+            REMOTE_NETWORK_GUIDE_STEP_COUNT[current.provider] - 1,
+            current.step + delta,
+          ),
         ),
       });
     }

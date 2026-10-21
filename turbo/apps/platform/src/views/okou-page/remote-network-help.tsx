@@ -3,10 +3,9 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   ChevronRight,
-  Cloud,
   ExternalLink,
   CircleHelp,
-  Network,
+  X,
 } from "lucide-react";
 import {
   Button,
@@ -17,33 +16,25 @@ import {
   DialogTitle,
   DialogDescription,
   DialogBody,
+  DialogClose,
+  IconButton,
 } from "@okouai/ui";
-import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { cn } from "@okouai/ui/lib/utils";
 import { searchParams$ } from "../../signals/route.ts";
-import {
-  remoteSetup$,
-  returnToRemoteNetworkProvider$,
-} from "../../signals/remote-control-setup.ts";
+import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
 import {
   remoteNetworkGuide$,
   openRemoteNetworkGuide$,
   closeRemoteNetworkGuide$,
   moveRemoteNetworkGuide$,
-  REMOTE_NETWORK_GUIDE_STEP_COUNT,
   type NetworkGuideProvider,
 } from "../../signals/remote-network-guide.ts";
 
 export function useRemoteNetworkSaveLabel() {
   const { t } = useTranslation();
-  const setup = useGet(remoteSetup$);
-  return setup?.step === "oauth" || setup?.step === "cf-credentials"
-    ? t(($) => {
-        return $.remoteNetworkGuide.saveContinue;
-      })
-    : t(($) => {
-        return $.remoteNetworkGuide.saveNetwork;
-      });
+  return t(($) => {
+    return $.remoteNetworkGuide.saveNetwork;
+  });
 }
 interface GuideStep {
   readonly title: string;
@@ -107,9 +98,6 @@ function useCloudflareStartSteps(values: {
       title: t(($) => {
         return $.remoteNetworkGuide.cf2Title;
       }, values),
-      description: t(($) => {
-        return $.remoteNetworkGuide.cf2a;
-      }, values),
       path: t(($) => {
         return $.remoteNetworkGuide.cf1c;
       }),
@@ -117,25 +105,13 @@ function useCloudflareStartSteps(values: {
       link: t(($) => {
         return $.remoteNetworkGuide.openCloudflare;
       }),
-      rows: [
-        {
-          label: t(($) => {
-            return $.remoteNetworkGuide.fieldName;
-          }),
-          value: t(($) => {
-            return $.remoteNetworkGuide.Okou;
-          }),
-        },
-        {
-          label: t(($) => {
-            return $.remoteNetworkGuide.duration;
-          }),
-          value: t(($) => {
-            return $.remoteNetworkGuide.requiredDuration;
-          }),
-        },
-      ],
       actions: [
+        t(($) => {
+          return $.remoteNetworkGuide.cf2a;
+        }, values),
+        t(($) => {
+          return $.remoteNetworkGuide.cf2b;
+        }, values),
         t(($) => {
           return $.remoteNetworkGuide.cf2c;
         }, values),
@@ -221,10 +197,10 @@ function useCloudflareFinishSteps(values: {
         t(($) => {
           return $.remoteNetworkGuide.cf4b;
         }, values),
+        t(($) => {
+          return $.remoteNetworkGuide.cf4c;
+        }, values),
       ],
-      note: t(($) => {
-        return $.remoteNetworkGuide.cf4c;
-      }, values),
     },
   ];
 }
@@ -237,6 +213,19 @@ function useTailscaleStartSteps(values: {
 }): readonly GuideStep[] {
   const { t } = useTranslation();
   return [
+    {
+      title: t(($) => {
+        return $.remoteNetworkGuide.downloadTailscale;
+      }),
+      description: t(($) => {
+        return $.remoteNetworkGuide.installTailscaleHelp;
+      }),
+      actions: [],
+      href: "https://tailscale.com/download",
+      link: t(($) => {
+        return $.remoteNetworkGuide.downloadTailscale;
+      }),
+    },
     {
       title: t(($) => {
         return $.remoteNetworkGuide.ts2Title;
@@ -334,55 +323,47 @@ function useTailscaleFinishSteps(values: {
         t(($) => {
           return $.remoteNetworkGuide.ts4b;
         }, values),
+        t(($) => {
+          return $.remoteNetworkGuide.ts4c;
+        }, values),
       ],
-      note: t(($) => {
-        return $.remoteNetworkGuide.ts4c;
-      }, values),
     },
   ];
+}
+function GuideDestination({ step }: { readonly step: GuideStep }) {
+  if (!step.href || (!step.link && !step.path)) {
+    return null;
+  }
+  return (
+    <div className="grid gap-2">
+      <a
+        href={step.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex w-fit items-center gap-2 rounded-sm text-sm underline underline-offset-4 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span>{step.link ?? step.path}</span>
+        <ExternalLink size={14} className="shrink-0" aria-hidden />
+      </a>
+      {step.path && step.link && (
+        <p className="text-xs leading-5 text-muted-foreground">{step.path}</p>
+      )}
+    </div>
+  );
 }
 function GuideActions({ step }: { readonly step: GuideStep }) {
   const { t } = useTranslation();
   return (
     <div className="grid gap-5 text-sm leading-6">
-      <header className="grid gap-2">
-        <h3 className="text-lg font-semibold tracking-tight">{step.title}</h3>
-        {step.description && (
-          <p className="text-muted-foreground">{step.description}</p>
-        )}
-      </header>
-      {step.href && step.link && (
-        <a
-          href={step.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            buttonVariants({ variant: "outline" }),
-            "h-auto min-h-9 w-fit whitespace-normal text-left",
-          )}
-        >
-          {step.link}
-          <ExternalLink size={14} aria-hidden />
-        </a>
-      )}
-      {step.path && step.href && (
-        <a
-          href={step.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-4 py-3 text-sm text-muted-foreground hover:bg-state-hover hover:text-foreground"
-        >
-          <span>{step.path}</span>
-          <ExternalLink size={14} className="shrink-0" aria-hidden />
-        </a>
-      )}
+      <GuideDestination step={step} />
+      {step.description && <p>{step.description}</p>}
       {step.rows && (
-        <dl className="grid overflow-hidden rounded-xl bg-gray-50 divide-y divide-divider">
+        <dl className="grid gap-3">
           {step.rows.map((row) => {
             return (
               <div
                 key={row.label}
-                className="grid grid-cols-2 items-center gap-3 px-4 py-3"
+                className="grid items-start gap-1 sm:grid-cols-2 sm:gap-3"
               >
                 <dt className="text-sm text-muted-foreground">{row.label}</dt>
                 <dd className="flex min-w-0 items-center justify-between gap-2">
@@ -408,9 +389,21 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
           })}
         </dl>
       )}
-      {step.actions.map((action) => {
-        return <p key={action}>{action}</p>;
-      })}
+      {step.actions.length > 1 ? (
+        <ol className="grid list-decimal gap-3 pl-5 marker:text-muted-foreground">
+          {step.actions.map((action) => {
+            return (
+              <li key={action} className="pl-1">
+                {action}
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        step.actions.map((action) => {
+          return <p key={action}>{action}</p>;
+        })
+      )}
       {step.note && (
         <p className="text-sm text-muted-foreground">{step.note}</p>
       )}
@@ -436,51 +429,57 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
                 <ExternalLink size={14} aria-hidden />
               </a>
             )}
-            <ol className="grid list-decimal gap-3 pl-5">
-              {step.blocker.map((action) => {
-                return <li key={action}>{action}</li>;
-              })}
-            </ol>
+            {step.blocker.length > 1 ? (
+              <ol className="grid list-decimal gap-3 pl-5">
+                {step.blocker.map((action) => {
+                  return <li key={action}>{action}</li>;
+                })}
+              </ol>
+            ) : (
+              step.blocker.map((action) => {
+                return <p key={action}>{action}</p>;
+              })
+            )}
           </div>
         </details>
       )}
     </div>
   );
 }
-function GuideFooter({ step }: { readonly step: number }) {
+function GuideFooter({
+  step,
+  count,
+  provider,
+}: {
+  readonly step: number;
+  readonly count: number;
+  readonly provider: NetworkGuideProvider;
+}) {
   const { t } = useTranslation();
-  const standalone = useGet(searchParams$).get("scope") === "private-network";
-  const selectProvider = useSet(returnToRemoteNetworkProvider$);
   const move = useSet(moveRemoteNetworkGuide$);
   const close = useSet(closeRemoteNetworkGuide$);
-  const lastStep = step === REMOTE_NETWORK_GUIDE_STEP_COUNT - 1;
+  const lastStep = step === count - 1;
   return (
-    <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-divider px-4 py-4 sm:px-6">
-      <Button
-        type="button"
-        variant="quiet"
-        className="min-h-10 whitespace-normal text-left"
-        onClick={() => {
-          if (step > 0) {
+    <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-divider px-6 py-4">
+      {step > 0 ? (
+        <Button
+          type="button"
+          variant="quiet"
+          className="min-h-10 whitespace-normal text-left"
+          onClick={() => {
             move(-1);
-          } else if (standalone) {
-            selectProvider();
-          } else {
-            close();
-          }
-        }}
-      >
-        {t(($) => {
-          return step > 0
-            ? $.remoteNetworkGuide.previous
-            : standalone
-              ? $.remoteNetworkGuide.returnToProvider
-              : $.remoteNetworkGuide.returnToForm;
-        })}
-      </Button>
+          }}
+        >
+          {t(($) => {
+            return $.remoteNetworkGuide.previous;
+          })}
+        </Button>
+      ) : (
+        <GuideFirstStepSkip step={step} />
+      )}
       <Button
         type="button"
-        className="min-h-10 whitespace-normal"
+        className={cn(REMOTE_PAGE_ACTION, "ml-auto whitespace-normal")}
         onClick={() => {
           if (lastStep) {
             close(true);
@@ -494,7 +493,9 @@ function GuideFooter({ step }: { readonly step: number }) {
               return $.remoteNetworkGuide.returnToForm;
             })
           : t(($) => {
-              return $.remoteNetworkGuide.next;
+              return provider === "tailscale" && step === 0
+                ? $.remoteNetworkGuide.installedContinue
+                : $.remoteNetworkGuide.next;
             })}
         {!lastStep && <ArrowRight size={14} aria-hidden />}
       </Button>
@@ -512,7 +513,7 @@ function GuideFirstStepSkip({ step }: { readonly step: number }) {
     <Button
       type="button"
       variant="quiet"
-      className="mt-5 h-auto justify-self-start px-0 text-sm"
+      className="h-auto min-h-10 whitespace-normal px-3 text-sm font-normal text-muted-foreground"
       onClick={() => {
         close();
       }}
@@ -537,33 +538,43 @@ export function RemoteNetworkCredentialHelp({
   const step = steps[index];
   return (
     <>
-      <div className="grid gap-2">
-        <p className="text-sm text-muted-foreground">
+      <div className="mt-2 grid gap-1 border-t border-divider pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <h3 className="text-base font-semibold">
+            {t(($) => {
+              return $.remoteNetworkGuide.credentialsTitle;
+            })}
+          </h3>
+          <Button
+            type="button"
+            variant="quiet"
+            className="h-auto min-h-9 whitespace-normal px-3 text-sm font-normal text-muted-foreground"
+            aria-label={t(($) => {
+              return $.remoteNetworkGuide.open;
+            })}
+            onClick={(event) => {
+              const field = event.currentTarget
+                .closest("form")
+                ?.elements.namedItem("tailscaleTags");
+              open(
+                provider,
+                field instanceof HTMLInputElement ? field.value.trim() : "",
+              );
+            }}
+          >
+            <CircleHelp size={14} aria-hidden />
+            {t(($) => {
+              return $.remoteNetworkGuide.helpLink;
+            })}
+          </Button>
+        </div>
+        <p className="text-sm leading-relaxed text-muted-foreground">
           {t(($) => {
             return provider === "tailscale"
               ? $.remoteNetworkGuide.tailscaleCredentialSource
               : $.remoteNetworkGuide.cloudflareCredentialSource;
           })}
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-auto min-h-9 justify-self-start whitespace-normal text-left"
-          onClick={(event) => {
-            const field = event.currentTarget
-              .closest("form")
-              ?.elements.namedItem("tailscaleTags");
-            open(
-              provider,
-              field instanceof HTMLInputElement ? field.value.trim() : "",
-            );
-          }}
-        >
-          <CircleHelp size={14} aria-hidden />
-          {t(($) => {
-            return $.remoteNetworkGuide.open;
-          })}
-        </Button>
       </div>
       <Dialog
         open={current?.provider === provider && current.open}
@@ -573,62 +584,50 @@ export function RemoteNetworkCredentialHelp({
           }
         }}
       >
-        <DialogContent maxWidth="lg" contentClassName="flex flex-col gap-0 p-0">
-          <div className="shrink-0 px-6 pt-6">
-            <DialogHeader className="flex-row items-center justify-between space-y-0 gap-4 pr-10 text-left">
-              <DialogTitle className="flex items-center gap-2 text-sm font-medium">
-                {provider === "cloudflare" ? (
-                  <Cloud size={18} className="shrink-0" aria-hidden />
-                ) : (
-                  <Network size={18} className="shrink-0" aria-hidden />
-                )}
-                <span className="sr-only">
-                  {provider === "cloudflare"
-                    ? t(($) => {
-                        return $.remoteNetworkGuide.cloudflareTitle;
-                      })
-                    : t(($) => {
-                        return $.remoteNetworkGuide.tailscaleTitle;
-                      })}
-                </span>
-                <span aria-hidden>
-                  {t(($) => {
-                    return provider === "cloudflare"
-                      ? $.cloudflareAccess.title
-                      : $.tailscale.title;
-                  })}
-                </span>
-              </DialogTitle>
-              <DialogDescription
-                className="shrink-0 text-sm tabular-nums"
+        <DialogContent
+          maxWidth="lg"
+          contentClassName="flex flex-col gap-0 p-0"
+          showCloseButton={false}
+        >
+          <DialogHeader className="space-y-0 px-6 pt-6 text-left">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle
+                className="min-w-0 flex-1 text-xl font-semibold leading-7"
                 aria-live="polite"
               >
-                {index + 1} / {REMOTE_NETWORK_GUIDE_STEP_COUNT}
-              </DialogDescription>
-            </DialogHeader>
-            <ol className="mt-5 flex gap-1" aria-hidden>
-              {steps.map((item, itemIndex) => {
-                return (
-                  <li
-                    key={item.title}
-                    className={cn(
-                      "h-0.5 flex-1",
-                      itemIndex === index
-                        ? "bg-foreground"
-                        : itemIndex < index
-                          ? "bg-muted-foreground/50"
-                          : "bg-divider",
-                    )}
+                {step?.title}
+              </DialogTitle>
+              <span
+                className="shrink-0 text-xs leading-5 tabular-nums text-muted-foreground"
+                aria-live="polite"
+              >
+                {index + 1} / {steps.length}
+              </span>
+              <DialogClose
+                render={
+                  <IconButton
+                    aria-label={t(($) => {
+                      return $.workflows.common.close;
+                    })}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
                   />
-                );
+                }
+              >
+                <X size={18} aria-hidden />
+              </DialogClose>
+            </div>
+            <DialogDescription className="sr-only">
+              {t(($) => {
+                return provider === "cloudflare"
+                  ? $.remoteNetworkGuide.cloudflareTitle
+                  : $.remoteNetworkGuide.tailscaleTitle;
               })}
-            </ol>
-          </div>
-          <DialogBody className="min-h-0 flex-1 px-6 py-6">
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="min-h-0 flex-1 px-6 pb-6 pt-5">
             {step && <GuideActions step={step} />}
-            <GuideFirstStepSkip step={index} />
           </DialogBody>
-          <GuideFooter step={index} />
+          <GuideFooter step={index} count={steps.length} provider={provider} />
         </DialogContent>
       </Dialog>
     </>
