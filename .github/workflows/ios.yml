@@ -146,7 +146,7 @@ jobs:
           path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
       - name: Configure locked package sources
         run: |
-          mkdir "$RUNNER_TEMP/okou-ios-ci"
+          mkdir -p "$RUNNER_TEMP/okou-ios-ci"
           python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
           # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
           printf '\n' >> "$HOME/.gitconfig"
