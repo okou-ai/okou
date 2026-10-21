@@ -160,7 +160,8 @@ private struct WorkspaceRootView: View {
                   modelSelection: store.newModelSelection,
                   mentionSource: ComposerMentionSource(
                     agentID: store.selectedAgentID, agents: store.list.agents,
-                    threads: store.list.threads))
+                    threads: store.list.threads),
+                  workflowSource: store.composerWorkflows, agentID: store.selectedAgentID)
               }
           }
         }

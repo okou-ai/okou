@@ -33,6 +33,7 @@ final class ConversationStore {
   }
 
   let modelSelection: ChatModelSelectionStore?
+  let workflowSource: ComposerWorkflowSource?
   var thread: ChatThread
   var draft: String {
     get { composer.text }
@@ -127,6 +128,7 @@ final class ConversationStore {
     didFail: @escaping @MainActor (Error) -> Void,
     didSettle: @escaping @MainActor () -> Void,
     modelSelection: ChatModelSelectionStore? = nil,
+    workflowSource: ComposerWorkflowSource? = nil,
     activitySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -134,6 +136,7 @@ final class ConversationStore {
     didRequestNewChat: @escaping @MainActor () -> Void = {}
   ) {
     self.modelSelection = modelSelection
+    self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
     self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
@@ -421,6 +424,9 @@ final class ConversationStore {
         didSettle()
       }
       do {
+        let workflowIDs =
+          try await workflowSource?.prepareUse(
+            in: message.text, document: message.document, agentID: thread.agentID) ?? []
         _ = try await commands.send(
           thread: thread, text: message.text, attachments: message.attachments,
           document: message.document,
@@ -428,6 +434,7 @@ final class ConversationStore {
           reasoningEffort: message.reasoningEffort)
         try Task.checkCancellation()
         guard !closed else { return }
+        workflowSource?.recordUse(workflowIDs)
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }

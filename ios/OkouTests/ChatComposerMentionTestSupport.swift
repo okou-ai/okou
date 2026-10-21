@@ -19,13 +19,16 @@ final class MentionNavigationFixture: Sendable {
     String(format: "74000000-0000-4000-8000-%012d", index)
   }
 
-  init() {
+  init(workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil) {
     let paths = MentionRequestLog()
     self.paths = paths
     http = ChatHTTPFixture { request in
       let path = request.url!.path
       paths.value.withLock { $0.append(path) }
       switch path {
+      case "/api/workflows/for-composer":
+        guard let workflows else { throw URLError(.unsupportedURL) }
+        return try await workflows(request)
       case "/api/agents":
         let names = [
           "Planner", "Research Agent", "Notes", "Release",

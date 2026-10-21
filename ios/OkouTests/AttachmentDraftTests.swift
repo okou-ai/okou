@@ -293,7 +293,8 @@ final class AttachmentFlowFixture: Sendable {
     failUpload: Bool = false, failSend: Bool = false, acceptBeforeFailure: Bool = false,
     storage: @escaping @Sendable () async -> Void = {},
     creation: @escaping @Sendable () async -> Bool = { true },
-    draftRead: @escaping @Sendable () async -> Void = {}
+    draftRead: @escaping @Sendable () async -> Void = {},
+    workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil
   ) {
     let state = self.state
     http = ChatHTTPFixture { request in
@@ -311,6 +312,9 @@ final class AttachmentFlowFixture: Sendable {
           body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
       }
       switch path {
+      case "/api/workflows/for-composer":
+        guard let workflows else { throw URLError(.unsupportedURL) }
+        return try await workflows(request)
       case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
       case "/api/chat-threads/\(Self.threadID)/draft":
         await draftRead()
@@ -404,7 +408,9 @@ final class AttachmentFlowFixture: Sendable {
     }
   }
 
-  @MainActor func conversation(storage: ChatDraftStorage? = nil) -> ConversationStore {
+  @MainActor func conversation(
+    storage: ChatDraftStorage? = nil, workflowSource: ComposerWorkflowSource? = nil
+  ) -> ConversationStore {
     let sync = ChatSync(client: http.client)
     return ConversationStore(
       thread: ChatThread(
@@ -413,6 +419,7 @@ final class AttachmentFlowFixture: Sendable {
       sync: sync, commands: ChatCommands(client: http.client, sync: sync), webURL: http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
       isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
+      workflowSource: workflowSource,
       draftRepository: storage.map { _ in ChatDraftRepository(client: http.client) },
       draftStorage: storage)
   }

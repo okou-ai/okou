@@ -43,6 +43,14 @@ struct ChatComposerTextInput: UIViewRepresentable {
   func updateUIView(_ view: ComposerTextView, context: Context) {
     context.coordinator.input = self
     view.mentionEditor = editor
+    view.workflowSuggestions = editor?.workflows
+    view.updateWorkflows = { [weak coordinator = context.coordinator, weak view] textChanged in
+      guard let coordinator, let view else { return }
+      coordinator.input.editor?.workflows.update(
+        in: view, textChanged: textChanged,
+        isCurrent: { [weak coordinator] in coordinator?.input.isCurrent() == true },
+        focusRequested: { [weak coordinator] in coordinator?.input.focusRequested?() })
+    }
     view.isCurrent = isCurrent
     view.usesStructuredDocument = document != nil
     editor?.register(
@@ -115,6 +123,9 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.pasteImages = { _ in }
     view.isCurrent = { false }
     view.mentionEditor = nil
+    view.workflowSuggestions?.unregister(view)
+    view.workflowSuggestions = nil
+    view.updateWorkflows = { _ in }
     // A retired editor must not reclaim the keyboard if UIKit reattaches it.
     view.setFocused(false)
   }
@@ -139,6 +150,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
       (textView as? ComposerTextView)?.placeholder.isHidden = !textView.text.isEmpty
       textView.invalidateIntrinsicContentSize()
       input.editor?.updateMention(in: view, textChanged: true)
+      view.updateWorkflows(true)
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {
@@ -148,17 +160,22 @@ struct ChatComposerTextInput: UIViewRepresentable {
         view.typingAttributes = view.composerTextAttributes
       }
       input.editor?.updateMention(in: view)
+      view.updateWorkflows(false)
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
       if !input.isFocused { input.isFocused = true }
-      if let view = textView as? ComposerTextView { input.editor?.updateMention(in: view) }
+      if let view = textView as? ComposerTextView {
+        input.editor?.updateMention(in: view)
+        view.updateWorkflows(false)
+      }
     }
     func textViewDidEndEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
       if input.isFocused { input.isFocused = false }
       input.editor?.dismissMentions()
+      if let view = textView as? ComposerTextView { input.editor?.workflows.unregister(view) }
     }
 
     func textPasteConfigurationSupporting(
@@ -207,6 +224,8 @@ struct ChatComposerTextInput: UIViewRepresentable {
 }
 
 final class ComposerTextView: UITextView {
+  weak var workflowSuggestions: ComposerWorkflowSuggestions?
+  var updateWorkflows: (Bool) -> Void = { _ in }
   var acceptsImages = false
   var pasteImages: ([NSItemProvider]) -> Void = { _ in }
   let placeholder = UILabel()
@@ -273,26 +292,38 @@ final class ComposerTextView: UITextView {
   }
 
   override var keyCommands: [UIKeyCommand]? {
-    guard markedTextRange == nil, !isSettlingComposition, mentionEditor?.mentionQuery != nil else {
-      return super.keyCommands
+    let workflowsActive = workflowSuggestions?.query != nil
+    guard markedTextRange == nil, !isSettlingComposition,
+      workflowsActive || mentionEditor?.mentionQuery != nil
+    else { return super.keyCommands }
+    let hasRows =
+      workflowsActive
+      ? workflowSuggestions?.matches.isEmpty == false
+      : mentionEditor?.mentionSuggestions.isEmpty == false
+    var keys = [UIKeyCommand.inputEscape]
+    if hasRows {
+      keys.insert(contentsOf: [UIKeyCommand.inputUpArrow, UIKeyCommand.inputDownArrow], at: 0)
+      if !workflowsActive
+        || workflowSuggestions.map({ $0.matches.indices.contains($0.selectedIndex) }) == true
+      {
+        keys += ["\r", "\t"]
+      }
     }
-    let keys =
-      mentionEditor?.mentionSuggestions.isEmpty == false
-      ? [
-        UIKeyCommand.inputUpArrow, UIKeyCommand.inputDownArrow, UIKeyCommand.inputEscape, "\r",
-        "\t",
-      ]
-      : [UIKeyCommand.inputEscape]
     return keys.map {
-      let command = UIKeyCommand(input: $0, modifierFlags: [], action: #selector(mentionKey(_:)))
+      let command = UIKeyCommand(
+        input: $0, modifierFlags: [], action: #selector(composerSuggestionKey(_:)))
       command.wantsPriorityOverSystemBehavior = true
       return command
     } + (super.keyCommands ?? [])
   }
 
-  @objc private func mentionKey(_ command: UIKeyCommand) {
+  @objc private func composerSuggestionKey(_ command: UIKeyCommand) {
     guard let key = command.input else { return }
-    mentionEditor?.handleMentionKey(key, in: self)
+    if workflowSuggestions?.query != nil {
+      workflowSuggestions?.handleKey(key, in: self)
+    } else {
+      mentionEditor?.handleMentionKey(key, in: self)
+    }
   }
 
   override func insertText(_ text: String) {
@@ -315,6 +346,7 @@ final class ComposerTextView: UITextView {
   override func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
     super.setMarkedText(markedText, selectedRange: selectedRange)
     mentionEditor?.updateMention(in: self)
+    updateWorkflows(false)
   }
 
   private func settleComposition() {
@@ -326,6 +358,7 @@ final class ComposerTextView: UITextView {
       isSettlingComposition = false
       refreshAppearance()
       mentionEditor?.updateMention(in: self)
+      updateWorkflows(false)
     }
   }
 

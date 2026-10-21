@@ -52,6 +52,8 @@ final class WorkspaceStore {
 
   @ObservationIgnored lazy var modelStore = ChatModelStore(
     client: client, webURL: webURL, didFail: { [weak self] in self?.handle($0) })
+  @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
+    client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
   @ObservationIgnored lazy var search = ChatSearchStore(
     sync: sync, didFail: { [weak self] in self?.handle($0) })
@@ -158,6 +160,7 @@ final class WorkspaceStore {
       didFail: { [weak self] in self?.handle($0) },
       didSettle: { [weak self] in self?.requestPrune() },
       modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
+      workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
       didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) })
     conversations[id] = conversation
@@ -172,6 +175,7 @@ final class WorkspaceStore {
     pruneTask?.cancel()
     warmingTask?.cancel()
     modelStore.close()
+    composerWorkflows.close()
     newModelSelection.close()
     list.close()
     search.close()
