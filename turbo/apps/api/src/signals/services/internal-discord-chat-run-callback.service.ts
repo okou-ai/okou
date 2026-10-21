@@ -1,6 +1,9 @@
 import { command } from "ccstate";
 import { and, countDistinct, eq, isNull, or } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
@@ -9,7 +12,7 @@ import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection"
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { splitDiscordMessage } from "../../lib/discord-message";
 import { logger } from "../../lib/log";
-import { db$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { settle } from "../utils";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
@@ -17,9 +20,14 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordOutputAccess$ } from "./discord-output-destination.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
 import {
-  resolveIntegrationAdmissionFailurePresentation,
-  resolveIntegrationAgentResponsePresentation,
+  integrationAdmissionFailurePresentation,
+  integrationAgentResponsePresentation,
 } from "./integration-agent-response-presentation.service";
+import {
+  runModelSelectionColumns,
+  runModelSelectionCondition,
+  runModelSelectionFromRow,
+} from "./run-model-selection.service";
 
 const L = logger("DiscordChatDelivery");
 
@@ -159,6 +167,71 @@ async function postParts(
   }
 }
 
+const readDiscordResponsePresentation$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly agentId: string;
+      readonly runId: string | null;
+      readonly replyToMention?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = get(db$);
+    const [agentLabel, runModel] = await Promise.all([
+      (async () => {
+        const [org] = await db
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, args.orgId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (args.agentId === org?.defaultAgentId) {
+          return undefined;
+        }
+        const [agent] = await db
+          .select({ displayName: agents.displayName, name: agents.name })
+          .from(agents)
+          .where(eq(agents.id, args.agentId))
+          .limit(1);
+        signal.throwIfAborted();
+        return agent?.displayName ?? agent?.name;
+      })(),
+      (async () => {
+        if (args.runId === null) {
+          return undefined;
+        }
+        const [row] = await db
+          .select(runModelSelectionColumns())
+          .from(agentRuns)
+          .where(runModelSelectionCondition(args.runId))
+          .limit(1);
+        signal.throwIfAborted();
+        return runModelSelectionFromRow(row);
+      })(),
+    ]);
+    signal.throwIfAborted();
+    // Admission failures have no run and omit the model label.
+    if (args.runId === null) {
+      return integrationAdmissionFailurePresentation({
+        agentLabel,
+        replyToMention: args.replyToMention,
+      });
+    }
+    return integrationAgentResponsePresentation({
+      agentLabel,
+      modelLabel: runModel?.selectedModel
+        ? getRunModelDisplayName(
+            runModel.selectedModel,
+            runModel.codexServiceTier,
+          )
+        : undefined,
+      replyToMention: args.replyToMention,
+    });
+  },
+);
+
 /**
  * Fire and forget: call after the transaction that created the event commits,
  * and only from the attempt that created it, so replays never post twice.
@@ -166,11 +239,11 @@ async function postParts(
  */
 export const sendDiscordChatReply$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     request: DiscordReplyRequest,
     signal: AbortSignal,
   ): Promise<void> => {
+    const db = get(db$);
     const sent = await settle(
       (async (): Promise<void> => {
         const [event] = await db
@@ -235,26 +308,19 @@ export const sendDiscordChatReply$ = command(
         if (!mentionerCount) {
           throw new Error("Discord reply mentioner count is unavailable");
         }
-        const presentationArgs = {
-          db,
-          orgId: request.orgId,
-          agentId: event.agentId,
-          replyToMention:
-            mentionerCount.count > 1
-              ? `<@${binding.discordUserId}>`
-              : undefined,
-        };
-        // An admission failure has no run, so its footer omits the model.
-        const presentation =
-          event.runId === null
-            ? await resolveIntegrationAdmissionFailurePresentation(
-                presentationArgs,
-                signal,
-              )
-            : await resolveIntegrationAgentResponsePresentation(
-                { ...presentationArgs, runId: event.runId },
-                signal,
-              );
+        const presentation = await set(
+          readDiscordResponsePresentation$,
+          {
+            orgId: request.orgId,
+            agentId: event.agentId,
+            runId: event.runId,
+            replyToMention:
+              mentionerCount.count > 1
+                ? `<@${binding.discordUserId}>`
+                : undefined,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         const content = presentation.footerText
           ? `${event.content}\n\n_${presentation.footerText}_`

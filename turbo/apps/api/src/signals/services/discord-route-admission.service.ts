@@ -23,7 +23,7 @@ import {
 import {
   discordChatThreadRouteWhere,
   ensureCanonicalDiscordChatThreadRoute$,
-  findDiscordChatThreadRoute,
+  findDiscordChatThreadRoute$,
   type DiscordChatThreadRouteBinding,
 } from "./discord-chat-ingress.service";
 import {
@@ -366,7 +366,8 @@ const resolveCanonicalDiscordRoute$ = command(
           : message.id,
     };
     const route =
-      assignedRoute ?? (await findDiscordChatThreadRoute(db, routeKey));
+      assignedRoute ??
+      (await set(findDiscordChatThreadRoute$, routeKey, signal));
     signal.throwIfAborted();
     if (!route) {
       return await set(

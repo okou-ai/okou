@@ -115,9 +115,19 @@ export async function resolveIntegrationAdmissionFailurePresentation(
     composeId: args.agentId,
   });
   signal.throwIfAborted();
+  return integrationAdmissionFailurePresentation({
+    agentLabel,
+    replyToMention: args.replyToMention,
+  });
+}
+
+export function integrationAdmissionFailurePresentation(args: {
+  readonly agentLabel: string | undefined;
+  readonly replyToMention?: string;
+}): { readonly footerText: string | undefined } {
   const parts: string[] = [];
-  if (agentLabel) {
-    parts.push(`Sent via ${agentLabel}`);
+  if (args.agentLabel) {
+    parts.push(`Sent via ${args.agentLabel}`);
   }
   if (args.replyToMention) {
     parts.push(`Reply to ${args.replyToMention}`);
