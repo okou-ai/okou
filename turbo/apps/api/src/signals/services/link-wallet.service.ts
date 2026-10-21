@@ -171,26 +171,34 @@ const connection$ = computed(async (get): Promise<Connection | undefined> => {
   return row;
 });
 
-export const walletStatus$ = computed(async (get) => {
+const connectionCredentials$ = computed(async (get) => {
   const row = await get(connection$);
-  const connected = Boolean(row?.encryptedCredentials && !row.revokedAt);
-  const credentials =
-    connected && row?.encryptedCredentials
-      ? linkCredentialsSchema.parse(
-          JSON.parse(
-            await decryptStoredSecretValue(row.encryptedCredentials),
-          ) as unknown,
-        )
-      : undefined;
+  if (!row?.encryptedCredentials || row.revokedAt) {
+    return undefined;
+  }
+  return linkCredentialsSchema.parse(
+    JSON.parse(
+      await decryptStoredSecretValue(row.encryptedCredentials),
+    ) as unknown,
+  );
+});
+
+function walletStatus(
+  credentials: z.infer<typeof linkCredentialsSchema> | undefined,
+) {
   const authorization = walletAuthorization(credentials);
   return {
-    connected,
+    connected: credentials !== undefined,
     nextAction: authorization.capabilities.payments
       ? ("create_spend" as const)
       : ("connect" as const),
     checkoutAvailable: false as const,
     authorization,
   };
+}
+
+export const walletStatus$ = computed(async (get) => {
+  return walletStatus(await get(connectionCredentials$));
 });
 
 function walletScopeChange(
@@ -236,11 +244,35 @@ function walletScopeChange(
   };
 }
 
-export const walletSettingsStatus$ = computed(
-  async (get): Promise<WalletConnectionStatus> => {
-    const status = await get(walletStatus$);
-    const row = await get(connection$);
+export const walletSettingsStatus$ = command(
+  async (
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<WalletConnectionStatus> => {
     const owner = get(organizationAuthContext$);
+    const [row, storedCredentials] = await Promise.all([
+      get(connection$),
+      get(connectionCredentials$),
+    ]);
+    signal.throwIfAborted();
+    let credentials = storedCredentials;
+    if (
+      row?.encryptedCredentials &&
+      credentials &&
+      credentials.expiresAt <= now() + 60_000
+    ) {
+      // The page waits for this response before fetching cards and transactions.
+      // Persist rotation first so those independent requests can safely fan out.
+      const refreshed = await set(refreshWalletConnection$, {
+        owner,
+        connection: { ...row, encryptedCredentials: row.encryptedCredentials },
+        refreshToken: credentials.refreshToken,
+        readOnly: credentials.readOnly,
+      });
+      signal.throwIfAborted();
+      credentials = refreshed.credentials;
+    }
+    const status = walletStatus(credentials);
     const db = get(db$);
     const [pending] = await db
       .select({ id: linkWalletConnections.id })
@@ -254,6 +286,7 @@ export const walletSettingsStatus$ = computed(
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     const scopeChange =
       row && !row.revokedAt && status.connected
         ? walletScopeChange(

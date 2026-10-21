@@ -167,8 +167,9 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return walletResponse(result);
 });
-const userStatus$ = command(async ({ get }, signal: AbortSignal) => {
-  const result = await settle(get(walletSettingsStatus$), signal);
+const userStatus$ = command(async ({ set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const result = await settle(set(walletSettingsStatus$, signal), signal);
   signal.throwIfAborted();
   return walletResponse(result);
 });
