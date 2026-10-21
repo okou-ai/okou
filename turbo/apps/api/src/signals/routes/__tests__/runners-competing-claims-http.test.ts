@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { z } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -28,6 +28,9 @@ test.each([
   async ({ first, readyAtStart }) => {
     const owned = await publicChatActor(context);
     const root = await mkdtemp(join(tmpdir(), "okou-native-claim-http-"));
+    onTestFinished(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
     await owned.run(async () => {
       const run = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
@@ -144,7 +147,6 @@ test.each([
           owned.rememberClaim(receipt.runId, claim.sandboxToken);
         }
       }
-      await rm(root, { recursive: true });
       if (!outcome.ok) {
         throw outcome.error;
       }
