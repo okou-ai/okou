@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { readFile, readdir } from "node:fs/promises";
+import { deserialize, serialize } from "node:v8";
 import { MemoryFS, PGlite, type PGliteOptions } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
@@ -165,9 +166,13 @@ export async function createPgliteSnapshot(): Promise<Blob> {
       }
       // Checkpoint the seeded baseline to reduce WAL recovery when restoring cases.
       await engine.exec("CHECKPOINT");
-      // Workers restore this image repeatedly; keep its physical bytes directly
-      // instead of making each isolated file inflate the same baseline again.
-      return await engine.dumpDataDir("none");
+      const image = await engine.dumpDataDir("none");
+      const snapshot = await readSnapshotFiles(
+        Buffer.from(await image.arrayBuffer()),
+      );
+      // Decode the physical archive once for the run. Workers only read the
+      // indexed files; every case still receives its own writable copies.
+      return new Blob([serialize(snapshot)]);
     })(),
     async () => {
       await engine.close();
@@ -186,6 +191,24 @@ interface SnapshotFiles {
   readonly files: readonly SnapshotFile[];
 }
 
+const snapshotPathSchema = z
+  .string()
+  .startsWith("/pglite/data/")
+  .refine((path) => {
+    return !path.split("/").includes("..");
+  }, "Invalid snapshot path");
+
+const snapshotSchema = z.object({
+  directories: z.array(snapshotPathSchema),
+  files: z.array(
+    z.object({
+      path: snapshotPathSchema,
+      data: z.instanceof(Uint8Array),
+      modifiedAt: z.number().int(),
+    }),
+  ),
+});
+
 // Decode immutable files once. Each engine still owns separate writable copies.
 const snapshots = singleton(() => {
   return new Map<string, Promise<SnapshotFiles>>();
@@ -199,8 +222,7 @@ const postgresModule = singleton(async () => {
   return await WebAssembly.compile(new Uint8Array(bytes));
 });
 
-async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
-  const bytes = await readFile(path);
+async function readSnapshotFiles(bytes: Buffer): Promise<SnapshotFiles> {
   const directories: string[] = [];
   const files: SnapshotFile[] = [];
   const parser = new Parser({
@@ -262,11 +284,17 @@ async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
   return { directories, files };
 }
 
+async function readIndexedSnapshot(path: string): Promise<SnapshotFiles> {
+  const bytes = await readFile(path);
+  const decoded: unknown = deserialize(bytes);
+  return snapshotSchema.parse(decoded);
+}
+
 function snapshotFiles(path: string): Promise<SnapshotFiles> {
   const images = snapshots();
   let files = images.get(path);
   if (!files) {
-    files = readSnapshotFiles(path);
+    files = readIndexedSnapshot(path);
     images.set(path, files);
   }
   return files;
