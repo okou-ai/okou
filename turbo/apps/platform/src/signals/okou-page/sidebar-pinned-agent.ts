@@ -78,11 +78,13 @@ function createSidebarPinnedAgentActions(agentId: string) {
 function createSidebarPinnedAgentSignals(agentId: string) {
   const displayName$ = computed(async (get) => {
     const agents = await get(sortedAgents$);
-    return (
-      agents.find((agent) => {
-        return agent.agentId === agentId;
-      })?.displayName ?? agentId
-    );
+    const agent = agents.find((candidate) => {
+      return candidate.agentId === agentId;
+    });
+    if (!agent) {
+      return undefined;
+    }
+    return agent.displayName ?? agentId;
   });
   const selected$ = computed(async (get) => {
     if (!isChatRoute(get(activeRoute$))) {

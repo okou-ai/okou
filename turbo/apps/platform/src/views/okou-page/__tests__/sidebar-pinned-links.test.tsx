@@ -159,6 +159,34 @@ test.each(["horizontal", "vertical"] as const)(
   },
 );
 
+test.each(["horizontal", "vertical"] as const)(
+  "%s pinned links label an available unnamed agent with its ID",
+  async (layout) => {
+    if (layout === "vertical") {
+      mockMobileLayout();
+    }
+    const agents = prepareAgents().map((agent) => {
+      return agent.agentId === RESEARCH_AGENT_ID
+        ? { ...agent, displayName: null }
+        : agent;
+    });
+    context.mocks.data.agents(agents);
+    context.mocks.data.userPreferences({ pinnedAgentIds: [RESEARCH_AGENT_ID] });
+    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    if (layout === "vertical") {
+      click(screen.getByLabelText("Open menu"));
+    }
+    const pinned =
+      layout === "horizontal"
+        ? screen.getByTestId("pinned-agents-grid")
+        : mobileSidebar();
+    const link = await waitFor(() => {
+      return pinnedAgentLink(pinned, RESEARCH_AGENT_ID);
+    });
+    expect(link).toHaveAttribute("href", `/agents/${RESEARCH_AGENT_ID}/chat`);
+  },
+);
+
 test("Alt-click still opens a thread in the sidebar pane", async () => {
   const user = userEvent.setup({ delay: null });
   prepareAgents();

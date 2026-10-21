@@ -315,9 +315,12 @@ function PinnedAgentGridAvatar({ signals }: PinnedAgentProps) {
 }
 
 function PinnedAgentGridTitle({ signals }: PinnedAgentProps) {
-  const displayName = useLastResolved(signals.displayName$) ?? signals.agentId;
+  const displayName = useLastResolved(signals.displayName$);
   const isPrimarySelected = useLastResolved(signals.selected$) ?? false;
   const isDragging = useGet(signals.dragging$);
+  if (displayName === undefined) {
+    return null;
+  }
   return (
     <HoverScrollTitle
       data-slot="pinned-agent-title"
@@ -599,7 +602,10 @@ function PinnedAgentRowLink({
 }
 
 function PinnedAgentRowLabel({ signals }: PinnedAgentProps) {
-  const displayName = useLastResolved(signals.displayName$) ?? signals.agentId;
+  const displayName = useLastResolved(signals.displayName$);
+  if (displayName === undefined) {
+    return null;
+  }
   return (
     <>
       <AgentAvatarImg
