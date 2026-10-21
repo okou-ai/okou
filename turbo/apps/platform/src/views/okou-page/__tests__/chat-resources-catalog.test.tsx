@@ -105,19 +105,19 @@ test.each([
   {
     kind: "hosted-site",
     aliasUrl: "https://report.sites.okou.ai/",
-    title: "report.sites.okou.ai",
+    title: "Quarterly report",
   },
   {
     kind: "presentation",
     aliasUrl: "https://report.sites.okou.ai/",
-    title: "index.html",
+    title: "Report presentation",
   },
-  { kind: "hosted-site", aliasUrl: undefined, title: "index.html" },
+  { kind: "hosted-site", aliasUrl: undefined, title: "Private report" },
 ] as const)(
   "Render the $kind resource title as $title",
   async ({ kind, aliasUrl, title }) => {
     const artifact = {
-      ...artifactSummary(RESOURCE_ARTIFACT_ID, kind, "index.html"),
+      ...artifactSummary(RESOURCE_ARTIFACT_ID, kind, title),
       aliasUrl,
     };
     await setupResources({

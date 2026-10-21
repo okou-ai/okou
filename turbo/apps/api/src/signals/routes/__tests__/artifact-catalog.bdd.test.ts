@@ -406,15 +406,6 @@ describe("GET /api/artifacts/catalog", () => {
       owner.actor.orgId,
       owner.actor.orgRole,
     );
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.HostedSiteTitleEditing]: true } },
-      }),
-      [200],
-    );
     const renamed = await accept(
       setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle({
         headers,
@@ -484,6 +475,17 @@ describe("GET /api/artifacts/catalog", () => {
       owner.actor.userId,
       owner.actor.orgId,
       owner.actor.orgRole,
+    );
+    await accept(
+      setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      ).update({
+        headers,
+        body: {
+          switches: { [FeatureSwitchKey.HostedSiteTitleEditing]: false },
+        },
+      }),
+      [200],
     );
     await accept(
       setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle(

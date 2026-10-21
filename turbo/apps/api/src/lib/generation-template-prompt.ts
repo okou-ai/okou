@@ -354,6 +354,7 @@ function buildUserPresentationTemplatePrompt(
       PRESENTATION_IMAGE_BATCH_INSTRUCTION,
       PRESENTATION_STATIC_HTML_INSTRUCTION,
       ...presentationDeliveryInstructions(),
+      "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
     ].join("\n"),
   };
 }
@@ -381,6 +382,7 @@ function buildPresentationRunbookPrompt(
         runbookPackage,
         colorSystemToken: color.token,
       }),
+      "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
     ].join("\n"),
   };
 }
