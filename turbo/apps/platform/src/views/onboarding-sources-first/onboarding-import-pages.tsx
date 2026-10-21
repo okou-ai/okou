@@ -1,20 +1,18 @@
-import { useGet } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import {
-  enterSkillImport$,
-  sourcesFirstSkillImportSignals,
-} from "../../signals/onboarding/onboarding-skill-import.ts";
+import { sourcesFirstSkillImportSignals$ } from "../../signals/onboarding/onboarding-skill-import.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 import {
-  ImportedSkillList,
+  SkillImportResults,
   SkillImportPanel,
 } from "../skill-import/skill-import-panel.tsx";
 
 export function OnboardingSkillsPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("skills");
-  const skillImport = useGet(sourcesFirstSkillImportSignals.state$);
+  const signals = useGet(sourcesFirstSkillImportSignals$);
+  const results = useLoadable(signals.imported$);
   const provider = flow.draft.provider;
   const providerName =
     provider === "codex"
@@ -30,7 +28,7 @@ export function OnboardingSkillsPage() {
   if (provider === null || providerName === null) {
     return null;
   }
-  const imported = skillImport.imported.length > 0;
+  const imported = results.state === "hasData" && results.data.length > 0;
 
   return (
     <OnboardingStepLayout
@@ -65,12 +63,11 @@ export function OnboardingSkillsPage() {
     >
       <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
         <SkillImportPanel
-          signals={sourcesFirstSkillImportSignals}
+          signals={signals}
           provider={provider}
           providerName={providerName}
-          retry$={enterSkillImport$}
         />
-        <ImportedSkillList skills={skillImport.imported} />
+        <SkillImportResults signals={signals} />
       </div>
     </OnboardingStepLayout>
   );

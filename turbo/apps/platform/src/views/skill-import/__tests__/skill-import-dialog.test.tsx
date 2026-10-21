@@ -28,6 +28,8 @@ const context = testContext();
 const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const PROMPT_LABEL = "Skill import prompt";
 const DIALOG_TITLE = "Import your skills";
+const CLAUDE_SESSION_ID = "b0000000-0000-4000-a000-000000000001";
+const CODEX_SESSION_ID = "b0000000-0000-4000-a000-000000000002";
 
 function workflow(entry: {
   readonly id: string;
@@ -54,13 +56,29 @@ function workflow(entry: {
 }
 
 /**
- * The workflow list, which the page shows and the dialog polls; the test
+ * The page workflow list and the session results read; the test
  * decides what the user's own Claude Code or Codex session has written.
  */
 function mockWorkflows(initial: readonly WorkflowSummary[] = []): {
-  readonly write: (workflows: readonly WorkflowSummary[]) => void;
+  readonly write: (
+    workflows: readonly WorkflowSummary[],
+    notify?: boolean,
+  ) => void;
 } {
   let workflows = initial;
+  context.mocks.api(
+    skillImportSessionsContract.listSkills,
+    ({ params, respond }) => {
+      const provider =
+        params.sessionId === CODEX_SESSION_ID ? "codex" : "claudeCode";
+      return respond(
+        200,
+        workflows.filter((entry) => {
+          return entry.importSource === provider;
+        }),
+      );
+    },
+  );
   context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
     return respond(200, [...workflows]);
   });
@@ -74,8 +92,11 @@ function mockWorkflows(initial: readonly WorkflowSummary[] = []): {
     return respond(200, { displayName: "Test User", imageUrl: null });
   });
   return {
-    write: (next) => {
+    write: (next, notify = true) => {
       workflows = next;
+      if (notify) {
+        context.mocks.ably.trigger("skillImportChanged");
+      }
     },
   };
 }
@@ -87,7 +108,9 @@ function mockSessions(): { readonly providers: string[] } {
     providers.push(body.provider);
     return respond(200, {
       uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      token: `vm0_skillimport_${body.provider}-session-token`,
+      token: `vm0_skillimport_${body.provider}-session-token-${String(providers.length)}`,
+      sessionId:
+        body.provider === "codex" ? CODEX_SESSION_ID : CLAUDE_SESSION_ID,
       expiresAt: new Date(
         now() + SKILL_IMPORT_SESSION_TTL_SECONDS * 1000,
       ).toISOString(),
@@ -97,8 +120,12 @@ function mockSessions(): { readonly providers: string[] } {
   return { providers };
 }
 
-async function openWorkflowsPage(): Promise<void> {
-  await setupPage({ context, path: "/workflows" });
+async function openWorkflowsPage(messagePort = false): Promise<void> {
+  await setupPage({
+    context,
+    path: "/workflows",
+    sharedWorkerTestTransport: messagePort ? "message-port" : "direct",
+  });
   await screen.findByRole("heading", { name: "Workflows" });
 }
 
@@ -366,13 +393,13 @@ test("The dialog lists only workflows the import tagged", async () => {
   expect(within(dialog).queryByText("Made in chat")).toBeNull();
 });
 
-test("Reopening the dialog lists only the skills that opening imports", async () => {
+test("Reopening retains the prompt and resyncs the whole session including closed-window uploads", async () => {
   const workflows = mockWorkflows();
   mockSessions();
   await openWorkflowsPage();
   click(getButtonNamed("Import skills"));
   let dialog = await findDialog();
-  await findCopyPrompt(dialog);
+  const originalPrompt = (await showFullPrompt(dialog)).textContent;
   expect(
     within(dialog).getByText("Imported skills appear here as they arrive."),
   ).toBeVisible();
@@ -402,26 +429,228 @@ test("Reopening the dialog lists only the skills that opening imports", async ()
     screen.findByText("Imported from Claude Code"),
   ).resolves.toBeVisible();
 
-  // Reopening starts over: the same steps, and none of the earlier skills.
+  expect(context.mocks.ably.hasSubscription("skillImportChanged")).toBeFalsy();
+  // The user's agent continues uploading with the already-copied prompt.
+  workflows.write(
+    [
+      weeklyReport,
+      workflow({
+        id: "d0000000-0000-4000-a000-000000000412",
+        name: "launch-checklist",
+        displayName: "Launch checklist",
+        importSource: "claudeCode",
+      }),
+    ],
+    false,
+  );
   click(getButtonNamed("Import skills"));
   dialog = await findDialog();
-  await findCopyPrompt(dialog);
-  expect(within(dialog).queryByText("Weekly report")).toBeNull();
-  expect(within(dialog).getByRole("status")).toHaveTextContent(
-    "Imported skills appear here as they arrive.",
-  );
-
-  workflows.write([
-    weeklyReport,
-    workflow({
-      id: "d0000000-0000-4000-a000-000000000412",
-      name: "launch-checklist",
-      displayName: "Launch checklist",
-      importSource: "claudeCode",
-    }),
-  ]);
   await expect(
     within(dialog).findByText("Launch checklist"),
   ).resolves.toBeVisible();
-  expect(within(dialog).queryByText("Weekly report")).toBeNull();
+  expect(within(dialog).getByText("Weekly report")).toBeInTheDocument();
+  expect((await showFullPrompt(dialog)).textContent).toBe(originalPrompt);
+});
+
+test("An upload before subscription attachment is recovered without replacing the prompt", async () => {
+  const workflows = mockWorkflows();
+  mockSessions();
+  await openWorkflowsPage(true);
+  const subscription = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "skillImportChanged",
+  );
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  const prompt = await showFullPrompt(dialog);
+  const copiedPrompt = prompt.textContent;
+  await subscription.started;
+  workflows.write([
+    workflow({
+      id: "d0000000-0000-4000-a000-000000000441",
+      name: "before-subscribe",
+      displayName: "Before subscribe",
+      importSource: "claudeCode",
+    }),
+  ]);
+  subscription.attach();
+  await waitFor(() => {
+    return expect(
+      within(dialog).getByText("Before subscribe"),
+    ).toBeInTheDocument();
+  });
+  expect(
+    within(dialog).getByRole("region", { name: PROMPT_LABEL }).textContent,
+  ).toBe(copiedPrompt);
+});
+
+test("A continuity gap resyncs missed uploads without issuing another prompt", async () => {
+  const workflows = mockWorkflows();
+  mockSessions();
+  await openWorkflowsPage(true);
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  const prompt = await showFullPrompt(dialog);
+  const original = prompt.textContent;
+  await within(dialog).findByText(
+    "Imported skills appear here as they arrive.",
+  );
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("skillImportChanged"),
+    ).toBeTruthy();
+  });
+  workflows.write(
+    [
+      workflow({
+        id: "d0000000-0000-4000-a000-000000000442",
+        name: "missed-upload",
+        displayName: "Missed upload",
+        importSource: "claudeCode",
+      }),
+    ],
+    false,
+  );
+  context.mocks.ably.triggerConnectionState("suspended");
+  context.mocks.ably.triggerConnectionState("connected");
+  await expect(
+    within(dialog).findByText("Missed upload"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("region", { name: PROMPT_LABEL }).textContent,
+  ).toBe(original);
+});
+
+test("A failed results read offers its own retry and preserves the displayed prompt", async () => {
+  mockWorkflows();
+  mockSessions();
+  let unavailable = true;
+  context.mocks.api(skillImportSessionsContract.listSkills, ({ respond }) => {
+    if (unavailable) {
+      return respond(403, {
+        error: { code: "FORBIDDEN", message: "Results unavailable" },
+      });
+    }
+    return respond(200, []);
+  });
+  await openWorkflowsPage();
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  const prompt = await showFullPrompt(dialog);
+  const original = prompt.textContent;
+  await within(dialog).findByText("Imported skills could not be loaded.");
+  expect(
+    within(dialog).queryByText("Imported skills appear here as they arrive."),
+  ).toBeNull();
+  unavailable = false;
+  click(getButtonNamed("Try again", dialog));
+  await expect(
+    within(dialog).findByText("Imported skills appear here as they arrive."),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("region", { name: PROMPT_LABEL }).textContent,
+  ).toBe(original);
+});
+
+test("Session failure can be retried directly from the panel", async () => {
+  mockWorkflows();
+  let unavailable = true;
+  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
+    if (unavailable) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "No default agent" },
+      });
+    }
+    return respond(200, {
+      sessionId: CLAUDE_SESSION_ID,
+      uploadUrl: "https://api.okou.test/api/skill-import/skills",
+      token: "retry-session-token",
+      expiresAt: new Date(now() + 3_600_000).toISOString(),
+      limits: SKILL_IMPORT_LIMITS,
+    });
+  });
+  await openWorkflowsPage();
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  await within(dialog).findByText("The import session could not be opened.");
+  unavailable = false;
+  // The list also failed because there was no session, so scope the retry to
+  // the prompt preparation error rather than the separate results error.
+  const promptError = within(dialog).getByText(
+    "The import session could not be opened.",
+  ).parentElement;
+  if (!promptError) {
+    throw new Error("Expected prompt error container");
+  }
+  click(getButtonNamed("Try again", promptError));
+  const prompt = await showFullPrompt(dialog);
+  expect(prompt.textContent).toContain("retry-session-token");
+});
+
+test("An older API response never presents an untracked prompt as a ready import", async () => {
+  mockWorkflows();
+  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
+    return respond(200, {
+      uploadUrl: "https://api.okou.test/api/skill-import/skills",
+      token: "legacy-api-token",
+      expiresAt: new Date(now() + 3_600_000).toISOString(),
+      limits: SKILL_IMPORT_LIMITS,
+    });
+  });
+  await openWorkflowsPage();
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  await within(dialog).findByText("The import session could not be opened.");
+  expect(buttonNamed("Copy prompt", dialog)).toBeUndefined();
+  expect(
+    within(dialog).queryByRole("region", { name: PROMPT_LABEL }),
+  ).toBeNull();
+});
+
+test("Changing the signed-in identity closes the old import and releases its subscription", async () => {
+  mockWorkflows();
+  mockSessions();
+  await openWorkflowsPage();
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  await showFullPrompt(dialog);
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("skillImportChanged"),
+    ).toBeTruthy();
+  });
+  const clerk = context.mocks.clerk();
+  clerk.user(
+    { id: "different-user", fullName: "Different User" },
+    { token: "different-token", id: "different-session" },
+  );
+  clerk.stateChanged();
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("dialog", { name: DIALOG_TITLE }),
+    ).toBeNull();
+  });
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("skillImportChanged"),
+    ).toBeFalsy();
+  });
+});
+
+test("Escape closes the import, releases realtime, and returns keyboard focus", async () => {
+  mockWorkflows();
+  mockSessions();
+  const user = userEvent.setup({ delay: null });
+  await openWorkflowsPage();
+  const trigger = getButtonNamed("Import skills");
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const dialog = await findDialog();
+  await findCopyPrompt(dialog);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: DIALOG_TITLE })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+  expect(context.mocks.ably.hasSubscription("skillImportChanged")).toBeFalsy();
 });

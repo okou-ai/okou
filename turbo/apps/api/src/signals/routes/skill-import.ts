@@ -13,8 +13,9 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
-import { command } from "ccstate";
-import { and, count, eq, gte, isNull, or } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { command, computed } from "ccstate";
+import { and, asc, count, eq, gte, isNull, or } from "drizzle-orm";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -27,8 +28,11 @@ import {
   verifySkillImportToken,
 } from "../auth/tokens";
 import { authorization$, request$, setResHeader$ } from "../context/hono";
-import { bodyResultOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
+import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
+import { recordSkillImportFact } from "../services/skill-import-telemetry";
+import { workflowSummary } from "../services/workflow-data.service";
 import type { RouteEntry } from "../route-entry";
 import { safeSync } from "../utils";
 import { createWorkflowRecord$ } from "./workflows";
@@ -115,17 +119,29 @@ const createSessionInner$ = command(
       return notFound("This organization has no default agent to import into");
     }
 
+    const sessionId = randomUUID();
     const session = generateSkillImportToken(
       auth.userId,
       auth.orgId,
       agentId,
       bodyResult.data.provider,
+      sessionId,
+    );
+    waitUntil(
+      recordSkillImportFact({
+        event: "session_created",
+        userId: auth.userId,
+        orgId: auth.orgId,
+        sessionId,
+        provider: bodyResult.data.provider,
+      }),
     );
     // The token is a credential; keep it out of every cache on the way back.
     set(setResHeader$, "Cache-Control", "no-store");
     return {
       status: 200 as const,
       body: {
+        sessionId,
         uploadUrl: uploadUrl(),
         token: session.token,
         expiresAt: session.expiresAt.toISOString(),
@@ -134,6 +150,64 @@ const createSessionInner$ = command(
     };
   },
 );
+
+const sessionSkillsParams$ = pathParamsOf(
+  skillImportSessionsContract.listSkills,
+);
+
+const listSessionSkillsInner$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const { sessionId } = await get(sessionSkillsParams$);
+  const rows = await get(db$)
+    .select({
+      workflow: {
+        id: workflows.id,
+        agentId: workflows.agentId,
+        name: workflows.name,
+        visibility: workflows.visibility,
+        ownerUserId: workflows.ownerUserId,
+        displayName: workflows.displayName,
+        description: workflows.description,
+        officialDefinitionName: workflows.officialDefinitionName,
+        officialInstallationState: workflows.officialInstallationState,
+        importSource: workflows.importSource,
+        createdAt: workflows.createdAt,
+      },
+      agent: {
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+        name: agents.name,
+        displayName: agents.displayName,
+      },
+    })
+    .from(workflows)
+    .innerJoin(
+      agents,
+      and(eq(agents.id, workflows.agentId), eq(agents.orgId, workflows.orgId)),
+    )
+    .where(
+      and(
+        eq(workflows.importSessionId, sessionId),
+        eq(workflows.orgId, auth.orgId),
+        eq(workflows.ownerUserId, auth.userId),
+        eq(workflows.createdBy, auth.userId),
+        isNull(workflows.officialDefinitionName),
+        or(eq(agents.visibility, "public"), eq(agents.owner, auth.userId)),
+      ),
+    )
+    .orderBy(asc(workflows.createdAt), asc(workflows.id));
+  return {
+    status: 200 as const,
+    body: rows.map(({ workflow, agent }) => {
+      return workflowSummary({
+        workflow,
+        agent,
+        member: { userId: auth.userId, role: auth.orgRole ?? "member" },
+      });
+    }),
+  };
+});
 
 function resolveSession(
   authHeader: string | undefined,
@@ -307,7 +381,10 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         eq(workflows.agentId, session.agentId),
         eq(workflows.createdBy, session.userId),
-        gte(workflows.createdAt, new Date(session.issuedAtSeconds * 1000)),
+        session.sessionId
+          ? eq(workflows.importSessionId, session.sessionId)
+          : // Previously issued tokens remain usable for their original 24h TTL.
+            gte(workflows.createdAt, new Date(session.issuedAtSeconds * 1000)),
         isNull(workflows.officialDefinitionName),
       ),
     );
@@ -368,6 +445,7 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       visibility: "private" as const,
       importSource: session.provider,
+      importSessionId: session.sessionId,
     },
     signal,
   );
@@ -389,6 +467,13 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const skillImportRoutes: readonly RouteEntry[] = [
+  {
+    route: skillImportSessionsContract.listSkills,
+    handler: authRoute(
+      { requireOrganization: true, missingOrganizationStatus: 401 },
+      listSessionSkillsInner$,
+    ),
+  },
   {
     route: skillImportSessionsContract.create,
     handler: authRoute(

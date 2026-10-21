@@ -116,7 +116,7 @@ export const captureSourceOnboardingExperienceAnswered$ = command(
   },
 );
 
-/** The skills step has a prompt to paste: the session behind it is open. */
+/** The prompt element has actually mounted in the skills step. */
 export const captureSourceOnboardingImportPromptShown$ = command(
   ({ set }): void => {
     set(captureStepEvent$, "skills", "ImportPromptShown");
@@ -130,18 +130,6 @@ export const captureSourceOnboardingImportPromptShown$ = command(
 export const captureSourceOnboardingPromptCopied$ = command(({ set }): void => {
   set(captureStepEvent$, "skills", "PromptCopied");
 });
-
-/**
- * One skill arrived, counted rather than named: a skill's name and its
- * contents are the user's own writing and never reach the funnel.
- */
-export const captureSourceOnboardingSkillImported$ = command(
-  ({ set }, importedCount: number): void => {
-    set(captureStepEvent$, "skills", "SkillImported", {
-      imported_count: importedCount,
-    });
-  },
-);
 
 export const captureSourceOnboardingSlackInstallStarted$ = command(
   ({ set }): void => {

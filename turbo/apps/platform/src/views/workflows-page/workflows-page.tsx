@@ -1253,9 +1253,8 @@ function WorkflowFilterBar({
 /** Opens the import skills dialog. */
 function useImportSkills(): () => void {
   const openSkillImportDialog = useSet(openSkillImportDialog$);
-  const pageSignal = useGet(pageSignal$);
   return () => {
-    detach(openSkillImportDialog(pageSignal), Reason.DomCallback);
+    openSkillImportDialog();
   };
 }
 

@@ -1,93 +1,63 @@
-/**
- * The import skills dialog the workflows page and the composer's plus menu
- * open. The tool is picked in the dialog, and each opening lists only the
- * skills imported while it is open: the session and its prompt survive
- * closing it, but the imported list starts over.
- */
+/** The dialog retains one session across close/reopen for the same identity. */
 import { command, computed, state } from "ccstate";
-import { resetSignal } from "../utils.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
+import { rootVersion$ } from "../root-signal.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import {
   createSkillImportSignals,
   type SkillImportProvider,
 } from "./skill-import.ts";
 
-const internalOpen$ = state(false);
-const internalProvider$ = state<SkillImportProvider>("claudeCode");
-/** The full prompt under its one-line preview; copying it needs neither. */
-const internalPromptShown$ = state(false);
-/** Owns the poll while the dialog is open; closing or re-entering aborts it. */
-const resetSkillImport$ = resetSignal();
+const dialog$ = computed((get) => {
+  get(authenticatedSessionKey$);
+  get(rootVersion$);
+  const open$ = state(false);
+  const provider$ = state<SkillImportProvider>("claudeCode");
+  const promptShown$ = state(false);
+  const signals$ = computed((get) => {
+    const provider = get(provider$);
+    return createSkillImportSignals({ provider });
+  });
+  return { open$, provider$, promptShown$, signals$ };
+});
 
 export const skillImportDialogOpen$ = computed((get) => {
-  return get(internalOpen$);
+  return get(get(dialog$).open$);
 });
-
 export const skillImportDialogProvider$ = computed((get) => {
-  return get(internalProvider$);
+  return get(get(dialog$).provider$);
 });
-
 export const skillImportPromptShown$ = computed((get) => {
-  return get(internalPromptShown$);
+  return get(get(dialog$).promptShown$);
+});
+export const skillImportDialogSignals$ = computed((get) => {
+  return get(get(dialog$).signals$);
 });
 
-export const skillImportDialogSignals = createSkillImportSignals({
-  provider$: skillImportDialogProvider$,
-  // The dialog's baseline outlives it, so a workflow made in chat between two
-  // openings would otherwise read as imported.
-  requireImportSource: true,
+export const openSkillImportDialog$ = command(({ get, set }) => {
+  const owner = get(dialog$);
+  set(owner.promptShown$, false);
+  set(owner.open$, true);
 });
 
-/**
- * (Re)enters the import for the chosen tool under a fresh child of the
- * caller's signal, so the previous poll stops first. Also the failed state's
- * retry.
- */
-export const startSkillImport$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    const importSignal = set(resetSkillImport$, signal);
-    await set(skillImportDialogSignals.enter$, importSignal);
-  },
-);
-
-export const openSkillImportDialog$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    // Skills an earlier opening brought in are already on the workflow list;
-    // this one shows only what arrives while it is open.
-    set(skillImportDialogSignals.reset$);
-    set(internalPromptShown$, false);
-    set(internalOpen$, true);
-    await set(startSkillImport$, signal);
-  },
-);
-
-/**
- * Closing stops the poll. Skills it saw arrive are already workflows, so the
- * workflow list is asked again rather than left without them until a reload.
- */
 export const closeSkillImportDialog$ = command(({ get, set }) => {
-  set(internalOpen$, false);
-  set(resetSkillImport$);
-  if (get(skillImportDialogSignals.state$).imported.length > 0) {
-    set(reloadWorkflowData$);
-  }
+  const owner = get(dialog$);
+  set(owner.open$, false);
+  set(reloadWorkflowData$);
 });
 
-/** Writing the prompt for another tool needs a session for that tool. */
 export const selectSkillImportProvider$ = command(
-  async (
-    { get, set },
-    provider: SkillImportProvider,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    if (get(internalProvider$) === provider) {
+  ({ get, set }, provider: SkillImportProvider) => {
+    const owner = get(dialog$);
+    if (get(owner.provider$) === provider) {
       return;
     }
-    set(internalProvider$, provider);
-    await set(startSkillImport$, signal);
+    set(owner.provider$, provider);
   },
 );
 
-export const setSkillImportPromptShown$ = command(({ set }, shown: boolean) => {
-  set(internalPromptShown$, shown);
-});
+export const setSkillImportPromptShown$ = command(
+  ({ get, set }, shown: boolean) => {
+    set(get(dialog$).promptShown$, shown);
+  },
+);

@@ -70,6 +70,8 @@ export const workflows = pgTable(
     importSource: varchar("import_source", {
       length: 32,
     }).$type<WorkflowImportSource>(),
+    // Attribution is written with the workflow, never inferred from its date.
+    importSessionId: uuid("import_session_id"),
     createdBy: text("created_by").notNull(),
     updatedBy: text("updated_by").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -83,6 +85,9 @@ export const workflows = pgTable(
         foreignColumns: [agents.id],
       }).onDelete("cascade"),
       agentIdx: index("idx_workflows_agent").on(table.agentId, table.name),
+      importSessionIdx: index("idx_workflows_import_session").on(
+        table.importSessionId,
+      ),
       // Public workflow slugs are the shared namespace for an agent. Private
       // workflows may duplicate public slugs as user-specific forks/overrides,
       // but one owner cannot have two ordinary private workflows with the same
