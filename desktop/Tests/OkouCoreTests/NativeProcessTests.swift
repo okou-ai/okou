@@ -5,6 +5,12 @@ import OkouCore
 
 @MainActor
 final class NativeProcessTests: XCTestCase {
+  private func telemetry() throws -> SentryHTTPCollector {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    return collector
+  }
+
   private func fixture(_ source: String) throws -> (CommandExecutor, URL) {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -32,6 +38,7 @@ final class NativeProcessTests: XCTestCase {
   }
 
   func testMalformedResponseReportsSafeDiagnosticsAndRestartsOnlyForANewCommand() async throws {
+    let collector = try telemetry()
     let (executor, directory) = try fixture(
       #"""
       #!/usr/bin/python3
@@ -76,9 +83,20 @@ final class NativeProcessTests: XCTestCase {
       .split(separator: "\n")
     XCTAssertEqual(allDispatches.count, 2)
     XCTAssertNotEqual(allDispatches.first, allDispatches.last)
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 1)
+    let event = try XCTUnwrap(events.first)
+    XCTAssertEqual(event["release"].string, "okou-desktop@0.54.1")
+    XCTAssertEqual(event["environment"].string, "integration-test")
+    XCTAssertEqual(event["tags"]["component"].string, "desktop-main")
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "invalid_json")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["responseBytes"].number, 26)
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["stderrBytes"].number, 65_536)
+    XCTAssertFalse(event.formatted.contains("private-app-content"))
   }
 
   func testMissingRequestIDRemainsDistinctFromMalformedJSON() async throws {
+    let collector = try telemetry()
     let (executor, _) = try fixture(
       #"""
       #!/usr/bin/python3
@@ -99,5 +117,63 @@ final class NativeProcessTests: XCTestCase {
     let message = try XCTUnwrap(failed["error"]["message"].string)
     XCTAssertTrue(message.contains("protocol failure: missing or invalid request ID"))
     XCTAssertTrue(message.contains("stderrBytes=0"))
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "missing_request_id")
+  }
+
+  func testUnexpectedHelperExitIsDeliveredToSentry() async throws {
+    let collector = try telemetry()
+    let (executor, _) = try fixture(
+      #"""
+      #!/usr/bin/python3
+      import os, sys
+      for line in sys.stdin:
+          os._exit(23)
+      """#)
+    let response = await listApps(executor)
+    XCTAssertEqual(response["status"].string, "failed")
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "unexpected_exit")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["exitStatus"].number, 23)
+  }
+
+  func testHelperTimeoutIsDeliveredToSentry() async throws {
+    let collector = try telemetry()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let executable = directory.appendingPathComponent("helper")
+    try #"""
+      #!/usr/bin/python3
+      import sys
+      for line in sys.stdin:
+          pass
+      """#.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let helper = NativeProcess(executable: executable)
+    addTeardownBlock {
+      await helper.stop()
+      try FileManager.default.removeItem(at: directory)
+    }
+    do {
+      _ = try await helper.request(.object(["kind": .string("apps.list")]), timeout: 0.1)
+      XCTFail("An unanswered helper request must fail at its deadline")
+    } catch let failure as DesktopFailure {
+      XCTAssertEqual(failure.code, "command_timeout")
+    }
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 1)
+    XCTAssertEqual(events.first?["tags"]["nativeHelperFailure"].string, "timeout")
+  }
+
+  func testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath() async throws {
+    let collector = try telemetry()
+    let helper = NativeProcess(
+      executable: URL(fileURLWithPath: "/nonexistent/private-helper-installation/helper"))
+    let executor = CommandExecutor(helper: helper)
+    let response = await listApps(executor)
+    XCTAssertEqual(response["status"].string, "failed")
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "launch_failed")
+    XCTAssertFalse(event.formatted.contains("private-helper-installation"))
   }
 }

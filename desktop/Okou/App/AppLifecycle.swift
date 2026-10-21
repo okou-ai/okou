@@ -23,6 +23,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   private var lockDescriptor: Int32 = -1
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    let diagnosticRun = CommandLine.arguments.contains("--smoke-test")
+      || CommandLine.arguments.contains("--auth-smoke-test")
+    if !diagnosticRun {
+      let identifier = Bundle.main.bundleIdentifier!
+      DesktopTelemetry.start(
+        dsn: Bundle.main.object(forInfoDictionaryKey: "OkouSentryDSN") as? String,
+        version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+        environment: identifier == "ai.okou.desktop" ? "production" : "development",
+        cacheDirectory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+          .appendingPathComponent(identifier).appendingPathComponent("sentry-desktop-main"))
+    }
     do {
       let configuration = try DesktopConfiguration.load()
       if CommandLine.arguments.contains("--smoke-test") {
@@ -105,10 +116,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         self, selector: #selector(workspaceDidWake), name: NSWorkspace.didWakeNotification,
         object: nil)
     } catch {
+      if !diagnosticRun { DesktopTelemetry.captureStartupFailure() }
       let alert = NSAlert()
       alert.messageText = "Unable to start Okou"
       alert.informativeText = error.localizedDescription
       alert.runModal()
+      if !diagnosticRun { DesktopTelemetry.close() }
       NSApplication.shared.terminate(nil)
     }
   }
@@ -234,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     terminating = true
     Task {
       await model.shutdown()
+      DesktopTelemetry.close()
       NSApplication.shared.reply(toApplicationShouldTerminate: true)
     }
     return .terminateLater

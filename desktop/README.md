@@ -27,7 +27,8 @@ packages use `Okou`, `ai.okou.desktop`, and the live Clerk publishable key. Set
 ignored and removed from the source tree after packaging. Open the resulting
 app in `desktop/out/` to exercise the real UI. `--smoke-test` verifies packaged
 configuration, helper presence, and bundled resources without signing in or
-registering a host.
+registering a host. Production builds also require `SENTRY_DSN_DESKTOP`; package
+verification rejects a missing DSN so error reporting cannot silently disappear.
 
 `--auth-smoke-test` separately initializes the real Clerk SDK and reports its
 Keychain namespace and whether a session was restored, without opening a login

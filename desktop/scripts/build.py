@@ -169,6 +169,7 @@ def verify(app, version, development):
     )
     if not development:
         assert config["platformUrl"] == "https://app.okou.ai"
+        assert info.get("OkouSentryDSN"), "Production Desktop requires its Sentry DSN"
     assert [p.name for p in (app / "Contents/MacOS").iterdir()] == [name]
     for executable in (
         app / "Contents/MacOS" / name,
