@@ -68,7 +68,8 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
       let archive = UIAction(
         title: thread.isArchived ? "Unarchive chat" : "Archive chat",
         image: UIImage(systemName: thread.isArchived ? "archivebox.fill" : "archivebox"),
-        identifier: UIAction.Identifier("chat-archive"), attributes: enabled ? [] : .disabled
+        identifier: UIAction.Identifier("chat-archive"),
+        attributes: enabled && (thread.isArchived || !store.isCreating) ? [] : .disabled
       ) { _ in
         guard let current = list.threads.first(where: { $0.id == threadID }) else { return }
         Task {

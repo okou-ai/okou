@@ -430,6 +430,8 @@ final class WorkspaceStore {
       let thread = list.threads.first(where: { $0.id == id })
     else { return false }
     let leaving = archived && leaveDetail && selectedThreadID == id
+    // Creation already owns the next navigation when its response arrives.
+    guard !isCreating || (!leaving && !reopenOnSuccess) else { return false }
     let restore = leaving || restoreOnUndo
     let succeeded = await list.setArchived(thread, archived: archived, eventID: eventID) {
       // The list owns the write, so leaving the detail cannot cancel it.
@@ -444,7 +446,9 @@ final class WorkspaceStore {
           ? "Chat archived. It will stay archived while muted."
           : "Chat archived. A new reply will bring it back.")
         : "Chat unarchived."
-      threadFeedback = ChatThreadFeedback(threadID: id, message: message, actionTitle: "Undo") {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: message, actionTitle: "Undo", requiresNavigation: restore
+      ) {
         [weak self] in
         guard let self else { return }
         await self.setArchived(id, archived: !archived, reopenOnSuccess: restore)
@@ -452,7 +456,7 @@ final class WorkspaceStore {
     } else {
       threadFeedback = ChatThreadFeedback(
         threadID: id, message: list.error ?? "The archive change was not saved.",
-        actionTitle: "Retry", persists: true
+        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess
       ) { [weak self] in
         await self?.setArchived(
           id, archived: archived, restoreOnUndo: restore,

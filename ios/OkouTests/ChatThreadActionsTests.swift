@@ -9,6 +9,54 @@ import XCTest
 
 @MainActor
 final class ChatThreadActionsTests: XCTestCase {
+  func testDetailArchiveWaitsForNewChatCreationToReleaseNavigation() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    store.selectChat(ThreadActionsFixture.thread)
+    await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
+    let undo = try XCTUnwrap(store.threadFeedback)
+    XCTAssertTrue(undo.requiresNavigation)
+    let gate = ThreadActionGate()
+    defer { gate.open() }
+    fixture.state.value.withLock { $0.nextGate = gate }
+    let creating = Task { await store.createChat(agentID: ThreadActionsFixture.agent) }
+    try await eventually { fixture.writes.contains { $0.action == "create" } }
+    await undo.action()
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create"])
+    store.selectChat(ThreadActionsFixture.thread)
+    let unarchived = await store.setArchived(ThreadActionsFixture.thread, archived: false)
+    XCTAssertTrue(unarchived)
+    let host = UIHostingController(
+      rootView: ChatWorkspaceHeader(store: store, height: 60, openSidebar: {}))
+    let window = try await mountActions(host)
+    defer { unmount(window) }
+    let button = try XCTUnwrap(moreButton(in: host.view))
+    XCTAssertTrue(button.isEnabled)
+    XCTAssertTrue(try action("chat-archive", in: button).attributes.contains(.disabled))
+    let archived = await store.setArchived(
+      ThreadActionsFixture.thread, archived: true, leaveDetail: true)
+    XCTAssertFalse(archived)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create", "unarchive"])
+    gate.open()
+    let created = await creating.value
+    XCTAssertEqual(created?.id, ThreadActionsFixture.createdThread)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.createdThread)
+    store.selectChat(ThreadActionsFixture.thread)
+    try await eventually {
+      (try? self.action("chat-archive", in: button))?.attributes.contains(.disabled) == false
+    }
+    let saved = await store.setArchived(
+      ThreadActionsFixture.thread, archived: true, leaveDetail: true)
+    XCTAssertTrue(saved)
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create", "unarchive", "archive"])
+  }
+
   func testNativeMenuAndRenamePresentationInLightDarkAndAccessibilityText() async throws {
     let fixture = ThreadActionsFixture(muted: true)
     let store = fixture.workspace()
@@ -478,6 +526,7 @@ private final class ThreadActionGate: Sendable {
 
 private final class ThreadActionsFixture: Sendable {
   static let thread = "78000000-0000-4000-8000-000000000001"
+  static let createdThread = "78000000-0000-4000-8000-000000000004"
   static let agent = "78000000-0000-4000-8000-000000000002"
   static let otherAgent = "78000000-0000-4000-8000-000000000003"
   static let date = "2026-10-21T00:00:00Z"
@@ -509,6 +558,21 @@ private final class ThreadActionsFixture: Sendable {
     self.state = state
     http = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
+      if request.httpMethod == "POST", path == "/api/chat-threads" {
+        let gate = state.value.withLock { state in
+          state.writes.append(Write(action: "create", eventID: nil, title: nil))
+          let gate = state.nextGate
+          state.nextGate = nil
+          return gate
+        }
+        await gate?.wait()
+        try Task.checkCancellation()
+        return ChatHTTPResponse(
+          status: 201,
+          body:
+            "{\"id\":\"\(Self.createdThread)\",\"title\":null,\"createdAt\":\"\(Self.date)\",\"selectedModel\":null}"
+        )
+      }
       if request.httpMethod == "POST" {
         XCTAssertEqual(
           request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")

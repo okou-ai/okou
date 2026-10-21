@@ -6,16 +6,19 @@ struct ChatThreadFeedback: Identifiable {
   let message: String
   let actionTitle: String?
   let persists: Bool
+  let requiresNavigation: Bool
   let action: @MainActor () async -> Void
 
   init(
     threadID: String, message: String, actionTitle: String?, persists: Bool = false,
+    requiresNavigation: Bool = false,
     action: @escaping @MainActor () async -> Void
   ) {
     self.threadID = threadID
     self.message = message
     self.actionTitle = actionTitle
     self.persists = persists
+    self.requiresNavigation = requiresNavigation
     self.action = action
   }
 }
@@ -37,7 +40,9 @@ struct ChatThreadFeedbackView: View {
         .font(.subheadline.weight(.semibold))
         .frame(minWidth: 44, minHeight: 44)
         .accessibilityIdentifier("chat-feedback-action")
-        .disabled(!store.list.canUpdate(feedback.threadID) || store.needsUpgrade)
+        .disabled(
+          !store.list.canUpdate(feedback.threadID) || store.needsUpgrade
+            || (feedback.requiresNavigation && store.isCreating))
       }
       Button {
         store.dismissThreadFeedback(feedback.id)
