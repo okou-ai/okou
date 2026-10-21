@@ -981,21 +981,24 @@ async function insertTeamsChatDeliveryCallback(args: {
  * Discord replies are fire and forget with no delivery record, so only the
  * attempt that created the event posts it; replays never post twice.
  */
-async function discordReplyRequest(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
+const discordReplyRunSelection = Object.freeze({
+  userId: agentRuns.userId,
+  orgId: agentRuns.orgId,
+  chatThreadId: agentRuns.chatThreadId,
+});
+
+function discordReplyRequest(args: {
+  readonly run:
+    | {
+        readonly userId: string;
+        readonly orgId: string;
+        readonly chatThreadId: string | null;
+      }
+    | undefined;
   readonly target: DiscordDeliveryTarget;
   readonly chatEventId: string;
-}): Promise<DiscordReplyRequest> {
-  const [run] = await args.db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      chatThreadId: agentRuns.chatThreadId,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, args.runId))
-    .limit(1);
+}): DiscordReplyRequest {
+  const { run } = args;
   if (!run?.chatThreadId) {
     throw new Error("Canonical Discord delivery run is unavailable");
   }
@@ -1159,14 +1162,21 @@ async function insertAssistantErrorEventTransaction(
         chatEventId: event.id,
       })
     : undefined;
+  const discordTarget = input.discordDelivery;
   const discordReply =
-    input.discordDelivery && insertedEvent
-      ? await discordReplyRequest({
-          db: tx,
-          runId: input.runId,
-          target: input.discordDelivery,
-          chatEventId: event.id,
-        })
+    discordTarget && insertedEvent
+      ? await (async () => {
+          const [run] = await tx
+            .select(discordReplyRunSelection)
+            .from(agentRuns)
+            .where(eq(agentRuns.id, input.runId))
+            .limit(1);
+          return discordReplyRequest({
+            run,
+            target: discordTarget,
+            chatEventId: event.id,
+          });
+        })()
       : undefined;
   const wechatDeliveryCallbackId = input.wechatDelivery
     ? await insertChatDeliveryCallback({
@@ -1449,14 +1459,21 @@ async function registerRunLifecycleDeliveryCallbacks(
           chatEventId: deliveryEvent.id,
         })
       : undefined;
+  const discordTarget = input.discordDelivery;
   const discordReply =
-    deliveryEvent && input.discordDelivery && markerInserted
-      ? await discordReplyRequest({
-          db: tx,
-          runId: input.runId,
-          target: input.discordDelivery,
-          chatEventId: deliveryEvent.id,
-        })
+    deliveryEvent && discordTarget && markerInserted
+      ? await (async () => {
+          const [run] = await tx
+            .select(discordReplyRunSelection)
+            .from(agentRuns)
+            .where(eq(agentRuns.id, input.runId))
+            .limit(1);
+          return discordReplyRequest({
+            run,
+            target: discordTarget,
+            chatEventId: deliveryEvent.id,
+          });
+        })()
       : undefined;
   const wechatDeliveryCallbackId =
     deliveryEvent && input.wechatDelivery
@@ -2515,8 +2532,13 @@ const sendQueuedAdmissionFailure$ = command(
       case "Discord": {
         await set(
           sendDiscordChatReply$,
-          db,
-          { ...base, target: channel.target },
+          {
+            chatThreadId: channel.chatThreadId,
+            orgId: channel.orgId,
+            userId: channel.userId,
+            chatEventId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -3121,7 +3143,7 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
       );
     }
     if (args.discordReply) {
-      await set(sendDiscordChatReply$, args.db, args.discordReply, signal);
+      await set(sendDiscordChatReply$, args.discordReply, signal);
     }
   },
 );

@@ -12,7 +12,6 @@ import { randomUUID } from "node:crypto";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 
-import type { Tx } from "../../lib/db-types";
 import {
   CHANNEL_CONTEXT_MESSAGE_LIMIT,
   THREAD_CONTEXT_MESSAGE_LIMIT,
@@ -29,7 +28,7 @@ import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { discordMessageUrl } from "../../lib/discord-message";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   discordClient,
   type DiscordApiResult,
@@ -1029,147 +1028,131 @@ const terminalIngressRouteSelection = Object.freeze({
   discordUserId: discordOrgConnections.discordUserId,
 });
 
-async function recordTerminalIngressFailure(
-  tx: Tx,
-  args: {
-    readonly ingressId: string;
-    readonly currentTime: Date;
-    readonly claimed: {
-      readonly connectionId: string;
-      readonly routeId: string | null;
-      readonly payload: string;
-    };
-  },
-  signal: AbortSignal,
-): Promise<RecordedIngressFailure | null> {
-  const { ingressId, currentTime, claimed } = args;
+interface IngressFailureArgs {
+  readonly ingressId: string;
+  readonly claimToken: string;
+  readonly attemptCount: number;
+  readonly failure: DiscordIngressFailure;
+}
+
+function ingressFailurePlan(args: IngressFailureArgs) {
+  const retry = args.failure.retryable && args.attemptCount < MAX_ATTEMPTS;
+  const currentTime = nowDate();
+  return {
+    currentTime,
+    notify:
+      !retry &&
+      !args.failure.errorClass.startsWith("binding:") &&
+      ![
+        "access:403",
+        "access:404",
+        "discord:unavailable",
+        "discord:config_unavailable",
+      ].includes(args.failure.errorClass),
+    values: {
+      status: retry ? ("retryable" as const) : ("terminal" as const),
+      claimToken: null,
+      claimedAt: null,
+      retryAt: retry
+        ? new Date(
+            currentTime.getTime() +
+              Math.max(
+                60_000 * 5 ** (args.attemptCount - 1),
+                args.failure.retryAfterMs,
+              ),
+          )
+        : null,
+      lastErrorClass:
+        args.failure.retryable && !retry
+          ? "attempts_exhausted"
+          : args.failure.errorClass,
+      lastError: args.failure.message,
+      updatedAt: currentTime,
+    },
+  };
+}
+
+function terminalIngressMessage(payload: string) {
   const envelope = discordGatewayEnvelopeSchema.safeParse(
-    safeJsonParse(claimed.payload),
+    safeJsonParse(payload),
   );
   if (!envelope.success || envelope.data.eventType !== "MESSAGE_CREATE") {
     return null;
   }
   const message = discordMessageCreateSchema.safeParse(envelope.data.payload);
-  if (!message.success) {
-    return null;
-  }
-  const content =
-    "I couldn't process this Discord message. Please send it again.";
-  if (claimed.routeId !== null) {
-    const [route] = await tx
-      .select(terminalIngressRouteSelection)
-      .from(discordChatThreadRoutes)
-      .innerJoin(
-        discordOrgConnections,
-        eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
-      )
-      .innerJoin(
-        discordOauthStates,
-        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
-      )
-      .where(
-        and(
-          eq(discordChatThreadRoutes.id, claimed.routeId),
-          eq(discordChatThreadRoutes.connectionId, claimed.connectionId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (route?.destinationChannelId) {
-      const inserted =
-        parseRawRows(
-          chatEventCommandResultSchema,
-          await tx.execute(
-            chatEventInsertSql(
-              {
-                id: ingressId,
-                chatThreadId: route.chatThreadId,
-                eventType: "output.error",
-                runId: null,
-                content,
-                error: content,
-                createdAt: currentTime,
-              },
-              "id",
-            ),
-          ),
-        )[0] ?? null;
-      signal.throwIfAborted();
-      if (inserted) {
-        const threadTouchRows = parseRawRows(
-          chatThreadLastMessageTouchSchema,
-          await tx.execute(
-            chatThreadLastMessageTouchSql(route.chatThreadId, currentTime, {
-              userId: route.userId,
-              orgId: route.orgId,
-            }),
-          ),
-        );
-        const threadSortSql = chatThreadLastMessageSortSql(
-          threadTouchRows,
+  return message.success ? message.data : null;
+}
+
+const TERMINAL_INGRESS_CONTENT =
+  "I couldn't process this Discord message. Please send it again.";
+
+type TerminalIngressRoute = Pick<
+  typeof discordChatThreadRoutes.$inferSelect,
+  "id" | "chatThreadId" | "userId" | "sessionKey" | "destinationChannelId"
+> & { readonly orgId: string; readonly discordUserId: string };
+
+function terminalIngressFailureResult(
+  args: {
+    readonly ingressId: string;
+    readonly connectionId: string;
+    readonly message: DiscordMessageCreate;
+    readonly route: TerminalIngressRoute | undefined;
+  },
+  inserted: boolean,
+): RecordedIngressFailure {
+  const { ingressId, connectionId, message, route } = args;
+  if (!route?.destinationChannelId) {
+    return {
+      reply: {
+        kind: "notice",
+        notice: {
           ingressId,
-          { userId: route.userId, orgId: route.orgId },
-        );
-        if (threadSortSql) {
-          await tx.execute(threadSortSql);
-        }
-        signal.throwIfAborted();
-      }
-      return {
-        reply: inserted
-          ? {
-              kind: "chat",
-              request: {
-                chatEventId: ingressId,
-                chatThreadId: route.chatThreadId,
-                userId: route.userId,
-                orgId: route.orgId,
-                target: {
-                  routeId: route.id,
-                  connectionId: claimed.connectionId,
-                  guildId: message.data.guild_id ?? null,
-                  discordUserId: route.discordUserId,
-                  channelId: route.destinationChannelId,
-                  messageId: message.data.id,
-                  sessionKey: route.sessionKey,
-                },
-              },
-            }
-          : null,
-        notification: {
-          userId: route.userId,
-          orgId: route.orgId,
-          threadId: route.chatThreadId,
+          connectionId,
+          channelId: message.channel_id,
+          content: TERMINAL_INGRESS_CONTENT,
         },
-      };
-    }
+      },
+      notification: null,
+    };
   }
   return {
-    reply: {
-      kind: "notice",
-      notice: {
-        ingressId,
-        connectionId: claimed.connectionId,
-        channelId: message.data.channel_id,
-        content,
-      },
+    reply: inserted
+      ? {
+          kind: "chat",
+          request: {
+            chatEventId: ingressId,
+            chatThreadId: route.chatThreadId,
+            userId: route.userId,
+            orgId: route.orgId,
+            target: {
+              routeId: route.id,
+              connectionId,
+              guildId: message.guild_id ?? null,
+              discordUserId: route.discordUserId,
+              channelId: route.destinationChannelId,
+              messageId: message.id,
+              sessionKey: route.sessionKey,
+            },
+          },
+        }
+      : null,
+    notification: {
+      userId: route.userId,
+      orgId: route.orgId,
+      threadId: route.chatThreadId,
     },
-    notification: null,
   };
 }
 
-function recordIngressFailure(
-  db: Db,
-  args: {
-    readonly ingressId: string;
-    readonly claimToken: string;
-    readonly attemptCount: number;
-    readonly failure: DiscordIngressFailure;
-  },
+// Keep the existing named owner and lock order: a failed event/sort append
+// must roll back the terminal transition so the claimed attempt can recover.
+const recordIngressFailure$ = command(function recordIngressFailure(
+  { set },
+  args: IngressFailureArgs,
   signal: AbortSignal,
 ): Promise<RecordedIngressFailure | null> {
-  const retry = args.failure.retryable && args.attemptCount < MAX_ATTEMPTS;
-  const currentTime = nowDate();
+  const plan = ingressFailurePlan(args);
+  const db = set(writeDb$);
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0088; new non-billing transactions are prohibited.
   return db.transaction(async (tx) => {
     const [claimed] = await tx
@@ -1193,51 +1176,98 @@ function recordIngressFailure(
     }
     await tx
       .update(discordChatIngress)
-      .set({
-        status: retry ? "retryable" : "terminal",
-        claimToken: null,
-        claimedAt: null,
-        retryAt: retry
-          ? new Date(
-              currentTime.getTime() +
-                Math.max(
-                  60_000 * 5 ** (args.attemptCount - 1),
-                  args.failure.retryAfterMs,
-                ),
-            )
-          : null,
-        lastErrorClass:
-          args.failure.retryable && !retry
-            ? "attempts_exhausted"
-            : args.failure.errorClass,
-        lastError: args.failure.message,
-        updatedAt: currentTime,
-      })
+      .set(plan.values)
       .where(eq(discordChatIngress.id, args.ingressId));
     signal.throwIfAborted();
-    if (
-      retry ||
-      args.failure.errorClass.startsWith("binding:") ||
-      args.failure.errorClass === "access:403" ||
-      args.failure.errorClass === "access:404" ||
-      args.failure.errorClass === "discord:unavailable" ||
-      // A notice cannot be delivered without app configuration either.
-      args.failure.errorClass === "discord:config_unavailable"
-    ) {
+    if (!plan.notify) {
       return null;
     }
-    return recordTerminalIngressFailure(
-      tx,
-      { ingressId: args.ingressId, currentTime, claimed },
-      signal,
-    );
+    const message = terminalIngressMessage(claimed.payload);
+    if (!message) {
+      return null;
+    }
+    const [route] =
+      claimed.routeId === null
+        ? []
+        : await tx
+            .select(terminalIngressRouteSelection)
+            .from(discordChatThreadRoutes)
+            .innerJoin(
+              discordOrgConnections,
+              eq(
+                discordOrgConnections.id,
+                discordChatThreadRoutes.connectionId,
+              ),
+            )
+            .innerJoin(
+              discordOauthStates,
+              eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
+            )
+            .where(
+              and(
+                eq(discordChatThreadRoutes.id, claimed.routeId),
+                eq(discordChatThreadRoutes.connectionId, claimed.connectionId),
+              ),
+            )
+            .limit(1);
+    signal.throwIfAborted();
+    const resultArgs = {
+      ingressId: args.ingressId,
+      connectionId: claimed.connectionId,
+      message,
+      route,
+    };
+    if (!route?.destinationChannelId) {
+      return terminalIngressFailureResult(resultArgs, false);
+    }
+    const inserted = parseRawRows(
+      chatEventCommandResultSchema,
+      await tx.execute(
+        chatEventInsertSql(
+          {
+            id: args.ingressId,
+            chatThreadId: route.chatThreadId,
+            eventType: "output.error",
+            runId: null,
+            content: TERMINAL_INGRESS_CONTENT,
+            error: TERMINAL_INGRESS_CONTENT,
+            createdAt: plan.currentTime,
+          },
+          "id",
+        ),
+      ),
+    )[0];
+    signal.throwIfAborted();
+    if (inserted) {
+      const scope = { userId: route.userId, orgId: route.orgId };
+      const touchRows = parseRawRows(
+        chatThreadLastMessageTouchSchema,
+        await tx.execute(
+          chatThreadLastMessageTouchSql(
+            route.chatThreadId,
+            plan.currentTime,
+            scope,
+          ),
+        ),
+      );
+      signal.throwIfAborted();
+      const sortSql = chatThreadLastMessageSortSql(
+        touchRows,
+        args.ingressId,
+        scope,
+      );
+      if (sortSql) {
+        await tx.execute(sortSql);
+      }
+      signal.throwIfAborted();
+    }
+    return terminalIngressFailureResult(resultArgs, inserted !== undefined);
   });
-}
+});
 
 const finishRecordedIngressFailure$ = command(
   async (
     { set },
-    db: Db,
     recorded: RecordedIngressFailure | null,
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1248,7 +1278,7 @@ const finishRecordedIngressFailure$ = command(
       signal.throwIfAborted();
     }
     if (recorded?.reply?.kind === "chat") {
-      await set(sendDiscordChatReply$, db, recorded.reply.request, signal);
+      await set(sendDiscordChatReply$, recorded.reply.request, signal);
     } else if (recorded?.reply?.kind === "notice") {
       await set(sendDiscordIngressNotice$, recorded.reply.notice, signal);
     }
@@ -1310,8 +1340,8 @@ export const processCanonicalDiscordIngress$ = command(
     );
     signal.throwIfAborted();
     if (!result.ok) {
-      const recorded = await recordIngressFailure(
-        db,
+      const recorded = await set(
+        recordIngressFailure$,
         {
           ingressId: args.ingressId,
           ...claim,
@@ -1319,7 +1349,7 @@ export const processCanonicalDiscordIngress$ = command(
         },
         signal,
       );
-      await set(finishRecordedIngressFailure$, db, recorded, signal);
+      await set(finishRecordedIngressFailure$, recorded, signal);
       throw result.error;
     }
     if (!result.value) {
@@ -1432,8 +1462,8 @@ export const drainStaleCanonicalDiscordIngress$ = command(
       if (row.claimToken === null) {
         throw new Error("Processing Discord ingress has no claim token");
       }
-      const recorded = await recordIngressFailure(
-        db,
+      const recorded = await set(
+        recordIngressFailure$,
         {
           ingressId: row.id,
           claimToken: row.claimToken,
@@ -1447,7 +1477,7 @@ export const drainStaleCanonicalDiscordIngress$ = command(
         },
         signal,
       );
-      await set(finishRecordedIngressFailure$, db, recorded, signal);
+      await set(finishRecordedIngressFailure$, recorded, signal);
     }
     const rows = await db
       .select({ id: discordChatIngress.id })

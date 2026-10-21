@@ -1278,6 +1278,70 @@ describe("canonical Discord ingress", () => {
     },
   );
 
+  it("keeps one canonical error and one reply when an attachment disappears after routing", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const channel = provider.createThread(uniqueDiscordSnowflake());
+    const attachmentId = uniqueDiscordSnowflake();
+    const message = discordMessageForTest(actor, {
+      channelId: channel.id,
+      content: `<@${actor.botUserId}> read the missing attachment`,
+      attachments: [
+        {
+          id: attachmentId,
+          filename: "missing.txt",
+          size: 5,
+          url: `https://cdn.discordapp.com/attachments/${channel.id}/${attachmentId}/missing.txt`,
+        },
+      ],
+    });
+    // The gateway observed the attachment, but Discord's authorized refresh
+    // no longer returns it after the canonical route has been established.
+    provider.messages.set(message.id, { ...message, attachments: [] });
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    expect(thread).toBeDefined();
+    if (!thread) {
+      throw new Error("Routed Discord failure must remain visible in chat");
+    }
+    const content =
+      "I couldn't process this Discord message. Please send it again.";
+    const original = await events(actor, thread.id);
+    const errors = original.filter((event) => {
+      return event.eventType === "output.error";
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ content });
+    expect(currentInputs(original)).toStrictEqual([]);
+    expect(
+      original.every((event) => {
+        return event.runId === undefined;
+      }),
+    ).toBeTruthy();
+    expect(provider.sentMessages).toHaveLength(1);
+    expect(provider.sentMessages[0]).toMatchObject({
+      channel_id: channel.id,
+      content,
+    });
+
+    provider.messages.set(message.id, message);
+    expect(
+      (
+        await postDiscordMessage(
+          context,
+          message,
+          `terminal-replay:${message.id}`,
+        )
+      ).body.outcome,
+    ).toBe("duplicate");
+    await flushWaitUntilForTest();
+    await expect(events(actor, thread.id)).resolves.toStrictEqual(original);
+    expect(provider.sentMessages).toHaveLength(1);
+  });
+
   // Discord's CREATE_PUBLIC_THREADS bit, independent of ordinary conversation
   // permissions. The case data below are Discord role and overwrite payloads.
   const createPublicThreads = "34359738368";

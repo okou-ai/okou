@@ -31,7 +31,7 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import type { DefaultModelFirstPin } from "./model-selection.service";
 
@@ -59,53 +59,59 @@ export function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   );
 }
 
-export async function findDiscordChatThreadRoute(
-  db: Db,
-  key: DiscordChatThreadRouteKey,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  const [route] = await db
-    .select({
-      id: discordChatThreadRoutes.id,
-      connectionId: discordChatThreadRoutes.connectionId,
-      channelId: discordChatThreadRoutes.channelId,
-      sessionKey: discordChatThreadRoutes.sessionKey,
-      userId: discordChatThreadRoutes.userId,
-      chatThreadId: discordChatThreadRoutes.chatThreadId,
-      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-    })
-    .from(discordChatThreadRoutes)
-    .where(discordChatThreadRouteWhere(key))
-    .limit(1);
-  if (!route) {
-    return undefined;
-  }
-  const channelId = key.channelId;
-  if (
-    route.sessionKey !== INTEGRATION_DM_SESSION_KEY ||
-    (route.channelId === channelId &&
-      (route.destinationChannelId === null ||
-        route.destinationChannelId === channelId))
-  ) {
-    return route;
-  }
-  const [updated] = await db
-    .update(discordChatThreadRoutes)
-    .set({ channelId, destinationChannelId: channelId })
-    .where(
-      and(
-        eq(discordChatThreadRoutes.id, route.id),
-        discordChatThreadRouteWhere(route),
-      ),
-    )
-    .returning({
-      channelId: discordChatThreadRoutes.channelId,
-      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-    });
-  if (!updated) {
-    throw new Error("Failed to update Discord DM route destination");
-  }
-  return { ...route, ...updated };
-}
+export const findDiscordChatThreadRoute$ = command(
+  async (
+    { set },
+    key: DiscordChatThreadRouteKey,
+    signal: AbortSignal,
+  ): Promise<DiscordChatThreadRouteBinding | undefined> => {
+    const db = set(writeDb$);
+    const [route] = await db
+      .select({
+        id: discordChatThreadRoutes.id,
+        connectionId: discordChatThreadRoutes.connectionId,
+        channelId: discordChatThreadRoutes.channelId,
+        sessionKey: discordChatThreadRoutes.sessionKey,
+        userId: discordChatThreadRoutes.userId,
+        chatThreadId: discordChatThreadRoutes.chatThreadId,
+        destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+      })
+      .from(discordChatThreadRoutes)
+      .where(discordChatThreadRouteWhere(key))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!route) {
+      return undefined;
+    }
+    const channelId = key.channelId;
+    if (
+      route.sessionKey !== INTEGRATION_DM_SESSION_KEY ||
+      (route.channelId === channelId &&
+        (route.destinationChannelId === null ||
+          route.destinationChannelId === channelId))
+    ) {
+      return route;
+    }
+    const [updated] = await db
+      .update(discordChatThreadRoutes)
+      .set({ channelId, destinationChannelId: channelId })
+      .where(
+        and(
+          eq(discordChatThreadRoutes.id, route.id),
+          discordChatThreadRouteWhere(route),
+        ),
+      )
+      .returning({
+        channelId: discordChatThreadRoutes.channelId,
+        destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+      });
+    signal.throwIfAborted();
+    if (!updated) {
+      throw new Error("Failed to update Discord DM route destination");
+    }
+    return { ...route, ...updated };
+  },
+);
 
 interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
   readonly orgId: string;
