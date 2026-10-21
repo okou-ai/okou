@@ -4624,7 +4624,7 @@ function ActiveChatConnectorActionConnectModal() {
   }
 
   const onSuccess = async (
-    connectionId: string | null,
+    connectionId: string,
     attemptSignal: AbortSignal,
   ) => {
     if (active.kind === "catalog-reconnect") {

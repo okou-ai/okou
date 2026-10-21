@@ -196,10 +196,7 @@ export const authorizeDirectedConnector$ = command(
     }
     const options = { connectorLabel: item.label, agentId, ...accountOptions };
     const launchMode = getBuiltinConnectorStatusConnectLaunchMode(item);
-    const onSuccess = (
-      _connectionId: string | null,
-      attemptSignal: AbortSignal,
-    ) => {
+    const onSuccess = (_connectionId: string, attemptSignal: AbortSignal) => {
       return set(
         completeDirectedConnectorAuthorization$,
         agentId,

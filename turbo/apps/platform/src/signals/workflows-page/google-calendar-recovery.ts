@@ -108,7 +108,7 @@ export const checkGoogleCalendarRecovery$ = command(
   async (
     { get, set },
     target: CalendarRecoveryTarget,
-    connectionId: string | null | undefined,
+    connectionId: string | undefined,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
