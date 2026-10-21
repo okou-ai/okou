@@ -187,9 +187,15 @@ func focusMentionInput(_ input: ComposerTextView) async throws {
   try await eventually(
     message:
       "Native composer focus/expansion: \(input.isFirstResponder), \(input.bounds); "
-      + "window: \(input.window != nil); current: \(input.isCurrent())"
+      + "window: \(input.window != nil); current: \(input.isCurrent()); "
+      + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
+      + "key window: \(String(describing: input.window?.isKeyWindow)); "
+      + "scene: \(String(describing: input.window?.windowScene?.activationState)); "
+      + "line height: \(String(describing: input.font?.lineHeight))"
   ) {
-    input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    // Measure the native size after its window has laid out the focus change.
+    input.window?.layoutIfNeeded()
+    return input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
   }
 }
 
