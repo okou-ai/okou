@@ -26,15 +26,9 @@ xcode_args=(
   -destination "$IOS_TEST_DESTINATION"
   -derivedDataPath "$build_root/DerivedData"
   -clonedSourcePackagesDirPath "$build_root/SourcePackages"
-  -scmProvider system
   -onlyUsePackageVersionsFromResolvedFile
   -disableAutomaticPackageResolution
-  -disablePackageRepositoryCache
   -skipPackageUpdates
-  COMPILATION_CACHE_ENABLE_CACHING=YES
-  COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
-  # Keep compiler inputs identical to the SDK-upgrade consumer; CI needs no IDE index.
-  COMPILER_INDEX_STORE_ENABLE=NO
   CODE_SIGN_IDENTITY=-
   CODE_SIGNING_ALLOWED=YES
   DEVELOPMENT_TEAM=
@@ -43,6 +37,17 @@ xcode_args=(
   OKOU_WEB_BASE_URL=https://app.example.invalid
   CLERK_PUBLISHABLE_KEY=
 )
+
+# Bootstrap the new toolchain's cache before switching its required CI consumers.
+if [[ "${IOS_BUILD_CACHE_ENABLED:-false}" == true ]]; then
+  xcode_args+=(
+    -scmProvider system
+    -disablePackageRepositoryCache
+    COMPILATION_CACHE_ENABLE_CACHING=YES
+    COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
+    COMPILER_INDEX_STORE_ENABLE=NO
+  )
+fi
 
 if [[ "$ios_test_phase" == all ]]; then
   bash ios/scripts/ci-package-test.sh

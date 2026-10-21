@@ -14,9 +14,6 @@ permissions:
 
 env:
   npm_config_audit: "false"
-  GIT_CONFIG_COUNT: "1"
-  GIT_CONFIG_KEY_0: http.version
-  GIT_CONFIG_VALUE_0: HTTP/1.1
 
 concurrency:
   group: ios-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
@@ -102,13 +99,10 @@ jobs:
           fetch-depth: 32
       - name: Configure archive workspace
         run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
-      - name: Restore native build caches
-        id: build-cache
-        uses: ./.github/actions/setup-ios-build-cache
       - name: Capture promotion inputs
         run: |
           mkdir "$IOS_ARCHIVE_DIR"
-          cp "${{ steps.build-cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
       - name: Classify the whole merge group
         id: release-only

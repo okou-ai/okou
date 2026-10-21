@@ -15,6 +15,7 @@ env:
   npm_config_audit: "false"
   DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
   IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+  IOS_BUILD_CACHE_ENABLED: "true"
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: http.version
   GIT_CONFIG_VALUE_0: HTTP/1.1

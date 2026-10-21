@@ -71,6 +71,10 @@ test results, signing credentials, or the rest of DerivedData. Consumers still
 perform their required builds and tests. Main-owned caches are readable by PR and
 merge-group workflows; PR-scoped caches are not the shared baseline.
 
+`IOS_BUILD_CACHE_ENABLED=true` selects the shared compiler settings for warming
+and consumers. The bootstrap leaves the existing Xcode 26 CI configuration in
+place; the SDK upgrade enables restore and these settings after main is seeded.
+
 ## Immutable shared artifact storage
 
 Unsigned applications, dSYMs, evidence, and release mappings use the same static
