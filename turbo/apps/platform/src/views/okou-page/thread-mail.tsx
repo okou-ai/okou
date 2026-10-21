@@ -397,7 +397,7 @@ function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
               return $.chat.mail.manager.draftOnly;
             })}
       </p>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Button
           type="button"
           variant="outline"
@@ -419,6 +419,7 @@ function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
           type="button"
           size="sm"
           disabled={disabled}
+          className="ml-auto"
           onClick={() => {
             detach(prepare("send", signal), Reason.DomCallback);
           }}
