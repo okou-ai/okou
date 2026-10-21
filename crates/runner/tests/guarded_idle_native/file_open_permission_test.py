@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import resource
 import select
 import subprocess
 import sys
@@ -189,6 +190,30 @@ class KernelTests(unittest.TestCase):
                 gate.decide(event, event.pid == first.pid)
             self.assertEqual(join(first)["exit"], 0)
             self.assertEqual(join(second)["exit"], 23)
+
+    def test_kernel_pidfd_above_select_descriptor_limit(self):
+        before = resource.getrlimit(resource.RLIMIT_NOFILE)
+        self.assertTrue(before[1] == resource.RLIM_INFINITY or before[1] >= 1200)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (max(before[0], 1200), before[1]))
+        try:
+            with self.fixture() as (path, stream, gate, children, _):
+                padding = []
+                try:
+                    while not padding or padding[-1] < 1100:
+                        padding.append(os.dup(stream.fileno()))
+                    child = self.start(path, children)
+                    event = gate.receive()
+                    self.assertGreater(
+                        EVENT.unpack(bytes.fromhex(event.raw_hex))[-1], 1023
+                    )
+                    self.assertEqual(event.pid, child.pid)
+                    gate.decide(event, True)
+                    self.assertEqual(join(child)["exit"], 0)
+                finally:
+                    for descriptor in padding:
+                        os.close(descriptor)
+        finally:
+            resource.setrlimit(resource.RLIMIT_NOFILE, before)
 
     def test_write_truncate_open_is_held_before_original_bytes_change(self):
         code = """import json,pathlib,sys

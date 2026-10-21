@@ -80,7 +80,10 @@ root/capability/ABI support. Both are registered in `security.yml`. Real kernel
 cases cover allowed exact bytes, denied EPERM, write/truncate opens held before
 original bytes change, multiple pending producers,
 queued/observed retirement, observer unwind, original rename/replacement,
-borrower lifetime and foreign creator/token refusal. No successful observation
+borrower lifetime, high-numbered kernel PIDFDs and foreign creator/token refusal.
+The high-FD case temporarily raises only its own soft file limit within a hard
+limit of at least 1200 and retires its owned padding descriptors.
+No successful observation
 is mocked and no elapsed delay supplies synchronization. The qualification
 reader also rejects actual-record corruption and inflated claims.
 

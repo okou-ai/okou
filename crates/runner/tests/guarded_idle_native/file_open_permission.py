@@ -207,9 +207,10 @@ class FileOpenPermission:
                     len(info) <= 4096 and rows == [[str(owned.observation.pid)]],
                     "kernel PIDFD identity mismatch",
                 )
+                poller = select.poll()
+                poller.register(owned.pidfd, select.POLLIN)
                 require(
-                    owned.observation.pid > 0
-                    and not select.select([owned.pidfd], [], [], 0)[0],
+                    owned.observation.pid > 0 and not poller.poll(0),
                     "event producer already exited",
                 )
         return True
