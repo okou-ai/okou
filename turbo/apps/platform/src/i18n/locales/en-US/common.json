@@ -513,8 +513,7 @@
         "websiteAria": "Show website artifacts"
       },
       "kindIcon": "{{kind}} artifact",
-      "loading": "Loading artifacts",
-      "retry": "Try again"
+      "loading": "Loading artifacts"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -611,6 +610,7 @@
     },
     "sharing": {
       "accessLabel": "Who can access",
+      "copied": "Copied",
       "copyLink": "Copy link",
       "loadFailed": "Unable to load permissions",
       "loadingPermissions": "Loading permissions",
@@ -2103,6 +2103,7 @@
       "received": "Received",
       "running": "Running",
       "sent": "Sent",
+      "toggleMessages": "Messages with {{title}}",
       "unavailable": "Unavailable",
       "untitled": "Untitled"
     },
@@ -5337,10 +5338,6 @@
           "title": "Default model"
         },
         "description": "Choose defaults for new chats and how messages are sent.",
-        "resources": {
-          "description": "Show a chat's artifacts and related chats beside the conversation when there is room.",
-          "title": "Open resources automatically"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

@@ -1,5 +1,5 @@
 import { hostedSiteAccessRoutes } from "./hosted-site-access";
-import { hostedSiteViewer$ } from "../services/hosted-site-viewer.service";
+import { hostedSiteSessionViewer$ } from "../services/hosted-site-sessions.service";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
@@ -100,10 +100,17 @@ const deliveryAuthorization$ = command(
     let body = await set(authorizeHostedSiteDelivery$, args, signal);
     if (body.decision === "authenticate") {
       const userId = await set(
-        hostedSiteViewer$,
-        hostedLinkOrigin(linkLayoutFromSegment(args.publicBrand), args.alias),
+        hostedSiteSessionViewer$,
+        {
+          siteId: args.siteId,
+          origin: hostedLinkOrigin(
+            linkLayoutFromSegment(args.publicBrand),
+            args.alias,
+          ),
+        },
         signal,
       );
+      signal.throwIfAborted();
       if (userId) {
         body = await set(
           authorizeHostedSiteDelivery$,

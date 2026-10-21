@@ -2318,14 +2318,10 @@ jobs:
       needs.deploy-app.result == 'success' &&
       (github.event_name == 'push' || needs.deploy-stripe-listener.result == 'success')
     outputs:
-      runner-organization-id: ${{ steps.account.outputs.runner-organization-id }}
       codex-organization-id: ${{ steps.account.outputs.codex-organization-id }}
-      claude-organization-id: ${{ steps.account.outputs.claude-organization-id }}
       mock-claude-organization-id: ${{ steps.account.outputs.mock-claude-organization-id }}
       codex-built-in-organization-id: ${{ steps.account.outputs.codex-built-in-organization-id }}
-      runner-email: ${{ steps.account.outputs.runner-email }}
       codex-email: ${{ steps.account.outputs.codex-email }}
-      claude-email: ${{ steps.account.outputs.claude-email }}
       mock-claude-email: ${{ steps.account.outputs.mock-claude-email }}
       codex-built-in-email: ${{ steps.account.outputs.codex-built-in-email }}
       runner-shard-matrix: ${{ steps.shards.outputs.matrix }}
@@ -2382,9 +2378,7 @@ jobs:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
-          E2E_RUNNER_ORGANIZATION_ID: ${{ steps.account.outputs.runner-organization-id }}
           E2E_RUNNER_CODEX_ORGANIZATION_ID: ${{ steps.account.outputs.codex-organization-id }}
-          E2E_RUNNER_CLAUDE_ORGANIZATION_ID: ${{ steps.account.outputs.claude-organization-id }}
           E2E_RUNNER_MOCK_CLAUDE_ORGANIZATION_ID: ${{ steps.account.outputs.mock-claude-organization-id }}
           E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID: ${{ steps.account.outputs.codex-built-in-organization-id }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
@@ -2410,9 +2404,7 @@ jobs:
         with:
           name: e2e-tokens
           path: |
-            /tmp/e2e-api-credentials-runner.json
             /tmp/e2e-api-credentials-runner-real-codex.json
-            /tmp/e2e-api-credentials-runner-real-claude.json
             /tmp/e2e-api-credentials-runner-mock-claude.json
             /tmp/e2e-api-credentials-runner-real-codex-built-in.json
           retention-days: 1
@@ -2442,29 +2434,24 @@ jobs:
         with:
           name: e2e-tokens
           path: /tmp
-      - name: Reset runner model defaults
+      - name: Check fresh mock account Auto defaults
         shell: bash
-        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner.json false
+        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-mock-claude.json false
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-      - name: Bootstrap mock Claude account
+      - name: Bootstrap mock native subscriptions
         shell: bash
         run: cd e2e && bash playwright/runner-mock-claude-bootstrap.bash /tmp/e2e-api-credentials-runner-mock-claude.json
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-      - name: Bootstrap real Codex account
+      - name: Bootstrap ordinary real Auto account
         shell: bash
         run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-codex.json true
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-      - name: Bootstrap built-in Codex account
+      - name: Bootstrap isolated real Auto billing account
         shell: bash
         run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-codex-built-in.json true
-        env:
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-      - name: Bootstrap real Claude account
-        shell: bash
-        run: cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-real-claude.json true
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
@@ -2494,13 +2481,10 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.cli-e2e-03-runner-prepare.outputs.runner-shard-matrix) }}
     env:
-      E2E_CLERK_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.runner-organization-id }}
+      E2E_CLERK_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.codex-organization-id }}
       E2E_RUNNER_CODEX_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.codex-organization-id }}
-      E2E_RUNNER_CLAUDE_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.claude-organization-id }}
       E2E_RUNNER_MOCK_CLAUDE_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.mock-claude-organization-id }}
-      E2E_RUNNER_EMAIL: ${{ needs.cli-e2e-03-runner-prepare.outputs.runner-email }}
       E2E_RUNNER_CODEX_EMAIL: ${{ needs.cli-e2e-03-runner-prepare.outputs.codex-email }}
-      E2E_RUNNER_CLAUDE_EMAIL: ${{ needs.cli-e2e-03-runner-prepare.outputs.claude-email }}
       E2E_RUNNER_MOCK_CLAUDE_EMAIL: ${{ needs.cli-e2e-03-runner-prepare.outputs.mock-claude-email }}
       E2E_RUNNER_SHARD_INDEX: ${{ matrix.index }}
       E2E_RUNNER_SHARD_TOTAL: ${{ strategy.job-total }}
@@ -2528,16 +2512,14 @@ jobs:
         run: |
           set -euo pipefail
           for credential_file in \
-            /tmp/e2e-api-credentials-runner.json \
             /tmp/e2e-api-credentials-runner-real-codex.json \
-            /tmp/e2e-api-credentials-runner-real-claude.json \
             /tmp/e2e-api-credentials-runner-real-codex-built-in.json \
             /tmp/e2e-api-credentials-runner-mock-claude.json; do
             jq -er '.token | select(type == "string" and length > 0)' "$credential_file" >/dev/null
             jq -er '.apiUrl | select(type == "string" and length > 0)' "$credential_file" >/dev/null
           done
-          token=$(jq -er '.token' /tmp/e2e-api-credentials-runner.json)
-          api_url=$(jq -er '.apiUrl' /tmp/e2e-api-credentials-runner.json)
+          token=$(jq -er '.token' /tmp/e2e-api-credentials-runner-real-codex.json)
+          api_url=$(jq -er '.apiUrl' /tmp/e2e-api-credentials-runner-real-codex.json)
           echo "::add-mask::$token"
           echo "E2E_API_TOKEN=$token" >> "$GITHUB_ENV"
           echo "E2E_API_URL=$api_url" >> "$GITHUB_ENV"
@@ -2547,11 +2529,8 @@ jobs:
           set -euo pipefail
           : "${E2E_CLERK_ORG_ID:?runner E2E organization is required}"
           : "${E2E_RUNNER_CODEX_ORG_ID:?runner Codex E2E organization is required}"
-          : "${E2E_RUNNER_CLAUDE_ORG_ID:?runner Claude E2E organization is required}"
           : "${E2E_RUNNER_MOCK_CLAUDE_ORG_ID:?runner mock Claude E2E organization is required}"
-          : "${E2E_RUNNER_EMAIL:?runner E2E account is required}"
           : "${E2E_RUNNER_CODEX_EMAIL:?runner Codex E2E account is required}"
-          : "${E2E_RUNNER_CLAUDE_EMAIL:?runner Claude E2E account is required}"
           : "${E2E_RUNNER_MOCK_CLAUDE_EMAIL:?runner mock Claude E2E account is required}"
           : "${E2E_API_TOKEN:?runner E2E API token is required}"
           : "${E2E_API_URL:?runner E2E API URL is required}"

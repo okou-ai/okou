@@ -214,6 +214,13 @@ struct PollApiResult {
 const POLL_SLOW: Duration = Duration::from_secs(30);
 /// Poll interval when Ably is disconnected or unavailable (primary mechanism).
 const POLL_FAST: Duration = Duration::from_secs(5);
+/// Reconcile advertised reuse while Ably may still report Connected, at a
+/// load-limited ten-second cadence. This deliberately exceeds the API's one-
+/// and two-second preference windows; a competitor can claim after expiry.
+/// Connection heartbeats shorten silent-loss detection independently. HTTP
+/// latency, capacity and explicit deferrals can further delay discovery.
+const POLL_REUSE: Duration = Duration::from_secs(10);
+const POLL_REUSE_STAGGER_MS: u64 = 100;
 /// Retry delay after a job-notification wakeup reaches poll but poll fails.
 const POLL_WAKEUP_RETRY: Duration = POLL_FAST;
 const DIRECT_CANDIDATE_INBOX_CAPACITY: usize = 128;
@@ -952,6 +959,25 @@ impl JobProvider for ApiProvider {
     }
 
     async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {
+        let has_admittable_reuse = state.mode == "running"
+            && (state.held_sandbox_states.iter().any(|held| {
+                state
+                    .admittable_profiles
+                    .contains(&held.reusable_sandbox.profile)
+            }) || state.held_home_states.iter().any(|held| {
+                held.home_caches
+                    .iter()
+                    .any(|cache| state.admittable_profiles.contains(&cache.profile))
+            }));
+        // Keep this local projection independent of HTTP delivery. A stalled
+        // heartbeat must not delay discovery of work for an available resource.
+        let stagger = Duration::from_millis(
+            u64::from(self.runner_identity.runner_id().as_bytes()[0]) % (POLL_REUSE_STAGGER_MS + 1),
+        );
+        self.poll_wakeups.update_reuse_polling(
+            (state.snapshot_generation, state.snapshot_sequence),
+            has_admittable_reuse.then_some(POLL_REUSE + stagger),
+        );
         let result = self.api.heartbeat(state).await;
         match &result {
             Ok(()) => {
@@ -2305,6 +2331,7 @@ mod tests {
     mod claim_observation;
     mod finalizing_source;
     mod parallel_claim;
+    mod silent_connection;
 
     fn api_client_for_url(api_url: String) -> ApiClient {
         ApiClient::new(

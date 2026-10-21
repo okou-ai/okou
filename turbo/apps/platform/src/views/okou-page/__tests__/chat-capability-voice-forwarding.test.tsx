@@ -18,12 +18,14 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 import {
   completedConversation,
-  context,
-  installCapabilityChat,
+  createChatCapabilityHelpers,
   RUN_PATH,
   selectPassage,
 } from "./chat-capability-test-helpers.ts";
@@ -35,7 +37,10 @@ import {
   queryButton,
 } from "./chat-run-test-fixtures.ts";
 
-const refreshedContext = testContext();
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
+// A replacement app has fresh app/worker stores under the same document owner.
+const refreshedContext = createTestRuntime(context);
 const FORWARD_TARGET_NAME = "Okou";
 
 function releasePageDom() {

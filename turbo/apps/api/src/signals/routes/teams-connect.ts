@@ -12,6 +12,7 @@ import {
   teamsConnectStatus,
 } from "../services/teams-connect.service";
 import type { RouteEntry } from "../route-entry";
+import { createTeamsOAuthState$ } from "../services/teams-oauth-state";
 
 function errorResponse(
   status: 403 | 404,
@@ -36,10 +37,36 @@ const teamsConnectStatusIdentity$ = computed((get) => {
 });
 const teamsConnectStatus$ = teamsConnectStatus(teamsConnectStatusIdentity$);
 
-const getTeamsConnectStatusInner$ = computed(async (get) => {
-  const body = await get(teamsConnectStatus$);
-  return { status: 200 as const, body };
-});
+const getTeamsConnectStatusInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const body = await get(teamsConnectStatus$);
+    signal.throwIfAborted();
+    if (!body.connectUrl) {
+      return { status: 200 as const, body };
+    }
+    const auth = get(organizationAuthContext$);
+    const url = new URL(body.connectUrl);
+    const connectState = await set(
+      createTeamsOAuthState$,
+      {
+        purpose: "teams-start",
+        userId: auth.userId,
+        orgId: auth.orgId,
+        redirectUri: new URL(
+          "/api/integrations/teams/oauth/callback",
+          url,
+        ).toString(),
+        prompt: null,
+      },
+      signal,
+    );
+    url.search = new URLSearchParams({ connectState }).toString();
+    return {
+      status: 200 as const,
+      body: { ...body, connectUrl: url.toString() },
+    };
+  },
+);
 
 const connectInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);

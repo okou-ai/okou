@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   browserContract,
   type BrowserSession,
@@ -30,18 +31,20 @@ import {
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   CAPABILITY_AGENT_ID,
-  context,
   completedConversation,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
   RUN_THREAD_ID,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import {
   assistantEvent,
   findButton,
   promptEvent,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000001101";
 const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000001102";

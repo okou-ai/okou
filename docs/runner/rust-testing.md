@@ -227,6 +227,11 @@ cargo llvm-cov nextest --all-targets --all-features --test-threads 8 \
 Nextest schedules tests across executables and runs each case in a separate
 process. Guest mock fixtures recognize the verified Cargo or nextest parent
 session so the mock binaries are built once per invocation, not once per case.
+The workspace config at `crates/.config/nextest.toml` reserves all configured
+test slots for large-payload Guest Agent delivery scenarios. Their
+multi-MiB JSON processing must fit the existing real delivery and termination
+deadlines without competing with other tests. Each scenario retains its own
+process and HTTP concurrency; other tests keep the configured parallelism.
 On Linux CI, `LLVM_PROFILE_FILE_NAME=crates-%b-%8m.profraw` separates executable
 build IDs and gives each profile signature up to eight raw files. LLVM manages
 locking and merging across test processes and their children. Default fresh

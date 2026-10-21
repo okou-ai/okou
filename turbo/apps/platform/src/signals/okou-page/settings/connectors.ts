@@ -76,7 +76,7 @@ import type {
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
 import {
-  readConnectorAccountCount,
+  hasSavedConnectorAccounts,
   readConnectorAccountPage,
   readConnectorOAuthCompletion,
   readConnectorAccountCompletion,
@@ -95,11 +95,11 @@ type BrowserAuthPostConnectOptions = PostConnectOptions & {
 };
 
 export interface BuiltinConnectorConnectionResult {
-  readonly connectionId: string | null;
+  readonly connectionId: string;
 }
 
 export type ConnectorConnectSuccess = (
-  connectionId: string | null,
+  connectionId: string,
   signal: AbortSignal,
 ) => void | Promise<void>;
 
@@ -142,12 +142,13 @@ const resolveConnectorPostConnectOptions$ = command(
     }
     const authorizeVisibleAgents =
       account.intent === "add" &&
-      (page?.connections.length ??
-        (await readConnectorAccountCount(
-          get(apiClient$),
-          { kind: "builtin", connectorSlug },
-          signal,
-        ))) === 0;
+      !(page
+        ? page.connections.length > 0
+        : await hasSavedConnectorAccounts(
+            get(apiClient$),
+            { kind: "builtin", connectorSlug },
+            signal,
+          ));
     return { ...options, account, authorizeVisibleAgents };
   },
 );
@@ -1344,7 +1345,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
     { set },
     connectorSlug: ConnectorSlug,
     onSuccess: ConnectorConnectSuccess,
-    connectionId: string | null,
+    connectionId: string,
     signal: AbortSignal,
   ): Promise<void> => {
     const flow = createConnectorConnectFlowState(connectorSlug);

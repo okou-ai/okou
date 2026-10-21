@@ -31,6 +31,7 @@ describe("GET /api/integrations/slack", () => {
     readonly orgId: string;
     readonly slackWorkspaceId: string;
   }): Promise<{ readonly orgId: string; readonly slackWorkspaceId: string }> {
+    mocks.clerk.session(args.installerUserId, args.orgId, "org:admin");
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [
         {
@@ -49,6 +50,7 @@ describe("GET /api/integrations/slack", () => {
     const started = await accept(
       oauthClient.install({
         query: { orgId: args.orgId, userId: args.installerUserId },
+        extraHeaders: { authorization: "Bearer clerk-session" },
       }),
       [307],
     );

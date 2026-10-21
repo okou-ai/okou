@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -13,10 +14,13 @@ import {
 } from "./chat-conversation-locator-test-helpers.ts";
 import {
   chatScrollContainer,
-  context,
-  mockChatLifecycleWithoutBrowserSession,
   setupPage,
+  createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
+
+const context = testContext();
+const { mockChatLifecycleWithoutBrowserSession } =
+  createChatLifecycleHelpers(context);
 
 const MAX_TICK_COUNT = 24;
 const TICK_PITCH = 10;

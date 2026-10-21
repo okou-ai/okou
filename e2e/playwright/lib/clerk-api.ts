@@ -62,9 +62,7 @@ export interface ClerkTestOwner {
 }
 
 export interface RunnerTestAccounts {
-  readonly runner: string;
   readonly codex: string;
-  readonly claude: string;
   readonly mockClaude: string;
   readonly codexBuiltIn: string;
 }
@@ -225,9 +223,7 @@ export function generateTestEmail(role: ClerkTestRole): string {
 
 export function runnerTestAccounts(): RunnerTestAccounts {
   return {
-    runner: generateTestEmail("runner"),
     codex: generateTestEmail("runner-real-codex"),
-    claude: generateTestEmail("runner-real-claude"),
     mockClaude: generateTestEmail("runner-mock-claude"),
     codexBuiltIn: generateTestEmail("runner-real-codex-built-in"),
   };

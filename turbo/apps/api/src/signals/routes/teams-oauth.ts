@@ -18,6 +18,12 @@ import {
 import { safeJsonParse, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
+import { requiredAuthContext$ } from "../auth/auth-context";
+import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
+import {
+  claimTeamsOAuthState$,
+  createTeamsOAuthState$,
+} from "../services/teams-oauth-state";
 
 const L = logger("TeamsOAuth");
 const MICROSOFT_AUTHORIZATION_URL =
@@ -123,29 +129,6 @@ function truncatePrompt(prompt: string): string {
 
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function parseOAuthState(state: string | undefined): OAuthState | null {
-  if (!state) {
-    return null;
-  }
-
-  const parsed = safeJsonParse(state);
-  if (typeof parsed !== "object" || parsed === null) {
-    return null;
-  }
-
-  const record = parsed as Record<string, unknown>;
-  const redirectUri = optionalString(record.redirectUri);
-  if (!redirectUri) {
-    return null;
-  }
-  return {
-    orgId: optionalString(record.orgId),
-    userId: optionalString(record.userId),
-    prompt: optionalString(record.prompt),
-    redirectUri,
-  };
 }
 
 /**
@@ -296,7 +279,7 @@ const resolveTeamsOauthStateAuth$ = command(
   },
 );
 
-const connectOauth$ = command(({ get }) => {
+const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$).raw;
   const origin = getOAuthApiOrigin(request);
   const credentials = microsoftCredentials();
@@ -308,34 +291,68 @@ const connectOauth$ = command(({ get }) => {
   }
 
   const query = get(queryOf(teamsOauthContract.connect));
-  const userId = query.userId;
-  if (!query.orgId || !userId) {
-    return jsonErrorResponse("Missing orgId or userId", 400);
+  const entry = query.connectState
+    ? await set(
+        claimTeamsOAuthState$,
+        {
+          state: query.connectState,
+          purpose: "teams-start",
+        },
+        signal,
+      )
+    : null;
+  if (query.connectState && !entry) {
+    return settingsErrorRedirect(
+      "This connection link has expired or was already used. Please connect again.",
+    );
   }
-
-  // Record the redirect URI this authorization actually sends, so the token
-  // exchange can repeat it instead of recomputing a value that may have moved.
+  const auth =
+    entry ??
+    (await set(requiredAuthContext$, { requireOrganization: true }, signal));
+  if ("status" in auth) {
+    if (auth.status !== 401) {
+      return settingsErrorRedirect(auth.body.error.message);
+    }
+    const signInUrl = new URL("/sign-in", env("APP_URL"));
+    signInUrl.searchParams.set("redirect_url", request.url);
+    return noStoreRedirect(signInUrl.toString());
+  }
+  if (
+    !auth.orgId ||
+    (query.orgId && query.orgId !== auth.orgId) ||
+    (query.userId && query.userId !== auth.userId)
+  ) {
+    return settingsErrorRedirect(
+      "The connection link belongs to a different account or organization. Please connect again from settings.",
+    );
+  }
+  if (entry) {
+    const actorError = await set(checkOAuthCallbackActor$, entry, signal);
+    if (actorError) {
+      return settingsErrorRedirect(actorError);
+    }
+  }
   const redirectUri = callbackRedirectUri(origin);
-  const stateObj: {
-    orgId: string;
-    userId: string;
-    prompt?: string;
-    redirectUri: string;
-  } = {
-    orgId: query.orgId,
-    userId,
-    redirectUri,
-  };
-  if (query.prompt) {
-    stateObj.prompt = truncatePrompt(query.prompt);
-  }
+  const state = await set(
+    createTeamsOAuthState$,
+    {
+      purpose: "teams-callback",
+      orgId: auth.orgId,
+      userId: auth.userId,
+      redirectUri,
+      prompt: query.prompt
+        ? truncatePrompt(query.prompt)
+        : (entry?.prompt ?? null),
+    },
+    signal,
+  );
 
   const authUrl = new URL(MICROSOFT_AUTHORIZATION_URL);
   authUrl.searchParams.set("client_id", credentials.clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", MICROSOFT_TEAMS_CONNECT_SCOPES.join(" "));
-  authUrl.searchParams.set("state", JSON.stringify(stateObj));
+  authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("prompt", "select_account");
 
   return noStoreRedirect(authUrl.toString());
@@ -351,7 +368,16 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const query = get(queryOf(teamsOauthContract.callback));
-  const state = parseOAuthState(query.state);
+  const state = query.state
+    ? await set(
+        claimTeamsOAuthState$,
+        {
+          state: query.state,
+          purpose: "teams-callback",
+        },
+        signal,
+      )
+    : null;
   if (query.error) {
     return settingsErrorRedirect(query.error_description ?? query.error);
   }
@@ -361,6 +387,14 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (!state?.orgId || !state.userId) {
     return settingsErrorRedirect("Invalid connect state.");
+  }
+  const actorError = await set(
+    checkOAuthCallbackActor$,
+    { userId: state.userId, orgId: state.orgId },
+    signal,
+  );
+  if (actorError) {
+    return settingsErrorRedirect(actorError);
   }
 
   const auth = await set(resolveTeamsOauthStateAuth$, state, signal);

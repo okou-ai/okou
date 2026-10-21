@@ -10,14 +10,17 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
   buttonByText,
-  context,
+  createSidebarAccountHelpers,
   linkByText,
   openAccountMenu,
-  prepareDefaultAgent,
 } from "./sidebar-account-test-helpers.ts";
+
+const context = testContext();
+const { prepareDefaultAgent } = createSidebarAccountHelpers(context);
 
 test("Open personal Settings and manage account security", async () => {
   prepareDefaultAgent();

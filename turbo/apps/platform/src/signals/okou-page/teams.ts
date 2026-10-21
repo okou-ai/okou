@@ -8,12 +8,7 @@ import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { authenticatedSessionKey$, clerk$ } from "../auth.ts";
 import { pageVersion$ } from "../page-signal.ts";
-import {
-  bestEffort,
-  NEVER_RESOLVED_PROMISE,
-  onDomEventFn,
-  resetSignal,
-} from "../utils.ts";
+import { NEVER_RESOLVED_PROMISE, onDomEventFn, resetSignal } from "../utils.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -233,10 +228,6 @@ const watchCurrentTeamsConnection$ = command(
     });
     window.addEventListener("focus", refresh, { signal });
     document.addEventListener("visibilitychange", refresh, { signal });
-    // The view renders this promise's failure and provides retry. Attach the
-    // subscription even after failure; runOnSubscribe closes the read/attach gap.
-    await bestEffort(set(status.refresh$, signal), signal);
-    signal.throwIfAborted();
     set(
       setAblyLoop$,
       {
@@ -246,6 +237,8 @@ const watchCurrentTeamsConnection$ = command(
       },
       signal,
     );
+    await set(status.refresh$, signal);
+    signal.throwIfAborted();
   },
 );
 

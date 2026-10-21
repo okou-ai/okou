@@ -1,13 +1,17 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  context,
   findFastControl,
-  installMessageExperienceChat,
+  createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
 
 const CREATED_AT = "2026-08-22T09:00:00.000Z";
 

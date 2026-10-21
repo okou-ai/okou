@@ -1,5 +1,19 @@
 import { z } from "zod";
 
+export const HOSTED_SITE_AUTHORIZATION_PATH = "/hosted-site-authorize";
+export const HOSTED_SITE_AUTH_CALLBACK_PATH = "/.okou/auth/callback";
+export const hostedSiteAuthProofSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{43}$/u);
+export const hostedSiteAuthCodeSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+export const hostedSiteSessionTokenSchema = z
+  .string()
+  .regex(/^okou_site_[a-f0-9]{64}$/u);
+export const hostedSiteSessionSchema = z.object({
+  sessionToken: hostedSiteSessionTokenSchema,
+  expiresAt: z.iso.datetime(),
+});
+
 export const hostedSiteVisibilitySchema = z.enum([
   "private",
   "organization",

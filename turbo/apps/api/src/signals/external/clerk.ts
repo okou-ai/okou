@@ -319,6 +319,7 @@ export interface ClerkSessionsApi {
     readonly id: string;
     readonly userId: string;
     readonly status: string;
+    readonly expireAt: number;
   }>;
 }
 
@@ -756,6 +757,32 @@ export async function authenticateClerkSession(
   }
 
   const auth = requestState.toAuth();
+  const party = auth.sessionClaims?.azp;
+  if (typeof party === "string") {
+    const origin = z.url().safeParse(party);
+    if (!origin.success) {
+      return {
+        identity: null,
+        failureReason: "token-invalid-authorized-parties",
+      };
+    }
+    const hostname = new URL(origin.data).hostname.replace(/\.$/u, "");
+    // User-hosted origins are never general App clients, including credentials
+    // issued before the satellite was removed. Site delivery uses its own handles.
+    if (
+      [env("OKOU_PUBLIC_HOST_DOMAIN"), env("ZERO_HOST_DOMAIN")].some(
+        (domain) => {
+          const normalized = domain.toLowerCase().replace(/\.$/u, "");
+          return hostname === normalized || hostname.endsWith(`.${normalized}`);
+        },
+      )
+    ) {
+      return {
+        identity: null,
+        failureReason: "token-invalid-authorized-parties",
+      };
+    }
+  }
   const userId: unknown = auth.userId;
   if (typeof userId !== "string" || userId.length === 0) {
     return { identity: null, failureReason: null };

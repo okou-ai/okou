@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse } from "msw";
@@ -8,15 +9,17 @@ import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
-  context,
   findButton,
   findWorkHistoryToggle,
-  installRunChat,
   promptEvent,
   queryWorkHistoryToggle,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const RUN_ID = "a0000000-0000-4000-a000-000000000281";
 

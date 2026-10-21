@@ -1,3 +1,4 @@
+import { testContext } from "./test-helpers.ts";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
@@ -6,12 +7,14 @@ import { expect, test } from "vitest";
 import { setupPage, startPage } from "../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
-  context,
-  mockAgent,
-  mockPersonalModelRoutes,
+  createChatComposerHelpers,
 } from "../../views/okou-page/__tests__/chat-composer-test-helpers.ts";
 import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
 import { clickComposerAddMenuItem } from "../../views/okou-page/__tests__/chat-composer-add-menu-test-helpers.ts";
+
+const context = testContext();
+const { mockAgent, mockPersonalModelRoutes } =
+  createChatComposerHelpers(context);
 
 const CUSTOMER_ORG_ID = "org_customer_workspace";
 

@@ -73,6 +73,7 @@ export function createAblyAuthCallback(
         try {
           signal.throwIfAborted();
           const client = createClient(invocation);
+          // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: distinguish an authentication timeout from root cancellation.
           const res = await onRejection(
             async () => {
               const response = await accept(

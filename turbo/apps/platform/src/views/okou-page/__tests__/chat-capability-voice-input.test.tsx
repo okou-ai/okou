@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
@@ -8,14 +9,16 @@ import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   assistantEvent,
-  context,
   findButton,
   findEnabledButton,
-  installRunChat,
   queryButton,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 function installAvailableVoiceQuota(limit: number | null = 60): void {
   context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {

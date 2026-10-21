@@ -4,17 +4,22 @@ import { HttpResponse } from "msw";
 import { expect, vi, describe, beforeEach, it, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 import {
-  context,
+  createChatRunFixtures,
   findEnabledButton,
-  installRunChat,
   queryButton,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
-const secondContext = testContext();
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
+// Preserve independent replacement app/worker graphs without reinstalling HTML.
+const secondContext = createTestRuntime(context);
 
 function installVoiceChat() {
   installRunChat({ selectedModel: null });

@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { mockAutoRunModel } from "../../../mocks/handlers/api-run-models.ts";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -14,18 +15,18 @@ import {
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import {
-  buildRunModel,
-  composerModelTrigger,
-} from "./chat-composer-test-helpers.ts";
-import {
-  context,
-  installRunChat,
   NEW_CHAT_PATH,
   readyChat,
   RUN_PATH,
   sendText,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 

@@ -63,7 +63,7 @@ import {
   agentphoneDeliveryTargetSchema,
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
-import { loadAgentPhoneQueuedLaunchMaterial } from "./agentphone-queued-launch-context.service";
+import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
   followupsEventIdForRun,
   integrationCompletionFallbackEventIdForRun,
@@ -130,8 +130,8 @@ import {
 } from "./internal-discord-chat-run-callback.service";
 import {
   clearCanonicalFeishuThinkingReaction$,
-  deliverFeishuChatAdmissionFailure,
-  dispatchFeishuChatDeliveryOnce,
+  deliverFeishuChatAdmissionFailure$,
+  dispatchFeishuChatDeliveryOnce$,
 } from "./internal-feishu-chat-run-callback.service";
 import type { InternalRunCallbackEnvelope } from "./internal-run-callback";
 import {
@@ -937,24 +937,15 @@ async function insertSlackChatDeliveryCallback(args: {
   });
 }
 
-async function insertFeishuChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: FeishuDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "feishu:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function feishuChatDeliveryFields(
+  target: FeishuDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "feishu:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 function teamsChatDeliveryFields(
@@ -1013,24 +1004,15 @@ function telegramChatDeliveryFields(
   };
 }
 
-async function insertAgentPhoneChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: AgentPhoneDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "agentphone:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function agentPhoneChatDeliveryFields(
+  target: AgentPhoneDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "agentphone:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 async function publishAssistantErrorEventSignals(args: {
@@ -1127,12 +1109,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const feishuDeliveryCallbackId = input.feishuDelivery
-    ? await insertFeishuChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.feishuDelivery,
-        chatEventId: event.id,
+        ...feishuChatDeliveryFields(input.feishuDelivery, event.id),
       })
     : undefined;
   const teamsDeliveryCallbackId = input.teamsDelivery
@@ -1184,12 +1165,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const agentphoneDeliveryCallbackId = input.agentphoneDelivery
-    ? await insertAgentPhoneChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.agentphoneDelivery,
-        chatEventId: event.id,
+        ...agentPhoneChatDeliveryFields(input.agentphoneDelivery, event.id),
       })
     : undefined;
   return {
@@ -1421,12 +1401,11 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const feishuDeliveryCallbackId =
     deliveryEvent && input.feishuDelivery
-      ? await insertFeishuChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.feishuDelivery,
-          chatEventId: deliveryEvent.id,
+          ...feishuChatDeliveryFields(input.feishuDelivery, deliveryEvent.id),
         })
       : undefined;
   const teamsDeliveryCallbackId =
@@ -1485,12 +1464,14 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const agentphoneDeliveryCallbackId =
     deliveryEvent && input.agentphoneDelivery
-      ? await insertAgentPhoneChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.agentphoneDelivery,
-          chatEventId: deliveryEvent.id,
+          ...agentPhoneChatDeliveryFields(
+            input.agentphoneDelivery,
+            deliveryEvent.id,
+          ),
         })
       : undefined;
   return {
@@ -2497,8 +2478,15 @@ const sendQueuedAdmissionFailure$ = command(
         return;
       }
       case "Feishu": {
-        await deliverFeishuChatAdmissionFailure(
-          { ...base, target: channel.target },
+        await set(
+          deliverFeishuChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            orgId: channel.orgId,
+            userId: channel.userId,
+            chatEventId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -3080,8 +3068,8 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
           signal,
         );
       } else if (channel.name === "Feishu") {
-        deliveryPromise = dispatchFeishuChatDeliveryOnce(
-          args.db,
+        deliveryPromise = set(
+          dispatchFeishuChatDeliveryOnce$,
           callbackId,
           signal,
         );
@@ -3721,7 +3709,7 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "agentphone": {
-        const material = await loadAgentPhoneQueuedLaunchMaterial(db, source);
+        const material = await set(loadAgentPhoneQueuedLaunchMaterial$, source);
         signal.throwIfAborted();
         return material
           ? {

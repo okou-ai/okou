@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   billingCheckoutContract,
   billingStatusContract,
@@ -14,13 +15,15 @@ import {
 import { mockNow } from "../../../lib/time.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   promptEvent,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const ENDPOINT = "https://www.okou.ai/api/events";
 const STRIPE_URL = "https://checkout.stripe.com/test/marketing-paywall";

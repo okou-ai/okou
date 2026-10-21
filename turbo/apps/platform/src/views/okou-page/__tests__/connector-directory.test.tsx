@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -15,13 +16,14 @@ import {
   noAuthMethod,
   httpConnector,
   ACME_CONNECTOR_ID,
-  installComposerConnectorFixture,
   SCOUT_AGENT_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
-import {
-  context,
-  findFastControl,
-} from "./chat-message-experience-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 test("Show builtin tool service details without HTTP permission controls", async () => {
   const user = userEvent.setup({ delay: null });

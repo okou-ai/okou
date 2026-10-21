@@ -20,17 +20,20 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
   connectedPersonalClaudeCodeProvider,
   connectedPersonalCodexProvider,
-  context,
+  createSidebarAccountHelpers,
   expectVisibleText,
   formatResetInTimeZone,
-  mockAdminAccountSidebar,
   mockBrowserTimeZone,
   openAccountMenu,
 } from "./sidebar-account-test-helpers.ts";
+
+const context = testContext();
+const { mockAdminAccountSidebar } = createSidebarAccountHelpers(context);
 
 test("Hide subscription usage when the account-menu feature is off", async () => {
   mockAdminAccountSidebar();

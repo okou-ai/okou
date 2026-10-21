@@ -641,6 +641,7 @@ function createRealtimeSubscriptionChannel(
         onResync,
       };
       subscriptions.set(callback, subscription);
+      // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: remove the failed subscription and its listener.
       await onRejection(
         // Registering the listener cannot fail on a transport condition;
         // waiting for `attached` is what makes the subscription live.
@@ -955,6 +956,7 @@ const initializeRealtime$ = command(
       { once: true },
     );
 
+    // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: reject subscribers waiting for a failed connection.
     const connected = await onRejection(
       set(connectRealtimeClient$, signal),
       rejectPendingSubscriptions,

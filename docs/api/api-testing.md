@@ -360,11 +360,11 @@ execute exactly the same files; there are no exported pricing/catalog writers
 or per-case seed options. It also migrates and seeds one PGlite,
 saves a checkpointed immutable snapshot, and provides its path to workers.
 The fixture caches the unpacked files and compiled program for subsequent cases.
-Worker setup prepares one untouched engine for the first case that selects
-isolation. That case takes sole ownership and closes it after its work; file
-teardown closes the engine if no case uses it. Later isolated cases create new
-engines. Every case has separate memory and writable filesystem copies; warming
-the physical database never creates a case's business state. Cases do not
+Worker setup only records the snapshot path. Each case that selects
+`isolatePg: true` creates its engine on demand and closes it after its work;
+files that never select isolation do not restore a snapshot or start an engine.
+Every isolated case has separate memory and writable filesystem copies;
+restoring the physical database never creates a case's business state. Cases do not
 repeat gzip/tar decoding, replay migrations, or reseed their database. The catalog seed
 publishes entries and their schema-version pointer in one atomic statement,
 inserting only a missing pointer and never replacing existing catalog authority.

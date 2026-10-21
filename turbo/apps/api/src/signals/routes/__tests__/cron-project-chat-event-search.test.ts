@@ -38,31 +38,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
   });
 
-  it("reports zero projection and convergence for an empty isolated queue", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronProjectChatEventSearchRoutes,
-      isolatePg: true,
-    });
-    mockEnv("CRON_SECRET", CRON_SECRET);
-
-    const response = await accept(
-      app(cronProjectChatEventSearchContract).project({
-        headers: { authorization: `Bearer ${CRON_SECRET}` },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      success: true,
-      threads: 0,
-      indexedEvents: 0,
-      deletedDocs: 0,
-      orphanedThreads: 0,
-      convergence: { eligibleThreads: 0, durableCaughtUpThreads: 0 },
-    });
-  });
-
   it("publishes indexed hits with canonical MCP Agent metadata and preserves Web results", async () => {
     // This is the operator index-publication boundary, not a user fixture that
     // privately drives indexing. All business data and observations use APIs.

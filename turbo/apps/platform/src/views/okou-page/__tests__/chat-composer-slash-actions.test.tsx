@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
 import {
   userTemplatesContract,
@@ -22,17 +23,18 @@ import {
 } from "../../../signals/chat-page/workflow-prompt-action.ts";
 import {
   AGENT_ID,
-  buildRunModel,
   composerWorkflow,
-  context,
   findComposerEditor,
-  mockAgent,
-  mockBillingCapabilities,
-  mockPersonalModelRoutes,
   tabByText,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+
+const context = testContext();
+const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+  createChatComposerHelpers(context);
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000930";
 const WORKFLOWS = ["axiom-red", "axiom-status", "axiom-traces"] as const;

@@ -1,5 +1,6 @@
 import {
   authorizeSiteRequest,
+  hostedSiteAuthCallback,
   hostedSiteAccessEnabled,
   withSiteAuthHeaders,
   withHostedSiteAccess,
@@ -1511,12 +1512,20 @@ export default {
     if (request.method === "OPTIONS") {
       return Promise.resolve(optionsResponse(request));
     }
-    return serveHostedSite(request, env, execution)
+    // The reserved callback never reaches publisher-controlled HTML, including
+    // missing/renamed Sites, storage outages and preparation-only configurations.
+    return hostedSiteAuthCallback(request, env)
+      .then((callback) => {
+        return callback ?? serveHostedSite(request, env, execution);
+      })
       .catch(() => {
         // A registry/policy/storage failure is unavailable, never anonymous access.
         return new Response("Artifact unavailable", {
           status: 503,
-          headers: { "Cache-Control": PRIVATE_NO_STORE_CACHE_CONTROL },
+          headers: {
+            "Cache-Control": PRIVATE_NO_STORE_CACHE_CONTROL,
+            "Referrer-Policy": "no-referrer",
+          },
         });
       })
       .then((response) => {

@@ -204,7 +204,7 @@ function observeConnectorConnectionMutation(
   return resolution;
 }
 
-function connectorConnectionSelection() {
+export function connectorConnectionSelection() {
   return {
     id: connectors.id,
     authMethod: connectors.authMethod,

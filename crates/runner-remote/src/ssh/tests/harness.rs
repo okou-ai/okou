@@ -694,10 +694,10 @@ pub(super) async fn respond(socket: &mut TcpStream, body: Value) -> io::Result<(
 pub(crate) fn params() -> Value {
     json!({"sshConnectionId":CONNECTION,"command":"printf test-command"})
 }
-pub(super) async fn request_frames(mut guest: DuplexStream, json: String) -> Vec<Value> {
+pub(super) async fn send_request(guest: &mut DuplexStream, json: &str) {
     guest.write_u32(json.len() as u32).await.unwrap();
     guest.write_all(json.as_bytes()).await.unwrap();
-    if serde_json::from_str::<Value>(&json)
+    if serde_json::from_str::<Value>(json)
         .ok()
         .is_some_and(|request| {
             request["method"]
@@ -705,10 +705,13 @@ pub(super) async fn request_frames(mut guest: DuplexStream, json: String) -> Vec
                 .is_some_and(|method| method.starts_with("vnc."))
         })
     {
-        Writer::input(&mut guest).send(&Frame::End).await.unwrap();
+        Writer::input(guest).send(&Frame::End).await.unwrap();
     } else {
         guest.shutdown().await.unwrap();
     }
+}
+pub(super) async fn request_frames(mut guest: DuplexStream, json: String) -> Vec<Value> {
+    send_request(&mut guest, &json).await;
     frames(guest).await
 }
 pub(super) async fn frames(mut guest: DuplexStream) -> Vec<Value> {

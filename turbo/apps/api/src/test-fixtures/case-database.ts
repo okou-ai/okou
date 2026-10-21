@@ -14,7 +14,6 @@ interface CaseDatabase {
 interface DatabaseState {
   snapshotPath: string;
   current?: CaseDatabase;
-  prepared?: PgliteTestDatabase;
 }
 
 // Cases in a file run serially. Database selection needs no async-local scope.
@@ -22,21 +21,8 @@ const state = singleton((): DatabaseState => {
   return { snapshotPath: "" };
 });
 
-export function configureCaseDatabase(
-  snapshotPath: string,
-  prepared: PgliteTestDatabase,
-): void {
-  const scope = state();
-  scope.snapshotPath = snapshotPath;
-  scope.prepared = prepared;
-}
-
-/** Worker setup owns the baseline until an isolated case takes it once. */
-export async function closePreparedCaseDatabase(): Promise<void> {
-  const scope = state();
-  const prepared = scope.prepared;
-  scope.prepared = undefined;
-  await prepared?.close();
+export function configureCaseDatabase(snapshotPath: string): void {
+  state().snapshotPath = snapshotPath;
 }
 
 /** testContext owns disposal after request cleanup and tracked background work. */
@@ -71,11 +57,7 @@ export async function initializeCaseDatabase(): Promise<void> {
     throw new Error("The API test database snapshot was not provided");
   }
   if (!current.isolated) {
-    const prepared = scope.prepared;
-    scope.prepared = undefined;
-    current.isolated = prepared
-      ? Promise.resolve(prepared)
-      : createPgliteDatabase(snapshotPath);
+    current.isolated = createPgliteDatabase(snapshotPath);
   }
   current.ready = await current.isolated;
 }

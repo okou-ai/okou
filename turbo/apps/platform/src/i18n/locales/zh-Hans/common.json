@@ -512,8 +512,7 @@
         "websiteAria": "显示网站成果"
       },
       "kindIcon": "{{kind}}成果",
-      "loading": "正在加载成果",
-      "retry": "重试"
+      "loading": "正在加载成果"
     },
     "fileBadges": {
       "artwork": "美术",
@@ -610,6 +609,7 @@
     },
     "sharing": {
       "accessLabel": "谁可以访问",
+      "copied": "已复制",
       "copyLink": "复制链接",
       "loadFailed": "无法加载权限",
       "loadingPermissions": "正在加载权限",
@@ -2097,6 +2097,7 @@
       "received": "收到",
       "running": "运行中",
       "sent": "发出",
+      "toggleMessages": "与 {{title}} 的消息往来",
       "unavailable": "不可访问",
       "untitled": "未命名"
     },
@@ -5323,10 +5324,6 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
-        "resources": {
-          "description": "有足够空间时，在对话旁显示该对话的成果和关联对话。",
-          "title": "自动打开资源面板"
-        },
         "sectionTitle": "聊天"
       },
       "debug": {

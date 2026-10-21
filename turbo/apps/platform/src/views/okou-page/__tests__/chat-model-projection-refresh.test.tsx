@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type {
   AvailableRunModel,
   ModelProviderResponse,
@@ -21,12 +22,15 @@ import {
   openModelPanel,
 } from "./chat-model-panel-test-helpers.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   NEW_CHAT_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
+
 const MODEL = "gpt-5.6-sol";
 
 function runModelFixture(

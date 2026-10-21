@@ -30,7 +30,7 @@ import {
   sendAgentPhoneMessage,
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -46,7 +46,7 @@ import {
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
   resolveAgentPhoneConversationVisibilityRecipients$,
-  resolveOrgDefaultComposeId,
+  resolveOrgDefaultComposeId$,
   storeOutboundAgentPhoneMessage$,
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
@@ -469,40 +469,43 @@ export const storeInboundAgentPhoneMessage$ = command(
   },
 );
 
-async function resolveAgentPhoneAgent(
-  db: ReadonlyDb,
-  userLink: AgentPhoneUserLink,
-): Promise<WorkspaceAgent | undefined> {
-  const composeId = await resolveOrgDefaultComposeId(db, userLink.orgId);
-  if (!composeId) {
-    return undefined;
-  }
+const resolveAgentPhoneAgent$ = command(
+  async (
+    { get, set },
+    userLink: AgentPhoneUserLink,
+  ): Promise<WorkspaceAgent | undefined> => {
+    const db = get(db$);
+    const composeId = await set(resolveOrgDefaultComposeId$, userLink.orgId);
+    if (!composeId) {
+      return undefined;
+    }
 
-  return (
-    (await (async (): Promise<WorkspaceAgent | null> => {
-      const [row] = await db
-        .select({
-          composeId: agents.id,
-          name: agents.name,
-          displayName: agents.displayName,
-        })
-        .from(agents)
-        .where(eq(agents.id, composeId))
-        .limit(1);
+    return (
+      (await (async (): Promise<WorkspaceAgent | null> => {
+        const [row] = await db
+          .select({
+            composeId: agents.id,
+            name: agents.name,
+            displayName: agents.displayName,
+          })
+          .from(agents)
+          .where(eq(agents.id, composeId))
+          .limit(1);
 
-      if (!row) {
-        return null;
-      }
+        if (!row) {
+          return null;
+        }
 
-      return {
-        composeId: row.composeId,
-        agentId: row.composeId,
-        name: row.name,
-        displayName: row.displayName,
-      };
-    })()) ?? undefined
-  );
-}
+        return {
+          composeId: row.composeId,
+          agentId: row.composeId,
+          name: row.name,
+          displayName: row.displayName,
+        };
+      })()) ?? undefined
+    );
+  },
+);
 
 export function agentPhoneFilenameFromMediaUrl(
   mediaUrl: string,
@@ -571,95 +574,98 @@ function formatAgentPhoneFileForContext(params: {
   ].join("\n");
 }
 
-async function fetchAgentPhoneContext(
-  db: ReadonlyDb,
-  params: {
-    readonly userLinkId: string;
-    readonly userId: string;
-    readonly orgId: string;
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
-    readonly conversationId: string | null;
-    readonly groupId: string | null;
-    readonly agentphoneAgentId: string;
-    readonly isGroup: boolean;
-    readonly recentHistory: readonly AgentPhoneRecentHistoryMessage[];
-    readonly currentMessageId?: string;
-  },
-): Promise<{ readonly executionContext: string }> {
-  const phoneHandle = normalizeAgentPhoneHandle(
-    params.phoneHandle,
-    params.channel,
-  );
-  const providerContext = params.isGroup
-    ? ""
-    : formatAgentPhoneRecentHistoryContext(
-        params.recentHistory,
-        params.currentMessageId,
-        false,
-      );
-  if (providerContext) {
-    return { executionContext: providerContext };
-  }
+const fetchAgentPhoneContext$ = command(
+  async (
+    { get },
+    params: {
+      readonly userLinkId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly phoneHandle: string;
+      readonly channel: AgentPhoneChannel;
+      readonly conversationId: string | null;
+      readonly groupId: string | null;
+      readonly agentphoneAgentId: string;
+      readonly isGroup: boolean;
+      readonly recentHistory: readonly AgentPhoneRecentHistoryMessage[];
+      readonly currentMessageId?: string;
+    },
+  ): Promise<{ readonly executionContext: string }> => {
+    const db = get(db$);
+    const phoneHandle = normalizeAgentPhoneHandle(
+      params.phoneHandle,
+      params.channel,
+    );
+    const providerContext = params.isGroup
+      ? ""
+      : formatAgentPhoneRecentHistoryContext(
+          params.recentHistory,
+          params.currentMessageId,
+          false,
+        );
+    if (providerContext) {
+      return { executionContext: providerContext };
+    }
 
-  const messages =
-    params.isGroup && params.groupId
-      ? await db
-          .select({
-            messageId: agentphoneMessages.agentphoneMessageId,
-            body: agentphoneMessages.body,
-            mediaUrl: agentphoneMessages.mediaUrl,
-            isBot: agentphoneMessages.isBot,
-            direction: agentphoneMessages.direction,
-            fromNumber: agentphoneMessages.fromNumber,
-          })
-          .from(agentphoneMessages)
-          .innerJoin(
-            agentphoneMessageVisibility,
-            eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
-          )
-          .where(
-            and(
-              eq(
-                agentphoneMessages.agentphoneAgentId,
-                params.agentphoneAgentId,
+    const messages =
+      params.isGroup && params.groupId
+        ? await db
+            .select({
+              messageId: agentphoneMessages.agentphoneMessageId,
+              body: agentphoneMessages.body,
+              mediaUrl: agentphoneMessages.mediaUrl,
+              isBot: agentphoneMessages.isBot,
+              direction: agentphoneMessages.direction,
+              fromNumber: agentphoneMessages.fromNumber,
+            })
+            .from(agentphoneMessages)
+            .innerJoin(
+              agentphoneMessageVisibility,
+              eq(agentphoneMessageVisibility.messageId, agentphoneMessages.id),
+            )
+            .where(
+              and(
+                eq(
+                  agentphoneMessages.agentphoneAgentId,
+                  params.agentphoneAgentId,
+                ),
+                eq(agentphoneMessages.groupId, params.groupId),
+                eq(agentphoneMessageVisibility.orgId, params.orgId),
+                eq(agentphoneMessageVisibility.userId, params.userId),
               ),
-              eq(agentphoneMessages.groupId, params.groupId),
-              eq(agentphoneMessageVisibility.orgId, params.orgId),
-              eq(agentphoneMessageVisibility.userId, params.userId),
-            ),
-          )
-          .orderBy(desc(agentphoneMessages.receivedAt))
-          .limit(MAX_CONTEXT_MESSAGES)
-      : await db
-          .select({
-            messageId: agentphoneMessages.agentphoneMessageId,
-            body: agentphoneMessages.body,
-            mediaUrl: agentphoneMessages.mediaUrl,
-            isBot: agentphoneMessages.isBot,
-            direction: agentphoneMessages.direction,
-            fromNumber: agentphoneMessages.fromNumber,
-          })
-          .from(agentphoneMessages)
-          .where(
-            and(
-              eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
-              eq(agentphoneMessages.phoneHandle, phoneHandle),
-              isNull(agentphoneMessages.groupId),
-            ),
-          )
-          .orderBy(desc(agentphoneMessages.createdAt))
-          .limit(MAX_CONTEXT_MESSAGES);
+            )
+            .orderBy(desc(agentphoneMessages.receivedAt))
+            .limit(MAX_CONTEXT_MESSAGES)
+        : await db
+            .select({
+              messageId: agentphoneMessages.agentphoneMessageId,
+              body: agentphoneMessages.body,
+              mediaUrl: agentphoneMessages.mediaUrl,
+              isBot: agentphoneMessages.isBot,
+              direction: agentphoneMessages.direction,
+              fromNumber: agentphoneMessages.fromNumber,
+            })
+            .from(agentphoneMessages)
+            .where(
+              and(
+                eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
+                eq(agentphoneMessages.phoneHandle, phoneHandle),
+                isNull(agentphoneMessages.groupId),
+              ),
+            )
+            .orderBy(desc(agentphoneMessages.createdAt))
+            .limit(MAX_CONTEXT_MESSAGES);
 
-  return {
-    executionContext: formatAgentPhoneStoredContext({
-      messages,
-      currentMessageId: params.currentMessageId,
-      fallbackSender: phoneHandle,
-      isGroup: params.isGroup,
-    }),
-  };
-}
+    return {
+      executionContext: formatAgentPhoneStoredContext({
+        messages,
+        currentMessageId: params.currentMessageId,
+        fallbackSender: phoneHandle,
+        isGroup: params.isGroup,
+      }),
+    };
+  },
+);
 
 function formatAgentPhoneStoredContext(params: {
   readonly messages: readonly {
@@ -1441,7 +1447,6 @@ export const handleAgentPhoneMessage$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     if (shouldIgnoreAgentPhoneGroupMessage(params.event)) {
       return;
     }
@@ -1470,7 +1475,7 @@ export const handleAgentPhoneMessage$ = command(
       return;
     }
 
-    const agent = await resolveAgentPhoneAgent(db, userLink);
+    const agent = await set(resolveAgentPhoneAgent$, userLink);
     signal.throwIfAborted();
     if (!agent) {
       await set(
@@ -1488,22 +1493,23 @@ export const handleAgentPhoneMessage$ = command(
     const isGroup = isAgentPhoneGroupEvent(params.event);
     const rootMessageId = agentPhoneChatRouteRootMessageId(params.event);
     const userLinkId = userLink.id;
+    const contextRead = set(fetchAgentPhoneContext$, {
+      userLinkId,
+      userId: userLink.userId,
+      orgId: userLink.orgId,
+      phoneHandle: params.event.fromNumber,
+      channel: params.event.channel,
+      conversationId: params.event.conversationId,
+      groupId: params.event.groupId,
+      agentphoneAgentId: params.event.agentphoneAgentId,
+      isGroup,
+      recentHistory: params.event.recentHistory,
+      currentMessageId: params.event.messageId,
+    });
     const { executionContext } = await loadOptionalChatEnrichment(
       "agentphone",
       () => {
-        return fetchAgentPhoneContext(db, {
-          userLinkId,
-          userId: userLink.userId,
-          orgId: userLink.orgId,
-          phoneHandle: params.event.fromNumber,
-          channel: params.event.channel,
-          conversationId: params.event.conversationId,
-          groupId: params.event.groupId,
-          agentphoneAgentId: params.event.agentphoneAgentId,
-          isGroup,
-          recentHistory: params.event.recentHistory,
-          currentMessageId: params.event.messageId,
-        });
+        return contextRead;
       },
       () => {
         return { executionContext: "" };

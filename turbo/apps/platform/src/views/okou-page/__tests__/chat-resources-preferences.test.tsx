@@ -1,16 +1,21 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
+  createChatResourcesHelpers,
   resourceButton,
   resourceState,
-  setupResources,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
+const { setupResources, recordPreferenceUpdates } =
+  createChatResourcesHelpers(context);
 
 test("Keep a manual close while the available gutter narrows and widens again", async () => {
   const resize = await setupResources();
@@ -62,36 +67,44 @@ test("Keep the existing artifact entry when the rollout switch is off", async ()
   expect(all).toHaveAccessibleName("Artifacts");
 });
 
-test("Turn automatic resources off from Chat settings", async () => {
-  await setupPage({
-    context,
-    path: "/?settings=chat",
-    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
-  });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  const toggle = await within(dialog).findByRole("switch", {
-    name: "Open resources automatically",
-  });
+test("Apply a second press while the first save is still in flight", async () => {
+  const saving = createDeferredPromise<void>(context.signal);
+  const updates = recordPreferenceUpdates(false, saving.promise);
+  await setupResources();
+  await screen.findByTestId("chat-thread-header-title");
+  click(resourceButton());
   await waitFor(() => {
-    expect(toggle).toBeChecked();
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  click(toggle);
+  expect(updates).toContainEqual({ chatResourcesEnabledByDefault: true });
+  expect(resourceButton()).toBeEnabled();
+  click(resourceButton());
   await waitFor(() => {
-    expect(
-      within(dialog).getByRole("switch", {
-        name: "Open resources automatically",
-      }),
-    ).not.toBeChecked();
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
+  saving.resolve();
+  await waitFor(() => {
+    expect(updates.at(-1)).toStrictEqual({
+      chatResourcesEnabledByDefault: false,
+    });
+  });
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
 });
 
-test("Offer the automatic resources setting only with the rollout switch", async () => {
-  await setupPage({ context, path: "/?settings=chat" });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  await within(dialog).findByRole("switch", { name: "Cloud browser" });
-  expect(
-    within(dialog).queryByRole("switch", {
-      name: "Open resources automatically",
-    }),
-  ).not.toBeInTheDocument();
+test("Roll back the panel and explain a failed preference save", async () => {
+  context.mocks.api(userPreferencesContract.update, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Preference update failed" },
+    });
+  });
+  await setupResources();
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  click(resourceButton());
+  await screen.findByText("Preference update failed");
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  expect(screen.getAllByText("Preference update failed")).toHaveLength(1);
 });

@@ -1,3 +1,4 @@
+import { connectorDirectoryPageSignals } from "../../signals/okou-page/settings/connector-directory-page.ts";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import {
   GuidedRemoteControlPanel,
@@ -215,11 +216,8 @@ function LegacyPrivateNetworkPanel() {
   );
 }
 
-export function RemoteControlPanel({
-  vncEnabled,
-}: {
-  readonly vncEnabled: boolean;
-}) {
+export function RemoteControlPanel() {
+  const vncEnabled = useGet(connectorDirectoryPageSignals.vncEnabled$);
   const guided = useGet(remoteControlGuidedEnabled$);
   return guided ? (
     <GuidedRemoteControlPanel vncEnabled={vncEnabled} />

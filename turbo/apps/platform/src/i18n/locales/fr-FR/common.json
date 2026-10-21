@@ -528,8 +528,7 @@
         "websiteAria": "Afficher les artéfacts du site web"
       },
       "kindIcon": "Artéfact {{kind}}",
-      "loading": "Chargement des artéfacts",
-      "retry": "Réessayer"
+      "loading": "Chargement des artéfacts"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -629,6 +628,7 @@
     },
     "sharing": {
       "accessLabel": "Qui peut y accéder",
+      "copied": "Copié",
       "copyLink": "Copier le lien",
       "loadFailed": "Impossible de charger les autorisations",
       "loadingPermissions": "Chargement des autorisations",
@@ -2142,6 +2142,7 @@
       "received": "Reçu",
       "running": "En cours",
       "sent": "Envoyé",
+      "toggleMessages": "Messages avec {{title}}",
       "unavailable": "Indisponible",
       "untitled": "Sans titre"
     },
@@ -5402,10 +5403,6 @@
           "title": "Modèle par défaut"
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
-        "resources": {
-          "description": "Affiche les artefacts et chats associés à côté de la conversation lorsqu’il y a de la place.",
-          "title": "Ouvrir les ressources automatiquement"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

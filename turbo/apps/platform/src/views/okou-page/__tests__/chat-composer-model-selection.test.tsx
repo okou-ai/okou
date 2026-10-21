@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   chatThreadsContract,
   type ChatThreadEvent,
@@ -34,21 +35,21 @@ import {
 import { triggerAblyEvent } from "../../../mocks/ably.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   NEW_CHAT_PATH,
   readyChat,
   RUN_PATH,
   RUN_THREAD_ID,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
-import {
-  buildRunModel,
-  composerModelTrigger,
-} from "./chat-composer-test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 

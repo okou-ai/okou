@@ -14,8 +14,10 @@ interface RuleDocs {
   requiresTypeChecking?: boolean;
 }
 
-export const createRule = ESLintUtils.RuleCreator<RuleDocs>(
-  (name) => `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`,
+export const createRule = ESLintUtils.RuleCreator<RuleDocs>((name) =>
+  name === "no-on-rejection"
+    ? "https://github.com/okou-ai/okou/blob/main/docs/app/signals/onRejection.md"
+    : `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`,
 );
 
 export interface TypeRefPath {

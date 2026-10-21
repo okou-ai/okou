@@ -69,6 +69,10 @@ elif command == 'xcodebuild':
         mark('build-started')
         if scenario == 'build-failure':
             sys.exit(23)
+        products = pathlib.Path(args[args.index('-derivedDataPath') + 1]) / 'Build/Products'
+        products.mkdir(parents=True)
+        if scenario != 'missing-products':
+            (products / 'Okou_iphonesimulator27.1-arm64.xctestrun').write_text('built tests')
         mark('build-finished')
     elif 'test-without-building' in args:
         if not (state / 'build-finished').exists():
@@ -77,6 +81,9 @@ elif command == 'xcodebuild':
             sys.exit('Tests started before simulator readiness')
         if (state / 'tests-ran').exists():
             sys.exit('Native tests ran twice')
+        specification = pathlib.Path(args[args.index('-xctestrun') + 1])
+        if specification.read_text() != 'built tests':
+            sys.exit('Tests require the current build specification')
         mark('tests-ran')
     else:
         raise ValueError(args)
@@ -97,6 +104,7 @@ class CIProcessTests(unittest.TestCase):
         scripts.mkdir(parents=True)
         for name in (
             "ci-test.sh",
+            "prepare-package-sources.py",
             "ci-package-test.sh",
             "preboot-simulator.py",
             "run-ci-tests.sh",
@@ -152,7 +160,9 @@ class CIProcessTests(unittest.TestCase):
         )
         self.assertTrue((self.state / "tests-ran").exists())
 
-    def test_boot_and_resolution_overlap_before_compilation_and_the_complete_suite(self):
+    def test_boot_and_resolution_overlap_before_compilation_and_the_complete_suite(
+        self,
+    ):
         packages = self.invoke("ci-package-test.sh")
         self.assertEqual(packages.returncode, 0, packages.stderr)
         result = self.invoke()
@@ -185,6 +195,13 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 23, result.stderr)
         self.assertFalse((self.state / "tests-ran").exists())
 
+    def test_missing_build_products_block_native_tests(self):
+        self.env["CI_PROCESS_SCENARIO"] = "missing-products"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Expected exactly one built test specification", result.stderr)
+        self.assertFalse((self.state / "tests-ran").exists())
+
     def test_cancellation_retires_both_owned_process_groups(self):
         self.env["CI_PROCESS_SCENARIO"] = "cancel"
         with subprocess.Popen(
@@ -210,6 +227,22 @@ class CIProcessTests(unittest.TestCase):
         result = self.invoke("ci-test.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_complete_suite()
+
+    def test_cache_preparation_without_prefetched_sources_on_system_bash(self):
+        self.env["CI_PROCESS_SCENARIO"] = "manual"
+        self.env["IOS_BUILD_CACHE_ENABLED"] = "true"
+        self.env.pop("IOS_PACKAGE_SOURCES_DIR", None)
+        result = subprocess.run(
+            ["/bin/bash", str(self.repo / "ios/scripts/ci-test.sh"), "prepare"],
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=8,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "prepare-finished").exists())
 
 
 if __name__ == "__main__":

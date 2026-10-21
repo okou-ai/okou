@@ -1,4 +1,5 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import { HOSTED_SITE_AUTHORIZATION_PATH } from "@okouai/api-contracts/contracts/hosted-site-access";
 
 export const ROUTES = {
   home: "/",
@@ -67,6 +68,7 @@ export const ROUTES = {
   signUp: "/sign-up",
   signUpCatchAll: "/sign-up{/*path}",
   oauthConsent: "/oauth-consent",
+  hostedSiteAuthorize: HOSTED_SITE_AUTHORIZATION_PATH,
   signInToken: "/sign-in-token",
   lab: "/_/lab",
   exportData: "/export",

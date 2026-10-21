@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -5,10 +6,11 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  context,
-  installMessageExperienceChat,
-} from "./chat-message-experience-test-helpers.ts";
+import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
 
 const CREATED_AT = "2026-08-20T12:00:00.000Z";
 const RUN_ID = "d0000000-0000-4000-a000-000000000071";

@@ -1,6 +1,7 @@
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
@@ -4429,6 +4430,107 @@ export function registerFeishuIntegrationTests(
             return message.kind === "reply";
           }),
         ).toHaveLength(1);
+      });
+
+      it("keeps a failed credential preparation disconnected and permits a fresh authorization", async () => {
+        const fixture = await setupFeishuInstallationFixture();
+        const connectUrl = await requestFeishuConnectUrl(fixture);
+        const managedConnector = requireValue(
+          (
+            await own(() => {
+              return authOrgApi.listCustomConnectors(fixture.actor);
+            })
+          ).connectors.find((connector) => {
+            return connector.permissionBundleRef === "builtin:feishu@1";
+          }),
+          "Expected the managed Feishu connector",
+        );
+        const connectApp = createAppWithRoutes({
+          signal: context.signal,
+          routes: feishuBrowserConnectRoutes,
+        });
+        const started = await own(() => {
+          return connectApp.request("/api/feishu/connect", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              cookie: "__session=opaque",
+            },
+            body: JSON.stringify(feishuConnectBody(connectUrl)),
+          });
+        });
+        const authorizationUrl =
+          await feishuAuthorizationUrlFromResponse(started);
+        const state = requireValue(
+          authorizationUrl.searchParams.get("state"),
+          "Expected OAuth state",
+        );
+        fixtureState.oauthUserOpenId = "ou_feishu_user";
+        let failPreparation = true;
+        useSecretKmsProbe(() => {
+          return failPreparation
+            ? Promise.reject(new Error("Credential encryption unavailable"))
+            : undefined;
+        });
+        const oauthApp = createAppWithRoutes({
+          signal: context.signal,
+          routes: feishuOauthRoutes,
+        });
+        const failed = await own(() => {
+          return oauthApp.request(
+            `${feishuOauthContract.callback.path}?${new URLSearchParams({ code: "failed-preparation", responseMode: "json", state })}`,
+          );
+        });
+        failPreparation = false;
+        expect(failed.status).toBe(500);
+        const client = feishuConnectClient(platform);
+        const disconnected = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(disconnected.body.isConnected).toBeFalsy();
+        const grantsClient = setupApp({ context, routes: agentsRoutes })(
+          agentCustomConnectorsContract,
+        );
+        const ungranted = await own(() => {
+          return accept(
+            grantsClient.get({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { id: fixture.defaultAgentId },
+            }),
+            [200],
+          );
+        });
+        expect(ungranted.body.grants).not.toContainEqual(
+          expect.objectContaining({ customConnectorId: managedConnector.id }),
+        );
+        await connectFixtureUser(fixture);
+        const connected = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(connected.body.isConnected).toBeTruthy();
+        const granted = await own(() => {
+          return accept(
+            grantsClient.get({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { id: fixture.defaultAgentId },
+            }),
+            [200],
+          );
+        });
+        expect(granted.body.grants).toContainEqual({
+          customConnectorId: managedConnector.id,
+          permissionNames: [],
+        });
       });
 
       it("preserves agent access and retries welcome when reconnecting", async () => {

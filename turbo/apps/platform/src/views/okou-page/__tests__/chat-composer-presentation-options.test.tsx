@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
@@ -13,15 +14,16 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
-  buildRunModel,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-  context,
   findComposerEditor,
-  mockAgent,
-  mockBillingCapabilities,
-  mockPersonalModelRoutes,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+  createChatComposerHelpers(context);
 
 interface SubmittedMessage {
   readonly userMessage?: UserMessageDocument;

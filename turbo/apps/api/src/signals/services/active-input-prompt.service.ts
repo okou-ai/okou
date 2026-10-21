@@ -22,7 +22,7 @@ import type { SelectResultFields } from "drizzle-orm/query-builders/select.types
 
 import type { Db } from "../external/db";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
-import { loadAgentPhoneQueuedLaunchMaterial } from "./agentphone-queued-launch-context.service";
+import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
   feishuQueuedLaunchContextReadPlan,
   feishuQueuedLaunchMaterialFromContext,
@@ -285,7 +285,7 @@ const loadIntegrationPromptMaterial$ = command(
         return await set(loadTelegramQueuedLaunchMaterial$, loaderArgs);
       }
       case "agentphone": {
-        return await loadAgentPhoneQueuedLaunchMaterial(db, loaderArgs);
+        return await set(loadAgentPhoneQueuedLaunchMaterial$, loaderArgs);
       }
       case "web":
       case "automation":

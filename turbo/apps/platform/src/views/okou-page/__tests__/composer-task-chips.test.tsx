@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -20,11 +21,13 @@ import {
 import {
   AGENT_ID,
   THREAD_ID,
-  context,
   createUploadedTemplate,
-  mockPresentationTemplateLibrary,
-  mockTemplateChat,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockPresentationTemplateLibrary, mockTemplateChat } =
+  createTemplateGalleryHelpers(context);
 
 function button(
   label: string,

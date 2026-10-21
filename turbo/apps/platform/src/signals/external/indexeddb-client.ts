@@ -46,6 +46,7 @@ export async function runIndexedDbTransaction<
     template: details.template,
     transaction_mode: details.transaction_mode,
   } satisfies ClientTelemetryOperation;
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: transaction-creation telemetry.
   const transaction = await onRejection(createTransaction, (error) => {
     recordClientTelemetry(
       creationMeasurement,
@@ -61,6 +62,7 @@ export async function runIndexedDbTransaction<
     return request;
   };
 
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: observe physical transaction completion and failure telemetry.
   const result = await onRejection(
     (async () => {
       const result = await execute(transaction, trackRequest);

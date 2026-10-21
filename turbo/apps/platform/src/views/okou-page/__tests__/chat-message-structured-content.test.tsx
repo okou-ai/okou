@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -8,12 +9,15 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   ADA_AGENT_ID,
-  context,
   findFastControl,
-  installMessageExperienceChat,
   MESSAGE_EXPERIENCE_AGENT_ID,
   SOURCE_AGENT_ID,
+  createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
 
 const CREATED_AT = "2026-08-20T12:00:00.000Z";
 const SOURCE_THREAD_ID = "b0000000-0000-4000-a000-000000000052";

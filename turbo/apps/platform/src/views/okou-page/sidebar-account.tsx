@@ -701,24 +701,18 @@ export function useAccountActions(
   };
 }
 
-export function useAccountCodexReset(
+function useAccountCodexResetAction(
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey,
 ) {
   const [resetLoadable, confirmReset] = useLoadableSet(
     confirmAccountMenuCodexUsageReset$,
   );
-  const resetDialog = useGet(accountMenuCodexResetDialog$);
-  const setResetDialog = useSet(setAccountMenuCodexResetDialog$);
   const actionLoadable = useLoadable(personalActionPromise$);
   const pageSignal = useGet(pageSignal$);
   const actionPending =
     actionLoadable.state === "loading" || resetLoadable.state === "loading";
   const resetError =
     resetLoadable.state === "hasError" ? String(resetLoadable.error) : null;
-
-  const handleOpenCodexReset = (resetCredits: number | null) => {
-    setResetDialog({ open: true, resetCredits });
-  };
 
   const handleConfirmCodexReset = () => {
     detach(
@@ -727,6 +721,18 @@ export function useAccountCodexReset(
     );
   };
 
+  return { resetError, actionPending, handleConfirmCodexReset };
+}
+
+export function useAccountCodexReset(
+  subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey,
+) {
+  const action = useAccountCodexResetAction(subscriptionRowsCacheKey);
+  const resetDialog = useGet(accountMenuCodexResetDialog$);
+  const setResetDialog = useSet(setAccountMenuCodexResetDialog$);
+  const handleOpenCodexReset = (resetCredits: number | null) => {
+    setResetDialog({ open: true, resetCredits });
+  };
   const handleCodexResetOpenChange = (open: boolean) => {
     setResetDialog({
       ...resetDialog,
@@ -735,13 +741,33 @@ export function useAccountCodexReset(
   };
 
   return {
+    ...action,
     resetDialog,
-    resetError,
-    actionPending,
     handleOpenCodexReset,
-    handleConfirmCodexReset,
     handleCodexResetOpenChange,
   };
+}
+
+function AccountCodexResetDialog({
+  actionPending,
+  resetError,
+  handleConfirmCodexReset,
+}: ReturnType<typeof useAccountCodexResetAction>) {
+  const resetDialog = useGet(accountMenuCodexResetDialog$);
+  const setResetDialog = useSet(setAccountMenuCodexResetDialog$);
+
+  return (
+    <CodexResetUsageDialog
+      open={resetDialog.open}
+      resetCredits={resetDialog.resetCredits}
+      resetting={actionPending}
+      error={resetError}
+      onOpenChange={(open) => {
+        setResetDialog({ ...resetDialog, open });
+      }}
+      onConfirm={handleConfirmCodexReset}
+    />
+  );
 }
 
 export function AccountDropdown({
@@ -775,14 +801,13 @@ export function AccountDropdown({
     handleOpenSettings,
     handleOpenCreditBalance,
   } = useAccountActions(profile, onAccountAction);
-  const {
-    resetDialog,
-    resetError,
-    actionPending,
-    handleOpenCodexReset,
-    handleConfirmCodexReset,
-    handleCodexResetOpenChange,
-  } = useAccountCodexReset(subscriptionRowsCacheKey);
+  // Keep the single action owner outside popup presence so closing a menu or
+  // dialog cannot reset its busy/error state while the operation is in flight.
+  const resetAction = useAccountCodexResetAction(subscriptionRowsCacheKey);
+  const setResetDialog = useSet(setAccountMenuCodexResetDialog$);
+  const handleOpenCodexReset = (resetCredits: number | null) => {
+    setResetDialog({ open: true, resetCredits });
+  };
   const reloadSubscriptions = useSet(reloadAccountMenuSubscriptionUsageRows$);
   const reloadCreditBalances = useSet(reloadAccountMenuCreditBalances$);
   const pageSignal = useGet(pageSignal$);
@@ -843,7 +868,7 @@ export function AccountDropdown({
             <AccountUsageGroup
               onOpenCreditBalance={handleOpenCreditBalance}
               onResetCodexUsage={handleOpenCodexReset}
-              resetPending={actionPending}
+              resetPending={resetAction.actionPending}
               subscriptionRowsCacheKey={subscriptionRowsCacheKey}
               subscriptionsEnabled={subscriptionsEnabled}
             />
@@ -865,16 +890,7 @@ export function AccountDropdown({
           <SignOutItem onAccountAction={handleAccountAction} />
         </DropdownMenuContent>
       </DropdownMenu>
-      {renderCodexResetDialog && (
-        <CodexResetUsageDialog
-          open={resetDialog.open}
-          resetCredits={resetDialog.resetCredits}
-          resetting={actionPending}
-          error={resetError}
-          onOpenChange={handleCodexResetOpenChange}
-          onConfirm={handleConfirmCodexReset}
-        />
-      )}
+      {renderCodexResetDialog && <AccountCodexResetDialog {...resetAction} />}
     </>
   );
 }

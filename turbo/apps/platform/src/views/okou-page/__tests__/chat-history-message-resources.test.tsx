@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -7,11 +8,14 @@ import { mockPrivateUrlSequence } from "./chat-attachment-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   ADA_AGENT_ID,
-  context,
   findFastControl,
-  installMessageExperienceChat,
   queryFastControl,
+  createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
 
 test("Loading older messages restores agent references and attachment navigation", async () => {
   const firstImageUrl = "https://example.com/history-first.png";

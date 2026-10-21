@@ -528,8 +528,7 @@
         "websiteAria": "Mostrar artefatos de site"
       },
       "kindIcon": "Artefato do tipo {{kind}}",
-      "loading": "Carregando artefatos",
-      "retry": "Tentar novamente"
+      "loading": "Carregando artefatos"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -629,6 +628,7 @@
     },
     "sharing": {
       "accessLabel": "Quem pode acessar",
+      "copied": "Copiado",
       "copyLink": "Copiar link",
       "loadFailed": "Não foi possível carregar as permissões",
       "loadingPermissions": "Carregando permissões",
@@ -2142,6 +2142,7 @@
       "received": "Recebido",
       "running": "Em execução",
       "sent": "Enviado",
+      "toggleMessages": "Mensagens com {{title}}",
       "unavailable": "Indisponível",
       "untitled": "Sem título"
     },
@@ -5402,10 +5403,6 @@
           "title": "Modelo padrão"
         },
         "description": "Escolha os padrões para novos chats e como as mensagens são enviadas.",
-        "resources": {
-          "description": "Mostra os artefatos e chats relacionados ao lado da conversa quando há espaço.",
-          "title": "Abrir recursos automaticamente"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

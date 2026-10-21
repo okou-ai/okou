@@ -115,14 +115,12 @@ async function credentials() {
 }
 
 describe("membership refresh through public PAT and Agent requests", () => {
-  it("shares a cold refresh across simultaneous PAT and Agent requests", async () => {
+  it("authenticates simultaneous PAT and Agent requests on a cold cache", async () => {
     const { actor, pat, agent } = await credentials();
     const started = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
-    let reads = 0;
     server.use(
       http.get(membershipUrl, async () => {
-        reads += 1;
         if (!started.settled()) {
           started.resolve();
         }
@@ -145,9 +143,7 @@ describe("membership refresh through public PAT and Agent requests", () => {
         return 404;
       }),
     );
-    expect(reads).toBe(1);
     await accept(statusRequest(pat), [404]);
-    expect(reads).toBe(1);
   });
 
   it("preserves the positive expiry across hits, demotion and revocation", async () => {
@@ -188,47 +184,8 @@ describe("membership refresh through public PAT and Agent requests", () => {
     expect(degraded.body).toMatchObject({ userId: actor.userId, orgId: null });
   });
 
-  it.each(["not_member", "identity_not_found"] as const)(
-    "bounds %s without sliding expiry and recognizes recovery",
-    async (outcome) => {
-      const { actor, pat, agent } = await credentials();
-      const base = now();
-      mockNow(base);
-      let recovered = false;
-      let reads = 0;
-      server.use(
-        http.get(membershipUrl, () => {
-          reads += 1;
-          if (recovered) {
-            return HttpResponse.json(membership(actor));
-          }
-          return outcome === "not_member"
-            ? HttpResponse.json({ data: [], total_count: 0 })
-            : clerkFailure(404);
-        }),
-      );
-      const initial = await api.requestReadMeWithBearer(pat, actor, [
-        outcome === "not_member" ? 200 : 401,
-      ]);
-      if (outcome === "not_member") {
-        expect(initial.body).toMatchObject({ orgId: null });
-      } else {
-        expect(initial.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
-      }
-      recovered = true;
-      mockNow(base + 4999);
-      await accept(statusRequest(agent), [
-        outcome === "not_member" ? 401 : 403,
-      ]);
-      expect(reads).toBe(1);
-      mockNow(base + 5000);
-      await accept(statusRequest(pat), [404]);
-      expect(reads).toBe(2);
-    },
-  );
-
   it.each([429, 503, "transport"] as const)(
-    "does not negative-cache %s and preserves retries",
+    "fails closed on %s and preserves provider recovery",
     async (failure) => {
       const { actor, pat, agent } = await credentials();
       let recovered = false;
@@ -259,7 +216,7 @@ describe("membership refresh through public PAT and Agent requests", () => {
     },
   );
 
-  it("isolates negative membership by both user and organization", async () => {
+  it("checks membership for the requested user and organization", async () => {
     const actor = api.user();
     const otherOrg = api.user({ userId: actor.userId });
     const otherUser = api.user({ orgId: actor.orgId });
@@ -300,9 +257,6 @@ describe("membership refresh through public PAT and Agent requests", () => {
     const survivors = Array.from({ length: 8 }, () => {
       return statusRequest(agent);
     });
-    // Starting a route request does not prove it joined this refresh before
-    // cancellation. A later caller may validly establish a replacement owner;
-    // the cold-refresh case above owns the one-read coalescing assertion.
     await started.promise;
     controller.abort();
     expect((await cancelled).status).toBe(500);
@@ -312,7 +266,7 @@ describe("membership refresh through public PAT and Agent requests", () => {
     }
   });
 
-  it("releases abandoned work and ignores a late negative result", async () => {
+  it("ignores a late Clerk result after caller cancellation", async () => {
     const { actor, agent } = await credentials();
     const controller = new AbortController();
     const started = createDeferredPromise<void>(context.signal);
@@ -341,101 +295,4 @@ describe("membership refresh through public PAT and Agent requests", () => {
     await accept(statusRequest(agent), [404]);
     expect(reads).toBe(2);
   });
-
-  it("bounds active refreshes while preserving joins and fresh cached authority", async () => {
-    const warm = api.user();
-    const warmToken = agentToken(warm);
-    server.use(
-      http.get(membershipUrl, () => {
-        return HttpResponse.json(membership(warm));
-      }),
-    );
-    await accept(statusRequest(warmToken), [404]);
-
-    const full = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    let reads = 0;
-    server.use(
-      http.get(membershipUrl, async () => {
-        reads += 1;
-        if (reads === 512) {
-          full.resolve();
-        }
-        await release.promise;
-        return HttpResponse.json({ data: [], total_count: 0 });
-      }),
-    );
-    const tokens = Array.from({ length: 512 }, () => {
-      return agentToken(api.user());
-    });
-    const requests = tokens.map((token) => {
-      return statusRequest(token);
-    });
-    await full.promise;
-    const join = statusRequest(tokens[0]!);
-    await accept(statusRequest(warmToken), [404]);
-    const excessToken = agentToken(api.user());
-    const excess = await statusRequest(excessToken);
-    expect(excess.status).toBe(503);
-    expect(excess.headers.get("Cache-Control")).toBe("no-store");
-    expect(reads).toBe(512);
-    release.resolve();
-    const responses = await Promise.all([...requests, join]);
-    expect(
-      responses.every((response) => {
-        return response.status === 401;
-      }),
-    ).toBeTruthy();
-    await accept(statusRequest(excessToken), [401]);
-    expect(reads).toBe(513);
-  });
-
-  it("evicts old negatives at capacity without granting access", async () => {
-    mockNow(now());
-    let reads = 0;
-    server.use(
-      http.get(membershipUrl, () => {
-        reads += 1;
-        return clerkFailure(404);
-      }),
-    );
-    const oldest = agentToken(api.user());
-    await accept(statusRequest(oldest), [403]);
-    for (let i = 0; i < 512; i += 1) {
-      await accept(statusRequest(agentToken(api.user())), [403]);
-    }
-    await accept(statusRequest(oldest), [403]);
-    expect(reads).toBe(514);
-  });
-
-  // This verifies the real 15-second ownership deadline, not scheduler timing.
-  it("expires a stuck refresh without caching its late result", async () => {
-    const { actor, agent } = await credentials();
-    const started = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const late = createDeferredPromise<void>(context.signal);
-    let reads = 0;
-    server.use(
-      http.get(membershipUrl, async () => {
-        reads += 1;
-        if (reads === 1) {
-          started.resolve();
-          await release.promise;
-          late.resolve();
-          return clerkFailure(404);
-        }
-        return HttpResponse.json(membership(actor));
-      }),
-    );
-    const pending = statusRequest(agent);
-    await started.promise;
-    const expired = await pending;
-    expect(expired.status).toBe(503);
-    expect(expired.headers.get("Cache-Control")).toBe("no-store");
-    await accept(statusRequest(agent), [404]);
-    release.resolve();
-    await late.promise;
-    await accept(statusRequest(agent), [404]);
-    expect(reads).toBe(2);
-  }, 20_000);
 });

@@ -1,3 +1,4 @@
+import { buildProvider, buildRunModel } from "./chat-model-builders.ts";
 import {
   agentInstructionsContract,
   agentsByIdContract,
@@ -11,25 +12,18 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  AvailableRunModel,
-  ModelProviderResponse,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import type { PresentationTemplateItem } from "@okouai/core";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, vi } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-import {
-  mockAutoRunModel,
-  mockSubscriptionRunModel,
-} from "../../../mocks/handlers/api-run-models.ts";
+
 import {
   chatEventRowsResponse,
   mockChatThreadSnapshotResponse,
-  testContext,
+  type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockChatEventRows,
@@ -38,8 +32,6 @@ import {
 } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
-
-export const context = testContext();
 
 export const AGENT_ID = "e0000000-0000-4000-a000-000000000010";
 
@@ -87,68 +79,6 @@ export function buttonContainingText(
   return button;
 }
 
-export function buildProvider(
-  overrides: Partial<ModelProviderResponse> & {
-    id: string;
-    type: ModelProviderResponse["type"];
-  },
-): ModelProviderResponse {
-  return {
-    framework: "claude-code",
-    needsReconnect: false,
-    lastRefreshErrorCode: null,
-    createdAt: "2024-01-01T00:00:00Z",
-    updatedAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-export function buildRunModel(options: {
-  readonly model: string | null;
-  readonly modelLabel?: string;
-  readonly providerType?: ModelProviderType;
-  readonly modelProviderId?: string | null;
-}): AvailableRunModel {
-  return options.model === null
-    ? mockAutoRunModel()
-    : mockSubscriptionRunModel(options.model, options);
-}
-
-export function mockPersonalModelRoutes(): void {
-  context.mocks.data.personalModelProviders([
-    buildProvider({
-      id: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-      type: "claude-code-oauth-token",
-    }),
-  ]);
-  context.mocks.data.availableRunModels([
-    buildRunModel({
-      model: "claude-fable-5-1",
-      modelLabel: "Claude Fable 5.1",
-      providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-    }),
-    buildRunModel({
-      model: "claude-sonnet-5",
-      modelLabel: "Claude Sonnet 5",
-      providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-    }),
-    buildRunModel({
-      model: "claude-opus-5-5",
-      modelLabel: "Claude Opus 5.5",
-      providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-    }),
-    buildRunModel({
-      model: "claude-opus-5",
-      modelLabel: "Claude Opus 5",
-      providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-    }),
-  ]);
-}
-
 function billingStatus(
   tier: string,
   modelCapabilities?: {
@@ -177,137 +107,6 @@ function billingStatus(
     concurrencyLimit: 0,
     concurrencySubscriptions: [],
   };
-}
-
-export function mockBillingCapabilities(
-  modelCapabilities: {
-    readonly restrictedBuiltInModels: boolean;
-  },
-  tier = "pro",
-): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus(tier, modelCapabilities));
-  });
-}
-
-export function mockAgent(options?: { includeOtherAgent?: boolean }): void {
-  const agents = [
-    {
-      agentId: AGENT_ID,
-      displayName: "Scout",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-    },
-    ...(options?.includeOtherAgent
-      ? [
-          {
-            agentId: OTHER_AGENT_ID,
-            displayName: "Other Agent",
-            description: null,
-            sound: null,
-            avatarUrl: null,
-          },
-        ]
-      : []),
-  ];
-  context.mocks.data.agents(agents);
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const isOtherAgent = params.id === OTHER_AGENT_ID;
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: params.id,
-      ownerId: "test-user-123",
-      displayName: isOtherAgent ? "Other Agent" : "Scout",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    });
-  });
-  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
-    return respond(200, { content: null, filename: null });
-  });
-}
-
-export function mockThread(options?: {
-  selectedModel?: string | null;
-  activeRunIds?: string[];
-  messages?: MockChatEventInput[];
-}): void {
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-    });
-  });
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(
-      200,
-      mockChatThreadSnapshotResponse(context, {
-        chatThreads: [
-          {
-            id: THREAD_ID,
-            agentId: AGENT_ID,
-            title: "My thread",
-            sortAt: "2026-03-10T00:00:00Z",
-            createdAt: "2026-03-10T00:00:00Z",
-            updatedAt: "2026-03-10T00:00:00Z",
-            pinnedAt: null,
-            archived: false,
-            renamedAt: null,
-            selectedModel: options?.selectedModel ?? null,
-            serviceTier: null,
-            computerUseHostId: null,
-          },
-        ],
-        latestEventId: null,
-        latestSeqId: null,
-      }),
-    );
-  });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      agents: {},
-      threads:
-        options?.activeRunIds && options.activeRunIds.length > 0
-          ? { [THREAD_ID]: "active" }
-          : {},
-      unreadAt: {},
-    });
-  });
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    return respond(
-      200,
-      chatEventRowsResponse(
-        mockChatEventRows(
-          normalizeMockChatEvents(options?.messages ?? [], THREAD_ID),
-        ).filter((row) => {
-          return row.seqId > query.sinceSeqId;
-        }),
-        query,
-      ),
-    );
-  });
-}
-
-export function mockActiveTemplateThread(): void {
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    chatEvents: [
-      {
-        id: "msg-template-active-user",
-        role: "user",
-        content: "Start an active deck run",
-        runId: "run-template-active",
-        createdAt: "2026-06-09T10:00:00Z",
-      },
-    ],
-    activeRunIds: ["run-template-active"],
-  });
 }
 
 export function trackTemplatePreviewImagePreloads(): {
@@ -436,5 +235,181 @@ export function composerWorkflow(
     name,
     displayName: null,
     description,
+  };
+}
+
+export function createChatComposerHelpers(context: TestContext) {
+  function mockPersonalModelRoutes(): void {
+    context.mocks.data.personalModelProviders([
+      buildProvider({
+        id: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+        type: "claude-code-oauth-token",
+      }),
+    ]);
+    context.mocks.data.availableRunModels([
+      buildRunModel({
+        model: "claude-fable-5-1",
+        modelLabel: "Claude Fable 5.1",
+        providerType: "claude-code-oauth-token",
+        modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+      }),
+      buildRunModel({
+        model: "claude-sonnet-5",
+        modelLabel: "Claude Sonnet 5",
+        providerType: "claude-code-oauth-token",
+        modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+      }),
+      buildRunModel({
+        model: "claude-opus-5-5",
+        modelLabel: "Claude Opus 5.5",
+        providerType: "claude-code-oauth-token",
+        modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+      }),
+      buildRunModel({
+        model: "claude-opus-5",
+        modelLabel: "Claude Opus 5",
+        providerType: "claude-code-oauth-token",
+        modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+      }),
+    ]);
+  }
+
+  function mockBillingCapabilities(
+    modelCapabilities: {
+      readonly restrictedBuiltInModels: boolean;
+    },
+    tier = "pro",
+  ): void {
+    context.mocks.api(billingStatusContract.get, ({ respond }) => {
+      return respond(200, billingStatus(tier, modelCapabilities));
+    });
+  }
+
+  function mockAgent(options?: { includeOtherAgent?: boolean }): void {
+    const agents = [
+      {
+        agentId: AGENT_ID,
+        displayName: "Scout",
+        description: null,
+        sound: null,
+        avatarUrl: null,
+      },
+      ...(options?.includeOtherAgent
+        ? [
+            {
+              agentId: OTHER_AGENT_ID,
+              displayName: "Other Agent",
+              description: null,
+              sound: null,
+              avatarUrl: null,
+            },
+          ]
+        : []),
+    ];
+    context.mocks.data.agents(agents);
+    context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
+      const isOtherAgent = params.id === OTHER_AGENT_ID;
+      return respond(200, {
+        isDefaultAgent: false,
+        agentId: params.id,
+        ownerId: "test-user-123",
+        displayName: isOtherAgent ? "Other Agent" : "Scout",
+        description: null,
+        sound: null,
+        avatarUrl: null,
+        visibility: "public",
+      });
+    });
+    context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+      return respond(200, { content: null, filename: null });
+    });
+  }
+
+  function mockThread(options?: {
+    selectedModel?: string | null;
+    activeRunIds?: string[];
+    messages?: MockChatEventInput[];
+  }): void {
+    context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+      return respond(200, {
+        lastReadAt: null,
+        cancellationRecoveryPending: false,
+      });
+    });
+    context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+      return respond(
+        200,
+        mockChatThreadSnapshotResponse(context, {
+          chatThreads: [
+            {
+              id: THREAD_ID,
+              agentId: AGENT_ID,
+              title: "My thread",
+              sortAt: "2026-03-10T00:00:00Z",
+              createdAt: "2026-03-10T00:00:00Z",
+              updatedAt: "2026-03-10T00:00:00Z",
+              pinnedAt: null,
+              archived: false,
+              renamedAt: null,
+              selectedModel: options?.selectedModel ?? null,
+              serviceTier: null,
+              computerUseHostId: null,
+            },
+          ],
+          latestEventId: null,
+          latestSeqId: null,
+        }),
+      );
+    });
+    context.mocks.api(chatThreadsContract.events, ({ respond }) => {
+      return respond(200, { events: [], hasMore: false });
+    });
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        agents: {},
+        threads:
+          options?.activeRunIds && options.activeRunIds.length > 0
+            ? { [THREAD_ID]: "active" }
+            : {},
+        unreadAt: {},
+      });
+    });
+    context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+      return respond(
+        200,
+        chatEventRowsResponse(
+          mockChatEventRows(
+            normalizeMockChatEvents(options?.messages ?? [], THREAD_ID),
+          ).filter((row) => {
+            return row.seqId > query.sinceSeqId;
+          }),
+          query,
+        ),
+      );
+    });
+  }
+
+  function mockActiveTemplateThread(): void {
+    mockChatLifecycle(context, {
+      threadId: THREAD_ID,
+      chatEvents: [
+        {
+          id: "msg-template-active-user",
+          role: "user",
+          content: "Start an active deck run",
+          runId: "run-template-active",
+          createdAt: "2026-06-09T10:00:00Z",
+        },
+      ],
+      activeRunIds: ["run-template-active"],
+    });
+  }
+
+  return {
+    mockPersonalModelRoutes,
+    mockBillingCapabilities,
+    mockAgent,
+    mockThread,
+    mockActiveTemplateThread,
   };
 }

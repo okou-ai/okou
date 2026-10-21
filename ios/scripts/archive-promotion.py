@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import platform
@@ -17,6 +18,8 @@ import tomllib
 INPUT_PATHS = (
     "ios",
     ".github/workflows/ios.yml",
+    ".github/workflows/ios-build-cache.yml",
+    ".github/actions/setup-ios-build-cache",
     ".github/workflows/ios-archive-proof.yml",
     ".github/workflows/release-please.yml",
     ".github/scripts/checks/changed-base-ref.sh",
@@ -76,7 +79,7 @@ def toolchain():
 
 def inputs(commit, tools):
     entries = git_bytes("ls-tree", "-r", "-z", commit, "--", *INPUT_PATHS).split(b"\0")
-    archive, tests = [], []
+    files = []
     for entry in entries:
         if not entry:
             continue
@@ -87,7 +90,22 @@ def inputs(commit, tools):
             continue
         if kind != "blob" or mode not in ("100644", "100755"):
             raise ValueError(f"Unsupported promotion input: {path}")
-        data = git_bytes("cat-file", "blob", oid)
+        files.append((path, mode, oid.encode()))
+    # One Git process reads every blob, including binary assets and repeated OIDs.
+    blobs = io.BytesIO(
+        subprocess.check_output(
+            ["git", "cat-file", "--batch"],
+            input=b"".join(oid + b"\n" for _, _, oid in files),
+        )
+    )
+    archive, tests = [], []
+    for path, mode, oid in files:
+        header = blobs.readline().split()
+        if len(header) != 3 or header[:2] != [oid, b"blob"]:
+            raise ValueError(f"Invalid promotion input blob: {path}")
+        data = blobs.read(int(header[2]))
+        if blobs.read(1) != b"\n":
+            raise ValueError(f"Truncated promotion input blob: {path}")
         archive.append([path, mode, digest(data)])
         if path == "ios/version.txt":
             if not re.fullmatch(SEMVER, data.decode().strip()):

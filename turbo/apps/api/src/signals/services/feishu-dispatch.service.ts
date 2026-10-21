@@ -1,3 +1,19 @@
+import { feishuDisconnectCleanupPlan } from "./feishu-disconnect-plan";
+import {
+  feishuOAuthMemberReadPlan,
+  feishuOAuthMemberFromRows,
+  feishuOAuthInstallationReadPlan,
+  feishuOAuthAccountReadPlan,
+  feishuOAuthAccountFromRows,
+  feishuOAuthCredentialReadPlan,
+} from "./feishu-custom-connector.service";
+import { secrets } from "@okouai/db/schema/secret";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { connectors } from "@okouai/db/schema/connector";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { variables } from "@okouai/db/schema/variable";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   FEISHU_PLATFORMS,
@@ -8,7 +24,7 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, inArray } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
   buildFeishuHelpMessage,
@@ -21,15 +37,14 @@ import {
   type FeishuPromptFile,
 } from "../../lib/feishu-message-content";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
-  replyWithFeishuMessage,
+  replyWithFeishuMessage$,
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
-import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import {
   feishuOrgChangedAdminReadPlan,
   feishuOrgChangedUserIds,
@@ -85,7 +100,6 @@ interface FeishuCommand {
 }
 
 interface ConnectedCommandArgs {
-  readonly db: Db;
   readonly installation: FeishuDispatchInstallation;
   readonly connection: FeishuDispatchConnection;
   readonly message: FeishuInboundMessage;
@@ -110,106 +124,112 @@ function parseFeishuCommand(text: string): FeishuCommand | null {
   };
 }
 
-async function reply(
-  args: {
-    readonly db: Db;
-    readonly message: FeishuInboundMessage;
-    readonly outbound: FeishuOutboundMessage;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await replyWithFeishuMessage(
-    {
-      db: args.db,
-      installationId: args.message.installationId,
-      messageId: args.message.messageId,
-      message: args.outbound,
-      replyInThread: true,
+const reply$ = command(
+  async (
+    { set },
+    args: {
+      readonly message: FeishuInboundMessage;
+      readonly outbound: FeishuOutboundMessage;
     },
-    signal,
-  );
-}
-
-async function replyNotice(
-  args: {
-    readonly db: Db;
-    readonly message: FeishuInboundMessage;
-    readonly title: string;
-    readonly text: string;
-    readonly kind?: "error" | "info" | "success" | "warning";
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await reply(
-    {
-      db: args.db,
-      message: args.message,
-      outbound: buildFeishuNoticeMessage({
-        title: args.title,
-        text: args.text,
-        kind: args.kind,
-      }),
-    },
-    signal,
-  );
-}
-
-export async function replyToUnconnectedFeishuMessage(
-  args: {
-    readonly db: Db;
-    readonly message: FeishuInboundMessage;
-    readonly botName: string | null;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const commandInput = parseFeishuCommand(args.message.text);
-  if (commandInput?.name === "help") {
-    await reply(
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      replyWithFeishuMessage$,
       {
-        db: args.db,
-        message: args.message,
-        outbound: buildFeishuHelpMessage({
-          platform: args.message.platform,
-          botName: args.botName,
-        }),
+        installationId: args.message.installationId,
+        messageId: args.message.messageId,
+        message: args.outbound,
+        replyInThread: true,
       },
       signal,
     );
-    return;
-  }
-  if (commandInput?.name === "disconnect") {
-    await reply(
+  },
+);
+
+const replyNotice$ = command(
+  async (
+    { set },
+    args: {
+      readonly message: FeishuInboundMessage;
+      readonly title: string;
+      readonly text: string;
+      readonly kind?: "error" | "info" | "success" | "warning";
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      reply$,
       {
-        db: args.db,
         message: args.message,
         outbound: buildFeishuNoticeMessage({
-          title: "Not connected",
-          text: "You are not connected.",
-          kind: "error",
+          title: args.title,
+          text: args.text,
+          kind: args.kind,
         }),
       },
       signal,
     );
-    return;
-  }
-  const connectUrl = buildFeishuConnectUrl({
-    platform: args.message.platform,
-    installationId: args.message.installationId,
-    openId: args.message.openId,
-    chatId: args.message.chatId,
-  });
-  await reply(
-    {
-      db: args.db,
-      message: args.message,
-      outbound: buildFeishuLoginMessage({
-        platform: args.message.platform,
-        connectUrl,
-      }),
+  },
+);
+
+export const replyToUnconnectedFeishuMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly message: FeishuInboundMessage;
+      readonly botName: string | null;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const commandInput = parseFeishuCommand(args.message.text);
+    if (commandInput?.name === "help") {
+      await set(
+        reply$,
+        {
+          message: args.message,
+          outbound: buildFeishuHelpMessage({
+            platform: args.message.platform,
+            botName: args.botName,
+          }),
+        },
+        signal,
+      );
+      return;
+    }
+    if (commandInput?.name === "disconnect") {
+      await set(
+        reply$,
+        {
+          message: args.message,
+          outbound: buildFeishuNoticeMessage({
+            title: "Not connected",
+            text: "You are not connected.",
+            kind: "error",
+          }),
+        },
+        signal,
+      );
+      return;
+    }
+    const connectUrl = buildFeishuConnectUrl({
+      platform: args.message.platform,
+      installationId: args.message.installationId,
+      openId: args.message.openId,
+      chatId: args.message.chatId,
+    });
+    await set(
+      reply$,
+      {
+        message: args.message,
+        outbound: buildFeishuLoginMessage({
+          platform: args.message.platform,
+          connectUrl,
+        }),
+      },
+      signal,
+    );
+  },
+);
 
 export function feishuEffectiveAgentReadPlan(args: {
   readonly installation: FeishuDispatchInstallation;
@@ -248,30 +268,33 @@ export function feishuEffectiveAgentFromRows(
   return { status: existing ? "not_accessible" : "not_found" };
 }
 
-export async function replyFeishuAgentUnavailable(
-  args: {
-    readonly db: Db;
-    readonly message: FeishuInboundMessage;
-    readonly status: "not_accessible" | "not_found";
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const providerName = FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name;
-  const text =
-    args.status === "not_accessible"
-      ? `The configured agent is not available to your ${providerName} account. Ask an admin to update the organization default agent.`
-      : `The configured ${providerName} agent could not be found. Ask an admin to select another agent.`;
-  await replyNotice(
-    {
-      db: args.db,
-      message: args.message,
-      title: "Agent unavailable",
-      text,
-      kind: "error",
+export const replyFeishuAgentUnavailable$ = command(
+  async (
+    { set },
+    args: {
+      readonly message: FeishuInboundMessage;
+      readonly status: "not_accessible" | "not_found";
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const providerName =
+      FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name;
+    const text =
+      args.status === "not_accessible"
+        ? `The configured agent is not available to your ${providerName} account. Ask an admin to update the organization default agent.`
+        : `The configured ${providerName} agent could not be found. Ask an admin to select another agent.`;
+    await set(
+      replyNotice$,
+      {
+        message: args.message,
+        title: "Agent unavailable",
+        text,
+        kind: "error",
+      },
+      signal,
+    );
+  },
+);
 
 function historyMessageContext(
   message: FeishuHistoryMessage,
@@ -503,32 +526,10 @@ export function feishuMessageReceivedCondition(installationId: string) {
   );
 }
 
-async function handleDisconnectCommand(
-  args: ConnectedCommandArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0164; new non-billing transactions are prohibited.
-  await args.db.transaction(async (tx) => {
-    await disconnectFeishuCustomConnectorOAuthConnection(
-      tx,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        installationId: args.message.installationId,
-        memberConnectorId: args.connection.connectorId,
-        feishuOpenId: args.message.openId,
-      },
-      signal,
-    );
-    await tx
-      .delete(feishuOrgConnections)
-      .where(eq(feishuOrgConnections.id, args.connection.id));
-    signal.throwIfAborted();
-  });
-  signal.throwIfAborted();
-  await (async () => {
+const publishFeishuDisconnect$ = command(
+  async ({ get }, args: ConnectedCommandArgs) => {
     const plan = feishuOrgChangedAdminReadPlan(args.installation.orgId);
-    const admins = await args.db
+    const admins = await get(db$)
       .select(plan.columns)
       .from(orgMembersCache)
       .where(plan.condition);
@@ -537,14 +538,131 @@ async function handleDisconnectCommand(
       args.installation.ownerUserId,
       [args.connection.userId],
     );
-    if (userIds.length === 0) {
-      return;
+    if (userIds.length > 0) {
+      await publishUserSignal(userIds, "feishu:changed");
     }
-    await publishUserSignal(userIds, "feishu:changed");
-  })();
-  await replyNotice(
+  },
+);
+
+const handleDisconnectCommand$ = command(async function handleDisconnectCommand(
+  { set },
+  args: ConnectedCommandArgs,
+  signal: AbortSignal,
+): Promise<void> {
+  const db = set(writeDb$);
+  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0164; new non-billing transactions are prohibited.
+  await db.transaction(async (tx) => {
+    const scope = {
+      orgId: args.installation.orgId,
+      userId: args.connection.userId,
+      installationId: args.message.installationId,
+      memberConnectorId: args.connection.connectorId,
+      feishuOpenId: args.message.openId,
+    };
+    await (async () => {
+      const p = feishuOAuthInstallationReadPlan(scope);
+      const q = tx.select(p.columns).from(p.from).where(p.condition);
+      const [installation] = await q.for("update", { of: p.from }).limit(1);
+      signal.throwIfAborted();
+      if (!installation?.customConnectorId) {
+        return;
+      }
+      const memberConnectorId = await (async () => {
+        const m = feishuOAuthMemberReadPlan(scope);
+        const mq = tx.select(m.columns).from(m.from).where(m.condition);
+        const members = m.needsRead ? await mq.limit(2) : [];
+        const member = feishuOAuthMemberFromRows(scope, members);
+        if (!member) {
+          return null;
+        }
+        const iq = tx.select(p.columns).from(p.from).where(p.condition);
+        const [installed] = await iq.limit(1);
+        if (!installed?.customConnectorId) {
+          return null;
+        }
+        const accountScope = {
+          ...scope,
+          ...member,
+          customConnectorId: installed.customConnectorId,
+        };
+        const a = feishuOAuthAccountReadPlan(accountScope);
+        const [exactRows, defaultRows] = await Promise.all([
+          a.exactWhere
+            ? tx.select(a.columns).from(connectors).where(a.exactWhere)
+            : [],
+          a.defaultWhere
+            ? tx.select(a.columns).from(connectors).where(a.defaultWhere)
+            : [],
+        ]);
+        const accountId = feishuOAuthAccountFromRows(a, {
+          exactRows,
+          defaultRows,
+        });
+        if (accountId === null) {
+          return null;
+        }
+        const c = feishuOAuthCredentialReadPlan({
+          ...accountScope,
+          memberConnectorId: accountId,
+        });
+        const query = tx.select(c.columns).from(connectors);
+        const [matched] = await query
+          .innerJoin(orgCustomConnectors, c.connectorJoin)
+          .innerJoin(secrets, c.secretJoin)
+          .where(c.condition)
+          .limit(1);
+        return matched?.id ?? null;
+      })();
+      signal.throwIfAborted();
+      if (!memberConnectorId) {
+        return;
+      }
+      const d = feishuDisconnectCleanupPlan({
+        ...scope,
+        customConnectorId: installation.customConnectorId,
+        memberConnectorId,
+      });
+      const account = tx.select(d.columns).from(connectors).where(d.account);
+      const [connection] = await account.for("update").limit(1);
+      signal.throwIfAborted();
+      if (!connection) {
+        return;
+      }
+      await tx.delete(secrets).where(d.secret);
+      signal.throwIfAborted();
+      await tx.delete(variables).where(d.variable);
+      signal.throwIfAborted();
+      await tx.execute(d.defer);
+      const deleted = await tx
+        .delete(connectors)
+        .where(d.connector)
+        .returning(d.columns);
+      if (deleted.length > 0) {
+        await tx.delete(chatThreadConnectorSelections).where(d.selection);
+      }
+      await tx.execute(d.immediate);
+      if (deleted.length > 0) {
+        const affected = tx
+          .select(d.cursorColumns)
+          .from(workflowAutomations)
+          .where(d.cursor);
+        await tx
+          .delete(googleFormsAutomationCursors)
+          .where(inArray(googleFormsAutomationCursors.automationId, affected));
+      }
+      signal.throwIfAborted();
+    })();
+    await tx
+      .delete(feishuOrgConnections)
+      .where(eq(feishuOrgConnections.id, args.connection.id));
+    signal.throwIfAborted();
+  });
+  signal.throwIfAborted();
+  await set(publishFeishuDisconnect$, args);
+  signal.throwIfAborted();
+  await set(
+    replyNotice$,
     {
-      db: args.db,
       message: args.message,
       title: "Disconnected",
       text: `Your ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} account has been disconnected and its agent access has been revoked.`,
@@ -552,15 +670,19 @@ async function handleDisconnectCommand(
     },
     signal,
   );
-}
+});
 
 const handleConnectedCommand$ = command(
-  async (_, args: ConnectedCommandArgs, signal: AbortSignal): Promise<void> => {
+  async (
+    { set },
+    args: ConnectedCommandArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
     switch (args.command.name) {
       case "help": {
-        await reply(
+        await set(
+          reply$,
           {
-            db: args.db,
             message: args.message,
             outbound: buildFeishuHelpMessage({
               platform: args.message.platform,
@@ -572,9 +694,9 @@ const handleConnectedCommand$ = command(
         return;
       }
       case "connect": {
-        await replyNotice(
+        await set(
+          replyNotice$,
           {
-            db: args.db,
             message: args.message,
             title: "Already connected",
             text: `Your ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} account is already connected to ${BRAND_PRESENTATION.brandName}. Send a task to start working with your agent.`,
@@ -585,13 +707,13 @@ const handleConnectedCommand$ = command(
         return;
       }
       case "disconnect": {
-        await handleDisconnectCommand(args, signal);
+        await set(handleDisconnectCommand$, args, signal);
         return;
       }
       default: {
-        await reply(
+        await set(
+          reply$,
           {
-            db: args.db,
             message: args.message,
             outbound: buildFeishuHelpMessage({
               platform: args.message.platform,

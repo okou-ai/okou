@@ -3,15 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
   buttonByText,
-  context,
+  createSidebarHelpers,
   mobileSidebar,
-  mockMobileLayout,
-  prepareDefaultAgent,
   setupSidebarPage,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { mockMobileLayout, prepareDefaultAgent } = createSidebarHelpers(context);
 
 test.each([
   { title: "Manage", link: "Agents" },

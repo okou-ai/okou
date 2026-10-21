@@ -1,5 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mockNow, now } from "../../../lib/time";
 import { expect, test } from "vitest";
+import { authContract } from "@okouai/api-contracts/contracts/auth";
+import { authMeRoutes } from "../auth-me";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
@@ -25,6 +28,29 @@ function client(user?: ApiTestUser) {
       user.orgId,
       user.orgRole,
     );
+    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
+      return Promise.resolve({
+        isAuthenticated:
+          request instanceof Request &&
+          request.headers.get("Authorization") === headers.authorization,
+        toAuth: () => {
+          return {
+            userId: user.userId,
+            orgId: user.orgId,
+            orgRole: user.orgRole,
+            sessionId: `sess_${user.userId}`,
+          };
+        },
+      });
+    });
+    context.mocks.clerk.sessions.getSession.mockImplementation((sessionId) => {
+      return Promise.resolve({
+        id: sessionId,
+        userId: user.userId,
+        status: "active",
+        expireAt: now() + 86_400_000,
+      });
+    });
   }
   return setupAppWithRoutes({
     context,
@@ -86,6 +112,7 @@ async function publish() {
   };
   const prepared = await api.prepareHostedSite(owner, input);
   await api.completeHostedSite(owner, prepared.deploymentId);
+  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", prepared.siteId);
   const prefix = `sites/brands/okou/publications/${prepared.deploymentId}`;
   return {
     owner,
@@ -103,6 +130,52 @@ async function publish() {
       },
     },
   };
+}
+
+async function authorizeBrowser(
+  user: ApiTestUser,
+  siteId: string,
+  origin: string,
+) {
+  const verifier = randomBytes(32).toString("base64url");
+  const state = randomBytes(32).toString("base64url");
+  const result = await accept(
+    client(user).authorizeSiteSession({
+      headers,
+      params: { siteId },
+      body: {
+        origin,
+        state,
+        codeChallenge: createHash("sha256")
+          .update(verifier)
+          .digest("base64url"),
+      },
+    }),
+    [200],
+  );
+  const callback = new URL(result.body.callbackUrl);
+  expect(callback.origin).toBe(origin);
+  expect(callback.pathname).toBe("/.okou/auth/callback");
+  expect(callback.searchParams.get("state")).toBe(state);
+  return {
+    origin,
+    code: callback.searchParams.get("code")!,
+    codeVerifier: verifier,
+  };
+}
+
+async function browserHeaders(
+  user: ApiTestUser,
+  siteId: string,
+  origin: string,
+) {
+  const body = await authorizeBrowser(user, siteId, origin);
+  const exchanged = await accept(
+    client().exchangeSiteSession({ params: { siteId }, body }),
+    [200],
+  );
+  expect(exchanged.body.sessionToken).toMatch(/^okou_site_[a-f0-9]{64}$/u);
+  return { authorization: `Bearer ${exchanged.body.sessionToken}` };
 }
 
 test("creation stays public and ignores stale credentials before Clerk is called", async () => {
@@ -146,6 +219,9 @@ test("only the owner changes visibility and stale edits cannot overwrite it", as
   await enable(owner);
   await enable(other);
   const params = { siteId: prepared.siteId };
+  const origin = `https://${prepared.publicSlug}.okou.app`;
+  const otherSession = await browserHeaders(other, prepared.siteId, origin);
+  const ownerSession = await browserHeaders(owner, prepared.siteId, origin);
   await accept(
     client(other).updateSiteVisibility({
       headers,
@@ -179,7 +255,10 @@ test("only the owner changes visibility and stale edits cannot overwrite it", as
   expect(
     (
       await accept(
-        client(other).deliveryAuthorization({ ...request, headers }),
+        client(other).deliveryAuthorization({
+          ...request,
+          headers: otherSession,
+        }),
         [200],
       )
     ).body.decision,
@@ -187,7 +266,10 @@ test("only the owner changes visibility and stale edits cannot overwrite it", as
   expect(
     (
       await accept(
-        client(owner).deliveryAuthorization({ ...request, headers }),
+        client(owner).deliveryAuthorization({
+          ...request,
+          headers: ownerSession,
+        }),
         [200],
       )
     ).body.decision,
@@ -257,10 +339,18 @@ test("organization access follows current membership in the site's organization"
       });
     },
   );
+  const viewerSession = await browserHeaders(
+    viewer,
+    prepared.siteId,
+    `https://${prepared.publicSlug}.okou.app`,
+  );
   expect(
     (
       await accept(
-        client(viewer).deliveryAuthorization({ ...request, headers }),
+        client(viewer).deliveryAuthorization({
+          ...request,
+          headers: viewerSession,
+        }),
         [200],
       )
     ).body.allowed,
@@ -269,7 +359,10 @@ test("organization access follows current membership in the site's organization"
   expect(
     (
       await accept(
-        client(viewer).deliveryAuthorization({ ...request, headers }),
+        client(viewer).deliveryAuthorization({
+          ...request,
+          headers: viewerSession,
+        }),
         [200],
       )
     ).body.decision,
@@ -278,7 +371,10 @@ test("organization access follows current membership in the site's organization"
     new Error("Membership service unavailable"),
   );
   await accept(
-    client(viewer).deliveryAuthorization({ ...request, headers }),
+    client(viewer).deliveryAuthorization({
+      ...request,
+      headers: viewerSession,
+    }),
     [500],
   );
 });
@@ -467,3 +563,304 @@ test("private downloads remain controlled with management disabled and stop afte
     (await accept(client().downloadAuthorization(download), [200])).body.file,
   ).toBeNull();
 });
+
+test("a user-editable switch cannot admit a Site outside the server cohort", async () => {
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", randomUUID());
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "private", expectedRevision: null },
+    }),
+    [403],
+  );
+  expect(
+    (
+      await accept(
+        client().siteAccess({
+          params: { siteId: prepared.siteId },
+          query: { origin: `https://${prepared.publicSlug}.okou.app` },
+        }),
+        [200],
+      )
+    ).body.decision,
+  ).toBe("allow");
+});
+
+test("authorization codes require the correct proof, Site and origin, and are single-use", async () => {
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  const params = { siteId: prepared.siteId };
+  const body = await authorizeBrowser(
+    owner,
+    prepared.siteId,
+    `https://${prepared.publicSlug}.okou.app`,
+  );
+  await accept(
+    client().exchangeSiteSession({
+      params,
+      body: { ...body, codeVerifier: "a".repeat(43) },
+    }),
+    [401],
+  );
+  await accept(
+    client().exchangeSiteSession({
+      params,
+      body: { ...body, origin: "https://other.okou.app" },
+    }),
+    [401],
+  );
+  await accept(
+    client().exchangeSiteSession({ params: { siteId: randomUUID() }, body }),
+    [401],
+  );
+  const results = await Promise.all([
+    client().exchangeSiteSession({ params, body }),
+    client().exchangeSiteSession({ params, body }),
+  ]);
+  expect(
+    results
+      .map((result) => {
+        return result.status;
+      })
+      .sort(),
+  ).toStrictEqual([200, 401]);
+  await accept(client().exchangeSiteSession({ params, body }), [401]);
+});
+
+test("expired authorization codes cannot be exchanged", async () => {
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  const start = now();
+  mockNow(start);
+  const body = await authorizeBrowser(
+    owner,
+    prepared.siteId,
+    `https://${prepared.publicSlug}.okou.app`,
+  );
+  mockNow(start + 121_000);
+  const response = await accept(
+    client().exchangeSiteSession({ params: { siteId: prepared.siteId }, body }),
+    [401],
+  );
+  expect(response.body.error.code).toBe("UNAUTHORIZED");
+});
+
+test("site sessions survive 60 seconds without a Clerk JWT and stop after primary revocation", async () => {
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  const params = { siteId: prepared.siteId };
+  const origin = `https://${prepared.publicSlug}.okou.app`;
+  const siteHeaders = await browserHeaders(owner, prepared.siteId, origin);
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params,
+      body: { visibility: "private", expectedRevision: null },
+    }),
+    [200],
+  );
+  await accept(
+    setupAppWithRoutes({ context, routes: authMeRoutes })(authContract).me({
+      headers: siteHeaders,
+    }),
+    [401],
+  );
+  mockNow(now() + 61_000);
+  expect(
+    (
+      await accept(
+        client().siteAccess({
+          headers: siteHeaders,
+          params,
+          query: { origin },
+        }),
+        [200],
+      )
+    ).body.decision,
+  ).toBe("allow");
+  expect(
+    (
+      await accept(
+        client().siteAccess({
+          headers: siteHeaders,
+          params,
+          query: { origin: "https://sibling.okou.app" },
+        }),
+        [200],
+      )
+    ).body.decision,
+  ).toBe("authenticate");
+  expect(
+    (
+      await accept(
+        client(owner).siteAccess({ headers, params, query: { origin } }),
+        [200],
+      )
+    ).body.decision,
+  ).toBe("authenticate");
+  context.mocks.clerk.sessions.getSession.mockResolvedValue({
+    id: `sess_${owner.userId}`,
+    userId: owner.userId,
+    status: "revoked",
+    expireAt: now() + 86_400_000,
+  });
+  expect(
+    (
+      await accept(
+        client().siteAccess({
+          headers: siteHeaders,
+          params,
+          query: { origin },
+        }),
+        [200],
+      )
+    ).body.decision,
+  ).toBe("authenticate");
+});
+
+test("pending sessions and untrusted return origins cannot mint site authorization codes", async () => {
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  const api = client(owner);
+  const input = {
+    headers,
+    params: { siteId: prepared.siteId },
+    body: {
+      origin: `https://${prepared.publicSlug}.okou.app`,
+      state: "a".repeat(43),
+      codeChallenge: "b".repeat(43),
+    },
+  };
+  context.mocks.clerk.sessions.getSession.mockResolvedValue({
+    id: `sess_${owner.userId}`,
+    userId: owner.userId,
+    status: "pending",
+    expireAt: now() + 86_400_000,
+  });
+  const response = await accept(api.authorizeSiteSession(input), [401]);
+  expect(response.body.error.code).toBe("UNAUTHORIZED");
+  await accept(
+    api.authorizeSiteSession({
+      ...input,
+      body: { ...input.body, origin: "https://attacker.example" },
+    }),
+    [403],
+  );
+});
+
+test("one publisher cannot redirect another Site's authorization to its own origin", async () => {
+  const { owner, api, input, prepared } = await publish();
+  await enable(owner);
+  const other = await api.prepareHostedSite(owner, {
+    ...input,
+    site: `other-${randomUUID().slice(0, 8)}`,
+  });
+  await api.completeHostedSite(owner, other.deploymentId);
+  await accept(
+    client(owner).authorizeSiteSession({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: {
+        origin: `https://${other.publicSlug}.okou.app`,
+        state: "a".repeat(43),
+        codeChallenge: "b".repeat(43),
+      },
+    }),
+    [403],
+  );
+  const origin = `https://dpl-${prepared.deploymentId}.okou.app`;
+  const session = await browserHeaders(owner, prepared.siteId, origin);
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "private", expectedRevision: null },
+    }),
+    [200],
+  );
+  expect(
+    (
+      await accept(
+        client().siteAccess({
+          headers: session,
+          params: { siteId: prepared.siteId },
+          query: { origin },
+        }),
+        [200],
+      )
+    ).body.decision,
+  ).toBe("allow");
+});
+
+test("the App bridge rejects a Clerk JWT issued to an untrusted hosted origin", async () => {
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  const api = client(owner);
+  const origin = `https://${prepared.publicSlug}.okou.app`;
+  context.mocks.clerk.authenticateRequest.mockImplementation(
+    (_request, options) => {
+      const parties =
+        typeof options === "object" &&
+        options !== null &&
+        "authorizedParties" in options &&
+        Array.isArray(options.authorizedParties)
+          ? options.authorizedParties
+          : null;
+      return Promise.resolve({
+        isAuthenticated: parties === null || parties.includes(origin),
+        toAuth: () => {
+          return {
+            userId: owner.userId,
+            sessionId: `sess_${owner.userId}`,
+          };
+        },
+      });
+    },
+  );
+  const response = await accept(
+    api.authorizeSiteSession({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: {
+        origin,
+        state: "a".repeat(43),
+        codeChallenge: "b".repeat(43),
+      },
+    }),
+    [401],
+  );
+  expect(response.body.error.code).toBe("UNAUTHORIZED");
+});
+
+test.each([
+  "https://demo.okou.app",
+  "https://demo.okou.app.",
+  "https://demo.sites.example.com",
+])(
+  "general API endpoints reject verified Clerk credentials from %s",
+  async (origin) => {
+    const { owner } = await publish();
+    client(owner);
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      toAuth: () => {
+        return {
+          userId: owner.userId,
+          orgId: owner.orgId,
+          sessionId: `sess_${owner.userId}`,
+          sessionClaims: { azp: origin },
+        };
+      },
+    });
+    const response = await accept(
+      setupAppWithRoutes({ context, routes: authMeRoutes })(authContract).me({
+        headers,
+      }),
+      [401],
+    );
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
+  },
+);
