@@ -81,6 +81,10 @@ cases cover allowed exact bytes, denied EPERM, write/truncate opens held before
 original bytes change, multiple pending producers,
 queued/observed retirement, observer unwind, original rename/replacement,
 borrower lifetime, high-numbered kernel PIDFDs and foreign creator/token refusal.
+Failure cleanup also changes a private original's owner while two real producers
+are blocked, then verifies that both are reaped before the fixture reports its
+cleanup failure. This regression uses a separate controller process; its exit
+retires retained gate FDs without claiming successful gate cleanup.
 The high-FD case temporarily raises only its own soft file limit within a hard
 limit of at least 1200 and retires its owned padding descriptors.
 No successful observation

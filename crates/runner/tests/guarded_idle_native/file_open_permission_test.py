@@ -123,7 +123,7 @@ class InputTests(unittest.TestCase):
 )
 class KernelTests(unittest.TestCase):
     @contextmanager
-    def fixture(self):
+    def fixture(self, join_timeout=10):
         self.assertEqual(os.geteuid(), 0, "privileged suite must actually run as root")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "original"
@@ -140,15 +140,24 @@ class KernelTests(unittest.TestCase):
                         if not state["closed"]:
                             gate.close()
                     finally:
+                        failures = []
                         for child in children:
                             try:
-                                child.communicate(timeout=10)
-                            except subprocess.TimeoutExpired:
-                                child.kill()
-                                child.communicate(timeout=10)
-                                self.fail(
-                                    "fixture-owned producer needed emergency intervention"
-                                )
+                                child.communicate(timeout=join_timeout)
+                            except BaseException as error:  # noqa: BLE001 - retire every owned child
+                                failures.append(f"producer {child.pid}: {error}")
+                                try:
+                                    child.kill()
+                                    child.communicate(timeout=10)
+                                except BaseException as cleanup_error:  # noqa: BLE001 - keep retiring other children
+                                    failures.append(
+                                        f"producer {child.pid} containment: {cleanup_error}"
+                                    )
+                        self.assertEqual(
+                            failures,
+                            [],
+                            "fixture-owned producers needed emergency intervention",
+                        )
 
     def start(self, path, children):
         child = producer(path)
@@ -190,6 +199,46 @@ class KernelTests(unittest.TestCase):
                 gate.decide(event, event.pid == first.pid)
             self.assertEqual(join(first)["exit"], 0)
             self.assertEqual(join(second)["exit"], 23)
+
+    def test_fixture_reaps_all_producers_after_original_authority_loss(self):
+        code = """import os
+from file_open_permission_test import KernelTests
+case = KernelTests()
+children = []
+try:
+    try:
+        with case.fixture(join_timeout=0.1) as (path, stream, gate, children, _):
+            for _ in range(2):
+                case.start(path, children)
+            for _ in children:
+                gate.receive()
+            os.fchown(stream.fileno(), 1, -1)
+    except AssertionError as error:
+        assert 'emergency intervention' in str(error), str(error)
+    else:
+        raise AssertionError('failed retirement was reported as successful')
+    assert len(children) == 2 and all(child.poll() is not None for child in children), (
+        'fixture abandoned an original producer'
+    )
+    print('all original producers joined after failed retirement', flush=True)
+finally:
+    for child in children:
+        if child.poll() is None:
+            child.kill()
+        child.communicate(timeout=10)
+"""
+        # Isolate deliberately retained gate FDs; controller exit is no success claim.
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", code],
+            cwd=HERE,
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout, b"all original producers joined after failed retirement\n"
+        )
 
     def test_kernel_pidfd_above_select_descriptor_limit(self):
         before = resource.getrlimit(resource.RLIMIT_NOFILE)
