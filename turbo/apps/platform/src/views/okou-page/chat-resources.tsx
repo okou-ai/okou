@@ -35,11 +35,6 @@ import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resource
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
-import { hostedSiteLink } from "./artifact-display.ts";
-import {
-  currentHostedSiteUrl,
-  hostedSiteUrlChanges$,
-} from "../../signals/hosted-site-url-changes.ts";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -250,11 +245,7 @@ function ResourceOutputRow({
         <span className={RESOURCE_GLYPH_CLASS}>
           <FilePreviewIcon filename={artifact.title} size="sm" />
         </span>
-        {artifact.kind === "hosted-site" ? (
-          <HostedSiteResourceTitle artifact={artifact} />
-        ) : (
-          <HoverScrollTitle title={artifact.title} />
-        )}
+        <HoverScrollTitle title={artifact.title} />
       </Button>
       <TooltipProvider delay={200}>
         <Tooltip>
@@ -278,20 +269,6 @@ function ResourceOutputRow({
       </TooltipProvider>
     </li>
   );
-}
-
-function HostedSiteResourceTitle({
-  artifact,
-}: {
-  readonly artifact: ArtifactSummary;
-}) {
-  const changes = useGet(hostedSiteUrlChanges$);
-  const titleLink = hostedSiteLink(
-    artifact.aliasUrl
-      ? currentHostedSiteUrl(artifact.aliasUrl, changes)
-      : undefined,
-  );
-  return <HoverScrollTitle title={titleLink?.label ?? artifact.title} />;
 }
 
 function ChatResourcesStatus({

@@ -71,7 +71,7 @@ describe("okou generate presentation command", () => {
       "Check that shapes, charts, images, or decorative graphics do not cover readable text",
     );
     expect(stdout).toContain(
-      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png --json\n",
+      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --title 'API Migration Plan' --artifact-kind presentation-html --preview ./generated/previews/cover.png --json\n",
     );
     expect(stdout).toContain(
       "Uploaded and generated files default to only-me. Hosted sites are public.",
@@ -103,7 +103,7 @@ describe("okou generate presentation command", () => {
       return line.startsWith("- For HTML delivery, host the finished deck:");
     });
     expect(hostInstructions).toEqual([
-      "- For HTML delivery, host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org --preview ./generated/previews/cover.png --json",
+      '- For HTML delivery, host the finished deck: okou host <output-dir> --site team-plan --title "<presentation title>" --artifact-kind presentation-html --visibility org --preview ./generated/previews/cover.png --json',
     ]);
     expect(stdout).toContain(
       "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
@@ -220,7 +220,7 @@ describe("okou generate presentation command", () => {
     );
     expect(stdout).toContain("User request: create a 15-slide launch deck");
     expect(stdout).toContain(
-      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png --json\n",
+      'For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --title "<presentation title>" --artifact-kind presentation-html --preview ./generated/previews/cover.png --json\n',
     );
     const imageWorkflowLines = stdout.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");

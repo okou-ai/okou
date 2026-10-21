@@ -26,6 +26,7 @@ import {
 const deploymentId = "00000000-0000-4000-8000-000000000041";
 const siteId = "00000000-0000-4000-8000-000000000042";
 const artifactId = "00000000-0000-4000-8000-000000000043";
+const siteTitle = "Quarterly launch report";
 
 async function setupHostedSite(
   sidebar: boolean,
@@ -38,7 +39,7 @@ async function setupHostedSite(
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   const summary = {
-    ...artifactSummary(artifactId, "hosted-site", "launch-site.html"),
+    ...artifactSummary(artifactId, "hosted-site", siteTitle),
     sourceUrl: deploymentUrl,
     aliasUrl: `https://${initialSlug}.${hostDomain}`,
   };
@@ -67,6 +68,7 @@ async function setupHostedSite(
           files: run.files.map((file) => {
             return {
               ...file,
+              title: siteTitle,
               aliasUrl: `https://${currentSlug}.${hostDomain}`,
               artifactKind: "hosted-site" as const,
             };
@@ -136,10 +138,10 @@ async function setupHostedSite(
   );
 }
 
-async function copyFromResources(slug: string) {
+async function copyFromResources() {
   click(resourceButton());
   const resources = await screen.findByRole("region", { name: "Resources" });
-  const title = await within(resources).findByText(`${slug}.okou.app`);
+  const title = await within(resources).findByText(siteTitle);
   const row = title.closest("li")!;
   click(buttonNamed("Copy link", row));
 }
@@ -179,16 +181,16 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
 }
 
 test.each([false, true])(
-  "consecutive site renames update the preview title and title link (sidebar=%s)",
+  "consecutive URL renames retain the catalog title and update its link (sidebar=%s)",
   async (sidebar) => {
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
-    expect(title).toHaveTextContent("launch-site.okou.app");
+    expect(title).toHaveTextContent(siteTitle);
     const shareMenu = await openHostedSiteShare(preview, sidebar);
     for (const slug of ["renamed-site", "final-site"]) {
       await renameHostedSite(shareMenu, slug);
       await waitFor(() => {
-        expect(title).toHaveTextContent(`${slug}.okou.app`);
+        expect(title).toHaveTextContent(siteTitle);
         expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
       });
     }
@@ -220,7 +222,7 @@ test.each([false, true])(
   async (sidebar) => {
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
-    expect(title).toHaveTextContent("launch-site.okou.app");
+    expect(title).toHaveTextContent(siteTitle);
     const shareMenu = await openHostedSiteShare(preview, sidebar);
     for (const slug of ["renamed-site", "final-site"]) {
       await renameHostedSite(shareMenu, slug);
@@ -231,24 +233,24 @@ test.each([false, true])(
       expect(title).not.toBeInTheDocument();
     });
     const clipboard = context.mocks.browser.clipboardWriteText();
-    await copyFromResources("final-site");
+    await copyFromResources();
     await waitFor(() => {
       expect(clipboard.writes.at(-1)).toBe("https://final-site.okou.app");
     });
   },
 );
 
-test("a reopened chat shows and copies the current site address despite the original filename", async () => {
+test("a reopened chat shows the catalog title and copies the current site address", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const preview = await setupHostedSite(true, "already-renamed");
   const title = await within(preview).findByTestId("artifact-title-link");
-  expect(title).toHaveTextContent("already-renamed.okou.app");
+  expect(title).toHaveTextContent(siteTitle);
   expect(title).toHaveAttribute("href", "https://already-renamed.okou.app/");
   click(buttonNamed("Close artifact", preview));
   await waitFor(() => {
     expect(title).not.toBeInTheDocument();
   });
-  await copyFromResources("already-renamed");
+  await copyFromResources();
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([
       "https://already-renamed.okou.app",
@@ -266,7 +268,7 @@ test.each([false, true])(
       "sites.vm0.io",
     );
     const title = await within(preview).findByTestId("artifact-title-link");
-    expect(title).toHaveTextContent("legacy-site.sites.vm0.io");
+    expect(title).toHaveTextContent(siteTitle);
     expect(title).toHaveAttribute("href", "https://legacy-site.sites.vm0.io/");
     const shareLabel = sidebar ? "Share artifact" : "Share";
     await waitFor(() => {

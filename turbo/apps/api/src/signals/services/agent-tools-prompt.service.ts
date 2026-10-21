@@ -35,6 +35,7 @@ function buildIntegrationToolsPrompt(): readonly string[] {
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
     "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`.",
+    "Before publishing, check `okou host --help`. When `--title` is supported, supply a concise human-readable display title separately from the URL slug. Use `okou host title <site> <title>` to rename an existing site when that command is available.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     "For file delivery, use the current integration's `upload-file` command.",
     "For Word documents, PDFs, or spreadsheets, if no relevant template is selected, read the `office` skill's `SKILL.md` entry point and follow its task routing. Read only the selected route and references needed for the task.",

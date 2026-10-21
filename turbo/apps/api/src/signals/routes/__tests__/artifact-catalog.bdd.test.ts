@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
+import { featureSwitchesRoutes } from "../feature-switches";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -336,6 +339,7 @@ async function uploadFile(args: {
 async function publishHostedSite(args: {
   readonly owner: CatalogActor;
   readonly site: string;
+  readonly title?: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
   readonly threadId?: string;
 }): Promise<{
@@ -356,6 +360,7 @@ async function publishHostedSite(args: {
   const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
   const body = {
     site: args.site,
+    title: args.title,
     artifactKind: args.artifactKind ?? ("hosted-site" as const),
     spaFallback: false,
     files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
@@ -382,6 +387,137 @@ async function publishHostedSite(args: {
 }
 
 describe("GET /api/artifacts/catalog", () => {
+  it("shares the explicit site title across Chat and Artifacts and retains renames on redeploy", async () => {
+    const owner = await catalogActor("Site title owner");
+    const site = `title-${randomUUID().slice(0, 8)}`;
+    const published = await publishHostedSite({
+      owner,
+      site,
+      title: "Quarterly sales report",
+    });
+    const catalog = await chat.listArtifactCatalog(owner.actor);
+    const entry = catalog.artifacts.find((artifact) => {
+      return artifact.kind === "hosted-site";
+    });
+    expect(entry).toMatchObject({ title: "Quarterly sales report" });
+    const headers = { authorization: "Bearer clerk-session" };
+    routeMocks.clerk.session(
+      owner.actor.userId,
+      owner.actor.orgId,
+      owner.actor.orgRole,
+    );
+    const renamed = await accept(
+      setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle({
+        headers,
+        params: { publicSlug: published.publicSlug },
+        body: { title: "  季度销售报告  " },
+      }),
+      [200],
+    );
+    expect(renamed.body).toStrictEqual({
+      siteId: published.siteId,
+      publicSlug: published.publicSlug,
+      title: "季度销售报告",
+    });
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, entry!.id),
+    ).resolves.toMatchObject({
+      title: "季度销售报告",
+      site: { url: published.url, publicSlug: published.publicSlug },
+    });
+    const redeployed = await publishHostedSite({
+      owner,
+      site,
+      title: "Quarterly sales report",
+      threadId: published.threadId,
+    });
+    expect(redeployed.siteId).toBe(published.siteId);
+    const afterRedeploy = await chat.listArtifactCatalog(owner.actor);
+    expect(afterRedeploy.artifacts).toStrictEqual([
+      expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
+    ]);
+    const threadArtifacts = await chat.listThreadArtifacts(
+      owner.actor,
+      published.threadId,
+    );
+    const files = threadArtifacts.runs.flatMap((run) => {
+      return run.files;
+    });
+    expect(files).toHaveLength(2);
+    expect(files).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "季度销售报告",
+          aliasUrl: published.url,
+        }),
+        expect.objectContaining({
+          title: "季度销售报告",
+          aliasUrl: redeployed.url,
+        }),
+      ]),
+    );
+  });
+
+  it("gates site title editing and denies other owners without changing the title", async () => {
+    const owner = await catalogActor("Site title access owner");
+    const published = await publishHostedSite({
+      owner,
+      site: `title-access-${randomUUID().slice(0, 8)}`,
+      title: "Original report",
+    });
+    const headers = { authorization: "Bearer clerk-session" };
+    const rename = {
+      headers,
+      params: { publicSlug: published.publicSlug },
+      body: { title: "Renamed report" },
+    };
+    routeMocks.clerk.session(
+      owner.actor.userId,
+      owner.actor.orgId,
+      owner.actor.orgRole,
+    );
+    await accept(
+      setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      ).update({
+        headers,
+        body: {
+          switches: { [FeatureSwitchKey.HostedSiteTitleEditing]: false },
+        },
+      }),
+      [200],
+    );
+    await accept(
+      setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle(
+        rename,
+      ),
+      [403],
+    );
+    for (const actor of [bdd.user({ orgId: owner.actor.orgId }), bdd.user()]) {
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      await accept(
+        setupApp({ context, routes: featureSwitchesRoutes })(
+          featureSwitchesContract,
+        ).update({
+          headers,
+          body: {
+            switches: { [FeatureSwitchKey.HostedSiteTitleEditing]: true },
+          },
+        }),
+        [200],
+      );
+      await accept(
+        setupApp({ context, routes: hostRoutes })(hostContract).updateSiteTitle(
+          rename,
+        ),
+        [404],
+      );
+    }
+    expect(
+      (await chat.listArtifactCatalog(owner.actor)).artifacts,
+    ).toStrictEqual([expect.objectContaining({ title: "Original report" })]);
+  });
+
   it("lists an uploaded file as one artifact and hides other callers", async () => {
     const owner = await catalogActor("Artifact catalog owner");
     const outsider = await catalogActor("Artifact catalog outsider");

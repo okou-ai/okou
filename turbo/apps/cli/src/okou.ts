@@ -696,7 +696,9 @@ export function buildHelpText(
     '  Generate image?        okou generate image --raw-prompt "..."',
     '  Generate website?      okou generate website --prompt "..."',
     ...(canWriteHost
-      ? ["  Host a static site?    okou host ./dist --site my-site --spa"]
+      ? [
+          '  Host a static site?    okou host ./dist --site my-site --title "My site" --spa',
+        ]
       : []),
     ...(canReadHost
       ? ["  Clone hosted site?     okou host clone <public-slug>"]

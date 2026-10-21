@@ -105,6 +105,9 @@ describe("buildGenerationTemplatePrompt", () => {
       "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
     );
     expect(result.prompt).toContain(
+      "when supported, add `--title` with a concise human-readable presentation name",
+    );
+    expect(result.prompt).toContain(
       "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
     const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
@@ -165,6 +168,9 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain("tokens.json");
     expect(result.prompt).toContain(
       "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+    );
+    expect(result.prompt).toContain(
+      "when supported, add `--title` with a concise human-readable presentation name",
     );
     expect(result.prompt).toContain(
       "choose HTML or PPTX from the user's request, remembered preferences, and intended use",

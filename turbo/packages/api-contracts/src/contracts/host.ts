@@ -12,6 +12,14 @@ import {
 
 const c = initContract();
 
+export const hostedSiteTitleSchema = z.string().trim().min(1).max(200);
+
+export const hostedSiteTitleResponseSchema = z.object({
+  siteId: z.uuid(),
+  publicSlug: z.string(),
+  title: hostedSiteTitleSchema,
+});
+
 export const hostedSiteUrlSlugSchema = z
   .string()
   .min(3)
@@ -191,6 +199,8 @@ export const hostedSitePrepareRequestSchema = z
     /** Fail before creating bytes when private artifact creation is unavailable. */
     requirePrivateArtifact: z.boolean().optional(),
     site: hostedSiteSlugSchema,
+    /** Initial display name; optional for retained CLI clients. */
+    title: hostedSiteTitleSchema.optional(),
     slugSuffix: hostedSiteSlugSuffixSchema.optional(),
     artifactKind: hostedArtifactKindSchema.default("hosted-site"),
     spaFallback: z.boolean().default(false),
@@ -223,6 +233,8 @@ export const hostedSiteUploadSchema = z.object({
 
 export const hostedSitePrepareResponseSchema = z.object({
   siteId: z.string().uuid(),
+  /** Acknowledges explicit titles; absent on APIs predating site titles. */
+  title: hostedSiteTitleSchema.optional(),
   deploymentId: z.string().uuid(),
   publicSlug: z.string(),
   url: artifactUrlSchema,
@@ -522,6 +534,23 @@ export const hostContract = c.router({
     },
     summary: "List deployment versions for an owned hosted site",
   },
+  updateSiteTitle: {
+    method: "PATCH",
+    path: "/api/host/sites/:publicSlug/title",
+    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
+    headers: authHeadersSchema,
+    body: z.object({ title: hostedSiteTitleSchema }),
+    responses: {
+      200: hostedSiteTitleResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      402: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Change an owned hosted site's display title without changing its URL",
+  },
   deleteSite: {
     method: "DELETE",
     path: "/api/host/sites/:publicSlug",
@@ -545,6 +574,9 @@ export const hostContract = c.router({
 });
 
 export type HostContract = typeof hostContract;
+export type HostedSiteTitleResponse = z.infer<
+  typeof hostedSiteTitleResponseSchema
+>;
 export type HostedSitePrepareRequest = z.infer<
   typeof hostedSitePrepareRequestSchema
 >;

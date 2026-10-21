@@ -300,7 +300,8 @@ function ArtifactSidebarResolvedContent({
     >
       <ArtifactSidebarHeader
         shareUrl={shareUrl}
-        title={display.filename}
+        title={display.title}
+        filename={display.filename}
         kind={display.kind}
         artifactKind={display.artifactKind}
         subtitle={display.subtitle}
@@ -336,6 +337,7 @@ interface ArtifactDisplay {
   url: string;
   kind: ArtifactKindForBody;
   filename: string;
+  title: string;
   subtitle: string;
   titleLink: ArtifactTitleLink | null;
   shareAvailable: boolean;
@@ -425,6 +427,7 @@ function resolveArtifactDisplay(
       url: ref.url,
       kind: ref.kind,
       filename: item.file.filename,
+      title: item.file.title ?? item.file.filename,
       subtitle: artifactTitleSubtitle(ref.kind, item.file),
       titleLink: artifactTitleLink(ref.kind, item.file),
       shareAvailable: ref.shareAvailable ?? true,
@@ -435,6 +438,7 @@ function resolveArtifactDisplay(
     url: ref.url,
     kind: ref.kind,
     filename: ref.filename,
+    title: ref.filename,
     subtitle: artifactFallbackSubtitle(ref.kind, ref.filename),
     titleLink: null,
     shareAvailable: ref.shareAvailable ?? true,
@@ -444,6 +448,7 @@ function resolveArtifactDisplay(
 function ArtifactSidebarHeader({
   shareUrl,
   title,
+  filename,
   kind,
   artifactKind,
   subtitle,
@@ -458,6 +463,7 @@ function ArtifactSidebarHeader({
 }: {
   shareUrl?: string | null;
   title: string;
+  filename: string;
   kind?: ArtifactKindForBody;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   subtitle: string;
@@ -497,7 +503,7 @@ function ArtifactSidebarHeader({
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">
-          <ArtifactTitle filename={title} link={titleLink} />
+          <ArtifactTitle title={title} link={titleLink} />
         </div>
         {subtitle && (
           <div className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -515,7 +521,7 @@ function ArtifactSidebarHeader({
         onToggleFullscreen={onToggleFullscreen}
         shareAvailable={shareAvailable}
         syncTarget={syncTarget}
-        title={title}
+        filename={filename}
         url={url}
       />
     </div>
@@ -532,7 +538,7 @@ function ArtifactSidebarActions({
   onToggleFullscreen,
   shareAvailable,
   syncTarget,
-  title,
+  filename,
   url,
 }: {
   shareUrl?: string | null;
@@ -544,7 +550,7 @@ function ArtifactSidebarActions({
   onToggleFullscreen: () => void;
   shareAvailable: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
-  title: string;
+  filename: string;
   url?: string;
 }) {
   return (
@@ -556,7 +562,7 @@ function ArtifactSidebarActions({
           kind={kind}
           shareAvailable={shareAvailable}
           syncTarget={syncTarget}
-          title={title}
+          filename={filename}
           url={url}
         />
       )}
@@ -579,7 +585,7 @@ function ArtifactSidebarPreviewActions({
   kind,
   shareAvailable,
   syncTarget,
-  title,
+  filename,
   url,
 }: {
   shareUrl?: string | null;
@@ -587,7 +593,7 @@ function ArtifactSidebarPreviewActions({
   kind?: ArtifactKindForBody;
   shareAvailable: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
-  title: string;
+  filename: string;
   url: string;
 }) {
   const { t } = useTranslation();
@@ -605,12 +611,12 @@ function ArtifactSidebarPreviewActions({
         />
       )}
       <ArtifactDownloadMenu
-        key={`${url}:${title}`}
+        key={`${url}:${filename}`}
         ariaLabel={t(($) => {
           return $.artifacts.actions.downloadArtifact;
         })}
         artifactKind={artifactKind}
-        filename={title}
+        filename={filename}
         syncTarget={syncTarget}
         url={url}
       />

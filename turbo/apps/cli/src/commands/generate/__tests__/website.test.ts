@@ -101,7 +101,7 @@ describe("okou generate website command", () => {
       "Write the artifact under `./generated/mockups/clearpath-demo/`.",
     );
     expect(stdout).toContain(
-      "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --spa --preview ./generated/previews/clearpath-demo.png --json\n",
+      "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --title 'Clearpath' --spa --preview ./generated/previews/clearpath-demo.png --json\n",
     );
     expect(stdout).not.toContain("Hosted websites are public:");
     expect(stdout).not.toContain("--visibility");
@@ -124,7 +124,7 @@ describe("okou generate website command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain(
-      "okou host ./generated/mockups/launch-site --site launch-site --spa --preview ./generated/previews/launch-site.png --json\n",
+      'okou host ./generated/mockups/launch-site --site launch-site --title "<descriptive display title>" --spa --preview ./generated/previews/launch-site.png --json\n',
     );
     expect(stdout).not.toContain("okou web upload-file -f <file>");
     expect(stdout).not.toContain("File upload is a separate delivery channel");
@@ -204,7 +204,7 @@ describe("okou generate website command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain(
-      "okou host ./generated/mockups/clearpath --site clearpath --spa",
+      "okou host ./generated/mockups/clearpath --site clearpath --title 'Clearpath' --spa",
     );
   });
 

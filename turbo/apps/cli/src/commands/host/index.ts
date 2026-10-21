@@ -2,6 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import {
   hostedArtifactKindSchema,
+  hostedSiteTitleSchema,
   type HostedArtifactKind,
 } from "@okouai/api-contracts/contracts/host";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -12,9 +13,11 @@ import { deleteHostedSiteCommand } from "./delete";
 import { versionsHostedSiteCommand } from "./versions";
 import { screenshotHostedSiteCommand } from "./screenshot";
 import { completeHostedSiteCommand } from "./complete";
+import { titleHostedSiteCommand } from "./title";
 
 interface HostOptions {
   readonly site?: string;
+  readonly title?: string;
   readonly slugSuffix?: string;
   readonly artifactKind?: HostedArtifactKind;
   readonly spa?: boolean;
@@ -44,6 +47,10 @@ export const hostCommand = new Command()
   )
   .option("--slug-suffix <suffix>", "Site URL suffix for legacy API servers")
   .option(
+    "--title <text>",
+    "Initial display title (required); redeploys keep the saved title",
+  )
+  .option(
     "--artifact-kind <kind>",
     "Artifact kind to record for this hosted deployment",
     parseArtifactKind,
@@ -59,22 +66,26 @@ export const hostCommand = new Command()
   .addCommand(deleteHostedSiteCommand)
   .addCommand(screenshotHostedSiteCommand)
   .addCommand(completeHostedSiteCommand)
+  .addCommand(titleHostedSiteCommand)
   .addHelpText(
     "after",
     `
 Examples:
   Capture a cover:      okou host screenshot ./dist --out ./preview.png --spa
-  Publish with cover:   okou host ./dist --site my-product-demo --spa --preview ./preview.png
-  Publish a Vite build:  okou host ./dist --site my-product-demo --spa
-  Redeploy the same URL: okou host ./dist --site my-product-demo --spa
+  Publish with cover:   okou host ./dist --site my-product-demo --title "Product demo" --spa --preview ./preview.png
+  Publish a Vite build:  okou host ./dist --site my-product-demo --title "Product demo" --spa
+  Redeploy the same URL: okou host ./dist --site my-product-demo --title "Product demo" --spa
+  Change display title: okou host title my-product-demo "New product demo"
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Take a site offline:   okou host delete my-product-demo
-  Machine readable:      okou host ./dist --site my-product-demo --spa --json
+  Machine readable:      okou host ./dist --site my-product-demo --title "Product demo" --spa --json
 
 Notes:
   - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
   - For an HTML presentation, add --artifact-kind presentation-html
+  - --title supplies a human-readable name, independent of the URL slug; it never defaults to --site
+  - Existing sites retain their saved title on redeploy; use okou host title to rename them
   - Use a user-selected cover or run host screenshot on the final bundle, inspect the image, and pass --preview; re-capture after editing
   - Preview images upload separately to private artifact storage and feed Artifacts cards; they do not become public files inside your site
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
@@ -95,9 +106,16 @@ Notes:
       if (!options.site) {
         throw new Error("--site is required when publishing a hosted site");
       }
+      if (!options.title?.trim()) {
+        throw new Error(
+          "--title is required when publishing a hosted site; use a human-readable display name",
+        );
+      }
+      const title = hostedSiteTitleSchema.parse(options.title);
       const result = await publishStaticSite({
         dir,
         site: options.site,
+        title,
         slugSuffix: options.slugSuffix,
         artifactKind: options.artifactKind,
         spaFallback: Boolean(options.spa),
@@ -116,7 +134,7 @@ Notes:
       });
 
       const presentation = createArtifactPresentation(
-        options.site,
+        result.title,
         result.aliasUrl ?? result.url,
       );
       if (options.json) {
@@ -125,6 +143,7 @@ Notes:
       }
 
       console.log(chalk.green("✓ Hosted site deployed"));
+      console.log(chalk.dim(`  Title: ${result.title}`));
       console.log(chalk.dim(`  Site: ${result.publicSlug}`));
       if (result.deploymentVersion !== undefined) {
         console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));

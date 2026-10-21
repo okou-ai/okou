@@ -45,6 +45,7 @@ describe("okou host publish command", () => {
   beforeEach(() => {
     chalk.level = 0;
     hostCommand.setOptionValue("json", undefined);
+    hostCommand.setOptionValue("title", undefined);
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
@@ -63,6 +64,49 @@ describe("okou host publish command", () => {
     } else {
       Reflect.deleteProperty(process.stderr, "isTTY");
     }
+  });
+
+  it("requires an explicit display title instead of using the site slug", async () => {
+    writeFileSync(join(tempDir, "index.html"), "<main>Report</main>");
+    await expect(
+      hostCommand.parseAsync(["node", "okou", tempDir, "--site", "demo-site"]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "--title is required",
+    );
+    expect(mockConsoleLog.mock.calls).toHaveLength(0);
+  });
+
+  it("does not upload when an older API silently drops the supplied title", async () => {
+    writeFileSync(join(tempDir, "index.html"), "<main>Report</main>");
+    server.use(
+      http.post(PREPARE_URL, () => {
+        return HttpResponse.json({
+          siteId: "00000000-0000-4000-8000-000000000001",
+          deploymentId: "00000000-0000-4000-8000-000000000002",
+          publicSlug: "demo-site",
+          url: "https://demo-site.okou.app",
+          uploads: [],
+        });
+      }),
+    );
+    await expect(
+      hostCommand.parseAsync([
+        "node",
+        "okou",
+        tempDir,
+        "--site",
+        "demo-site",
+        "--title",
+        "Demo site",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "did not acknowledge the supplied site title",
+    );
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "Hosted site deployed",
+    );
   });
 
   it.each([
@@ -107,6 +151,7 @@ describe("okou host publish command", () => {
           );
           expect(body).toMatchObject({
             site: "demo-site",
+            title: "Demo site",
             artifactKind: "hosted-site",
             spaFallback: true,
           });
@@ -131,6 +176,7 @@ describe("okou host publish command", () => {
 
           return HttpResponse.json({
             siteId: "00000000-0000-4000-8000-000000000001",
+            title: "Demo site",
             deploymentId: "00000000-0000-4000-8000-000000000002",
             publicSlug,
             url,
@@ -158,6 +204,7 @@ describe("okou host publish command", () => {
           );
           return HttpResponse.json({
             siteId: "00000000-0000-4000-8000-000000000001",
+            title: "Demo site",
             deploymentId: "00000000-0000-4000-8000-000000000002",
             publicSlug,
             url,
@@ -175,6 +222,8 @@ describe("okou host publish command", () => {
         "node",
         "cli",
         tempDir,
+        "--title",
+        "Demo site",
         "--site",
         "demo-site",
         "--spa",
@@ -193,8 +242,8 @@ describe("okou host publish command", () => {
         expect(stdout).toContain(`Alias: ${aliasUrl}`);
       }
       expect(stdout).toContain("Artifact presentation context:");
-      expect(stdout).toContain(`[demo-site](<${expectedUrl}>)`);
-      expect(stdout).toContain(`\n\n![demo-site](<${expectedUrl}>)\n\n`);
+      expect(stdout).toContain(`[Demo site](<${expectedUrl}>)`);
+      expect(stdout).toContain(`\n\n![Demo site](<${expectedUrl}>)\n\n`);
       expect(stdout).toContain(
         "occupies its own Markdown paragraph, with a blank line before and after it, and is outside a code fence",
       );
@@ -207,6 +256,8 @@ describe("okou host publish command", () => {
         "node",
         "cli",
         tempDir,
+        "--title",
+        "Demo site",
         "--site",
         "demo-site",
         "--spa",
@@ -225,8 +276,8 @@ describe("okou host publish command", () => {
         size:
           Buffer.byteLength(index) +
           Buffer.byteLength(DEFAULT_HOSTED_SITE_ROBOTS_TXT),
-        inlineMarkdownLink: `[demo-site](<${expectedUrl}>)`,
-        previewMarkdownBlock: `![demo-site](<${expectedUrl}>)`,
+        inlineMarkdownLink: `[Demo site](<${expectedUrl}>)`,
+        previewMarkdownBlock: `![Demo site](<${expectedUrl}>)`,
         artifactPresentationContext: expect.stringContaining(
           "outside code fences",
         ),
@@ -252,6 +303,7 @@ describe("okou host publish command", () => {
         expect(body.slugSuffix).toBe("release-01");
         return HttpResponse.json({
           siteId: "00000000-0000-4000-8000-000000000001",
+          title: "Demo site",
           deploymentId: "00000000-0000-4000-8000-000000000004",
           publicSlug: legacyPublicSlug,
           url: legacyUrl,
@@ -270,6 +322,7 @@ describe("okou host publish command", () => {
       http.post(COMPLETE_URL, () => {
         return HttpResponse.json({
           siteId: "00000000-0000-4000-8000-000000000001",
+          title: "Demo site",
           deploymentId: "00000000-0000-4000-8000-000000000004",
           publicSlug: legacyPublicSlug,
           url: legacyUrl,
@@ -282,6 +335,8 @@ describe("okou host publish command", () => {
       "node",
       "cli",
       tempDir,
+      "--title",
+      "Demo site",
       "--site",
       "demo-site",
       "--slug-suffix",
@@ -295,8 +350,8 @@ describe("okou host publish command", () => {
     expect(parsed).toMatchObject({
       publicSlug: legacyPublicSlug,
       url: legacyUrl,
-      inlineMarkdownLink: `[demo-site](<${legacyUrl}>)`,
-      previewMarkdownBlock: `![demo-site](<${legacyUrl}>)`,
+      inlineMarkdownLink: `[Demo site](<${legacyUrl}>)`,
+      previewMarkdownBlock: `![Demo site](<${legacyUrl}>)`,
       artifactPresentationContext: expect.stringContaining(
         "outside code fences",
       ),
@@ -348,6 +403,8 @@ describe("okou host publish command", () => {
           "node",
           "cli",
           tempDir,
+          "--title",
+          "Demo site",
           "--site",
           "demo-site",
           ...extraArgs,

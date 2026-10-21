@@ -120,7 +120,10 @@ ${formatPresentationTemplateListing(templates)}`;
           options.visibility === undefined
             ? ""
             : ` --visibility ${options.visibility}`;
-        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`;
+        const displayTitle = options.title
+          ? `'${options.title.replaceAll("'", "'\\''")}'`
+          : '"<presentation title>"';
+        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --title ${displayTitle} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`;
         const deliveryInstructions = [
           options.visibility === undefined
             ? "- Uploaded and generated files default to only-me. Hosted sites are public."

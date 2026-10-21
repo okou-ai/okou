@@ -26,6 +26,7 @@ import { completeHostedSiteCommand } from "../complete";
 const deploymentId = "00000000-0000-4000-8000-000000000002";
 const previewImageUrl = "https://app.okou.ai/artifacts/abc123abcd.png";
 const completed = {
+  title: "Preview demo",
   siteId: "00000000-0000-4000-8000-000000000001",
   deploymentId,
   publicSlug: "preview-demo",
@@ -83,6 +84,8 @@ describe("hosted artifact previews", () => {
       "node",
       "okou",
       site,
+      "--title",
+      "Preview demo",
       "--site",
       "preview-demo",
       "--preview",

@@ -26,6 +26,7 @@ import {
 } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 import { hostedSiteUrlRoutes } from "./hosted-site-url";
+import { hostedSiteTitleRoutes } from "./hosted-site-title";
 
 function internalError(message: string) {
   return {
@@ -236,6 +237,7 @@ const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const hostRoutes: readonly RouteEntry[] = [
+  ...hostedSiteTitleRoutes,
   ...hostedSiteUrlRoutes,
   ...hostedSiteAccessRoutes,
   {
