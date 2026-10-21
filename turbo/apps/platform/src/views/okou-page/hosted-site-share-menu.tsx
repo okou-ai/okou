@@ -375,24 +375,26 @@ function HostedSiteShareActions({
 
 function HostedSiteShareBody({
   session,
+  link,
+  loading,
   saving,
   saveFailed,
   onSave,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly link: string | null;
+  readonly loading: boolean;
   readonly saving: boolean;
   readonly saveFailed: boolean;
   readonly onSave: () => void;
 }) {
-  // Both reads stay subscribed while the editor is open, so Cancel and Save
-  // return to settled actions instead of a loading frame.
-  const link = useLoadable(session.copyUrl$);
+  // Stays subscribed while the editor is open, so Cancel and Save return to
+  // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
   const editing = useGet(session.editing$);
-  const current = link.state === "hasData" ? link.data : null;
   return (
     <>
-      <SiteStatus link={current} loading={link.state === "loading"} />
+      <SiteStatus link={link} loading={loading} />
       {editing ? (
         <WebsiteUrlEditor
           session={session}
@@ -400,10 +402,16 @@ function HostedSiteShareBody({
           saveFailed={saveFailed}
           onSave={onSave}
         />
+      ) : loading ? (
+        // Nothing can be copied or customized until the current address is
+        // known, so the footer holds its place without offering either.
+        <div aria-busy="true" className="mt-4 flex justify-end">
+          <Skeleton className="h-8 w-24 rounded-lg" />
+        </div>
       ) : (
         <HostedSiteShareActions
           session={session}
-          link={current}
+          link={link}
           customizable={
             details.state === "hasData" &&
             details.data?.isActive === true &&
@@ -424,6 +432,8 @@ function HostedSiteShareSessionMenu({
   className,
   iconSize = 16,
 }: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
+  // The preview mounts this menu before its popover, so preload the current URL here.
+  const link = useLoadable(session.copyUrl$);
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
   const setOpen = useSet(session.setOpen$);
@@ -456,6 +466,8 @@ function HostedSiteShareSessionMenu({
       >
         <HostedSiteShareBody
           session={session}
+          link={link.state === "hasData" ? link.data : null}
+          loading={link.state === "loading"}
           saving={saving.state === "loading"}
           saveFailed={saving.state === "hasError"}
           onSave={() => {
