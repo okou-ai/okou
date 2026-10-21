@@ -110,8 +110,13 @@ struct MessageArtifactPreview: View {
           ArtifactWebView(
             url: url,
             didFail: { message, status in
+              guard viewer.preview?.id == preview.id else { return }
               if !viewer.renewHTMLSignature(status: status) { webError = message }
-            }, loadingChanged: { webLoading = $0 }
+            },
+            loadingChanged: { value in
+              guard viewer.preview?.id == preview.id else { return }
+              webLoading = value
+            }
           )
           .id(preview.id)
           if webLoading {

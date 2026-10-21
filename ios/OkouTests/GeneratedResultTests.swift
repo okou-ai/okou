@@ -102,6 +102,53 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertEqual(conversation.messages.last?.text, fixture.message)
   }
 
+  func testReusedCardResolvesReplacedResourceAndReplacementScope() async throws {
+    let first = try await GeneratedResultFixture.make()
+    let second = try await GeneratedResultFixture.make()
+    defer {
+      first.server.stop()
+      second.server.stop()
+    }
+    let original = first.history.conversation()
+    let replacement = second.history.conversation()
+    defer {
+      original.close()
+      replacement.close()
+    }
+    let image = try XCTUnwrap(original.artifacts.resource("/artifacts/image00001.png"))
+    let video = try XCTUnwrap(original.artifacts.resource("/artifacts/video00001.mp4"))
+    @MainActor func content(_ resource: ChatArtifact, viewer: MessageArtifactStore) -> some View {
+      ScrollView {
+        MessageArtifactCard(
+          resource: resource, label: resource.filename, destination: nil,
+          images: [], imageSources: [], viewer: viewer, loadsContent: true
+        ).padding(20)
+      }
+    }
+    let host = UIHostingController(rootView: content(image, viewer: original.artifacts))
+    let window = try await mountResultHost(host)
+    defer { unmount(window) }
+    try await eventually {
+      first.state.storageRequests.withLock {
+        $0.contains { $0.url?.lastPathComponent == "image00001.png" }
+      }
+    }
+    host.rootView = content(video, viewer: original.artifacts)
+    try await eventually {
+      first.state.storageRequests.withLock {
+        $0.contains { $0.url?.lastPathComponent == "poster0001.png" }
+      }
+    }
+    original.artifacts.deactivate()
+    host.rootView = content(video, viewer: replacement.artifacts)
+    try await eventually {
+      second.state.storageRequests.withLock {
+        $0.contains { $0.url?.lastPathComponent == "poster0001.png" }
+      }
+    }
+    XCTAssertGreaterThan(second.state.resolutions.withLock { $0 }, 0)
+  }
+
   func testNativePreviewFamiliesAndSameMessageImageNavigation() async throws {
     let fixture = try await GeneratedResultFixture.make()
     defer { fixture.server.stop() }

@@ -9,12 +9,28 @@ struct MessageArtifactCard: View {
   let imageSources: [String]
   let viewer: MessageArtifactStore
   let loadsContent: Bool
-  @State private var card: MessageArtifactStore.Card?
-  @State private var error: String?
+  private struct LoadKey: Hashable {
+    let resource: ChatArtifact
+    let owner: ObjectIdentifier
+    let enabled: Bool
+    let retry: Int
+  }
+  private struct Prepared {
+    let key: LoadKey
+    let card: MessageArtifactStore.Card?
+    let error: String?
+  }
+  @State private var prepared: Prepared?
   @State private var retry = 0
   @Environment(\.openURL) private var openURL
   @ScaledMetric(relativeTo: .subheadline) private var titleHeight = 42
 
+  private var loadKey: LoadKey {
+    LoadKey(
+      resource: resource, owner: ObjectIdentifier(viewer), enabled: loadsContent, retry: retry)
+  }
+  private var card: MessageArtifactStore.Card? { prepared?.key == loadKey ? prepared?.card : nil }
+  private var error: String? { prepared?.key == loadKey ? prepared?.error : nil }
   private var artifact: ChatArtifact { card?.artifact ?? resource }
   private var isMedia: Bool { [.image, .video, .html].contains(resource.kind) }
   private var title: String {
@@ -78,16 +94,16 @@ struct MessageArtifactCard: View {
     .frame(maxWidth: 400, alignment: .leading)
     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     .accessibilityIdentifier("generated-result-card")
-    .task(id: "\(loadsContent)-\(retry)") {
+    .task(id: loadKey) {
       guard loadsContent else { return }
-      error = nil
+      let key = loadKey
       do {
         let value = try await viewer.card(resource, thumbnail: isMedia)
         guard !Task.isCancelled else { return }
-        card = value
+        prepared = Prepared(key: key, card: value, error: nil)
       } catch {
         guard !Task.isCancelled else { return }
-        self.error = MessageArtifactStore.message(for: error)
+        prepared = Prepared(key: key, card: nil, error: MessageArtifactStore.message(for: error))
       }
     }
   }
