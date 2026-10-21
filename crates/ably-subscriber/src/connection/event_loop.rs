@@ -32,7 +32,7 @@ use crate::subscribe::CloseRequest;
 use crate::types::{Event, Message, TimingConfig, TokenDetails, TokenFuture};
 
 const BACKLOG_WARNING_INTERVAL: Duration = Duration::from_secs(60);
-const BACKLOG_WARNING_THRESHOLD: usize = 64;
+const BACKLOG_WARNING_DURATION: Duration = Duration::from_secs(5);
 type CloseReceiver = oneshot::Receiver<CloseRequest>;
 
 #[derive(Default)]
@@ -43,25 +43,27 @@ pub(crate) struct BacklogWarnings {
 
 impl BacklogWarnings {
     fn observe(&mut self, events: &EventSender) {
-        if events.depth() < BACKLOG_WARNING_THRESHOLD {
+        let stats = events.snapshot();
+        let Some(backlog_since) = stats.backlog_since else {
             self.report_at = None;
             return;
-        }
+        };
         let now = Instant::now();
-        let report_at = self
-            .last_reported_at
-            .map(|at| at + BACKLOG_WARNING_INTERVAL);
-        if report_at.is_none_or(|at| now >= at) {
+        let mut report_at = backlog_since + BACKLOG_WARNING_DURATION;
+        if let Some(last_reported_at) = self.last_reported_at {
+            report_at = report_at.max(last_reported_at + BACKLOG_WARNING_INTERVAL);
+        }
+        if now >= report_at {
             tracing::warn!(
-                event_backlog = events.depth(),
-                event_backlog_peak = events.peak(),
+                event_backlog = stats.depth,
+                event_backlog_peak = stats.peak,
+                event_backlog_duration_ms = now.duration_since(backlog_since).as_millis(),
                 "Ably event consumer backlog; drain or close the subscription"
             );
             self.last_reported_at = Some(now);
-            self.report_at = Some(now + BACKLOG_WARNING_INTERVAL);
-        } else {
-            self.report_at = report_at;
+            report_at = now + BACKLOG_WARNING_INTERVAL;
         }
+        self.report_at = Some(report_at);
     }
 
     fn report_at(&self) -> Option<Instant> {
