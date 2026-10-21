@@ -102,6 +102,7 @@ async function accept<
   options: AcceptOptions = {},
 ): Promise<Extract<T, { status: S }>> {
   const showErrorToast = options.showErrorToast ?? true;
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: shared request-error presentation boundary.
   const result = await onRejection(promise, (error) => {
     if (!isAbortError(error)) {
       signal?.throwIfAborted();

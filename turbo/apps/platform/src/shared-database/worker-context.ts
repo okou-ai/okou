@@ -290,6 +290,7 @@ function requestConnectionToken(
   signal: AbortSignal,
 ): Promise<string | null> {
   const providerSignal = AbortSignal.any([signal, connectionSignal]);
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: another tab's cancellation is a provider failure for the live caller.
   return onRejection(
     () => {
       providerSignal.throwIfAborted();

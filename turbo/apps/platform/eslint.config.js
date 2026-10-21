@@ -111,6 +111,7 @@ export default [
       "ccstate/require-client-signal": "error",
       "ccstate/command-async-signal": "error",
       "ccstate/no-command-in-command": "error",
+      "ccstate/no-on-rejection": "error",
       "ccstate/no-computed-signal": "error",
       "ccstate/no-getter-setter-params": "error",
       "ccstate/no-accessor-escape": "error",
@@ -308,8 +309,9 @@ export default [
   // - try/catch: use accept() for API errors, useLoadableSet for loading states.
   // - .then/.catch: production code must await and surface state via ccstate
   //   loadables; the centralized helpers in signals/utils.ts (bestEffort,
-  //   tapError, onRejection, settle, toVoid, detach) wrap the legitimate
-  //   Promise primitive usage — see issue #13535.
+  //   tapError, settle, toVoid, detach) wrap legitimate Promise primitives.
+  //   onRejection requires explicit review via ccstate/no-on-rejection; see
+  //   docs/app/signals/onRejection.md and issue #13535.
   {
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
@@ -337,12 +339,12 @@ export default [
         {
           selector: "CallExpression[callee.property.name='then']",
           message:
-            "Promise.then is not allowed. Use await, or one of the helpers in signals/utils.ts (bestEffort, tapError, onRejection, settle, toVoid).",
+            "Promise.then is not allowed. Use await and derive request state from loadables. See docs/app/signals/onRejection.md before adding error callbacks.",
         },
         {
           selector: "CallExpression[callee.property.name='catch']",
           message:
-            "Promise.catch is not allowed. Use the helpers in signals/utils.ts (bestEffort, tapError, onRejection, settle).",
+            "Promise.catch is not allowed. Let accept errors propagate and derive request state from loadables. See docs/app/signals/onRejection.md for infrastructure exceptions.",
         },
         {
           selector: "NewExpression[callee.name='Date'][arguments.length=0]",

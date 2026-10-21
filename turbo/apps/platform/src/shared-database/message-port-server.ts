@@ -264,6 +264,7 @@ export class SharedDatabaseMessagePortServer {
         })(),
       ]);
     };
+    // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: Worker token-request outcome telemetry.
     return onRejection(
       async () => {
         const started = report("started");

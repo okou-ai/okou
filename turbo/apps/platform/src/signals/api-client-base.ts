@@ -200,6 +200,7 @@ export function createAuthedContractClient<T extends AppRouter>(
               method: args.route.method,
               route: args.route.path,
             } satisfies ClientTelemetryOperation;
+            // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: shared network-failure telemetry.
             const networkResponse = await onRejection(
               requestWithToken(token, diagnostic),
               (error) => {

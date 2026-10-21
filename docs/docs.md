@@ -98,6 +98,8 @@ owning surface.
   and [Clerk customization](app/styles.md#clerk-customization).
 - [UI layering](app/layering.md): scenario choices, implementation links, and checks.
 - [ResizeObserver](app/resize-observer.md): CSS layout and measurement ownership.
+- [onRejection](app/signals/onRejection.md): error-callback misuse, loadable-owned
+  request state, and reviewed infrastructure exceptions.
 - [Platform testing](app/app-testing.md): real page setup and user-visible assertions.
 
 ## Desktop
