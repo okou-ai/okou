@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.3](https://github.com/okou-ai/okou/compare/sandbox-v0.28.2...sandbox-v0.28.3) (2026-10-21)
+
+
+### Documentation
+
+* **sandbox:** clarify best-effort process cancellation ([#42019](https://github.com/okou-ai/okou/issues/42019)) ([128c536](https://github.com/okou-ai/okou/commit/128c5369c1a3b6eff76c9483027ba650758c0497))
+
 ## [0.28.2](https://github.com/okou-ai/okou/compare/sandbox-v0.28.1...sandbox-v0.28.2) (2026-10-20)
 
 

@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1049.0](https://github.com/okou-ai/okou/compare/app-v0.1048.7...app-v0.1049.0) (2026-10-21)
+
+
+### Features
+
+* support independent hosted site titles ([#41997](https://github.com/okou-ai/okou/issues/41997)) ([87ae8c9](https://github.com/okou-ai/okou/commit/87ae8c9f3481e1fc8b193dd6076e55b21022c0b0))
+
+
+### Refactoring
+
+* **connector:** retire status contracts after app reader preparation ([#41862](https://github.com/okou-ai/okou/issues/41862)) ([4ddecef](https://github.com/okou-ai/okou/commit/4ddecefcad0e97d13b75106bcc0bca13a0a45fa6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.584.0
+    * @okouai/core bumped to 8.775.0
+
 ## [0.1048.7](https://github.com/okou-ai/okou/compare/app-v0.1048.6...app-v0.1048.7) (2026-10-21)
 
 

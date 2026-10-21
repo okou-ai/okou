@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.1...runner-lifecycle-v0.17.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **runner:** hand off reusable non-success predecessors with home custody ([#42000](https://github.com/okou-ai/okou/issues/42000)) ([cd921b9](https://github.com/okou-ai/okou/commit/cd921b9542b8d9ffc50fe934a2a1cc6e156ba530))
+
 ## [0.17.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.0...runner-lifecycle-v0.17.1) (2026-10-21)
 
 ## [0.17.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.16.2...runner-lifecycle-v0.17.0) (2026-10-20)

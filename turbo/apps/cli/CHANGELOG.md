@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.406.0](https://github.com/okou-ai/okou/compare/cli-v9.405.8...cli-v9.406.0) (2026-10-21)
+
+
+### Features
+
+* support independent hosted site titles ([#41997](https://github.com/okou-ai/okou/issues/41997)) ([87ae8c9](https://github.com/okou-ai/okou/commit/87ae8c9f3481e1fc8b193dd6076e55b21022c0b0))
+
+
+### Refactoring
+
+* **connector:** retire status contracts after app reader preparation ([#41862](https://github.com/okou-ai/okou/issues/41862)) ([4ddecef](https://github.com/okou-ai/okou/commit/4ddecefcad0e97d13b75106bcc0bca13a0a45fa6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.584.0
+    * @okouai/core bumped to 8.775.0
+    * @okouai/pi-agent-runtime bumped to 1.50.40
+
 ## [9.405.8](https://github.com/okou-ai/okou/compare/cli-v9.405.7...cli-v9.405.8) (2026-10-21)
 
 

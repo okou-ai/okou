@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.775.0](https://github.com/okou-ai/okou/compare/core-v8.774.9...core-v8.775.0) (2026-10-21)
+
+
+### Features
+
+* support independent hosted site titles ([#41997](https://github.com/okou-ai/okou/issues/41997)) ([87ae8c9](https://github.com/okou-ai/okou/commit/87ae8c9f3481e1fc8b193dd6076e55b21022c0b0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.584.0
+
 ## [8.774.9](https://github.com/okou-ai/okou/compare/core-v8.774.8...core-v8.774.9) (2026-10-21)
 
 

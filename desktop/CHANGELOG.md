@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.54.2](https://github.com/okou-ai/okou/compare/desktop-v0.54.1...desktop-v0.54.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **desktop:** restore native main process sentry reporting ([#42033](https://github.com/okou-ai/okou/issues/42033)) ([d920879](https://github.com/okou-ai/okou/commit/d920879cdbba15f310e4fa3e6f29fca61ed19ff5))
+
+
+### Refactoring
+
+* **desktop:** align computer use helper log category ([#42017](https://github.com/okou-ai/okou/issues/42017)) ([562cb9a](https://github.com/okou-ai/okou/commit/562cb9a96be69319b4047fd5eb49cae3e037931b))
+
 ## [0.54.1](https://github.com/okou-ai/okou/compare/desktop-v0.54.0...desktop-v0.54.1) (2026-10-21)
 
 
