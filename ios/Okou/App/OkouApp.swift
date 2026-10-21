@@ -319,11 +319,10 @@ private struct WorkspaceRootView: View {
 
   private var greetingText: String {
     let name = authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let chinese = Locale.preferredLanguages.first?.hasPrefix("zh") == true
     if let name, !name.isEmpty {
-      return chinese ? "今天我们做点什么，\(name)？" : "What are we working on, \(name)?"
+      return "What are we working on, \(name)?"
     }
-    return chinese ? "今天我们做点什么？" : "What are we working on?"
+    return "What are we working on?"
   }
 
   private func openSidebar() {

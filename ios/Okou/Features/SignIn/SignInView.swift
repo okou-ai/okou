@@ -33,7 +33,7 @@ struct SignInView: View {
         unavailableView
       }
     }
-    .environment(\.locale, .autoupdatingCurrent)
+    .environment(\.locale, Locale(identifier: "en"))
   }
 
   private var unavailableView: some View {
