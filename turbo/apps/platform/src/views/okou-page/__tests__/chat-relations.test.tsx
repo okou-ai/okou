@@ -124,11 +124,17 @@ function mockMessages(items: readonly ChatRelationMessage[]) {
     return respond(200, { items: [...items] });
   });
 }
+function messagesCaret(container: HTMLElement, title: string) {
+  return queryAllByRoleFast("button", container).find((button) => {
+    return button.getAttribute("aria-label") === `Messages with ${title}`;
+  });
+}
 async function openMessages(title: string) {
   const panel = await screen.findByRole("region", { name: "Resources" });
-  const row = (await within(panel).findByText(title)).closest("button");
+  await within(panel).findByText(title);
+  const row = messagesCaret(panel, title);
   if (!row) {
-    throw new Error(`Expected a disclosure row for ${title}`);
+    throw new Error(`Expected a messages caret for ${title}`);
   }
   click(row);
   return { panel, row };
@@ -180,7 +186,7 @@ async function setupRelations(
 }
 
 test.each(["children", "communications"] as const)(
-  "Keep the source visible while %s are still loading",
+  "Draw the source and related chats together once %s answer",
   async (pending) => {
     const requested = createDeferredPromise<void>(context.signal);
     const response = createDeferredPromise<void>(context.signal);
@@ -215,15 +221,9 @@ test.each(["children", "communications"] as const)(
     });
     await requested.promise;
     await screen.findByText("Plan the launch");
-    const sourcePanel = await screen.findByRole("region", {
-      name: "Resources",
-    });
+    // The source alone would draw a half-filled panel that then grows.
     expect(
-      within(sourcePanel).getByRole("region", { name: "From" }),
-    ).toHaveTextContent("Slack");
-    expect(within(sourcePanel).queryByRole("status")).not.toBeInTheDocument();
-    expect(
-      within(sourcePanel).queryByRole("region", { name: "Chats" }),
+      screen.queryByRole("region", { name: "Resources" }),
     ).not.toBeInTheDocument();
 
     response.resolve();
@@ -279,7 +279,7 @@ test("Keep loaded relationships visible while retrying a failed source", async (
   await within(panel).findByText("Updated child");
 });
 
-test("Keep the resources popup and trigger when the last resource disappears", async () => {
+test("Close an automatic panel but keep the trigger when the last resource disappears", async () => {
   let empty = false;
   await setupRelations({
     mock: () => {
@@ -304,17 +304,15 @@ test("Keep the resources popup and trigger when the last resource disappears", a
   await within(panel).findByText("Research child");
   empty = true;
   click(buttonNamed("Try again", panel));
-  await within(panel).findByText(
-    "Artifacts and related chats from this chat appear here.",
-  );
-  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("region", { name: "Resources" }),
-  ).toBeInTheDocument();
+  // An automatic opening has nothing left to show, so it steps away.
+  await waitFor(() => {
+    expect(panel).not.toBeInTheDocument();
+  });
   expect(buttonNamed("Resources")).toBeEnabled();
+  expect(buttonNamed("Resources")).toHaveAttribute("aria-expanded", "false");
 });
 
-test("Keep the next chat's popup available while its relationships load", async () => {
+test("Draw the next chat's panel only once its relationships answer", async () => {
   installRelationsGeometry();
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
@@ -356,16 +354,19 @@ test("Keep the next chat's popup available while its relationships load", async 
       "Next related chat",
     );
   });
+  // No placeholder and nothing from the previous chat while this one loads.
+  await waitFor(() => {
+    expect(buttonNamed("Resources")).toHaveAttribute("aria-busy", "true");
+  });
+  expect(
+    screen.queryByRole("region", { name: "Resources" }),
+  ).not.toBeInTheDocument();
+  response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
-  await expect(within(panel).findByRole("status")).resolves.toHaveTextContent(
-    "Loading",
-  );
+  await within(panel).findByText("Research child");
   expect(
     within(panel).queryByText("Next related chat"),
   ).not.toBeInTheDocument();
-  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
-  response.resolve();
-  await within(panel).findByText("Research child");
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
 });
 
@@ -394,12 +395,14 @@ test("Show the first source and created chats with their status", async () => {
   await expect(
     within(panel).findByText("Older child"),
   ).resolves.toBeInTheDocument();
-  // Exchanged messages turn the peer row into a disclosure for its history.
-  const peer = within(panel)
-    .getByText("Existing planning chat")
-    .closest("button");
-  expect(peer).toHaveAttribute("aria-expanded", "false");
+  // The peer row opens the chat; a separate caret opens its message history.
+  const peer = within(panel).getByText("Existing planning chat").closest("a");
+  expect(peer).toHaveAttribute("href", `/chats/${PEER}`);
   expect(peer).toHaveTextContent("Running");
+  expect(messagesCaret(panel, "Existing planning chat")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   expect(child.closest("a")).not.toHaveTextContent("Running");
   expect(panel.querySelector("[title]")).toBeNull();
 });
@@ -479,10 +482,8 @@ test("List an agent origin once when it is also a related chat", async () => {
   const panel = await screen.findByRole("region", { name: "Resources" });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
   await within(chats).findByText("Research child");
-  const parent = within(chats)
-    .getByText("Existing planning chat")
-    .closest("button");
-  expect(parent).toHaveAttribute("aria-expanded", "false");
+  const parent = within(chats).getByText("Existing planning chat").closest("a");
+  expect(parent).toHaveAttribute("href", `/chats/${PEER}`);
   expect(parent).toHaveTextContent("From");
   expect(within(chats).getAllByText("From", { exact: true })).toHaveLength(1);
   expect(within(chats).getAllByRole("listitem")).toHaveLength(2);
@@ -597,27 +598,26 @@ test("Follow a sent message card to the run it started in the other chat", async
   expect(hash()).toBe(`#run-${OTHER_RUN}`);
 });
 
-test("Open a chat that only sent messages here from its expanded history", async () => {
+test("Open a related chat from its row in one click, while its caret opens the history", async () => {
   await setupRelations({
     mock: () => {
       mockCommunications(0, { receivedCount: 1 });
       mockMessages([receivedMessage("The launch plan is ready")]);
     },
   });
-  const { panel } = await openMessages("Existing planning chat");
+  const { panel, row: caret } = await openMessages("Existing planning chat");
   const reply = await within(panel).findByText("The launch plan is ready");
+  expect(caret).toHaveAttribute("aria-expanded", "true");
   expect(reply.closest("a")).toHaveAttribute(
     "href",
     `/chats/${THREAD}#run-${RUN}`,
   );
-  const open = queryAllByRoleFast("link", panel).find((link) => {
-    return link.textContent.trim() === "Open chat";
-  });
-  if (!open) {
-    throw new Error("Expected a link to the other chat");
+  const row = within(panel).getByText("Existing planning chat").closest("a");
+  if (!row) {
+    throw new Error("Expected the related chat row to be a link");
   }
-  expect(open).toHaveAttribute("href", `/chats/${PEER}`);
-  click(open);
+  expect(row).toHaveAttribute("href", `/chats/${PEER}`);
+  click(row);
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${PEER}`);
   });
@@ -633,6 +633,7 @@ test("Keep received messages usable when the other chat is unavailable", async (
   const { panel, row } = await openMessages("Unavailable");
   const reply = await within(panel).findByText("The reply is still here");
   expect(row).toHaveAttribute("aria-expanded", "true");
+  expect(within(panel).getByText("Unavailable").closest("a")).toBeNull();
   expect(reply.closest("a")).toHaveAttribute(
     "href",
     `/chats/${THREAD}#run-${RUN}`,
@@ -739,7 +740,7 @@ test("Show a queued related chat's status as text", async () => {
   const panel = await screen.findByRole("region", { name: "Resources" });
   const row = (
     await within(panel).findByText("Existing planning chat")
-  ).closest("button");
+  ).closest("a");
   expect(row).toHaveTextContent("Queued");
   expect(row).not.toHaveTextContent("Running");
 });
@@ -795,9 +796,9 @@ test("Preview three unique chats and expand the complete list", async () => {
   const chats = await within(panel).findByRole("region", { name: "Chats" });
   expect(within(chats).getAllByRole("listitem")).toHaveLength(3);
   expect(within(chats).getAllByText("Child 1")).toHaveLength(1);
-  expect(
-    within(chats).getByText("Child 1").closest("button"),
-  ).toHaveTextContent("Running");
+  expect(within(chats).getByText("Child 1").closest("a")).toHaveTextContent(
+    "Running",
+  );
   expect(within(chats).queryByText("Created")).not.toBeInTheDocument();
   click(buttonNamed("Show more", chats));
   expect(within(chats).getByText("Child 51")).toBeInTheDocument();
@@ -807,6 +808,43 @@ test("Preview three unique chats and expand the complete list", async () => {
   expect(within(panel).getByRole("region", { name: "From" })).toHaveTextContent(
     "Slack",
   );
+});
+
+test("Close an open message history when the Chats section collapses", async () => {
+  await setupRelations({
+    mock: () => {
+      context.mocks.api(chatRelationsContract.children, ({ respond }) => {
+        return respond(200, {
+          items: Array.from({ length: 4 }, (_, index) => {
+            return {
+              ...createdChat(
+                `d0000000-0000-4000-a000-${String(200 + index).padStart(12, "0")}`,
+                `Child ${index + 1}`,
+              ),
+              id: `d0000000-0000-4000-a000-${String(300 + index).padStart(12, "0")}`,
+            };
+          }),
+        });
+      });
+      mockCommunications(1, {
+        threadId: "d0000000-0000-4000-a000-000000000200",
+        title: "Child 1",
+      });
+      mockMessages([message()]);
+    },
+  });
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  const chats = await within(panel).findByRole("region", { name: "Chats" });
+  click(buttonNamed("Show more", chats));
+  const { row } = await openMessages("Child 1");
+  await within(chats).findByText("Please check the launch plan");
+  click(buttonNamed("Collapse", chats));
+  await waitFor(() => {
+    expect(row).toHaveAttribute("aria-expanded", "false");
+  });
+  expect(
+    within(chats).queryByText("Please check the launch plan"),
+  ).not.toBeInTheDocument();
 });
 
 test("Show exactly three related chats without an expand control", async () => {
