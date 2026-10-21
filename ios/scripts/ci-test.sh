@@ -30,6 +30,8 @@ xcode_args=(
   -onlyUsePackageVersionsFromResolvedFile
   -disableAutomaticPackageResolution
   -skipPackageUpdates
+  # IDE source indexing is unnecessary for CI test products.
+  COMPILER_INDEX_STORE_ENABLE=NO
   CODE_SIGN_IDENTITY=-
   CODE_SIGNING_ALLOWED=YES
   DEVELOPMENT_TEAM=
@@ -57,7 +59,15 @@ fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
   cmp "$resolved" "$build_root/Package.resolved.before"
-  xcodebuild "${xcode_args[@]}" \
+  # Use the build's test specification without loading the package graph again.
+  shopt -s nullglob
+  test_runs=("$build_root"/DerivedData/Build/Products/*.xctestrun)
+  if [[ ${#test_runs[@]} -ne 1 ]]; then
+    echo "Expected exactly one built test specification, found ${#test_runs[@]}" >&2
+    exit 1
+  fi
+  xcodebuild -xctestrun "${test_runs[0]}" \
+    -destination "$IOS_TEST_DESTINATION" \
     -parallel-testing-enabled NO \
     -maximum-concurrent-test-simulator-destinations 1 \
     -resultBundlePath "$build_root/Tests.xcresult" \
