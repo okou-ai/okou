@@ -1923,76 +1923,97 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(telegramMocks.sentMessages).toHaveLength(0);
   });
 
-  it("keeps Telegram completion terminal after provider delivery fails", async () => {
-    const runnerGroup = configureCanonicalTelegramRunner();
-    const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    telegramApiMocks();
-    const attemptedMessages: TelegramSendMessageBody[] = [];
-    server.use(
-      http.post(
-        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
-        async ({ request }) => {
-          attemptedMessages.push(
-            (await request.json()) as TelegramSendMessageBody,
-          );
-          return HttpResponse.json(
-            { ok: false, description: "Telegram temporarily unavailable" },
-            { status: 503 },
-          );
-        },
-      ),
-    );
-    const chatId = -77_202;
-    const prompt = `@${OFFICIAL_BOT_USERNAME} complete despite delivery failure`;
-    expect(
-      (
-        await postWebhook({
-          telegramBotId: fixture.telegramBotId,
-          secret: fixture.webhookSecret,
-          body: {
-            update_id: 204,
-            message: {
-              message_id: 2206,
-              chat: { id: chatId, type: "supergroup" },
-              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
-              text: prompt,
-              entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
-            },
+  it.each([
+    { providerStatus: 503, expectedAttempts: 1 },
+    { providerStatus: 429, expectedAttempts: 2 },
+  ])(
+    "keeps Telegram completion terminal after provider HTTP $providerStatus",
+    async ({ providerStatus, expectedAttempts }) => {
+      const runnerGroup = configureCanonicalTelegramRunner();
+      const fixture = await createTelegramPostFixture({ linkOfficial: true });
+      telegramApiMocks();
+      const attemptedMessages: TelegramSendMessageBody[] = [];
+      server.use(
+        http.post(
+          `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+          async ({ request }) => {
+            const body = (await request.json()) as TelegramSendMessageBody;
+            attemptedMessages.push(body);
+            if (providerStatus === 429 && attemptedMessages.length === 2) {
+              return HttpResponse.json({
+                ok: true,
+                result: {
+                  message_id: 700,
+                  chat: { id: Number(body.chat_id) },
+                  text: body.text,
+                },
+              });
+            }
+            return HttpResponse.json(
+              { ok: false, description: "Telegram temporarily unavailable" },
+              { status: providerStatus },
+            );
           },
-        })
-      ).status,
-    ).toBe(200);
-    await flushWaitUntilForTest();
-    const run = await runForPrompt(fixture, prompt);
-    if (!run) {
-      throw new Error("Expected the Telegram provider-failure run");
-    }
-    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
-    await completeCanonicalChatRun({
-      runId: run.id,
-      sandboxToken: claim.sandboxToken,
-    });
-    expect(attemptedMessages).toHaveLength(1);
-    expect(attemptedMessages[0]).toMatchObject({
-      chat_id: String(chatId),
-      text: expect.stringContaining("Task completed successfully."),
-    });
-    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
-      id: run.id,
-      status: "completed",
-    });
-    await webhooksApi.requestAgentComplete(
-      { runId: run.id, exitCode: 1, error: "late duplicate completion" },
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(attemptedMessages).toHaveLength(1);
-    await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
-      id: run.id,
-      status: "completed",
-    });
-  });
+        ),
+      );
+      const chatId = -77_202;
+      const prompt = `@${OFFICIAL_BOT_USERNAME} complete despite delivery failure`;
+      expect(
+        (
+          await postWebhook({
+            telegramBotId: fixture.telegramBotId,
+            secret: fixture.webhookSecret,
+            body: {
+              update_id: 204,
+              message: {
+                message_id: 2206,
+                chat: { id: chatId, type: "supergroup" },
+                from: {
+                  id: Number(fixture.telegramUserId),
+                  first_name: "Alice",
+                },
+                text: prompt,
+                entities: [mentionEntity(OFFICIAL_BOT_USERNAME)],
+              },
+            },
+          })
+        ).status,
+      ).toBe(200);
+      await flushWaitUntilForTest();
+      const run = await runForPrompt(fixture, prompt);
+      if (!run) {
+        throw new Error("Expected the Telegram provider-failure run");
+      }
+      const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+      await completeCanonicalChatRun({
+        runId: run.id,
+        sandboxToken: claim.sandboxToken,
+      });
+      expect(attemptedMessages).toHaveLength(expectedAttempts);
+      expect(attemptedMessages[0]).toMatchObject({
+        chat_id: String(chatId),
+        text: expect.stringContaining("Task completed successfully."),
+      });
+      if (providerStatus === 429) {
+        expect(attemptedMessages[1]).toStrictEqual(attemptedMessages[0]);
+      }
+      await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+        id: run.id,
+        status: "completed",
+      });
+      await webhooksApi.requestAgentComplete(
+        { runId: run.id, exitCode: 1, error: "late duplicate completion" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(attemptedMessages).toHaveLength(expectedAttempts);
+      await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
+        id: run.id,
+        status: "completed",
+      });
+    },
+  );
 
   it("preserves Telegram group reply chains and duplicate updates", async () => {
     expect.hasAssertions();
