@@ -34,6 +34,7 @@ function authHeaders() {
     "Cache-Control": "private, no-store",
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy": "worker-src 'none'",
+    "Cross-Origin-Resource-Policy": "same-origin",
   });
 }
 
@@ -277,6 +278,8 @@ export function withSiteAuthHeaders(
     output.set("Referrer-Policy", "no-referrer");
   if (headers.has("Content-Security-Policy"))
     output.append("Content-Security-Policy", "worker-src 'none'");
+  if (headers.has("Cross-Origin-Resource-Policy"))
+    output.set("Cross-Origin-Resource-Policy", "same-origin");
   return new Response(response.body, {
     status: response.status,
     headers: output,
