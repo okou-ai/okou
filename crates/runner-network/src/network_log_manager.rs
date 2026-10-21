@@ -328,7 +328,7 @@ impl NetworkLogManager {
     fn writer_pool(&self) -> &WriterPool {
         self.inner.writers.get_or_init(|| {
             WriterPool::start(
-                self.inner.writer_config.normalized(),
+                self.inner.writer_config,
                 #[cfg(any(test, feature = "test-support"))]
                 self.inner.write_gate.clone(),
             )
