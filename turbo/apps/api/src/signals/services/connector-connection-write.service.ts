@@ -134,9 +134,9 @@ export type ConnectorConnectionWriteOutcome =
   | { readonly kind: "sibling-disabled" };
 
 /**
- * Thrown only by the row-returning compatibility wrappers when a concurrent
- * writer changed the resolved account set. Callers using the `*Outcome`
- * variants receive the deterministic outcome instead.
+ * Thrown by {@link connectorConnectionWrittenRow} when a concurrent writer
+ * changed the resolved account set. Callers using the `*Outcome` variants
+ * receive the deterministic outcome instead.
  */
 export class ConnectorConnectionWriteLostError extends Error {
   constructor(
