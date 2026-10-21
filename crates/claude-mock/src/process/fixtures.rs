@@ -371,13 +371,17 @@ pub(super) fn run_stuck_tool_scenario(
 
 pub(super) fn run_orphan_pipe_scenario(output_format: &str) -> ExitCode {
     if output_format == "stream-json" {
-        emit_post_result_pair();
-
-        // Spawn a child after flushing the completed stream. It inherits
-        // stdout and keeps the pipe open after this process exits.
-        let _ = Command::new("sleep")
+        // Establish the inherited stdout holder before publishing success.
+        // The caller owns cleanup of this intentionally orphaned child.
+        if let Err(error) = Command::new("sleep")
             .arg(REAPABLE_HANG_DURATION.as_secs().to_string())
-            .spawn();
+            .spawn()
+        {
+            eprintln!("start orphan-pipe child: {error}");
+            return ExitCode::from(1);
+        }
+
+        emit_post_result_pair();
     }
     ExitCode::SUCCESS
 }
