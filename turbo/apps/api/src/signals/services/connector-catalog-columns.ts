@@ -1,6 +1,13 @@
-import { connectorCatalogEntries } from "@okouai/db/runtime/connector-catalog";
-import type { ConnectorCatalogArtifactConnector } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
+import {
+  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+  type ConnectorCatalogArtifactConnector,
+} from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorCatalogPermissionSummary } from "@okouai/connectors/connector-catalog/entry-columns";
+import { asc, eq } from "drizzle-orm";
 
 // Narrow projections share the required column contract with the writer.
 const entry = connectorCatalogEntries;
@@ -31,6 +38,28 @@ export const connectorCatalogRuntimeColumns = Object.freeze({
   skill: entry.skill,
   firewall: entry.firewall,
 });
+
+export function acceptedCatalogIdentityReadPlan() {
+  return {
+    columns: {
+      schemaVersion: connectorCatalog.schemaVersion,
+      hash: connectorCatalog.hash,
+    },
+    condition: eq(
+      connectorCatalog.schemaVersion,
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+    ),
+  };
+}
+
+export function acceptedCatalogEntriesReadPlan(catalogDigest: string) {
+  return {
+    displayColumns: connectorCatalogDisplayColumns,
+    runtimeColumns: connectorCatalogRuntimeColumns,
+    condition: eq(connectorCatalogEntries.hash, catalogDigest),
+    orderBy: asc(connectorCatalogEntries.slug),
+  };
+}
 
 type CompatibilityConnector = Pick<
   ConnectorCatalogArtifactConnector,

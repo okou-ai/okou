@@ -20,23 +20,21 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { asc, eq } from "drizzle-orm";
 
 import { singleton } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
 import { onRejection } from "../utils";
-import {
-  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  type ConnectorCatalogArtifactConnector,
-  type ConnectorCatalogAuthMethod,
+import type {
+  ConnectorCatalogArtifactConnector,
+  ConnectorCatalogAuthMethod,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   compactConnectorCatalogDefaultPolicy,
   connectorCatalogPermissionSummary,
 } from "@okouai/connectors/connector-catalog/entry-columns";
 import {
-  connectorCatalogDisplayColumns,
-  connectorCatalogRuntimeColumns,
+  acceptedCatalogIdentityReadPlan,
+  acceptedCatalogEntriesReadPlan,
   materializeConnectorCatalogDisplayRow,
   materializeConnectorCatalogRuntimeRow,
   type ConnectorCatalogDisplayConnector,
@@ -242,48 +240,6 @@ function measureCatalogLoadSync<T>(
   return timing ? timing.measureSync(actionType, operation) : operation();
 }
 
-async function readCurrentCatalog(args: {
-  readonly db: ReadonlyDb;
-  readonly identity: ExternalCatalogIdentity;
-  readonly capability: ExecutableCapabilityState;
-  readonly timing?: ConnectorCatalogLoadTiming;
-}): Promise<AcceptedConnectorCatalogSnapshot> {
-  const rows = await (async () => {
-    return await measureCatalogLoad(
-      args.timing,
-      "api_dispatch_connector_catalog_query_payload",
-      async () => {
-        return await args.db
-          .select({
-            slug: connectorCatalogRuntimeColumns.slug,
-            authMethods: connectorCatalogRuntimeColumns.authMethods,
-            mcp: connectorCatalogRuntimeColumns.mcp,
-            label: connectorCatalogRuntimeColumns.label,
-            description: connectorCatalogRuntimeColumns.description,
-            category: connectorCatalogRuntimeColumns.category,
-            icon: connectorCatalogRuntimeColumns.icon,
-            tags: connectorCatalogRuntimeColumns.tags,
-            generation: connectorCatalogRuntimeColumns.generation,
-            skill: connectorCatalogRuntimeColumns.skill,
-            firewall: connectorCatalogRuntimeColumns.firewall,
-          })
-          .from(connectorCatalogEntries)
-          .where(eq(connectorCatalogEntries.hash, args.identity.catalogDigest))
-          .orderBy(asc(connectorCatalogEntries.slug));
-      },
-    );
-  })();
-  // A published artifact contains at least one connector. A whole-catalog
-  // read must not turn an unavailable generation into a successful empty list.
-  if (rows.length === 0) {
-    throw new ExternalConnectorCatalogUnavailableError("missing_entries");
-  }
-  return materializeAcceptedConnectorCatalog({
-    ...args,
-    connectors: rows.map(materializeConnectorCatalogRuntimeRow),
-  });
-}
-
 function materializeAcceptedConnectorCatalog<
   Connector extends CompatibleCatalogConnector,
 >(args: {
@@ -407,18 +363,11 @@ export async function loadAcceptedConnectorCatalogSnapshot(
       identityReadTiming,
       "api_dispatch_connector_catalog_query_identity",
       async () => {
+        const plan = acceptedCatalogIdentityReadPlan();
         return await identityReadDb
-          .select({
-            schemaVersion: connectorCatalog.schemaVersion,
-            hash: connectorCatalog.hash,
-          })
+          .select(plan.columns)
           .from(connectorCatalog)
-          .where(
-            eq(
-              connectorCatalog.schemaVersion,
-              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-            ),
-          )
+          .where(plan.condition)
           .limit(1);
       },
     );
@@ -440,22 +389,12 @@ export async function loadAcceptedConnectorCatalogSnapshot(
       identity,
       timing,
       load: async () => {
+        const plan = acceptedCatalogEntriesReadPlan(identity.catalogDigest);
         const rows = await db
-          .select({
-            slug: connectorCatalogDisplayColumns.slug,
-            authMethods: connectorCatalogDisplayColumns.authMethods,
-            mcp: connectorCatalogDisplayColumns.mcp,
-            label: connectorCatalogDisplayColumns.label,
-            description: connectorCatalogDisplayColumns.description,
-            category: connectorCatalogDisplayColumns.category,
-            icon: connectorCatalogDisplayColumns.icon,
-            tags: connectorCatalogDisplayColumns.tags,
-            generation: connectorCatalogDisplayColumns.generation,
-            permissionSummary: connectorCatalogDisplayColumns.permissionSummary,
-          })
+          .select(plan.displayColumns)
           .from(connectorCatalogEntries)
-          .where(eq(connectorCatalogEntries.hash, identity.catalogDigest))
-          .orderBy(asc(connectorCatalogEntries.slug));
+          .where(plan.condition)
+          .orderBy(plan.orderBy);
         if (rows.length === 0) {
           throw new ExternalConnectorCatalogUnavailableError("missing_entries");
         }
@@ -473,12 +412,35 @@ export async function loadAcceptedConnectorCatalogSnapshot(
     identity,
     timing,
     load: async () => {
-      return await readCurrentCatalog({
-        db,
-        identity,
-        capability,
-        ...(timing === undefined ? {} : { timing }),
-      });
+      return await (async () => {
+        const rows = await (async () => {
+          return await measureCatalogLoad(
+            timing,
+            "api_dispatch_connector_catalog_query_payload",
+            async () => {
+              const plan = acceptedCatalogEntriesReadPlan(
+                identity.catalogDigest,
+              );
+              return await db
+                .select(plan.runtimeColumns)
+                .from(connectorCatalogEntries)
+                .where(plan.condition)
+                .orderBy(plan.orderBy);
+            },
+          );
+        })();
+        // A published artifact contains at least one connector. A whole-catalog
+        // read must not turn an unavailable generation into a successful empty list.
+        if (rows.length === 0) {
+          throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+        }
+        return materializeAcceptedConnectorCatalog({
+          identity,
+          capability,
+          ...(timing === undefined ? {} : { timing }),
+          connectors: rows.map(materializeConnectorCatalogRuntimeRow),
+        });
+      })();
     },
   });
 }
