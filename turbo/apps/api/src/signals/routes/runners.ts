@@ -72,7 +72,6 @@ import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
-import { compareAppVersions } from "../../lib/app-version";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -2022,11 +2021,8 @@ async function resolveStoredExecutionContextForClaim(
     readonly db: Db;
     readonly runId: string;
     readonly orgId: string;
-    readonly agentId: string | null;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
-    readonly nativeContinuationSupported: boolean;
-    readonly runnerVersion: string | undefined;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2053,24 +2049,6 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
-    };
-  }
-  // Release #41438 shipped the prepared inline reader in Runner 0.234.18.
-  if (
-    args.agentId !== null &&
-    (args.runnerVersion === undefined ||
-      (compareAppVersions(args.runnerVersion, "0.234.18") ?? -1) < 0)
-  ) {
-    // Older runners ignore inline instructions. Leave the job pending for a prepared reader.
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
-  if (!args.nativeContinuationSupported) {
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
     };
   }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2112,8 +2090,6 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
-      readonly nativeContinuationSupported: boolean;
-      readonly runnerVersion: string | undefined;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2129,11 +2105,8 @@ const claimAuthorizedJob$ = command(
         db,
         runId,
         orgId: run.orgId,
-        agentId: run.agentId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
-        nativeContinuationSupported: args.nativeContinuationSupported,
-        runnerVersion: args.runnerVersion,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs, signal);
@@ -2306,10 +2279,7 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       runId,
       authType: auth.type,
       runnerAttribution,
-      runnerVersion: runnerVersionResult.data,
       capabilities: body.data.capabilities,
-      nativeContinuationSupported:
-        body.data.nativeContinuationSupported === true,
       jobWithRun,
       telemetry: body.data.telemetry
         ? { ...body.data.telemetry, runnerPreference }

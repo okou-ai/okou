@@ -667,7 +667,6 @@ describe("MCP OAuth foundations", () => {
         body: {
           runnerIdentity,
           capabilities: { piModelConfigGenerations: [1, 2, 3] },
-          nativeContinuationSupported: true,
         },
       }),
       [200],

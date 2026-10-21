@@ -69,6 +69,8 @@ struct ClaimRequestBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_hostname: Option<&'a str>,
     capabilities: RunnerClaimCapabilities,
+    /// APIs before the claim stopped reading this advertisement still leave
+    /// jobs pending without it; drop it once such APIs are no rollback target.
     native_continuation_supported: bool,
     telemetry: ClaimRequestTelemetry,
     /// Versions of the Okou CLI installed in this runner's rootfs. A runner
