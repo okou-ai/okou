@@ -2,6 +2,7 @@ import {
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
   builtinConnectorAccountFacts,
+  connectorAccountTargetKey,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
@@ -39,7 +40,7 @@ export interface MemberConnectorFacts {
 }
 
 /** Preserve target status output from the complete, unfiltered target inventory. */
-export function memberAccountSummary(
+function memberAccountSummary(
   target: ConnectorAccountTarget,
   accounts: ConnectorAccountConnectionsResult | null,
 ): MemberConnectorFacts["accountSummary"] {
@@ -63,7 +64,7 @@ export function memberAccountSummary(
   };
 }
 
-export function memberAccountStatus(
+function memberAccountStatus(
   accounts: ConnectorAccountConnectionsResult | null,
 ): MemberConnectionStatus {
   if (accounts?.state === "unavailable") return "unavailable";
@@ -79,6 +80,45 @@ export function memberAccountStatus(
   }
   if (account.setupStatus !== "complete") return "setup-required";
   return "connected";
+}
+
+/** Read one canonical target inventory for current-member status and identity. */
+export async function readMemberAccountFacts(
+  target: ConnectorAccountTarget,
+): Promise<MemberConnectorFacts> {
+  const accounts = await listConnectorAccountConnections(target, undefined, {
+    includeScopeMismatch: target.kind === "builtin",
+  });
+  const targetKey = connectorAccountTargetKey(target);
+  if (
+    accounts.state === "available" &&
+    (accounts.connections.some((account) => {
+      return connectorAccountTargetKey(account.target) !== targetKey;
+    }) ||
+      (accounts.defaultConnection !== null &&
+        connectorAccountTargetKey(accounts.defaultConnection.target) !==
+          targetKey))
+  ) {
+    throw new Error("Connector account response target identity mismatch.");
+  }
+  const accountSummary = memberAccountSummary(target, accounts);
+  const scopeMismatch =
+    target.kind === "builtin"
+      ? accountSummary?.defaultConnection?.scopeMismatch
+      : undefined;
+  const memberStatus = memberAccountStatus(accounts);
+  return {
+    integrationManaged: false,
+    accountSummary,
+    connectionId: accountSummary?.defaultConnection?.id ?? null,
+    scopeMismatch,
+    memberStatus:
+      target.kind === "builtin" &&
+      memberStatus === "connected" &&
+      scopeMismatch === undefined
+        ? "account-review-required"
+        : memberStatus,
+  };
 }
 
 /** Current-member management facts; never an admitted Run account projection. */
@@ -97,27 +137,15 @@ export async function readMemberConnectorFacts(
     "kind" in connector
       ? { kind: "custom" as const, customConnectorId: connector.id }
       : { kind: "builtin" as const, connectorSlug: connector.slug };
-  const accounts = await listConnectorAccountConnections(target, undefined, {
-    includeScopeMismatch: target.kind === "builtin",
-  });
-  const accountSummary = memberAccountSummary(target, accounts);
-  const account = accountSummary?.defaultConnection;
+  const facts = await readMemberAccountFacts(target);
+  const account = facts.accountSummary?.defaultConnection;
   const scopeMismatch =
     !("kind" in connector) && account
       ? builtinConnectorAccountFacts(connector, account).scopeMismatch
       : undefined;
-  const memberStatus = memberAccountStatus(accounts);
   return {
-    integrationManaged: false,
-    accountSummary,
-    connectionId: accountSummary?.defaultConnection?.id ?? null,
+    ...facts,
     scopeMismatch,
-    memberStatus:
-      !("kind" in connector) &&
-      memberStatus === "connected" &&
-      scopeMismatch === undefined
-        ? "account-review-required"
-        : memberStatus,
   };
 }
 

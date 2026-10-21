@@ -20,7 +20,10 @@ import {
   writeRunConnectorAccountContext,
 } from "../../__tests__/helpers/run-connector-accounts";
 import { server } from "../../../mocks/server";
-import { stubConnectorAccounts } from "../../__tests__/helpers/connector-accounts";
+import {
+  connectorAccount,
+  stubConnectorAccounts,
+} from "../../__tests__/helpers/connector-accounts";
 import {
   catalogItem,
   stubConnectorCatalog,
@@ -394,6 +397,158 @@ describe("okou connector check command", () => {
     expect(mockExit).toHaveBeenCalledWith(1);
   }
 
+  describe("current-member account diagnostics", () => {
+    const target = { kind: "builtin", connectorSlug: "github" } as const;
+    const account = connectorAccount(target, {
+      id: "00000000-0000-4000-8000-000000000003",
+    });
+
+    beforeEach(() => {
+      vi.stubEnv("OKOU_TOKEN", "test-session-token");
+      vi.stubEnv("OKOU_AGENT_ID", "");
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
+      stubDiagnostic(resolvedEnvironment({ run: { status: "not-scoped" } }));
+      stubConnector("github", null);
+    });
+
+    it.each([
+      {
+        name: "empty inventory",
+        accounts: [],
+        message: "Current account status: not connected.",
+        action: "/connectors/github/connect",
+      },
+      {
+        name: "saved accounts without a default",
+        accounts: [{ ...account, isDefault: false }],
+        message: "Current account status: default account required.",
+        action: "[Manage GitHub accounts]",
+      },
+      {
+        name: "incomplete setup",
+        accounts: [
+          {
+            ...account,
+            setupStatus: "incomplete" as const,
+            missingRequiredFields: ["apiKey"],
+          },
+        ],
+        message: "Current account status: missing apiKey.",
+        action: "[Manage GitHub accounts]",
+      },
+      {
+        name: "invalid setup",
+        accounts: [{ ...account, setupStatus: "invalid" as const }],
+        message: "Current account status: setup invalid.",
+        action: "[Manage GitHub accounts]",
+      },
+      {
+        name: "unavailable scope review",
+        accounts: [{ ...account, scopeMismatch: undefined }],
+        message: "Current account status: account review required.",
+        action: "[Manage GitHub accounts]",
+      },
+    ])("reports $name without claiming an active account", async (scenario) => {
+      server.use(stubConnectorAccounts(scenario.accounts, API_BASE_URL));
+
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--env-name",
+        "GH_TOKEN",
+      ]);
+
+      expect(getOutput()).toContain(scenario.message);
+      expect(getOutput()).toContain(scenario.action);
+      expect(getOutput()).not.toContain("connected and active");
+      if (scenario.accounts.length > 0) {
+        expect(getOutput()).not.toContain("/connectors/github/connect");
+      }
+    });
+
+    it("keeps an unavailable current inventory distinct from an empty one", async () => {
+      server.use(
+        http.get(`${API_BASE_URL}/api/connector-accounts/connections`, () => {
+          return HttpResponse.json(
+            { error: { message: "Connector not found", code: "NOT_FOUND" } },
+            { status: 404 },
+          );
+        }),
+      );
+
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--env-name",
+        "GH_TOKEN",
+      ]);
+
+      expect(getOutput()).toContain(
+        "Current account status: account status unavailable.",
+      );
+      expect(getOutput()).toContain("[Manage GitHub accounts]");
+      expect(getOutput()).not.toContain("/connectors/github/connect");
+      expect(getOutput()).not.toContain("connected and active");
+    });
+
+    it("reports a healthy canonical default as active", async () => {
+      server.use(stubConnectorAccounts([account], API_BASE_URL));
+
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--env-name",
+        "GH_TOKEN",
+      ]);
+
+      expect(getOutput()).toContain(`Default connection ID: ${account.id}`);
+      expect(getOutput()).toContain("connected and active");
+    });
+
+    it("surfaces a current inventory dependency failure", async () => {
+      server.use(
+        http.get(`${API_BASE_URL}/api/connector-accounts/connections`, () => {
+          return HttpResponse.json(
+            {
+              error: {
+                message: "Inventory unavailable",
+                code: "INTERNAL_SERVER_ERROR",
+              },
+            },
+            { status: 500 },
+          );
+        }),
+      );
+
+      await expectCommandFailure(["--env-name", "GH_TOKEN"]);
+
+      expect(getErrorOutput()).toContain("500: Inventory unavailable");
+      expect(getOutput()).not.toContain("/connectors/github/connect");
+      expect(getOutput()).not.toContain("connected and active");
+    });
+
+    it("rejects current JSON account metadata for a different target", async () => {
+      const otherAccount = connectorAccount({
+        kind: "custom",
+        customConnectorId: "00000000-0000-4000-8000-000000000004",
+      });
+      server.use(
+        http.get(`${API_BASE_URL}/api/connector-accounts/connections`, () => {
+          return HttpResponse.json({
+            connections: [otherAccount],
+            defaultConnection: otherAccount,
+            nextCursor: null,
+          });
+        }),
+      );
+
+      await expectCommandFailure(["--env-name", "GH_TOKEN", "--json"]);
+
+      expect(getErrorOutput()).toContain("target identity mismatch");
+      expect(getOutput()).not.toContain(otherAccount.id);
+    });
+  });
+
   describe("JSON output", () => {
     it("preserves AWS selectors in the diagnostic request and retry command", async () => {
       const awsIdentity = connectorIdentity({
@@ -603,8 +758,28 @@ describe("okou connector check command", () => {
       expect(getOutput()).not.toContain("\u001b[");
     });
 
-    it("keeps a standalone connection and unscoped policy distinct from a run account", async () => {
-      server.use(stubConnectorAccounts([], API_BASE_URL));
+    it("keeps current JSON identity and status on the canonical independent default", async () => {
+      const target = { kind: "builtin", connectorSlug: "github" } as const;
+      const account = connectorAccount(target, {
+        id: "00000000-0000-4000-8000-000000000003",
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
+        setupStatus: "invalid",
+      });
+      const sibling = connectorAccount(target, { isDefault: false });
+      server.use(
+        http.get(
+          `${API_BASE_URL}/api/connector-accounts/connections`,
+          ({ request }) => {
+            const cursor = new URL(request.url).searchParams.get("cursor");
+            return HttpResponse.json({
+              connections: cursor ? [account] : [sibling],
+              defaultConnection: account,
+              nextCursor: cursor ? null : "next-account-page",
+            });
+          },
+        ),
+      );
       vi.stubEnv("OKOU_AGENT_ID", "");
       stubDiagnostic(
         resolvedEnvironment({
@@ -627,11 +802,35 @@ describe("okou connector check command", () => {
         context: "current",
         account: null,
         authorization: null,
-        connection: { id: connectorResponse("github").id },
+        connection: {
+          id: account.id,
+          slug: "github",
+          connectionStatus: "reconnect-required",
+        },
+        accountSummary: {
+          accountCount: 2,
+          attentionCount: 1,
+          defaultConnection: { id: account.id, setupStatus: "invalid" },
+        },
+        memberStatus: "reconnect-required",
         diagnostic: {
           run: { status: "not-scoped" },
           permission: { outcome: "unavailable", basis: "not-run-scoped" },
         },
+      });
+      expect(json).toHaveProperty("connection", {
+        id: account.id,
+        slug: "github",
+        authMethod: account.authMethod,
+        externalId: account.externalId,
+        externalUsername: account.externalUsername,
+        externalEmail: account.externalEmail,
+        oauthScopes: account.oauthScopes,
+        connectionStatus: account.connectionStatus,
+        reconnectReason: account.reconnectReason,
+        tokenExpiresAt: account.tokenExpiresAt,
+        createdAt: account.createdAt,
+        updatedAt: account.updatedAt,
       });
     });
 
@@ -1305,15 +1504,26 @@ describe("okou connector check command", () => {
       expect(text).not.toContain("/connectors/github/reconnect");
     });
 
-    it("preserves deterministic default status outside a run", async () => {
+    it("preserves the exact reconnect-required current default beside a healthy sibling", async () => {
       vi.stubEnv("OKOU_TOKEN", "test-session-token");
       vi.stubEnv("OKOU_AGENT_ID", "");
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
       stubDiagnostic(resolvedEnvironment({ run: { status: "not-scoped" } }));
-      stubConnector(
-        "github",
-        connectorResponse("github", "reconnect-required"),
+      const account = connectorAccount(
+        { kind: "builtin", connectorSlug: "github" },
+        {
+          id: "00000000-0000-4000-8000-000000000003",
+          connectionStatus: "reconnect-required",
+          setupStatus: "invalid",
+        },
       );
+      server.use(
+        stubConnectorAccounts(
+          [account, connectorAccount(account.target, { isDefault: false })],
+          API_BASE_URL,
+        ),
+      );
+      stubConnector("github", connectorResponse("github"));
 
       await checkConnectorCommand.parseAsync([
         "node",
@@ -1323,7 +1533,11 @@ describe("okou connector check command", () => {
       ]);
 
       expect(getOutput()).toContain("needs to be reconnected");
-      expect(getOutput()).toContain("/connectors/github/connect");
+      expect(getOutput()).toContain(`Default connection ID: ${account.id}`);
+      expect(getOutput()).toContain(
+        `/connectors/github/reconnect/${account.id}`,
+      );
+      expect(getOutput()).not.toContain("connected and active");
     });
 
     it.each([
