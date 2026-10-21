@@ -17,10 +17,9 @@ export interface ChatThreadExecutionSnapshot {
 
 export interface ChatThreadContinuation {
   readonly expected: ChatThreadNativeBinding;
-  /** One creation bound for the predecessor read and the eventual Run insert. */
+  /** Revalidated at the actual Run insertion time before launch can commit. */
   readonly admission: {
     readonly runId: string;
-    readonly createdAt: Date;
     readonly finalizingSourceRunId: string | null;
   };
   readonly cloudBrowserEnabled: boolean;

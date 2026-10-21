@@ -12860,7 +12860,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(continuation).toStrictEqual({
               sessionId: null,
               generationRunId: null,
-              recoveryPrompt: null,
+              recoveryPrompt: expect.stringContaining(
+                "okou chat messages --output-dir threads",
+              ),
             });
           }
           await api.requestCancelRun(actor, next.runId, [200]);
@@ -13252,7 +13254,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(continuedClaim.nativeContinuation).toStrictEqual({
               sessionId: null,
               generationRunId: null,
-              recoveryPrompt: null,
+              recoveryPrompt: expect.stringContaining(
+                "okou chat messages --output-dir threads",
+              ),
             });
           }
 

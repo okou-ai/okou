@@ -18,6 +18,7 @@ import type { ApiTestUser } from "./helpers/api-bdd";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
   requireOrgId,
@@ -380,13 +381,25 @@ describe("CHAT-02: model-first routing", () => {
     const retry = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "retain the last initialized native context",
+      prompt: "recover Chat history after uninitialized turns",
     });
     const retryClaim = await claimChatRun(runnerGroup, retry.runId);
-    expect(retryClaim.claim.nativeContinuation).toMatchObject({
-      sessionId: run.threadId,
-      generationRunId: run.runId,
+    expect(retryClaim.claim.piSessionId).toBe(run.threadId);
+    expect(retryClaim.claim.nativeContinuation).toStrictEqual({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: expect.stringContaining(
+        "okou chat messages --output-dir threads",
+      ),
     });
+    const recoveryHistory = (
+      await chat.listThreadEvents(actor, run.threadId)
+    ).events
+      .map(chatEventDisplayText)
+      .join("\n");
+    expect(recoveryHistory).toContain(prompt);
+    expect(recoveryHistory).toContain("reject a changed native Framework");
+    expect(recoveryHistory).toContain("cancel before native initialization");
     await webhooks.requestAgentComplete(
       {
         runId: retry.runId,

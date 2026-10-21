@@ -85,7 +85,6 @@ export interface ThreadContext extends ThreadWorkflowContext {
   /** Generated once per picked event's claim graph. */
   readonly runIds$: Computed<{
     readonly runId: string;
-    readonly createdAt: Date;
   }>;
   /** Connector accounts chosen from thread, source and default selections. */
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
@@ -321,7 +320,7 @@ function createThreadHostGrant(
 
 function createRunIds() {
   return computed(() => {
-    return { runId: randomUUID(), createdAt: nowDate() };
+    return { runId: randomUUID() };
   });
 }
 
@@ -354,7 +353,7 @@ function createThreadContinuation(
       chatThreadId: sql.param(event.thread.id),
       userId: sql.param(event.thread.userId),
       orgId: sql.param(orgId),
-      createdAt: sql.param(identity.createdAt, agentRuns.createdAt),
+      createdAt: sql.param(nowDate(), agentRuns.createdAt),
     });
     const [previous] = await get(db$)
       .select(plan.fields)

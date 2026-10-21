@@ -4877,6 +4877,7 @@ function launchThreadBindingCte(args: {
   readonly userId: string;
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
+  readonly createdAt: Date;
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
 }) {
   const expected = args.validatedThreadSession;
@@ -4894,7 +4895,7 @@ function launchThreadBindingCte(args: {
     chatThreadId: sql.param(args.chatThreadId),
     userId: sql.param(args.userId),
     orgId: sql.param(args.orgId),
-    createdAt: sql.param(expected.admission.createdAt, agentRuns.createdAt),
+    createdAt: sql.param(args.createdAt, agentRuns.createdAt),
   });
   return new QueryBuilder().$with("validated_launch_thread").as(
     new QueryBuilder()
@@ -4916,8 +4917,8 @@ function launchThreadBindingCte(args: {
 
 function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const { rowsArgs, metadata } = args.commit.persistence.rows;
-  const createdAt =
-    args.validatedThreadSession?.admission.createdAt ?? nowDate();
+  // Preserve insertion time and revalidate the predecessor at this same bound.
+  const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
 
   const insertedRun = new QueryBuilder()
@@ -4965,6 +4966,7 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     userId: args.commit.createArgs.userId,
     orgId: args.commit.createArgs.orgId,
     identity: rowsArgs.identity,
+    createdAt,
     validatedThreadSession: args.validatedThreadSession,
   });
   return {
