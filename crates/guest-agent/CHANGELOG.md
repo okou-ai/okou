@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.23](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.22...guest-agent-v0.107.23) (2026-10-21)
+
+
+### Bug Fixes
+
+* **runner:** report event delivery response observations ([#41984](https://github.com/okou-ai/okou/issues/41984)) ([475bb68](https://github.com/okou-ai/okou/commit/475bb6814312a44d248c696149dfae0364418dd7))
+
 ## [0.107.22](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.21...guest-agent-v0.107.22) (2026-10-20)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.2...runner-supervisor-v0.20.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* **runner:** report event delivery response observations ([#41984](https://github.com/okou-ai/okou/issues/41984)) ([475bb68](https://github.com/okou-ai/okou/commit/475bb6814312a44d248c696149dfae0364418dd7))
+
 ## [0.20.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.1...runner-supervisor-v0.20.2) (2026-10-21)
 
 ## [0.20.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.0...runner-supervisor-v0.20.1) (2026-10-21)

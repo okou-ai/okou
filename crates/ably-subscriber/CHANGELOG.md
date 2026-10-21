@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.0...ably-subscriber-v2.0.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **ably-subscriber:** debounce transient consumer backlog warnings ([#41970](https://github.com/okou-ai/okou/issues/41970)) ([e8d1f28](https://github.com/okou-ai/okou/commit/e8d1f2882b7c631f2cf1a0f0964237970341edda))
+
 ## [2.0.0](https://github.com/okou-ai/okou/compare/ably-subscriber-v1.1.6...ably-subscriber-v2.0.0) (2026-10-20)
 
 
