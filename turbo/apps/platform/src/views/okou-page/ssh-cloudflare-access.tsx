@@ -16,19 +16,25 @@ import {
   sshConnectionModeEditor$,
 } from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import {
   AccessFields,
   CloudflareAccessLoadError,
 } from "./cloudflare-access.tsx";
 
 function AccessConfigOptions({
-  personal,
-  organization,
+  configs,
 }: {
-  readonly personal: readonly ScopedCloudflareAccessConfig[];
-  readonly organization: readonly ScopedCloudflareAccessConfig[];
+  readonly configs: readonly ScopedCloudflareAccessConfig[];
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const personal = configs.filter((config) => {
+    return config.scope === "personal";
+  });
+  const organization = configs.filter((config) => {
+    return config.scope === "organization";
+  });
   return (
     <>
       <SelectGroup>
@@ -44,11 +50,13 @@ function AccessConfigOptions({
             </SelectItem>
           );
         })}
-        <SelectItem value="new">
-          {t(($) => {
-            return $.cloudflareAccess.createNew;
-          })}
-        </SelectItem>
+        {!guided && (
+          <SelectItem value="new">
+            {t(($) => {
+              return $.cloudflareAccess.createNew;
+            })}
+          </SelectItem>
+        )}
       </SelectGroup>
       {organization.length > 0 && (
         <SelectGroup>
@@ -72,33 +80,26 @@ function AccessConfigOptions({
 
 export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   const configs = useLoadable(cloudflareAccessConfigs$);
   const editor = useGet(sshConnectionModeEditor$);
   const choose = useSet(chooseSshAccessConfig$);
-  const personal =
-    configs.state === "hasData"
-      ? (configs.data?.filter((config) => {
-          return config.scope === "personal";
-        }) ?? [])
-      : [];
-  const organization =
-    configs.state === "hasData"
-      ? (configs.data?.filter((config) => {
-          return config.scope === "organization";
-        }) ?? [])
-      : [];
   const configItems = [
     ...(configs.state === "hasData" && configs.data
       ? configs.data.map((config) => {
           return { value: config.id, label: config.name };
         })
       : []),
-    {
-      value: "new",
-      label: t(($) => {
-        return $.cloudflareAccess.createNew;
-      }),
-    },
+    ...(!guided
+      ? [
+          {
+            value: "new",
+            label: t(($) => {
+              return $.cloudflareAccess.createNew;
+            }),
+          },
+        ]
+      : []),
   ];
   if (configs.state === "hasData" && configs.data === null) {
     return (
@@ -151,10 +152,7 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
               />
             </SelectTrigger>
             <SelectContent>
-              <AccessConfigOptions
-                personal={personal}
-                organization={organization}
-              />
+              <AccessConfigOptions configs={configs.data} />
             </SelectContent>
           </Select>
           {editor.configId &&
@@ -170,7 +168,14 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
             )}
         </div>
       ) : null}
-      {editor.configId === "new" && (
+      {guided && configs.state === "hasData" && configs.data?.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.networkManagementHelp;
+          })}
+        </p>
+      )}
+      {!guided && editor.configId === "new" && (
         <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
           <AccessFields config={null} />
         </div>

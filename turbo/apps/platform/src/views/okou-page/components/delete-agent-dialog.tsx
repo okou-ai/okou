@@ -94,6 +94,7 @@ function DeleteDangerZoneHeader() {
 }
 
 interface DeleteConfirmButtonProps {
+  busy: boolean;
   deleting: boolean;
   copying: boolean;
   workflowsReady: boolean;
@@ -102,6 +103,7 @@ interface DeleteConfirmButtonProps {
 }
 
 function DeleteConfirmButton({
+  busy,
   deleting,
   copying,
   workflowsReady,
@@ -125,7 +127,7 @@ function DeleteConfirmButton({
       variant="destructive"
       size="sm"
       className={className}
-      disabled={deleting || copying || !workflowsReady}
+      disabled={busy || !workflowsReady}
       onClick={onDelete}
     >
       {label}
@@ -135,6 +137,7 @@ function DeleteConfirmButton({
 
 interface AgentDeleteReconcileViewProps {
   agentName: string;
+  busy: boolean;
   deleting: boolean;
   copying: boolean;
   workflowsReady: boolean;
@@ -209,6 +212,7 @@ function AgentDeleteWorkflowDestination({
 
 function AgentDeleteReconcileView({
   agentName,
+  busy,
   deleting,
   copying,
   workflowsReady,
@@ -247,13 +251,14 @@ function AgentDeleteReconcileView({
         <DeleteDangerHeader agentName={agentName} />
         <div className="mt-auto flex flex-col gap-2 pt-8">
           <DeleteConfirmButton
+            busy={busy}
             deleting={deleting}
             copying={copying}
             workflowsReady={workflowsReady}
             onDelete={onDelete}
             className="w-full"
           />
-          {deleting || copying ? null : (
+          {busy ? null : (
             <DialogClose
               render={
                 <Button variant="outline" size="sm" className="w-full">
@@ -290,7 +295,7 @@ function AgentDeleteReconcileView({
                 <AgentDeleteWorkflowDestination
                   items={destinationItems}
                   value={copyChoices[workflow.id] ?? DELETE_WITH_AGENT}
-                  disabled={deleting || copying || !workflowsReady}
+                  disabled={busy || !workflowsReady}
                   workflowTitle={workflow.title}
                   onValueChange={(value) => {
                     setCopyChoices({ ...copyChoices, [workflow.id]: value });
@@ -307,6 +312,7 @@ function AgentDeleteReconcileView({
 
 interface AgentDeleteSimpleViewProps {
   agentName: string;
+  busy: boolean;
   deleting: boolean;
   copying: boolean;
   workflowsReady: boolean;
@@ -315,6 +321,7 @@ interface AgentDeleteSimpleViewProps {
 
 function AgentDeleteSimpleView({
   agentName,
+  busy,
   deleting,
   copying,
   workflowsReady,
@@ -326,7 +333,7 @@ function AgentDeleteSimpleView({
     <div className="flex flex-col px-6 py-6">
       <DeleteDangerHeader agentName={agentName} />
       <DialogFooter className="mt-6">
-        {deleting || copying ? null : (
+        {busy ? null : (
           <DialogClose
             render={
               <Button variant="outline" size="sm">
@@ -338,6 +345,7 @@ function AgentDeleteSimpleView({
           />
         )}
         <DeleteConfirmButton
+          busy={busy}
           deleting={deleting}
           copying={copying}
           workflowsReady={workflowsReady}
@@ -384,18 +392,20 @@ function AgentDeleteError({ error }: { error: unknown }) {
 
 function AgentDeleteFeedback({
   session,
+  busy,
+  error,
   deleteWorkflowsState,
   deleteCopyTargets,
   onRetry,
 }: {
   session: AgentDeleteSession | null;
+  busy: boolean;
+  error: unknown;
   deleteWorkflowsState: "loading" | "error" | "ready";
   deleteCopyTargets: readonly AgentDeleteCopyTarget[];
   onRetry: (sessionId: symbol) => void;
 }) {
   const { t } = useTranslation("agents");
-  const result = useLoadable(agentDeleteResult$);
-  const busy = session !== null && session.phase !== "idle";
   return (
     <>
       {deleteWorkflowsState === "loading" && (
@@ -431,9 +441,7 @@ function AgentDeleteFeedback({
           </Button>
         </div>
       ) : (
-        <AgentDeleteError
-          error={session && result.state === "hasError" ? result.error : null}
-        />
+        <AgentDeleteError error={error} />
       )}
       {session && session.completedRescues.length > 0 && (
         <div role="status" className="space-y-2 px-6 pb-6 text-sm">
@@ -476,6 +484,22 @@ function AgentDeleteFeedback({
   );
 }
 
+function useAgentDeleteSessionFeedback(agentId: string) {
+  const pageSignal = useGet(pageSignal$);
+  const currentSession = useGet(agentDeleteSession$);
+  const session =
+    currentSession?.agentId === agentId && currentSession.owner === pageSignal
+      ? currentSession
+      : null;
+  const result = useLoadable(agentDeleteResult$);
+  return {
+    pageSignal,
+    session,
+    busy: session !== null && result.state === "loading",
+    error: session && result.state === "hasError" ? result.error : null,
+  };
+}
+
 export function AgentDeleteDialog({
   agentId,
   resolvedAgentName,
@@ -486,22 +510,17 @@ export function AgentDeleteDialog({
   onCopyWorkflowBeforeDelete,
 }: AgentDeleteDialogProps) {
   const { t } = useTranslation("agents");
-  const pageSignal = useGet(pageSignal$);
-
+  const { pageSignal, session, busy, error } =
+    useAgentDeleteSessionFeedback(agentId);
   const deleteAgentFn = useSet(deleteAgent$);
-  const currentSession = useGet(agentDeleteSession$);
-  const session =
-    currentSession?.agentId === agentId && currentSession.owner === pageSignal
-      ? currentSession
-      : null;
   const setOpen = useSet(setAgentDeleteDialogOpen$);
   const updateCopyChoices = useSet(setAgentDeleteCopyChoices$);
   const reloadWorkflows = useSet(reloadAgentDeleteWorkflows$);
   const copyChoices = session?.choices ?? {};
   // Retain this confirmation's last known workflow rows if a refresh fails.
   const workflows = deleteWorkflows ?? session?.workflows ?? [];
-  const copying = session?.phase === "copying";
-  const deleting = session?.phase === "deleting";
+  const copying = busy && session?.phase === "copying";
+  const deleting = busy && session?.phase === "deleting";
   const workflowsReady = deleteWorkflowsState === "ready";
   const setCopyChoices = (choices: Record<string, string>) => {
     if (session) {
@@ -566,7 +585,7 @@ export function AgentDeleteDialog({
                 }
               />
               <DialogContent
-                showCloseButton={!deleting && !copying}
+                showCloseButton={!busy}
                 closeLabel={t(($) => {
                   return $.actions.close;
                 })}
@@ -576,6 +595,7 @@ export function AgentDeleteDialog({
                 {canReconcile ? (
                   <AgentDeleteReconcileView
                     agentName={resolvedAgentName}
+                    busy={busy}
                     deleting={deleting}
                     copying={copying}
                     workflowsReady={workflowsReady}
@@ -588,6 +608,7 @@ export function AgentDeleteDialog({
                 ) : (
                   <AgentDeleteSimpleView
                     agentName={resolvedAgentName}
+                    busy={busy}
                     deleting={deleting}
                     copying={copying}
                     workflowsReady={workflowsReady}
@@ -596,6 +617,8 @@ export function AgentDeleteDialog({
                 )}
                 <AgentDeleteFeedback
                   session={session}
+                  busy={busy}
+                  error={error}
                   deleteWorkflowsState={deleteWorkflowsState}
                   deleteCopyTargets={deleteCopyTargets}
                   onRetry={reloadWorkflows}

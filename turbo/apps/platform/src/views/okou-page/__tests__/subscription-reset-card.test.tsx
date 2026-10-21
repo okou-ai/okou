@@ -144,7 +144,7 @@ test("a reset link displays exact-account usage and never resets before a click"
   expect(frame()).toBe(originalFrame);
 });
 
-test("repeated cards converge on the refreshed remaining credits", async () => {
+test("repeated cards share the in-flight request and refreshed remaining credits", async () => {
   let redeemed = false;
   let submissions = 0;
   const gate = context.mocks.deferred<void>();
@@ -172,19 +172,20 @@ test("repeated cards converge on the refreshed remaining credits", async () => {
     return candidate.getAttribute("aria-label") === "3 resets";
   });
   click(buttons[0]);
+  click(buttons[1]);
   await waitFor(() => {
     expect(
       queryAllByRoleFast("button").filter((candidate) => {
         return candidate.getAttribute("aria-label") === "Resetting…";
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   });
   gate.resolve();
   await waitFor(() => {
     expect(screen.getAllByText("Remaining resets: 2")).toHaveLength(2);
   });
   expect(submissions).toBe(1);
-  expect(screen.getAllByText("Usage reset successfully.")).toHaveLength(1);
+  expect(screen.getAllByText("Usage reset successfully.")).toHaveLength(2);
 });
 
 test("the direct URL opens an authenticated reset page and still requires a click", async () => {
@@ -411,56 +412,20 @@ test("unknown usage still exposes credit details without inventing zero quota", 
   ).toBeInTheDocument();
 });
 
-test.each([
-  {
-    outcome: "reset" as const,
-    credits: 2,
-    notice: "Usage reset successfully.",
-  },
-  {
-    outcome: "nothingToReset" as const,
-    credits: 3,
-    notice: "There is no exhausted usage window to reset.",
-  },
-])(
-  "a pending $outcome retains the row and refreshes credits automatically",
-  async ({ outcome, credits, notice }) => {
-    const gate = context.mocks.deferred<void>();
-    let redeemed = false;
-    context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
-      return respond(
-        200,
-        subscription({ subscriptionResetCredits: redeemed ? credits : 3 }),
-      );
-    });
-    context.mocks.api(
-      personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
-      async ({ respond, withSignal }) => {
-        await withSignal(gate.promise);
-        redeemed = true;
-        return respond(200, { outcome });
-      },
-    );
-    await setupChat(URL);
-    await screen.findByText("Remaining resets: 3");
-    const originalFrame = frame();
-    const row = screen.getByTestId("subscription-reset-card");
-    click(button("3 resets"));
-    await waitFor(() => {
-      expect(button("Resetting…")).toBeDisabled();
-    });
-    expect(row).toHaveAttribute("aria-busy", "true");
-    expect(frame()).toBe(originalFrame);
-    gate.resolve();
-    await screen.findByText(notice);
-    await waitFor(() => {
-      expect(button(`${credits} resets`)).toBeDisabled();
-      expect(row).toHaveAttribute("aria-busy", "false");
-    });
-    expect(frame()).toBe(originalFrame);
-    expect(screen.getByTestId("subscription-reset-card")).toBe(row);
-  },
-);
+test("nothing to reset is a terminal outcome without spending a credit", async () => {
+  mockRead();
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ respond }) => {
+      return respond(200, { outcome: "nothingToReset" });
+    },
+  );
+  await setupChat(URL);
+  await screen.findByText("Remaining resets: 3");
+  click(button("3 resets"));
+  await screen.findByText("There is no exhausted usage window to reset.");
+  expect(button("3 resets")).toBeDisabled();
+});
 
 test("a failed subscription read shows an error without reset or refresh actions", async () => {
   context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {

@@ -62,13 +62,10 @@ export type ConnectorAccountActionStatus =
       readonly selected: boolean;
     };
 
-export type ConnectorAccountActionConfirmationState =
-  "idle" | "loading" | "error";
-
 export interface ConnectorAccountActionSignals extends ConnectorAccountActionDescriptor {
   readonly status$: Computed<Promise<ConnectorAccountActionStatus>>;
   readonly connector$: Computed<Promise<ConnectorAccountActionConnector>>;
-  readonly confirmationState$: Computed<ConnectorAccountActionConfirmationState>;
+  readonly operation$: Computed<Promise<void> | undefined>;
   readonly refresh$: Command<void, []>;
   readonly confirm$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -219,11 +216,9 @@ function createConnectorAccountActionSignals(
   connector: ComposerConnectorSignals,
 ): ConnectorAccountActionSignals {
   const reload$ = state(0);
-  const internalConfirmationState$ =
-    state<ConnectorAccountActionConfirmationState>("idle");
-  const confirmationState$ = computed((get) => {
-    return get(internalConfirmationState$);
-  });
+  const internalOperation$ = state<Promise<void> | undefined>(undefined);
+  const running$ = state<Promise<void> | null>(null);
+  const savedSelection$ = state<ConnectorAccountSelection | null>(null);
   const target = descriptor.selection.target;
   const connector$ =
     target.kind === "builtin"
@@ -263,54 +258,62 @@ function createConnectorAccountActionSignals(
     });
     set(connector.accounts.reload$);
   });
-  const confirm$ = command(
+  const selectAndContinue$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const currentState = get(internalConfirmationState$);
-      if (currentState !== "idle" && currentState !== "error") {
-        return;
+      signal.throwIfAborted();
+      if (!get(savedSelection$)) {
+        const result = await accept(
+          get(apiClient$)(chatThreadConnectorSelectionContract).update({
+            params: { id: descriptor.threadId },
+            body: descriptor.selection,
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        );
+        // This result proves this action saved its selection, not that it is
+        // still the thread's current preference. A retry continues only the
+        // callback; it must not overwrite a later selection from another action.
+        // The card's selected label continues to come from preferenceState$.
+        set(savedSelection$, result.body);
+        set(refresh$);
       }
-      set(internalConfirmationState$, "loading");
-      let selectionSucceeded = false;
-      await withCleanup(
-        (async () => {
-          await accept(
-            get(apiClient$)(chatThreadConnectorSelectionContract).update({
-              params: { id: descriptor.threadId },
-              body: descriptor.selection,
-              fetchOptions: { signal },
-            }),
-            [200],
-            signal,
-          );
-          selectionSucceeded = true;
-          set(refresh$);
-          await set(
-            runChatActionCallback$,
-            {
-              threadId: descriptor.threadId,
-              agentId: descriptor.agentId,
-              callbackPrompt: descriptor.callbackPrompt,
-            },
-            signal,
-          );
-        })(),
-        () => {
-          set(internalConfirmationState$, (current) => {
-            return current === "loading"
-              ? selectionSucceeded
-                ? "idle"
-                : "error"
-              : current;
-          });
+      await set(
+        runChatActionCallback$,
+        {
+          threadId: descriptor.threadId,
+          agentId: descriptor.agentId,
+          callbackPrompt: descriptor.callbackPrompt,
         },
+        signal,
       );
+      signal.throwIfAborted();
+      // The continuation is complete. A later explicit switch (after another
+      // action changes the thread preference) is a new selection, not a retry.
+      set(savedSelection$, null);
+    },
+  );
+  const confirm$ = command(
+    ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const running = get(running$);
+      if (running) {
+        return running;
+      }
+      const operation = withCleanup(set(selectAndContinue$, signal), () => {
+        set(running$, null);
+      });
+      set(running$, operation);
+      set(internalOperation$, operation);
+      return operation;
     },
   );
   return {
     ...descriptor,
     status$,
     connector$,
-    confirmationState$,
+    operation$: computed((get) => {
+      return get(internalOperation$);
+    }),
     refresh$,
     confirm$,
   };

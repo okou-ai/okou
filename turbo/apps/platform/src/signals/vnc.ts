@@ -1,3 +1,4 @@
+import { resetRemoteLogin$ } from "./remote-login.ts";
 import { command, computed, state } from "ccstate";
 import type {
   InitClientReturn,
@@ -63,8 +64,12 @@ import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";
 import { invalidateTailscale$ } from "./tailscale.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
+export const vncEnabled$ = computed((get) => {
+  return get(featureSwitch$)[FeatureSwitchKey.VncAccess];
+});
+
 export const vncIdentity$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.VncAccess]) {
+  if (!get(vncEnabled$)) {
     return null;
   }
   const [user, identity] = await Promise.all([
@@ -81,7 +86,7 @@ export const vncClients$ = computed(async (get) => {
     const session = clerk.session;
     if (
       !identity ||
-      !get(featureSwitch$)[FeatureSwitchKey.VncAccess] ||
+      !get(vncEnabled$) ||
       !session ||
       identity !== `${clerk.organization?.id}:${clerk.user?.id}`
     ) {
@@ -231,6 +236,8 @@ export interface VncDialogState {
     | "delete-credential";
   readonly connection: VncConnectionResponse | null;
   readonly credential: VncCredentialResponse | null;
+  readonly loginCredential?: VncCredentialResponse;
+  readonly connectionSaved?: boolean;
 }
 const dialog$ = state<VncDialogState | null>(null);
 export type VncProfile =
@@ -433,7 +440,10 @@ const editor$ = state<Editor>({
   replace: false,
 });
 const uncertain$ = state(false);
-const saveMessage$ = state<string | null>(null);
+const notice$ = state<{
+  readonly code: string;
+  readonly source: "save" | "rsa-import" | "kerberos-import";
+} | null>(null);
 const conflict$ = state(false);
 const reviewedVersion$ = state<number | null>(null);
 const resetSave$ = resetSignal();
@@ -488,7 +498,15 @@ export const vncSaveUncertain$ = computed((get) => {
   return get(uncertain$);
 });
 export const vncSaveMessage$ = computed((get) => {
-  return get(saveMessage$);
+  return get(notice$)?.code ?? null;
+});
+export const vncNoticeSource$ = computed((get) => {
+  return get(notice$)?.source ?? "save";
+});
+export const clearVncSaveMessage$ = command(({ get, set }) => {
+  if (!get(editorLocked$)) {
+    set(notice$, null);
+  }
 });
 export const vncConflict$ = computed((get) => {
   return get(conflict$);
@@ -521,6 +539,9 @@ export function isVncReviewableConflict(
   return (
     ((dialog.kind === "edit" || dialog.kind === "delete") &&
       message === VNC_ERROR_CODES.GENERATION_CONFLICT) ||
+    (dialog.kind === "edit" &&
+      dialog.loginCredential !== undefined &&
+      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT) ||
     ((dialog.kind === "edit-credential" ||
       dialog.kind === "delete-credential") &&
       message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT) ||
@@ -543,13 +564,33 @@ function isSameVncDialog(current: VncDialogState, reviewed: VncDialogState) {
 export const vncConflictReview$ = computed(
   async (get): Promise<VncConflictReviewState | null> => {
     const dialog = await get(vncDialog$);
-    const message = get(saveMessage$);
+    const message = get(vncSaveMessage$);
     if (
       !dialog ||
       !get(conflict$) ||
       !isVncReviewableConflict(dialog, message)
     ) {
       return null;
+    }
+    if (
+      dialog.kind === "edit" &&
+      dialog.connection &&
+      dialog.loginCredential &&
+      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT
+    ) {
+      const loginCredential = (await get(vncCredentials$))?.find(
+        (candidate) => {
+          return candidate.id === dialog.loginCredential?.id;
+        },
+      );
+      return loginCredential
+        ? {
+            ...dialog,
+            kind: "edit",
+            connection: dialog.connection,
+            loginCredential,
+          }
+        : null;
     }
     if (dialog.kind === "edit" || dialog.kind === "delete") {
       const connection = (await get(vncConnections$))?.find((candidate) => {
@@ -578,7 +619,7 @@ export const acceptVncConflictReview$ = command(
   ) => {
     const current = await get(vncDialog$);
     signal.throwIfAborted();
-    const message = get(saveMessage$);
+    const message = get(vncSaveMessage$);
     if (
       !current ||
       get(dialog$) !== current ||
@@ -592,6 +633,16 @@ export const acceptVncConflictReview$ = command(
     ) {
       return;
     }
+    if (
+      current.kind === "edit" &&
+      reviewed.loginCredential &&
+      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT
+    ) {
+      set(dialog$, { ...current, loginCredential: reviewed.loginCredential });
+      set(conflict$, false);
+      set(notice$, null);
+      return;
+    }
     set(resetRsaImport$);
     set(resetKerberosImport$);
     set(
@@ -601,12 +652,13 @@ export const acceptVncConflictReview$ = command(
         : reviewed.credential.revision,
     );
     set(conflict$, false);
-    set(saveMessage$, null);
+    set(notice$, null);
   },
 );
 export const chooseVncCredential$ = command(
   ({ get, set }, selection: string | null) => {
     if (selection !== null && !get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(resetKerberosImport$);
       set(editor$, (current) => {
         return { ...current, selection };
@@ -631,6 +683,7 @@ export const chooseVncProfile$ = command(
         profile === "apple_rsa_srp" ||
         isRsaAesProfile(profile))
     ) {
+      set(clearVncSaveMessage$);
       set(resetRsaImport$);
       set(resetKerberosImport$);
       set(editor$, (current): Editor => {
@@ -639,7 +692,11 @@ export const chooseVncProfile$ = command(
           : {
               ...current,
               profile,
-              selection: "",
+              selection: get(featureSwitch$)[
+                FeatureSwitchKey.RemoteControlGuidedSetup
+              ]
+                ? "new"
+                : "",
               transport:
                 requiresVncProtectiveRoute(profile) &&
                 current.transport === "direct"
@@ -657,6 +714,7 @@ export const chooseVncProfile$ = command(
 export const chooseVncLoopbackHost$ = command(
   ({ get, set }, host: string | null) => {
     if (!get(editorLocked$) && (host === "127.0.0.1" || host === "::1")) {
+      set(clearVncSaveMessage$);
       const loopbackHost: Editor["loopbackHost"] = host;
       set(editor$, (current): Editor => {
         return { ...current, loopbackHost };
@@ -743,7 +801,10 @@ export const importVncRsaKey$ = command(
     ) {
       // The displayed public-key draft must still be the material inspected.
       // Do not associate a late old fingerprint with a newly edited PEM.
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, {
+        code: VNC_ERROR_CODES.INVALID_INPUT,
+        source: "rsa-import",
+      });
       return;
     }
     set(editor$, (current) => {
@@ -753,12 +814,13 @@ export const importVncRsaKey$ = command(
         rsaImportedModulusBits: result.body.modulusBits,
       };
     });
-    set(saveMessage$, null);
+    set(notice$, null);
   },
 );
 
 export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {
   if (!get(editorLocked$) && (trust === "system" || trust === "custom_ca")) {
+    set(clearVncSaveMessage$);
     set(editor$, (current): Editor => {
       return { ...current, trust };
     });
@@ -775,6 +837,7 @@ export const chooseVncTransport$ = command(
       (transport !== "direct" ||
         !requiresVncProtectiveRoute(get(editor$).profile))
     ) {
+      set(clearVncSaveMessage$);
       set(editor$, (current): Editor => {
         return {
           ...current,
@@ -792,6 +855,7 @@ export const chooseVncTransport$ = command(
 export const chooseVncSshConnection$ = command(
   ({ get, set }, sshConnectionId: string | null) => {
     if (sshConnectionId !== null && !get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(editor$, (current): Editor => {
         return { ...current, sshConnectionId };
       });
@@ -802,6 +866,7 @@ export const chooseVncKdcSsh$ = command(({ get, set }, id: string | null) => {
   if (id === null || get(editorLocked$)) {
     return;
   }
+  set(clearVncSaveMessage$);
   set(editor$, (current): Editor => {
     return {
       ...current,
@@ -820,6 +885,7 @@ export const chooseVncKdcTransport$ = command(
         transport === "cloudflare_access" ||
         transport === "tailscale")
     ) {
+      set(clearVncSaveMessage$);
       set(editor$, (current): Editor => {
         return { ...current, kdcTransport: transport, kdcNetworkConfigId: "" };
       });
@@ -829,6 +895,7 @@ export const chooseVncKdcTransport$ = command(
 export const chooseVncNetworkConfig$ = command(
   ({ get, set }, role: "rfb" | "kdc", id: string | null) => {
     if (id !== null && !get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(editor$, (current) => {
         return role === "rfb"
           ? { ...current, networkConfigId: id }
@@ -851,6 +918,7 @@ export const editVncOriginTls$ = command(
     >,
   ) => {
     if (!get(editorLocked$)) {
+      set(clearVncSaveMessage$);
       set(editor$, (current) => {
         return { ...current, ...fields };
       });
@@ -869,6 +937,7 @@ export const replaceVncAuthentication$ = command(
     if (get(editorLocked$)) {
       return;
     }
+    set(clearVncSaveMessage$);
     set(editor$, (current) => {
       return { ...current, replace };
     });
@@ -877,12 +946,13 @@ export const replaceVncAuthentication$ = command(
 );
 
 export const closeVncDialog$ = command(({ set }) => {
+  set(resetRemoteLogin$);
   set(resetKerberosImport$);
   set(resetSave$);
   set(resetRsaImport$);
   set(dialog$, null);
   set(uncertain$, false);
-  set(saveMessage$, null);
+  set(notice$, null);
   set(conflict$, false);
   set(reviewedVersion$, null);
   set(editor$, {
@@ -916,7 +986,7 @@ export const mountVncForm$ = onRef(
     signal.addEventListener(
       "abort",
       () => {
-        if (get(dialog$) === mountedDialog) {
+        if (get(dialog$)?.creationId === mountedDialog?.creationId) {
           set(resetSave$);
           set(resetRsaImport$);
           set(resetKerberosImport$);
@@ -924,7 +994,7 @@ export const mountVncForm$ = onRef(
           // Only an actual authority change discards the stored draft here.
           if (
             get(authenticatedSessionKey$) !== mountedSession ||
-            !get(featureSwitch$)[FeatureSwitchKey.VncAccess]
+            !get(vncEnabled$)
           ) {
             set(closeVncDialog$);
           }
@@ -981,7 +1051,10 @@ export const importVncKerberos$ = command(
     }
     field.value = "";
     if (file.size === 0 || file.size > 65_536) {
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, {
+        code: VNC_ERROR_CODES.INVALID_INPUT,
+        source: "kerberos-import",
+      });
       return;
     }
     const principal = [
@@ -1029,7 +1102,7 @@ export const importVncKerberos$ = command(
               ).bytes
             : canonicalKerberosKeytab(bytes, initiator);
           field.value = encodeAndClearKerberosMaterial(canonical);
-          set(saveMessage$, null);
+          set(notice$, null);
         })(),
         () => {
           bytes?.fill(0);
@@ -1039,7 +1112,10 @@ export const importVncKerberos$ = command(
     );
     if (!result.ok) {
       field.value = "";
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, {
+        code: VNC_ERROR_CODES.INVALID_INPUT,
+        source: "kerberos-import",
+      });
     }
   },
 );
@@ -1145,6 +1221,27 @@ function initialVncEditor(
   };
 }
 
+const readVncConnectionLogin$ = command(
+  async (
+    { get },
+    kind: VncDialogState["kind"],
+    connection: VncConnectionResponse | null,
+    signal: AbortSignal,
+  ) => {
+    const loginCredential =
+      kind === "edit" &&
+      connection &&
+      "credentialId" in connection &&
+      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup]
+        ? (await get(vncCredentials$))?.find((candidate) => {
+            return candidate.id === connection.credentialId;
+          })
+        : undefined;
+    signal.throwIfAborted();
+    return loginCredential;
+  },
+);
+
 export const openVncDialog$ = command(
   async (
     { get, set },
@@ -1160,6 +1257,20 @@ export const openVncDialog$ = command(
     }
     const connection = resource && "host" in resource ? resource : null;
     const credential = resource && "authMethod" in resource ? resource : null;
+    const loginCredential = await set(
+      readVncConnectionLogin$,
+      kind,
+      connection,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      identity !== (await get(vncIdentity$)) ||
+      sessionKey !== get(authenticatedSessionKey$)
+    ) {
+      return;
+    }
+    signal.throwIfAborted();
     set(closeVncDialog$);
     set(editor$, initialVncEditor(kind, connection, credential));
     const dialog: VncDialogState = {
@@ -1169,6 +1280,7 @@ export const openVncDialog$ = command(
       connection,
       credential,
       creationId: crypto.randomUUID(),
+      ...(loginCredential ? { loginCredential } : {}),
     };
     set(dialog$, dialog);
     if (kind === "create") {
@@ -1187,6 +1299,7 @@ export const openVncDialog$ = command(
         return vncCredentialMatchesProfile(credential, get(editor$).profile);
       });
       const selection =
+        get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup] ||
         compatible.length === 0
           ? "new"
           : compatible.length === 1
@@ -1620,6 +1733,44 @@ function credentialRequest(
     : null;
 }
 
+export function vncLoginChanged(
+  form: HTMLFormElement,
+  credential: VncCredentialResponse,
+) {
+  for (const name of [
+    "password",
+    "privateKey",
+    "certificateChain",
+    "kerberosMaterial",
+  ]) {
+    const input = form.elements.namedItem(name);
+    if (
+      (input instanceof HTMLInputElement ||
+        input instanceof HTMLTextAreaElement) &&
+      input.value.length > 0
+    ) {
+      return true;
+    }
+  }
+  return (
+    "username" in credential &&
+    textField(form, "username") !== credential.username
+  );
+}
+
+function vncLoginPatch(
+  form: HTMLFormElement,
+  credential: VncCredentialResponse,
+  profile: VncProfile,
+) {
+  return vncLoginChanged(form, credential)
+    ? updateVncCredentialRequestSchema.safeParse({
+        expectedRevision: credential.revision,
+        authentication: credentialFields(form, profile).authentication,
+      })
+    : null;
+}
+
 function hasNativeVncDraft(editor: Editor) {
   return (
     editor.transport === "cloudflare_access" ||
@@ -1631,9 +1782,8 @@ function hasNativeVncDraft(editor: Editor) {
   );
 }
 
-export const saveVnc$ = command(
-  async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
-    const signal = set(resetSave$, parentSignal);
+const prepareVncFormSave$ = command(
+  async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
     const dialog = await get(vncDialog$);
     signal.throwIfAborted();
     if (!dialog || get(conflict$)) {
@@ -1648,52 +1798,65 @@ export const saveVnc$ = command(
       ...get(editor$),
       reviewedVersion: get(reviewedVersion$),
     };
+    const guided =
+      get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
+    if (
+      guided &&
+      (dialog.kind === "create" || dialog.kind === "edit") &&
+      editor.selection === "new"
+    ) {
+      const name = form.elements.namedItem("credentialName");
+      if (name instanceof HTMLInputElement) {
+        name.value = textField(form, "displayName").trim();
+      }
+    }
+    const login =
+      guided &&
+      dialog.kind === "edit" &&
+      dialog.loginCredential &&
+      editor.selection === dialog.loginCredential.id &&
+      vncCredentialMatchesProfile(dialog.loginCredential, editor.profile)
+        ? vncLoginPatch(form, dialog.loginCredential, editor.profile)
+        : null;
+    if (login && !login.success) {
+      set(notice$, { code: VNC_ERROR_CODES.INVALID_INPUT, source: "save" });
+      return;
+    }
     const request = dialog.kind.endsWith("-credential")
       ? credentialRequest(clients, dialog, form, editor, signal)
       : connectionRequest(clients, dialog, form, editor, signal);
     if (!request) {
-      set(saveMessage$, VNC_ERROR_CODES.INVALID_INPUT);
+      set(notice$, { code: VNC_ERROR_CODES.INVALID_INPUT, source: "save" });
       return;
     }
-    const retrying = get(uncertain$);
-    set(saveMessage$, null);
-    set(uncertain$, true);
-    const result = await accept<
-      Awaited<ReturnType<typeof request>>,
-      200 | 201 | 204 | 400 | 404 | 409 | 500
-    >(request(), [200, 201, 204, 400, 404, 409, 500], signal);
-    signal.throwIfAborted();
-    if (
-      get(dialog$) !== dialog ||
-      dialog.identity !== (await get(vncIdentity$))
-    ) {
-      return;
-    }
-    signal.throwIfAborted();
-    if (
-      result.status === 200 ||
-      result.status === 201 ||
-      result.status === 204
-    ) {
-      set(closeVncDialog$);
-      set(invalidateVnc$);
-      return;
-    }
-    if (result.status === 500) {
+    return { dialog, clients, editor, login, request };
+  },
+);
+
+const handleVncSaveFailure$ = command(
+  (
+    { set },
+    failure: { readonly status: number; readonly code: string },
+    retrying: boolean,
+    dialog: VncDialogState,
+    editor: Editor,
+  ) => {
+    const { status, code } = failure;
+    if (status === 500) {
       return;
     }
     const versionConflict =
-      result.body.error.code === VNC_ERROR_CODES.GENERATION_CONFLICT ||
-      result.body.error.code === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT;
+      code === VNC_ERROR_CODES.GENERATION_CONFLICT ||
+      code === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT;
     // A later rejection cannot prove that an earlier ambiguous create failed.
     if (retrying && !versionConflict) {
       return;
     }
     set(uncertain$, false);
-    set(saveMessage$, result.body.error.code);
+    set(notice$, { code, source: "save" });
     if (
-      result.status === 404 &&
-      result.body.error.code === VNC_ERROR_CODES.UNAVAILABLE &&
+      status === 404 &&
+      code === VNC_ERROR_CODES.UNAVAILABLE &&
       hasNativeVncDraft(editor)
     ) {
       // A rejected first publication can be repaired with an available config.
@@ -1701,7 +1864,7 @@ export const saveVnc$ = command(
       set(invalidateVnc$);
       return;
     }
-    if (result.status !== 400) {
+    if (status !== 400) {
       set(resetRsaImport$);
       set(resetKerberosImport$);
       set(reviewedVersion$, null);
@@ -1711,5 +1874,86 @@ export const saveVnc$ = command(
         set(invalidateSsh$);
       }
     }
+    return undefined;
+  },
+);
+
+export const saveVnc$ = command(
+  async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+    const signal = set(resetSave$, parentSignal);
+    const prepared = await set(prepareVncFormSave$, form, signal);
+    signal.throwIfAborted();
+    if (!prepared) {
+      return;
+    }
+    const { dialog, clients, editor, login, request } = prepared;
+    const retrying = get(uncertain$);
+    set(notice$, null);
+    set(uncertain$, true);
+    let result = await accept<
+      Awaited<ReturnType<typeof request>>,
+      200 | 201 | 204 | 400 | 404 | 409 | 500
+    >(request(), [200, 201, 204, 400, 404, 409, 500], signal);
+    signal.throwIfAborted();
+    const savedConnectionId =
+      (result.status === 200 || result.status === 201) && "host" in result.body
+        ? result.body.id
+        : dialog.kind === "create"
+          ? dialog.creationId
+          : dialog.connection?.id;
+    if (
+      get(dialog$) !== dialog ||
+      dialog.identity !== (await get(vncIdentity$))
+    ) {
+      return;
+    }
+    signal.throwIfAborted();
+    if (
+      result.status === 200 &&
+      "host" in result.body &&
+      login?.success &&
+      dialog.loginCredential
+    ) {
+      const activeDialog = {
+        ...dialog,
+        connection: result.body,
+        connectionSaved: true,
+      };
+      set(dialog$, activeDialog);
+      set(reviewedVersion$, null);
+      result = await accept(
+        clients.credentials.update({
+          params: { credentialId: dialog.loginCredential.id },
+          body: login.data,
+          fetchOptions: { signal },
+        }),
+        [200, 400, 404, 409, 500],
+        signal,
+      );
+      signal.throwIfAborted();
+      if (
+        get(dialog$) !== activeDialog ||
+        dialog.identity !== (await get(vncIdentity$))
+      ) {
+        return;
+      }
+      signal.throwIfAborted();
+    }
+    if (
+      result.status === 200 ||
+      result.status === 201 ||
+      result.status === 204
+    ) {
+      set(closeVncDialog$);
+      set(invalidateVnc$);
+      return savedConnectionId;
+    }
+    return set(
+      handleVncSaveFailure$,
+      { status: result.status, code: result.body.error.code },
+      retrying,
+      dialog,
+      editor,
+    );
   },
 );

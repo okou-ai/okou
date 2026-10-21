@@ -145,7 +145,9 @@ test("Show a connected account in its provider section only after authorization 
     thirdPartySubscriptionsMainContract.list,
     async ({ respond }) => {
       if (completed) {
-        refreshStarted.resolve();
+        if (!refreshStarted.settled()) {
+          refreshStarted.resolve();
+        }
         await release.promise;
       }
       return respond(200, { subscriptions: completed ? [connected] : [] });
@@ -254,7 +256,9 @@ test("Connect ChatGPT directly without selecting a provider from a menu", async 
   const authorization = await screen.findByRole("dialog", {
     name: "Connect Codex",
   });
-  expect(within(authorization).getByText("TEST-CODE")).toBeInTheDocument();
+  await expect(
+    within(authorization).findByText("TEST-CODE"),
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 });
 

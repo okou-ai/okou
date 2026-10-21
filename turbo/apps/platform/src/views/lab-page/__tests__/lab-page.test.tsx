@@ -108,7 +108,7 @@ test("Lab groups active feature switches", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  // Every switch is listed once, in the group named for its rollout stage.
+  // Available switches are listed once, in their rollout-stage group.
   const metadata = getFeatureSwitchMetadata();
   const stageGroups = {
     released: "Released",
@@ -136,6 +136,23 @@ test("Lab groups active feature switches", async () => {
     ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
+});
+
+test("The maintainer can manage the remote UI switch in Lab", async () => {
+  await setupPage({
+    context,
+    path: "/_/lab",
+    auth: {
+      user: { id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV", fullName: "Bingjie" },
+    },
+    featureSwitches: { [FeatureSwitchKey.Lab]: true },
+  });
+  await screen.findByText("Remote control guided setup");
+  expect(
+    within(
+      featureSwitchRow(FeatureSwitchKey.RemoteControlGuidedSetup),
+    ).getByRole("switch"),
+  ).toBeEnabled();
 });
 
 test("Maintainer filters narrow the feature list", async () => {
@@ -178,6 +195,7 @@ test("Maintainer filters narrow the feature list", async () => {
 test.each([
   FeatureSwitchKey.TestOauthConnector,
   FeatureSwitchKey.PwaKeyboardViewport,
+  FeatureSwitchKey.RemoteControlGuidedSetup,
 ])("Toggle and reset a Lab override: %s", async (featureKey) => {
   const user = userEvent.setup();
   const updatedSwitches: Record<string, boolean>[] = [];

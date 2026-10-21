@@ -8,18 +8,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import {
+  useGet,
+  useLastLoadable,
+  useLoadable,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type {
-  SubscriptionResetActionState,
-  SubscriptionResetOutcome,
+  ResetOutcome,
   SubscriptionResetSignals,
 } from "../../signals/chat-page/subscription-reset-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, isAbortError, Reason } from "../../signals/utils.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 import {
   fallbackSubscriptionUsage,
@@ -54,23 +58,9 @@ function resetSupported(account: ModelProviderResponse | null): boolean {
   );
 }
 
-function resetActionState(attempt: {
-  readonly state: "idle" | "loading" | "hasData" | "hasError";
-  readonly data?: SubscriptionResetOutcome;
-  readonly error?: unknown;
-}): SubscriptionResetActionState {
-  if (attempt.state === "hasError") {
-    return isAbortError(attempt.error) ? "idle" : "error";
-  }
-  if (attempt.state === "loading") {
-    return "loading";
-  }
-  return attempt.data ?? "idle";
-}
-
 function useResetNotice(
   account: ModelProviderResponse | null,
-  actionState: SubscriptionResetActionState,
+  operation: Loadable<ResetOutcome | undefined>,
   readFailed: boolean,
   unavailable: boolean,
 ): string | null {
@@ -100,12 +90,17 @@ function useResetNotice(
       return $.chat.subscriptionReset.reconnect;
     });
   }
-  switch (actionState) {
-    case "error": {
-      return t(($) => {
-        return $.chat.subscriptionReset.error;
-      });
-    }
+  if (operation.state === "hasError") {
+    return t(($) => {
+      return $.chat.subscriptionReset.error;
+    });
+  }
+  if (operation.state === "loading") {
+    return t(($) => {
+      return $.chat.subscriptionReset.resetting;
+    });
+  }
+  switch (operation.data) {
     case "reset": {
       return t(($) => {
         return $.chat.subscriptionReset.reset;
@@ -126,12 +121,7 @@ function useResetNotice(
         return $.chat.subscriptionReset.alreadyRedeemed;
       });
     }
-    case "loading": {
-      return t(($) => {
-        return $.chat.subscriptionReset.resetting;
-      });
-    }
-    case "idle": {
+    case undefined: {
       return account.subscriptionResetCredits === 0
         ? t(($) => {
             return $.chat.subscriptionReset.noCredit;
@@ -148,8 +138,7 @@ function SubscriptionResetCardContent({
 }) {
   const loadable = useLoadable(signals.status$);
   const last = useLastLoadable(signals.status$);
-  const [attempt, confirm] = useLoadableSet(signals.confirm$);
-  const actionState = resetActionState(attempt);
+  const operation = useLoadable(signals.operation$);
   const status =
     loadable.state === "hasData"
       ? loadable.data
@@ -161,7 +150,7 @@ function SubscriptionResetCardContent({
   const readFailed = loadable.state === "hasError";
   const notice = useResetNotice(
     account,
-    actionState,
+    operation,
     readFailed,
     status?.kind === "unavailable",
   );
@@ -169,7 +158,7 @@ function SubscriptionResetCardContent({
     <TooltipProvider delay={100}>
       <div
         data-testid="subscription-reset-card"
-        aria-busy={refreshing || actionState === "loading"}
+        aria-busy={refreshing || operation.state === "loading"}
         className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center"
       >
         <SubscriptionResetIdentity
@@ -178,9 +167,9 @@ function SubscriptionResetCardContent({
           loading={refreshing && !account}
         />
         <SubscriptionResetControls
-          confirm={confirm}
+          signals={signals}
           account={account}
-          actionState={actionState}
+          operation={operation}
           refreshing={refreshing}
           readFailed={readFailed}
           notice={notice}
@@ -317,16 +306,18 @@ function SubscriptionResetIdentityContent({
 
 function resetActionDisabled(
   account: ModelProviderResponse | null,
-  actionState: SubscriptionResetActionState,
+  operation: Loadable<ResetOutcome | undefined>,
   readUnavailable: boolean,
 ): boolean {
-  const terminal = actionState !== "idle" && actionState !== "error";
+  const terminal =
+    operation.state === "loading" ||
+    (operation.state === "hasData" && operation.data !== undefined);
   const credits = account?.subscriptionResetCredits;
   return (
     terminal ||
     readUnavailable ||
     account?.needsReconnect === true ||
-    (actionState !== "error" && !(credits && credits > 0))
+    (operation.state !== "hasError" && !(credits && credits > 0))
   );
 }
 
@@ -389,28 +380,29 @@ function SubscriptionResetDetails({
 }
 
 function SubscriptionResetControls({
-  confirm,
+  signals,
   account,
-  actionState,
+  operation,
   refreshing,
   readFailed,
   notice,
 }: {
-  readonly confirm: (signal: AbortSignal) => Promise<unknown>;
+  readonly signals: SubscriptionResetSignals;
   readonly account: ModelProviderResponse | null;
-  readonly actionState: SubscriptionResetActionState;
+  readonly operation: Loadable<ResetOutcome | undefined>;
   readonly refreshing: boolean;
   readonly readFailed: boolean;
   readonly notice: string | null;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
+  const confirm = useSet(signals.confirm$);
   const creditLabel = useResetCreditLabel(account);
-  const pending = actionState === "loading";
+  const pending = operation.state === "loading";
   const credits = account?.subscriptionResetCredits;
   const disabled = resetActionDisabled(
     account,
-    actionState,
+    operation,
     refreshing || readFailed,
   );
   const label = pending

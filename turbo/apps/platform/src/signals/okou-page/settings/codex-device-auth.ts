@@ -9,6 +9,7 @@ import { delay } from "signal-timers";
 
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
+import { ApiError } from "../../../lib/api-error.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { brandName$, type BrandName } from "../../branding.ts";
@@ -35,7 +36,7 @@ type OpenPersonalCodexDeviceAuthArgs =
   | { readonly mode: "reconnect"; readonly modelProviderId: string };
 
 type ActiveCodexDeviceAuthFlowState = {
-  readonly status: "pending" | "polling";
+  readonly status: "pending";
   readonly requestId: string;
   readonly sessionToken: string;
   readonly browserUrl: string;
@@ -47,7 +48,6 @@ type ActiveCodexDeviceAuthFlowState = {
 
 type CodexDeviceAuthFlowState =
   | { readonly status: "idle" }
-  | { readonly status: "starting"; readonly requestId: string }
   | ActiveCodexDeviceAuthFlowState
   | { readonly status: "expired"; readonly message: string }
   | { readonly status: "error"; readonly message: string };
@@ -100,27 +100,17 @@ function codexDeviceAuthErrorMessage(
   return error.message;
 }
 
-function isCurrentStarting(
-  stateValue: CodexDeviceAuthFlowState,
-  requestId: string,
-): boolean {
-  return stateValue.status === "starting" && stateValue.requestId === requestId;
-}
-
 function isCurrentActive(
   stateValue: CodexDeviceAuthFlowState,
   requestId: string,
 ): stateValue is ActiveCodexDeviceAuthFlowState {
-  return (
-    (stateValue.status === "pending" || stateValue.status === "polling") &&
-    stateValue.requestId === requestId
-  );
+  return stateValue.status === "pending" && stateValue.requestId === requestId;
 }
 
 function isActive(
   stateValue: CodexDeviceAuthFlowState,
 ): stateValue is ActiveCodexDeviceAuthFlowState {
-  return stateValue.status === "pending" || stateValue.status === "polling";
+  return stateValue.status === "pending";
 }
 
 function activeFlowOrExpired(
@@ -165,7 +155,7 @@ const completeCodexDeviceAuth$ = command(
         body: { sessionToken },
         fetchOptions: { signal },
       }),
-      [200, 400, 404, 503],
+      [200, 400, 404],
     );
     signal.throwIfAborted();
     return result;
@@ -194,6 +184,8 @@ interface CodexDeviceAuthSignalContext {
   reloadProviders$: Command<void, []>;
   internalDialogState$: State<CodexDeviceAuthDialogState>;
   internalFlowState$: State<CodexDeviceAuthFlowState>;
+  internalStartOperation$: State<Promise<boolean> | null>;
+  internalRunOperation$: State<Promise<boolean> | null>;
   resetFlowSignal$: ReturnType<typeof resetSignal>;
 }
 
@@ -217,7 +209,6 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
             return true;
           }
 
-          set(ctx.internalFlowState$, { ...current, status: "polling" });
           const completion = await set(
             completeCodexDeviceAuth$,
             current.sessionToken,
@@ -250,6 +241,7 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
             );
             set(ctx.internalDialogState$, createInitialDialogState());
             set(ctx.internalFlowState$, createIdleFlowState());
+            set(ctx.internalStartOperation$, null);
             completed = true;
             return true;
           }
@@ -273,6 +265,13 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
         },
         0,
         signal,
+        {
+          // 503 was already terminal when accepted as a domain result. Keep
+          // all previously rejected errors on the existing retry policy.
+          shouldRetryError: (error) => {
+            return !(error instanceof ApiError && error.status === 503);
+          },
+        },
       );
 
       const latest = get(ctx.internalFlowState$);
@@ -289,85 +288,71 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
   );
 }
 
-function createCodexRunFlow$(
-  ctx: CodexDeviceAuthSignalContext,
-  pollFlow$: ReturnType<typeof createCodexPollFlow$>,
-) {
+function createCodexStartFlow$(ctx: CodexDeviceAuthSignalContext) {
   return command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const requestId = createRequestId(ctx.scope);
-      set(ctx.internalFlowState$, { status: "starting", requestId });
-
-      return await withCleanup(
-        (async () => {
-          const dialog = get(ctx.internalDialogState$);
-          const startArgs: {
-            readonly scope: CodexDeviceAuthScope;
-            readonly mode?: CodexDeviceAuthMode;
-            readonly modelProviderId?: string;
-          } = {
-            scope: "personal",
-            mode: dialog.mode === "reconnect" ? "reconnect" : "add",
-            ...(dialog.modelProviderId
-              ? { modelProviderId: dialog.modelProviderId }
-              : {}),
-          };
-
-          const started = await set(startCodexDeviceAuth$, startArgs, signal);
-          signal.throwIfAborted();
-
-          if (!isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
-            return false;
-          }
-
-          const expiresAtMs = now() + secondsToMilliseconds(started.expiresIn);
-          const pollIntervalMs = Math.max(
-            secondsToMilliseconds(started.interval),
-            CODEX_DEVICE_AUTH_MIN_POLL_MS,
-          );
-
-          set(ctx.internalFlowState$, {
-            status: "pending",
-            requestId,
-            sessionToken: started.sessionToken,
-            browserUrl: started.browserUrl,
-            verificationCode: started.verificationCode,
-            expiresAtMs,
-            pollIntervalMs,
-            errorMessage: null,
-          });
-
-          return await set(pollFlow$, requestId, signal);
-        })(),
-        () => {
-          if (isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
-            set(ctx.internalFlowState$, createIdleFlowState());
-          }
+    async (
+      { get, set },
+      requestId: string,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const dialog = get(ctx.internalDialogState$);
+      const started = await set(
+        startCodexDeviceAuth$,
+        {
+          scope: ctx.scope,
+          mode: dialog.mode === "reconnect" ? "reconnect" : "add",
+          ...(dialog.modelProviderId
+            ? { modelProviderId: dialog.modelProviderId }
+            : {}),
         },
+        signal,
       );
+      signal.throwIfAborted();
+      set(ctx.internalFlowState$, {
+        status: "pending",
+        requestId,
+        sessionToken: started.sessionToken,
+        browserUrl: started.browserUrl,
+        verificationCode: started.verificationCode,
+        expiresAtMs: now() + secondsToMilliseconds(started.expiresIn),
+        pollIntervalMs: Math.max(
+          secondsToMilliseconds(started.interval),
+          CODEX_DEVICE_AUTH_MIN_POLL_MS,
+        ),
+        errorMessage: null,
+      });
+      return true;
     },
   );
 }
 
 function createCodexRun$(
   ctx: CodexDeviceAuthSignalContext,
-  runFlow$: ReturnType<typeof createCodexRunFlow$>,
+  startFlow$: ReturnType<typeof createCodexStartFlow$>,
+  pollFlow$: ReturnType<typeof createCodexPollFlow$>,
 ) {
-  return command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+  const execute$ = command(
+    async ({ set }, signal: AbortSignal): Promise<boolean> => {
       const flowSignal = set(ctx.resetFlowSignal$, signal);
-      flowSignal.addEventListener(
-        "abort",
-        () => {
-          if (get(ctx.internalFlowState$).status === "starting") {
-            set(ctx.internalFlowState$, createIdleFlowState());
-          }
-        },
-        { once: true },
-      );
-      return await set(runFlow$, flowSignal);
+      set(ctx.internalFlowState$, createIdleFlowState());
+      const requestId = createRequestId(ctx.scope);
+      const operation = set(startFlow$, requestId, flowSignal);
+      // Retain the actual startup result until retry or dialog-session release.
+      set(ctx.internalStartOperation$, operation);
+      if (!(await operation)) {
+        return false;
+      }
+      flowSignal.throwIfAborted();
+      return await set(pollFlow$, requestId, flowSignal);
     },
   );
+  return command(({ set }, signal: AbortSignal) => {
+    const operation = withCleanup(set(execute$, signal), () => {
+      set(ctx.reloadProviders$);
+    });
+    set(ctx.internalRunOperation$, operation);
+    return operation;
+  });
 }
 
 function createCodexOpen$(
@@ -398,12 +383,17 @@ function createCodexClose$(ctx: CodexDeviceAuthSignalContext) {
     set(ctx.resetFlowSignal$);
     set(ctx.internalDialogState$, createInitialDialogState());
     set(ctx.internalFlowState$, createIdleFlowState());
+    set(ctx.internalStartOperation$, null);
+    set(ctx.internalRunOperation$, null);
 
     if (!sessionToken) {
+      set(ctx.reloadProviders$);
       return;
     }
 
-    await set(cancelCodexDeviceAuth$, sessionToken, signal);
+    await withCleanup(set(cancelCodexDeviceAuth$, sessionToken, signal), () => {
+      set(ctx.reloadProviders$);
+    });
     signal.throwIfAborted();
   });
 }
@@ -417,11 +407,13 @@ function createCodexDeviceAuthSignals(
     reloadProviders$,
     internalDialogState$: state(createInitialDialogState()),
     internalFlowState$: state<CodexDeviceAuthFlowState>(createIdleFlowState()),
+    internalStartOperation$: state<Promise<boolean> | null>(null),
+    internalRunOperation$: state<Promise<boolean> | null>(null),
     resetFlowSignal$: resetSignal(),
   };
   const pollFlow$ = createCodexPollFlow$(ctx);
-  const runFlow$ = createCodexRunFlow$(ctx, pollFlow$);
-  const run$ = createCodexRun$(ctx, runFlow$);
+  const startFlow$ = createCodexStartFlow$(ctx);
+  const run$ = createCodexRun$(ctx, startFlow$, pollFlow$);
 
   return {
     dialogState$: computed((get) => {
@@ -429,6 +421,12 @@ function createCodexDeviceAuthSignals(
     }),
     flowState$: computed((get) => {
       return get(ctx.internalFlowState$);
+    }),
+    startOperation$: computed((get) => {
+      return get(ctx.internalStartOperation$);
+    }),
+    runOperation$: computed((get) => {
+      return get(ctx.internalRunOperation$);
     }),
     open$: createCodexOpen$(ctx, run$),
     close$: createCodexClose$(ctx),
@@ -445,6 +443,10 @@ export const codexDeviceAuthDialogStatePersonal$ =
   personalCodexDeviceAuthSignals.dialogState$;
 export const codexDeviceAuthFlowStatePersonal$ =
   personalCodexDeviceAuthSignals.flowState$;
+export const codexDeviceAuthStartOperationPersonal$ =
+  personalCodexDeviceAuthSignals.startOperation$;
+export const codexDeviceAuthRunOperationPersonal$ =
+  personalCodexDeviceAuthSignals.runOperation$;
 export const openCodexDeviceAuthDialogPersonal$: Command<
   Promise<boolean>,
   [OpenPersonalCodexDeviceAuthArgs, AbortSignal]

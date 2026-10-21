@@ -79,6 +79,9 @@ export async function requireCustomConnectorAccountReady(
   }
 }
 
+/** Local connection requirements, distinct from HTTP request failures. */
+export class ConnectorConnectionError extends Error {}
+
 /** Completion validates canonical facts for the exact operated account. */
 export async function readConnectorAccountCompletion(
   createClient: ApiClientFactory,
@@ -103,13 +106,13 @@ export async function readConnectorAccountCompletion(
     connectorAccountTargetKey(parsed.data.target) !==
       connectorAccountTargetKey(target)
   ) {
-    throw new Error(
+    throw new ConnectorConnectionError(
       "Connector account setup information is unavailable. Refresh and try again.",
     );
   }
   const account = parsed.data;
   if (account.setupStatus !== "complete") {
-    throw new Error(
+    throw new ConnectorConnectionError(
       "This account needs additional setup. Review its connector settings and try again.",
     );
   }

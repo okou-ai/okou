@@ -1,7 +1,27 @@
-import type { ClipboardEvent } from "react";
+import { RemoteSecretInput } from "./remote-secret-input.tsx";
+import type { ReactNode, ClipboardEvent } from "react";
+import {
+  RemoteNetworkScopeField,
+  RemoteNetworkScopeConfirmation,
+} from "./remote-network-scope.tsx";
+import {
+  RemoteNetworkSummary,
+  RemoteNetworkDeleteAction,
+} from "./remote-network-summary.tsx";
+import {
+  RemoteNetworkCredentialHelp,
+  useRemoteNetworkSaveLabel,
+} from "./remote-network-help.tsx";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import { remoteNetworkScopeStatus$ } from "../../signals/remote-network-scope.ts";
+import {
+  RemoteEditorFrame,
+  useRemoteNetworkEditorVisible,
+  REMOTE_PAGE_ACTION,
+} from "./remote-editor-frame.tsx";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
@@ -248,9 +268,7 @@ function accessCredentialInput(
   name: keyof AccessCredentials,
 ): HTMLInputElement | null {
   const input = form.elements.namedItem(name);
-  return input instanceof HTMLInputElement && input.type === "password"
-    ? input
-    : null;
+  return input instanceof HTMLInputElement ? input : null;
 }
 
 function pasteAccessCredentials(event: ClipboardEvent<HTMLInputElement>) {
@@ -273,29 +291,50 @@ function pasteAccessCredentials(event: ClipboardEvent<HTMLInputElement>) {
 
 export function AccessFields({
   config,
+  scopeField,
 }: {
   readonly config: CloudflareAccessConfig | null;
+  readonly scopeField?: ReactNode;
 }) {
   const { t } = useTranslation();
   const replace = useGet(cloudflareAccessReplaceToken$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   const setReplace = useSet(replaceCloudflareAccessToken$);
   return (
     <>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.cloudflareAccess.name;
-        })}
-        <Input
-          name="accessName"
-          placeholder={t(($) => {
-            return $.cloudflareAccess.namePlaceholder;
+      <div className="grid gap-2">
+        <label className="grid gap-2">
+          {t(($) => {
+            return guided
+              ? $.remoteNetworkScope.networkName
+              : $.cloudflareAccess.name;
           })}
-          required
-          pattern=".*\S.*"
-          maxLength={128}
-          defaultValue={config?.name}
-        />
-      </label>
+          <Input
+            name="accessName"
+            placeholder={t(($) => {
+              return guided
+                ? $.remoteNetworkScope.networkNamePlaceholder
+                : $.cloudflareAccess.namePlaceholder;
+            })}
+            aria-describedby={guided ? "cloudflare-name-help" : undefined}
+            required
+            pattern=".*\S.*"
+            maxLength={128}
+            defaultValue={config?.name}
+          />
+        </label>
+        {guided && (
+          <p
+            id="cloudflare-name-help"
+            className="text-sm text-muted-foreground"
+          >
+            {t(($) => {
+              return $.remoteNetworkScope.networkNameHelp;
+            })}
+          </p>
+        )}
+      </div>
+      {scopeField}
       {config && (
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
@@ -312,47 +351,58 @@ export function AccessFields({
       )}
       {(!config || replace) && (
         <>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.cloudflareAccess.tokenHelp;
-            })}
-          </p>
-          <label className="grid gap-2">
-            {t(($) => {
-              return $.cloudflareAccess.clientId;
-            })}
-            <Input
+          {guided && <RemoteNetworkCredentialHelp provider="cloudflare" />}
+          {!guided && (
+            <p className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.cloudflareAccess.tokenHelp;
+              })}
+            </p>
+          )}
+          <div className="grid gap-2">
+            <label htmlFor="cloudflare-clientId">
+              {t(($) => {
+                return guided
+                  ? $.remoteNetworkGuide.clientId
+                  : $.cloudflareAccess.clientId;
+              })}
+            </label>
+            <RemoteSecretInput
+              id="cloudflare-clientId"
               name="clientId"
               placeholder={t(($) => {
                 return $.cloudflareAccess.clientIdPlaceholder;
               })}
               required
-              type="password"
               pattern="[!-~]+"
               maxLength={CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}
               autoComplete="new-password"
               spellCheck={false}
               onPaste={pasteAccessCredentials}
             />
-          </label>
-          <label className="grid gap-2">
-            {t(($) => {
-              return $.cloudflareAccess.clientSecret;
-            })}
-            <Input
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="cloudflare-clientSecret">
+              {t(($) => {
+                return guided
+                  ? $.remoteNetworkGuide.clientSecret
+                  : $.cloudflareAccess.clientSecret;
+              })}
+            </label>
+            <RemoteSecretInput
+              id="cloudflare-clientSecret"
               name="clientSecret"
               placeholder={t(($) => {
                 return $.cloudflareAccess.clientSecretPlaceholder;
               })}
               required
-              type="password"
               pattern="[!-~]+"
               maxLength={CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}
               autoComplete="new-password"
               spellCheck={false}
               onPaste={pasteAccessCredentials}
             />
-          </label>
+          </div>
         </>
       )}
     </>
@@ -363,13 +413,20 @@ function useCloudflareAccessDialogCopy(
   kind: CloudflareAccessDialogState["kind"] | undefined,
 ) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   switch (kind) {
     case "create": {
       return {
         title: t(($) => {
-          return $.cloudflareAccess.add;
+          return guided
+            ? $.remoteNetworkScope.addCloudflare
+            : $.cloudflareAccess.add;
         }),
-        description: null,
+        description: guided
+          ? t(($) => {
+              return $.remoteNetworkScope.scopeDescription;
+            })
+          : null,
       };
     }
     case "edit": {
@@ -426,29 +483,42 @@ function CloudflareAccessFormActions({
   blocked,
   destructive,
   title,
+  inline,
 }: {
   readonly isSaving: boolean;
   readonly blocked: boolean;
   readonly destructive: boolean;
   readonly title: string;
+  readonly inline?: boolean;
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const saveLabel = useRemoteNetworkSaveLabel();
   const close = useSet(closeCloudflareAccessDialog$);
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
   return (
-    <div className="flex shrink-0 justify-end gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        disabled={isSaving}
-        onClick={close}
-      >
-        {t(($) => {
-          return $.cloudflareAccess.cancel;
-        })}
-      </Button>
+    <div
+      className={
+        inline
+          ? "mt-2 flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-5"
+          : "flex shrink-0 justify-end gap-2"
+      }
+    >
+      {!inline && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isSaving}
+          onClick={close}
+        >
+          {t(($) => {
+            return $.cloudflareAccess.cancel;
+          })}
+        </Button>
+      )}
       <Button
         type="submit"
+        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
         disabled={isSaving || (!uncertain && blocked)}
         variant={destructive ? "destructive" : "default"}
       >
@@ -462,9 +532,11 @@ function CloudflareAccessFormActions({
               })
             : destructive
               ? title
-              : t(($) => {
-                  return $.cloudflareAccess.save;
-                })}
+              : guided
+                ? saveLabel
+                : t(($) => {
+                    return $.cloudflareAccess.save;
+                  })}
       </Button>
     </div>
   );
@@ -532,91 +604,139 @@ function CloudflareAccessScopeSelect({
   );
 }
 
-export function CloudflareAccessDialog() {
+function CloudflareDialogScope({
+  creating,
+  scope,
+  disabled,
+}: {
+  readonly creating: boolean;
+  readonly scope: "personal" | "organization";
+  readonly disabled: boolean;
+}) {
   const { t } = useTranslation();
-  const data = useLoadable(cloudflareAccessDialog$);
+  const admin = useLoadable(isOrgAdmin$);
+  return (
+    <>
+      {" "}
+      {creating && admin.state === "hasData" && admin.data && (
+        <CloudflareAccessScopeSelect value={scope} disabled={disabled} />
+      )}
+      {scope === "organization" && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.cloudflareAccess.organizationHelp;
+          })}
+        </p>
+      )}
+    </>
+  );
+}
+
+function CloudflareAccessEditorFields({
+  dialog,
+  disabled,
+}: {
+  readonly dialog: CloudflareAccessDialogState;
+  readonly disabled: boolean;
+}) {
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const createScope = useGet(cloudflareAccessCreateScope$);
+  const scope = dialog.kind === "create" ? createScope : dialog.scope;
+  return (
+    <>
+      {!guided && (
+        <CloudflareDialogScope
+          creating={dialog.kind === "create"}
+          scope={scope}
+          disabled={disabled}
+        />
+      )}
+      {dialog.kind !== "delete" && (
+        <fieldset disabled={disabled} className="grid min-w-0 gap-4">
+          <AccessFields
+            config={dialog.config}
+            scopeField={
+              guided ? (
+                <RemoteNetworkScopeField
+                  provider="cloudflare"
+                  config={dialog.config}
+                  disabled={disabled}
+                />
+              ) : undefined
+            }
+          />
+        </fieldset>
+      )}
+      {dialog.config && <AccessImpact config={dialog.config} />}
+    </>
+  );
+}
+
+export function CloudflareAccessDialog({
+  inline = false,
+  saveAction = saveCloudflareAccess$,
+}: {
+  readonly inline?: boolean;
+  readonly saveAction?: typeof saveCloudflareAccess$;
+} = {}) {
+  const dialog = useLastResolved(cloudflareAccessDialog$);
   const close = useSet(closeCloudflareAccessDialog$);
-  const [saving, save] = useLoadableSet(saveCloudflareAccess$);
+  const [saving, save] = useLoadableSet(saveAction);
   const mount = useSet(mountCloudflareAccessForm$);
   const signal = useGet(pageSignal$);
   const conflict = useGet(cloudflareAccessConflict$);
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
-  const admin = useLoadable(isOrgAdmin$);
-  const createScope = useGet(cloudflareAccessCreateScope$);
-  const dialog = data.state === "hasData" ? data.data : null;
   const { title, description } = useCloudflareAccessDialogCopy(dialog?.kind);
+  const scopeStatus = useGet(remoteNetworkScopeStatus$);
   const isSaving = saving.state === "loading";
-  if (!dialog) {
+  const visible = useRemoteNetworkEditorVisible(inline, dialog);
+  if (!dialog || !visible) {
     return null;
   }
   const destructive = dialog.kind === "delete";
-  const scope = dialog.kind === "create" ? createScope : dialog.scope;
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !isSaving) {
-          close();
-        }
-      }}
+    <RemoteEditorFrame
+      key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
+      inline={inline}
+      title={title}
+      description={description}
+      busy={isSaving}
+      onClose={close}
     >
-      <DialogContent
-        contentClassName="flex flex-col"
-        key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
+      <form
+        id="remote-network-cloudflare"
+        ref={mount}
+        className="flex min-h-0 min-w-0 flex-col gap-4"
+        autoComplete="off"
+        aria-busy={isSaving}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!isSaving && !scopeStatus.error && (uncertain || !conflict)) {
+            detach(save(event.currentTarget, signal), Reason.DomCallback);
+          }
+        }}
       >
-        <DialogHeader className="shrink-0">
-          <DialogTitle>{title}</DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
-        </DialogHeader>
-        <form
-          ref={mount}
-          className="flex min-h-0 min-w-0 flex-col gap-4"
-          autoComplete="off"
-          aria-busy={isSaving}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!isSaving && (uncertain || !conflict)) {
-              detach(save(event.currentTarget, signal), Reason.DomCallback);
-            }
-          }}
-        >
-          <DialogBody className="grid gap-4">
-            {dialog.kind === "create" &&
-              admin.state === "hasData" &&
-              admin.data && (
-                <CloudflareAccessScopeSelect
-                  value={scope}
-                  disabled={isSaving || uncertain}
-                />
-              )}
-            {scope === "organization" && (
-              <p className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.cloudflareAccess.organizationHelp;
-                })}
-              </p>
-            )}
-            {!destructive && (
-              <fieldset
-                disabled={isSaving || uncertain}
-                className="grid min-w-0 gap-4"
-              >
-                <AccessFields config={dialog.config} />
-              </fieldset>
-            )}
-            {dialog.config && <AccessImpact config={dialog.config} />}
-            <CloudflareAccessConflictReview />
-            <CloudflareAccessSaveNotice isSaving={isSaving} />
-          </DialogBody>
-          <CloudflareAccessFormActions
-            isSaving={isSaving}
-            blocked={isSaving || !!conflict}
-            destructive={destructive}
-            title={title}
+        <DialogBody className="grid gap-4">
+          <CloudflareAccessEditorFields
+            dialog={dialog}
+            disabled={isSaving || uncertain}
           />
-        </form>
-      </DialogContent>
-    </Dialog>
+          <CloudflareAccessConflictReview />
+          <CloudflareAccessSaveNotice isSaving={isSaving} />
+          <RemoteNetworkScopeConfirmation
+            provider="cloudflare"
+            configId={dialog.config?.id}
+          />
+        </DialogBody>
+        <CloudflareAccessFormActions
+          isSaving={isSaving}
+          inline={inline}
+          blocked={isSaving || !!conflict || !!scopeStatus.error}
+          destructive={destructive}
+          title={title}
+        />
+      </form>
+    </RemoteEditorFrame>
   );
 }
 
@@ -1050,16 +1170,18 @@ export function CloudflareAccessConversionDialog() {
   );
 }
 
-function CloudflareAccessSection({
+function CloudflareConfigCard({
+  config,
+  compact,
   scope,
-  configs,
   canManage,
-  canPromote = false,
+  canPromote,
 }: {
+  readonly config: ScopedCloudflareAccessConfig;
+  readonly compact: boolean;
   readonly scope: "personal" | "organization";
-  readonly configs: readonly ScopedCloudflareAccessConfig[];
   readonly canManage: boolean;
-  readonly canPromote?: boolean;
+  readonly canPromote: boolean;
 }) {
   const { t } = useTranslation();
   const open = useSet(openCloudflareAccessDialog$);
@@ -1067,6 +1189,101 @@ function CloudflareAccessSection({
   const openPromotion = useSet(openCloudflareAccessPromotion$);
   const openDeletion = useSet(openCloudflareAccessDeletion$);
   const signal = useGet(pageSignal$);
+  return (
+    <article
+      className={
+        compact
+          ? "grid gap-5"
+          : surfaceVariants({ className: "grid gap-3 p-5" })
+      }
+    >
+      {compact ? (
+        <RemoteNetworkSummary config={config} kind="cloudflare" />
+      ) : (
+        <>
+          <h3 className="font-semibold">{config.name}</h3>
+          <AccessImpact config={config} />
+        </>
+      )}
+      {canManage && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={compact ? "neutral" : "outline"}
+            onClick={() => {
+              return detach(open("edit", config, signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return compact
+                ? $.remoteControlSetup.networkEditSettings
+                : $.cloudflareAccess.edit;
+            })}
+          </Button>
+          {scope === "personal" && canPromote && !compact && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                return detach(
+                  openPromotion(config, signal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              {t(($) => {
+                return $.cloudflareAccess.promote;
+              })}
+            </Button>
+          )}
+          {scope === "organization" && !compact && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                return detach(
+                  openConversion(config, signal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              {t(($) => {
+                return $.cloudflareAccess.convert;
+              })}
+            </Button>
+          )}
+          <RemoteNetworkDeleteAction
+            label={t(($) => {
+              return $.cloudflareAccess.delete;
+            })}
+            compact={compact}
+            disabled={privateNetworkHostCount(config) > 0}
+            onClick={() => {
+              return detach(
+                scope === "organization"
+                  ? openDeletion(config, signal)
+                  : open("delete", config, signal),
+                Reason.DomCallback,
+              );
+            }}
+          />
+        </div>
+      )}
+    </article>
+  );
+}
+
+export function CloudflareAccessSection({
+  compact = false,
+  scope,
+  configs,
+  canManage,
+  canPromote = false,
+}: {
+  readonly compact?: boolean;
+  readonly scope: "personal" | "organization";
+  readonly configs: readonly ScopedCloudflareAccessConfig[];
+  readonly canManage: boolean;
+  readonly canPromote?: boolean;
+}) {
+  const { t } = useTranslation();
   return (
     <section
       aria-label={t(($) => {
@@ -1076,13 +1293,15 @@ function CloudflareAccessSection({
       })}
       className="grid gap-3"
     >
-      <h2 className="text-base font-semibold">
-        {t(($) => {
-          return scope === "personal"
-            ? $.cloudflareAccess.personal
-            : $.cloudflareAccess.organization;
-        })}
-      </h2>
+      {!compact && (
+        <h2 className="text-base font-semibold">
+          {t(($) => {
+            return scope === "personal"
+              ? $.cloudflareAccess.personal
+              : $.cloudflareAccess.organization;
+          })}
+        </h2>
+      )}
       {configs.length === 0 && (
         <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
           {t(($) => {
@@ -1092,83 +1311,14 @@ function CloudflareAccessSection({
       )}
       {configs.map((config) => {
         return (
-          <article
+          <CloudflareConfigCard
             key={config.id}
-            className={surfaceVariants({ className: "grid gap-3 p-5" })}
-          >
-            <h3 className="font-semibold">{config.name}</h3>
-            <AccessImpact config={config} />
-            {canManage && (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    return detach(
-                      open("edit", config, signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                >
-                  {t(($) => {
-                    return $.cloudflareAccess.edit;
-                  })}
-                </Button>
-                {scope === "personal" && canPromote && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      return detach(
-                        openPromotion(config, signal),
-                        Reason.DomCallback,
-                      );
-                    }}
-                  >
-                    {t(($) => {
-                      return $.cloudflareAccess.promote;
-                    })}
-                  </Button>
-                )}
-                {scope === "organization" && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      return detach(
-                        openConversion(config, signal),
-                        Reason.DomCallback,
-                      );
-                    }}
-                  >
-                    {t(($) => {
-                      return $.cloudflareAccess.convert;
-                    })}
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  disabled={privateNetworkHostCount(config) > 0}
-                  onClick={() => {
-                    return detach(
-                      scope === "organization"
-                        ? openDeletion(config, signal)
-                        : open("delete", config, signal),
-                      Reason.DomCallback,
-                    );
-                  }}
-                >
-                  {t(($) => {
-                    return $.cloudflareAccess.delete;
-                  })}
-                </Button>
-              </div>
-            )}
-            {canManage && privateNetworkHostCount(config) > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.vnc.native.inUse;
-                })}
-              </p>
-            )}
-          </article>
+            config={config}
+            compact={compact}
+            scope={scope}
+            canManage={canManage}
+            canPromote={canPromote}
+          />
         );
       })}
     </section>

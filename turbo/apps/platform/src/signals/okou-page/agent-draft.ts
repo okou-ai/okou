@@ -11,7 +11,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import { collectSuccessfulAttachmentInfos } from "../chat-page/resolve-draft-attachments.ts";
-import { resetSignal } from "../utils.ts";
+import { resetSignal, withCleanup } from "../utils.ts";
 import {
   createDraftSignals,
   createRestoredAttachment,
@@ -93,6 +93,14 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
       }),
     );
     signal.throwIfAborted();
+    // A failed lookup is not evidence that a saved reference disappeared.
+    // Do not overwrite the authoritative draft with an unresolved subset.
+    const unresolved = infos.find((info) => {
+      return info.status === "rejected";
+    });
+    if (unresolved?.status === "rejected") {
+      throw unresolved.reason;
+    }
     const attachments = collectSuccessfulAttachmentInfos(
       draftAttachments,
       infos,
@@ -112,6 +120,7 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
     const payload = buildDraftPersistencePayload({
       input: get(draft.input$),
       editorDocument: set(draft.readEditorDocument$),
+      restoredUserMessage: set(draft.peekRestoredUserMessage$),
       generationTemplate: get(draft.generationTemplate$),
       attachments,
     });
@@ -171,11 +180,41 @@ export const ensureAgentDraft$ = command(
   },
 );
 
+function createAgentDraftHandoffSync(
+  draft: DraftSignals,
+  queueDraftSync$: AgentDraftEntry["queueDraftSync$"],
+) {
+  return command(
+    async (
+      { get, set },
+      restored: RestoredDraftState | null,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      if (!get(draft.composerDraftHandoff$)) {
+        return;
+      }
+      // Finishing consumes and applies the handoff before its first await.
+      // Persist that domain change even if attachment reconciliation rejects.
+      await withCleanup(
+        set(draft.finishComposerDraftHandoff$, restored, signal),
+        () => {
+          if (!signal.aborted) {
+            return set(queueDraftSync$, signal);
+          }
+          return undefined;
+        },
+      );
+    },
+  );
+}
+
 function createAgentDraftLoad(
   agentId: string,
   draft: DraftSignals,
   queueDraftSync$: AgentDraftEntry["queueDraftSync$"],
 ): AgentDraftEntry["load$"] {
+  const finishHandoff$ = createAgentDraftHandoffSync(draft, queueDraftSync$);
   const revision$ = state(0);
   const serverDraft$ = computed(async (get) => {
     get(revision$);
@@ -200,9 +239,7 @@ function createAgentDraftLoad(
       return;
     }
     if (handoff && !handoff.needsRemoteMerge) {
-      if (await set(draft.finishComposerDraftHandoff$, null, signal)) {
-        await set(queueDraftSync$, signal);
-      }
+      await set(finishHandoff$, null, signal);
       return;
     }
 
@@ -219,9 +256,7 @@ function createAgentDraftLoad(
     signal.throwIfAborted();
 
     if (get(draft.composerDraftHandoff$)) {
-      if (await set(draft.finishComposerDraftHandoff$, restoredDraft, signal)) {
-        await set(queueDraftSync$, signal);
-      }
+      await set(finishHandoff$, restoredDraft, signal);
       return;
     }
 
@@ -243,19 +278,32 @@ function createAgentDraftLoad(
       return;
     }
 
-    const removedUnavailableAttachments = await set(
-      draft.seed$,
-      {
-        content: restoredDraft.content,
-        userMessage: restoredDraft.userMessage,
-        generationTemplate: undefined,
-        attachments: restoredDraft.attachments.map(createRestoredAttachment),
+    const attachments = restoredDraft.attachments.map(createRestoredAttachment);
+    await withCleanup(
+      set(
+        draft.seed$,
+        {
+          content: restoredDraft.content,
+          userMessage: restoredDraft.userMessage,
+          generationTemplate: undefined,
+          attachments,
+        },
+        signal,
+      ),
+      () => {
+        // Save only actual removals, including a user removal during rebuild.
+        // A sibling rebuild failure must not strand a confirmed 404 in storage.
+        if (
+          !signal.aborted &&
+          attachments.some((attachment) => {
+            return !get(draft.attachments$).includes(attachment);
+          })
+        ) {
+          return set(queueDraftSync$, signal);
+        }
+        return undefined;
       },
-      signal,
     );
-    if (removedUnavailableAttachments) {
-      await set(queueDraftSync$, signal);
-    }
   });
   return load$;
 }

@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -14,8 +14,9 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   agentSuggestionIndex$,
-  agentSuggestionStarting$,
-  consumeAgentSuggestion$,
+  agentSuggestionOperation$,
+  agentSuggestionRecoveryId$,
+  dismissAgentSuggestion$,
   showAgentSuggestion$,
   startAgentSuggestion$,
   visibleAgentSuggestions$,
@@ -65,8 +66,9 @@ function AgentSuggestionHeader({
   readonly total: number;
 }) {
   const { t } = useTranslation();
-  const consume = useSet(consumeAgentSuggestion$);
-  const starting = useGet(agentSuggestionStarting$);
+  const dismiss = useSet(dismissAgentSuggestion$);
+  const operation = useLoadable(agentSuggestionOperation$);
+  const starting = operation.state === "loading";
   const show = useSet(showAgentSuggestion$);
   const signal = useGet(pageSignal$);
   return (
@@ -125,7 +127,7 @@ function AgentSuggestionHeader({
           })}
           disabled={starting}
           onClick={() => {
-            detach(consume(item, signal), Reason.DomCallback);
+            detach(dismiss(item, signal), Reason.DomCallback);
           }}
         >
           <X />
@@ -139,7 +141,9 @@ export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(visibleAgentSuggestions$);
   const start = useSet(startAgentSuggestion$);
-  const starting = useGet(agentSuggestionStarting$);
+  const operation = useLoadable(agentSuggestionOperation$);
+  const starting = operation.state === "loading";
+  const recoveryId = useGet(agentSuggestionRecoveryId$);
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   // The tab exists only for a resolved, non-empty pool, so a read that is
@@ -150,6 +154,7 @@ export function AgentSuggestions() {
   const items = result.data;
   const index = Math.min(requested, items.length - 1);
   const item = items[index];
+  const recoverable = item.id === recoveryId;
   const behind = Math.min(items.length - 1, 2);
   return (
     <section
@@ -186,6 +191,8 @@ export function AgentSuggestions() {
           <span className="inline-flex items-center gap-1.5 pt-2 text-xs text-muted-foreground">
             {starting ? (
               <LoaderCircle aria-hidden className="animate-spin" />
+            ) : recoverable ? (
+              <MessageSquarePlus aria-hidden />
             ) : item.threadId ? (
               <MessageSquare aria-hidden />
             ) : (
@@ -195,18 +202,29 @@ export function AgentSuggestions() {
               ? t(($) => {
                   return $.chat.agentSuggestions.starting;
                 })
-              : item.threadId
+              : recoverable
                 ? t(($) => {
-                    return $.chat.agentSuggestions.runInChat;
+                    return $.chat.agentSuggestions.restoreDraft;
                   })
-                : t(($) => {
-                    return $.chat.agentSuggestions.runNewChat;
-                  })}
+                : item.threadId
+                  ? t(($) => {
+                      return $.chat.agentSuggestions.runInChat;
+                    })
+                  : t(($) => {
+                      return $.chat.agentSuggestions.runNewChat;
+                    })}
             <ArrowRight
               aria-hidden
               className="opacity-0 transition-opacity group-hover/suggestion:opacity-100"
             />
           </span>
+          {recoverable && !starting && (
+            <span className="text-xs text-muted-foreground">
+              {t(($) => {
+                return $.chat.agentSuggestions.recoveryHint;
+              })}
+            </span>
+          )}
         </Button>
         <AgentSuggestionHeader item={item} index={index} total={items.length} />
       </div>

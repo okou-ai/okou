@@ -1,10 +1,10 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { useGet, useSet } from "ccstate-react";
+import { useLoadable, useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ComposerConnectorSignals } from "../../signals/okou-page/connectors.ts";
 import {
-  builtinConnectFlowSlug$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinConnectExecution$,
+  builtinConnectOperation$,
   builtinPollingOAuthDeviceAuthSlug$,
   connectBuiltinConnectorNoAuthAndSettle$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -15,7 +15,6 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
   const [authorization, setAuthorization] = useLoadableSet(
     signals.setConnectorAuthorization$,
   );
-  const savingAccount = useGet(signals.accounts.saving$);
   const commitAccountSelection = useSet(signals.accounts.commitSelection$);
   const [browserAuth, connectBrowserAuth] = useLoadableSet(
     connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -23,20 +22,22 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
   const [noAuth, connectNoAuth] = useLoadableSet(
     connectBuiltinConnectorNoAuthAndSettle$,
   );
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectExecution = useGet(builtinConnectExecution$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
   return {
     savingAuthorization: authorization.state === "loading",
     setAuthorization,
-    savingAccount,
     commitAccountSelection,
-    connecting: browserAuth.state === "loading" || noAuth.state === "loading",
+    connecting:
+      connectOperation.state === "loading" ||
+      browserAuth.state === "loading" ||
+      noAuth.state === "loading",
     isConnectorConnecting: (connectorSlug: ConnectorSlug) => {
       return (
-        connectFlowSlug === connectorSlug ||
-        pollingAuthCodeSlug === connectorSlug ||
+        (connectExecution?.connectorSlug === connectorSlug &&
+          connectOperation.state === "loading") ||
         pollingDeviceAuthSlug === connectorSlug
       );
     },

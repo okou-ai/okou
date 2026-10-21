@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
@@ -35,6 +35,8 @@ import {
 import {
   connectOnboardingSubscription$,
   onboardingSubscriptionStatus$,
+  onboardingSubscriptionStartOperation$,
+  onboardingSubscriptionOperation$,
   type OnboardingSubscriptionStatus,
 } from "../../signals/onboarding/onboarding-subscription-connect.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -445,18 +447,6 @@ function SubscriptionConnectNote({
       </ConnectNoteLine>
     );
   }
-  if (status === "cancelled") {
-    return (
-      <ConnectNoteLine>
-        {t(
-          ($) => {
-            return $.onboarding.sourcesFirst.subscription.cancelledNote;
-          },
-          { provider: providerName },
-        )}
-      </ConnectNoteLine>
-    );
-  }
   if (status === "unconfirmed") {
     return (
       <ConnectNoteLine>
@@ -506,8 +496,8 @@ function SubscriptionConnectLabel({
 
 /**
  * The connect for the chosen plan. Connected is what `/api/me/3rd-party-subscriptions`
- * answers, so an attempt that failed or was called off says so and leaves the
- * step passable either way.
+ * answers. Startup errors come from the actual operation, not an inferred
+ * session outcome; the step remains passable either way.
  */
 function SubscriptionConnect({
   provider,
@@ -516,15 +506,28 @@ function SubscriptionConnect({
 }) {
   const pageSignal = useGet(pageSignal$);
   const connect = useSet(connectOnboardingSubscription$);
-  const statusLoadable = useLastLoadable(onboardingSubscriptionStatus$);
+  const statusLoadable = useLoadable(onboardingSubscriptionStatus$);
+  const startup = useLoadable(onboardingSubscriptionStartOperation$);
+  const operation = useLoadable(onboardingSubscriptionOperation$);
   // A provider list that cannot be read leaves the account unknown, which is
   // its own answer: never the connected one.
-  const status: OnboardingSubscriptionStatus =
+  const accountStatus: OnboardingSubscriptionStatus =
     statusLoadable.state === "hasData"
       ? statusLoadable.data
       : statusLoadable.state === "hasError"
         ? "unconfirmed"
         : "idle";
+  const status: OnboardingSubscriptionStatus =
+    accountStatus === "connected"
+      ? "connected"
+      : startup.state === "loading"
+        ? "connecting"
+        : startup.state === "hasError" ||
+            operation.state === "hasError" ||
+            (startup.state === "hasData" && startup.data === false) ||
+            (operation.state === "hasData" && operation.data === false)
+          ? "failed"
+          : accountStatus;
   const providerName = useProviderName(provider);
   const connected = status === "connected";
   const connecting = status === "connecting";

@@ -65,13 +65,29 @@ const performCreateWorkspace$ = command(
 );
 
 const internalWorkspaceCreation$ = state<Promise<void> | undefined>(undefined);
+// Retain the outcome separately from the operation that excludes re-entry.
+const workspaceCreationInFlight$ = state<Promise<void> | undefined>(undefined);
+const workspaceAcceptances$ = state<ReadonlyMap<string, Promise<void>>>(
+  new Map(),
+);
+
+export const workspaceAcceptance$ = computed((get) => {
+  return get(workspaceAcceptances$).values().next().value;
+});
 
 export const workspaceCreation$ = computed((get) => {
   return get(internalWorkspaceCreation$);
 });
 
-export const createWorkspace$ = command(({ set }, signal: AbortSignal) => {
-  const request = set(performCreateWorkspace$, signal);
+export const createWorkspace$ = command(({ get, set }, signal: AbortSignal) => {
+  const existing = get(workspaceCreationInFlight$);
+  if (existing) {
+    return existing;
+  }
+  const request = withCleanup(set(performCreateWorkspace$, signal), () => {
+    set(workspaceCreationInFlight$, undefined);
+  });
+  set(workspaceCreationInFlight$, request);
   set(internalWorkspaceCreation$, request);
   return request;
 });
@@ -81,10 +97,29 @@ function createWorkspaceInvitationActions(invitation: WorkspaceInvitation) {
   return {
     invitation,
     request$: computed((get) => {
-      return get(internalRequest$);
+      // Refreshed actions for the same invitation observe the accepted work.
+      return (
+        get(workspaceAcceptances$).get(invitation.id) ?? get(internalRequest$)
+      );
     }),
-    join$: command(({ set }, signal: AbortSignal) => {
-      const request = set(joinWorkspace$, invitation, signal);
+    join$: command(({ get, set }, signal: AbortSignal) => {
+      const current = get(workspaceAcceptances$);
+      const existing = current.get(invitation.id);
+      if (existing) {
+        set(internalRequest$, existing);
+        return existing;
+      }
+      if (current.size > 0) {
+        return;
+      }
+      const request = withCleanup(
+        set(joinWorkspace$, invitation, signal),
+        () => {
+          set(workspaceAcceptances$, new Map());
+        },
+      );
+      // Claim synchronously, before the SDK operation can resume after await.
+      set(workspaceAcceptances$, new Map([[invitation.id, request]]));
       set(internalRequest$, request);
       return request;
     }),

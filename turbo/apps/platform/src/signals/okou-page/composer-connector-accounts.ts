@@ -44,7 +44,7 @@ export interface ComposerConnectorAccountSignals {
   readonly loadMore$: ReturnType<
     typeof createConnectorAccountListSignals
   >["loadMore$"];
-  readonly saving$: Computed<boolean>;
+  readonly saveOperation$: Computed<Promise<void> | null>;
   readonly commitSelection$: Command<
     Promise<void>,
     [ConnectorAccountConnection | null, AbortSignal]
@@ -161,6 +161,8 @@ export function createComposerConnectorAccountSignals(
   const menuTarget$ = state<ConnectorAccountTarget | null>(null);
   const menuOpen$ = state(false);
   const activeSave$ = state<Promise<void> | null>(null);
+  // Retain the actual result for this menu session, independently of its mutex.
+  const saveOperation$ = state<Promise<void> | null>(null);
   const resetSaveSignal$ = resetSignal();
   const reloadVersion$ = state(0);
   const pendingState$ = state<ComposerConnectorAccountPreferenceState>(
@@ -199,6 +201,7 @@ export function createComposerConnectorAccountSignals(
       const currentTarget = get(menuTarget$);
       set(resetSaveSignal$);
       set(activeSave$, null);
+      set(saveOperation$, null);
       // A dismissed write may have reached the server before cancellation.
       set(reloadPreference$);
       set(menuTarget$, target);
@@ -217,6 +220,7 @@ export function createComposerConnectorAccountSignals(
   const closeMenu$ = command(({ set }): void => {
     set(resetSaveSignal$);
     set(activeSave$, null);
+    set(saveOperation$, null);
     set(menuOpen$, false);
     set(menuTarget$, null);
     set(list.clearTarget$);
@@ -244,6 +248,7 @@ export function createComposerConnectorAccountSignals(
         ? set(mutations.selectAccount$, connection, signal)
         : set(mutations.useDefault$, target, signal);
       set(activeSave$, pending);
+      set(saveOperation$, pending);
       await withCleanup(pending, () => {
         // A dismissed request must not reset a newer menu session's save.
         if (get(activeSave$) === pending) {
@@ -275,8 +280,8 @@ export function createComposerConnectorAccountSignals(
     closeMenu$,
     setSearch$: list.setSearch$,
     loadMore$: list.loadMore$,
-    saving$: computed((get) => {
-      return get(activeSave$) !== null;
+    saveOperation$: computed((get) => {
+      return get(saveOperation$);
     }),
     commitSelection$,
     reloadPreference$,
