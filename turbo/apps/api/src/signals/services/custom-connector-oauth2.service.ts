@@ -1078,9 +1078,6 @@ async function persistAutomaticNoAuthConnection(
     result: "connected" as const,
     connector: serialiseCustomConnector({
       row: connector,
-      valueMarkers: [],
-      connectedAccountId: result.connection.id,
-      connectedAccountUpdatedAt: result.connection.updatedAt,
     }),
     connectionId: result.connection.id,
   };

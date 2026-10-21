@@ -10,16 +10,8 @@ import {
 import type { McpConnector } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 
-interface CustomFixtureAccount {
-  readonly connected?: boolean;
-  readonly connectedAccountId?: string;
-  readonly connectedAccountUpdatedAt?: string;
-  readonly missingRequiredFields?: readonly string[];
-  readonly configuredFieldKeys?: readonly string[];
-}
-
 export function customConnector(
-  overrides: Partial<CustomConnectorHttpResponse> & CustomFixtureAccount = {},
+  overrides: Partial<CustomConnectorHttpResponse> = {},
 ): CustomConnectorHttpResponse {
   const connector = customConnectorHttpResponseSchema.parse({
     kind: "http",
@@ -44,8 +36,6 @@ export function customConnector(
     queryInjections: [],
     authMode: "manual",
     storageVersion: 1,
-    missingRequiredFields: ["apiKey"],
-    configuredFieldKeys: [],
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
@@ -54,7 +44,7 @@ export function customConnector(
 }
 
 export function customMcpConnector(
-  overrides: Partial<CustomConnectorMcpResponse> & CustomFixtureAccount = {},
+  overrides: Partial<CustomConnectorMcpResponse> = {},
 ): CustomConnectorMcpResponse {
   const connector = customConnectorMcpResponseSchema.parse({
     ...customConnector(),

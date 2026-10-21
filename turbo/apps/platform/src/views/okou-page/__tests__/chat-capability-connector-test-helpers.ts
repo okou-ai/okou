@@ -2,6 +2,7 @@ import {
   catalogFixture,
   httpConnectorFixture,
   mcpConnectorFixture,
+  type FixtureAccountOverrides,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
@@ -57,12 +58,12 @@ export function catalogConnector(args: {
   readonly slug: ConnectorSlug;
   readonly label: string;
   readonly method: PublicConnectorCatalogAuthMethodDetail;
-  readonly connected?: boolean;
+  readonly hasAccount?: boolean;
   readonly reconnectRequired?: boolean;
   readonly connectionId?: string;
   readonly tokenExpiresAt?: string | null;
 }): PublicConnectorCatalogStatusItem {
-  const connected = args.connected ?? false;
+  const hasAccount = args.hasAccount ?? false;
   const reconnectRequired = args.reconnectRequired ?? false;
   return catalogFixture({
     slug: args.slug,
@@ -82,7 +83,10 @@ export function catalogConnector(args: {
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: connected
+    singleAuthCodeAuthMethodId:
+      args.method.grantKind === "auth-code" ? args.method.id : null,
+    connectNotice: null,
+    account: hasAccount
       ? {
           id: args.connectionId ?? CONNECTOR_CONNECTION_ID,
           authMethod: args.method.id,
@@ -91,20 +95,12 @@ export function catalogConnector(args: {
           reconnectReason: reconnectRequired
             ? "authorization_expired_or_revoked"
             : null,
+          connectionStatus: reconnectRequired
+            ? "reconnect-required"
+            : "connected",
+          tokenExpiresAt: args.tokenExpiresAt ?? null,
         }
-      : null,
-    connected,
-    setupStatus: connected ? "complete" : null,
-    connectionStatus: connected
-      ? reconnectRequired
-        ? "reconnect-required"
-        : "connected"
-      : "not-connected",
-    scopeMismatch: false,
-    tokenExpiresAt: args.tokenExpiresAt ?? null,
-    singleAuthCodeAuthMethodId:
-      args.method.grantKind === "auth-code" ? args.method.id : null,
-    connectNotice: null,
+      : undefined,
   });
 }
 
@@ -138,7 +134,7 @@ export function connectedConnectorResponse(args: {
 export function customConnector(args: {
   readonly slug: `_${string}`;
   readonly displayName: string;
-  readonly connected: boolean;
+  readonly account?: FixtureAccountOverrides;
   readonly permissionBundleRef?: `builtin:${string}@1` | null;
   readonly kind?: "http" | "mcp";
 }): CustomConnectorResponse {
@@ -161,15 +157,14 @@ export function customConnector(args: {
     permissionBundleRef: args.permissionBundleRef ?? null,
     skillMarkdown: null,
     storageVersion: 1,
-    connected: args.connected,
-    ...(args.connected
+    account: args.account
       ? {
-          connectedAccountId: CONNECTOR_CONNECTION_ID,
-          connectedAccountUpdatedAt: "2026-08-01T09:00:00.000Z",
+          id: CONNECTOR_CONNECTION_ID,
+          updatedAt: "2026-08-01T09:00:00.000Z",
+          configuredFieldKeys: ["apiSecret"],
+          ...args.account,
         }
-      : {}),
-    missingRequiredFields: args.connected ? [] : ["apiSecret"],
-    configuredFieldKeys: args.connected ? ["apiSecret"] : [],
+      : undefined,
     createdAt: "2026-08-01T08:00:00.000Z",
     updatedAt: "2026-08-01T09:00:00.000Z",
   };

@@ -1,6 +1,6 @@
 import {
   catalogFixture,
-  type BuiltinFixtureAccount,
+  type FixtureAccountOverrides,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
@@ -42,11 +42,9 @@ function publicStatusItem(args: {
   readonly description?: string;
   readonly category?: string;
   readonly authMethods: PublicConnectorCatalogStatusItem["authMethods"];
-  readonly connection?: BuiltinFixtureAccount["connection"];
-  readonly connected?: boolean;
+  readonly account?: FixtureAccountOverrides;
   readonly singleAuthCodeAuthMethodId?: string | null;
 }): PublicConnectorCatalogStatusItem {
-  const connected = args.connected ?? false;
   return catalogFixture({
     slug: args.connectorSlug,
     label: args.label,
@@ -65,13 +63,9 @@ function publicStatusItem(args: {
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: args.connection ?? null,
-    connected,
-    connectionStatus: connected ? "connected" : "not-connected",
-    scopeMismatch: false,
-    tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: args.singleAuthCodeAuthMethodId ?? null,
     connectNotice: null,
+    account: args.account,
   });
 }
 

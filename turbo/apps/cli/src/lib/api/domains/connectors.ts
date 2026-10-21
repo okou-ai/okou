@@ -154,7 +154,7 @@ export async function listConnectorAccountConnections(
 
 export async function inspectConnectorAccounts(
   selections: readonly ConnectorAccountSelection[],
-): Promise<readonly ConnectorAccountInspectionResult[] | null> {
+): Promise<readonly ConnectorAccountInspectionResult[]> {
   const config = await getClientConfig();
   const client = initClient(connectorAccountsContract, {
     ...config,
@@ -166,9 +166,6 @@ export async function inspectConnectorAccounts(
   });
   if (result.status === 200) {
     return result.body.results;
-  }
-  if (result.status === 404) {
-    return null;
   }
   handleError(result, "Failed to inspect connector accounts for this run");
 }

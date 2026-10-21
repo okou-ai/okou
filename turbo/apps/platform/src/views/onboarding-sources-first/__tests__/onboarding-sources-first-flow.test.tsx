@@ -160,7 +160,7 @@ function mockCatalog({
       slug: "gmail",
       label: "Gmail",
       description: "Connect Gmail to continue",
-      connected,
+      hasAccount: connected,
     }),
   ]);
 }
@@ -804,7 +804,7 @@ test("A prompt link can retry unavailable account information", async () => {
     slug: "gmail",
     label: "Gmail",
     description: "Connect Gmail to continue",
-    connected: true,
+    hasAccount: true,
   });
   const account = requireConnectorFixtureAccount(gmail);
   mockOnboardingConnectorCatalog(context, [gmail]);

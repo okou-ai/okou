@@ -28,13 +28,11 @@ test("Offer every whole-catalog category id, named from the id alone", async () 
         connectorSlug: "gmail" as ConnectorSlug,
         label: "Gmail",
         category: "communication-collaboration",
-        connected: false,
       }),
       publicStatusItem({
         connectorSlug: "notion" as ConnectorSlug,
         label: "Notion",
         category: "docs-files-knowledge",
-        connected: false,
       }),
     ],
     {

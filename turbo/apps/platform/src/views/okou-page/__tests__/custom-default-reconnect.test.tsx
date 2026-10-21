@@ -104,7 +104,6 @@ test.each([1, 2])(
   async (accountCount) => {
     let connector = customConnector({
       slug: "_acme-search",
-      configuredFieldKeys: ["secret"],
     });
     let account = customConnectorAccount(connector.id, {
       connectionStatus: "reconnect-required",
@@ -141,9 +140,11 @@ test.each([1, 2])(
         };
         connector = httpConnectorFixture({
           ...connector,
-          connected: true,
-          connectedAccountId: account.id,
-          missingRequiredFields: [],
+          account: {
+            id: account.id,
+            missingRequiredFields: [],
+            setupStatus: "complete",
+          },
         });
         return respond(200, { ...connector, connectionId: account.id });
       },
@@ -179,20 +180,24 @@ test.each([1, 2])(
   },
 );
 
-test("Resolve the current default instead of stale definition identity", async () => {
-  const staleConnectionId = crypto.randomUUID();
+test("Reconnect the current default when a healthy sibling exists", async () => {
+  const defaultConnectionId = crypto.randomUUID();
+  const siblingConnectionId = crypto.randomUUID();
   let connector = customConnector({
     slug: "_acme-search",
-    connected: true,
-    connectedAccountId: staleConnectionId,
-    configuredFieldKeys: ["secret"],
-    missingRequiredFields: [],
+    account: {
+      id: defaultConnectionId,
+      missingRequiredFields: [],
+      configuredFieldKeys: ["secret"],
+      setupStatus: "complete",
+    },
   });
   const account = customConnectorAccount(connector.id, {
+    id: defaultConnectionId,
     configuredFieldKeys: ["secret"],
   });
   mockAccountReads(() => {
-    return [account, { ...account, id: staleConnectionId, isDefault: false }];
+    return [account, { ...account, id: siblingConnectionId, isDefault: false }];
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
@@ -202,7 +207,7 @@ test("Resolve the current default instead of stale definition identity", async (
     mutations.push(body.account);
     connector = httpConnectorFixture({
       ...connector,
-      connectedAccountId: account.id,
+      account: { id: account.id },
     });
     return respond(200, { ...connector, connectionId: account.id });
   });
@@ -231,7 +236,6 @@ function installOAuthFlow(state: PreflightState, complete = false) {
     headerInjections: [
       { name: "Authorization", valueTemplate: "Bearer {{oauth.access_token}}" },
     ],
-    missingRequiredFields: ["oauth"],
     oauthConfig: {
       providerAdapter: "standard",
       clientId: "client-id",
@@ -311,9 +315,11 @@ function installOAuthFlow(state: PreflightState, complete = false) {
         };
         connector = httpConnectorFixture({
           ...connector,
-          connected: true,
-          connectedAccountId: account.id,
-          missingRequiredFields: [],
+          account: {
+            id: account.id,
+            missingRequiredFields: [],
+            setupStatus: "complete",
+          },
         });
       }
       return respond(200, {

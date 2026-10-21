@@ -22,7 +22,6 @@ function bigCategory() {
       label: `Connector ${String(index).padStart(3, "0")}`,
       category: CATEGORY,
       popularityRank: index,
-      connected: false,
     });
   });
 }

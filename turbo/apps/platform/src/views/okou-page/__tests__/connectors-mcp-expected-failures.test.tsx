@@ -55,10 +55,9 @@ test.each([
   async ({ status, code, message, report }) => {
     const connector = mcpCustomConnector({
       authMode: "automatic",
-      connected: false,
       fields: [],
       headerInjections: [],
-      configuredFieldKeys: [],
+      account: undefined,
     });
     context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {

@@ -250,7 +250,6 @@ export function googleDriveConnector(
 export function googleDriveCatalogItem(
   connectionStatus: "connected" | "not-connected" | "reconnect-required",
 ): PublicConnectorCatalogStatusItem {
-  const connected = connectionStatus === "connected";
   return catalogFixture({
     slug: "google-drive",
     label: "Google Drive",
@@ -279,9 +278,11 @@ export function googleDriveCatalogItem(
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection:
+    singleAuthCodeAuthMethodId: "oauth",
+    connectNotice: null,
+    account:
       connectionStatus === "not-connected"
-        ? null
+        ? undefined
         : {
             id: GOOGLE_DRIVE_CONNECTION_ID,
             authMethod: "oauth",
@@ -291,13 +292,8 @@ export function googleDriveCatalogItem(
               connectionStatus === "reconnect-required"
                 ? "authorization_expired_or_revoked"
                 : null,
+            connectionStatus,
           },
-    connected,
-    connectionStatus,
-    scopeMismatch: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
   });
 }
 

@@ -264,7 +264,6 @@ async function enrichTargets(
       offset + CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
     );
     const results = await inspectConnectorAccounts(chunk);
-    if (!results) break;
     for (const result of results) {
       if (result.kind === "available") {
         metadata.set(metadataKey(result.target, result.connectionId), result);

@@ -98,11 +98,6 @@ function feishuConnectorStatus(): PublicConnectorCatalogStatusItem {
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: null,
-    connected: false,
-    connectionStatus: "not-connected",
-    scopeMismatch: false,
-    tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: null,
     connectNotice: null,
   });

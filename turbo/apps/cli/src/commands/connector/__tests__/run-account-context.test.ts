@@ -395,31 +395,6 @@ describe("run connector account inspection", () => {
     });
   });
 
-  it("retains exact IDs when the enrichment route is unavailable", async () => {
-    writeContext([
-      {
-        kind: "builtin",
-        connectorSlug: "github",
-        connectionId: PINNED_CONNECTION_ID,
-      },
-    ]);
-    server.use(
-      stubConnectorCatalog([catalogItem({ connectorSlug: "github" })]),
-      stubCustomConnectors([]),
-      http.post("http://localhost:3000/api/connector-accounts/inspect", () => {
-        return HttpResponse.json(
-          { error: { code: "NOT_FOUND", message: "Resource not found" } },
-          { status: 404 },
-        );
-      }),
-    );
-
-    await listCommand.parseAsync(["node", "cli"]);
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain(PINNED_CONNECTION_ID);
-    expect(output).toContain("metadata unavailable");
-  });
-
   it("chunks more than one bounded API batch in stable order", async () => {
     const targets = Array.from({ length: 257 }, (_, index) => {
       const serial = index + 1;

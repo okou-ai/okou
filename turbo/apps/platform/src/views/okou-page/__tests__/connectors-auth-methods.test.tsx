@@ -195,7 +195,7 @@ function oauthMethod(label = "OAuth") {
   };
 }
 
-test.each(["none-canonical", "oauth"] as const)(
+test.each(["none", "oauth"] as const)(
   "Connect a builtin Automatic method resolving to %s",
   async (resolution) => {
     const slug = "server-authored-tools";
@@ -243,9 +243,7 @@ test.each(["none-canonical", "oauth"] as const)(
     });
     context.mocks.browser.open(authWindow);
     context.mocks.api(
-      resolution === "none-canonical"
-        ? builtinConnectorAutomaticContract.start
-        : builtinConnectorAutomaticContract.start,
+      builtinConnectorAutomaticContract.start,
       ({ body, respond }) => {
         expect(body).toMatchObject({
           authMethod: methodId,
@@ -393,116 +391,109 @@ async function openAwsWithCode(code: string): Promise<{
   };
 }
 
-test.each(["canonical"])(
-  "Add an AWS account with an external-code %s receipt",
-  async (receipt) => {
-    const permissions = context.mocks.deferred<void>();
-    const details = delayAccountDetails("aws", () => {
-      return permissions.settled();
-    });
-    const permissionsStarted = context.mocks.deferred<void>();
-    mockConnectors(context, []);
-    context.mocks.data.agents([
-      listAgent("c0000000-0000-4000-a000-000000000002", "Research Agent"),
-    ]);
-    mockAgentConnectorAccess("aws", permissions.promise, () => {
-      return permissionsStarted.resolve();
-    });
-    const authWindow = createAuthWindow();
-    const browserOpen = context.mocks.browser.open(authWindow);
-    if (receipt === "canonical") {
-      context.mocks.api(
-        builtinConnectorExternalCodeSessionContract.complete,
-        ({ respond }) => {
-          const connector = storeConnectedConnector("aws", "cli");
-          return respond(200, {
-            status: "complete",
-            connectionId: connector.id,
-          });
-        },
-      );
-    }
-    context.mocks.api(
-      builtinConnectorExternalCodeSessionContract.create,
-      ({ body, params, respond }) => {
-        expect(params.connectorSlug).toBe("aws");
-        expect(body.account).toStrictEqual({ intent: "add" });
-        return respond(200, {
-          sessionId: "00000000-0000-4000-8000-000000000002",
-          sessionToken: "mock-aws-external-code-session-token",
-          connectorSlug: "aws",
-          status: "pending",
-          authorizationUrl: "https://oauth.test/aws/external-code",
-          expiresIn: 600,
-        });
-      },
-    );
-    await setupPage({
-      context,
-      path: "/connectors?keywords=aws",
-    });
-    click(
-      await waitFor(() => {
-        return getConnectorAction("button", "Connect AWS");
-      }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "AWS" });
-    expect(dialog).toHaveTextContent(
-      /temporary AWS connector expires after up to 12 hours/u,
-    );
-
-    click(getConnectorAction("button", "Start AWS sign-in", dialog));
-    await expect(
-      waitFor(() => {
-        return getConnectorAction("button", "Open AWS sign-in", dialog);
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(within(dialog).getByLabelText("Close")).toBeEnabled();
-    click(getConnectorAction("button", "Open AWS sign-in", dialog));
-    expect(
-      browserOpen.calls.some((call) => {
-        return call.url === "https://oauth.test/aws/external-code";
-      }),
-    ).toBeTruthy();
-    await fill(
-      within(dialog).getByTestId("connector-external-code-input"),
-      "AWS-CODE",
-    );
-    click(within(dialog).getByTestId("connector-external-code-complete"));
-
-    await permissionsStarted.promise;
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(screen.getByRole("dialog", { name: "AWS" })).toBeVisible();
-    expect(
-      within(dialog).getByTestId("connector-external-code-complete"),
-    ).toBeDisabled();
-    permissions.resolve();
-    await expect(
-      screen.findByText("AWS connected"),
-    ).resolves.toBeInTheDocument();
-    await details.requested.promise;
-    await expect(
-      within(dialog).findByRole("status"),
-    ).resolves.toHaveTextContent("Saving permissions...");
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    details.ready.resolve();
-    const naming = await screen.findByRole("dialog", {
-      name: "Name your AWS account",
-    });
+test("Add an AWS account through external-code authorization", async () => {
+  const permissions = context.mocks.deferred<void>();
+  const details = delayAccountDetails("aws", () => {
+    return permissions.settled();
+  });
+  const permissionsStarted = context.mocks.deferred<void>();
+  mockConnectors(context, []);
+  context.mocks.data.agents([
+    listAgent("c0000000-0000-4000-a000-000000000002", "Research Agent"),
+  ]);
+  mockAgentConnectorAccess("aws", permissions.promise, () => {
+    return permissionsStarted.resolve();
+  });
+  const authWindow = createAuthWindow();
+  const browserOpen = context.mocks.browser.open(authWindow);
+  context.mocks.api(
+    builtinConnectorExternalCodeSessionContract.complete,
+    ({ respond }) => {
+      const connector = storeConnectedConnector("aws", "cli");
+      return respond(200, {
+        status: "complete",
+        connectionId: connector.id,
+      });
+    },
+  );
+  context.mocks.api(
+    builtinConnectorExternalCodeSessionContract.create,
+    ({ body, params, respond }) => {
+      expect(params.connectorSlug).toBe("aws");
+      expect(body.account).toStrictEqual({ intent: "add" });
+      return respond(200, {
+        sessionId: "00000000-0000-4000-8000-000000000002",
+        sessionToken: "mock-aws-external-code-session-token",
+        connectorSlug: "aws",
+        status: "pending",
+        authorizationUrl: "https://oauth.test/aws/external-code",
+        expiresIn: 600,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?keywords=aws",
+  });
+  click(
     await waitFor(() => {
-      return expect(screen.queryByText("Connecting your account")).toBeNull();
-    });
-    click(getConnectorAction("button", "Skip", naming));
+      return getConnectorAction("button", "Connect AWS");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "AWS" });
+  expect(dialog).toHaveTextContent(
+    /temporary AWS connector expires after up to 12 hours/u,
+  );
 
-    const awsCard = getConnectorCard("AWS");
-    await expect(
-      within(awsCard).findByText("Connected"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      getConnectorAction("button", "Manage AWS access", awsCard),
-    ).toHaveTextContent("Used by Research Agent");
-  },
-);
+  click(getConnectorAction("button", "Start AWS sign-in", dialog));
+  await expect(
+    waitFor(() => {
+      return getConnectorAction("button", "Open AWS sign-in", dialog);
+    }),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Close")).toBeEnabled();
+  click(getConnectorAction("button", "Open AWS sign-in", dialog));
+  expect(
+    browserOpen.calls.some((call) => {
+      return call.url === "https://oauth.test/aws/external-code";
+    }),
+  ).toBeTruthy();
+  await fill(
+    within(dialog).getByTestId("connector-external-code-input"),
+    "AWS-CODE",
+  );
+  click(within(dialog).getByTestId("connector-external-code-complete"));
+
+  await permissionsStarted.promise;
+  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+  expect(screen.getByRole("dialog", { name: "AWS" })).toBeVisible();
+  expect(
+    within(dialog).getByTestId("connector-external-code-complete"),
+  ).toBeDisabled();
+  permissions.resolve();
+  await expect(screen.findByText("AWS connected")).resolves.toBeInTheDocument();
+  await details.requested.promise;
+  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
+    "Saving permissions...",
+  );
+  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+  details.ready.resolve();
+  const naming = await screen.findByRole("dialog", {
+    name: "Name your AWS account",
+  });
+  await waitFor(() => {
+    return expect(screen.queryByText("Connecting your account")).toBeNull();
+  });
+  click(getConnectorAction("button", "Skip", naming));
+
+  const awsCard = getConnectorCard("AWS");
+  await expect(
+    within(awsCard).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    getConnectorAction("button", "Manage AWS access", awsCard),
+  ).toHaveTextContent("Used by Research Agent");
+});
 
 test("Add an account through OpenID", async () => {
   const completedAttempts = mockOAuthCompletions(context);
@@ -587,287 +578,269 @@ test("Add an account through OpenID", async () => {
   });
 });
 
-test.each(["canonical"])(
-  "Choose a credential-free method with a %s receipt",
-  async (receipt) => {
-    mockConnectors(context, []);
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({
-        connectorSlug: "stripe",
-        label: "Public Stripe",
-        authMethods: [oauthMethod("Public OAuth"), noAuthMethod()],
-      }),
-    ]);
-    let selectedMethod: string | null = null;
-    context.mocks.api(
-      receipt === "canonical"
-        ? builtinConnectorNoAuthGrantContract.connect
-        : builtinConnectorNoAuthGrantContract.connect,
-      ({ body, respond }) => {
-        selectedMethod = body.authMethod;
-        const connector = storeConnectedConnector("stripe", body.authMethod);
-        return respond(200, { connectionId: connector.id });
-      },
-    );
-    await setupPage({
-      context,
-      path: "/connectors?keywords=public+stripe",
-    });
-    click(
-      await waitFor(() => {
-        return getConnectorAction("button", "Connect Public Stripe");
-      }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Public Stripe" });
-    expect(within(dialog).getByText("Public OAuth")).toBeInTheDocument();
-    expect(within(dialog).getByText("Public catalog")).toBeInTheDocument();
+test("Choose a credential-free method", async () => {
+  mockConnectors(context, []);
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "stripe",
+      label: "Public Stripe",
+      authMethods: [oauthMethod("Public OAuth"), noAuthMethod()],
+    }),
+  ]);
+  let selectedMethod: string | null = null;
+  context.mocks.api(
+    builtinConnectorNoAuthGrantContract.connect,
+    ({ body, respond }) => {
+      selectedMethod = body.authMethod;
+      const connector = storeConnectedConnector("stripe", body.authMethod);
+      return respond(200, { connectionId: connector.id });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?keywords=public+stripe",
+  });
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Connect Public Stripe");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Public Stripe" });
+  expect(within(dialog).getByText("Public OAuth")).toBeInTheDocument();
+  expect(within(dialog).getByText("Public catalog")).toBeInTheDocument();
+  expect(
+    within(dialog).getByText("Enable public catalog data."),
+  ).toBeInTheDocument();
+
+  click(getConnectorAction("button", "Enable Public Stripe", dialog));
+
+  await waitFor(() => {
+    expect(selectedMethod).toBe("api");
     expect(
-      within(dialog).getByText("Enable public catalog data."),
+      within(getConnectorCard("Public Stripe")).getByText("Connected"),
     ).toBeInTheDocument();
+  });
+});
 
-    click(getConnectorAction("button", "Enable Public Stripe", dialog));
-
+test("Authorize visible agents only for the first manual account", async () => {
+  const researchId = "c0000000-0000-4000-a000-000000000002";
+  mockConnectors(context, []);
+  context.mocks.data.agents([
+    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
+    listAgent(researchId, "Research Agent"),
+  ]);
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "axiom",
+      label: "Public Axiom",
+      authMethods: [
+        manualMethod({
+          id: "api-token",
+          label: "Public API Token",
+          fieldId: "apiToken",
+          fieldLabel: "Public API token",
+          placeholder: "public-xaat",
+        }),
+      ],
+    }),
+  ]);
+  let connectedAccount: BuiltinConnectorResponse | undefined;
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    ({ body, respond }) => {
+      expect(body.authorizeAgent ?? false).toBe(!connectedAccount);
+      connectedAccount = storeConnectedConnector("axiom", body.authMethod);
+      return respond(200, { connectionId: connectedAccount.id });
+    },
+  );
+  mockAgentConnectorAccess("axiom");
+  await setupPage({
+    context,
+    path: "/connectors?keywords=axiom",
+  });
+  click(
     await waitFor(() => {
-      expect(selectedMethod).toBe("api");
-      expect(
-        within(getConnectorCard("Public Stripe")).getByText("Connected"),
-      ).toBeInTheDocument();
-    });
-  },
-);
+      return getConnectorAction("button", "Connect Public Axiom");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
+  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-test");
 
-test.each(["canonical"])(
-  "Authorize visible agents only for the first manual account with a %s receipt",
-  async (receipt) => {
-    const researchId = "c0000000-0000-4000-a000-000000000002";
-    mockConnectors(context, []);
-    context.mocks.data.agents([
-      listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
-      listAgent(researchId, "Research Agent"),
-    ]);
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({
-        connectorSlug: "axiom",
-        label: "Public Axiom",
-        authMethods: [
-          manualMethod({
-            id: "api-token",
-            label: "Public API Token",
-            fieldId: "apiToken",
-            fieldLabel: "Public API token",
-            placeholder: "public-xaat",
-          }),
-        ],
-      }),
-    ]);
-    let connectedAccount: BuiltinConnectorResponse | undefined;
-    context.mocks.api(
-      receipt === "canonical"
-        ? builtinConnectorManualGrantContract.connect
-        : builtinConnectorManualGrantContract.connect,
-      ({ body, respond }) => {
-        expect(body.authorizeAgent ?? false).toBe(!connectedAccount);
-        connectedAccount = storeConnectedConnector("axiom", body.authMethod);
-        return respond(200, { connectionId: connectedAccount.id });
-      },
-    );
-    mockAgentConnectorAccess("axiom");
-    await setupPage({
-      context,
-      path: "/connectors?keywords=axiom",
-    });
-    click(
-      await waitFor(() => {
-        return getConnectorAction("button", "Connect Public Axiom");
-      }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
-    await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-test");
+  click(getConnectorAction("button", "Save", dialog));
 
-    click(getConnectorAction("button", "Save", dialog));
-
-    await expect(
-      screen.findByText("Public Axiom connected successfully"),
-    ).resolves.toBeInTheDocument();
-    const naming = await screen.findByRole("dialog", {
-      name: "Name your Public Axiom account",
-    });
-    click(getConnectorAction("button", "Skip", naming));
-    await waitFor(() => {
-      expect(
-        within(getConnectorCard("Public Axiom")).getByText("Connected"),
-      ).toBeInTheDocument();
-      expect(
-        getConnectorAction(
-          "button",
-          "Manage Public Axiom access",
-          getConnectorCard("Public Axiom"),
-        ),
-      ).toHaveTextContent("Used by 2 agents");
-    });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-    click(getConnectorAction("button", "Manage Public Axiom access"));
-    const access = await screen.findByRole("dialog", {
-      name: "Manage Public Axiom access",
-    });
-    click(getConnectorSwitch("Revoke Public Axiom access for Nova", access));
-    await waitFor(() => {
-      expect(
-        getConnectorSwitch("Authorize Public Axiom access for Nova", access),
-      ).not.toBeChecked();
-    });
-    click(getConnectorAction("button", "Close", access));
-    click(getConnectorAction("button", "Manage Public Axiom accounts"));
-    const manager = await screen.findByRole("dialog", {
-      name: "Manage Public Axiom accounts",
-    });
-    click(getConnectorAction("button", "Add account", manager));
-    const addition = await screen.findByRole("dialog", {
-      name: "Public Axiom",
-    });
-    await fill(
-      within(addition).getByPlaceholderText("public-xaat"),
-      "second-token",
-    );
-    click(getConnectorAction("button", "Save", addition));
-    const secondNaming = await screen.findByRole("dialog", {
-      name: "Name your Public Axiom account",
-    });
-    click(getConnectorAction("button", "Skip", secondNaming));
-    await waitFor(() => {
-      expect(
-        getConnectorAction("button", "Manage Public Axiom access"),
-      ).toHaveTextContent("Used by Research Agent");
-    });
-    click(getConnectorAction("button", "Manage Public Axiom access"));
-    const updatedAccess = await screen.findByRole("dialog", {
-      name: "Manage Public Axiom access",
-    });
+  await expect(
+    screen.findByText("Public Axiom connected successfully"),
+  ).resolves.toBeInTheDocument();
+  const naming = await screen.findByRole("dialog", {
+    name: "Name your Public Axiom account",
+  });
+  click(getConnectorAction("button", "Skip", naming));
+  await waitFor(() => {
     expect(
-      getConnectorSwitch(
-        "Authorize Public Axiom access for Nova",
-        updatedAccess,
+      within(getConnectorCard("Public Axiom")).getByText("Connected"),
+    ).toBeInTheDocument();
+    expect(
+      getConnectorAction(
+        "button",
+        "Manage Public Axiom access",
+        getConnectorCard("Public Axiom"),
       ),
+    ).toHaveTextContent("Used by 2 agents");
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+  click(getConnectorAction("button", "Manage Public Axiom access"));
+  const access = await screen.findByRole("dialog", {
+    name: "Manage Public Axiom access",
+  });
+  click(getConnectorSwitch("Revoke Public Axiom access for Nova", access));
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Authorize Public Axiom access for Nova", access),
     ).not.toBeChecked();
+  });
+  click(getConnectorAction("button", "Close", access));
+  click(getConnectorAction("button", "Manage Public Axiom accounts"));
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage Public Axiom accounts",
+  });
+  click(getConnectorAction("button", "Add account", manager));
+  const addition = await screen.findByRole("dialog", {
+    name: "Public Axiom",
+  });
+  await fill(
+    within(addition).getByPlaceholderText("public-xaat"),
+    "second-token",
+  );
+  click(getConnectorAction("button", "Save", addition));
+  const secondNaming = await screen.findByRole("dialog", {
+    name: "Name your Public Axiom account",
+  });
+  click(getConnectorAction("button", "Skip", secondNaming));
+  await waitFor(() => {
     expect(
-      getConnectorSwitch(
-        "Revoke Public Axiom access for Research Agent",
-        updatedAccess,
-      ),
-    ).toBeChecked();
-  },
-);
+      getConnectorAction("button", "Manage Public Axiom access"),
+    ).toHaveTextContent("Used by Research Agent");
+  });
+  click(getConnectorAction("button", "Manage Public Axiom access"));
+  const updatedAccess = await screen.findByRole("dialog", {
+    name: "Manage Public Axiom access",
+  });
+  expect(
+    getConnectorSwitch("Authorize Public Axiom access for Nova", updatedAccess),
+  ).not.toBeChecked();
+  expect(
+    getConnectorSwitch(
+      "Revoke Public Axiom access for Research Agent",
+      updatedAccess,
+    ),
+  ).toBeChecked();
+});
 
-test.each(["canonical"])(
-  "Connect through device authorization with a %s receipt",
-  async (receipt) => {
-    const approval = context.mocks.deferred<void>();
-    const permissions = context.mocks.deferred<void>();
-    const details = delayAccountDetails("base44", () => {
-      return permissions.settled();
-    });
-    const permissionsStarted = context.mocks.deferred<void>();
-    mockConnectors(context, []);
-    context.mocks.data.agents([
-      listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-      listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-    ]);
-    mockAgentConnectorAccess("base44", permissions.promise, () => {
-      if (!permissionsStarted.settled()) {
-        permissionsStarted.resolve();
-      }
-    });
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({
-        connectorSlug: "base44",
-        label: "Base44",
-        authMethods: [
-          {
-            id: "oauth",
-            label: "OAuth",
-            description: "Sign in with Base44 to grant access.",
-            grantKind: "device-auth",
-            supportsRefresh: true,
-            manualFields: [],
-            startOptions: [],
-          },
-        ],
-      }),
-    ]);
-    const browserOpen = context.mocks.browser.open(createAuthWindow());
-    context.mocks.api(
-      receipt === "canonical"
-        ? builtinConnectorOauthDeviceAuthSessionContract.poll
-        : builtinConnectorOauthDeviceAuthSessionContract.poll,
-      async ({ respond }) => {
-        await approval.promise;
-        const connector = storeConnectedConnector(
-          "base44",
-          "oauth",
-          "mock-base44",
-        );
-        return respond(200, {
-          status: "complete",
-          connectionId: connector.id,
-        });
-      },
-    );
-    await setupPage({
-      context,
-      path: "/connectors",
-    });
-    click(
-      await waitFor(() => {
-        return getConnectorAction("button", "Connect Base44");
-      }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "Base44" });
+test("Connect through device authorization", async () => {
+  const approval = context.mocks.deferred<void>();
+  const permissions = context.mocks.deferred<void>();
+  const details = delayAccountDetails("base44", () => {
+    return permissions.settled();
+  });
+  const permissionsStarted = context.mocks.deferred<void>();
+  mockConnectors(context, []);
+  context.mocks.data.agents([
+    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
+    listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
+  ]);
+  mockAgentConnectorAccess("base44", permissions.promise, () => {
+    if (!permissionsStarted.settled()) {
+      permissionsStarted.resolve();
+    }
+  });
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "base44",
+      label: "Base44",
+      authMethods: [
+        {
+          id: "oauth",
+          label: "OAuth",
+          description: "Sign in with Base44 to grant access.",
+          grantKind: "device-auth",
+          supportsRefresh: true,
+          manualFields: [],
+          startOptions: [],
+        },
+      ],
+    }),
+  ]);
+  const browserOpen = context.mocks.browser.open(createAuthWindow());
+  context.mocks.api(
+    builtinConnectorOauthDeviceAuthSessionContract.poll,
+    async ({ respond }) => {
+      await approval.promise;
+      const connector = storeConnectedConnector(
+        "base44",
+        "oauth",
+        "mock-base44",
+      );
+      return respond(200, {
+        status: "complete",
+        connectionId: connector.id,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors",
+  });
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Connect Base44");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Base44" });
 
-    click(getConnectorAction("button", "Connect Base44", dialog));
+  click(getConnectorAction("button", "Connect Base44", dialog));
 
-    await expect(
-      screen.findByTestId("connector-oauth-device-code"),
-    ).resolves.toHaveTextContent("OKOU-DEVICE");
-    const approvalDialog = await screen.findByRole("dialog", {
-      name: "Base44",
-    });
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    click(within(approvalDialog).getByTestId("connector-oauth-device-open"));
+  await expect(
+    screen.findByTestId("connector-oauth-device-code"),
+  ).resolves.toHaveTextContent("OKOU-DEVICE");
+  const approvalDialog = await screen.findByRole("dialog", {
+    name: "Base44",
+  });
+  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+  click(within(approvalDialog).getByTestId("connector-oauth-device-open"));
+  expect(
+    browserOpen.calls.some((call) => {
+      return call.url?.includes("oauth.test/base44/device") ?? false;
+    }),
+  ).toBeTruthy();
+  approval.resolve();
+  await permissionsStarted.promise;
+  expect(within(approvalDialog).getByRole("status")).toHaveTextContent(
+    "Checking for approval...",
+  );
+  permissions.resolve();
+  await details.requested.promise;
+  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
+    "Saving permissions...",
+  );
+  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+  details.ready.resolve();
+  const naming = await screen.findByRole("dialog", {
+    name: "Name your Base44 account",
+  });
+  await waitFor(() => {
+    return expect(screen.queryByText("Connecting your account")).toBeNull();
+  });
+  click(getConnectorAction("button", "Skip", naming));
+  await waitFor(() => {
     expect(
-      browserOpen.calls.some((call) => {
-        return call.url?.includes("oauth.test/base44/device") ?? false;
-      }),
-    ).toBeTruthy();
-    approval.resolve();
-    await permissionsStarted.promise;
-    expect(within(approvalDialog).getByRole("status")).toHaveTextContent(
-      "Checking for approval...",
-    );
-    permissions.resolve();
-    await details.requested.promise;
-    await expect(
-      within(dialog).findByRole("status"),
-    ).resolves.toHaveTextContent("Saving permissions...");
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    details.ready.resolve();
-    const naming = await screen.findByRole("dialog", {
-      name: "Name your Base44 account",
-    });
-    await waitFor(() => {
-      return expect(screen.queryByText("Connecting your account")).toBeNull();
-    });
-    click(getConnectorAction("button", "Skip", naming));
-    await waitFor(() => {
-      expect(
-        within(getConnectorCard("Base44")).getByText("Connected"),
-      ).toBeInTheDocument();
-      expect(
-        getConnectorAction("button", "Manage Base44 access"),
-      ).toHaveTextContent("Used by 2 agents");
-    });
-  },
-);
+      within(getConnectorCard("Base44")).getByText("Connected"),
+    ).toBeInTheDocument();
+    expect(
+      getConnectorAction("button", "Manage Base44 access"),
+    ).toHaveTextContent("Used by 2 agents");
+  });
+});
 
 test.each([
   ["device-auth", "invalid"],

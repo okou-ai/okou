@@ -30,7 +30,7 @@ test("Show builtin tool service details without HTTP permission controls", async
       builtinConnector({
         slug: "public-mcp",
         label: "Public Tools",
-        connected: true,
+        hasAccount: true,
         authMethods: [noAuthMethod()],
         popularityRank: 0,
         mcp: {
@@ -75,13 +75,13 @@ function directoryCatalog() {
     builtinConnector({
       slug: GITHUB_SLUG,
       label: "GitHub",
-      connected: true,
+      hasAccount: true,
       popularityRank: 0,
     }),
     builtinConnector({
       slug: GMAIL_SLUG,
       label: "Gmail",
-      connected: false,
+      hasAccount: false,
       tags: ["email", "inbox"],
       hasPermissions: true,
       popularityRank: 1,
@@ -89,7 +89,7 @@ function directoryCatalog() {
     builtinConnector({
       slug: NOTION_SLUG,
       label: "Notion",
-      connected: false,
+      hasAccount: false,
       popularityRank: 2,
     }),
   ];
@@ -178,7 +178,7 @@ test("Open connector detail and step back to the list", async () => {
         id: ACME_CONNECTOR_ID,
         slug: "acme-search",
         displayName: "Acme Search",
-        connected: false,
+        hasAccount: false,
       }),
     ],
   });
@@ -246,7 +246,7 @@ function rankedCatalog() {
       return builtinConnector({
         slug: `mail-${index}` as ConnectorSlug,
         label,
-        connected: false,
+        hasAccount: false,
         category: "mail",
         popularityRank: index,
       });
@@ -254,14 +254,14 @@ function rankedCatalog() {
     builtinConnector({
       slug: "voice-0" as ConnectorSlug,
       label: "ElevenLabs",
-      connected: false,
+      hasAccount: false,
       category: "voice",
       popularityRank: 40,
     }),
     builtinConnector({
       slug: "voice-1" as ConnectorSlug,
       label: "3Scribe",
-      connected: false,
+      hasAccount: false,
       category: "voice",
     }),
   ];

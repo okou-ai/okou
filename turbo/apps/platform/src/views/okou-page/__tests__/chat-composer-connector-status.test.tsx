@@ -56,7 +56,7 @@ function acme(connected = false) {
     id: ACME_CONNECTOR_ID,
     slug: "_acme-search",
     displayName: "Acme Search",
-    connected,
+    hasAccount: connected,
   });
 }
 
@@ -84,7 +84,6 @@ test("Saved connectors with unavailable defaults stay visible for account repair
     catalog: [
       catalogFixture({
         ...builtinConnector({ slug: "github", label: "GitHub" }),
-        connectionStatus: "reconnect-required",
       }),
     ],
     customConnectors: [acme()],
@@ -117,7 +116,7 @@ test("Healthy saved accounts stay connected while zero-account connectors remain
   installComposerConnectorFixture({
     catalog: [
       builtinConnector({ slug: "github", label: "GitHub" }),
-      builtinConnector({ slug: "notion", label: "Notion", connected: false }),
+      builtinConnector({ slug: "notion", label: "Notion", hasAccount: false }),
     ],
     customConnectors: [acme(true)],
     accounts: [...savedAccounts(builtinTarget), ...savedAccounts(customTarget)],
@@ -220,7 +219,7 @@ test("Connected inventory failure is retryable and leaves managed Feishu in its 
         id: FEISHU_CONNECTOR_ID,
         slug: "_feishu",
         displayName: "Feishu",
-        connected: true,
+        hasAccount: true,
         authMode: "oauth",
         providerAdapter: "feishu",
       }),
@@ -288,7 +287,7 @@ test("A saved builtin target with no default sends the user to account managemen
   });
   const fixture = installComposerConnectorFixture({
     catalog: [
-      builtinConnector({ slug: "github", label: "GitHub", connected: false }),
+      builtinConnector({ slug: "github", label: "GitHub", hasAccount: false }),
     ],
     accounts,
   });
@@ -338,7 +337,7 @@ test("Saved builtin targets remain manageable when definitions omit account proj
     catalog: [builtin],
     accounts: savedAccounts(builtinTarget),
   });
-  const { ...builtinDefinition } = builtin;
+  const builtinDefinition = builtin;
   context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
     return respond(200, {
       connectors: [builtinDefinition],
@@ -367,7 +366,7 @@ test("A custom definition without account projections does not claim a reconnect
     customConnectors: [connector],
     accounts: savedAccounts(target),
   });
-  const { ...definition } = connector;
+  const definition = connector;
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [definition] });
   });

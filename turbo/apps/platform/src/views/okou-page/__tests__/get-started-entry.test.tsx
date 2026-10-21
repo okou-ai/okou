@@ -143,13 +143,9 @@ function catalogItem(
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: null,
-    connected,
-    connectionStatus: connected ? "connected" : "not-connected",
-    scopeMismatch: false,
-    tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: grantKind === "auth-code" ? "oauth" : null,
     connectNotice: null,
+    account: connected ? {} : undefined,
   });
 }
 

@@ -1257,10 +1257,6 @@ describe("okou whoami command", () => {
   describe("custom connector authorization", () => {
     const ordinaryHttp = customConnector({
       permissionBundleRef: null,
-      connected: true,
-      connectedAccountId: "11111111-1111-4111-8111-111111111111",
-      missingRequiredFields: [],
-      configuredFieldKeys: ["apiKey"],
     });
     const mcp: CustomConnectorMcpResponse = {
       kind: "mcp",

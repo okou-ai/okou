@@ -76,11 +76,6 @@ function catalogItem(
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: null,
-    connected: false,
-    connectionStatus: "not-connected",
-    scopeMismatch: false,
-    tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   });

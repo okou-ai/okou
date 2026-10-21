@@ -516,22 +516,14 @@ interface CustomConnectorCredentialOwner {
   readonly connectorIds?: readonly string[];
 }
 
-export function customConnectorValueMarkers(
-  args: CustomConnectorCredentialOwner,
-) {
-  return createCustomConnectorValueMarkers(
-    computed(() => {
-      return args;
-    }),
-  );
-}
-
 export function createCustomConnectorValueMarkers(
-  owner$: Computed<CustomConnectorCredentialOwner>,
+  owner$: Computed<
+    CustomConnectorCredentialOwner | Promise<CustomConnectorCredentialOwner>
+  >,
 ) {
   return computed(
     async (get): Promise<readonly CustomConnectorCredentialValueMarker[]> => {
-      const args = get(owner$);
+      const args = await get(owner$);
       const db = get(db$);
       if (args.connectorIds?.length === 0) {
         return [];
@@ -816,24 +808,16 @@ export function customConnectorRuntimeStorageReadPlan(args: {
   return { storedConnections, storedValues, projection };
 }
 
-export function customConnectorConnectedConnections(
-  args: CustomConnectorCredentialOwner,
-) {
-  return createCustomConnectorConnectedConnections(
-    computed(() => {
-      return args;
-    }),
-  );
-}
-
 export function createCustomConnectorConnectedConnections(
-  owner$: Computed<CustomConnectorCredentialOwner>,
+  owner$: Computed<
+    CustomConnectorCredentialOwner | Promise<CustomConnectorCredentialOwner>
+  >,
 ) {
   return computed(
     async (
       get,
     ): Promise<ReadonlyMap<string, ConnectedCustomConnectorConnection>> => {
-      const args = get(owner$);
+      const args = await get(owner$);
       const db = get(db$);
       if (args.connectorIds?.length === 0) {
         return new Map();

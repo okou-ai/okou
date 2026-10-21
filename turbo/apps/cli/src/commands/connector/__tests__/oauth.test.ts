@@ -83,53 +83,92 @@ describe("connector oauth start", () => {
     },
   );
 
-  it.each([ID])(
-    "normalizes whitelisted custom automatic identity from connectionId %s",
-    async (connectionId) => {
-      const connector = customMcpConnector({
-        authMode: "automatic",
-        fields: [],
-        headerInjections: [],
-        queryInjections: [],
-      });
-      server.use(
-        stubConnectorCatalog([]),
-        stubCustomConnectors([connector]),
-        http.post(
-          `http://localhost:3000/api/custom-connectors/${connector.id}/oauth2/start`,
-          async ({ request }) => {
-            expect(await request.json()).toEqual({
-              account: { intent: "add", displayName: "Work" },
-            });
-            return HttpResponse.json({
-              result: "connected",
-              connector: {
-                ...connector,
-                connected: true,
-                clientSecret: SECRET,
-              },
-              connectionId,
-              password: SECRET,
-            });
-          },
-        ),
-      );
-      await connectorOAuthCommand.parseAsync([
-        "node",
-        "okou",
-        "start",
-        `custom:${connector.id}`,
-        "--add",
-        "--account-name",
-        "Work",
-        "--json",
-      ]);
-      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
-        result: "connected",
-        connectionId: ID,
-      });
-    },
-  );
+  it("prints the completed custom automatic account identity without credentials", async () => {
+    const connector = customMcpConnector({
+      authMode: "automatic",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+    });
+    server.use(
+      stubConnectorCatalog([]),
+      stubCustomConnectors([connector]),
+      http.post(
+        `http://localhost:3000/api/custom-connectors/${connector.id}/oauth2/start`,
+        async ({ request }) => {
+          expect(await request.json()).toEqual({
+            account: { intent: "add", displayName: "Work" },
+          });
+          return HttpResponse.json({
+            result: "connected",
+            connector: {
+              ...connector,
+              clientSecret: SECRET,
+            },
+            connectionId: ID,
+            password: SECRET,
+          });
+        },
+      ),
+    );
+    await connectorOAuthCommand.parseAsync([
+      "node",
+      "okou",
+      "start",
+      `custom:${connector.id}`,
+      "--add",
+      "--account-name",
+      "Work",
+      "--json",
+    ]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
+      result: "connected",
+      connectionId: ID,
+    });
+  });
+
+  it("starts custom OAuth with the exact reconnect identity", async () => {
+    const connector = customMcpConnector({
+      authMode: "automatic",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+    });
+    server.use(
+      stubConnectorCatalog([]),
+      stubCustomConnectors([connector]),
+      http.post(
+        `http://localhost:3000/api/custom-connectors/${connector.id}/oauth2/start`,
+        async ({ request }) => {
+          expect(await request.json()).toEqual({
+            account: { intent: "reconnect", connectionId: ID },
+          });
+          return HttpResponse.json({
+            result: "authorization",
+            authorizationUrl: URL,
+            oauthAttemptId: ID,
+            connectionId: ID,
+            clientSecret: SECRET,
+          });
+        },
+      ),
+    );
+    await connectorOAuthCommand.parseAsync([
+      "node",
+      "okou",
+      "start",
+      `custom:${connector.id}`,
+      "--reconnect",
+      ID,
+      "--json",
+    ]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
+      result: "authorization",
+      authorizationUrl: URL,
+      oauthAttemptId: ID,
+      connectionId: ID,
+    });
+  });
 
   it("preserves the explicit builtin automatic account ID as the canonical completion identity", async () => {
     server.use(

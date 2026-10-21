@@ -160,14 +160,13 @@ test("Show Mercury disclosures while managing its accounts", async () => {
     publicStatusItem({
       connectorSlug: "mercury",
       label: "Mercury",
-      connected: true,
-      connectionStatus: "connected",
-      connection: {
+      account: {
         id: connector.id,
         authMethod: "oauth",
         externalUsername: "Not A Real Company Inc.",
         externalEmail: null,
         reconnectReason: null,
+        connectionStatus: "connected",
       },
     }),
   ]);

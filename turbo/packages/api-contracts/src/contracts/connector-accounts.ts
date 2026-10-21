@@ -212,7 +212,6 @@ export const connectorAccountsContract = c.router({
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
-      404: apiErrorSchema,
     },
     summary: "Inspect exact connector accounts",
   },
