@@ -2771,11 +2771,13 @@ test("A failed callback retries without repeating the Browser mutation", async (
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   click(button("Add to browser"));
 
-  await waitFor(() => {
-    expect(screen.getByText("Agent not notified.")).toBeVisible();
-  });
+  // The card shows the persisted state: applied, agent not yet notified.
+  await expect(screen.findByText("Information added")).resolves.toBeVisible();
   expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
-  click(button("Retry"));
+  await waitFor(() => {
+    expect(rejectCallback).toBeFalsy();
+  });
+  click(button("Notify agent"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });

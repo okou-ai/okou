@@ -1470,14 +1470,6 @@ function createContinueSignal({
   return continue$;
 }
 
-/** The website accepted the action, but the agent was not notified. */
-export class BrowserUserActionCallbackError extends Error {
-  constructor(cause: unknown) {
-    super("Browser user-action callback failed", { cause });
-    this.name = "BrowserUserActionCallbackError";
-  }
-}
-
 function createMutationSignals({
   descriptor,
   request$,
@@ -1512,17 +1504,12 @@ function createMutationSignals({
       callbackIds: ChatActionCallbackIds,
       signal: AbortSignal,
     ): Promise<void> => {
-      const delivered = await settle(
-        set(
-          runChatActionCallback$,
-          callbackArgs(descriptor, callbackPrompt, callbackIds),
-          signal,
-        ),
+      await set(
+        runChatActionCallback$,
+        callbackArgs(descriptor, callbackPrompt, callbackIds),
         signal,
       );
-      if (!delivered.ok) {
-        throw new BrowserUserActionCallbackError(delivered.error);
-      }
+      signal.throwIfAborted();
     },
   );
   const context: BrowserUserActionMutationContext = {

@@ -29,7 +29,6 @@ import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  BrowserUserActionCallbackError,
   fileDraftIsValid,
   type BrowserCheckboxDraft,
   type BrowserColorDraft,
@@ -143,21 +142,21 @@ function ActionState({
 }
 
 function TerminalActionState({
+  signals,
   callbackDelivered,
-  callbackFailed,
   cancelled,
-  continuing,
-  onContinue,
   variant,
 }: {
+  readonly signals: BrowserUserActionSignals;
   readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
   readonly cancelled: boolean;
-  readonly continuing: boolean;
-  readonly onContinue: () => void;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
+  const continuing = continueLoadable.state === "loading";
+  const callbackFailed = mutationFailed(continueLoadable);
   const callbackFailureDescription = t(($) => {
     return $.chat.browserInput.callbackFailed;
   });
@@ -188,7 +187,9 @@ function TerminalActionState({
           size="sm"
           variant="outline"
           disabled={continuing}
-          onClick={onContinue}
+          onClick={() => {
+            detach(continueAction(pageSignal), Reason.DomCallback);
+          }}
         >
           {continuing && <Loader2 size={15} className="animate-spin" />}
           {continuing
@@ -209,18 +210,12 @@ function TerminalActionState({
 }
 
 function StateFromRequest({
+  signals,
   request,
-  callbackDelivered,
-  callbackFailed,
-  continuing,
-  onContinue,
   variant,
 }: {
+  readonly signals: BrowserUserActionSignals;
   readonly request: BrowserUserActionRequestState;
-  readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
-  readonly continuing: boolean;
-  readonly onContinue: () => void;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
@@ -299,11 +294,9 @@ function StateFromRequest({
   if (action.state === "succeeded" || action.state === "cancelled") {
     return (
       <TerminalActionState
-        callbackDelivered={callbackDelivered}
-        callbackFailed={callbackFailed}
+        signals={signals}
+        callbackDelivered={action.callbackDelivered === true}
         cancelled={action.state === "cancelled"}
-        continuing={continuing}
-        onContinue={onContinue}
         variant={variant}
       />
     );
@@ -1663,39 +1656,13 @@ function hasNativeBrowserInputs(action: PendingBrowserInputAction): boolean {
   });
 }
 
-/**
- * The card owns its writes, so a callback failure that follows a submit or
- * cancel is still shown after the pending form gives way to the result.
- */
-function useBrowserInputMutations(signals: BrowserUserActionSignals) {
-  const [submitLoadable, submit] = useLoadableSet(signals.submit$);
-  const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
-  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
-  return {
-    submitLoadable,
-    submit,
-    cancelLoadable,
-    cancel,
-    continueLoadable,
-    continueAction,
-  };
-}
-
-type BrowserInputMutations = ReturnType<typeof useBrowserInputMutations>;
-
 interface PendingFormProps {
   readonly signals: BrowserUserActionSignals;
-  readonly mutations: BrowserInputMutations;
   readonly request: PendingBrowserInputRequest;
   readonly showTitle?: boolean;
 }
 
-function PendingForm({
-  signals,
-  mutations,
-  request,
-  showTitle = true,
-}: PendingFormProps) {
+function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
@@ -1722,7 +1689,8 @@ function PendingForm({
   const updateFileDraft = useSet(signals.updateFileDraft$);
   const removeFileDraft = useSet(signals.removeFileDraft$);
   const formRef = useSet(signals.formRef$);
-  const { submitLoadable, submit, cancelLoadable, cancel } = mutations;
+  const [submitLoadable, submit] = useLoadableSet(signals.submit$);
+  const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
   const submitting = submitLoadable.state === "loading";
   const cancelling = cancelLoadable.state === "loading";
   const busy = submitting || cancelling;
@@ -1825,7 +1793,6 @@ function PendingForm({
 
 function PendingFormWithCheck({
   signals,
-  mutations,
   request,
   showTitle = true,
 }: PendingFormProps) {
@@ -1833,7 +1800,6 @@ function PendingFormWithCheck({
   return (
     <PendingForm
       signals={signals}
-      mutations={mutations}
       request={{
         ...request,
         action: readyEntryAction(entry) ?? request.action,
@@ -1845,11 +1811,9 @@ function PendingFormWithCheck({
 
 function PendingInlineAction({
   signals,
-  mutations,
   request,
 }: {
   readonly signals: BrowserUserActionSignals;
-  readonly mutations: BrowserInputMutations;
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
@@ -1891,7 +1855,6 @@ function PendingInlineAction({
             </DialogHeader>
             <PendingFormWithCheck
               signals={signals}
-              mutations={mutations}
               request={request}
               showTitle={false}
             />
@@ -1923,20 +1886,10 @@ function ApplyingState({
 }
 
 function BrowserUserActionCardContent({
-  callbackDelivered,
-  callbackFailed,
-  continuing,
-  mutations,
-  onContinue,
   requestLoadable,
   signals,
   variant,
 }: {
-  readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
-  readonly continuing: boolean;
-  readonly mutations: BrowserInputMutations;
-  readonly onContinue: () => void;
   readonly requestLoadable: Loadable<BrowserUserActionRequestState>;
   readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
@@ -1983,27 +1936,16 @@ function BrowserUserActionCardContent({
     };
     content =
       variant === "inline" ? (
-        <PendingInlineAction
-          signals={signals}
-          mutations={mutations}
-          request={pendingRequest}
-        />
+        <PendingInlineAction signals={signals} request={pendingRequest} />
       ) : (
-        <PendingFormWithCheck
-          signals={signals}
-          mutations={mutations}
-          request={pendingRequest}
-        />
+        <PendingFormWithCheck signals={signals} request={pendingRequest} />
       );
   } else {
     content = (
       <DraftClearingState signals={signals}>
         <StateFromRequest
+          signals={signals}
           request={requestLoadable.data}
-          callbackDelivered={callbackDelivered}
-          callbackFailed={callbackFailed}
-          continuing={continuing}
-          onContinue={onContinue}
           variant={variant}
         />
       </DraftClearingState>
@@ -2019,45 +1961,12 @@ export function BrowserUserActionCard({
   readonly signals: BrowserUserActionSignals;
   readonly variant?: BrowserUserActionCardVariant;
 }) {
-  const pageSignal = useGet(pageSignal$);
   // Keep the settled state while a notification re-reads it, so an open
   // dialog is not remounted by an unrelated change in the same thread.
   const requestLoadable = useLastLoadable(signals.request$);
-  const mutations = useBrowserInputMutations(signals);
-  const { submitLoadable, cancelLoadable, continueLoadable, continueAction } =
-    mutations;
-  // Any of this card's writes may end with the agent callback failing.
-  const callbackFailed = [
-    submitLoadable,
-    cancelLoadable,
-    continueLoadable,
-  ].some((loadable) => {
-    return (
-      loadable.state === "hasError" &&
-      loadable.error instanceof BrowserUserActionCallbackError
-    );
-  });
-  const action =
-    requestLoadable.state === "hasData" &&
-    requestLoadable.data.kind === "action"
-      ? requestLoadable.data.action
-      : undefined;
-  const callbackDelivered = action?.callbackDelivered === true;
-  const continuing =
-    submitLoadable.state === "loading" ||
-    cancelLoadable.state === "loading" ||
-    continueLoadable.state === "loading";
-  const onContinue = () => {
-    detach(continueAction(pageSignal), Reason.DomCallback);
-  };
   return (
     <BrowserActionSurface variant={variant}>
       <BrowserUserActionCardContent
-        callbackDelivered={callbackDelivered}
-        callbackFailed={callbackFailed}
-        continuing={continuing}
-        mutations={mutations}
-        onContinue={onContinue}
         requestLoadable={requestLoadable}
         signals={signals}
         variant={variant}
