@@ -162,6 +162,14 @@ Interleave response headers before upload EOF with valid completion, policy or
 authorization rejection, and a blocked upload writer. Verify response bytes,
 privacy/accounting and terminal cleanup across both completion orders.
 
+Compare suspected detector backpressure regressions with detection disabled on
+the same forwarding path. Isolate upstream H2 protocol capacity from blocked TCP
+writes: use a zero upload window with writable sockets, and verify a response
+larger than the client's initial receive window still progresses through genuine
+`WINDOW_UPDATE` frames. Include an already-uploaded sibling SSE and ordinary/eager
+scheduling. Existing native queue or TCP-drain behavior is not evidence that a
+detector introduced it; measure detector retention separately from native buffers.
+
 Compare resources on identical baseline-eligible inputs in fresh pinned
 processes. Separate untraced CPU from traced allocations and report process RSS,
 Python allocations, SSE retention and synchronized event-loop progress. Newly

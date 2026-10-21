@@ -79,6 +79,12 @@ class Reader:
                 work.upload = upload
 
     async def wait_capacity(self) -> None:
+        if self.connection is self.handler.client and self.connection.alpn == b"h2":
+            # One H2 reader carries every stream's DATA and control frames.
+            # Waiting on an upload here also hides response WINDOW_UPDATE and
+            # reset frames. Keep native H2 backpressure as the forwarding
+            # baseline; detector readiness must not pause this shared reader.
+            return
         while pending := [
             work.classified for work in self.headers.values() if not work.classified.done()
         ]:
