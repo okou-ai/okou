@@ -1,5 +1,10 @@
-import { useGet, useSet } from "ccstate-react";
 import { connectorDirectoryPageSignals } from "../../signals/okou-page/settings/connector-directory-page.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import {
+  GuidedRemoteControlPanel,
+  GuidedPrivateNetworkPanel,
+} from "./remote-guided-directory.tsx";
+import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Filter } from "lucide-react";
 import {
@@ -105,9 +110,12 @@ function ConnectionTypeFilter({
   );
 }
 
-export function RemoteControlPanel() {
+function LegacyRemoteControlPanel({
+  vncEnabled,
+}: {
+  readonly vncEnabled: boolean;
+}) {
   const { t } = useTranslation();
-  const vncEnabled = useGet(connectorDirectoryPageSignals.vncEnabled$);
   const type = useGet(remoteControlType$);
   const selectedType = type === "vnc" && !vncEnabled ? "all" : type;
   const view = useGet(remoteControlView$);
@@ -181,7 +189,7 @@ export function RemoteControlPanel() {
   );
 }
 
-export function PrivateNetworkPanel() {
+function LegacyPrivateNetworkPanel() {
   const { t } = useTranslation();
   const mount = useSet(mountPrivateNetworkPanel$);
   return (
@@ -206,4 +214,18 @@ export function PrivateNetworkPanel() {
       <TailscaleManagement />
     </div>
   );
+}
+
+export function RemoteControlPanel() {
+  const vncEnabled = useGet(connectorDirectoryPageSignals.vncEnabled$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return guided ? (
+    <GuidedRemoteControlPanel vncEnabled={vncEnabled} />
+  ) : (
+    <LegacyRemoteControlPanel vncEnabled={vncEnabled} />
+  );
+}
+export function PrivateNetworkPanel() {
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return guided ? <GuidedPrivateNetworkPanel /> : <LegacyPrivateNetworkPanel />;
 }

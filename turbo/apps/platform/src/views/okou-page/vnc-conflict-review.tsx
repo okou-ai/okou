@@ -18,10 +18,8 @@ import { sshConnections$ } from "../../signals/ssh.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { VncCredentialImpact } from "./vnc-fields.tsx";
-import {
-  VncAuthenticationLabel,
-  VncHostProfileDetails,
-} from "./vnc-management.tsx";
+import { VncHostProfileDetails } from "./vnc-management.tsx";
+import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { VncNativeRoute } from "./vnc-native-route.tsx";
 
@@ -314,9 +312,12 @@ export function VncConflictReview({
               },
               {
                 version:
-                  current.kind === "edit" || current.kind === "delete"
-                    ? current.connection.generation
-                    : current.credential.revision,
+                  current.loginCredential &&
+                  message === "VNC_CREDENTIAL_REVISION_CONFLICT"
+                    ? current.loginCredential.revision
+                    : current.kind === "edit" || current.kind === "delete"
+                      ? current.connection.generation
+                      : current.credential.revision,
               },
             )}
           </p>
@@ -325,6 +326,9 @@ export function VncConflictReview({
           )}
           {current.credential && (
             <CredentialDetails credential={current.credential} />
+          )}
+          {current.loginCredential && (
+            <CredentialDetails credential={current.loginCredential} />
           )}
           <VncConflictReviewActions dialog={dialog} reviewed={current} />
         </>

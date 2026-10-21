@@ -1,3 +1,7 @@
+import {
+  resetRemoteSetup$,
+  setRemoteNetworkPicker$,
+} from "../../remote-control-setup.ts";
 import { command, computed, state } from "ccstate";
 import { pathname$, searchParams$, updateSearchParams$ } from "../../route.ts";
 import { onRef } from "../../utils.ts";
@@ -32,6 +36,8 @@ export const connectorDirectoryCustomScope$ = computed((get) => {
 
 export const setConnectorsScope$ = command(
   ({ get, set }, value: ConnectorsScope) => {
+    set(resetRemoteSetup$);
+    set(setRemoteNetworkPicker$, false);
     const params = new URLSearchParams(get(searchParams$));
     if (value === "discover") {
       params.delete(CONNECTORS_SCOPE_PARAM);
@@ -44,6 +50,10 @@ export const setConnectorsScope$ = command(
     // Every other control belongs to the scope that was just left: a category
     // means nothing among the connectors you already have, and an agent means
     // nothing in a catalog of four thousand.
+    params.delete("setup");
+    params.delete("remoteResource");
+    params.delete("remoteView");
+    params.delete("networkConnections");
     params.delete("keywords");
     params.delete("category");
     params.delete("connection");

@@ -485,6 +485,8 @@ test.each(["cloudflare_access", "tailscale"] as const)(
       security: { serverName: "inner.example.com" },
     });
     await screen.findByRole("heading", { name: "Native desktop" });
+    await expect(screen.findByText(network.name)).resolves.toBeVisible();
+    expect(screen.queryByText(network.id)).not.toBeInTheDocument();
   },
 );
 

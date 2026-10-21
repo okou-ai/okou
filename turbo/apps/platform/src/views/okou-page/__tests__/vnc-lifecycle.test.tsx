@@ -192,7 +192,7 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
   const dialog = await openCredential("Abandoned login");
   const secret = within(dialog).getByLabelText("VNC password");
   click(getAction("button", "Save", dialog));
-  await screen.findByText(/The save result is unknown/u);
+  await screen.findByText("Save failed.");
   expect(getAction("button", "Retry", dialog)).toBeEnabled();
 
   const clerk = context.mocks.clerk();
@@ -216,7 +216,7 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
   await screen.findByText("No saved VNC credentials.");
   expect(screen.queryByRole("dialog")).toBeNull();
   const fresh = await openCredential("Fresh login");
-  expect(within(fresh).queryByText(/The save result is unknown/u)).toBeNull();
+  expect(within(fresh).queryByText("Save failed.")).toBeNull();
   click(getAction("button", "Save", fresh));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();

@@ -1,3 +1,22 @@
+import {
+  remoteResource$,
+  remoteNetworkPage$,
+  privateNetworkDirectorySummary$,
+} from "../../signals/remote-resource-detail.ts";
+import {
+  RemoteResourcePage,
+  RemoteNetworkPage,
+} from "./remote-resource-page.tsx";
+import {
+  remoteSetup$,
+  leaveRemoteSetup$,
+  remoteControlGuidedEnabled$,
+  type RemoteSetup,
+} from "../../signals/remote-control-setup.ts";
+import { RemoteDetailPage } from "./remote-detail-page.tsx";
+import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
+import { remoteCredentialsPage$ } from "../../signals/okou-page/settings/remote-control-directory.ts";
+import { RemoteCredentialsPage } from "./remote-credentials-page.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
@@ -127,9 +146,8 @@ import {
   openBuiltinAccountConnectDialog$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
-import { vncSummary$ } from "../../signals/vnc.ts";
+import { vncSummary$, vncEnabled$ } from "../../signals/vnc.ts";
 import { sshSummary$ } from "../../signals/ssh.ts";
-import { cloudflareAccessSummary$ } from "../../signals/cloudflare-access.ts";
 import {
   PrivateNetworkPanel,
   RemoteControlPanel,
@@ -222,7 +240,7 @@ function RemoteControlScopeCount() {
 }
 
 function PrivateNetworkScopeCount() {
-  const summary = useLoadable(cloudflareAccessSummary$);
+  const summary = useLoadable(privateNetworkDirectorySummary$);
   return (
     <ConnectorsScopeCount value={configuredRemoteAccessResources(summary)} />
   );
@@ -1168,17 +1186,23 @@ function ConnectorCatalogHeader() {
   const { t } = useTranslation();
   const count = useLastLoadable(connectorDirectoryPageSignals.catalogCount$);
   const connectorCatalogCount = count.state === "hasData" ? count.data : null;
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const scope = useGet(connectorsScope$);
   const description =
-    connectorCatalogCount !== null
-      ? t(
-          ($) => {
-            return $.connectors.catalog.descriptionWithCount;
-          },
-          { value: formatLocalizedNumber(connectorCatalogCount) },
-        )
-      : t(($) => {
-          return $.connectors.catalog.description;
-        });
+    guided && (scope === "remote-control" || scope === "private-network")
+      ? t(($) => {
+          return $.remoteControlSetup.catalogDescription;
+        })
+      : connectorCatalogCount !== null
+        ? t(
+            ($) => {
+              return $.connectors.catalog.descriptionWithCount;
+            },
+            { value: formatLocalizedNumber(connectorCatalogCount) },
+          )
+        : t(($) => {
+            return $.connectors.catalog.description;
+          });
   return (
     <header className="shrink-0 bg-transparent px-4 sm:px-6 pt-0 md:pt-10 pb-0">
       <div className="mx-auto w-full max-w-[900px]">
@@ -1486,7 +1510,63 @@ function ConnectorsCurrentScopeContent() {
   return <ConnectorsDirectoryContent builtin={<BuiltinDirectoryPanel />} />;
 }
 
+function isRemoteSetupDetailPage(
+  setup: RemoteSetup | null,
+): setup is RemoteSetup {
+  // Network-origin flows keep their form owner mounted when returning to entry.
+  return (
+    setup !== null && (setup.step !== "entry" || setup.sourceNetwork !== null)
+  );
+}
+
+function RemoteSetupDetailPage({ setup }: { readonly setup: RemoteSetup }) {
+  const { t } = useTranslation();
+  const vncEnabled = useGet(vncEnabled$);
+  const leaveSetup = useSet(leaveRemoteSetup$);
+  return (
+    <RemoteDetailPage
+      network={setup.sourceNetwork !== null && !setup.fromComputer}
+      title={t(($) => {
+        return setup.step === "computer-network" ||
+          (setup.step === "entry" && setup.fromComputer)
+          ? $.remoteComputerSetup.title
+          : setup.protocol === "ssh"
+            ? $.remoteControlSetup.sshSetup
+            : $.remoteControlSetup.vncSetup;
+      })}
+      onBack={leaveSetup}
+    >
+      <RemoteConnectionSetup vncEnabled={vncEnabled} />
+    </RemoteDetailPage>
+  );
+}
+
+function RemoteCredentialsDetailPage() {
+  const vncEnabled = useGet(vncEnabled$);
+  return <RemoteCredentialsPage vncEnabled={vncEnabled} />;
+}
+
 export function ConnectorsPage() {
+  const remoteSetup = useGet(remoteSetup$);
+  const remoteResource = useGet(remoteResource$);
+  const credentialsPage = useGet(remoteCredentialsPage$);
+  const networkPage = useLastResolved(remoteNetworkPage$);
+  if (networkPage) {
+    return <RemoteNetworkPage />;
+  }
+  if (remoteResource && !remoteSetup) {
+    return <RemoteResourcePage />;
+  }
+  if (isRemoteSetupDetailPage(remoteSetup)) {
+    return <RemoteSetupDetailPage setup={remoteSetup} />;
+  }
+  if (credentialsPage) {
+    return <RemoteCredentialsDetailPage />;
+  }
+  return <ConnectorsDirectoryPage />;
+}
+
+function ConnectorsDirectoryPage() {
   return (
     <div
       data-testid="connectors-scroll-viewport"

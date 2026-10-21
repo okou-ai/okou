@@ -9,6 +9,7 @@ export enum FeatureSwitchKey {
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   HostedSiteTitleEditing = "hostedSiteTitleEditing",
   DesktopShell = "desktopShell",
+  RemoteControlGuidedSetup = "remoteControlGuidedSetup",
   TailscaleAccess = "tailscaleAccess",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",

@@ -1,4 +1,4 @@
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   getFeatureSwitchMetadata,
@@ -18,6 +18,7 @@ import {
   featureSwitch$,
   resetFeatureSwitches$,
   setFeatureSwitch$,
+  availableFeatureSwitchKeys$,
 } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -262,6 +263,7 @@ function LabControls(props: {
 export function LabPage() {
   const { t } = useTranslation();
   const features = useLastResolved(featureSwitch$);
+  const availableKeys = useLoadable(availableFeatureSwitchKeys$);
   const [toggleLoadable, setFeature] = useLoadableSet(setFeatureSwitch$);
   const [resetLoadable, reset] = useLoadableSet(resetFeatureSwitches$);
   const maintainerFilter = useGet(labMaintainerFilter$);
@@ -271,7 +273,11 @@ export function LabPage() {
   const busy = resetting || toggling;
   const pageSignal = useGet(pageSignal$);
   const metadata = getFeatureSwitchMetadata();
-  const sorted = sortedFeatureSwitchKeys(metadata);
+  const sorted = sortedFeatureSwitchKeys(metadata).filter((key) => {
+    return (
+      availableKeys.state === "hasData" && availableKeys.data.includes(key)
+    );
+  });
   const maintainerOptions = maintainerFilterOptions({
     keys: sorted,
     metadata,

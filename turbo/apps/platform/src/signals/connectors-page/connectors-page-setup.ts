@@ -1,3 +1,8 @@
+import {
+  resetRemoteSetup$,
+  setRemoteNetworkPicker$,
+  startComputerSetup$,
+} from "../remote-control-setup.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
@@ -10,15 +15,25 @@ import { refreshSsh$ } from "../ssh.ts";
 import { closeVncDialog$, invalidateVnc$ } from "../vnc.ts";
 import { closeCloudflareAccessDialog$ } from "../cloudflare-access.ts";
 import { setRemoteControlView$ } from "../okou-page/settings/remote-control-directory.ts";
+import { searchParams$ } from "../route.ts";
 
 export const setupConnectorsPage$ = command(
-  async ({ set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     set(resetConnectorAccountDialogs$);
+    set(resetRemoteSetup$);
+    set(setRemoteNetworkPicker$, false);
     set(refreshSsh$);
     set(closeVncDialog$);
     set(invalidateVnc$);
     set(closeCloudflareAccessDialog$);
     set(setRemoteControlView$, "connections");
+    const params = get(searchParams$);
+    if (
+      params.get("setup") === "computer" &&
+      params.get("scope") === "private-network"
+    ) {
+      set(startComputerSetup$);
+    }
     set(updatePage$, createElement(ConnectorsPage), "sidebar");
     set(
       updateDocumentTitle$,

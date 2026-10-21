@@ -305,12 +305,18 @@ test("Own SSH references block personal network deletion", async () => {
   await screen.findByText("Private server");
   const section = await networkSection();
   expect(getAction("button", "Delete Tailscale", section)).toBeDisabled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await userEvent.click(
+    getAction("button", "Why can't I delete this network?", section),
+  );
+  const explanation = await screen.findByRole("dialog", {
+    name: "Delete Tailscale",
+  });
   expect(
-    within(section).getByText(
+    within(explanation).getByText(
       "Your SSH or VNC hosts still use this network. Rebind or delete those hosts first.",
     ),
   ).toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("Credential replacement is explicit, clears discarded secrets and updates tags with the revision", async () => {

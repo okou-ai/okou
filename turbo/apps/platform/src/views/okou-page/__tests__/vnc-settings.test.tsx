@@ -3591,7 +3591,7 @@ test("An uncertain host creation freezes its draft and explicitly retries the sa
   const secret = within(dialog).getByLabelText("VNC password");
   await fill(secret, " retry ");
   click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(/The save result is unknown/u);
+  await within(dialog).findByText("Save failed.");
   expect(secret).toHaveValue(" retry ");
   expect(secret).toBeDisabled();
   expect(within(dialog).getByLabelText("Credential name")).toBeDisabled();

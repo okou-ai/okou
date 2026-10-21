@@ -49,26 +49,48 @@ import type { ComposerSignals } from "../../signals/okou-page/composer-signals.t
 import { vncConnections$, vncSshConnectionId } from "../../signals/vnc.ts";
 import { sshIdentity$ } from "../../signals/ssh.ts";
 
-export function RemoteHostDefaultToggle({
-  protocol,
-  connectionId,
-}: {
+interface RemoteHostDefaultToggleProps {
   protocol: RemoteAccessProtocol;
   connectionId: string;
-}) {
+  inline?: boolean;
+}
+
+export function RemoteHostDefaultToggle(props: RemoteHostDefaultToggleProps) {
+  const identity = useLoadable(sshIdentity$);
+  if (identity.state !== "hasData" || !identity.data) {
+    return null;
+  }
+  return (
+    <OwnerRemoteHostDefaultToggle
+      key={`${identity.data}:${props.protocol}:${props.connectionId}`}
+      {...props}
+    />
+  );
+}
+
+function OwnerRemoteHostDefaultToggle({
+  protocol,
+  connectionId,
+  inline = false,
+}: RemoteHostDefaultToggleProps) {
   const { t } = useTranslation();
   const defaults = useLoadable(remoteHostDefaults$);
+  const previousDefaults = useLastResolved(remoteHostDefaults$);
   const retry = useSet(invalidateRemoteAccess$);
   const [saving, update] = useLoadableSet(setRemoteHostDefault$);
   const signal = useGet(pageSignal$);
-  const host =
-    defaults.state === "hasData"
-      ? defaults.data?.[protocol].find((item) => {
-          return item.connectionId === connectionId;
-        })
-      : undefined;
+  const host = resolvedDuringRefresh(defaults, previousDefaults)?.[
+    protocol
+  ].find((item) => {
+    return item.connectionId === connectionId;
+  });
   return (
-    <div className="flex items-center justify-between gap-3 border-t pt-3">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3",
+        !inline && "border-t pt-3",
+      )}
+    >
       <span className="text-sm text-foreground">
         {t(($) => {
           return $.chat.remoteAccess.defaultEnabled;
@@ -91,7 +113,10 @@ export function RemoteHostDefaultToggle({
         <LoadingSwitch
           checked={host?.defaultEnabled ?? false}
           disabled={!host}
-          loading={saving.state === "loading" || defaults.state === "loading"}
+          loading={
+            saving.state === "loading" ||
+            (!host && defaults.state === "loading")
+          }
           ariaLabel={t(($) => {
             return $.chat.remoteAccess.defaultEnabled;
           })}

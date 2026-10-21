@@ -1,3 +1,8 @@
+import {
+  applyRemoteNetworkScope$,
+  remoteNetworkScopeStatus$,
+  resetRemoteNetworkScope$,
+} from "./remote-network-scope.ts";
 import { command, computed, state } from "ccstate";
 import { privateNetworkHostCount } from "../lib/private-network-references.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -222,6 +227,7 @@ export const acknowledgeTailscale$ = command(
 );
 
 export const closeTailscaleDialog$ = command(({ set }) => {
+  set(resetRemoteNetworkScope$);
   set(resetSave$);
   set(dialog$, null);
   set(error$, null);
@@ -244,9 +250,10 @@ export const mountTailscaleForm$ = onRef(
           ) {
             set(closeTailscaleDialog$);
           } else {
+            // Ref reattachment must preserve the dialog's replacement choice.
+            // Closing the dialog resets that choice; form cleanup clears inputs.
             set(resetSave$);
             set(attempt$, null);
-            set(replace$, false);
           }
         }
       },
@@ -683,28 +690,59 @@ const confirmTailscaleChange$ = command(
   },
 );
 
+function tailscaleSaveNeedsAdmin(
+  dialog: TailscaleDialogState,
+  createScope: "personal" | "organization",
+) {
+  return (
+    (dialog.kind === "create" ? createScope : dialog.config?.scope) ===
+      "organization" ||
+    dialog.kind === "promote" ||
+    dialog.kind === "adopt"
+  );
+}
+
 export const saveTailscale$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+    if (get(remoteNetworkScopeStatus$).busy) {
+      return;
+    }
     const signal = set(resetSave$, parentSignal);
-    const dialog = await get(tailscaleDialog$);
+    let dialog = await get(tailscaleDialog$);
     signal.throwIfAborted();
     if (!dialog) {
       return;
     }
     const admin = await get(isOrgAdmin$);
     signal.throwIfAborted();
-    if (
-      ((dialog.kind === "create" ? get(scope$) : dialog.config?.scope) ===
-        "organization" ||
-        dialog.kind === "promote" ||
-        dialog.kind === "adopt") &&
-      !admin
-    ) {
+    if (tailscaleSaveNeedsAdmin(dialog, get(scope$)) && !admin) {
       set(error$, TAILSCALE_ERROR_CODES.FORBIDDEN);
       return;
     }
     if (get(dialog$) !== dialog || !get(tailscaleSettingsEnabled$)) {
       return;
+    }
+    if (dialog.kind === "edit" && dialog.config) {
+      const config = await set(
+        applyRemoteNetworkScope$,
+        "tailscale",
+        dialog.config,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!config) {
+        set(invalidateTailscale$);
+        return;
+      }
+      if (get(dialog$) !== dialog) {
+        return;
+      }
+      if (config !== dialog.config) {
+        dialog = { ...dialog, config: { ...dialog.config, ...config } };
+        set(dialog$, dialog);
+        set(reviewedRevision$, null);
+        set(invalidateTailscale$);
+      }
     }
     let completed: boolean;
     if (dialog.kind === "create") {
@@ -719,8 +757,12 @@ export const saveTailscale$ = command(
     const identity = await get(tailscaleIdentity$);
     signal.throwIfAborted();
     if (completed && get(dialog$) === dialog && identity === dialog.identity) {
+      const savedId =
+        dialog.kind === "create" ? get(attempt$)?.id : dialog.config?.id;
       set(closeTailscaleDialog$);
       set(invalidateTailscale$);
+      return savedId;
     }
+    return;
   },
 );

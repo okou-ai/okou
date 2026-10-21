@@ -506,9 +506,7 @@ test("A committed Access creation completes on same-ID retry without another con
   await tokenFields(dialog);
   const secret = within(dialog).getByLabelText("Service Token Client Secret");
   click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(
-    /We couldn't confirm whether your changes were saved/u,
-  );
+  await within(dialog).findByText("Save failed.");
   expect(secret).toHaveValue("test-client-secret");
   expect(secret).toBeDisabled();
   expect(submitted).toHaveLength(1);
