@@ -58,7 +58,7 @@ def metadata(fd):
 def credentials():
     # inode_owner_or_capable uses filesystem credentials. A successful mincore
     # can otherwise contain synthetic all-one bits rather than residency.
-    with open("/proc/self/status", "rb") as stream:
+    with open("/proc/thread-self/status", "rb") as stream:
         raw = stream.read(65537)
     require(len(raw) <= 65536, "oversized process credentials")
     rows = [line.split()[1:] for line in raw.splitlines() if line.startswith(b"Uid:")]

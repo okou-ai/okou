@@ -7,7 +7,9 @@ touching its payload. Offsets are page-aligned; each nonempty extent is inside
 the current file size and at most 64 MiB. Before/after metadata and matching
 effective/filesystem UID checks refuse mutation, foreign authority and descriptor
 substitution. The creating process and thread own observations and cleanup;
-retained thread-object identity prevents a recycled numeric thread ID from
+credentials come from the calling native task's `thread-self/status`, since
+filesystem UIDs can differ between threads in one process.
+Retained thread-object identity prevents a recycled numeric thread ID from
 transferring that authority after the creating thread exits.
 The native TID and procfs task start generation are also checked, since Python
 can cache the same dummy thread object across different native C threads.
@@ -35,10 +37,10 @@ charged-window and native report formats/interpretations remain unchanged.
 
 ## Qualify and replay
 
-Use 64-bit Linux with readable procfs (including `thread-self/stat` and
-`sys/kernel/overflowuid`), mincore
-and permission to lock at most 64 KiB of
-new private file pages. The qualification supports page sizes up to 16 KiB.
+Use 64-bit Linux with readable procfs (including `thread-self/stat`,
+`thread-self/status` and `sys/kernel/overflowuid`), mincore and permission to lock
+at most 64 KiB of new private file pages. The qualification supports page sizes
+up to 16 KiB.
 It creates only a new canonical output directory and small disposable owned files.
 It neither requires KVM/root/cgroup delegation nor changes existing workloads,
 cache policy or host pressure. Supply a new absolute output path:
@@ -93,4 +95,9 @@ retain their independent native acceptance gates.
 The UID-alias regression uses a disposable user namespace in a joined subprocess;
 only that fixture is explicitly skipped when the kernel denies namespace creation
 or its UID mapping.
+The per-thread filesystem-UID regression uses a joined disposable root subprocess
+and is explicitly skipped without root; it changes only that subprocess worker's
+credentials and restores them before owned-resource cleanup.
+Security CI also runs that focused regression with sudo on its disposable Ubuntu
+runner, so its ordinary unprivileged skip does not omit credential coverage.
 Acquisition and reader refusal never fall back to guessed ownership or residency.

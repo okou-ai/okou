@@ -179,6 +179,73 @@ class AcquisitionTests(unittest.TestCase):
                 acquisition.FileResidency(self.fd, self.identity)
         self.assertEqual(len(os.listdir("/proc/self/fd")), before)
 
+    @unittest.skipUnless(
+        os.geteuid() == 0, "per-thread filesystem-UID fixture requires root"
+    )
+    def test_calling_native_task_filesystem_credentials_are_required(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                textwrap.dedent(
+                    """\
+                    import ctypes
+                    from concurrent.futures import ThreadPoolExecutor
+                    import json
+                    import os
+                    import sys
+                    from file_residency import FileResidency
+
+                    libc = ctypes.CDLL(None, use_errno=True)
+                    libc.setfsuid.argtypes = [ctypes.c_uint]
+                    libc.setfsuid.restype = ctypes.c_int
+                    def filesystem_uid(path):
+                        with open(path) as stream:
+                            return int(next(row for row in stream
+                                            if row.startswith('Uid:')).split()[4])
+                    with open(sys.argv[1], 'rb') as source:
+                        info = os.fstat(source.fileno())
+                        identity = (info.st_dev, info.st_ino)
+                        def worker():
+                            outcomes = {}
+                            with FileResidency(source.fileno(), identity) as owner:
+                                previous = libc.setfsuid(1000)
+                                try:
+                                    assert filesystem_uid('/proc/self/status') == 0
+                                    assert filesystem_uid('/proc/thread-self/status') == 1000
+                                    def construct():
+                                        with FileResidency(source.fileno(), identity):
+                                            pass
+                                    for label, action in [
+                                        ('construct', construct),
+                                        ('observe', lambda: owner.observe(0, 4096)),
+                                    ]:
+                                        try:
+                                            action()
+                                            outcomes[label] = 'accepted'
+                                        except ValueError as error:
+                                            outcomes[label] = str(error)
+                                finally:
+                                    libc.setfsuid(previous)
+                                    assert filesystem_uid('/proc/thread-self/status') == 0
+                            return outcomes
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            print(json.dumps(pool.submit(worker).result()))
+                    """
+                ),
+                str(self.path),
+            ],
+            cwd=OWNER,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        outcomes = json.loads(result.stdout)
+        self.assertEqual(outcomes["construct"], "effective/filesystem uid mismatch")
+        self.assertEqual(outcomes["observe"], "effective/filesystem uid mismatch")
+
     def test_native_thread_reuse_does_not_transfer_authority(self):
         result = subprocess.run(
             [
