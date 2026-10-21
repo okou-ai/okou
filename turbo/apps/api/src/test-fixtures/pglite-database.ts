@@ -165,7 +165,9 @@ export async function createPgliteSnapshot(): Promise<Blob> {
       }
       // Checkpoint the seeded baseline to reduce WAL recovery when restoring cases.
       await engine.exec("CHECKPOINT");
-      return await engine.dumpDataDir();
+      // Workers restore this image repeatedly; keep its physical bytes directly
+      // instead of making each isolated file inflate the same baseline again.
+      return await engine.dumpDataDir("none");
     })(),
     async () => {
       await engine.close();
@@ -237,10 +239,15 @@ async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
           );
           return;
         }
+        const [singleChunk] = chunks;
         files.push({
           path: target,
-          // Engines copy these image bytes before taking mutable ownership.
-          data: new Uint8Array(Buffer.concat(chunks)),
+          // These image views stay immutable. Each engine still copies them
+          // before taking writable ownership in SnapshotMemoryFS.
+          data:
+            chunks.length === 1 && singleChunk
+              ? singleChunk
+              : Buffer.concat(chunks),
           modifiedAt: Math.floor(entry.mtime.getTime() / 1000),
         });
       });
