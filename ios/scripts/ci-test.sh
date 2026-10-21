@@ -26,8 +26,10 @@ xcode_args=(
   -destination "$IOS_TEST_DESTINATION"
   -derivedDataPath "$build_root/DerivedData"
   -clonedSourcePackagesDirPath "$build_root/SourcePackages"
+  -scmProvider system
   -onlyUsePackageVersionsFromResolvedFile
   -disableAutomaticPackageResolution
+  -disablePackageRepositoryCache
   -skipPackageUpdates
   COMPILATION_CACHE_ENABLE_CACHING=YES
   COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
