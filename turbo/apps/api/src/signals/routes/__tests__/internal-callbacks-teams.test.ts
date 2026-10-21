@@ -1568,7 +1568,7 @@ describe("Teams chat callbacks", () => {
     });
   });
 
-  it("keeps the canonical thread session when the Teams API rejects the reply", async () => {
+  it("keeps the canonical session without resending a rejected Teams reply", async () => {
     const teams = await setupConnectedTeamsActor();
     const teamsApi = teamsApiMocks({
       fixture: teams.fixture,
@@ -1596,6 +1596,12 @@ describe("Teams chat callbacks", () => {
     clearTeamsApiCalls(teamsApi);
 
     const cliAgentSessionId = await completeSandboxRun({
+      runId,
+      sandboxToken: claim.sandboxToken,
+      exitCode: 0,
+    });
+
+    await completeSandboxRun({
       runId,
       sandboxToken: claim.sandboxToken,
       exitCode: 0,

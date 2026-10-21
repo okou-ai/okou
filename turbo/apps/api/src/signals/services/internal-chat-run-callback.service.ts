@@ -139,8 +139,8 @@ import {
   dispatchSlackChatDeliveryOnce$,
 } from "./internal-slack-chat-run-callback.service";
 import {
-  deliverTeamsChatAdmissionFailure,
-  dispatchTeamsChatDeliveryOnce,
+  deliverTeamsChatAdmissionFailure$,
+  dispatchTeamsChatDeliveryOnce$,
 } from "./internal-teams-chat-run-callback.service";
 import {
   deliverTelegramChatAdmissionFailure,
@@ -158,7 +158,7 @@ import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
 } from "./teams-chat-callback-payload";
-import { loadTeamsQueuedLaunchMaterial } from "./teams-queued-launch-context.service";
+import { loadTeamsQueuedLaunchMaterial$ } from "./teams-queued-launch-context.service";
 import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
@@ -957,24 +957,15 @@ async function insertFeishuChatDeliveryCallback(args: {
   });
 }
 
-async function insertTeamsChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: TeamsDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "teams:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function teamsChatDeliveryFields(
+  target: TeamsDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "teams:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 /**
@@ -1154,12 +1145,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const teamsDeliveryCallbackId = input.teamsDelivery
-    ? await insertTeamsChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.teamsDelivery,
-        chatEventId: event.id,
+        ...teamsChatDeliveryFields(input.teamsDelivery, event.id),
       })
     : undefined;
   const discordTarget = input.discordDelivery;
@@ -1451,12 +1441,11 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const teamsDeliveryCallbackId =
     deliveryEvent && input.teamsDelivery
-      ? await insertTeamsChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.teamsDelivery,
-          chatEventId: deliveryEvent.id,
+          ...teamsChatDeliveryFields(input.teamsDelivery, deliveryEvent.id),
         })
       : undefined;
   const discordTarget = input.discordDelivery;
@@ -2523,8 +2512,16 @@ const sendQueuedAdmissionFailure$ = command(
         return;
       }
       case "Teams": {
-        await deliverTeamsChatAdmissionFailure(
-          { ...base, agentId: channel.agentId, target: channel.target },
+        await set(
+          deliverTeamsChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            orgId: channel.orgId,
+            userId: channel.userId,
+            chatEventId,
+            agentId: channel.agentId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -3055,46 +3052,20 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
       }
     }
     const channels: readonly {
-      readonly name: string;
+      readonly name: "Feishu" | "Teams" | "Telegram";
       readonly callbackId: string | undefined;
-      readonly dispatch: (
-        callbackId: string,
-        signal: AbortSignal,
-      ) => Promise<void>;
     }[] = [
       {
         name: "Feishu",
         callbackId: args.feishuDeliveryCallbackId,
-        dispatch: (callbackId, dispatchSignal) => {
-          return dispatchFeishuChatDeliveryOnce(
-            args.db,
-            callbackId,
-            dispatchSignal,
-          );
-        },
       },
       {
         name: "Teams",
         callbackId: args.teamsDeliveryCallbackId,
-        dispatch: (callbackId, dispatchSignal) => {
-          return dispatchTeamsChatDeliveryOnce(
-            args.db,
-            callbackId,
-            dispatchSignal,
-          );
-        },
       },
       {
         name: "Telegram",
         callbackId: args.telegramDeliveryCallbackId,
-        dispatch: (callbackId, dispatchSignal) => {
-          return dispatchTelegramChatDeliveryOnce(
-            args.db,
-            callbackId,
-            args.status,
-            dispatchSignal,
-          );
-        },
       },
     ];
     for (const channel of channels) {
@@ -3102,10 +3073,28 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
       if (!callbackId) {
         continue;
       }
-      const delivery = await settle(
-        channel.dispatch(callbackId, signal),
-        signal,
-      );
+      let deliveryPromise: Promise<void>;
+      if (channel.name === "Teams") {
+        deliveryPromise = set(
+          dispatchTeamsChatDeliveryOnce$,
+          callbackId,
+          signal,
+        );
+      } else if (channel.name === "Feishu") {
+        deliveryPromise = dispatchFeishuChatDeliveryOnce(
+          args.db,
+          callbackId,
+          signal,
+        );
+      } else {
+        deliveryPromise = dispatchTelegramChatDeliveryOnce(
+          args.db,
+          callbackId,
+          args.status,
+          signal,
+        );
+      }
+      const delivery = await settle(deliveryPromise, signal);
       if (!delivery.ok) {
         log.error(
           `Failed to finalize canonical ${channel.name} delivery callback`,
@@ -3696,8 +3685,11 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "teams": {
-        const material = await loadTeamsQueuedLaunchMaterial(db, source);
-        signal.throwIfAborted();
+        const material = await set(
+          loadTeamsQueuedLaunchMaterial$,
+          source,
+          signal,
+        );
         return material
           ? { ...delivery, kind: "Teams", target: material.teamsDelivery }
           : undefined;
