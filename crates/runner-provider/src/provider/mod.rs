@@ -103,13 +103,7 @@ pub enum RunnerPreferenceDecision {
     ExactSandbox {
         runner_identity: RunnerProcessIdentity,
         expires_at: DateTime<FixedOffset>,
-        // Old API writers omit this until #41875; retire that shape in #41876.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_present_source"
-        )]
-        finalizing_source_run_id: Option<RunId>,
+        finalizing_source_run_id: RunId,
     },
     FinalizingPredecessor {
         runner_identity: RunnerProcessIdentity,
@@ -138,7 +132,6 @@ pub enum RunnerPreferenceDecision {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunnerPreferenceTarget {
-    ExactSandbox,
     SourceSandbox(RunId),
     FinalizingPredecessor(RunId),
     PeerFinalizingPredecessor(RunId),
@@ -147,16 +140,10 @@ pub enum RunnerPreferenceTarget {
     SourceHomeCache(RunId),
 }
 
-fn deserialize_present_source<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<RunId>, D::Error> {
-    RunId::deserialize(deserializer).map(Some)
-}
-
 impl RunnerPreferenceTarget {
     fn tier(self) -> RunnerPreferenceTier {
         match self {
-            Self::ExactSandbox | Self::SourceSandbox(_) => RunnerPreferenceTier::ExactSandbox,
+            Self::SourceSandbox(_) => RunnerPreferenceTier::ExactSandbox,
             Self::FinalizingPredecessor(_) => RunnerPreferenceTier::FinalizingPredecessor,
             Self::PeerFinalizingPredecessor(_) => RunnerPreferenceTier::PeerFinalizingPredecessor,
             Self::ReusableSandbox => RunnerPreferenceTier::ReusableSandbox,
@@ -171,7 +158,7 @@ impl RunnerPreferenceTarget {
             | Self::FinalizingPredecessor(source)
             | Self::PeerFinalizingPredecessor(source)
             | Self::SourceHomeCache(source) => Some(source),
-            Self::ExactSandbox | Self::ReusableSandbox | Self::HomeCache => None,
+            Self::ReusableSandbox | Self::HomeCache => None,
         }
     }
 
@@ -181,15 +168,10 @@ impl RunnerPreferenceTarget {
         expires_at: DateTime<FixedOffset>,
     ) -> RunnerPreferenceDecision {
         match self {
-            Self::ExactSandbox => RunnerPreferenceDecision::ExactSandbox {
-                runner_identity,
-                expires_at,
-                finalizing_source_run_id: None,
-            },
             Self::SourceSandbox(source) => RunnerPreferenceDecision::ExactSandbox {
                 runner_identity,
                 expires_at,
-                finalizing_source_run_id: Some(source),
+                finalizing_source_run_id: source,
             },
             Self::FinalizingPredecessor(finalizing_source_run_id) => {
                 RunnerPreferenceDecision::FinalizingPredecessor {
@@ -231,10 +213,7 @@ impl RunnerPreferenceDecision {
                 finalizing_source_run_id,
             } => (
                 runner_identity,
-                finalizing_source_run_id.map_or(
-                    RunnerPreferenceTarget::ExactSandbox,
-                    RunnerPreferenceTarget::SourceSandbox,
-                ),
+                RunnerPreferenceTarget::SourceSandbox(*finalizing_source_run_id),
                 expires_at,
             ),
             Self::FinalizingPredecessor {
@@ -449,7 +428,6 @@ pub struct JobCandidate {
     poll_due_to_job_discovered_elapsed: Option<Duration>,
     poll_http_request_elapsed: Option<Duration>,
     reuse_key: Option<String>,
-    history_generation_run_id: Option<RunId>,
     runner_preference_context: Option<RunnerPreferenceContext>,
 }
 
@@ -480,7 +458,6 @@ impl JobCandidate {
             poll_due_to_job_discovered_elapsed: None,
             poll_http_request_elapsed: None,
             reuse_key: None,
-            history_generation_run_id: None,
             runner_preference_context: None,
         }
     }
@@ -571,10 +548,6 @@ impl JobCandidate {
         self.reuse_key.as_deref()
     }
 
-    pub fn history_generation_run_id(&self) -> Option<RunId> {
-        self.history_generation_run_id
-    }
-
     pub fn runner_preference(&self) -> Option<&ActiveRunnerPreference> {
         self.runner_preference_context
             .as_ref()
@@ -638,14 +611,6 @@ impl JobCandidate {
             runner_preference: context.runner_preference.clone(),
             state,
         })
-    }
-
-    pub fn with_history_generation_run_id(
-        mut self,
-        history_generation_run_id: Option<RunId>,
-    ) -> Self {
-        self.history_generation_run_id = history_generation_run_id;
-        self
     }
 
     pub fn with_discovery_source(mut self, source: JobDiscoverySource) -> Self {

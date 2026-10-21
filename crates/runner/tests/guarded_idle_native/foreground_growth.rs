@@ -260,7 +260,8 @@ pub async fn prepare(request: Request) -> TestResult<Completion> {
                 .with_sandbox_id(id)
                 .with_profile_name(fixture::PROFILE)
                 .with_rootfs_hash(&context.rootfs_hash)
-                .with_history_generation_run_id(original)
+                .with_source_run_id(original)
+                .with_native_generation_run_id(original)
                 .with_home_promotion(promotion)
                 .build();
             if let Err(error) = candidate.capture_retirement_backing() {

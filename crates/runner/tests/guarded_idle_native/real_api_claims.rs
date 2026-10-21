@@ -305,7 +305,12 @@ pub async fn exercise(
     };
     let outcome: TestResult<()> = async {
         let candidate = JobCandidate::new(input.run, fixture::PROFILE.into())
-            .with_reuse_key(Some(input.reuse_key.clone())).with_history_generation_run_id(Some(input.original_run_id));
+            .with_reuse_key(Some(input.reuse_key.clone()))
+            .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                input.runner,
+                runner_provider::RunnerPreferenceTarget::SourceSandbox(input.original_run_id),
+                std::time::Instant::now() + std::time::Duration::from_secs(90),
+            ));
         let mut prepare = Box::pin(admission.prepare_and_claim(provider.clone(), candidate, &context.tracker));
         let mut prepared = None;
         pending(prepare.as_mut(), &mut prepared).await?;
@@ -361,7 +366,7 @@ pub async fn exercise(
                 let candidate = ParkedIdleCandidateBuilder::new(&input.reuse_key,lease).with_sandbox(parts.sandbox)
                     .with_source_run_id(claim.run_id)
                     .with_factory(context.factory.clone()).with_sandbox_id(id).with_profile_name(fixture::PROFILE)
-                    .with_rootfs_hash(&context.rootfs_hash).with_history_generation_run_id(input.original_run_id)
+                    .with_rootfs_hash(&context.rootfs_hash).with_native_generation_run_id(input.original_run_id)
                     .with_last_completed_at(input.original_completed_at.clone()).with_home_promotion(promotion)
                     .with_storage_fingerprints(parts.storage_fingerprints)
                     .with_guest_timezone_intent(GuestTimezoneIntent::from_context(&claim)).build();

@@ -92,7 +92,7 @@ async fn finalizing_original_promotion_mismatch_refuses_before_broker_projection
     let mut fixture = JobFixture::new("thread:finalizing-promotion", Some(backing)).await;
     let mut candidate = fixture.candidate();
     let incorrect = RunId::new_v4();
-    candidate.metadata.history_generation_run_id = Some(incorrect);
+    candidate.metadata.native_generation_run_id = Some(incorrect);
     let mut owner = GuardedFinalizingHandoffOwner::undelivered(
         IdleParkCandidate::Ordinary(candidate),
         incorrect,
@@ -116,7 +116,7 @@ async fn finalizing_uncaptured_delivery_never_adopts_a_later_generation() {
         .as_ref()
         .unwrap()
         .run_id();
-    candidate.metadata.history_generation_run_id = Some(predecessor);
+    candidate.metadata.native_generation_run_id = Some(predecessor);
     let successor = RunId::new_v4();
     let mut owner = GuardedFinalizingHandoffOwner::new(Box::new(
         candidate.into_finalizing_handoff(successor, predecessor),

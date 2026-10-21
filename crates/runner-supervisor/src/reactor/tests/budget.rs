@@ -145,7 +145,7 @@ async fn idle_sandbox_remains_reusable_until_capacity_is_needed() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             parked_at: now - Duration::from_secs(3600),
         },
     )
@@ -391,7 +391,7 @@ async fn budget_pressure_evicts_oldest_idle_regardless_of_age() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             parked_at: now - Duration::from_secs(100),
         },
     )
@@ -404,7 +404,7 @@ async fn budget_pressure_evicts_oldest_idle_regardless_of_age() {
             profile_name: "vm0/large",
             vcpu: 4,
             memory_mb: 8192,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             parked_at: now - Duration::from_secs(10),
         },
     )

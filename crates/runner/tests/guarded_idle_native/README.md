@@ -1,5 +1,55 @@
 # Guarded idle terminal fixture
 
+## Guest quiesce cancellation and retained Dirty custody
+
+`quiesce::native_quiesce_loss_retains_original_uncertainty` exercises the
+actual empty quiesce request inside the original public speculative `repark`.
+Genuine unpark/fixed restore and the successful canonical final-exec/fence
+precede this authority; ReadyForPark and physical pause follow it. The original
+empty `OperationsQuiesced` terminal proves the Guest dispatcher fenced
+admission, observed zero pending and checked process containment. A Busy/error
+terminal is never interpreted as that acknowledgement.
+
+Select each combination with `OKOU_TEST_QUIESCE_BOUNDARY=capture|terminal`,
+`OKOU_TEST_QUIESCE_FAULT=drop|observer-unwind|producer-unwind` and
+`OKOU_TEST_QUIESCE_MODE=fresh|snapshot`. Capture precedes dispatch; a held
+terminal proves completed dispatch, never a preterminal acceptance interval.
+Transport producer unwind occurs only after actual terminal delivery and is
+not a successful exchange join.
+
+Unlike normal exec cancellation, this lifecycle RPC does not itself make the
+normal tracker NotParkable. The actual park guard marks policy Dirty after
+quiesce starts, retaining its original normal-operation fence in park custody.
+The shared fixture preserves Uncertain commit/repark/incoming refusal, actual
+Dirty terminal-cleanup refusal, complete original capsule/backing/promotion,
+Executor session/physical history/private/home/payload, full lease and both
+uncertain growth allowances. It sends no recovery resume to reopen this owner.
+Independent observation/acknowledged heartbeat and actual pool/status waits
+remain progress witnesses; required original cleanup IO is not credited.
+
+Preserve original failed driver101/collector1, raw
+`native_quiesce_policy_json`, source/artifact/new matching-snapshot bindings and
+the complete retained original home image. The `native-quiesce-custody-v1`
+consumer checks these actual files and original empty request/ack bytes with
+strict identity, sequence, phase, clock, data, producer and lease contracts.
+Existing fixed-restore/final-exec formats remain compatible.
+
+```sh
+<native-test-binary> quiesce::native_quiesce_loss_retains_original_uncertainty \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/quiesce_report.py <p1-directory>
+```
+
+Require exact committed Host/all current canonical Guests, installed RootFS
+readback/fsck and a new matching snapshot, unchanged supplied policy/P1/guards,
+and independent original source/artifact/evidence replay. Copy original images
+only after positively confirmed collector containment; containment is not
+required saving. Real client/server Busy/admission/resume regressions remain
+ordinary evidence. Native Busy/preterminal/resume and original cleanup IO
+remain unproven. No saving/private-runtime removal/positive exit/full-lease
+release/physical relief, production OOM/shutdown/D/E/P4 or ancestor completion
+follows from these retained uncertainty probes.
+
 ## Final preparation exec cancellation and retained uncertainty
 
 `final_exec::native_final_exec_loss_retains_original_uncertainty` exercises the

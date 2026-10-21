@@ -24,12 +24,12 @@ class Contract:
     name: str
     wire: Callable[..., int]
 
-    def field(self, restore, final_exec):
-        return restore if self.name == "FixedRestore" else final_exec
+    def field(self, restore, final_exec, quiesce):
+        return {"FixedRestore": restore, "FinalExec": final_exec, "Quiesce": quiesce}[self.name]
 
     @property
     def key(self):
-        return self.field("fixed_restore", "final_exec")
+        return self.field("fixed_restore", "final_exec", "quiesce")
 
     @property
     def prefix(self):
@@ -89,9 +89,9 @@ def fixed_wire(value, kind, sequence=None, unix_window=None, history=None):
 def validate(directory, contract):
     wire = contract.wire
     PREFIX, CASES = contract.prefix, contract.cases
-    request_kind = contract.field(0x1a, 0x0b)
-    result_kind = contract.field(0x1b, 0x0e)
-    running = contract.field("running_helper_observed", "running_exec_observed")
+    request_kind = contract.field(0x1a, 0x0b, 0x05)
+    result_kind = contract.field(0x1b, 0x0e, 0x06)
+    running = contract.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")
     directory = pathlib.Path(directory)
     collector = json.loads(retained.regular(directory/"report.json", 1024**2), object_pairs_hook=pressure.unique_object)
     if (collector.get("format") != "runner-memory-calibration-v2" or collector.get("success") is not False
@@ -169,7 +169,7 @@ def validate(directory, contract):
                     unix_window=(terminals[1]["unix_ns"],events[2]["unix_ns"]), history=history)
     exact(captured, {"history_run_id":history,"operation_run_id":operation,"prepare_started_ns":started,
                      "request":captured["request"],"backend_dispatched":False,
-                     contract.field("canonical_fixed_helper", "canonical_final_exec"):True}|LEASE,
+                     contract.field("canonical_fixed_helper", "canonical_final_exec", "canonical_quiesce"):True}|LEASE,
           "fixed request capture changed")
     terminal = case.startswith(contract.name+"-terminal-")
     unwound = "-producer-unwind-" in case
@@ -178,7 +178,7 @@ def validate(directory, contract):
     elif waiting.get("response") is not None:
         raise ValueError("capture was misrepresented as Guest acceptance")
     exact(waiting, {"boundary":"terminal" if terminal else "capture","request":captured["request"],
-                    "response":waiting["response"],contract.field("public_restore_polled_pending", "public_repark_polled_pending"):True,
+                    "response":waiting["response"],contract.field("public_restore_polled_pending", "public_repark_polled_pending", "public_repark_polled_pending"):True,
                     running:False}|LEASE,
           "fixed waiting boundary or custody changed")
     lost_ns = batch.clock(lost.get("lost_ns"),events[3]["monotonic_ns"],events[4]["monotonic_ns"])
@@ -213,8 +213,8 @@ def validate(directory, contract):
     delivered = batch.clock(joined.get("delivery_requested_ns"),events[5]["monotonic_ns"],events[6]["monotonic_ns"])
     finished = batch.clock(joined.get("joined_ns"),delivered,events[6]["monotonic_ns"])
     exact(joined, {"request":captured["request"],"response":joined["response"],"delivery_requested_ns":delivered,"joined_ns":finished,
-                   contract.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero"):True,
-                   contract.field("helper_stdin_stderr_joined", "exec_stdin_stdout_stderr_joined"):True,"exchange_joined":not unwound,
+                   contract.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero", "canonical_quiesce_acknowledged"):True,
+                   contract.field("helper_stdin_stderr_joined", "exec_stdin_stdout_stderr_joined", "guest_dispatcher_completed"):True,"exchange_joined":not unwound,
                    "transport_producer_unwound":unwound,"connection_retained_pending":not unwound,
                    running:False,"ordinary_reuse_reopened":False}|LEASE,"fixed late-result joins or evidence limits changed")
     home = refused.get("original_home",{})
@@ -226,9 +226,12 @@ def validate(directory, contract):
     exact(home, {"path":str(expected_path),"bytes":16384*1024**2,"filesystem_uuid":home["filesystem_uuid"],
                  "superblock_sha256":home["superblock_sha256"]},"fixed home profile changed")
     error = refused.get("error")
-    if not isinstance(error,str) or len(error)>4096 or "normal operations are not available on this connection" not in error:
-        raise ValueError("actual NotParkable required-cleanup refusal missing")
-    exact(refused, {"error":error,"normal_operations_not_parkable":True,"completed_lease_refused":True,
+    expected_error = contract.field("normal operations are not available on this connection",
+        "normal operations are not available on this connection",
+        "park policy dirty while unpark is a no-op: park attempt dropped after guest quiesce started")
+    if not isinstance(error,str) or len(error)>4096 or expected_error not in error:
+        raise ValueError("actual operation-specific required-cleanup refusal missing")
+    exact(refused, {"error":error,contract.field("normal_operations_not_parkable", "normal_operations_not_parkable", "park_policy_dirty"):True,"completed_lease_refused":True,
                     "required_saving_complete":False,"cleanup_complete":False,"original_home":home}|LEASE,
           "fixed refused saving was credited as complete")
     attempt,attempt_sandbox = (later.identifier(owners.get(key)) for key in ("promotion_probe_run_id","promotion_probe_sandbox_id"))
@@ -241,8 +244,9 @@ def validate(directory, contract):
         "original_backing_retained":True,"original_exit_polled_pending":True,"tracker_joined":True,
         "heartbeat_provider_peer_joined":True,"accounting":accounting,"required_saving_complete":False,"cleanup_complete":False,
         "physical_relief_proven":False,"memory_credit":False,
-        contract.field("running_helper_boundary", "running_exec_boundary"):"blocked",
-        "preterminal_acceptance_boundary":"blocked","original_cleanup_io_progress":"blocked_not_parkable"}|LEASE,
+        contract.field("running_helper_boundary", "running_exec_boundary", "native_busy_resume_boundary"):"blocked",
+        "preterminal_acceptance_boundary":"blocked",
+        "original_cleanup_io_progress":contract.field("blocked_not_parkable", "blocked_not_parkable", "blocked_dirty")}|LEASE,
         "fixed unresolved owners/growth were released or acceptance fabricated")
     image = directory/"retained-home.ext4"
     # fstat and the full superblock bind the original regular retained image.
@@ -269,5 +273,5 @@ def validate(directory, contract):
         "original_collector_success":False,"collector_cleanup_intervened":collector["cleanup_intervened"],
         "original_complete_data_verified":True,"required_saving_complete":False,"cleanup_complete":False,
         "physical_relief_proven":False,"memory_credit":False,running:False,
-        "blocked_boundaries":["preterminal_acceptance",contract.field("running_helper","running_exec"),"original_cleanup_io_progress"],
+        "blocked_boundaries":["preterminal_acceptance",contract.field("running_helper","running_exec","native_busy_or_resume"),"original_cleanup_io_progress"],
         "native_wait":report.window(samples,events[2]["monotonic_ns"],events[6]["monotonic_ns"])}

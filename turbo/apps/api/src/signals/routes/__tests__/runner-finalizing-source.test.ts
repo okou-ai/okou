@@ -57,7 +57,6 @@ describe("independent finalizing resource source", () => {
             reusableSandbox: {
               profile: "vm0/default",
               sourceRunId: unrelatedSource,
-              historyGenerationRunId: f.run.runId,
             },
           },
         ],
@@ -359,7 +358,13 @@ describe("independent finalizing resource source", () => {
         {
           reuseKey: `thread:${f.run.threadId}`,
           lastCompletedAt: nowDate().toISOString(),
-          homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
+          homeCaches: [
+            {
+              sourceRunId: "33333333-3333-4333-8333-333333333333",
+              profile: "vm0/default",
+              homeAffinityVersion: 1,
+            },
+          ],
         },
       ],
     });

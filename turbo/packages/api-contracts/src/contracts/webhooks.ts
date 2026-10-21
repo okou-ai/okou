@@ -923,7 +923,6 @@ const sandboxOperationSchema = z.object({
   handoff_path: z.string().max(64).optional(),
   runner_id: z.uuid().optional(),
   runner_heartbeat_generation: z.number().int().nonnegative().optional(),
-  history_generation_run_id: z.uuid().optional(),
   inventory_loaded: z.boolean().optional(),
   inventory_observed_states: z.number().int().nonnegative().optional(),
   inventory_output_states: z.number().int().nonnegative().optional(),

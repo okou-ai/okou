@@ -786,7 +786,6 @@ impl JobProvider for ApiProvider {
                     }
                     let run_id = job.run_id;
                     let reuse_key = job.reuse_key().map(str::to_owned);
-                    let history_generation_run_id = job.history_generation_run_id;
                     let runner_preference_context =
                         match parse_runner_preference(job.runner_preference) {
                             Ok(context) => context,
@@ -803,7 +802,6 @@ impl JobProvider for ApiProvider {
                     info!(run_id = %run_id, %profile, poll_reason = ?reason, "poll: job found");
                     let mut candidate = JobCandidate::new(run_id, profile)
                         .with_reuse_key(reuse_key)
-                        .with_history_generation_run_id(history_generation_run_id)
                         .with_parsed_runner_preference_context(runner_preference_context)
                         .with_discovery_source(JobDiscoverySource::Poll)
                         .with_poll_reason(poll_reason_value(reason))
@@ -2862,7 +2860,6 @@ mod tests {
                 reusable_sandbox: runner_types::types::ReusableSandboxState {
                     source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
-                    history_generation_run_id: None,
                 },
             }],
             held_home_states: vec![runner_types::types::HeldHomeState {
@@ -4238,7 +4235,7 @@ mod tests {
 
         let expired_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            crate::provider::RunnerPreferenceTarget::ExactSandbox,
+            crate::provider::RunnerPreferenceTarget::SourceSandbox(RunId::new_v4()),
             Instant::now() - Duration::from_secs(1),
         );
         let expired = JobCandidate::new(
@@ -4494,8 +4491,6 @@ mod tests {
     async fn discover_returns_http_poll_job_after_wakeup() {
         let server = MockServer::start_async().await;
         let run_id: RunId = "00000000-0000-0000-0000-000000000003".parse().unwrap();
-        let history_generation_run_id: RunId =
-            "00000000-0000-0000-0000-000000000004".parse().unwrap();
         let mock = server
             .mock_async(|when, then| {
                 when.method(POST).path(routes::runners::poll::POLL.path);
@@ -4504,7 +4499,6 @@ mod tests {
                         "runId": run_id,
                         "experimentalProfile": "vm0/large",
                         "cliAgentSessionId": "sess-poll",
-                        "historyGenerationRunId": history_generation_run_id,
                         "runnerPreference": {
                             "kind": "preference",
                             "runnerIdentity": {
@@ -4533,10 +4527,6 @@ mod tests {
 
         assert_eq!(discovered.run_id(), run_id);
         assert_eq!(discovered.profile_name(), "vm0/large");
-        assert_eq!(
-            discovered.history_generation_run_id(),
-            Some(history_generation_run_id)
-        );
         let preference = discovered
             .runner_preference()
             .expect("canonical preference should be parsed");

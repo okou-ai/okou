@@ -167,7 +167,8 @@ pub async fn exercise(setup: Setup<'_>) -> TestResult<()> {
         .with_sandbox_id(id)
         .with_profile_name(fixture::PROFILE)
         .with_rootfs_hash(&rootfs)
-        .with_history_generation_run_id(original)
+        .with_source_run_id(original)
+        .with_native_generation_run_id(original)
         .with_home_promotion(promotion)
         .with_storage_fingerprints(prepared.storage);
     let mut candidate = if let Some(identity) = prepared.identity {
@@ -337,7 +338,8 @@ impl Histories {
             .with_sandbox_id(id)
             .with_profile_name(fixture::PROFILE)
             .with_rootfs_hash(&context.rootfs_hash)
-            .with_history_generation_run_id(run)
+            .with_source_run_id(run)
+            .with_native_generation_run_id(run)
             .with_restored_session_identity(identity)
             .with_storage_fingerprints(prepared.storage)
             .build();
@@ -494,7 +496,8 @@ impl Histories {
             .with_sandbox_id(history.id)
             .with_profile_name(fixture::PROFILE)
             .with_rootfs_hash(&context.rootfs_hash)
-            .with_history_generation_run_id(run)
+            .with_source_run_id(run)
+            .with_native_generation_run_id(run)
             .with_storage_fingerprints(prepared.storage)
             .with_restored_session_identity(identity)
             .with_home_promotion(promotion)

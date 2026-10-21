@@ -46,7 +46,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
         lastCompletedAt: "2026-10-12T00:59:00.000Z",
         reusableSandbox: {
           profile: "vm0/default",
-          historyGenerationRunId: randomUUID(),
+          sourceRunId: randomUUID(),
         },
       },
     ],
@@ -55,7 +55,11 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
         reuseKey: "thread:storage",
         lastCompletedAt: "2026-10-12T00:59:00.000Z",
         homeCaches: [
-          { profile: "vm0/default", homeAffinityVersion: 1 as const },
+          {
+            profile: "vm0/default",
+            homeAffinityVersion: 1 as const,
+            sourceRunId: randomUUID(),
+          },
         ],
       },
     ],

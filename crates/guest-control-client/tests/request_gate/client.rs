@@ -8,7 +8,8 @@ use guest_control_proto::{
     ExecCapturedOutput, ExecLifecyclePolicy, ExecOutputPolicy, ExecOutputStream, ExecProcessRole,
     ExecTermination, ExecTimeoutPolicy, GuestStateRestoreTimezone, MSG_ERROR, MSG_EXEC_OUTPUT,
     MSG_EXEC_RESULT, MSG_EXEC_START, MSG_EXEC_STARTED, MSG_GUEST_STATE_RESTORE,
-    MSG_GUEST_STATE_RESTORE_RESULT, MSG_OPERATIONS_QUIESCED, MSG_QUIESCE_OPERATIONS,
+    MSG_GUEST_STATE_RESTORE_RESULT, MSG_OPERATIONS_QUIESCED, MSG_OPERATIONS_RESUMED,
+    MSG_QUIESCE_OPERATIONS, MSG_RESUME_OPERATIONS,
 };
 
 use super::support::*;
@@ -168,6 +169,80 @@ async fn quiesce_holds_only_its_actual_sequence_and_preserves_error_terminal() {
             kind
         );
         finish(client, peer, connection).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn cancelled_quiesce_preserves_external_host_fence_through_late_ack_and_resume() {
+    for terminal_held in [false, true] {
+        for busy in [false, true] {
+            let (client, mut peer, mut controls, mut exchange, connection) = setup().await.unwrap();
+            let fence = client.try_fence_normal_operations().unwrap();
+            controls.arm(RequestKind::Quiesce).unwrap();
+            let mut operation = Box::pin(client.quiesce_operations(DEADLINE));
+            let captured = capture(&mut controls, operation.as_mut()).await.unwrap();
+            assert_eq!(captured.message_type(), MSG_QUIESCE_OPERATIONS);
+            let (kind, payload) = if busy {
+                (
+                    MSG_ERROR,
+                    guest_control_proto::encode_error("guest operations still pending: 1"),
+                )
+            } else {
+                (MSG_OPERATIONS_QUIESCED, Vec::new())
+            };
+            let mut dispatch = Some(controls.dispatch);
+            if terminal_held {
+                dispatch.take().unwrap().send(()).unwrap();
+                assert_eq!(peer.next().await.unwrap().raw, captured.raw());
+                peer.send(kind, captured.sequence(), &payload)
+                    .await
+                    .unwrap();
+                bounded(&mut controls.response).await.unwrap().unwrap();
+            }
+            pending_once(operation.as_mut()).await;
+            drop(operation);
+            if let Some(dispatch) = dispatch {
+                dispatch.send(()).unwrap();
+                assert_eq!(peer.next().await.unwrap().raw, captured.raw());
+                peer.send(kind, captured.sequence(), &payload)
+                    .await
+                    .unwrap();
+                bounded(&mut controls.response).await.unwrap().unwrap();
+            }
+            controls
+                .delivery
+                .send(ResponseDisposition::Deliver)
+                .unwrap();
+            let joined = bounded(exchange.join()).await.unwrap().unwrap();
+            assert_eq!(joined.request, captured);
+            assert_eq!(joined.response.message_type(), kind);
+            status_roundtrip(&client, &mut peer).await.unwrap();
+            assert!(matches!(
+                client.try_fence_normal_operations(),
+                Err(NormalOperationFenceRejection::AlreadyFenced)
+            ));
+            assert!(restore(&client).await.is_err());
+            let resume = client.resume_operations(DEADLINE);
+            let response = async {
+                let request = peer.next().await.unwrap();
+                assert_eq!(request.message.msg_type, MSG_RESUME_OPERATIONS);
+                peer.send(MSG_OPERATIONS_RESUMED, request.message.seq, &[])
+                    .await
+                    .unwrap();
+            };
+            let (resumed, ()) = tokio::join!(resume, response);
+            resumed.unwrap();
+            assert!(matches!(
+                client.try_fence_normal_operations(),
+                Err(NormalOperationFenceRejection::AlreadyFenced)
+            ));
+            assert!(restore(&client).await.is_err());
+            // Lifecycle cancellation is not normal-request cancellation. Only
+            // the external owner releases this independent host boundary.
+            drop(fence);
+            drop(client.try_fence_normal_operations().unwrap());
+            finish(client, peer, connection).await.unwrap();
+        }
     }
 }
 

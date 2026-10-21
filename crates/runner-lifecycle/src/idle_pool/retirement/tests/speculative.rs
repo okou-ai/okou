@@ -14,7 +14,7 @@ use super::*;
 
 fn owner(fixture: &mut JobFixture) -> GuardedSpeculativeIdleOwner {
     let mut candidate = fixture.candidate();
-    candidate.metadata.history_generation_run_id = Some(RunId::new_v4());
+    candidate.metadata.native_generation_run_id = Some(RunId::new_v4());
     candidate.metadata.guest_timezone_intent = GuestTimezoneIntent::Default;
     let mut pool = IdlePool::new(IdlePoolConfig::default());
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
@@ -152,7 +152,7 @@ async fn repark_preserves_original_timestamp_history_and_complete_lease() {
     let mut candidate = fixture.candidate();
     let producer = candidate.metadata.source_run_id.unwrap();
     let history = RunId::new_v4();
-    candidate.metadata.history_generation_run_id = Some(history);
+    candidate.metadata.native_generation_run_id = Some(history);
     let mut pool = IdlePool::new(IdlePoolConfig::default());
     let timestamp = std::time::Instant::now() - Duration::from_secs(60);
     assert!(matches!(
@@ -175,7 +175,7 @@ async fn repark_preserves_original_timestamp_history_and_complete_lease() {
         .into_parked_entry_preserving_owner()
         .unwrap_or_else(|_| panic!("parked owner"));
     assert_eq!(entry.parked_at, timestamp);
-    assert_eq!(entry.metadata.history_generation_run_id, Some(history));
+    assert_eq!(entry.metadata.native_generation_run_id, Some(history));
     assert_eq!(entry.metadata.source_run_id, Some(producer));
     let calls = fixture.overrides.exec_calls();
     let call = calls
@@ -280,7 +280,7 @@ async fn promotion_identity_mismatch_and_missing_history_do_not_abandon_required
         let mut fixture = JobFixture::new("thread:spec-identity", Some(backing)).await;
         let mut candidate = fixture.candidate();
         if !missing {
-            candidate.metadata.history_generation_run_id = Some(RunId::new_v4());
+            candidate.metadata.native_generation_run_id = Some(RunId::new_v4());
         }
         let mut pool = IdlePool::new(IdlePoolConfig::default());
         assert!(matches!(pool.park(candidate), ParkResult::Parked));

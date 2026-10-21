@@ -52,7 +52,8 @@ describe("peer finalizing reader and hostname preparation", () => {
       runnerIdentity: { runnerId: heartbeat.runnerId, heartbeatGeneration: 7 },
       tier,
       expiresAt: "2026-10-20T00:00:49.000Z",
-      ...(tier === "finalizingPredecessor" ||
+      ...(tier === "exactSandbox" ||
+      tier === "finalizingPredecessor" ||
       tier === "peerFinalizingPredecessor"
         ? { finalizingSourceRunId: "33333333-3333-4333-8333-333333333333" }
         : {}),

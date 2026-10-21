@@ -55,7 +55,7 @@ async fn claim_while_blank_publication_is_held(origin: PublicationOrigin, wait: 
                 profile_name: "vm0/default",
                 vcpu: 2,
                 memory_mb: 4096,
-                history_generation_run_id: None,
+                native_generation_run_id: None,
                 parked_at: std::time::Instant::now() - Duration::from_secs(40 * 60),
             },
         )

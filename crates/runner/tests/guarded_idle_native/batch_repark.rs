@@ -45,7 +45,7 @@ impl Owner {
                 .speculative
                 .as_mut()
                 .ok_or_else(|| io::Error::other("physical rollback owner absent"))?;
-            if !owner.matches_claim(Some(&context.reuse_key), Some(history), fixture::PROFILE) {
+            if !owner.matches_source_claim(Some(&context.reuse_key), history, fixture::PROFILE) {
                 return Err(
                     io::Error::other("physical rollback changed original claim metadata").into(),
                 );
@@ -83,7 +83,7 @@ impl Owner {
                 .map_err(io::Error::other)?;
             let repark_completed_ns = evidence::clocks()?.0;
             proof.require_full_lease()?;
-            if !owner.matches_claim(Some(&context.reuse_key), Some(history), fixture::PROFILE)
+            if !owner.matches_source_claim(Some(&context.reuse_key), history, fixture::PROFILE)
                 || backing.identity() != original_backing
                 || context.budget.allocated() != (2, 4096, 1)
                 || futures_util::poll!(Box::pin(backing.exit_confirmed()).as_mut()).is_ready()
