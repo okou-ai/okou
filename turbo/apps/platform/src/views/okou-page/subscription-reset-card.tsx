@@ -8,13 +8,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import {
-  type Loadable,
-  useGet,
-  useLastLoadable,
-  useLoadable,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -59,14 +54,16 @@ function resetSupported(account: ModelProviderResponse | null): boolean {
   );
 }
 
-function resetActionState(
-  attempt: Loadable<SubscriptionResetOutcome | null>,
-): SubscriptionResetActionState {
-  if (attempt.state === "loading") {
-    return "loading";
-  }
+function resetActionState(attempt: {
+  readonly state: "idle" | "loading" | "hasData" | "hasError";
+  readonly data?: SubscriptionResetOutcome;
+  readonly error?: unknown;
+}): SubscriptionResetActionState {
   if (attempt.state === "hasError") {
     return isAbortError(attempt.error) ? "idle" : "error";
+  }
+  if (attempt.state === "loading") {
+    return "loading";
   }
   return attempt.data ?? "idle";
 }
@@ -151,8 +148,7 @@ function SubscriptionResetCardContent({
 }) {
   const loadable = useLoadable(signals.status$);
   const last = useLastLoadable(signals.status$);
-  const attempt = useLoadable(signals.attempt$);
-  const confirm = useSet(signals.confirm$);
+  const [attempt, confirm] = useLoadableSet(signals.confirm$);
   const actionState = resetActionState(attempt);
   const status =
     loadable.state === "hasData"

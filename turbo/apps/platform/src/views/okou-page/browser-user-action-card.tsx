@@ -16,13 +16,7 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
-import {
-  useGet,
-  useLastLoadable,
-  useLoadable,
-  useSet,
-  type Loadable,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
@@ -1646,6 +1640,13 @@ function readyEntryAction(entry: BrowserInputEntryLoadable) {
     : null;
 }
 
+function entryCannotSubmit(entry: BrowserInputEntryLoadable): boolean {
+  return (
+    entry.state === "hasError" ||
+    (entry.state === "hasData" && entry.data.kind !== "ready")
+  );
+}
+
 /** A cancelled owner is not a failed write. */
 function mutationFailed(mutation: {
   readonly state: string;
@@ -1662,13 +1663,39 @@ function hasNativeBrowserInputs(action: PendingBrowserInputAction): boolean {
   });
 }
 
+/**
+ * The card owns its writes, so a callback failure that follows a submit or
+ * cancel is still shown after the pending form gives way to the result.
+ */
+function useBrowserInputMutations(signals: BrowserUserActionSignals) {
+  const [submitLoadable, submit] = useLoadableSet(signals.submit$);
+  const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
+  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
+  return {
+    submitLoadable,
+    submit,
+    cancelLoadable,
+    cancel,
+    continueLoadable,
+    continueAction,
+  };
+}
+
+type BrowserInputMutations = ReturnType<typeof useBrowserInputMutations>;
+
 interface PendingFormProps {
   readonly signals: BrowserUserActionSignals;
+  readonly mutations: BrowserInputMutations;
   readonly request: PendingBrowserInputRequest;
   readonly showTitle?: boolean;
 }
 
-function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
+function PendingForm({
+  signals,
+  mutations,
+  request,
+  showTitle = true,
+}: PendingFormProps) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
@@ -1680,7 +1707,6 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   const fileDraft = useGet(signals.fileDraft$);
   // Keep the settled check while a notification re-reads the request.
   const entry = useLastLoadable(signals.entry$);
-  const mutation = useLoadable(signals.mutation$);
   const updateDraft = useSet(signals.updateDraft$);
   const removeDraft = useSet(signals.removeDraft$);
   const updateChoiceDraft = useSet(signals.updateChoiceDraft$);
@@ -1696,17 +1722,14 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   const updateFileDraft = useSet(signals.updateFileDraft$);
   const removeFileDraft = useSet(signals.removeFileDraft$);
   const formRef = useSet(signals.formRef$);
-  const [submitLoadable, submit] = useLoadableSet(signals.submit$);
-  const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
+  const { submitLoadable, submit, cancelLoadable, cancel } = mutations;
   const submitting = submitLoadable.state === "loading";
   const cancelling = cancelLoadable.state === "loading";
-  const busy = mutation.state === "loading";
+  const busy = submitting || cancelling;
   const cancelFailed = mutationFailed(cancelLoadable);
   const failed = mutationFailed(submitLoadable) || cancelFailed;
   const entryAction = readyEntryAction(entry);
-  const entryUnavailable =
-    entry.state === "hasError" ||
-    (entry.state === "hasData" && entry.data.kind !== "ready");
+  const entryUnavailable = entryCannotSubmit(entry);
   const activeAction = entryAction ?? request.action;
   const selectValuesValid = requiredSelectsSatisfied(activeAction, choiceDraft);
   const checkboxValuesValid = requiredCheckboxesSatisfied(
@@ -1802,17 +1825,15 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
 
 function PendingFormWithCheck({
   signals,
+  mutations,
   request,
   showTitle = true,
-}: {
-  readonly signals: BrowserUserActionSignals;
-  readonly request: PendingBrowserInputRequest;
-  readonly showTitle?: boolean;
-}) {
+}: PendingFormProps) {
   const entry = useLastLoadable(signals.entry$);
   return (
     <PendingForm
       signals={signals}
+      mutations={mutations}
       request={{
         ...request,
         action: readyEntryAction(entry) ?? request.action,
@@ -1824,9 +1845,11 @@ function PendingFormWithCheck({
 
 function PendingInlineAction({
   signals,
+  mutations,
   request,
 }: {
   readonly signals: BrowserUserActionSignals;
+  readonly mutations: BrowserInputMutations;
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
@@ -1868,6 +1891,7 @@ function PendingInlineAction({
             </DialogHeader>
             <PendingFormWithCheck
               signals={signals}
+              mutations={mutations}
               request={request}
               showTitle={false}
             />
@@ -1902,6 +1926,7 @@ function BrowserUserActionCardContent({
   callbackDelivered,
   callbackFailed,
   continuing,
+  mutations,
   onContinue,
   requestLoadable,
   signals,
@@ -1910,6 +1935,7 @@ function BrowserUserActionCardContent({
   readonly callbackDelivered: boolean;
   readonly callbackFailed: boolean;
   readonly continuing: boolean;
+  readonly mutations: BrowserInputMutations;
   readonly onContinue: () => void;
   readonly requestLoadable: Loadable<BrowserUserActionRequestState>;
   readonly signals: BrowserUserActionSignals;
@@ -1957,9 +1983,17 @@ function BrowserUserActionCardContent({
     };
     content =
       variant === "inline" ? (
-        <PendingInlineAction signals={signals} request={pendingRequest} />
+        <PendingInlineAction
+          signals={signals}
+          mutations={mutations}
+          request={pendingRequest}
+        />
       ) : (
-        <PendingFormWithCheck signals={signals} request={pendingRequest} />
+        <PendingFormWithCheck
+          signals={signals}
+          mutations={mutations}
+          request={pendingRequest}
+        />
       );
   } else {
     content = (
@@ -1989,18 +2023,30 @@ export function BrowserUserActionCard({
   // Keep the settled state while a notification re-reads it, so an open
   // dialog is not remounted by an unrelated change in the same thread.
   const requestLoadable = useLastLoadable(signals.request$);
-  const mutation = useLoadable(signals.mutation$);
-  const continueAction = useSet(signals.continue$);
-  const callbackFailed =
-    mutation.state === "hasError" &&
-    mutation.error instanceof BrowserUserActionCallbackError;
+  const mutations = useBrowserInputMutations(signals);
+  const { submitLoadable, cancelLoadable, continueLoadable, continueAction } =
+    mutations;
+  // Any of this card's writes may end with the agent callback failing.
+  const callbackFailed = [
+    submitLoadable,
+    cancelLoadable,
+    continueLoadable,
+  ].some((loadable) => {
+    return (
+      loadable.state === "hasError" &&
+      loadable.error instanceof BrowserUserActionCallbackError
+    );
+  });
   const action =
     requestLoadable.state === "hasData" &&
     requestLoadable.data.kind === "action"
       ? requestLoadable.data.action
       : undefined;
   const callbackDelivered = action?.callbackDelivered === true;
-  const continuing = mutation.state === "loading";
+  const continuing =
+    submitLoadable.state === "loading" ||
+    cancelLoadable.state === "loading" ||
+    continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
   };
@@ -2010,6 +2056,7 @@ export function BrowserUserActionCard({
         callbackDelivered={callbackDelivered}
         callbackFailed={callbackFailed}
         continuing={continuing}
+        mutations={mutations}
         onContinue={onContinue}
         requestLoadable={requestLoadable}
         signals={signals}

@@ -118,8 +118,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
   readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
   readonly removeFileDraft$: Command<void, [string]>;
-  /** The latest submit, cancel or continue; every view of this card reads it. */
-  readonly mutation$: Computed<Promise<unknown> | null>;
   /**
    * The website check for a pending input form, or null when the website
    * cannot take this input. Evaluated only while a pending form reads it.
@@ -760,7 +758,6 @@ interface BrowserUserActionMutationContext {
   readonly fileDraft$: BrowserUserActionSignals["fileDraft$"];
   readonly rejectEntry$: Command<void, []>;
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
-  readonly trackMutation$: Command<void, [Promise<unknown>]>;
   readonly deliverCallback$: Command<
     Promise<void>,
     [string, ChatActionCallbackIds, AbortSignal]
@@ -1328,7 +1325,6 @@ function createSubmitSignal({
   fileDraft$,
   rejectEntry$,
   clearDraft$,
-  trackMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["submit$"] {
   // The form submits the action it shows: the checked one, or the requested
@@ -1405,11 +1401,7 @@ function createSubmitSignal({
       }
     },
   );
-  return command(({ set }, action: BrowserInputAction, signal: AbortSignal) => {
-    const submitted = set(submit$, action, signal);
-    set(trackMutation$, submitted);
-    return submitted;
-  });
+  return submit$;
 }
 
 function createCancelSignal({
@@ -1417,7 +1409,6 @@ function createCancelSignal({
   request$,
   write$,
   clearDraft$,
-  trackMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["cancel$"] {
   const cancel$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -1445,17 +1436,12 @@ function createCancelSignal({
       signal.throwIfAborted();
     }
   });
-  return command(({ set }, signal: AbortSignal) => {
-    const cancelled = set(cancel$, signal);
-    set(trackMutation$, cancelled);
-    return cancelled;
-  });
+  return cancel$;
 }
 
 function createContinueSignal({
   descriptor,
   request$,
-  trackMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["continue$"] {
   const continue$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -1481,14 +1467,10 @@ function createContinueSignal({
     }
     await set(deliverCallback$, callback.prompt, callback.ids, signal);
   });
-  return command(({ set }, signal: AbortSignal) => {
-    const continued = set(continue$, signal);
-    set(trackMutation$, continued);
-    return continued;
-  });
+  return continue$;
 }
 
-/** A chat callback failed after the website accepted the action. */
+/** The website accepted the action, but the agent was not notified. */
 export class BrowserUserActionCallbackError extends Error {
   constructor(cause: unknown) {
     super("Browser user-action callback failed", { cause });
@@ -1521,16 +1503,7 @@ function createMutationSignals({
   | "fileDraft$"
   | "clearDraft$"
   | "rejectEntry$"
->): Pick<
-  BrowserUserActionSignals,
-  "mutation$" | "submit$" | "cancel$" | "continue$"
-> {
-  // Every view of this card derives progress and callback failure from the
-  // latest mutation, so a second view cannot start a competing write.
-  const internalMutation$ = state<Promise<unknown> | null>(null);
-  const trackMutation$ = command(({ set }, mutation: Promise<unknown>) => {
-    set(internalMutation$, mutation);
-  });
+>): Pick<BrowserUserActionSignals, "submit$" | "cancel$" | "continue$"> {
   const write$ = createBrowserMutationSignal(descriptor);
   const deliverCallback$ = command(
     async (
@@ -1565,14 +1538,10 @@ function createMutationSignals({
     fileDraft$,
     rejectEntry$,
     clearDraft$,
-    trackMutation$,
     deliverCallback$,
   };
 
   return {
-    mutation$: computed((get) => {
-      return get(internalMutation$);
-    }),
     submit$: createSubmitSignal(context),
     cancel$: createCancelSignal(context),
     continue$: createContinueSignal(context),
