@@ -67,6 +67,41 @@ async fn expect_client_close(conn: &mut WsStream) {
     expect_websocket_close_frame(conn).await.unwrap();
 }
 
+fn backlog_warnings(captured: &CapturedEvents) -> Vec<tracing_test_support::CapturedEvent> {
+    captured
+        .entries()
+        .into_iter()
+        .filter(|event| {
+            event
+                .fields
+                .get("message")
+                .is_some_and(|m| m.starts_with("Ably event consumer backlog"))
+        })
+        .collect()
+}
+
+async fn send_numbered_burst(conn: &mut WsStream, first: usize, count: usize) {
+    send_protocol(
+        conn,
+        ProtocolMessage {
+            action: action::MESSAGE,
+            channel: Some("ch".into()),
+            channel_serial: Some(format!("burst-{first}")),
+            messages: Some(
+                (first..first + count)
+                    .map(|i| AblyMessage {
+                        id: Some(format!("burst-{i}")),
+                        data: Some(serde_json::json!(i)),
+                        ..Default::default()
+                    })
+                    .collect(),
+            ),
+            ..Default::default()
+        },
+    )
+    .await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn burst_is_lossless_fifo_and_sustained_backlog_warnings_are_bounded() {
     const COUNT: usize = 500;
@@ -89,25 +124,7 @@ async fn burst_is_lossless_fifo_and_sustained_backlog_warnings_are_bounded() {
             )
             .await
             .unwrap();
-        send_protocol(
-            &mut conn,
-            ProtocolMessage {
-                action: action::MESSAGE,
-                channel: Some("ch".into()),
-                channel_serial: Some("burst-serial".into()),
-                messages: Some(
-                    (0..COUNT)
-                        .map(|i| AblyMessage {
-                            id: Some(format!("burst-{i}")),
-                            data: Some(serde_json::json!(i)),
-                            ..Default::default()
-                        })
-                        .collect(),
-                ),
-                ..Default::default()
-            },
-        )
-        .await;
+        send_numbered_burst(&mut conn, 0, COUNT).await;
         // A control PONG proves the whole data message was read without relying on protocol PING support.
         conn.send(WsMessage::Ping(b"burst-processed".as_slice().into()))
             .await
@@ -132,19 +149,31 @@ async fn burst_is_lossless_fifo_and_sustained_backlog_warnings_are_bounded() {
         .await
         .unwrap();
     wait_for_test_observation(processed_rx, "burst dispatch without consumer progress").await;
-    let warnings = || {
-        captured
-            .entries()
-            .into_iter()
-            .filter(|event| {
-                event
-                    .fields
-                    .get("message")
-                    .is_some_and(|m| m.starts_with("Ably event consumer backlog"))
-            })
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(warnings().len(), 1);
+    let warnings = || backlog_warnings(&captured);
+    assert!(warnings().is_empty(), "a burst has not yet persisted");
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(5)).await;
+    tokio::time::resume();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while warnings().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        warnings().len(),
+        1,
+        "sustained backlog warns without new data"
+    );
+    assert!(
+        warnings()[0]
+            .fields
+            .get("event_backlog_duration_ms")
+            .and_then(|value| value.parse::<u128>().ok())
+            .is_some_and(|duration| duration >= 5_000),
+        "the warning reports its sustained duration"
+    );
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(60)).await;
     tokio::time::resume();
@@ -158,7 +187,7 @@ async fn burst_is_lossless_fifo_and_sustained_backlog_warnings_are_bounded() {
     assert_eq!(
         warnings().len(),
         2,
-        "one immediate warning and one timer warning with no new data"
+        "one duration-qualified warning and one rate-limited repeat"
     );
     assert_eq!(
         warnings()[1]
@@ -194,6 +223,125 @@ async fn burst_is_lossless_fifo_and_sustained_backlog_warnings_are_bounded() {
     );
     sub.close_and_wait().await.unwrap();
     join_server_task(server, "burst peer").await.unwrap();
+}
+
+async fn backlog_duration_restarts_after_drain(remaining: usize) {
+    const COUNT: usize = 64;
+    let refill_count = COUNT - remaining;
+    let http = MockServer::start();
+    mock_token_endpoint(&http, "testKey.testId");
+    let ws = MockAblyServer::start().await.unwrap();
+    let port = ws.port;
+    let (processed_tx, processed_rx) = oneshot::channel();
+    let (refill_tx, refill_rx) = oneshot::channel();
+    let (refilled_tx, refilled_rx) = oneshot::channel();
+    let (check_tx, check_rx) = oneshot::channel();
+    let (checked_tx, checked_rx) = oneshot::channel();
+    let (close_tx, close_rx) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let mut conn = ws
+            .accept_and_handshake_with_opts(
+                "ch",
+                "conn-1",
+                HandshakeOptions {
+                    max_idle_interval_ms: 0,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        send_numbered_burst(&mut conn, 0, COUNT).await;
+        protocol_ping(&mut conn, "first-burst-processed").await;
+        processed_tx.send(()).unwrap();
+        refill_rx.await.unwrap();
+        send_numbered_burst(&mut conn, COUNT, refill_count).await;
+        protocol_ping(&mut conn, "refill-processed").await;
+        refilled_tx.send(()).unwrap();
+        check_rx.await.unwrap();
+        protocol_ping(&mut conn, "original-deadline-passed").await;
+        checked_tx.send(()).unwrap();
+        close_rx.await.unwrap();
+        expect_client_close(&mut conn).await;
+    });
+    let captured = CapturedEvents::default();
+    let _guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    let mut sub = subscribe(test_config(port, http.port(), "ch"))
+        .await
+        .unwrap();
+    wait_for_test_observation(processed_rx, "first backlog episode armed").await;
+    assert!(backlog_warnings(&captured).is_empty());
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::time::resume();
+    expect_connected(&mut sub, "initial Connected remains first")
+        .await
+        .unwrap();
+    for i in 0..refill_count {
+        match expect_event(&mut sub, "drain below the warning depth")
+            .await
+            .unwrap()
+        {
+            Event::Message(message) => assert_eq!(message.data, serde_json::json!(i)),
+            other => panic!("expected message {i}, got {other:?}"),
+        }
+    }
+    // No event-loop observation occurs between the receiver's threshold exit and refill.
+    refill_tx.send(()).unwrap();
+    wait_for_test_observation(refilled_rx, "fresh backlog episode armed").await;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(3)).await;
+    tokio::time::resume();
+    check_tx.send(()).unwrap();
+    wait_for_test_observation(checked_rx, "control progress after the old deadline").await;
+    assert!(
+        backlog_warnings(&captured).is_empty(),
+        "short bursts do not inherit the previous episode's duration"
+    );
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::time::resume();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while backlog_warnings(&captured).is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let warnings = backlog_warnings(&captured);
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(
+        warnings[0].fields.get("event_backlog").map(String::as_str),
+        Some("64"),
+        "the new episode qualifies at the inclusive depth threshold"
+    );
+    for i in refill_count..COUNT + refill_count {
+        match expect_event(&mut sub, "FIFO across a threshold exit and refill")
+            .await
+            .unwrap()
+        {
+            Event::Message(message) => {
+                assert_eq!(message.id, Some(format!("burst-{i}")));
+                assert_eq!(message.data, serde_json::json!(i));
+            }
+            other => panic!("expected message {i}, got {other:?}"),
+        }
+    }
+    close_tx.send(()).unwrap();
+    sub.close_and_wait().await.unwrap();
+    join_server_task(server, "backlog episode peer")
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn drained_burst_starts_a_fresh_backlog_duration() {
+    backlog_duration_restarts_after_drain(0).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn partial_drain_below_threshold_starts_a_fresh_backlog_duration() {
+    backlog_duration_restarts_after_drain(63).await;
 }
 
 #[derive(Clone, Copy)]

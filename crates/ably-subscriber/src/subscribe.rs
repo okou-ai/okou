@@ -22,7 +22,8 @@ use crate::types::{Error, Event, SubscribeConfig};
 /// delivery. A slow consumer does not block socket reception, token renewal or reconnection.
 /// Keep polling [`next`](Subscription::next) or close the subscription: queued events consume
 /// memory until read, and an indefinitely slow consumer can grow memory without a fixed limit.
-/// Sustained backlog is reported with rate-limited warnings, without message payloads.
+/// A depth of at least 64 events sustained for five seconds produces a warning, repeated at most
+/// once per minute without message payloads. Dropping below 64 starts a fresh duration window.
 pub struct Subscription {
     rx: EventReceiver,
     close_tx: Option<oneshot::Sender<CloseRequest>>,
