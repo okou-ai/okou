@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   CONNECTOR_ACCOUNT_INSPECTION_MAX_SELECTIONS,
   connectorAccountsContract,
+  type ConnectorAccountMutationIntent,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -239,7 +240,7 @@ describe("connector account lifecycle routes", () => {
     expect(scopeDiff.body.error.message).toBe("Connector account not found");
   });
 
-  it("reports missing declared configuration independently of a custom OAuth credential", async () => {
+  it("keeps OAuth setup and token markers separate through an exact non-default reconnect", async () => {
     const fixture = await seedFixture();
     const actor: ApiTestUser = {
       ...fixture,
@@ -251,31 +252,16 @@ describe("connector account lifecycle routes", () => {
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
     });
-    const definition = await api.createCustomConnector(actor, {
-      displayName: "OAuth with declared configuration",
+    const input = {
+      displayName: "OAuth without declared configuration",
       prefixTemplates: ["https://configured-oauth.example.test/"],
       authMode: "oauth",
-      fields: [
-        { key: "region", label: "Region", kind: "variable", required: true },
-        {
-          key: "access_token",
-          label: "Declared access token variable",
-          kind: "variable",
-          required: true,
-        },
-        {
-          key: "refresh_token",
-          label: "Declared refresh token variable",
-          kind: "variable",
-          required: true,
-        },
-      ],
+      fields: [],
       headerInjections: [
         {
           name: "Authorization",
           valueTemplate: "Bearer {{oauth.access_token}}",
         },
-        { name: "X-Region", valueTemplate: "{{variables.region}}" },
       ],
       queryInjections: [],
       oauthConfig: {
@@ -289,23 +275,27 @@ describe("connector account lifecycle routes", () => {
         scopes: ["read"],
         authorizationParams: {},
       },
-    });
-    const authorization = new URL(
-      await api.startCustomConnectorOAuth2AtBaseUrl(
-        actor,
-        definition.id,
-        "https://api.okou.ai",
-        { intent: "add" },
-      ),
-    );
-    const state = authorization.searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected public OAuth authorization state");
+    } satisfies CreateCustomConnectorBody;
+    const definition = await api.createCustomConnector(actor, input);
+    async function authorize(account: ConnectorAccountMutationIntent) {
+      const authorization = new URL(
+        await api.startCustomConnectorOAuth2AtBaseUrl(
+          actor,
+          definition.id,
+          "https://api.okou.ai",
+          account,
+        ),
+      );
+      const state = authorization.searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected public OAuth authorization state");
+      }
+      await api.completeCustomConnectorOAuth2Callback(
+        { code: `setup-authorization-${randomUUID()}`, state },
+        { baseUrl: "https://api.okou.ai" },
+      );
     }
-    await api.completeCustomConnectorOAuth2Callback(
-      { code: "setup-authorization-code", state },
-      { baseUrl: "https://api.okou.ai" },
-    );
+    await authorize({ intent: "add" });
     const response = await accept(
       accountClient().connections({
         headers: authHeaders(),
@@ -316,8 +306,8 @@ describe("connector account lifecycle routes", () => {
     expect(response.body.defaultConnection).toMatchObject({
       target: { kind: "custom", customConnectorId: definition.id },
       connectionStatus: "connected",
-      setupStatus: "incomplete",
-      missingRequiredFields: ["access_token", "refresh_token", "region"],
+      setupStatus: "complete",
+      missingRequiredFields: [],
       configuredFieldKeys: [],
     });
     expect(response.body.connections).toStrictEqual([
@@ -328,12 +318,86 @@ describe("connector account lifecycle routes", () => {
     if (!accountId) {
       throw new Error("Expected the exact OAuth account");
     }
+    await authorize({ intent: "add", displayName: "Second OAuth account" });
+    const query = { kind: "custom" as const, customConnectorId: definition.id };
+    const beforeUpdate = await accept(
+      accountClient().connections({ headers: authHeaders(), query }),
+      [200],
+    );
+    const sibling = beforeUpdate.body.connections.find((account) => {
+      return account.id !== accountId;
+    });
+    expect(beforeUpdate.body.connections).toHaveLength(2);
+    expect(sibling).toMatchObject({
+      isDefault: false,
+      connectionStatus: "connected",
+      setupStatus: "complete",
+      configuredFieldKeys: [],
+    });
+    if (!sibling) {
+      throw new Error("Expected a non-default OAuth account");
+    }
+    const rejectedUpdate = await accept(
+      customConnectorByIdClient().update({
+        headers: authHeaders(),
+        params: { id: definition.id },
+        body: {
+          ...input,
+          fields: [
+            {
+              key: "region",
+              label: "Region",
+              kind: "variable",
+              required: true,
+            },
+          ],
+        },
+      }),
+      [400],
+    );
+    expect(rejectedUpdate.body.error.message).toBe(
+      "OAuth custom connectors cannot declare fields; remove all fields and their template references",
+    );
+    const afterUpdate = await accept(
+      accountClient().connections({ headers: authHeaders(), query }),
+      [200],
+    );
+    expect(afterUpdate.body).toStrictEqual(beforeUpdate.body);
+    await authorize({ intent: "reconnect", connectionId: sibling.id });
+    const afterReconnect = await accept(
+      accountClient().connections({ headers: authHeaders(), query }),
+      [200],
+    );
+    expect(afterReconnect.body.defaultConnection?.id).toBe(accountId);
+    expect(
+      afterReconnect.body.connections
+        .map((account) => {
+          return account.id;
+        })
+        .sort(),
+    ).toStrictEqual([accountId, sibling.id].sort());
+    const exact = await accept(
+      accountClient().connection({
+        headers: authHeaders(),
+        params: { connectionId: sibling.id },
+        query,
+      }),
+      [200],
+    );
+    expect(exact.body).toMatchObject({
+      id: sibling.id,
+      isDefault: false,
+      connectionStatus: "connected",
+      setupStatus: "complete",
+      missingRequiredFields: [],
+      configuredFieldKeys: [],
+    });
     const unsupportedWrite = await accept(
       customConnectorValuesClient().set({
         headers: authHeaders(),
         params: { id: definition.id },
         body: {
-          account: { intent: "reconnect", connectionId: accountId },
+          account: { intent: "reconnect", connectionId: sibling.id },
           values: [{ key: "region", kind: "variable", value: "us-test" }],
         },
       }),

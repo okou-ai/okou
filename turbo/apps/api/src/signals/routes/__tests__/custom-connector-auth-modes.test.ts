@@ -31,16 +31,21 @@ const oauthConfig = Object.freeze({
 function definition(
   authMode: CustomConnectorAuthMode,
   endpoint: string,
+  kind: "http" | "mcp" = "mcp",
 ): CreateCustomConnectorBody {
-  return {
-    kind: "mcp",
+  const shared = {
     displayName: "Connector mode lifecycle",
-    endpoint,
-    transport: "streamable-http",
     authMode,
     fields:
       authMode === "manual"
-        ? [{ key: "api_key", label: "API key", kind: "secret", required: true }]
+        ? [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret" as const,
+              required: true,
+            },
+          ]
         : [],
     headerInjections:
       authMode === "manual" || authMode === "oauth"
@@ -59,6 +64,9 @@ function definition(
       ? { oauthConfig: { ...oauthConfig, clientSecret: "test-client-secret" } }
       : {}),
   };
+  return kind === "mcp"
+    ? { ...shared, kind, endpoint, transport: "streamable-http" }
+    : { ...shared, kind, prefixTemplates: [endpoint] };
 }
 
 function clients() {
@@ -103,6 +111,151 @@ function clients() {
 }
 
 describe("Custom connector authentication modes", () => {
+  it.each([
+    ["http", true],
+    ["http", false],
+    ["mcp", true],
+    ["mcp", false],
+  ] as const)(
+    "rejects declared fields in %s OAuth creation (required: %s)",
+    async (kind, required) => {
+      const api = clients();
+      const rejected = await accept(
+        api.collection.create({
+          headers,
+          body: {
+            ...definition("oauth", "https://api.example.test/", kind),
+            fields: [
+              { key: "region", label: "Region", kind: "variable", required },
+            ],
+          },
+        }),
+        [400],
+      );
+      expect(rejected.body.error.message).toBe(
+        "OAuth custom connectors cannot declare fields; remove all fields and their template references",
+      );
+      const listed = await accept(api.collection.list({ headers }), [200]);
+      expect(listed.body.connectors).toStrictEqual([]);
+    },
+  );
+
+  it.each(["http", "mcp"] as const)(
+    "preserves a %s OAuth definition when explicit or inherited mode updates declare fields",
+    async (kind) => {
+      const api = clients();
+      const input = definition("oauth", "https://api.example.test/", kind);
+      const created = await accept(
+        api.collection.create({ headers, body: input }),
+        [201],
+      );
+      const params = { id: created.body.id };
+      for (const authMode of ["oauth", undefined] as const) {
+        const rejected = await accept(
+          api.connector.update({
+            headers,
+            params,
+            body: {
+              ...input,
+              displayName: "Rejected update",
+              authMode,
+              oauthConfig: authMode === "oauth" ? input.oauthConfig : undefined,
+              fields: [
+                {
+                  key: "region",
+                  label: "Region",
+                  kind: "variable",
+                  required: false,
+                },
+              ],
+            },
+          }),
+          [400],
+        );
+        expect(rejected.body.error.message).toBe(
+          "OAuth custom connectors cannot declare fields; remove all fields and their template references",
+        );
+        const read = await accept(
+          api.connector.get({ headers, params }),
+          [200],
+        );
+        expect(read.body).toStrictEqual(created.body);
+      }
+      const updated = await accept(
+        api.connector.update({
+          headers,
+          params,
+          body: {
+            ...input,
+            displayName: "Supported OAuth update",
+            authMode: undefined,
+            oauthConfig: undefined,
+          },
+        }),
+        [200],
+      );
+      expect(updated.body).toMatchObject({
+        id: created.body.id,
+        displayName: "Supported OAuth update",
+        fields: [],
+        storageVersion: created.body.storageVersion,
+      });
+    },
+  );
+
+  it.each(["http", "mcp"] as const)(
+    "requires removing member fields when changing a %s definition to OAuth",
+    async (kind) => {
+      const api = clients();
+      const input = {
+        ...definition("manual", "https://api.example.test/", kind),
+        fields: [
+          {
+            key: "region",
+            label: "Region",
+            kind: "variable" as const,
+            required: true,
+          },
+        ],
+        headerInjections: [
+          {
+            name: "Authorization",
+            valueTemplate: "Bearer {{variables.region}}",
+          },
+        ],
+      };
+      const created = await accept(
+        api.collection.create({ headers, body: input }),
+        [201],
+      );
+      const params = { id: created.body.id };
+      const oauth = definition("oauth", "https://api.example.test/", kind);
+      const rejected = await accept(
+        api.connector.update({
+          headers,
+          params,
+          body: { ...oauth, fields: input.fields },
+        }),
+        [400],
+      );
+      expect(rejected.body.error.message).toBe(
+        "OAuth custom connectors cannot declare fields; remove all fields and their template references",
+      );
+      const read = await accept(api.connector.get({ headers, params }), [200]);
+      expect(read.body).toStrictEqual(created.body);
+      const updated = await accept(
+        api.connector.update({ headers, params, body: oauth }),
+        [200],
+      );
+      expect(updated.body).toMatchObject({
+        id: created.body.id,
+        authMode: "oauth",
+        fields: [],
+        storageVersion: created.body.storageVersion + 1,
+      });
+    },
+  );
+
   it.each(modes)(
     "creates and reads a %s connector without changing endpoint queries",
     async (mode) => {

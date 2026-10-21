@@ -4752,7 +4752,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       [400],
     );
     expectApiError(rejected.body);
-    expect(rejected.body.error.message).toContain("must be variables");
+    expect(rejected.body.error.message).toBe(
+      "OAuth custom connectors cannot declare fields; remove all fields and their template references",
+    );
 
     const listed = await connectorsApi.listCustomConnectors(admin);
     expect(listed).toContainEqual(original);
