@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
@@ -12,15 +13,18 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
   connectorAccount,
-  installComposerConnectorFixture,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
-  context,
   findComposer,
   findFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
 const DEFAULT_ACCOUNT_LABEL = "GitHub · Account for this chat";

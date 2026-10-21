@@ -185,6 +185,10 @@ interface ComposerKeyDownContext {
   readonly composer: ComposerSignals;
   readonly selectedTask: ComposerTask | null;
   readonly selectTask: (task: ComposerTask | null) => void;
+  readonly onKeyDown: (event: KeyboardEventLike) => void;
+}
+
+interface ComposerSuggestionKeyDownContext {
   readonly suggestionOrder: readonly number[];
   readonly selectedSuggestionIndex: number;
   readonly showSuggestionMenu: boolean;
@@ -197,7 +201,6 @@ interface ComposerKeyDownContext {
    * reports whether there was one to cross.
    */
   readonly crossSuggestionSubmenu?: (direction: 1 | -1) => boolean;
-  readonly onKeyDown: (event: KeyboardEventLike) => void;
 }
 
 function eventTargetsNonEditableNodeView(event: Event): boolean {
@@ -210,10 +213,11 @@ function eventTargetsNonEditableNodeView(event: Event): boolean {
 function shouldRemoveSelectedTask(
   event: KeyboardEvent,
   context: ComposerKeyDownContext,
+  showSuggestionMenu: boolean,
 ): boolean {
   return (
     event.key === "Backspace" &&
-    !context.showSuggestionMenu &&
+    !showSuggestionMenu &&
     context.selectedTask !== null &&
     context.composer.editor.editor.isEmpty
   );
@@ -236,7 +240,7 @@ function nextSuggestionIndex(
 
 function crossesSuggestionSubmenu(
   event: KeyboardEvent,
-  context: ComposerKeyDownContext,
+  context: ComposerSuggestionKeyDownContext,
 ): boolean {
   if (
     !context.crossSuggestionSubmenu ||
@@ -254,6 +258,7 @@ function crossesSuggestionSubmenu(
 function handleComposerKeyDownCapture(
   event: KeyboardEvent,
   context: ComposerKeyDownContext,
+  suggestions?: ComposerSuggestionKeyDownContext,
 ): boolean {
   // ProseMirror normally gives node views first ownership through stopEvent.
   // React capture runs earlier, so preserve that boundary for their controls.
@@ -268,7 +273,13 @@ function handleComposerKeyDownCapture(
     // keymaps without preventing the input method's native confirmation.
     return true;
   }
-  if (shouldRemoveSelectedTask(event, context)) {
+  if (
+    shouldRemoveSelectedTask(
+      event,
+      context,
+      suggestions?.showSuggestionMenu ?? false,
+    )
+  ) {
     event.preventDefault();
     context.selectTask(null);
     return true;
@@ -293,16 +304,17 @@ function handleComposerKeyDownCapture(
     context.composer.editor.editor.commands.setTextSelection(lineNavigationPos);
     return true;
   }
-  if (!context.showSuggestionMenu) {
+  if (!suggestions?.showSuggestionMenu) {
     context.onKeyDown(event);
     return event.defaultPrevented;
   }
-  return handleSuggestionMenuKeyDown(event, context);
+  return handleSuggestionMenuKeyDown(event, suggestions, context.onKeyDown);
 }
 
 function handleSuggestionMenuKeyDown(
   event: KeyboardEvent,
-  context: ComposerKeyDownContext,
+  context: ComposerSuggestionKeyDownContext,
+  onKeyDown: ComposerKeyDownContext["onKeyDown"],
 ): boolean {
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
@@ -336,7 +348,7 @@ function handleSuggestionMenuKeyDown(
     context.closeSuggestionMenu();
     return true;
   }
-  context.onKeyDown(event);
+  onKeyDown(event);
   return event.defaultPrevented;
 }
 
@@ -740,6 +752,15 @@ function scrollSuggestionRowIntoView(
   }
 }
 
+function createComposerSuggestionKeyDown(
+  context: ComposerKeyDownContext,
+  suggestions: ComposerSuggestionKeyDownContext,
+): (event: KeyboardEvent) => boolean {
+  return (event) => {
+    return handleComposerKeyDownCapture(event, context, suggestions);
+  };
+}
+
 function useComposerSuggestionMenu({
   composer,
   onKeyDown,
@@ -822,11 +843,9 @@ function useComposerSuggestionMenu({
     });
   }
 
-  function handleKeyDown(event: KeyboardEvent): boolean {
-    return handleComposerKeyDownCapture(event, {
-      composer,
-      selectedTask,
-      selectTask,
+  const handleKeyDown = createComposerSuggestionKeyDown(
+    { composer, selectedTask, selectTask, onKeyDown },
+    {
       suggestionOrder,
       selectedSuggestionIndex: selectedIndex,
       showSuggestionMenu: open,
@@ -837,9 +856,8 @@ function useComposerSuggestionMenu({
         scrollSuggestionRowIntoView(index, rows, actionsOverview);
       },
       crossSuggestionSubmenu: actionsOverview?.cross,
-      onKeyDown,
-    });
-  }
+    },
+  );
 
   return {
     open,
@@ -912,24 +930,23 @@ function useComposerPasteHandler(
 }
 
 /**
- * Own the menu subscriptions and the capture handler together. The editor is
- * composed as children by its parent, so menu data and selection updates do
- * not re-execute the editor's render or replace its DOM/ref lifecycle.
+ * The open suggestion session owns its data and editor keyboard integration.
+ * It is a sibling of the editor, never a conditional parent of its DOM/ref.
  */
-function ComposerSuggestionMenu({
+function ComposerSuggestionSession({
   composer,
-  actions,
-  children,
+  onKeyDown,
 }: {
   readonly composer: ComposerSignals;
-  readonly actions: ComposerActions;
-  readonly children: ReactNode;
+  readonly onKeyDown: ComposerKeyDownContext["onKeyDown"];
 }) {
-  const onKeyDown = useComposerKeyboard(composer, actions);
   const suggestionMenu = useComposerSuggestionMenu({
     composer,
     onKeyDown,
   });
+  const attachSessionKeyDown = useSet(
+    composer.suggestion.attachSessionKeyDown$,
+  );
   const expandedSlashHeight = useGet(
     composer.suggestion.slashWorkflowsExpandedHeight$,
   );
@@ -945,19 +962,127 @@ function ComposerSuggestionMenu({
   );
 
   return (
-    <Popover
-      open={suggestionMenu.open}
-      onOpenChange={(open, details) => {
-        if (!open) {
-          suggestionMenu.close(details.reason === "escape-key");
-        }
+    <div
+      className="contents"
+      // This subtree owns the session listener, not the permanent editor DOM.
+      // A new committed row closure detaches the old ref before reattaching;
+      // preserve its React 19 cleanup. Abandoned renders never attach a ref.
+      ref={(host) => {
+        return attachSessionKeyDown(host, suggestionMenu.handleKeyDown);
       }}
     >
+      <Popover
+        open={suggestionMenu.open}
+        onOpenChange={(open, details) => {
+          if (!open) {
+            suggestionMenu.close(details.reason === "escape-key");
+          }
+        }}
+      >
+        {suggestionMenu.showWorkflows && (
+          <SlashWorkflowMenu
+            menuRef={setSlashHintMenuRef}
+            bare={suggestionMenu.cascade}
+            anchor={suggestionAnchor}
+          >
+            {suggestionMenu.actionsOverview ? (
+              <SlashActionsPanel
+                overview={suggestionMenu.actionsOverview}
+                workflows={suggestionMenu.workflows}
+                workflowsLoading={suggestionMenu.workflowsLoading}
+                categories={suggestionMenu.panelCategories}
+                selectedIndex={suggestionMenu.selectedIndex}
+                previewIndex={suggestionMenu.previewIndex}
+                onPreview={suggestionMenu.previewSuggestion}
+                onSelectWorkflow={suggestionMenu.selectWorkflow}
+                onSelectTemplate={suggestionMenu.selectTemplate}
+                onBrowseAll={suggestionMenu.browseAllTemplates}
+                onNewWorkflow={suggestionMenu.newWorkflow}
+                onManageWorkflows={() => {
+                  suggestionMenu.close();
+                }}
+              />
+            ) : (
+              <SlashTemplatePanel
+                categories={suggestionMenu.panelCategories}
+                actions={suggestionMenu.searchActions}
+                reversed={suggestionMenu.reversed}
+                reverseWorkflows={suggestionMenu.reverseWorkflows}
+                workflows={suggestionMenu.workflows}
+                workflowsLoading={suggestionMenu.workflowsLoading}
+                collapseWorkflows={suggestionMenu.collapseWorkflows}
+                onExpandWorkflows={suggestionMenu.expandWorkflows}
+                expandedHeight={expandedSlashHeight}
+                showWorkflowActions={suggestionMenu.showWorkflowActions}
+                onNewWorkflow={suggestionMenu.newWorkflow}
+                onManageWorkflows={() => {
+                  suggestionMenu.close();
+                }}
+                selectedIndex={suggestionMenu.selectedIndex}
+                previewIndex={suggestionMenu.previewIndex}
+                onPreview={suggestionMenu.previewSuggestion}
+                onSelectCategory={suggestionMenu.selectCategory}
+                onSelectTemplate={suggestionMenu.selectTemplate}
+                onSelectWorkflow={suggestionMenu.selectWorkflow}
+                onBrowseAll={suggestionMenu.browseAllTemplates}
+                workflowOptionId={slashWorkflowOptionId}
+                categoryOptionId={slashWorkflowOptionId}
+              />
+            )}
+          </SlashWorkflowMenu>
+        )}
+        {suggestionMenu.showMentions && (
+          <ComposerMentionSuggestionMenu
+            menuRef={setMentionHintMenuRef}
+            anchor={suggestionAnchor}
+            agents={suggestionMenu.agents}
+            chatThreads={suggestionMenu.chatThreads}
+            selectedIndex={suggestionMenu.selectedIndex}
+            onSelectAgent={suggestionMenu.selectAgent}
+            onSelectChatThread={suggestionMenu.selectChatThread}
+          />
+        )}
+      </Popover>
+    </div>
+  );
+}
+
+/**
+ * Keep the editor's parent and send owner mounted across menu transitions.
+ * Presence only needs token ranges; no workflow/model/mention payload is read
+ * until a token opens a session. An empty/loading mention session still owns
+ * the fallback keyboard path, even while its popover has no visible rows.
+ */
+function ComposerSuggestionMenu({
+  composer,
+  actions,
+  children,
+}: {
+  readonly composer: ComposerSignals;
+  readonly actions: ComposerActions;
+  readonly children: ReactNode;
+}) {
+  const sessionActive = useGet(composer.suggestion.sessionActive$);
+  const selectedTask = useGet(composer.taskChips.task$);
+  const selectTask = useSet(composer.taskChips.selectTask$);
+  const onKeyDown = useComposerKeyboard(composer, actions);
+  return (
+    <>
       <div
         className="relative flex min-h-full flex-col"
         onKeyDownCapture={(event) => {
+          if (sessionActive) {
+            // The open session handles capture on the editor itself, after
+            // this stable parent. Do not send before its menu can claim Enter.
+            return;
+          }
           const nativeEvent = event.nativeEvent;
-          const handled = suggestionMenu.handleKeyDown(nativeEvent);
+          const handled = handleComposerKeyDownCapture(nativeEvent, {
+            composer,
+            selectedTask,
+            selectTask,
+            onKeyDown,
+          });
           if (handled || nativeEvent.defaultPrevented) {
             event.stopPropagation();
           }
@@ -965,70 +1090,10 @@ function ComposerSuggestionMenu({
       >
         {children}
       </div>
-      {suggestionMenu.showWorkflows && (
-        <SlashWorkflowMenu
-          menuRef={setSlashHintMenuRef}
-          bare={suggestionMenu.cascade}
-          anchor={suggestionAnchor}
-        >
-          {suggestionMenu.actionsOverview ? (
-            <SlashActionsPanel
-              overview={suggestionMenu.actionsOverview}
-              workflows={suggestionMenu.workflows}
-              workflowsLoading={suggestionMenu.workflowsLoading}
-              categories={suggestionMenu.panelCategories}
-              selectedIndex={suggestionMenu.selectedIndex}
-              previewIndex={suggestionMenu.previewIndex}
-              onPreview={suggestionMenu.previewSuggestion}
-              onSelectWorkflow={suggestionMenu.selectWorkflow}
-              onSelectTemplate={suggestionMenu.selectTemplate}
-              onBrowseAll={suggestionMenu.browseAllTemplates}
-              onNewWorkflow={suggestionMenu.newWorkflow}
-              onManageWorkflows={() => {
-                suggestionMenu.close();
-              }}
-            />
-          ) : (
-            <SlashTemplatePanel
-              categories={suggestionMenu.panelCategories}
-              actions={suggestionMenu.searchActions}
-              reversed={suggestionMenu.reversed}
-              reverseWorkflows={suggestionMenu.reverseWorkflows}
-              workflows={suggestionMenu.workflows}
-              workflowsLoading={suggestionMenu.workflowsLoading}
-              collapseWorkflows={suggestionMenu.collapseWorkflows}
-              onExpandWorkflows={suggestionMenu.expandWorkflows}
-              expandedHeight={expandedSlashHeight}
-              showWorkflowActions={suggestionMenu.showWorkflowActions}
-              onNewWorkflow={suggestionMenu.newWorkflow}
-              onManageWorkflows={() => {
-                suggestionMenu.close();
-              }}
-              selectedIndex={suggestionMenu.selectedIndex}
-              previewIndex={suggestionMenu.previewIndex}
-              onPreview={suggestionMenu.previewSuggestion}
-              onSelectCategory={suggestionMenu.selectCategory}
-              onSelectTemplate={suggestionMenu.selectTemplate}
-              onSelectWorkflow={suggestionMenu.selectWorkflow}
-              onBrowseAll={suggestionMenu.browseAllTemplates}
-              workflowOptionId={slashWorkflowOptionId}
-              categoryOptionId={slashWorkflowOptionId}
-            />
-          )}
-        </SlashWorkflowMenu>
+      {sessionActive && (
+        <ComposerSuggestionSession composer={composer} onKeyDown={onKeyDown} />
       )}
-      {suggestionMenu.showMentions && (
-        <ComposerMentionSuggestionMenu
-          menuRef={setMentionHintMenuRef}
-          anchor={suggestionAnchor}
-          agents={suggestionMenu.agents}
-          chatThreads={suggestionMenu.chatThreads}
-          selectedIndex={suggestionMenu.selectedIndex}
-          onSelectAgent={suggestionMenu.selectAgent}
-          onSelectChatThread={suggestionMenu.selectChatThread}
-        />
-      )}
-    </Popover>
+    </>
   );
 }
 

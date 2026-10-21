@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
@@ -21,15 +22,17 @@ import {
 import {
   AGENT_ID,
   THREAD_ID,
-  context,
   createUploadedTemplate,
   expectInlineTemplate,
-  mockPresentationTemplateLibrary,
-  mockTemplateChat,
   openTemplatePicker,
   sendComposerMessage,
   templatePart,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockPresentationTemplateLibrary, mockTemplateChat } =
+  createTemplateGalleryHelpers(context);
 
 const UPLOADED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000001";
 const UPDATED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000002";

@@ -21,11 +21,8 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import {
-  buildProvider,
-  buildRunModel,
-  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-} from "./chat-composer-test-helpers.ts";
+import { CLAUDE_SUBSCRIPTION_PROVIDER_ID } from "./chat-composer-test-helpers.ts";
+import { buildProvider, buildRunModel } from "./chat-model-builders.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000081";

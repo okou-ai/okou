@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -11,18 +12,18 @@ import { setupPage } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
   THREAD_ID,
-  context,
-  mockTemplateChat,
   openTemplatePicker,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
-import {
-  buildRunModel,
-  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-} from "./chat-composer-test-helpers.ts";
+import { CLAUDE_SUBSCRIPTION_PROVIDER_ID } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import {
   openSavedPresentationPicker,
   savedPresentationDraft,
 } from "./presentation-draft-test-helpers.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 const IMPORT_PROMPT =
   "Analyse this deck and save its visual language as a reusable presentation template.";

@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -9,14 +10,16 @@ import { mockNow } from "../../../lib/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   completedEvent,
-  context,
   findButton,
-  installRunChat,
   promptEvent,
   publishRunUpdate,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const RUN_ID = "d0000000-0000-4000-a000-000000000841";
 const NEXT_RUN_ID = "d0000000-0000-4000-a000-000000000842";

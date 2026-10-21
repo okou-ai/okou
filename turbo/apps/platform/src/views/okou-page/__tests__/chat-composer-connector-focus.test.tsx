@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -6,13 +7,14 @@ import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
-  installComposerConnectorFixture,
   SCOUT_AGENT_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
-import {
-  context,
-  findFastControl,
-} from "./chat-message-experience-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 async function openLoadingConnectors() {
   const user = userEvent.setup({ delay: null });

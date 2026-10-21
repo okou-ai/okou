@@ -1,9 +1,10 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { buildProvider, buildRunModel } from "./chat-composer-test-helpers.ts";
+import { buildProvider, buildRunModel } from "./chat-model-builders.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import {
@@ -12,10 +13,9 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   NEW_CHAT_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 import {
   closeModelPanel,
@@ -23,6 +23,9 @@ import {
   openModelPanel,
 } from "./chat-model-panel-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 function configureRunModels(models: readonly string[]): void {
   installConnectedPersonalSubscriptions(context);

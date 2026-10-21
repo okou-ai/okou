@@ -12,11 +12,10 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   CAPABILITY_AGENT_ID,
-  context,
   findButton,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import {
   mockChatEventRows,
@@ -27,11 +26,18 @@ import {
   assistantEvent,
   completedEvent,
   findLink,
-  installRunChat,
   promptEvent,
   RUN_THREAD_ID,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const BASE_TIME = "2026-08-01T10:00:00.000Z";
 const COMPLETED_THREAD_ID = "b0000000-0000-4000-a000-000000000842";

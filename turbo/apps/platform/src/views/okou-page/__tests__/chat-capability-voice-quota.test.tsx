@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   billingStatusContract,
   billingUsagePackCatalogContract,
@@ -12,14 +13,16 @@ import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  context,
   findButton,
   findEnabledButton,
-  installRunChat,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 type VoicePlan = "limited-free-1" | "pro" | "team" | "custom";
 type WorkspaceRole = "admin" | "member";

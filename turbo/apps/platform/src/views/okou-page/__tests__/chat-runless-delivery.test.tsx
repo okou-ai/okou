@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -6,13 +7,15 @@ import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
-  context,
   expectTextOrder,
-  installRunChat,
   queryWorkHistoryToggle,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const PREVIOUS_RUN = "a0000000-0000-4000-a000-000000000401";
 const PREVIOUS_WORK = "Work performed during the previous Run";

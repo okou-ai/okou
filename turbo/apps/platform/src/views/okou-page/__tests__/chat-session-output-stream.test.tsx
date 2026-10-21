@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -12,15 +13,17 @@ import {
 import {
   assistantEvent,
   completedEvent,
-  context,
-  installRunChat,
   promptEvent,
   publishRunUpdate,
   findWorkHistoryToggle,
   findLink,
   RUN_PATH,
   RUN_THREAD_ID,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const RUN_ID = "d0000000-0000-4000-a000-000000000851";
 const EVENT_ID = "d0000000-0000-4000-a000-000000000852";

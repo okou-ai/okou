@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { screen } from "@testing-library/react";
@@ -7,10 +8,11 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  context,
-  installMessageExperienceChat,
-} from "./chat-message-experience-test-helpers.ts";
+import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
 
 const RUN_ID = "d0000000-0000-4000-a000-000000000073";
 const CREATED_AT = "2026-09-24T09:00:00.000Z";

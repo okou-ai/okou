@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, describe, beforeEach, it } from "vitest";
@@ -5,16 +6,18 @@ import { expect, describe, beforeEach, it } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   completedConversation,
-  context,
   findButton,
-  installCapabilityChat,
   quoteSelectedPassage,
   readyChat,
   RUN_PATH,
   selectPassage,
   waitForSend,
   type CapturedChatSend,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const PASSAGE = "The launch plan has three careful stages.";
 const OTHER_PASSAGE = "The second decision needs a separate review.";

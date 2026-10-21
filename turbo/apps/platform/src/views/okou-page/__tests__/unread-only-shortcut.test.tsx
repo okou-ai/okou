@@ -4,17 +4,20 @@ import { expect, test } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
+  createSidebarHelpers,
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
-  mockSidebarThreadStory,
   openChatListMenu,
-  prepareDefaultAgent,
   setupSidebarPage,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { mockSidebarThreadStory, prepareDefaultAgent } =
+  createSidebarHelpers(context);
 
 const MAC_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36";

@@ -123,7 +123,14 @@ type ComposerSuggestionSignals = Pick<
   | "clearSlashRange$"
   | "insertAgent$"
   | "insertChatThread$"
->;
+> & {
+  /** A token can own a session before its asynchronous rows are available. */
+  readonly sessionActive$: Computed<boolean>;
+  readonly attachSessionKeyDown$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null, (event: KeyboardEvent) => boolean]
+  >;
+};
 
 type ComposerTemplateEditorSignals = Pick<
   WorkflowComposerSignals,
@@ -377,7 +384,39 @@ function composerWorkflowSignals(
 function composerSuggestionSignals(
   composer: WorkflowComposerSignals,
 ): ComposerSuggestionSignals {
+  const sessionActive$ = computed((get) => {
+    return (
+      get(composer.activeSlashRange$) !== null ||
+      get(composer.activeChatThreadSuggestionRange$) !== null
+    );
+  });
+  // The committed session subtree owns this external DOM integration, not
+  // the permanent editor mount. Each ref attachment supplies its own committed
+  // row closure; cleanup releases exactly that listener without storing it.
+  const attachSessionKeyDown$ = command(
+    (
+      _,
+      host: HTMLElement | null,
+      handleKeyDown: (event: KeyboardEvent) => boolean,
+    ) => {
+      if (!host) {
+        return;
+      }
+      const element = composer.editor.view.dom;
+      const capture = (event: KeyboardEvent) => {
+        if (handleKeyDown(event) || event.defaultPrevented) {
+          event.stopPropagation();
+        }
+      };
+      element.addEventListener("keydown", capture, true);
+      return () => {
+        element.removeEventListener("keydown", capture, true);
+      };
+    },
+  );
   return {
+    sessionActive$,
+    attachSessionKeyDown$,
     activeSlashRange$: composer.activeSlashRange$,
     activeChatThreadSuggestionRange$: composer.activeChatThreadSuggestionRange$,
     chatThreadSuggestions$: composer.chatThreadSuggestions$,

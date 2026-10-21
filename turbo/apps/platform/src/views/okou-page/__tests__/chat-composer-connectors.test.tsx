@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
@@ -18,7 +19,6 @@ import {
   DEEPWIKI_CONNECTOR_ID,
   FEISHU_CONNECTOR_ID,
   httpConnector,
-  installComposerConnectorFixture,
   manualAuthMethod,
   mcpConnector,
   noAuthMethod,
@@ -26,12 +26,16 @@ import {
   ORDINARY_CONNECTOR_ID,
   permissionDetail,
   SCOUT_AGENT_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
-  context,
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
 const AXIOM_SLUG = "axiom" as ConnectorSlug;

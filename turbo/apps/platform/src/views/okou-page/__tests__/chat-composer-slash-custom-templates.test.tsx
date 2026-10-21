@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   userTemplatesContract,
   type UserTemplateCatalogEntry,
@@ -20,9 +21,11 @@ import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   THREAD_ID,
-  context,
-  mockTemplateChat,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 function template(kind: UserTemplateKind): UserTemplateCatalogEntry {
   const id = {

@@ -10,7 +10,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { artifactSummary } from "./chat-navigation-artifact-test-helpers.ts";
@@ -23,13 +26,15 @@ import {
 
 import {
   composer,
-  context,
   installResourceGeometry,
   resourceButton,
-  recordPreferenceUpdates,
+  createChatResourcesHelpers,
   resourcePanel,
   resourceState,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
+const { recordPreferenceUpdates } = createChatResourcesHelpers(context);
 
 async function setupResourceNavigation() {
   installResourceGeometry(480);

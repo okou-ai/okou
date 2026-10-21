@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   workflowAutomationsContract,
   type ChatThreadWorkflowAutomation,
@@ -12,13 +13,15 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   CAPABILITY_AGENT_ID,
-  context,
   findButton,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
   RUN_THREAD_ID,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const ACTIVE_SCHEDULE_ID = "a0000000-0000-4000-a000-000000000861";
 const WEBHOOK_ID = "a0000000-0000-4000-a000-000000000862";

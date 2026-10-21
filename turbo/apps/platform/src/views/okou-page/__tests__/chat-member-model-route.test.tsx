@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
@@ -13,12 +14,14 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockSubscriptionRunModel } from "../../../mocks/handlers/api-run-models.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   NEW_CHAT_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const ACCOUNT_ID = "34240000-0000-4000-a000-000000000002";
 

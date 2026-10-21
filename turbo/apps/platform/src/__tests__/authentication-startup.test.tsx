@@ -10,7 +10,10 @@ import {
   startPage,
 } from "./page-helper.ts";
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
-import { testContext } from "../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../signals/utils.ts";
 import {
   bootstrapSkeleton,
@@ -239,6 +242,49 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
     screen.queryByRole("heading", { name: "Agents" }),
   ).not.toBeInTheDocument();
 });
+
+test.each(["setupPage", "startPage"])(
+  "%s cancels a child app without disposing the case document or external mocks",
+  async (entryPoint) => {
+    const cancelledApp = createTestRuntime(context);
+    const localeRequested = context.mocks.deferred<Request>();
+    const localeResponse = context.mocks.deferred<void>();
+    context.mocks.http.get(frFRCommonUrl, async ({ request }) => {
+      localeRequested.resolve(request);
+      await localeResponse.promise;
+      return HttpResponse.json({});
+    });
+    const options = {
+      context: cancelledApp,
+      host: "app.okou.ai",
+      path: "/agents",
+      locale: "fr-FR" as const,
+    };
+    const startup =
+      entryPoint === "setupPage" ? setupPage(options) : startPage(options);
+    const request = await localeRequested.promise;
+    const reason = new DOMException(
+      "App replaced during locale startup",
+      "AbortError",
+    );
+    cancelledApp.dispose(reason);
+    localeResponse.resolve();
+    await expect(startup).rejects.toBe(reason);
+    expect(request.signal.aborted).toBeTruthy();
+
+    // Re-enter through production bootstrap under a fresh child. The case's
+    // installed HTML lifecycle and external mock boundary must remain usable.
+    const replacementApp = createTestRuntime(context);
+    await setupPage({
+      context: replacementApp,
+      host: "app.okou.ai",
+      path: "/agents",
+    });
+    await expect(
+      screen.findByRole("heading", { name: "Agents" }),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 test("Authentication startup is reused without a duplicate load", async () => {
   const clerk = context.mocks.clerk();
