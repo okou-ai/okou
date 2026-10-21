@@ -55,12 +55,17 @@ authorizations and confirmed chat account choices remain in use.
 
 ## Local setup
 
-Use Xcode 26.3 or a newer version supported by the host Mac, with an installed
-iOS 26 simulator runtime. Open `ios/Okou.xcodeproj` and select the shared `Okou`
+Use Xcode 27.1 (build `27A9275`, iOS 27.1 SDK) on macOS 26.6 or later, with an
+installed iOS 27 simulator runtime. Open `ios/Okou.xcodeproj` and select the shared `Okou`
 scheme and an iPhone simulator. Xcode resolves the pinned Clerk, Ably, and Textual
 Swift packages on first use. Keep
 `Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` with the
 project when dependency versions change.
+
+The app's minimum deployment target remains iOS 26.0. Validate UI changes on
+both iOS 26 and iOS 27: the build SDK and device runtime independently affect
+native presentation, including scroll-edge effects. An iOS 26 simulator preview
+does not establish iOS 27 device behavior.
 
 The checked-in configuration uses the production services:
 
@@ -260,8 +265,13 @@ remain outstanding.
 and manual dispatch. A lightweight Linux job tests change detection and gate
 behavior on every run. Changes to `ios/`, the iOS workflow, or the shared
 changed-base helper trigger Swift formatting, property-list validation, an app
-build, standalone ChatDomain/ChatData tests, and the simulator tests on macOS 26
-with Xcode 26.3 and iOS 26.2. Formatting includes both package manifests, sources,
+build, standalone ChatDomain/ChatData tests, and the simulator tests on the
+GitHub-hosted `xcode-27` image with Xcode 27.1 and iOS 27.0 on iPhone 18 Pro.
+The image is currently a public preview; the Xcode build is the stable
+`27A9275` release. Device archive builds, the optional archive proof, and
+TestFlight signing/export select the same Xcode version. Toolchain changes
+invalidate prior archive and test fingerprints, so the merge group must produce
+fresh matching evidence. Formatting includes both package manifests, sources,
 and tests. Swift
 packages must match `Package.resolved`; CI checks that it remains unchanged.
 Standalone package tests run on a separate macOS runner from the App build and

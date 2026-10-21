@@ -1,0 +1,5 @@
+# GitHub-hosted public preview image, pending actionlint's built-in label inventory.
+# https://github.com/actions/runner-images/issues/14404
+self-hosted-runner:
+  labels:
+    - xcode-27
