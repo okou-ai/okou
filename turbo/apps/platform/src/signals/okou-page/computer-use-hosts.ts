@@ -60,6 +60,7 @@ async function isUnsupportedIntelMacForDesktop(
     return false;
   }
 
+  // eslint-disable-next-line ccstate/no-tap-error -- Legacy use as of 2026/10/21: optional architecture detection must not block Desktop downloads.
   const highEntropyValues = await tapError(
     userAgentData.getHighEntropyValues(["architecture", "platform"]),
   );
