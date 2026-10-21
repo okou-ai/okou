@@ -4292,9 +4292,9 @@ describe("CHAT-02: auto-send after failures", () => {
       expect(appended).not.toContain(
         "successful history before the failed request",
       );
-      expect(probeContext.body.sessionId).toBe(
-        cliAgentSessionIdForChatRun(anchor.runId),
-      );
+      // The executed failure did not initialize a native context, so the
+      // earlier successful binding cannot cover this successor's predecessor.
+      expect(probeContext.body.sessionId).toBeNull();
       await api.requestCancelRun(actor, probeRunId, [200]);
       await waitForRunStatus(actor, probeRunId, "cancelled");
     },
@@ -4479,7 +4479,7 @@ describe("CHAT-02: auto-send after failures", () => {
     await waitForRunStatus(actor, probe.runId, "cancelled");
   }, 90_000);
 
-  it("auto-sends the queued message after a failure, carrying attachments, incomplete-round context, and the continued session", async () => {
+  it("auto-sends the queued message after a failure with attachments, incomplete-round context, and fresh native intent", async () => {
     const { actor, agentId, runnerGroup, storage } = await entitledChatActor();
 
     const first = await startChatRun(actor, {
@@ -4619,7 +4619,7 @@ describe("CHAT-02: auto-send after failures", () => {
     expect(appended).toContain(
       `[Web file] ${contextFile.filename} (${contextFile.contentType})\n   [ID] ${contextFile.id}`,
     );
-    expect(autoContext.body.sessionId).toBe(`bdd-cli-${first.runId}`);
+    expect(autoContext.body.sessionId).toBeNull();
 
     await flushWaitUntilForTest();
     expect(context.mocks.webpush.sendNotification.mock.calls).toHaveLength(1);

@@ -17,17 +17,23 @@ export interface ChatThreadExecutionSnapshot {
 
 export interface ChatThreadContinuation {
   readonly expected: ChatThreadNativeBinding;
+  /** Revalidated at the actual Run insertion time before launch can commit. */
+  readonly admission: {
+    readonly runId: string;
+    readonly finalizingSourceRunId: string | null;
+  };
   readonly cloudBrowserEnabled: boolean;
   readonly nativeContinuation: NativeContinuation;
   readonly executionSnapshot: ChatThreadExecutionSnapshot;
 }
 
-/** The captured Thread owns the native binding; a producer Run need not survive. */
+/** A native binding must cover the same executed predecessor as resource affinity. */
 export function resolveChatThreadContinuation(
   thread: ChatThreadRequestRow,
   args: {
     readonly cliAgentType: string | null;
     readonly officialWorkflow: boolean;
+    readonly admission: ChatThreadContinuation["admission"];
   },
 ): ChatThreadContinuation {
   const reusable =
@@ -35,19 +41,23 @@ export function resolveChatThreadContinuation(
     thread.framework !== null &&
     thread.framework === args.cliAgentType &&
     thread.frameworkSessionId !== null &&
-    thread.frameworkSessionRunId !== null;
+    args.admission.finalizingSourceRunId !== null &&
+    thread.frameworkSessionRunId === args.admission.finalizingSourceRunId;
   const nativeContinuation: NativeContinuation = {
     sessionId: reusable ? thread.frameworkSessionId : null,
     generationRunId: reusable ? thread.frameworkSessionRunId : null,
-    // A missing ID is the first native context, even if an earlier attempt
-    // failed before initialization. The Guest applies recovery only if it
-    // cannot actually resume the retained context.
+    // An executed predecessor can lack native initialization while still
+    // having durable Chat messages. The Guest also recovers if native-file
+    // validation prevents resuming an otherwise current binding.
     recoveryPrompt:
-      !args.officialWorkflow && thread.frameworkSessionId !== null
+      !args.officialWorkflow &&
+      (args.admission.finalizingSourceRunId !== null ||
+        thread.frameworkSessionId !== null)
         ? NATIVE_CONTEXT_RECOVERY_PROMPT
         : null,
   };
   return {
+    admission: args.admission,
     expected: {
       threadAgentId: thread.agentId,
       framework: thread.framework,

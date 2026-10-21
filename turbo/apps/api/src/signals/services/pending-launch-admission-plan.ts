@@ -31,6 +31,7 @@ import { chatEventReplacementInsertSql } from "./chat-event.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { withRunModelAnnotation } from "./chat-user-message.service";
 import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
+import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 
 interface ValidatedPendingThreadSession {
   readonly kind: "validated-thread-session-snapshot";
@@ -39,6 +40,7 @@ interface ValidatedPendingThreadSession {
   readonly framework: string | null;
   readonly frameworkSessionId: string | null;
   readonly frameworkSessionRunId: string | null;
+  readonly admission: ChatThreadContinuation["admission"];
 }
 
 interface AdmissionFacts {
@@ -118,6 +120,7 @@ export function pendingLaunchAdmissionStart(
         framework: resolution.expected.framework,
         frameworkSessionId: resolution.expected.frameworkSessionId,
         frameworkSessionRunId: resolution.expected.frameworkSessionRunId,
+        admission: resolution.admission,
       },
     };
     return subscriptionStep(args, captured);
@@ -286,6 +289,7 @@ function advanceThreadSnapshot(
     framework: row.framework,
     frameworkSessionId: row.frameworkSessionId,
     frameworkSessionRunId: row.frameworkSessionRunId,
+    admission: resolution.admission,
   });
   const captured = { ...facts, validatedThreadSession };
   return subscriptionStep(args, captured);

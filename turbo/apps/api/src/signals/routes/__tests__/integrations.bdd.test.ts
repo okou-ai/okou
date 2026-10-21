@@ -35,6 +35,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 /*
 helper gap:
@@ -891,8 +892,7 @@ async function expectSlackPiOwnership(args: {
 
 async function claimContinuedSlackPiTurn(args: {
   readonly scenario: CanonicalSlackPiScenario;
-  readonly firstPrompt: string;
-  readonly firstSessionId: string;
+  readonly firstRunId: string;
 }) {
   context.mocks.slack.chat.postMessage.mockClear();
   const prompt = "continue the same Slack Pi session with a tool";
@@ -916,7 +916,7 @@ async function claimContinuedSlackPiTurn(args: {
 
   expect(claim.nativeContinuation).toMatchObject({
     sessionId: args.scenario.chatThreadId,
-    generationRunId: expect.any(String),
+    generationRunId: args.firstRunId,
     recoveryPrompt: expect.stringContaining(
       "okou chat messages --output-dir threads",
     ),
@@ -927,7 +927,7 @@ async function claimContinuedSlackPiTurn(args: {
     args.scenario.chatThreadId,
     0,
   );
-  return { claim, runId };
+  return { claim, runId, prompt };
 }
 
 async function cancelContinuedSlackPiTurn(args: {
@@ -966,10 +966,11 @@ async function cancelContinuedSlackPiTurn(args: {
   expect(terminalEvents).toHaveLength(1);
 }
 
-async function runSuccessfulContinuedSlackPiTurn(args: {
+async function runSuccessfulRecoveredSlackPiTurn(args: {
   readonly scenario: CanonicalSlackPiScenario;
   readonly firstPrompt: string;
   readonly firstSessionId: string;
+  readonly cancelledPrompt: string;
 }) {
   context.mocks.slack.chat.postMessage.mockClear();
   const prompt = "complete a newer canonical Slack Pi history";
@@ -989,7 +990,20 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
     nativeContinuationSupported: true,
   });
 
-  expect(claim.nativeContinuation?.sessionId).toBe(args.scenario.chatThreadId);
+  expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
+  expect(claim.nativeContinuation).toMatchObject({
+    sessionId: null,
+    generationRunId: null,
+    recoveryPrompt: expect.stringContaining(
+      "okou chat messages --output-dir threads",
+    ),
+  });
+  const events = (
+    await chat.listThreadEvents(args.scenario.actor, args.scenario.chatThreadId)
+  ).events;
+  const history = events.map(chatEventDisplayText).join("\n");
+  expect(history).toContain(args.firstPrompt);
+  expect(history).toContain(args.cancelledPrompt);
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,
     runId: completedRunId,
@@ -2713,7 +2727,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   });
 
   it.each(["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"] as const)(
-    "admits canonical Slack %s turns into one Pi session without duplicate ownership",
+    "recovers canonical Slack %s after cancellation without duplicate ownership",
     async (selectedModel) => {
       const scenario = await establishCanonicalSlackHistory(
         await configureCanonicalSlackPiActor(selectedModel),
@@ -2730,18 +2744,18 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const continuedTurn = await claimContinuedSlackPiTurn({
         scenario,
-        firstPrompt: firstTurn.prompt,
-        firstSessionId,
+        firstRunId: firstTurn.runId,
       });
       await cancelContinuedSlackPiTurn({
         scenario,
         turn: continuedTurn,
       });
 
-      const successfulContinuation = await runSuccessfulContinuedSlackPiTurn({
+      const successfulContinuation = await runSuccessfulRecoveredSlackPiTurn({
         scenario,
         firstPrompt: firstTurn.prompt,
         firstSessionId,
+        cancelledPrompt: continuedTurn.prompt,
       });
       await expectSlackPiOwnership({
         scenario,

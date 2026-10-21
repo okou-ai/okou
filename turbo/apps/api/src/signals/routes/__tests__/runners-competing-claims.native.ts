@@ -110,14 +110,9 @@ test("composes actual PostgreSQL claim arbitration with both native Guest owners
           throw new Error("Public native poll did not return its job contract");
         }
         const job = poll.body.job;
-        if (
-          !job ||
-          job.runId !== run.runId ||
-          !job.reuseKey ||
-          job.historyGenerationRunId !== seed.runId
-        ) {
+        if (!job || job.runId !== run.runId || !job.reuseKey) {
           throw new Error(
-            "Public native candidate did not retain its predecessor",
+            "Public native candidate did not retain its reuse identity",
           );
         }
         const runnerIds = [randomUUID(), randomUUID()] as const;
@@ -219,6 +214,12 @@ test("composes actual PostgreSQL claim arbitration with both native Guest owners
             );
           }
           const claim = claimSchema.parse(winning.response);
+          expect(winning.response).toMatchObject({
+            nativeContinuation: {
+              sessionId: expect.any(String),
+              generationRunId: entry.seed.runId,
+            },
+          });
           owned.rememberClaim(entry.run.runId, claim.sandboxToken);
           const attribution = await api.requestRunRunner(
             owned.actor,

@@ -145,9 +145,13 @@ describe("CHAT-02: incomplete-round context", () => {
     expect(appended).toContain("...[truncated]");
     expect(appended).not.toContain("retry after two failures");
     const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(thirdClaim.claim.nativeContinuation?.sessionId).toBe(
-      `bdd-cli-${anchor.runId}`,
-    );
+    expect(thirdClaim.claim.nativeContinuation).toStrictEqual({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: expect.stringContaining(
+        "okou chat messages --output-dir threads",
+      ),
+    });
     await completeChatRunOk(third.runId, thirdClaim.sandboxHeaders);
     await expect(
       readCompletedRunSessionId(context, actor, third.runId),

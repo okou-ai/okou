@@ -19,7 +19,6 @@ export interface RunnerJobNotification {
   readonly profile: string;
   readonly reuseKey: string | null;
   readonly cliAgentSessionId: string | null;
-  readonly historyGenerationRunId: string | undefined;
   readonly createdAt: Date;
 }
 
@@ -139,7 +138,6 @@ export const notifyRunnerJob$ = command(
         runnerGroup: args.runnerGroup,
         profile: args.profile,
         reuseKey: args.reuseKey,
-        historyGenerationRunId: args.historyGenerationRunId,
         discoveryStartedAt: null,
       }),
       (error) => {
@@ -168,7 +166,6 @@ export const notifyRunnerJob$ = command(
       metadata: {
         reuseKey: args.reuseKey,
         cliAgentSessionId: args.cliAgentSessionId,
-        historyGenerationRunId: args.historyGenerationRunId,
       },
     });
     const publishFinishedAt = now();
@@ -188,9 +185,6 @@ export const notifyRunnerJob$ = command(
         ? { runner_preference_finalizing_source: finalizingPreferenceSource }
         : {}),
     };
-    if (args.historyGenerationRunId) {
-      dimensions.history_generation_run_id = args.historyGenerationRunId;
-    }
     // Queue-relative actions are cumulative boundaries. Preference lookup and
     // publish durations are nested children and must not be added to them.
     recordSandboxOperations([

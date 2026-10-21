@@ -1047,6 +1047,7 @@ interface SameThreadReuseHeartbeatArgs {
   readonly reusableSandbox?: {
     readonly profile: string;
     readonly historyGenerationRunId?: string;
+    readonly sourceRunId?: string;
   };
   readonly homeCaches?: {
     readonly profile: string;
@@ -3338,12 +3339,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
       });
 
-      it.each([
-        "mismatched profile",
-        "different generation",
-        "exact generation",
-      ])(
-        "selects reusable-sandbox preferences by profile and history generation: %s",
+      it.each(["mismatched profile", "different source", "matching source"])(
+        "selects reusable-sandbox preferences by profile and producing Run: %s",
         async (holder) => {
           const { reuseRunnerId, first, heartbeatHolder, pollFollowUp } =
             await setupSameThreadReuseScenario();
@@ -3363,20 +3360,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return;
           }
 
-          const exactGeneration = holder === "exact generation";
+          const exactSource = holder === "matching source";
           await heartbeatHolder({
             admittableProfiles: [],
             reusableSandbox: {
               profile: "vm0/default",
-              historyGenerationRunId: exactGeneration
-                ? first.runId
-                : randomUUID(),
+              historyGenerationRunId: randomUUID(),
+              sourceRunId: exactSource ? first.runId : randomUUID(),
             },
           });
           const reusableHolder = await pollFollowUp(
-            exactGeneration
-              ? "continue with exact reusable generation"
-              : "continue with a different reusable generation",
+            exactSource
+              ? "continue with the previous Run's sandbox"
+              : "continue with another producer's sandbox",
           );
           expect(runnerPreference(reusableHolder.job)).toStrictEqual({
             kind: "preference",
@@ -3384,7 +3380,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               runnerId: reuseRunnerId,
               heartbeatGeneration: 1,
             },
-            tier: exactGeneration ? "exactSandbox" : "reusableSandbox",
+            tier: exactSource ? "exactSandbox" : "reusableSandbox",
+            ...(exactSource ? { finalizingSourceRunId: first.runId } : {}),
             expiresAt: expect.any(String),
           });
         },
@@ -3446,7 +3443,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             runId: successor.runId,
             reuseKey,
-            historyGenerationRunId: first.runId,
             runnerPreference: finalizingPreference,
           }),
         );
@@ -3556,7 +3552,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "job",
           expect.objectContaining({
             runId: successor.runId,
-            historyGenerationRunId: first.runId,
             runnerPreference: preference,
           }),
         );
@@ -3809,7 +3804,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await flushWaitUntilForTest();
       });
 
-      it("prefers advertised exact history over the finalizing source", async () => {
+      it("prefers the previous Run's ready sandbox over its finalizing producer", async () => {
         const sourceCompletedAt = now();
         mockNow(sourceCompletedAt);
         onTestFinished(() => {
@@ -3845,6 +3840,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               reusableSandbox: {
                 profile: "vm0/default",
                 historyGenerationRunId: first.runId,
+                sourceRunId: first.runId,
               },
             },
           ],
@@ -3862,6 +3858,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: exactRunnerIdentity,
           tier: "exactSandbox" as const,
+          finalizingSourceRunId: first.runId,
           expiresAt: new Date(successorCreatedAt + 1000).toISOString(),
         };
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
@@ -3981,6 +3978,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               reusableSandbox: {
                 profile: holder === "draining" ? "vm0/default" : "vm0/large",
                 historyGenerationRunId: first.runId,
+                sourceRunId: first.runId,
               },
               ...(holder === "draining" ? { mode: "draining" as const } : {}),
             });
@@ -4287,6 +4285,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               reusableSandbox: {
                 profile: "vm0/default",
                 historyGenerationRunId: first.runId,
+                sourceRunId: first.runId,
               },
             },
           ],
@@ -4313,6 +4312,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             heartbeatGeneration: 1,
           },
           tier: "exactSandbox",
+          finalizingSourceRunId: first.runId,
           expiresAt: expect.any(String),
         });
         await api.requestCancelRun(actor, protectedFollowUp.runId, [200]);
@@ -10978,18 +10978,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "job",
           expect.objectContaining({
             runId: resumed.runId,
-            historyGenerationRunId: first.runId,
           }),
         );
         const resumedPoll = await api.pollRunner(runnerGroup);
         expect(resumedPoll.body.job).toMatchObject({
           runId: resumed.runId,
-          historyGenerationRunId: first.runId,
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
         expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: `bdd-combined-cli-${first.runId}`,
-          generationRunId: expect.any(String),
+          generationRunId: first.runId,
         });
 
         expect(resumedClaim.networkPolicies?.slack).toBeDefined();
@@ -12862,7 +12860,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(continuation).toStrictEqual({
               sessionId: null,
               generationRunId: null,
-              recoveryPrompt: null,
+              recoveryPrompt: expect.stringContaining(
+                "okou chat messages --output-dir threads",
+              ),
             });
           }
           await api.requestCancelRun(actor, next.runId, [200]);
@@ -13254,7 +13254,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(continuedClaim.nativeContinuation).toStrictEqual({
               sessionId: null,
               generationRunId: null,
-              recoveryPrompt: null,
+              recoveryPrompt: expect.stringContaining(
+                "okou chat messages --output-dir threads",
+              ),
             });
           }
 

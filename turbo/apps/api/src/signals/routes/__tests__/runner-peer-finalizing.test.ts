@@ -75,7 +75,6 @@ describe("same-host draining predecessor preference", () => {
     mockNow(f.clock + 2000);
     const next = await peerContinuation(f);
     const job = await peerPoll(f);
-    expect(job?.historyGenerationRunId).toBeUndefined();
     expect(job).toMatchObject({
       runId: next.runId,
       runnerPreference: {
@@ -178,6 +177,7 @@ describe("same-host draining predecessor preference", () => {
           reusableSandbox: {
             profile: "vm0/default",
             historyGenerationRunId: f.source.runId,
+            sourceRunId: f.source.runId,
           },
         },
       ],
@@ -185,6 +185,7 @@ describe("same-host draining predecessor preference", () => {
     await peerContinuation(f);
     expect((await peerPoll(f))?.runnerPreference).toMatchObject({
       tier: "exactSandbox",
+      finalizingSourceRunId: f.source.runId,
       runnerIdentity: { runnerId: ready, heartbeatGeneration: 8 },
     });
     mockNow(f.clock + 1000);

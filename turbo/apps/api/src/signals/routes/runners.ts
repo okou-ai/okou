@@ -71,7 +71,6 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
-  pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { compareAppVersions } from "../../lib/app-version";
 import { env } from "../../lib/env";
@@ -118,7 +117,6 @@ import {
 import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
-import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import {
   resolveRunnerReusePreference$,
@@ -668,7 +666,6 @@ function recordPollTimingMetrics(args: {
   readonly runnerPreference: RunnerPreference;
   readonly reuseKeyKind: "thread" | "session" | "none";
   readonly reuseKey: string | null;
-  readonly historyGenerationRunId: string | undefined;
   readonly queueCreatedAtMs: number;
   readonly pollRequestStartedAtMs: number;
   readonly pendingJobLookupStartedAtMs: number;
@@ -686,9 +683,6 @@ function recordPollTimingMetrics(args: {
   };
   if (args.pollReason) {
     dimensions.poll_reason = args.pollReason;
-  }
-  if (args.historyGenerationRunId) {
-    dimensions.history_generation_run_id = args.historyGenerationRunId;
   }
 
   recordSandboxOperations([
@@ -752,7 +746,6 @@ const resolvePollRunnerReusePreference$ = command(
       readonly runnerGroup: string;
       readonly profile: string;
       readonly reuseKey: string | null;
-      readonly historyGenerationRunId: string | undefined;
       readonly discoveryStartedAt: Date | null;
     },
   ) => {
@@ -788,10 +781,6 @@ const findPendingRunnerJob$ = command(
         profile: runnerJobQueue.profile,
         cliAgentSessionId: runnerJobQueue.cliAgentSessionId,
         reuseKey: runnerJobQueue.reuseKey,
-        historyGenerationRunId:
-          sql`${runnerJobQueue.executionContext}->'nativeContinuation'->>'generationRunId'`.mapWith(
-            nullableDriverValueDecoder(pgTextDecoder),
-          ),
         createdAt: runnerJobQueue.createdAt,
         discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
       })
@@ -867,7 +856,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     runnerGroup: group,
     profile: pendingJob.profile,
     reuseKey: pendingJob.reuseKey,
-    historyGenerationRunId: pendingJob.historyGenerationRunId ?? undefined,
     discoveryStartedAt: pendingJob.discoveryStartedAt,
   });
   signal.throwIfAborted();
@@ -881,7 +869,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     runnerPreference,
     reuseKeyKind: runnerReuseKeyTelemetryKind(pendingJob.reuseKey),
     reuseKey: pendingJob.reuseKey,
-    historyGenerationRunId: pendingJob.historyGenerationRunId ?? undefined,
     queueCreatedAtMs: pendingJob.createdAt.getTime(),
     pollRequestStartedAtMs,
     pendingJobLookupStartedAtMs,
@@ -900,7 +887,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         experimentalProfile: pendingJob.profile,
         cliAgentSessionId: pendingJob.cliAgentSessionId,
         reuseKey: pendingJob.reuseKey,
-        historyGenerationRunId: pendingJob.historyGenerationRunId ?? undefined,
         runnerPreference,
       },
     },
@@ -1763,9 +1749,6 @@ function scheduleSuccessfulClaimSideEffects(args: {
     preferenceClaimState: preferenceTelemetry.claimState,
     preferenceTargetedSelf: preferenceTelemetry.targetedSelf,
     reuseKey: job.reuseKey,
-    historyGenerationRunId: historyGenerationRunIdForStoredExecutionContext(
-      args.storedContext,
-    ),
     runnerAttribution: args.runnerAttribution,
     claimRouteTiming: args.claimRouteTiming,
   });
@@ -1795,7 +1778,6 @@ function scheduleClaimSucceededSideEffects(args: {
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
   readonly reuseKey: string | null;
-  readonly historyGenerationRunId: string | undefined;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
 }): void {
@@ -1830,7 +1812,6 @@ interface ClaimTimingMetricArgs {
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
   readonly reuseKey: string | null;
-  readonly historyGenerationRunId: string | undefined;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
 }
@@ -1926,9 +1907,6 @@ function claimTimingDimensions(
   }
   if (args.pollReason) {
     dimensions.poll_reason = args.pollReason;
-  }
-  if (args.historyGenerationRunId) {
-    dimensions.history_generation_run_id = args.historyGenerationRunId;
   }
   return dimensions;
 }
