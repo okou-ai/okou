@@ -184,6 +184,12 @@ function mockCustomAgentAccess(
 
 test.each([
   {
+    label: "an older API omits setup facts",
+    status: undefined,
+    message:
+      "Error: Connector account setup information is unavailable. Refresh and try again.",
+  },
+  {
     label: "required configuration is incomplete",
     status: "incomplete" as const,
     message:
@@ -220,8 +226,8 @@ test.each([
     context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
       account = customAccount(connector.id, connectionId, {
         setupStatus: status,
-        missingRequiredFields: ["secret"],
-        configuredFieldKeys: [],
+        missingRequiredFields: status === undefined ? undefined : ["secret"],
+        configuredFieldKeys: status === undefined ? undefined : [],
       });
       return respond(200, { ...connector, connectionId });
     });

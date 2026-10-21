@@ -16,6 +16,47 @@ import {
 
 const context = testContext();
 
+test.each([
+  { setupStatus: undefined, status: "Account status unavailable" },
+  { setupStatus: "incomplete", status: "Setup incomplete" },
+] as const)(
+  "Report $status for a saved account",
+  async ({ setupStatus, status }) => {
+    const connector = customConnector();
+    const account = customConnectorAccount(connector.id, {
+      displayName: "Work",
+      setupStatus,
+      missingRequiredFields: setupStatus === undefined ? undefined : ["secret"],
+      configuredFieldKeys: setupStatus === undefined ? undefined : [],
+    });
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+      return respond(200, { connectors: [connector] });
+    });
+    mockSavedConnectorAccounts(context, () => {
+      return [account];
+    });
+    context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+      return respond(200, {
+        connections: [account],
+        defaultConnection: account,
+        nextCursor: null,
+      });
+    });
+
+    await setupTeamPage({ context, path: "/connectors?scope=custom" });
+    click(
+      await waitFor(() => {
+        return getConnectorAction("button", "Manage Acme Search accounts");
+      }),
+    );
+    const manager = await screen.findByRole("dialog", {
+      name: "Manage Acme Search accounts",
+    });
+    const row = await within(manager).findByRole("group", { name: "Work" });
+    expect(within(row).getByText(status)).toBeInTheDocument();
+  },
+);
+
 test.each(["set-default", "delete-default"] as const)(
   "Check the current Job default after a local account %s",
   async (mutation) => {

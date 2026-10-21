@@ -872,7 +872,9 @@ test.each(["canonical"])(
 );
 
 test.each([
+  ["device-auth", undefined],
   ["device-auth", "invalid"],
+  ["external-code", undefined],
   ["external-code", "invalid"],
 ] as const)(
   "Reject %s completion when account setup is %s",
@@ -969,7 +971,9 @@ test.each([
       click(within(dialog).getByTestId("connector-external-code-complete"));
     }
     await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-      "This account needs additional setup. Review its connector settings and try again.",
+      setupStatus === undefined
+        ? "Connector account setup information is unavailable. Refresh and try again."
+        : "This account needs additional setup. Review its connector settings and try again.",
     );
     expect(
       screen.queryByRole("dialog", { name: `Name your ${label} account` }),

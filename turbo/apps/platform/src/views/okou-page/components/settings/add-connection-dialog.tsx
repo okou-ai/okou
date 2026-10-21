@@ -106,7 +106,7 @@ function connectedStatusText(
     });
   }
   const setupStatus = account ? account.setupStatus : item.setupStatus;
-  if (setupStatus === null) {
+  if (setupStatus === undefined || setupStatus === null) {
     return i18n.t(($) => {
       return $.connectors.accounts.setupUnavailable;
     });

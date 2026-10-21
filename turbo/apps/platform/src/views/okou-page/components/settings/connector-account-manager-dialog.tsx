@@ -109,7 +109,9 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
               })
             : needsSetup
               ? t(($) => {
-                  return $.connectors.accounts.setupIncomplete;
+                  return account.setupStatus === undefined
+                    ? $.connectors.accounts.setupUnavailable
+                    : $.connectors.accounts.setupIncomplete;
                 })
               : t(($) => {
                   return $.connectors.accounts.connected;
