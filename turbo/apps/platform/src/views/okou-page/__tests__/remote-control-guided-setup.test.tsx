@@ -1136,8 +1136,14 @@ test("A single saved network is explicitly selected and can be changed", async (
     expect(picker).toHaveTextContent("Office network");
   });
   expect(screen.queryByText("1 / 7")).not.toBeInTheDocument();
-  click(getAction("button", "Set up a new network"));
+  expect(queryAction("button", "Set up a new network")).toBeNull();
+  click(getAction("button", "Use another network"));
   expect(picker).not.toHaveTextContent("Office network");
+  expect(
+    screen.getByText(
+      "The next steps will help you connect another network. Your saved networks will not change.",
+    ),
+  ).toBeInTheDocument();
   click(getAction("button", "Installed, continue"));
   await fill(await screen.findByLabelText("Device address"), "100.64.0.20");
   click(getAction("button", "Continue"));

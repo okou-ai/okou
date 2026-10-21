@@ -544,6 +544,7 @@ function SavedNetworkPicker({ setup }: { readonly setup: RemoteSetup }) {
 function InstallStep({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
+  const networks = useLoadable(tailscaleConfigs$);
   return (
     <StepCard
       title={t(($) => {
@@ -585,10 +586,19 @@ function InstallStep({ setup }: { readonly setup: RemoteSetup }) {
           }}
         >
           {t(($) => {
-            return $.remoteControlSetup.newNetwork;
+            return $.remoteControlSetup.useAnotherNetwork;
           })}
         </Button>
       )}
+      {!setup.networkId &&
+        networks.state === "hasData" &&
+        !!networks.data?.length && (
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.anotherNetworkHelp;
+            })}
+          </p>
+        )}
       <ContinueButton
         onClick={() => {
           update({ step: "address" });
