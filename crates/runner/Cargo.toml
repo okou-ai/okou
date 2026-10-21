@@ -76,6 +76,7 @@ runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
 runner-supervisor = { workspace = true, features = ["test-support"] }
 guest-control-client = { workspace = true }
+guest-control-proto = { workspace = true }
 log = { workspace = true }
 # `test-util` feature exposes `with_test_defaults_v2()` on `aws_sdk_s3::Config`,
 # which `aws_smithy_mocks::mock_client!` needs. Feature applies only to the

@@ -1533,27 +1533,39 @@ impl FirecrackerSandbox {
         let connection_sandbox_id = self.id.clone();
         let observe_connection = timing.observer.is_some();
         let connection_submitted = Instant::now();
+        #[cfg(feature = "test-support")]
+        let connection_scope = guest_control_client::test_support::ConnectionScope::current();
         let mut vsock_task = tokio::spawn(async move {
-            if observe_connection {
-                let (result, timing) =
-                    GuestControlClient::wait_for_connection_with_timing_for_sandbox(
-                        &vsock_path,
-                        VSOCK_CONNECT_TIMEOUT,
-                        &connection_sandbox_id,
+            let connection = async move {
+                if observe_connection {
+                    let (result, timing) =
+                        GuestControlClient::wait_for_connection_with_timing_for_sandbox(
+                            &vsock_path,
+                            VSOCK_CONNECT_TIMEOUT,
+                            &connection_sandbox_id,
+                        )
+                        .await;
+                    (result, Some(timing))
+                } else {
+                    (
+                        GuestControlClient::wait_for_connection_for_sandbox(
+                            &vsock_path,
+                            VSOCK_CONNECT_TIMEOUT,
+                            &connection_sandbox_id,
+                        )
+                        .await,
+                        None,
                     )
-                    .await;
-                (result, Some(timing))
-            } else {
-                (
-                    GuestControlClient::wait_for_connection_for_sandbox(
-                        &vsock_path,
-                        VSOCK_CONNECT_TIMEOUT,
-                        &connection_sandbox_id,
-                    )
-                    .await,
-                    None,
-                )
-            }
+                }
+            };
+            #[cfg(feature = "test-support")]
+            let connection = async move {
+                match connection_scope {
+                    Some(scope) => scope.scope(connection).await,
+                    None => connection.await,
+                }
+            };
+            connection.await
         });
 
         let launch_result = if self.factory_config.snapshot.is_some() {

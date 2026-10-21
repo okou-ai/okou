@@ -1,5 +1,54 @@
 # Guarded idle terminal fixture
 
+## Fixed Guest restore cancellation and retained uncertainty
+
+`fixed_restore::native_fixed_restore_loss_retains_original_uncertainty` attaches
+invocation-owned framed controls to the genuine accepted Guest stream. Explicit
+scope capture/reinstallation covers both the owned Executor preparation task and
+the Sandbox startup listener. It uses the production handshake, fixed restore RPC
+and installed canonical `/sbin/guest-state-restore`; no executable is substituted.
+
+Run each combination separately: `OKOU_TEST_FIXED_RESTORE_BOUNDARY=capture|terminal`,
+`OKOU_TEST_FIXED_RESTORE_FAULT=drop|observer-unwind|producer-unwind` and
+`OKOU_TEST_FIXED_RESTORE_MODE=fresh|snapshot`. Capture precedes dispatch; a held
+successful terminal proves the actual helper/stdin/stderr work has completed.
+Neither is an acknowledgement of an unfinished running helper. Producer unwind
+is injected only after actual terminal delivery and remains a transport-fixture
+failure, with no positive exchange join.
+
+The actual Executor first completes a real Codex session. Complete original
+session/history bytes and their physical file, private runtime, ordinary home and
+64 KiB payload are bound and synced before cancellation. The external original
+capsule retains backing generation, promotion, metadata and the full lease.
+Cancellation leaves Uncertain and refuses commit/repark/incoming. Late terminal
+drain never clears the actual client's NotParkable state. Ordinary covered cleanup
+must report that refusal and retain the same original owner and both uncertain
+growth allowances, with no completed lease, saving or physical-relief credit.
+Independent observation and an acknowledged heartbeat progress under actual
+pool/status contention while another full-profile allocation remains refused.
+
+This corpus deliberately preserves its failed Rust driver result (101). Keep the
+original collector report, stdout/stderr, sample stream, artifacts, supplied raw
+`native_fixed_restore_policy_json` and matching snapshot preparation record. After
+the collector has positively contained only its owned children, copy the exact
+identified original `home.ext4` to `retained-home.ext4` beside those original files.
+The strict consumer reopens this regular full image and checks complete original
+home/private/session/history bytes; containment is never required cleanup.
+
+```sh
+<native-test-binary> fixed_restore::native_fixed_restore_loss_retains_original_uncertainty \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/fixed_restore_report.py <p1-directory>
+```
+
+Build exact committed Host/all current canonical Guests, verify installed helper
+and RootFS bytes, and create a new matching snapshot before execution. Preserve
+supplied policy/P1 and independently replay source/artifacts/original files.
+Synthetic reader/CLI negatives are ordinary validation only. Pre-terminal Guest
+acceptance, genuine running-helper cancellation and original cleanup IO progress
+remain explicitly blocked. This corpus cannot establish complete saving, private
+runtime removal, positive native exit, lease release, shutdown or D/E/P4 acceptance.
+
 ## Accepted physical pause with public repark awaiting HTTP
 
 `native_pause::native_accepted_physical_pause_loss_preserves_required_saving`

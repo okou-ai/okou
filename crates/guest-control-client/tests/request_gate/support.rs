@@ -70,7 +70,7 @@ impl Peer {
         Ok(raw)
     }
 
-    async fn handshake(&mut self) -> TestResult<()> {
+    pub async fn handshake(&mut self) -> TestResult<()> {
         self.send(MSG_READY, 0, &[]).await?;
         let ping = self.next().await?;
         assert_eq!(ping.message.msg_type, MSG_PING);

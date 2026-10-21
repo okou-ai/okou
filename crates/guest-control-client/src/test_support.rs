@@ -1,6 +1,8 @@
 //! Opt-in infrastructure for dependent real-socket protocol tests.
 
+mod connection_scope;
 pub mod request_gate;
+pub use connection_scope::ConnectionScope;
 
 use std::io;
 use std::time::Duration;

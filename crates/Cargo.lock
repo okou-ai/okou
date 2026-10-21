@@ -4115,6 +4115,7 @@ dependencies = [
  "guest-agent",
  "guest-contracts",
  "guest-control-client",
+ "guest-control-proto",
  "guest-home-mount",
  "guest-init",
  "guest-state-restore",
