@@ -1,6 +1,6 @@
 use guest_contracts::diagnostics::{
-    AgentFramework, EventDeliveryAcceptanceOutcome, EventDeliveryDiagnostic,
-    EventDeliveryFailedBatchDiagnostic, FailureClass, FailureDetailSource, FailureDiagnostic,
+    AgentFramework, EventDeliveryDiagnostic, EventDeliveryFailedBatchDiagnostic,
+    EventDeliveryResponseState, FailureClass, FailureDetailSource, FailureDiagnostic,
     FailureReason, HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic, PromptMetadata,
     SessionHistoryStatus,
 };
@@ -184,7 +184,7 @@ async fn read_guest_failure_diagnostic_file_accepts_unknown_event_attempt_field(
             last_sequence: 0,
             event_count: 1,
             conservative_bytes: 128,
-            outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
+            response_state: EventDeliveryResponseState::Incomplete,
             attempts: vec![HttpCompletedAttemptDiagnostic {
                 attempt: 1,
                 client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),

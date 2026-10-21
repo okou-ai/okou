@@ -1,7 +1,7 @@
 use super::*;
 use crate::executor::{SandboxReuseDisposition, SandboxReuseRejection, SandboxReuseTerminal};
 use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryDiagnostic, EventDeliveryFailedBatchDiagnostic,
+    EventDeliveryDiagnostic, EventDeliveryFailedBatchDiagnostic, EventDeliveryResponseState,
     HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic, WorkloadResourceLimitDiagnostic,
 };
 
@@ -1259,7 +1259,7 @@ async fn execute_inner_nonzero_with_failure_diagnostic_skips_abnormal_exit_diagn
             last_sequence: 0,
             event_count: 1,
             conservative_bytes: 128,
-            outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
+            response_state: EventDeliveryResponseState::Incomplete,
             attempts: vec![HttpCompletedAttemptDiagnostic {
                 attempt: 1,
                 client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
@@ -1715,7 +1715,7 @@ async fn execute_inner_attributes_nested_codex_sigkill_only_with_main_domain_oom
             last_sequence: 0,
             event_count: 1,
             conservative_bytes: 128,
-            outcome: EventDeliveryAcceptanceOutcome::ConfirmedRejection,
+            response_state: EventDeliveryResponseState::AllHttpErrors,
             attempts: vec![HttpCompletedAttemptDiagnostic {
                 attempt: 1,
                 client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),

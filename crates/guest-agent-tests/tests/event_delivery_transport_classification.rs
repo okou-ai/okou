@@ -1,18 +1,18 @@
-//! Event delivery distinguishes connection establishment failures from other
-//! response-less transport failures without retaining raw error text.
+//! Event delivery reports response observations independently of origin acceptance,
+//! while distinguishing response-less failures without retaining raw error text.
 
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
 use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryDiagnostic, HttpAttemptFailureKind,
+    EventDeliveryDiagnostic, EventDeliveryResponseState, HttpAttemptFailureKind,
 };
 use serde_json::json;
 use std::io;
 use std::time::Duration;
 
 #[tokio::test]
-async fn response_less_failures_have_stable_classifications()
+async fn failed_delivery_preserves_response_and_transport_evidence()
 -> Result<(), Box<dyn std::error::Error>> {
     let connect_delivery = run_connect_failure().await?;
     assert_failed_attempts(
@@ -22,9 +22,9 @@ async fn response_less_failures_have_stable_classifications()
         true,
     )?;
 
-    let (transport_delivery, on_wire_request_ids) = run_transport_failure().await?;
+    let transport = run_response_failures([None; 3]).await?;
     let transport_attempts = assert_failed_attempts(
-        &transport_delivery,
+        &transport.delivery,
         HttpAttemptFailureKind::Transport,
         false,
         false,
@@ -34,8 +34,49 @@ async fn response_less_failures_have_stable_classifications()
             .iter()
             .map(|attempt| attempt.client_request_id.as_str())
             .collect::<Vec<_>>(),
-        on_wire_request_ids
+        transport.request_ids
     );
+
+    for (responses, response_state) in [
+        ([Some(502); 3], EventDeliveryResponseState::AllHttpErrors),
+        (
+            [Some(502), None, Some(400)],
+            EventDeliveryResponseState::Incomplete,
+        ),
+    ] {
+        let observed = run_response_failures(responses).await?;
+        assert!(!observed.accepted_sequences.is_empty());
+        assert!(observed.delivery.last_acknowledged_sequence.is_none());
+        let failed = observed
+            .delivery
+            .first_failed_batch
+            .as_ref()
+            .ok_or_else(|| io::Error::other("response failure omitted its batch"))?;
+        assert_eq!(failed.response_state, response_state);
+        assert_eq!(failed.first_sequence, observed.accepted_sequences[0]);
+        assert_eq!(
+            failed.event_count as usize,
+            observed.accepted_sequences.len()
+        );
+        assert_eq!(failed.attempts.len(), responses.len());
+        for ((attempt, status), request_id) in failed
+            .attempts
+            .iter()
+            .zip(responses)
+            .zip(&observed.request_ids)
+        {
+            assert_eq!(attempt.http_status, status);
+            assert_eq!(attempt.client_request_id, *request_id);
+            assert_eq!(
+                attempt.failure_kind,
+                if status.is_some() {
+                    HttpAttemptFailureKind::HttpStatus
+                } else {
+                    HttpAttemptFailureKind::Transport
+                }
+            );
+        }
+    }
 
     let connect_timeout_delivery = run_connect_timeout_failure().await?;
     assert_failed_attempts(
@@ -91,14 +132,21 @@ async fn run_connect_failure() -> Result<EventDeliveryDiagnostic, Box<dyn std::e
         .ok_or_else(|| io::Error::other("connect failure omitted delivery diagnostic").into())
 }
 
-async fn run_transport_failure()
--> Result<(EventDeliveryDiagnostic, Vec<String>), Box<dyn std::error::Error>> {
+struct ResponseFailureRun {
+    delivery: EventDeliveryDiagnostic,
+    request_ids: Vec<String>,
+    accepted_sequences: Vec<u32>,
+}
+
+async fn run_response_failures(
+    responses: [Option<u16>; 3],
+) -> Result<ResponseFailureRun, Box<dyn std::error::Error>> {
     let mock_cli = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
     let mut server = common::ControlledHttpServer::start().await?;
     let prompt = format!(
         "@ECHO@\n{}",
-        json!({ "type": "result", "marker": "transport-failure" })
+        json!({ "type": "result", "marker": "response-failure" })
     );
 
     unsafe {
@@ -130,11 +178,17 @@ async fn run_transport_failure()
 
     let mut request_ids = Vec::new();
     let mut request_body = None;
-    for _ in 0..3 {
+    let accepted_path = tmp.path().join("accepted-events.json");
+    let mut accepted_sequences = Vec::new();
+    for status in responses {
         let request = server.next_request(Duration::from_secs(5)).await?;
         if let Some(request_body) = &request_body {
             assert_eq!(&request.request.body, request_body);
         } else {
+            // Model origin acceptance before an error response or lost acknowledgement.
+            // A client observing a proxy 502 cannot infer that this write did not happen.
+            accepted_sequences = common::event_request_sequences(&request.request)?;
+            std::fs::write(&accepted_path, &request.request.body)?;
             request_body = Some(request.request.body.clone());
         }
         request_ids.push(
@@ -142,19 +196,34 @@ async fn run_transport_failure()
                 .request
                 .client_request_id
                 .clone()
-                .ok_or_else(|| io::Error::other("transport request omitted request ID"))?,
+                .ok_or_else(|| io::Error::other("response-failure request omitted request ID"))?,
         );
-        drop(request);
+        if let Some(status) = status {
+            request.respond(status)?;
+        } else {
+            drop(request);
+        }
     }
 
     let joined = tokio::time::timeout(Duration::from_secs(5), execution)
         .await
-        .map_err(|_| io::Error::other("transport-failure delivery exceeded its retry budget"))?;
+        .map_err(|_| io::Error::other("response-failure delivery exceeded its retry budget"))?;
     let result = joined??;
+    assert_eq!(result.exit_code, common::CLEAN_EXIT);
     let delivery = result
         .event_delivery
-        .ok_or_else(|| io::Error::other("transport failure omitted delivery diagnostic"))?;
-    Ok((delivery, request_ids))
+        .ok_or_else(|| io::Error::other("response failure omitted delivery diagnostic"))?;
+    assert_eq!(
+        std::fs::read_to_string(accepted_path)?,
+        request_body
+            .ok_or_else(|| io::Error::other("response-failure run received no request body"))?
+    );
+    assert_eq!(server.request_count(), responses.len());
+    Ok(ResponseFailureRun {
+        delivery,
+        request_ids,
+        accepted_sequences,
+    })
 }
 
 async fn run_connect_timeout_failure() -> Result<EventDeliveryDiagnostic, Box<dyn std::error::Error>>
@@ -250,8 +319,8 @@ fn assert_failed_attempts(
             && attempt.connect_observed == Some(connect_observed)
     }));
     assert_eq!(
-        failed_batch.outcome,
-        EventDeliveryAcceptanceOutcome::OutcomeUnknown
+        failed_batch.response_state,
+        EventDeliveryResponseState::Incomplete
     );
     let mut unique_request_ids = failed_batch
         .attempts

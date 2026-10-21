@@ -324,7 +324,7 @@ pub struct EventDeliveryDiagnostic {
     /// Logical delivery batches started.
     pub total_batches: u64,
     /// Logical batches that completed with a terminal delivery failure,
-    /// including non-retryable rejection and exhausted HTTP retry attempts.
+    /// including non-retryable HTTP errors and exhausted HTTP retry attempts.
     ///
     /// A batch interrupted by the global drain deadline is reported in
     /// `drain_timeout` instead of being counted as a completed failed batch.
@@ -334,7 +334,7 @@ pub struct EventDeliveryDiagnostic {
     pub last_acknowledged_sequence: Option<u32>,
     /// First logical batch that completed with a terminal delivery failure.
     ///
-    /// Includes non-retryable rejection and exhausted HTTP retry attempts;
+    /// Includes non-retryable HTTP errors and exhausted HTTP retry attempts;
     /// the recorded attempt and status details establish the failure path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_failed_batch: Option<EventDeliveryFailedBatchDiagnostic>,
@@ -345,7 +345,7 @@ pub struct EventDeliveryDiagnostic {
 
 /// First logical event batch that completed with a terminal delivery failure.
 ///
-/// This includes non-retryable rejection and exhausted HTTP retry attempts.
+/// This includes non-retryable HTTP errors and exhausted HTTP retry attempts.
 /// Inspect `attempts` and their failure/status details to distinguish the path;
 /// this diagnostic alone does not imply retry exhaustion. A batch interrupted
 /// by the global drain deadline is reported separately in
@@ -361,8 +361,8 @@ pub struct EventDeliveryFailedBatchDiagnostic {
     pub event_count: u32,
     /// Conservative batch byte accounting used by guest admission control.
     pub conservative_bytes: u64,
-    /// Whether the API explicitly rejected every terminal attempt.
-    pub outcome: EventDeliveryAcceptanceOutcome,
+    /// Observed response state across the batch's failed attempts.
+    pub response_state: EventDeliveryResponseState,
     /// Completed failed attempts, bounded by the delivery retry budget.
     pub attempts: Vec<HttpCompletedAttemptDiagnostic>,
 }
@@ -401,8 +401,8 @@ pub struct EventDeliveryActiveBatchDiagnostic {
     /// Request attempt still in flight at the deadline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt: Option<EventDeliveryActiveAttemptDiagnostic>,
-    /// Acceptance remains unknown because delivery did not reach a terminal response.
-    pub outcome: EventDeliveryAcceptanceOutcome,
+    /// Incomplete while this batch remains active at the drain deadline.
+    pub response_state: EventDeliveryResponseState,
 }
 
 /// Request attempt active when the global drain deadline expires.
@@ -417,23 +417,25 @@ pub struct EventDeliveryActiveAttemptDiagnostic {
     pub elapsed_ms: u64,
 }
 
-/// Observed API acceptance outcome for terminal event delivery.
+/// Observed HTTP response completeness for failed or interrupted event delivery.
+///
+/// This state does not establish whether the origin accepted or processed events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EventDeliveryAcceptanceOutcome {
-    /// Every failed attempt received an explicit non-success HTTP response.
-    ConfirmedRejection,
-    /// At least one request received no response, so acceptance is unknown.
-    OutcomeUnknown,
+pub enum EventDeliveryResponseState {
+    /// A nonempty completed failed batch observed an HTTP error on every attempt.
+    AllHttpErrors,
+    /// At least one response is missing, or the batch remains active at the drain deadline.
+    Incomplete,
 }
 
-impl EventDeliveryAcceptanceOutcome {
+impl EventDeliveryResponseState {
     /// Return the stable snake_case string representation.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::ConfirmedRejection => "confirmed_rejection",
-            Self::OutcomeUnknown => "outcome_unknown",
+            Self::AllHttpErrors => "all_http_errors",
+            Self::Incomplete => "incomplete",
         }
     }
 }
@@ -1756,7 +1758,7 @@ mod tests {
                 last_sequence: 15,
                 event_count: 8,
                 conservative_bytes: 2_048,
-                outcome: EventDeliveryAcceptanceOutcome::ConfirmedRejection,
+                response_state: EventDeliveryResponseState::AllHttpErrors,
                 attempts: vec![first_attempt.clone()],
             }),
             drain_timeout: Some(EventDeliveryDrainTimeoutDiagnostic {
@@ -1771,7 +1773,7 @@ mod tests {
                     conservative_bytes: 8_192,
                     completed_attempts: vec![combined_transport_attempt],
                     active_attempt: Some(active_attempt),
-                    outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
+                    response_state: EventDeliveryResponseState::Incomplete,
                 }),
             }),
         };
@@ -1785,8 +1787,8 @@ mod tests {
 
         let json = serde_json::to_value(&diagnostic).unwrap();
         assert_eq!(
-            json["eventDelivery"]["firstFailedBatch"]["outcome"],
-            "confirmed_rejection"
+            json["eventDelivery"]["firstFailedBatch"]["responseState"],
+            "all_http_errors"
         );
         assert_eq!(
             json["eventDelivery"]["firstFailedBatch"]["attempts"][0],
@@ -1807,16 +1809,49 @@ mod tests {
             true
         );
         assert_eq!(
-            json["eventDelivery"]["drainTimeout"]["activeBatch"]["outcome"],
-            "outcome_unknown"
+            json["eventDelivery"]["drainTimeout"]["activeBatch"]["responseState"],
+            "incomplete"
         );
         assert_eq!(
-            EventDeliveryAcceptanceOutcome::ConfirmedRejection.as_str(),
-            "confirmed_rejection"
+            EventDeliveryResponseState::AllHttpErrors.as_str(),
+            "all_http_errors"
         );
         assert_eq!(HttpAttemptFailureKind::Transport.as_str(), "transport");
 
         let round_trip: FailureDiagnostic = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(round_trip, diagnostic);
+
+        let mut diagnostic = diagnostic;
+        let active_batch = diagnostic
+            .event_delivery
+            .as_mut()
+            .unwrap()
+            .drain_timeout
+            .as_mut()
+            .unwrap()
+            .active_batch
+            .as_mut()
+            .unwrap();
+        active_batch.completed_attempts.clear();
+        active_batch.active_attempt.as_mut().unwrap().attempt = 1;
+        let json = serde_json::to_value(&diagnostic).unwrap();
+        assert_eq!(
+            json["eventDelivery"]["drainTimeout"]["activeBatch"],
+            serde_json::json!({
+                "firstSequence": 16,
+                "lastSequence": 39,
+                "eventCount": 24,
+                "conservativeBytes": 8_192,
+                "completedAttempts": [],
+                "activeAttempt": {
+                    "attempt": 1,
+                    "clientRequestId": "22222222-2222-4222-8222-222222222222",
+                    "elapsedMs": 4_000
+                },
+                "responseState": "incomplete"
+            })
+        );
+        let round_trip: FailureDiagnostic = serde_json::from_value(json).unwrap();
         assert_eq!(round_trip, diagnostic);
     }
 

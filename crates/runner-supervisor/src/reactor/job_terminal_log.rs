@@ -155,8 +155,8 @@ fn log_job_execution_failed(
                     event_delivery_fields.first_failure_event_count,
                 event_delivery_first_failure_conservative_bytes =
                     event_delivery_fields.first_failure_conservative_bytes,
-                event_delivery_first_failure_outcome =
-                    event_delivery_fields.first_failure_outcome,
+                event_delivery_first_failure_response_state =
+                    event_delivery_fields.first_failure_response_state,
                 event_delivery_first_failure_attempt_count =
                     event_delivery_fields.first_failure_attempt_count,
                 event_delivery_first_failure_final_attempt_number =
@@ -197,8 +197,8 @@ fn log_job_execution_failed(
                     event_delivery_fields.drain_active_attempt_request_id,
                 event_delivery_drain_active_attempt_elapsed_ms =
                     event_delivery_fields.drain_active_attempt_elapsed_ms,
-                event_delivery_drain_active_outcome =
-                    event_delivery_fields.drain_active_outcome,
+                event_delivery_drain_active_response_state =
+                    event_delivery_fields.drain_active_response_state,
                 heartbeat_failed_cycle_count = heartbeat_fields.failed_cycle_count,
                 heartbeat_attempt_count = heartbeat_fields.attempt_count,
                 heartbeat_final_scheduled_lag_ms = heartbeat_fields.final_scheduled_lag_ms,
@@ -304,7 +304,7 @@ struct JobEventDeliveryLogFields<'a> {
     first_failure_last_sequence: Option<u32>,
     first_failure_event_count: Option<u32>,
     first_failure_conservative_bytes: Option<u64>,
-    first_failure_outcome: Option<&'static str>,
+    first_failure_response_state: Option<&'static str>,
     first_failure_attempt_count: Option<u64>,
     first_failure_final_attempt_number: Option<u32>,
     first_failure_final_attempt_kind: Option<&'static str>,
@@ -326,7 +326,7 @@ struct JobEventDeliveryLogFields<'a> {
     drain_active_attempt_number: Option<u32>,
     drain_active_attempt_request_id: Option<&'a str>,
     drain_active_attempt_elapsed_ms: Option<u64>,
-    drain_active_outcome: Option<&'static str>,
+    drain_active_response_state: Option<&'static str>,
 }
 
 struct JobHeartbeatLogFields<'a> {
@@ -399,7 +399,8 @@ impl<'a> From<Option<&'a EventDeliveryDiagnostic>> for JobEventDeliveryLogFields
             first_failure_event_count: first_failure.map(|failure| failure.event_count),
             first_failure_conservative_bytes: first_failure
                 .map(|failure| failure.conservative_bytes),
-            first_failure_outcome: first_failure.map(|failure| failure.outcome.as_str()),
+            first_failure_response_state: first_failure
+                .map(|failure| failure.response_state.as_str()),
             first_failure_attempt_count: first_failure
                 .map(|failure| u64::try_from(failure.attempts.len()).unwrap_or(u64::MAX)),
             first_failure_final_attempt_number: first_failure_final_attempt
@@ -431,7 +432,7 @@ impl<'a> From<Option<&'a EventDeliveryDiagnostic>> for JobEventDeliveryLogFields
             drain_active_attempt_request_id: drain_active_attempt
                 .map(|attempt| attempt.client_request_id.as_str()),
             drain_active_attempt_elapsed_ms: drain_active_attempt.map(|attempt| attempt.elapsed_ms),
-            drain_active_outcome: drain_active.map(|active| active.outcome.as_str()),
+            drain_active_response_state: drain_active.map(|active| active.response_state.as_str()),
         }
     }
 }
@@ -552,12 +553,13 @@ mod tests {
 
     use guest_contracts::diagnostics::{
         AgentFramework, CliObservedExitKind, CliTerminationDiagnostic, CliTerminationReason,
-        CliTerminationSignal, EventDeliveryAcceptanceOutcome, EventDeliveryActiveAttemptDiagnostic,
+        CliTerminationSignal, EventDeliveryActiveAttemptDiagnostic,
         EventDeliveryActiveBatchDiagnostic, EventDeliveryDiagnostic,
-        EventDeliveryDrainTimeoutDiagnostic, EventDeliveryFailedBatchDiagnostic, FailureClass,
-        FailureDetailSource, HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic,
-        HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic, PromptMetadata,
-        SessionHistoryStatus, WorkloadResourceLimitDiagnostic,
+        EventDeliveryDrainTimeoutDiagnostic, EventDeliveryFailedBatchDiagnostic,
+        EventDeliveryResponseState, FailureClass, FailureDetailSource,
+        HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic, HttpAttemptFailureKind,
+        HttpCompletedAttemptDiagnostic, PromptMetadata, SessionHistoryStatus,
+        WorkloadResourceLimitDiagnostic,
     };
     use tracing::Level;
     use tracing_subscriber::prelude::*;
@@ -1392,7 +1394,7 @@ mod tests {
                 last_sequence: 18,
                 event_count: 11,
                 conservative_bytes: 2_048,
-                outcome: EventDeliveryAcceptanceOutcome::ConfirmedRejection,
+                response_state: EventDeliveryResponseState::AllHttpErrors,
                 attempts: vec![failed_attempt.clone()],
             }),
             drain_timeout: Some(EventDeliveryDrainTimeoutDiagnostic {
@@ -1414,7 +1416,7 @@ mod tests {
                         client_request_id: "22222222-2222-4222-8222-222222222222".to_string(),
                         elapsed_ms: 4_001,
                     }),
-                    outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
+                    response_state: EventDeliveryResponseState::Incomplete,
                 }),
             }),
         });
@@ -1436,8 +1438,8 @@ mod tests {
         );
         assert_field_eq(
             &event,
-            "event_delivery_first_failure_outcome",
-            "confirmed_rejection",
+            "event_delivery_first_failure_response_state",
+            "all_http_errors",
         );
         assert_field_eq(&event, "event_delivery_first_failure_attempt_count", "1");
         assert_field_eq(
@@ -1506,8 +1508,8 @@ mod tests {
         );
         assert_field_eq(
             &event,
-            "event_delivery_drain_active_outcome",
-            "outcome_unknown",
+            "event_delivery_drain_active_response_state",
+            "incomplete",
         );
         for field in [
             "event_delivery_first_failure_event_count",
@@ -1612,7 +1614,7 @@ mod tests {
                 last_sequence: 0,
                 event_count: 1,
                 conservative_bytes: 128,
-                outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
+                response_state: EventDeliveryResponseState::Incomplete,
                 attempts: vec![HttpCompletedAttemptDiagnostic {
                     attempt: 3,
                     client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
