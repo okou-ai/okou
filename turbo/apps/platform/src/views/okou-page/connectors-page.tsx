@@ -1278,7 +1278,7 @@ function useBuiltinConnectorConnectHandlers() {
   const signal = useGet(pageSignal$);
   const finishExplicitAccountAdd = async (
     connector: PlatformConnectorCatalogStatusItem,
-    connectionId: string | null,
+    connectionId: string,
     attemptSignal: AbortSignal,
   ): Promise<void> => {
     await runConnectSuccess(

@@ -20,7 +20,7 @@ import {
   feishuInstallationEnabledFromRows,
   type FeishuInstallationConfig,
 } from "./feishu-config";
-import { ensureFeishuCustomConnector$ } from "./feishu-custom-connector.service";
+import { ensureManagedFeishuConnector$ } from "./feishu-custom-connector.service";
 
 interface ConfigureFeishuArgs {
   readonly orgId: string;
@@ -400,7 +400,7 @@ export const configureFeishuInstallation$ = command(
     signal.throwIfAborted();
     if (result.kind === "ok") {
       await set(
-        ensureFeishuCustomConnector$,
+        ensureManagedFeishuConnector$,
         {
           orgId: args.orgId,
           userId: args.userId,

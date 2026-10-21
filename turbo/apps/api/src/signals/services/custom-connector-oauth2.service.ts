@@ -1404,7 +1404,7 @@ export async function decryptCustomConnectorOAuth2Credentials(
   };
 }
 
-async function encryptTokenValues(args: {
+export async function encryptTokenValues(args: {
   readonly token: CustomConnectorOAuthTokenResult;
   readonly fallbackRefreshToken?: string;
   readonly fallbackEncryptedIdToken?: string;
@@ -1432,7 +1432,7 @@ async function encryptTokenValues(args: {
   };
 }
 
-function connectionTokenRows(args: {
+export function connectionTokenRows(args: {
   readonly connectionId: string;
   readonly orgId: string;
   readonly userId: string;

@@ -11,7 +11,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
-import { db$, writeDb$, type Db } from "./db";
+import { db$, writeDb$ } from "./db";
 import { command } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
@@ -657,79 +657,85 @@ export function feishuMessageSendBody(
   };
 }
 
-export async function replyWithFeishuMessage(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly messageId: string;
-    readonly message: FeishuOutboundMessage;
-    readonly replyInThread?: boolean;
-    readonly idempotencyKey?: string;
-  },
-  signal: AbortSignal,
-): Promise<FeishuSentMessage> {
-  const replyContextArgs = args;
-  const replyContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await replyContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.id, replyContextArgs.installationId))
-      .limit(1);
-    replyContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await replyContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      replyContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await replyContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(eq(feishuOrgInstallations.id, replyContextArgs.installationId));
-      replyContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
-  const response = await fetch(
-    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reply`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({
-        ...messagePayload(args.message),
-        ...(args.replyInThread ? { reply_in_thread: true } : {}),
-        ...(args.idempotencyKey ? { uuid: args.idempotencyKey } : {}),
-      }),
-      signal,
+export const replyWithFeishuMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly installationId: string;
+      readonly messageId: string;
+      readonly message: FeishuOutboundMessage;
+      readonly replyInThread?: boolean;
+      readonly idempotencyKey?: string;
     },
-  );
-  return parseSentMessage(
-    await readJson(response, providerName),
-    `${providerName} message reply failed`,
-    providerName,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<FeishuSentMessage> => {
+    const db = set(writeDb$);
+    const replyContextArgs = args;
+    const replyContextSignal = signal;
+    const { token, apiOrigin, providerName } = await (async () => {
+      const [installation] = await db
+        .select()
+        .from(feishuOrgInstallations)
+        .where(eq(feishuOrgInstallations.id, replyContextArgs.installationId))
+        .limit(1);
+      replyContextSignal.throwIfAborted();
+      if (!installation) {
+        throw new Error("Bot installation not found");
+      }
+      if (
+        !(await (async () => {
+          const plan = feishuInstallationAvailabilityReadPlan(installation);
+          if (plan.kind === "resolved") {
+            return plan.enabled;
+          }
+          const rows = await db
+            .select(plan.columns)
+            .from(userFeatureSwitches)
+            .where(plan.condition);
+          return feishuInstallationEnabledFromRows(plan.scope, rows);
+        })())
+      ) {
+        throw new FeishuApiError("Lark integration is not enabled", 403);
+      }
+      const credentials = await resolveFeishuRequestCredentials(
+        installation,
+        replyContextSignal,
+      );
+      if (credentials.refreshedToken) {
+        await db
+          .update(feishuOrgInstallations)
+          .set(feishuTokenUpdateValues(credentials.refreshedToken))
+          .where(
+            eq(feishuOrgInstallations.id, replyContextArgs.installationId),
+          );
+        replyContextSignal.throwIfAborted();
+      }
+      return credentials.context;
+    })();
+    signal.throwIfAborted();
+    const response = await fetch(
+      `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reply`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({
+          ...messagePayload(args.message),
+          ...(args.replyInThread ? { reply_in_thread: true } : {}),
+          ...(args.idempotencyKey ? { uuid: args.idempotencyKey } : {}),
+        }),
+        signal,
+      },
+    );
+    return parseSentMessage(
+      await readJson(response, providerName),
+      `${providerName} message reply failed`,
+      providerName,
+    );
+  },
+);
 
 export function feishuReactionCreationUrl(
   apiOrigin: string,

@@ -186,6 +186,19 @@ export function ShareLinkRow({
   );
 }
 
+export function ShareLinkSkeleton() {
+  return (
+    <div
+      aria-busy="true"
+      className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1"
+    >
+      <Skeleton className="size-3.5 rounded" />
+      <Skeleton className="h-3 flex-1 rounded" />
+      <Skeleton className="h-8 w-20 rounded-lg" />
+    </div>
+  );
+}
+
 function ShareRetryRow({ onRetry }: { readonly onRetry: () => void }) {
   const { t } = useTranslation();
   return (
@@ -233,11 +246,7 @@ function ShareSkeleton() {
           </div>
         );
       })}
-      <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1">
-        <Skeleton className="size-3.5 rounded" />
-        <Skeleton className="h-3 flex-1 rounded" />
-        <Skeleton className="h-8 w-20 rounded-lg" />
-      </div>
+      <ShareLinkSkeleton />
     </div>
   );
 }

@@ -2142,6 +2142,7 @@
       "received": "Recibido",
       "running": "En curso",
       "sent": "Enviado",
+      "toggleMessages": "Mensajes con {{title}}",
       "unavailable": "No disponible",
       "untitled": "Sin título"
     },
@@ -5102,10 +5103,6 @@
           "title": "Modelo predeterminado"
         },
         "description": "Elige los valores predeterminados para los chats nuevos y cómo se envían los mensajes.",
-        "resources": {
-          "description": "Muestra los artefactos y chats relacionados junto a la conversación cuando hay espacio.",
-          "title": "Abrir recursos automáticamente"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {
