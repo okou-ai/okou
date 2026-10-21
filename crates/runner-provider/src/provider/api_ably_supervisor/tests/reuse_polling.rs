@@ -3,7 +3,7 @@ use futures_util::FutureExt;
 
 const SLOW: Duration = Duration::from_secs(30);
 const FAST: Duration = Duration::from_secs(5);
-const REUSE: Duration = Duration::from_millis(500);
+const REUSE: Duration = Duration::from_secs(10);
 // Tokio rounds timer deadlines to milliseconds. Inspect readiness after that
 // one tick without awaiting a future that could advance past a missed deadline.
 const TIMER_TICK: Duration = Duration::from_millis(1);
@@ -27,7 +27,7 @@ async fn reuse_deadline_survives_connection_changes_and_wait_cancellation() {
         let wait = wakeups.wait_for_poll_due(&cancel, SLOW, FAST);
         tokio::pin!(wait);
         assert!(futures_util::poll!(&mut wait).is_pending());
-        tokio::time::advance(Duration::from_millis(100)).await;
+        tokio::time::advance(REUSE / 5).await;
         if sequence == 3 {
             wakeups.mark_ably_disconnected();
         } else {
@@ -86,13 +86,14 @@ async fn reuse_reconciliation_keeps_explicit_admission_deferrals() {
     let wakeups = ready().await;
     let cancel = CancellationToken::new();
     wakeups.update_reuse_polling((1, 1), Some(REUSE));
-    wakeups.request_deferred_poll_after(Duration::from_secs(2));
     let wait = wakeups.wait_for_poll_due(&cancel, SLOW, FAST);
     tokio::pin!(wait);
     assert!(futures_util::poll!(&mut wait).is_pending());
-    tokio::time::advance(REUSE).await;
+    tokio::time::advance(REUSE - Duration::from_secs(1)).await;
+    wakeups.request_deferred_poll_after(Duration::from_secs(2));
+    tokio::time::advance(Duration::from_secs(1)).await;
     assert!(futures_util::poll!(&mut wait).is_pending());
-    tokio::time::advance(Duration::from_millis(1500) + TIMER_TICK).await;
+    tokio::time::advance(Duration::from_secs(1) + TIMER_TICK).await;
     let due = wait
         .as_mut()
         .now_or_never()
@@ -115,7 +116,7 @@ async fn reuse_reconciliation_keeps_explicit_admission_deferrals() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn failed_reuse_poll_backs_off_even_as_inventory_is_refreshed() {
+async fn failed_reuse_poll_does_not_retry_early_as_inventory_is_refreshed() {
     let wakeups = ready().await;
     let cancel = CancellationToken::new();
     wakeups.update_reuse_polling((1, 1), Some(REUSE));
@@ -127,7 +128,7 @@ async fn failed_reuse_poll_backs_off_even_as_inventory_is_refreshed() {
     let next = wakeups.wait_for_poll_due(&cancel, SLOW, FAST);
     tokio::pin!(next);
     assert!(futures_util::poll!(&mut next).is_pending());
-    tokio::time::advance(FAST - Duration::from_millis(1)).await;
+    tokio::time::advance(REUSE - TIMER_TICK).await;
     wakeups.update_reuse_polling((1, 2), Some(REUSE));
     assert!(futures_util::poll!(&mut next).is_pending());
     tokio::time::advance(TIMER_TICK * 2).await;

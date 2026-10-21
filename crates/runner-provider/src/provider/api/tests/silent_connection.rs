@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider::api_ably_supervisor::make_ably_config;
 
 use std::sync::Mutex as StdMutex;
 
@@ -6,10 +7,26 @@ use ably_subscriber::protocol::{
     AblyMessage, ConnectionDetails, ProtocolMessage, action, decode_msg, encode_msg,
 };
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::{
+    Message as WsMessage,
+    handshake::server::{Callback, ErrorResponse, Request, Response},
+};
 
 const CHANNEL: &str = "runner-group:default";
 const COMPETITOR_ID: &str = "60000000-0000-4000-8000-000000000001";
+
+struct VerifyRunnerHeartbeat;
+
+impl Callback for VerifyRunnerHeartbeat {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        let url = reqwest::Url::parse(&format!("ws://localhost{}", request.uri())).unwrap();
+        assert!(
+            url.query_pairs()
+                .any(|(key, value)| key == "heartbeatInterval" && value == "5000")
+        );
+        Ok(response)
+    }
+}
 
 #[derive(Default)]
 struct Queue {
@@ -123,6 +140,8 @@ async fn heartbeat_limits_reconciliation_to_admittable_held_inventory() {
         tokio::pin!(wait);
         assert!(futures_util::poll!(&mut wait).is_pending(), "{name}");
         tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(futures_util::poll!(&mut wait).is_pending(), "{name}");
+        tokio::time::advance(POLL_REUSE).await;
         if eligible {
             assert!(
                 matches!(
@@ -145,7 +164,7 @@ async fn heartbeat_limits_reconciliation_to_admittable_held_inventory() {
 // Keep all peers in this runtime and use real time: a paused Tokio clock can
 // expire a claim while the kernel is still moving an ordinary HTTP response.
 #[tokio::test]
-async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fallback() {
+async fn silent_socket_reconciliation_respects_budget_and_expired_preference() {
     let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_address = listener.local_addr().unwrap();
@@ -154,8 +173,10 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
     let stop_http = CancellationToken::new();
     let peer_stop = stop_http.clone();
     let (initial_tx, initial_rx) = oneshot::channel();
+    let (reconciled_tx, reconciled_rx) = oneshot::channel();
     let server = tokio::spawn(async move {
         let mut initial_tx = Some(initial_tx);
+        let reconciliation = Arc::new(StdMutex::new(Some(reconciled_tx)));
         let mut requests = tokio::task::JoinSet::new();
         loop {
             tokio::select! {
@@ -164,6 +185,7 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
                 accepted = listener.accept() => {
                     let (mut stream, _) = accepted.unwrap();
                     let queue = Arc::clone(&queue_peer);
+                    let reconciliation = Arc::clone(&reconciliation);
                     // Only the first poll signals queue admission, after its
                     // empty response. Creating the job before it would let
                     // startup's immediate poll mask the broken safety cadence.
@@ -176,7 +198,15 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
                             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return,
                             Err(error) => panic!("reading discovery API request: {error}"),
                         };
-                        let response = queue.lock().unwrap().response(&request);
+                        let request_received_at = tokio::time::Instant::now();
+                        let (response, reconciled) = {
+                            let mut queue = queue.lock().unwrap();
+                            let response = queue.response(&request);
+                            let reconciled = request.split_whitespace().nth(1)
+                                == Some(routes::runners::poll::POLL.path)
+                                && queue.polls == 2;
+                            (response, reconciled)
+                        };
                         if let Err(error) = stream.write_all(&response).await {
                             // A cancelled poll may disconnect after its headers
                             // were read, too. The startup gate must still finish.
@@ -188,6 +218,10 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
                         }
                         if let Some(initial) = initial {
                             initial.send(()).unwrap();
+                        }
+                        if reconciled {
+                            reconciliation.lock().unwrap().take().unwrap()
+                                .send(request_received_at).unwrap();
                         }
                     });
                 }
@@ -215,13 +249,15 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
     let (deliver, delivery) = oneshot::channel();
     let peer = tokio::spawn(async move {
         let (tcp, _) = socket.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+        let mut ws = tokio_tungstenite::accept_hdr_async(tcp, VerifyRunnerHeartbeat)
+            .await
+            .unwrap();
         let connected = ProtocolMessage {
             action: action::CONNECTED,
             connection_id: Some("silent-connection".into()),
             connection_key: Some("silent-connection!fixture".into()),
             connection_details: Some(ConnectionDetails {
-                max_idle_interval: Some(15_000),
+                max_idle_interval: Some(5_000),
                 connection_state_ttl: Some(120_000),
                 ..Default::default()
             }),
@@ -271,31 +307,29 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
             }
         }
     });
-    let mut config = ably_subscriber::SubscribeConfig::new(
-        Box::new(|| {
-            Box::pin(async {
-                Ok(ably_subscriber::TokenRequest {
-                    key_name: "fixture.key".into(),
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                    nonce: "fixture-nonce".into(),
-                    mac: "fixture-mac".into(),
-                    capability: "{\"*\":[\"subscribe\"]}".into(),
-                    ttl: None,
-                    client_id: None,
-                })
-            })
-        }),
-        CHANNEL,
-    );
-    config.host = Some(socket_address.to_string());
-    config.rest_host = Some(tokens.address().to_string());
-    let subscription = ably_subscriber::subscribe(config).await.unwrap();
     let wakeups = Arc::new(PollWakeups::new(true));
     let provider = api_provider_for_test(
         format!("http://{api_address}"),
         CancellationToken::new(),
         Arc::clone(&wakeups),
     );
+    let mut config = make_ably_config(&provider.api, &provider.group);
+    config.get_token = Box::new(|| {
+        Box::pin(async {
+            Ok(ably_subscriber::TokenRequest {
+                key_name: "fixture.key".into(),
+                timestamp: chrono::Utc::now().timestamp_millis(),
+                nonce: "fixture-nonce".into(),
+                mac: "fixture-mac".into(),
+                capability: "{\"*\":[\"subscribe\"]}".into(),
+                ttl: None,
+                client_id: None,
+            })
+        })
+    });
+    config.host = Some(socket_address.to_string());
+    config.rest_host = Some(tokens.address().to_string());
+    let subscription = ably_subscriber::subscribe(config).await.unwrap();
     let supervisor = AblySupervisor::connected_for_test(
         AblySupervisorConfig {
             ably_side_message_handler: None,
@@ -316,13 +350,13 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
     let claim = tokio::spawn(async move {
         let candidate = discovering.discover().await.unwrap();
         assert_eq!(candidate.run_id(), run_id);
-        let claimed = discovering.claim(candidate).await;
-        (claimed, tokio::time::Instant::now())
+        discovering.claim(candidate).await
     });
     tokio::time::timeout(Duration::from_secs(5), initial_rx)
         .await
         .unwrap()
         .unwrap();
+    let eligible_since = tokio::time::Instant::now();
     provider
         .heartbeat(&heartbeat_state_for_test())
         .await
@@ -352,33 +386,37 @@ async fn reusable_holder_claims_during_silent_socket_loss_before_competitor_fall
                 crate::profile::DEFAULT_PROFILE.into()
             ))
             .await
-            .is_none()
+            .is_some()
     );
-    let (claimed, claimed_at) =
-        join_raw_http_task(claim, "preferred claim during silent connection").await;
-    assert!(claimed.is_some());
+    // Keep the actual two-second expiry: ten-second polling cannot promise
+    // preferred ownership, and the competitor is allowed to win after expiry.
+    let reconciled_at = tokio::time::timeout_at(
+        eligible_since + POLL_REUSE + Duration::from_secs(4),
+        reconciled_rx,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(
-        claimed_at < expires,
-        "preferred claim must finish before expiry"
+        reconciled_at >= eligible_since + POLL_REUSE,
+        "routine reconciliation must not start before the ten-second budget"
     );
+    assert!(provider.poll_wakeups.snapshot().ably_connected);
     {
         let queue = queue.lock().unwrap();
-        assert_eq!(queue.owner, Some(TEST_RUNNER_ID.parse().unwrap()));
+        assert_eq!(queue.owner, Some(COMPETITOR_ID.parse().unwrap()));
         assert_eq!(
             queue.polls, 2,
-            "startup and one bounded reconciliation find the job"
+            "startup and one load-limited reconciliation"
         );
     }
 
     // The same live socket later delivers its stale job notification through
     // the production Ably supervisor. Claim authority still rejects it.
     deliver.send(()).unwrap();
-    let late = tokio::time::timeout(Duration::from_secs(5), provider.discover())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(late.run_id(), run_id);
-    assert!(provider.claim(late).await.is_none());
+    let claimed =
+        join_raw_http_task(claim, "late preferred claim after competitor ownership").await;
+    assert!(claimed.is_none());
     provider.shutdown().await;
     competitor.shutdown().await;
     join_raw_http_task(peer, "silent WebSocket peer shutdown").await;

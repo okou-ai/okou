@@ -39,6 +39,10 @@ use runner_types::ids::RunId;
 use runner_types::types::ConnectorRuntimeTarget;
 
 const ABLY_BACKOFF_INITIAL: Duration = Duration::from_secs(5);
+// Request Ably's supported minimum. With its negotiated five-second idle
+// interval and the standard ten-second margin, silent-loss detection takes
+// about fifteen seconds rather than the default twenty-five.
+const ABLY_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const ABLY_BACKOFF_MAX: Duration = Duration::from_secs(60);
 const ABLY_DISCONNECT_ERROR_AFTER: Duration = Duration::from_secs(60);
 const DEFERRED_POLL_MAX: Duration = Duration::from_secs(10);
@@ -1169,7 +1173,7 @@ async fn sleep_until_optional(deadline: Option<tokio::time::Instant>) {
     }
 }
 
-fn make_ably_config(api: &ApiClient, group: &str) -> ably_subscriber::SubscribeConfig {
+pub(super) fn make_ably_config(api: &ApiClient, group: &str) -> ably_subscriber::SubscribeConfig {
     let api = api.clone();
     let channel = format!("runner-group:{group}");
     let group = group.to_owned();
@@ -1183,7 +1187,9 @@ fn make_ably_config(api: &ApiClient, group: &str) -> ably_subscriber::SubscribeC
                     .map_err(|e| Box::new(e) as ably_subscriber::BoxError)
             })
         });
-    ably_subscriber::SubscribeConfig::new(get_token, channel)
+    let mut config = ably_subscriber::SubscribeConfig::new(get_token, channel);
+    config.heartbeat_interval = Some(ABLY_HEARTBEAT_INTERVAL);
+    config
 }
 
 fn maybe_spawn_ably_connect(

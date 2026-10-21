@@ -214,12 +214,12 @@ struct PollApiResult {
 const POLL_SLOW: Duration = Duration::from_secs(30);
 /// Poll interval when Ably is disconnected or unavailable (primary mechanism).
 const POLL_FAST: Duration = Duration::from_secs(5);
-/// Reconcile advertised reuse while Ably may still report Connected. The API
-/// protects exact reuse for one second and generic reuse for two seconds. This
-/// 500 ms scheduling policy leaves room for HTTP and admission; request latency,
-/// unavailable capacity and explicit deferred windows can still exceed that
-/// patience. It is not a wall-clock claim guarantee.
-const POLL_REUSE: Duration = Duration::from_millis(500);
+/// Reconcile advertised reuse while Ably may still report Connected, at a
+/// load-limited ten-second cadence. This deliberately exceeds the API's one-
+/// and two-second preference windows; a competitor can claim after expiry.
+/// Connection heartbeats shorten silent-loss detection independently. HTTP
+/// latency, capacity and explicit deferrals can further delay discovery.
+const POLL_REUSE: Duration = Duration::from_secs(10);
 const POLL_REUSE_STAGGER_MS: u64 = 100;
 /// Retry delay after a job-notification wakeup reaches poll but poll fails.
 const POLL_WAKEUP_RETRY: Duration = POLL_FAST;
