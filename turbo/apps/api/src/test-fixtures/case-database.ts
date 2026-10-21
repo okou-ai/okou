@@ -1,14 +1,14 @@
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 import {
-  createPgliteDatabase,
-  type PgliteTestDatabase,
+  createIsolatedDatabase,
+  type IsolatedTestDatabase,
 } from "./pglite-database";
 
 interface CaseDatabase {
   sharedAccessed: boolean;
-  isolated?: Promise<PgliteTestDatabase>;
-  ready?: PgliteTestDatabase;
+  isolated?: Promise<IsolatedTestDatabase>;
+  ready?: IsolatedTestDatabase;
 }
 
 interface DatabaseState {
@@ -57,7 +57,7 @@ export async function initializeCaseDatabase(): Promise<void> {
     throw new Error("The API test database snapshot was not provided");
   }
   if (!current.isolated) {
-    current.isolated = createPgliteDatabase(snapshotPath);
+    current.isolated = createIsolatedDatabase(snapshotPath);
   }
   current.ready = await current.isolated;
 }
