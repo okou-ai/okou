@@ -1087,7 +1087,8 @@ describe("runner reuse preference contract", () => {
       const preference = {
         ...runnerPreference,
         tier,
-        ...(tier === "finalizingPredecessor" ||
+        ...(tier === "exactSandbox" ||
+        tier === "finalizingPredecessor" ||
         tier === "peerFinalizingPredecessor"
           ? { finalizingSourceRunId: "11111111-1111-4111-8111-111111111111" }
           : {}),
