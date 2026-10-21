@@ -5000,49 +5000,6 @@ type CurrentCustomConnectorAuthRefsResolution =
     }
   | { readonly kind: "unavailable" };
 
-async function resolveCurrentCustomConnectorMemberId(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly customConnectorId: string;
-  readonly sourceId: string;
-}): Promise<string | undefined> {
-  const target = {
-    kind: "custom" as const,
-    customConnectorId: args.customConnectorId,
-  };
-  const db = args.db;
-  const plan = connectorAccountResolutionReadPlan({
-    orgId: args.orgId,
-    userId: args.userId,
-    requests: [
-      {
-        target,
-        selection: { kind: "exact", sourceId: args.sourceId },
-      },
-    ],
-  });
-  const [exactRows, defaultRows] = await Promise.all([
-    plan.exactWhere
-      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
-      : [],
-    plan.defaultWhere
-      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
-      : [],
-  ]);
-  const accountResolutions = connectorAccountResolutionsFromRows({
-    requests: plan.requests,
-    exactRows,
-    defaultRows,
-  });
-  const accountResolution = accountResolutions.get(
-    connectorAccountTargetKey(target),
-  );
-  return accountResolution?.kind === "resolved"
-    ? accountResolution.account.connectorId
-    : undefined;
-}
-
 async function loadCurrentCustomConnectorAuthRefs(args: {
   readonly db: Db;
   readonly orgId: string;
@@ -5050,7 +5007,43 @@ async function loadCurrentCustomConnectorAuthRefs(args: {
   readonly customConnectorId: string;
   readonly sourceId: string;
 }): Promise<CurrentCustomConnectorAuthRefsResolution> {
-  const memberConnectorId = await resolveCurrentCustomConnectorMemberId(args);
+  const memberLookupArgs = args;
+  const memberConnectorId = await (async (): Promise<string | undefined> => {
+    const target = {
+      kind: "custom" as const,
+      customConnectorId: memberLookupArgs.customConnectorId,
+    };
+    const db = memberLookupArgs.db;
+    const plan = connectorAccountResolutionReadPlan({
+      orgId: memberLookupArgs.orgId,
+      userId: memberLookupArgs.userId,
+      requests: [
+        {
+          target,
+          selection: { kind: "exact", sourceId: memberLookupArgs.sourceId },
+        },
+      ],
+    });
+    const [exactRows, defaultRows] = await Promise.all([
+      plan.exactWhere
+        ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+        : [],
+      plan.defaultWhere
+        ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+        : [],
+    ]);
+    const accountResolutions = connectorAccountResolutionsFromRows({
+      requests: plan.requests,
+      exactRows,
+      defaultRows,
+    });
+    const accountResolution = accountResolutions.get(
+      connectorAccountTargetKey(target),
+    );
+    return accountResolution?.kind === "resolved"
+      ? accountResolution.account.connectorId
+      : undefined;
+  })();
   if (memberConnectorId === undefined) {
     return { kind: "unavailable" };
   }
