@@ -24,7 +24,7 @@ import { now } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -62,7 +62,7 @@ import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import {
-  bindTelegramReplyMessageRoute,
+  bindTelegramReplyMessageRoute$,
   createTelegramChatThread$,
   ensureTelegramChatThreadRoute$,
   type TelegramOwnerLink,
@@ -1015,7 +1015,6 @@ function buildTelegramAgentPrompt(args: {
 }
 
 interface TelegramAgentMessageArgs {
-  readonly db: Db;
   readonly botToken: string;
   readonly botId: string;
   readonly botUsername: string | null;
@@ -1119,7 +1118,7 @@ type PersistedTelegramChatMessage =
 
 const persistTelegramChatMessage$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly source: TelegramAgentMessageArgs;
       readonly chatId: string;
@@ -1132,7 +1131,7 @@ const persistTelegramChatMessage$ = command(
   ): Promise<PersistedTelegramChatMessage> => {
     const currentTime = new Date(args.source.apiStartTime);
     const chatEventId = telegramChatMessageId(args);
-    const [existingMessage] = await args.source.db
+    const [existingMessage] = await get(db$)
       .select({ id: chatEvents.id })
       .from(chatEvents)
       .where(eq(chatEvents.id, chatEventId))
@@ -1190,7 +1189,7 @@ const persistTelegramChatMessage$ = command(
       canonicalAsset,
     });
     if (args.source.isDM && args.source.message.reply_to_message) {
-      await bindTelegramReplyMessageRoute(args.source.db, {
+      await set(bindTelegramReplyMessageRoute$, {
         ownerLink: telegramOwnerLink(args.source),
         chatId: args.chatId,
         rootMessageId: String(args.source.message.message_id),
@@ -1366,14 +1365,32 @@ const runAgentForTelegram$ = command(
   },
 );
 
+const loadTelegramContext$ = command(
+  async ({ get }, args: TelegramContextData): Promise<string> => {
+    const db = get(db$);
+    const rows = await db
+      .select(telegramContextSelection())
+      .from(telegramMessages)
+      .where(
+        and(
+          eq(telegramMessages.officialOrgId, args.scope.orgId),
+          eq(telegramMessages.chatId, args.chatId),
+        ),
+      )
+      .orderBy(desc(telegramMessages.createdAt))
+      .limit(MAX_CONTEXT_MESSAGES);
+    return formatTelegramContext(rows, args);
+  },
+);
+
 const handleTelegramAgentMessage$ = command(
   async (
-    { set },
+    { get, set },
     args: TelegramAgentMessageArgs,
     signal: AbortSignal,
   ): Promise<void> => {
     const chatId = String(args.message.chat.id);
-    const agentDb = args.db;
+    const agentDb = get(db$);
     const agentComposeId = args.composeId;
     const agent = await (async (): Promise<WorkspaceAgent | null> => {
       const [row] = await agentDb
@@ -1417,7 +1434,7 @@ const handleTelegramAgentMessage$ = command(
       orgId: args.orgId,
       userLinkId: args.userLink.id,
     });
-    const messageDb = args.db;
+    const messageDb = set(writeDb$);
     async function storeTelegramMessage(
       args: TelegramMessageData,
     ): Promise<void> {
@@ -1435,32 +1452,16 @@ const handleTelegramAgentMessage$ = command(
     signal.throwIfAborted();
 
     const rootMessageId = rootMessageIdForAgentMessage(args);
+    const contextRead = set(loadTelegramContext$, {
+      scope,
+      chatId,
+      currentMessageId: String(args.message.message_id),
+      botId: args.botId,
+    });
     const context = await loadOptionalChatEnrichment(
       "telegram",
       () => {
-        const contextDb = args.db;
-        const fetchTelegramContext = async (
-          args: TelegramContextData,
-        ): Promise<string> => {
-          const rows = await contextDb
-            .select(telegramContextSelection())
-            .from(telegramMessages)
-            .where(
-              and(
-                eq(telegramMessages.officialOrgId, args.scope.orgId),
-                eq(telegramMessages.chatId, args.chatId),
-              ),
-            )
-            .orderBy(desc(telegramMessages.createdAt))
-            .limit(MAX_CONTEXT_MESSAGES);
-          return formatTelegramContext(rows, args);
-        };
-        return fetchTelegramContext({
-          scope,
-          chatId,
-          currentMessageId: String(args.message.message_id),
-          botId: args.botId,
-        });
+        return contextRead;
       },
       () => {
         return "";
@@ -1751,7 +1752,6 @@ const processOfficialWebhookMessage$ = command(
     await set(
       handleTelegramAgentMessage$,
       {
-        db,
         botToken: config.botToken,
         botId: config.botId,
         botUsername: config.botUsername,
