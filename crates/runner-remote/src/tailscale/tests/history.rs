@@ -7,7 +7,9 @@ async fn post_ready_work_failure_survives_cancellation_and_distinct_physical_cle
     let pool = Arc::new(super::super::Pool::new());
     let registry = super::super::Registry::new(Arc::clone(&pool));
     let fail = Arc::new(Semaphore::new(0));
-    let cleanup = Arc::new(Semaphore::new(0));
+    let cleanup = Arc::new(Semaphore::new(1));
+    // Release the finalizer on unwind so failed assertions cannot block runtime shutdown.
+    let cleanup_gate = cleanup.try_acquire().unwrap();
     let worker_fail = Arc::clone(&fail);
     let worker_cleanup = Arc::clone(&cleanup);
     let work: Work = Box::new(move |control| {
@@ -44,7 +46,7 @@ async fn post_ready_work_failure_survives_cancellation_and_distinct_physical_cle
     assert_eq!(pending["evidence"]["cleanup_complete"], false);
     let physical = node.physical();
     drop(node);
-    cleanup.add_permits(1);
+    drop(cleanup_gate);
     assert_eq!(bounded(physical).await, Err(Failure::CleanupTimedOut));
     let completed = serde_json::to_value(&source).unwrap();
     assert_eq!(completed["evidence"]["terminal"], "domain_failed");
