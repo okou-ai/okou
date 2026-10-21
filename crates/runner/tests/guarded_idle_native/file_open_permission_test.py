@@ -13,7 +13,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-from file_open_permission import FileOpenPermission
+from file_open_permission import EVENT, FileOpenPermission
 from file_open_permission_probe import PAYLOAD, join, producer, qualify
 from file_open_permission_report import validate
 
@@ -163,6 +163,10 @@ class KernelTests(unittest.TestCase):
                 self.assertIsNone(child.poll())
                 disposition = gate.decide(event, allow)
                 self.assertTrue(disposition["event_descriptors_closed"])
+                kernel_fields = EVENT.unpack(bytes.fromhex(event.raw_hex))
+                for descriptor in (kernel_fields[5], kernel_fields[-1]):
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptor)
                 with self.assertRaisesRegex(ValueError, "completed permission"):
                     gate.decide(event, allow)
                 result = join(child)
