@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useLoadable, useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Input } from "@okouai/ui/components/ui/input";
@@ -33,7 +33,7 @@ import type {
   PlatformConnectorCatalogStatusItem,
 } from "../../../../signals/connector-domain.ts";
 import {
-  builtinConnectFlowSlug$,
+  builtinConnectOperation$,
   builtinPollingOAuthAuthCodeSlug$,
   builtinConnectorExternalCodeState$,
   builtinConnectorOAuthDeviceAuthState$,
@@ -1452,7 +1452,7 @@ function ConnectModalContent({
     connectionId,
     signal,
   ) => {
-    await runConnectSuccess(item.slug, onSuccess, connectionId, signal);
+    await runConnectSuccess(onSuccess, connectionId, signal);
   };
   const connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn = async (
     connectorSlug,
@@ -1572,7 +1572,7 @@ export function ConnectModal({
     clearBuiltinConnectorOAuthDeviceAuth$,
   );
   const clearConnectorExternalCode = useSet(clearBuiltinConnectorExternalCode$);
-  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const connectorOAuthDeviceAuthState = useGet(
     builtinConnectorOAuthDeviceAuthState$,
@@ -1586,7 +1586,7 @@ export function ConnectModal({
   const selectedConnectorSlug = item.slug;
 
   const connectFlowActive =
-    connectFlowConnectorSlug === selectedConnectorSlug ||
+    connectOperation.state === "loading" ||
     pollingConnectorSlug === selectedConnectorSlug ||
     connectorOAuthDeviceAuthFlowIsActive(
       connectorOAuthDeviceAuthState,

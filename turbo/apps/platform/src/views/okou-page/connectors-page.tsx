@@ -41,7 +41,7 @@ import {
   connectorCatalogDiscovery$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   connectBuiltinConnectorNoAuthAndSettle$,
-  builtinConnectFlowSlug$,
+  builtinConnectOperation$,
   runBuiltinConnectorConnectSuccess$,
   connectorsSearch$,
   connectorsCategoryFilter$,
@@ -1358,7 +1358,7 @@ export function ConnectorsPage() {
   const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuthAndSettle$);
   const signal = useGet(pageSignal$);
@@ -1419,7 +1419,6 @@ export function ConnectorsPage() {
     attemptSignal: AbortSignal,
   ): Promise<void> => {
     await runConnectSuccess(
-      connector.slug,
       (completedConnectionId, continuationSignal) => {
         return finishAccountConnection(
           {
@@ -1493,7 +1492,7 @@ export function ConnectorsPage() {
     const isPolling =
       pollingAuthCodeSlug === c.slug ||
       pollingDeviceAuthSlug === c.slug ||
-      connectFlowSlug === c.slug;
+      connectOperation.state === "loading";
     const hasAccount =
       connectedTargetsLoadable.state === "hasData"
         ? connectedTargetsLoadable.data.has(`builtin:${c.slug}`)

@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadable, useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
 import { cn, Button } from "@okouai/ui";
@@ -10,7 +10,7 @@ import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  builtinConnectFlowSlug$,
+  builtinConnectOperation$,
   justConnectedBuiltinSlugs$,
   builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
@@ -217,7 +217,6 @@ function useSourceConnectorActivate(
             },
             onSuccess: (connectionId, signal) => {
               return runConnectSuccess(
-                item.slug,
                 () => {
                   onConnected?.(item.slug);
                 },
@@ -272,7 +271,7 @@ function SourcesConnectorGrid({
   const { selectedConnector, setSelectedConnectorSlug } =
     useSelectedConnector();
   const activate = useSourceConnectorActivate(onConnectStart, onConnected);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
@@ -318,7 +317,7 @@ function SourcesConnectorGrid({
               connector={item}
               connected={connected}
               busy={
-                connectFlowSlug === connectorSlug ||
+                connectOperation.state === "loading" ||
                 pollingAuthCodeSlug === connectorSlug ||
                 pollingDeviceAuthSlug === connectorSlug
               }
@@ -408,7 +407,7 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
   const { selectedConnector, setSelectedConnectorSlug } =
     useSelectedConnector();
   const connectHandlersFor = useListConnectHandlers(setSelectedConnectorSlug);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
@@ -444,7 +443,7 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
           const connected =
             item.connected === true || justConnectedSlugs.has(connectorSlug);
           const connecting =
-            connectFlowSlug === connectorSlug ||
+            connectOperation.state === "loading" ||
             pollingAuthCodeSlug === connectorSlug ||
             pollingDeviceAuthSlug === connectorSlug;
           const connectHandlers = connectHandlersFor(connectorSlug, item);

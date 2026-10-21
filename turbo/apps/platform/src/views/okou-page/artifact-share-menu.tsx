@@ -97,26 +97,29 @@ function PermissionChoices({
       }),
     },
   ] as const;
+  // No pending choice is confirmed yet. Keeping every option unchecked also
+  // lets native pointer and arrow selection reaffirm the server baseline.
   return (
     <RadioGroup
       aria-label={t(($) => {
         return $.artifacts.sharing.accessLabel;
       })}
       disabled={unavailable}
-      value={selected ?? null}
+      aria-busy={saving}
+      value={saving ? null : (selected ?? null)}
       onValueChange={(value: string) => {
         return onChange(value as ArtifactShareStatus["audience"]);
       }}
     >
       {options.map(({ audience, Icon, label }) => {
-        const isSelected = selected === audience;
+        const isSelected = !saving && selected === audience;
         return (
           <RadioPrimitive.Root
             key={audience}
             value={audience}
             nativeButton
             render={<button type="button" />}
-            aria-busy={isSelected && saving}
+            aria-busy={saving}
             className={cn(
               "flex w-full select-none items-center gap-2 rounded-lg px-2 text-left outline-none transition-colors",
               MENU_ROW_HEIGHT_CLASS,
@@ -139,12 +142,7 @@ function PermissionChoices({
             >
               {label}
             </span>
-            {isSelected &&
-              (saving ? (
-                <Loader2 size={16} className="shrink-0 animate-spin" />
-              ) : (
-                <Check size={16} className="shrink-0" />
-              ))}
+            {isSelected && <Check size={16} className="shrink-0" />}
           </RadioPrimitive.Root>
         );
       })}
@@ -281,7 +279,7 @@ function ShareSessionMenu({
   // Subscribing as soon as the preview mounts preloads permissions before Share.
   const loadable = useLoadable(session.details$);
   const details = useLastResolved(session.details$);
-  const draft = useGet(session.draft$);
+  const audienceOperation = useLoadable(session.audienceOperation$);
   const requestedOpen = useGet(session.open$);
   const signal = useGet(session.signal$);
   const open = useSet(session.show$);
@@ -324,11 +322,14 @@ function ShareSessionMenu({
       >
         <div
           aria-hidden="true"
-          className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground"
+          className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground"
         >
           {t(($) => {
             return $.artifacts.sharing.accessLabel;
           })}
+          {audienceOperation.state === "loading" && (
+            <Loader2 size={14} className="animate-spin" />
+          )}
         </div>
         {loading ? (
           <ShareSkeleton />
@@ -336,9 +337,9 @@ function ShareSessionMenu({
           <>
             {details?.status ? (
               <PermissionChoices
-                selected={draft?.audience ?? details.audience}
+                selected={details.audience}
                 organizationName={details.status.organization.name}
-                saving={draft !== null}
+                saving={audienceOperation.state === "loading"}
                 onChange={(audience) => {
                   return detach(change(audience, signal), Reason.DomCallback);
                 }}

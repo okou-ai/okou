@@ -8415,7 +8415,6 @@ function ComposerConnectorDialogsSlot({
       signal,
     ) => {
       return actions.runConnectSuccess(
-        connectorSlug,
         (_completedConnectionId, continuationSignal) => {
           return completeConnectorAddition(connectorSlug, continuationSignal);
         },

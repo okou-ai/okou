@@ -1,4 +1,4 @@
-import { useGet, useSet, useLastLoadable } from "ccstate-react";
+import { useLoadable, useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, LoadErrorRow } from "@okouai/ui";
 import {
@@ -24,7 +24,7 @@ import {
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   type ConnectorConnectSuccess,
-  builtinConnectFlowSlug$,
+  builtinConnectOperation$,
   justConnectedBuiltinSlugs$,
   builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
@@ -640,7 +640,7 @@ function DirectedConnectCard() {
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const [connectLoadable, connect] = useLoadableSet(connectDirectedConnector$);
   const signal = useGet(pageSignal$);
   const { item, presentation } = useDirectedConnectPresentation(connectorSlug);
@@ -665,7 +665,7 @@ function DirectedConnectCard() {
   const isConnecting =
     pollingAuthCodeSlug === connectorSlug ||
     pollingDeviceAuthSlug === connectorSlug ||
-    connectFlowSlug === connectorSlug ||
+    connectOperation.state === "loading" ||
     connectLoadable.state === "loading";
   if (presentation.unavailable) {
     return (

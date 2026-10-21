@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Button, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -191,12 +190,12 @@ function ReadyConnectorAccountActionCard({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const confirmationState = useGet(signals.confirmationState$);
+  const operation = useLoadable(signals.operation$);
   const connectorLoadable = useLastLoadable(signals.connector$);
-  const [, confirm] = useLoadableSet(signals.confirm$);
+  const confirm = useSet(signals.confirm$);
   const selected = status.selected;
-  const switching = confirmationState === "loading";
-  const switchFailed = confirmationState === "error" && !selected;
+  const switching = operation.state === "loading";
+  const switchFailed = operation.state === "hasError";
   const accountLabel = connectorAccountEffectiveLabel(
     status.account,
     t(($) => {
@@ -270,7 +269,7 @@ function ReadyConnectorAccountActionCard({
           />
         </div>
       </div>
-      {selected ? null : (
+      {selected && !switching && !switchFailed ? null : (
         <Button
           size="sm"
           className="w-full shrink-0 @[640px]:w-auto"

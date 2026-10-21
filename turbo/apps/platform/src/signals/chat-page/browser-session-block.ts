@@ -40,7 +40,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly session$: Computed<Promise<BrowserSession | null>>;
   readonly panelSession$: Computed<Promise<BrowserSession | null>>;
   readonly starting$: Computed<boolean>;
-  readonly fittingWindow$: Computed<boolean>;
+  readonly fitWindowOperation$: Computed<Promise<void> | null>;
   readonly reload$: Command<void, []>;
   readonly reloadPanel$: Command<void, []>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
@@ -226,32 +226,23 @@ function createFitWindowSignals(
   descriptor: BrowserSessionDescriptor,
   sessionOverride$: State<BrowserSession | null | undefined>,
   browserFitDom: BrowserFitDomSignals,
-): Pick<BrowserSessionSignals, "fittingWindow$" | "fitViewport$"> {
-  const fittingWindowState$ = state(false);
-  const fitViewport$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      if (get(fittingWindowState$)) {
-        return;
-      }
-      const aspectRatio = set(browserFitDom.viewportAspectRatio$);
-      if (aspectRatio === null) {
-        return;
-      }
-      set(fittingWindowState$, true);
+): Pick<BrowserSessionSignals, "fitWindowOperation$" | "fitViewport$"> {
+  const operation$ = state<Promise<void> | null>(null);
+  const resize$ = command(
+    async (
+      { get, set },
+      aspectRatio: number,
+      signal: AbortSignal,
+    ): Promise<void> => {
       const fitted = await settle(
-        withCleanup(
-          accept(
-            get(apiClient$)(browserContract).resizeByThread({
-              params: { threadId: descriptor.threadId },
-              body: { aspectRatio },
-              fetchOptions: { signal },
-            }),
-            [200, 404],
-            signal,
-          ),
-          () => {
-            set(fittingWindowState$, false);
-          },
+        accept(
+          get(apiClient$)(browserContract).resizeByThread({
+            params: { threadId: descriptor.threadId },
+            body: { aspectRatio },
+            fetchOptions: { signal },
+          }),
+          [200, 404],
+          signal,
         ),
         signal,
       );
@@ -264,9 +255,30 @@ function createFitWindowSignals(
       }
     },
   );
+  const fitViewport$ = command(({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const active = get(operation$);
+    if (active) {
+      return active;
+    }
+    const aspectRatio = set(browserFitDom.viewportAspectRatio$);
+    if (aspectRatio === null) {
+      return Promise.resolve();
+    }
+    const operation: Promise<void> = withCleanup(
+      set(resize$, aspectRatio, signal),
+      () => {
+        if (get(operation$) === operation) {
+          set(operation$, null);
+        }
+      },
+    );
+    set(operation$, operation);
+    return operation;
+  });
   return {
-    fittingWindow$: computed((get) => {
-      return get(fittingWindowState$);
+    fitWindowOperation$: computed((get) => {
+      return get(operation$);
     }),
     fitViewport$,
   };
@@ -404,7 +416,7 @@ export function createBrowserSessionSignals(
   });
 
   const browserFitDom = createBrowserFitDomSignals();
-  const { fittingWindow$, fitViewport$ } = createFitWindowSignals(
+  const { fitWindowOperation$, fitViewport$ } = createFitWindowSignals(
     descriptor,
     sessionOverride$,
     browserFitDom,
@@ -469,7 +481,7 @@ export function createBrowserSessionSignals(
     panelSession$: session$,
     ...startSignals,
     ...closeSignals,
-    fittingWindow$,
+    fitWindowOperation$,
     reload$,
     reloadPanel$: reload$,
     fitViewport$,

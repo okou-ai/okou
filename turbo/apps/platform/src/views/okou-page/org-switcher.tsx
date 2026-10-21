@@ -2,6 +2,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -16,41 +17,29 @@ import {
 import { ChevronDown, Plus, Mail } from "lucide-react";
 import { clerk$, currentOrgInfo$ } from "../../signals/auth.ts";
 import { createdOrganizationsCount$ } from "../../signals/org.ts";
-import {
-  bestEffort,
-  withCleanup,
-  detach,
-  onDomEventFn,
-  Reason,
-} from "../../signals/utils.ts";
+import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { userInvitations$ } from "../../signals/user-invitations.ts";
 import {
-  createWorkspace$,
-  joinWorkspace$,
-  type WorkspaceInvitation,
-} from "../../signals/select-org/workspace-actions.ts";
-import {
-  creatingOrg$,
-  setCreatingOrg$,
-  acceptingInvitationId$,
-  setAcceptingInvitationId$,
+  workspaceCreation$,
+  createSwitcherWorkspace$,
+  switcherInvitations$,
+  workspaceAcceptance$,
+  type SwitcherInvitation,
 } from "../../signals/select-org/org-switcher-ui.ts";
 import { ThumbnailPlaceholder, WorkspaceLogo } from "../components/avatar.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 
-function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
-  const acceptingId = useGet(acceptingInvitationId$);
-  const setAcceptingId = useSet(setAcceptingInvitationId$);
-  const joinWorkspace = useSet(joinWorkspace$);
+function InvitationRow({ action }: { action: SwitcherInvitation }) {
+  const { invitation } = action;
+  const acceptance = useLoadable(action.acceptance$);
+  const sharedAcceptance = useLoadable(workspaceAcceptance$);
+  const accept = useSet(action.accept$);
   const signal = useGet(pageSignal$);
-  const isAccepting = acceptingId === invitation.id;
+  const isAccepting = acceptance.state === "loading";
   const { t } = useTranslation();
 
   const handleAccept = onDomEventFn(async () => {
-    setAcceptingId(invitation.id);
-    await withCleanup(bestEffort(joinWorkspace(invitation, signal)), () => {
-      setAcceptingId(null);
-    });
+    await accept(signal);
   });
 
   return (
@@ -64,7 +53,7 @@ function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
       </span>
       <Button
         type="button"
-        disabled={isAccepting}
+        disabled={sharedAcceptance.state === "loading"}
         onClick={handleAccept}
         variant="quiet"
         size="xs"
@@ -84,17 +73,14 @@ function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
 }
 
 function CreateWorkspaceMenuItem() {
-  const creatingOrg = useGet(creatingOrg$);
-  const setCreating = useSet(setCreatingOrg$);
-  const createWorkspace = useSet(createWorkspace$);
+  const creation = useLoadable(workspaceCreation$);
+  const creatingOrg = creation.state === "loading";
+  const createWorkspace = useSet(createSwitcherWorkspace$);
   const signal = useGet(pageSignal$);
   const { t } = useTranslation();
 
   const handleCreateOrg = onDomEventFn(async () => {
-    setCreating(true);
-    await withCleanup(bestEffort(createWorkspace(signal)), () => {
-      setCreating(false);
-    });
+    await createWorkspace(signal);
   });
 
   return (
@@ -194,7 +180,7 @@ function OtherMembershipsList() {
 
 function OrgDropdownContent() {
   const clerkLoadable = useLastLoadable(clerk$);
-  const pendingInvitations = useLastResolved(userInvitations$);
+  const pendingInvitations = useLastResolved(switcherInvitations$);
   const currentOrg = useLastResolved(currentOrgInfo$);
   const { t } = useTranslation();
 
@@ -245,9 +231,9 @@ function OrgDropdownContent() {
           {hasPendingInvitations && (
             <>
               <DropdownMenuSeparator />
-              {pendingInvitations.map((invitation) => {
+              {pendingInvitations.map((action) => {
                 return (
-                  <InvitationRow key={invitation.id} invitation={invitation} />
+                  <InvitationRow key={action.invitation.id} action={action} />
                 );
               })}
             </>

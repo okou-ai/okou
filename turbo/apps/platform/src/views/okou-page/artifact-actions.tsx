@@ -57,7 +57,8 @@ import { connectorConnectionPending$ } from "../../signals/connector-connection-
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
-  googleDriveSyncPending$,
+  googleDriveSyncOperations$,
+  idleGoogleDriveSync$,
   googleDriveSyncAccount$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import {
@@ -639,6 +640,17 @@ function GoogleDriveConnectMenuItem({
   );
 }
 
+function useGoogleDriveSyncOperation(
+  syncTarget: ArtifactDownloadSyncTarget | undefined,
+  mode: GoogleDriveUploadMode,
+) {
+  const operations = useGet(googleDriveSyncOperations$);
+  return useLoadable(
+    (syncTarget && operations.get(syncTarget.artifactId)?.get(mode)) ??
+      idleGoogleDriveSync$,
+  );
+}
+
 function GoogleDriveMenuItem({
   filename,
   syncTarget,
@@ -659,7 +671,7 @@ function GoogleDriveMenuItem({
     availability,
     mode,
   );
-  const pending = useGet(googleDriveSyncPending$);
+  const syncOperation = useGoogleDriveSyncOperation(syncTarget, mode);
   const labels = useGoogleDriveMenuLabels(target);
   const { connectorListLoaded, googleDriveReady } = availability;
 
@@ -689,7 +701,7 @@ function GoogleDriveMenuItem({
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
 
-  if (pending.get(syncTarget.artifactId)?.has(mode)) {
+  if (syncOperation.state === "loading") {
     return (
       <DropdownMenuItem disabled>
         <Loader2 size={14} className="animate-spin" />

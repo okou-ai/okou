@@ -1,12 +1,12 @@
 import { Loader2, Plus } from "lucide-react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadable, useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { cn, ScrollBar, surfaceVariants } from "@okouai/ui";
 import { oneClickConnectorCatalog$ } from "../../signals/external/connectors.ts";
 import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import {
-  builtinConnectFlowSlug$,
+  builtinConnectOperation$,
   builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
   connectBuiltinConnectorOAuthAuthCode$,
@@ -183,7 +183,7 @@ export function QuestConnectorPicker({
   const catalogLoadable = useLastLoadable(oneClickConnectorCatalog$);
   const pageSignal = useGet(pageSignal$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectors =
@@ -193,7 +193,7 @@ export function QuestConnectorPicker({
 
   const isBusy = (connector: PlatformConnectorCatalogConnectItem) => {
     return (
-      connectFlowSlug === connector.slug ||
+      connectOperation.state === "loading" ||
       pollingAuthCodeSlug === connector.slug ||
       pollingDeviceAuthSlug === connector.slug
     );

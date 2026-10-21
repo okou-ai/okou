@@ -18,7 +18,11 @@ import { customConnectorAccount } from "../../okou-page/__tests__/connector-page
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { expect, test } from "vitest";
 
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import {
   testContext,
   type TestContext,
@@ -261,7 +265,7 @@ async function openAgentConnectorIsolationStory() {
   return { customSaves };
 }
 
-test("A failed built-in connector toggle rolls back its draft and can be retried", async () => {
+test("A filtered-out connector retains its failed toggle result and can be retried", async () => {
   const saveStarted = context.mocks.deferred<void>();
   const saveResult = context.mocks.deferred<void>();
   let failSave = true;
@@ -304,10 +308,15 @@ test("A failed built-in connector toggle rolls back its draft and can be retried
       "true",
     );
   });
+  click(screen.getByLabelText("Find connectors"));
+  const search = screen.getByPlaceholderText("Find connectors...");
+  await fill(search, "unmatched connector");
+  await screen.findByText("No results for “unmatched connector”");
   saveResult.resolve();
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "GitHub access could not be saved",
   );
+  await fill(search, "");
   await waitFor(() => {
     expect(connectorAccessSwitch("Grant GitHub access")).not.toHaveAttribute(
       "aria-disabled",

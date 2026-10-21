@@ -215,47 +215,80 @@ async function syncArtifactFileToGoogleDrive(
   return result?.ok ? result.file : undefined;
 }
 
-const internalGoogleDriveSyncPending$ = state<
-  ReadonlyMap<string, ReadonlySet<GoogleDriveUploadMode>>
+type GoogleDriveSyncOperation = Promise<GoogleDriveUploadedFile | undefined>;
+
+// This registry owns real in-flight uploads, not a second pending-state model.
+// Repeated surfaces and callers share the same upload result for each mode.
+const internalGoogleDriveSyncOperations$ = state<
+  ReadonlyMap<
+    string,
+    ReadonlyMap<GoogleDriveUploadMode, GoogleDriveSyncOperation>
+  >
 >(new Map());
-export const googleDriveSyncPending$ = computed((get) => {
-  return get(internalGoogleDriveSyncPending$);
+export const idleGoogleDriveSync$ = computed(() => {
+  return undefined;
+});
+export const googleDriveSyncOperations$ = computed((get) => {
+  return new Map(
+    [...get(internalGoogleDriveSyncOperations$)].map(([artifactId, modes]) => {
+      return [
+        artifactId,
+        new Map(
+          [...modes].map(([mode, operation]) => {
+            return [
+              mode,
+              computed(() => {
+                return operation;
+              }),
+            ] as const;
+          }),
+        ),
+      ] as const;
+    }),
+  );
 });
 
 const syncArtifactFileToGoogleDrive$ = command(
-  async (
+  (
     { get, set },
     params: ArtifactGoogleDriveSyncParams & {
       readonly createClient: ApiClientFactory;
     },
     signal: AbortSignal,
-  ): Promise<GoogleDriveUploadedFile | undefined> => {
+  ): GoogleDriveSyncOperation => {
     signal.throwIfAborted();
-    const modes = get(internalGoogleDriveSyncPending$).get(params.artifactId);
-    if (modes?.has(params.mode)) {
-      return undefined;
-    }
-    set(
-      internalGoogleDriveSyncPending$,
-      new Map(get(internalGoogleDriveSyncPending$)).set(
-        params.artifactId,
-        new Set(modes).add(params.mode),
-      ),
+    const modes = get(internalGoogleDriveSyncOperations$).get(
+      params.artifactId,
     );
-    return await withCleanup(
+    const existing = modes?.get(params.mode);
+    if (existing) {
+      return existing;
+    }
+    const operation: GoogleDriveSyncOperation = withCleanup(
       syncArtifactFileToGoogleDrive(params, signal),
       () => {
-        const pending = new Map(get(internalGoogleDriveSyncPending$));
-        const remaining = new Set(pending.get(params.artifactId));
+        const operations = new Map(get(internalGoogleDriveSyncOperations$));
+        if (operations.get(params.artifactId)?.get(params.mode) !== operation) {
+          return;
+        }
+        const remaining = new Map(operations.get(params.artifactId));
         remaining.delete(params.mode);
         if (remaining.size > 0) {
-          pending.set(params.artifactId, remaining);
+          operations.set(params.artifactId, remaining);
         } else {
-          pending.delete(params.artifactId);
+          operations.delete(params.artifactId);
         }
-        set(internalGoogleDriveSyncPending$, pending);
+        set(internalGoogleDriveSyncOperations$, operations);
       },
     );
+    set(
+      internalGoogleDriveSyncOperations$,
+      new Map(get(internalGoogleDriveSyncOperations$)).set(
+        params.artifactId,
+        new Map(modes).set(params.mode, operation),
+      ),
+    );
+    return operation;
   },
 );
 

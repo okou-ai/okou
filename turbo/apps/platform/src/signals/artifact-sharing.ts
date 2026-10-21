@@ -45,9 +45,6 @@ interface ShareSource {
   readonly artifactShareIdentity?: ArtifactShareIdentity;
 }
 type Audience = ArtifactShareStatus["audience"];
-interface AudienceDraft {
-  readonly audience: Audience;
-}
 
 async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
   const reference = parseArtifactReference(source.url, location.origin);
@@ -106,27 +103,26 @@ function createAudienceSignals(
   details$: Computed<Promise<ShareDetails>>,
   reload$: State<number>,
 ) {
-  // The user's latest choice stays visible while earlier writes settle. Object
-  // identity prevents an earlier completion from clearing a newer selection.
-  const draft$ = state<AudienceDraft | null>(null);
+  // Permission selection comes from server details, not submitted arguments.
+  const operation$ = state<Promise<void> | null>(null);
   const persist$ = command(
-    async ({ get, set }, draft: AudienceDraft, signal: AbortSignal) => {
+    async ({ get, set }, audience: Audience, signal: AbortSignal) => {
       const details = await get(details$);
       signal.throwIfAborted();
       if (!details?.status) {
-        return;
+        return false;
       }
       if (
-        details.audience === draft.audience &&
-        (draft.audience === "private" ||
+        details.audience === audience &&
+        (audience === "private" ||
           details.status.selectedTarget?.id === details.target.id)
       ) {
-        return;
+        return false;
       }
       await withCleanup(
         accept(
           get(apiClient$)(artifactSharesContract).update({
-            body: { target: details.target, audience: draft.audience },
+            body: { target: details.target, audience },
             fetchOptions: { signal },
           }),
           [200],
@@ -143,35 +139,37 @@ function createAudienceSignals(
       signal.throwIfAborted();
       await get(details$);
       signal.throwIfAborted();
-      if (get(draft$) === draft) {
-        toast.success(
-          i18n.t(($) => {
-            return $.artifacts.sharing.permissionsUpdated;
-          }),
-        );
-      }
+      return true;
     },
   );
-  const save$ = throttleCommand(
-    command(({ get, set }, draft: AudienceDraft, signal: AbortSignal) => {
-      return withCleanup(set(persist$, draft, signal), () => {
-        if (get(draft$) === draft) {
-          set(draft$, null);
-        }
-      });
-    }),
-    0,
-  );
+  const save$ = throttleCommand(persist$, 0);
   const change$ = command(
     ({ get, set }, audience: Audience, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const current = get(draft$);
-      const draft = current?.audience === audience ? current : { audience };
-      set(draft$, draft);
-      return set(save$, draft, signal);
+      // A distinct continuation per call also identifies the latest caller when
+      // the throttle coalesces several callers into one trailing execution.
+      let promise: Promise<void> | null = null;
+      promise = (async () => {
+        const updated = await set(save$, audience, signal);
+        signal.throwIfAborted();
+        if (updated && get(operation$) === promise) {
+          toast.success(
+            i18n.t(($) => {
+              return $.artifacts.sharing.permissionsUpdated;
+            }),
+          );
+        }
+      })();
+      set(operation$, promise);
+      return promise;
     },
   );
-  return { draft$, change$ };
+  return {
+    audienceOperation$: computed((get) => {
+      return get(operation$);
+    }),
+    change$,
+  };
 }
 
 function createArtifactShareSession(source: ShareSource) {
