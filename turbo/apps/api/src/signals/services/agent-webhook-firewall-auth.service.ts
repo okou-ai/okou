@@ -2014,44 +2014,6 @@ function shouldUseCurrentAccess(args: {
   return false;
 }
 
-async function loadModelProviderRefreshStateRow(
-  db: Db,
-  args: RefreshAccessTokenArgs,
-  context: RefreshTokenContext,
-): Promise<RefreshStateRow | null> {
-  if (args.sourceId) {
-    const rows = await db
-      .select({
-        authMethod: sql`NULL`.mapWith(pgNullDecoder),
-        connectorId: sql`NULL`.mapWith(pgNullDecoder),
-        storageVersion: sql`NULL`.mapWith(pgNullDecoder),
-        tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-        needsReconnect: modelProviderAccounts.needsReconnect,
-        lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
-        reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-      })
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, context.secretUserId),
-          eq(
-            modelProviderAccounts.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
-        ),
-      )
-      .limit(1);
-    return rows[0] ?? null;
-  }
-  return null;
-}
-
 async function loadConnectorRefreshStateRow(
   db: Db,
   args: RefreshAccessTokenArgs,
@@ -2092,7 +2054,40 @@ async function loadRefreshState(
 ): Promise<RefreshState | null> {
   const row =
     args.sourceType === "model-provider"
-      ? await loadModelProviderRefreshStateRow(db, args, context)
+      ? await (async (): Promise<RefreshStateRow | null> => {
+          if (args.sourceId) {
+            const rows = await db
+              .select({
+                authMethod: sql`NULL`.mapWith(pgNullDecoder),
+                connectorId: sql`NULL`.mapWith(pgNullDecoder),
+                storageVersion: sql`NULL`.mapWith(pgNullDecoder),
+                tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+                needsReconnect: modelProviderAccounts.needsReconnect,
+                lastRefreshErrorCode:
+                  modelProviderAccounts.lastRefreshErrorCode,
+                reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
+              })
+              .from(modelProviderAccounts)
+              .where(
+                and(
+                  eq(modelProviderAccounts.id, args.sourceId),
+                  personalSubscriptionAccountAccessCondition(args.runId),
+                  eq(modelProviderAccounts.orgId, args.orgId),
+                  eq(modelProviderAccounts.userId, context.secretUserId),
+                  eq(
+                    modelProviderAccounts.type,
+                    requiredModelProviderMetadataKey({
+                      providerKey: args.accessSourceKey,
+                      metadataKey: args.metadataKey,
+                    }),
+                  ),
+                ),
+              )
+              .limit(1);
+            return rows[0] ?? null;
+          }
+          return null;
+        })()
       : await loadConnectorRefreshStateRow(db, args);
 
   if (!row) {
