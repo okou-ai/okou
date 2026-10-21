@@ -406,22 +406,29 @@ mod tests {
         let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
         let http = client(server.url());
         let cancel = CancellationToken::new();
-        let task = AbortOnDropHandle::new(tokio::spawn({
-            let cancel = cancel.clone();
-            async move {
-                report_startup_path(
-                    &http,
-                    RunId::new_v4(),
-                    "startup-run-token",
-                    SandboxStartupPath::Home,
-                    &cancel,
-                )
-                .await;
-            }
-        }));
-        server.next_request("startup before cancellation").await;
+        let report = report_startup_path(
+            &http,
+            RunId::new_v4(),
+            "startup-run-token",
+            SandboxStartupPath::Home,
+            &cancel,
+        );
+        tokio::pin!(report);
+        tokio::select! {
+            biased;
+            _ = server.next_request("startup before cancellation") => {},
+            () = &mut report => panic!("startup report finished before cancellation"),
+        }
+        // Freeze the request deadline only for this synchronous cancellation poll.
+        // Awaiting the report could otherwise succeed through its HTTP timeout.
+        tokio::time::pause();
         cancel.cancel();
-        task.await.unwrap();
+        let completed = poll_fn(|cx| Poll::Ready(report.as_mut().poll(cx).is_ready())).await;
+        tokio::time::resume();
+        assert!(
+            completed,
+            "cancelled in-flight request still waits for HTTP timeout"
+        );
         server.assert_finished().await;
     }
 
