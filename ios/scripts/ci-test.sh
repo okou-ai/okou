@@ -33,6 +33,8 @@ xcode_args=(
   -skipPackageUpdates
   COMPILATION_CACHE_ENABLE_CACHING=YES
   COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
+  # Keep compiler inputs identical to the SDK-upgrade consumer; CI needs no IDE index.
+  COMPILER_INDEX_STORE_ENABLE=NO
   CODE_SIGN_IDENTITY=-
   CODE_SIGNING_ALLOWED=YES
   DEVELOPMENT_TEAM=
