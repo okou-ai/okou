@@ -11,16 +11,11 @@ import {
   buildConnectorShelves,
   type ConnectorShelfLayout,
 } from "../../signals/okou-page/settings/connector-shelves.ts";
-import {
-  builtinConnectorCurrentConnectionStatus,
-  matchesConnectorDirectorySearch,
-} from "../../signals/okou-page/settings/connectors.ts";
+import { matchesConnectorDirectorySearch } from "../../signals/okou-page/settings/connectors.ts";
 import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
 import { connectorCategoryLabels } from "./components/settings/connector-category-labels.ts";
 
 export interface ConnectorDirectoryModel {
-  /** Connected connectors whose connection or permissions need a fix. */
-  readonly attention: readonly PlatformConnectorCatalogStatusItem[];
   /**
    * Connected connectors matching the current search. Discovery only offers
    * what can be added, so without these a search for something already
@@ -29,7 +24,6 @@ export interface ConnectorDirectoryModel {
   readonly matchedConnected: readonly PlatformConnectorCatalogStatusItem[];
   readonly discover: readonly PlatformConnectorCatalogStatusItem[];
   readonly custom: readonly CustomConnectorResponse[];
-  readonly customAttention: readonly CustomConnectorResponse[];
   readonly categorySections: readonly ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[];
   /**
    * The categories the chip row offers. They come from the browse response
@@ -44,13 +38,6 @@ export interface ConnectorDirectoryModel {
     PlatformConnectorCatalogStatusItem
   >;
   readonly categoryLabelOf: (category: string) => string | undefined;
-}
-
-function needsAttention(
-  connector: PlatformConnectorCatalogStatusItem,
-): boolean {
-  const status = builtinConnectorCurrentConnectionStatus(connector);
-  return status === "scope-mismatch" || status === "reconnect-required";
 }
 
 function matchesCustomConnectorSearch(
@@ -70,34 +57,10 @@ function matchesCustomConnectorSearch(
   });
 }
 
-function customConnectorGroups(
-  connectors: readonly CustomConnectorResponse[],
-  connectedTargets: ReadonlySet<string> | undefined,
-) {
-  const customAttention = connectors.filter((connector) => {
-    return (
-      !isIntegrationManagedCustomConnector(connector) &&
-      connectedTargets?.has(`custom:${connector.id}`) === true &&
-      connector.connected === false
-    );
-  });
-  const attentionIds = new Set(
-    customAttention.map((connector) => {
-      return connector.id;
-    }),
-  );
-  return {
-    customAttention,
-    custom: connectors.filter((connector) => {
-      return !attentionIds.has(connector.id);
-    }),
-  };
-}
-
 /**
  * Derives everything the directory renders from the raw connector lists, so the
- * dialog stays a view: which connected connectors need a fix, what discovery
- * shows for the current search and category.
+ * dialog stays a view: saved membership and discovery for the current search
+ * and category. Account readiness belongs to the opened target.
  */
 export function buildConnectorDirectoryModel({
   connectors,
@@ -143,15 +106,8 @@ export function buildConnectorDirectoryModel({
       !connectedTargets.has(`custom:${connector.id}`)
     );
   });
-  const requiresAttention = (connector: PlatformConnectorCatalogStatusItem) => {
-    return needsAttention(connector);
-  };
   const matchedConnected = connected.filter((connector) => {
     return matchesConnectorDirectorySearch(search, connector);
-  });
-  const attention = connected.filter(requiresAttention);
-  const searchedConnected = matchedConnected.filter((connector) => {
-    return !requiresAttention(connector);
   });
   const discover = unconnected.filter((connector) => {
     return (
@@ -163,10 +119,6 @@ export function buildConnectorDirectoryModel({
     (connector) => {
       return matchesCustomConnectorSearch(search, connector);
     },
-  );
-  const { custom, customAttention } = customConnectorGroups(
-    matchedCustom,
-    connectedTargets,
   );
   const categoryMetadata = connectorCategoryLabels(
     [...unconnected, ...chipCatalog].map((connector) => {
@@ -200,11 +152,9 @@ export function buildConnectorDirectoryModel({
   );
 
   return {
-    attention,
-    matchedConnected: search.trim() ? searchedConnected : [],
+    matchedConnected: search.trim() ? matchedConnected : [],
     discover,
-    custom,
-    customAttention,
+    custom: matchedCustom,
     categorySections,
     chipSections,
     shelfLayout,

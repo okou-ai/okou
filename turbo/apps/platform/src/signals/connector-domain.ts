@@ -1,20 +1,35 @@
-import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountMutationIntent,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import type {
-  PublicConnectorCatalogConnectReaderItem,
-  PublicConnectorCatalogStatusReaderItem,
+  PublicConnectorCatalogConnectReaderItem as PublicConnectorCatalogConnectItem,
+  PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 
+export type PlatformConnectorConnectionStatus =
+  "not-connected" | "connected" | "scope-mismatch" | "reconnect-required";
+export type PlatformConnectorConnection = Pick<
+  ConnectorAccountConnection,
+  "id" | "authMethod" | "externalUsername" | "externalEmail" | "reconnectReason"
+>;
+
+/** Active UI state derived from canonical accounts, never catalog wire status. */
+interface BuiltinConnectorAccountView {
+  readonly setupStatus: ConnectorAccountConnection["setupStatus"] | null;
+  readonly connected: boolean;
+  readonly connection: PlatformConnectorConnection | null;
+  readonly connectionStatus: PlatformConnectorConnectionStatus | undefined;
+  readonly scopeMismatch: boolean | undefined;
+  readonly authMethodSupportsRefresh: boolean | undefined;
+  readonly tokenExpiresAt: string | null;
+}
 export type PlatformConnectorCatalogStatusItem =
-  PublicConnectorCatalogStatusReaderItem & {
-    readonly accountProjectionConflict?: boolean;
-  };
-/** What a connect surface lists: enough to draw a card and connect from it. */
+  PublicConnectorCatalogStatusItem & BuiltinConnectorAccountView;
 export type PlatformConnectorCatalogConnectItem =
-  PublicConnectorCatalogConnectReaderItem & {
-    readonly accountProjectionConflict?: boolean;
-  };
+  PublicConnectorCatalogConnectItem & BuiltinConnectorAccountView;
 export type PlatformConnectorPermissionMetadata =
   PublicConnectorCatalogPermissionDetail;
 export type PlatformUserPermissionGrant = UserPermissionGrantResponse;

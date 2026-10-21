@@ -1,10 +1,10 @@
 import { screen, waitFor } from "@testing-library/react";
+import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogPermissionDetail,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";

@@ -1,24 +1,20 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
-  builtinConnectorAutomaticContract,
-  builtinConnectorExternalCodeSessionContract,
-  builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantContract,
-  builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorOauthStartContract,
   builtinConnectorOpenIdStartContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
+  builtinConnectorExternalCodeSessionReaderContract as builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionReaderContract as builtinConnectorOauthDeviceAuthSessionContract,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import {
-  builtinConnectorAutomaticReaderContract,
-  builtinConnectorExternalCodeSessionReaderContract,
-  builtinConnectorManualGrantReaderContract,
-  builtinConnectorNoAuthGrantReaderContract,
-  builtinConnectorOauthDeviceAuthSessionReaderContract,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
+
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -195,12 +191,13 @@ function oauthMethod(label = "OAuth") {
     label,
     description: null,
     grantKind: "auth-code" as const,
+    supportsRefresh: true,
     manualFields: [],
     startOptions: [],
   };
 }
 
-test.each(["none", "none-canonical", "oauth"] as const)(
+test.each(["none-canonical", "oauth"] as const)(
   "Connect a builtin Automatic method resolving to %s",
   async (resolution) => {
     const slug = "server-authored-tools";
@@ -221,6 +218,7 @@ test.each(["none", "none-canonical", "oauth"] as const)(
           label: "Connect",
           description: null,
           grantKind: "automatic",
+          supportsRefresh: true,
           manualFields: [],
           startOptions: [],
         },
@@ -248,7 +246,7 @@ test.each(["none", "none-canonical", "oauth"] as const)(
     context.mocks.browser.open(authWindow);
     context.mocks.api(
       resolution === "none-canonical"
-        ? builtinConnectorAutomaticReaderContract.start
+        ? builtinConnectorAutomaticContract.start
         : builtinConnectorAutomaticContract.start,
       ({ body, respond }) => {
         expect(body).toMatchObject({
@@ -259,9 +257,7 @@ test.each(["none", "none-canonical", "oauth"] as const)(
           savedAccount = storeConnectedConnector(slug, methodId);
           return respond(200, {
             result: "connected",
-            ...(resolution === "none-canonical"
-              ? { connectionId: savedAccount.id }
-              : { connectedAccountId: savedAccount.id }),
+            connectionId: savedAccount.id,
           });
         }
         return respond(200, {
@@ -299,6 +295,7 @@ function noAuthMethod() {
     label: "Public catalog",
     description: "Enable public catalog data.",
     grantKind: "none" as const,
+    supportsRefresh: true,
     manualFields: [],
     startOptions: [],
   };
@@ -316,6 +313,7 @@ function manualMethod(args: {
     label: args.label,
     description: null,
     grantKind: "manual" as const,
+    supportsRefresh: true,
     manualFields: [
       {
         id: args.fieldId,
@@ -397,7 +395,7 @@ async function openAwsWithCode(code: string): Promise<{
   };
 }
 
-test.each(["legacy", "canonical"])(
+test.each(["canonical"])(
   "Add an AWS account with an external-code %s receipt",
   async (receipt) => {
     const permissions = context.mocks.deferred<void>();
@@ -416,7 +414,7 @@ test.each(["legacy", "canonical"])(
     const browserOpen = context.mocks.browser.open(authWindow);
     if (receipt === "canonical") {
       context.mocks.api(
-        builtinConnectorExternalCodeSessionReaderContract.complete,
+        builtinConnectorExternalCodeSessionContract.complete,
         ({ respond }) => {
           const connector = storeConnectedConnector("aws", "cli");
           return respond(200, {
@@ -531,6 +529,7 @@ test("Add an account through OpenID", async () => {
         label: "Partner OpenID",
         description: null,
         grantKind: "openid-auth",
+        supportsRefresh: true,
         manualFields: [],
         startOptions: [],
       },
@@ -590,7 +589,7 @@ test("Add an account through OpenID", async () => {
   });
 });
 
-test.each(["legacy", "canonical"])(
+test.each(["canonical"])(
   "Choose a credential-free method with a %s receipt",
   async (receipt) => {
     mockConnectors(context, []);
@@ -604,15 +603,12 @@ test.each(["legacy", "canonical"])(
     let selectedMethod: string | null = null;
     context.mocks.api(
       receipt === "canonical"
-        ? builtinConnectorNoAuthGrantReaderContract.connect
+        ? builtinConnectorNoAuthGrantContract.connect
         : builtinConnectorNoAuthGrantContract.connect,
       ({ body, respond }) => {
         selectedMethod = body.authMethod;
         const connector = storeConnectedConnector("stripe", body.authMethod);
-        return respond(
-          200,
-          receipt === "canonical" ? { connectionId: connector.id } : connector,
-        );
+        return respond(200, { connectionId: connector.id });
       },
     );
     await setupPage({
@@ -642,7 +638,7 @@ test.each(["legacy", "canonical"])(
   },
 );
 
-test.each(["legacy", "canonical"])(
+test.each(["canonical"])(
   "Authorize visible agents only for the first manual account with a %s receipt",
   async (receipt) => {
     const researchId = "c0000000-0000-4000-a000-000000000002";
@@ -669,17 +665,12 @@ test.each(["legacy", "canonical"])(
     let connectedAccount: BuiltinConnectorResponse | undefined;
     context.mocks.api(
       receipt === "canonical"
-        ? builtinConnectorManualGrantReaderContract.connect
+        ? builtinConnectorManualGrantContract.connect
         : builtinConnectorManualGrantContract.connect,
       ({ body, respond }) => {
         expect(body.authorizeAgent ?? false).toBe(!connectedAccount);
         connectedAccount = storeConnectedConnector("axiom", body.authMethod);
-        return respond(
-          200,
-          receipt === "canonical"
-            ? { connectionId: connectedAccount.id }
-            : connectedAccount,
-        );
+        return respond(200, { connectionId: connectedAccount.id });
       },
     );
     mockAgentConnectorAccess("axiom");
@@ -770,7 +761,7 @@ test.each(["legacy", "canonical"])(
   },
 );
 
-test.each(["legacy", "canonical"])(
+test.each(["canonical"])(
   "Connect through device authorization with a %s receipt",
   async (receipt) => {
     const approval = context.mocks.deferred<void>();
@@ -799,6 +790,7 @@ test.each(["legacy", "canonical"])(
             label: "OAuth",
             description: "Sign in with Base44 to grant access.",
             grantKind: "device-auth",
+            supportsRefresh: true,
             manualFields: [],
             startOptions: [],
           },
@@ -808,7 +800,7 @@ test.each(["legacy", "canonical"])(
     const browserOpen = context.mocks.browser.open(createAuthWindow());
     context.mocks.api(
       receipt === "canonical"
-        ? builtinConnectorOauthDeviceAuthSessionReaderContract.poll
+        ? builtinConnectorOauthDeviceAuthSessionContract.poll
         : builtinConnectorOauthDeviceAuthSessionContract.poll,
       async ({ respond }) => {
         await approval.promise;
@@ -819,9 +811,7 @@ test.each(["legacy", "canonical"])(
         );
         return respond(200, {
           status: "complete",
-          ...(receipt === "canonical"
-            ? { connectionId: connector.id }
-            : { connector }),
+          connectionId: connector.id,
         });
       },
     );
@@ -882,10 +872,10 @@ test.each(["legacy", "canonical"])(
 );
 
 test.each([
-  ["device-auth", "invalid"],
   ["device-auth", undefined],
-  ["external-code", "invalid"],
+  ["device-auth", "invalid"],
   ["external-code", undefined],
+  ["external-code", "invalid"],
 ] as const)(
   "Reject %s completion when account setup is %s",
   async (grantKind, setupStatus) => {
@@ -904,6 +894,7 @@ test.each([
         label,
         authMethods: [
           {
+            supportsRefresh: true,
             id: "oauth",
             label: "OAuth",
             description: null,
@@ -944,11 +935,7 @@ test.each([
         builtinConnectorOauthDeviceAuthSessionContract.poll,
         ({ respond }) => {
           saved = storeConnectedConnector(slug, "oauth");
-          return respond(200, {
-            status: "complete",
-            connector: saved,
-            connectionId: saved.id,
-          });
+          return respond(200, { status: "complete", connectionId: saved.id });
         },
       );
     } else {
@@ -956,11 +943,7 @@ test.each([
         builtinConnectorExternalCodeSessionContract.complete,
         ({ respond }) => {
           saved = storeConnectedConnector(slug, "oauth");
-          return respond(200, {
-            status: "complete",
-            connector: saved,
-            connectionId: saved.id,
-          });
+          return respond(200, { status: "complete", connectionId: saved.id });
         },
       );
     }
@@ -1029,7 +1012,9 @@ test("Enable a connector that needs no credentials", async () => {
     builtinConnectorNoAuthGrantContract.connect,
     ({ body, respond }) => {
       expect(body.authorizeAgent).toBeTruthy();
-      return respond(200, storeConnectedConnector("stripe", body.authMethod));
+      return respond(200, {
+        connectionId: storeConnectedConnector("stripe", body.authMethod).id,
+      });
     },
   );
   mockAgentConnectorAccess("stripe");
@@ -1079,6 +1064,7 @@ test("Follow provider-authored external-code instructions", async () => {
           description:
             "First make sure you are signed in to PlayStation at [https://www.playstation.com/](https://www.playstation.com/).\nClick the button below, then copy the `npsso` value.",
           grantKind: "external-code",
+          supportsRefresh: true,
           manualFields: [],
           startOptions: [],
         },
@@ -1137,6 +1123,7 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
           label: "Public CLI",
           description: "Public CLI description",
           grantKind: "device-auth",
+          supportsRefresh: true,
           manualFields: [],
           startOptions: [],
         },
@@ -1249,7 +1236,7 @@ async function addManualAccountForNaming() {
         externalEmail: "owner@example.com",
       };
       context.mocks.data.connectors([connector]);
-      return respond(200, connector);
+      return respond(200, { connectionId: connector.id });
     },
   );
   context.mocks.api(
@@ -1257,6 +1244,9 @@ async function addManualAccountForNaming() {
     ({ params, body, respond }) => {
       renamed = { id: params.connectionId, name: body.displayName };
       return respond(200, {
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: [],
         id: connectionId,
         target: { kind: "builtin", connectorSlug: "ahrefs" },
         authMethod: "api-token",
@@ -1326,6 +1316,7 @@ test("Submit a chosen device-authorization start option", async () => {
           label: "Stripe CLI",
           description: "Approve access with Stripe CLI.",
           grantKind: "device-auth",
+          supportsRefresh: true,
           manualFields: [],
           startOptions: [
             {
@@ -1489,7 +1480,9 @@ test("Submit credentials only for the chosen manual method", async () => {
     ({ body, respond }) => {
       submittedMethod = body.authMethod;
       submittedValues = body.values;
-      return respond(200, storeConnectedConnector("axiom", body.authMethod));
+      return respond(200, {
+        connectionId: storeConnectedConnector("axiom", body.authMethod).id,
+      });
     },
   );
   await setupPage({

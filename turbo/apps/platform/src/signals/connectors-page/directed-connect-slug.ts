@@ -12,6 +12,7 @@ import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorManagedStatusSchema } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { z } from "zod";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -33,7 +34,6 @@ import { completeDirectedConnectorAction$ } from "./directed-connector-callback.
 import { routeChatActionCallback$ } from "../chat-page/action-callback.ts";
 import { connectorCatalogItemForSlug } from "../external/connectors.ts";
 import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
-import { customConnectorManagedStatusSchema } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { createConnectorAccountListSignals } from "../okou-page/connector-accounts.ts";
 
 const directedConnectAccounts = createConnectorAccountListSignals({

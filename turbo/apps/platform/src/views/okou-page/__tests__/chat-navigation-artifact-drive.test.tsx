@@ -6,7 +6,7 @@ import {
 } from "@okouai/core/google-workspace-conversion";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import type { ArtifactDetail } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,

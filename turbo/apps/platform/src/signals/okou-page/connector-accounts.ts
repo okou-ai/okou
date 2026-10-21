@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
   connectorAccountTargetKey,
@@ -268,7 +268,10 @@ function createConnectorAccountQuerySignals() {
 }
 
 export function createConnectorAccountListSignals(
-  options: { readonly includeBuiltinScopeMismatch?: true } = {},
+  options: {
+    readonly includeBuiltinScopeMismatch?: true;
+    readonly refreshVersion$?: Computed<number>;
+  } = {},
 ) {
   const includeBuiltinScopeMismatch =
     options.includeBuiltinScopeMismatch === true;
@@ -277,6 +280,9 @@ export function createConnectorAccountListSignals(
     const query = get(querySignals.query$);
     if (!query) {
       return emptyConnectorAccountPage();
+    }
+    if (options.refreshVersion$) {
+      get(options.refreshVersion$);
     }
     if (query.debounce) {
       const debouncedSearch = await get(querySignals.debouncedSearch$);

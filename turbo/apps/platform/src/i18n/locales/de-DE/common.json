@@ -1878,7 +1878,6 @@
         "emptyCustomTitle": "Noch keine eigenen Integrationen",
         "matchCount_one": "{{count}} Treffer",
         "matchCount_other": "{{count}} Treffer",
-        "needsAttention": "Braucht Aufmerksamkeit",
         "nextCategories": "Nächste Kategorien",
         "noResultsBody": "Versuchen Sie einen Produktnamen oder erstellen Sie eine eigene aus einer API oder einem MCP-Server.",
         "noResultsTitle": "Keine Integration passt zu „{{query}}“",

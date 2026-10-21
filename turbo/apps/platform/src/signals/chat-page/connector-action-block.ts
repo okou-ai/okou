@@ -290,15 +290,15 @@ export const completeExactReconnectChatAction$ = command(
   },
 );
 
-export const completeCustomConnectorChatAction$ = command(
+export const refreshCustomConnectorChatAccount$ = command(
   async (
     { get, set },
     active: ActiveCustomConnectorAction,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     signal.throwIfAborted();
     if (get(activeChatConnectorActionState$) !== active) {
-      return;
+      return false;
     }
     const connector = (await get(customConnectors$)).find((candidate) => {
       return candidate.slug === active.connectorSlug;
@@ -316,13 +316,32 @@ export const completeCustomConnectorChatAction$ = command(
         );
     signal.throwIfAborted();
     if (get(activeChatConnectorActionState$) !== active) {
-      return;
+      return false;
     }
     const connected = accountPage
       ? accountPage.defaultConnection?.connectionStatus === "connected" &&
         accountPage.defaultConnection.setupStatus === "complete"
       : customConnectorManagedStatusSchema.parse(connector).connected;
     set(active.recordConnection$, connector, connected);
+    return connected;
+  },
+);
+
+export const completeCustomConnectorChatAction$ = command(
+  async (
+    { get, set },
+    active: ActiveCustomConnectorAction,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const connected = await set(
+      refreshCustomConnectorChatAccount$,
+      active,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (get(activeChatConnectorActionState$) !== active) {
+      return;
+    }
     if (!connected) {
       throw new Error(
         "The default account still needs attention. Review its accounts in Connectors settings.",
@@ -672,7 +691,7 @@ function createCustomConnectorSignals(
     }
     return isIntegrationManagedCustomConnector(connector)
       ? customConnectorManagedStatusSchema.parse(connector).connected
-      : connector.connected === true;
+      : false;
   });
 
   const authorized$ = computed(async (get): Promise<boolean> => {

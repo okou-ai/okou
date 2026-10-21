@@ -1908,7 +1908,6 @@
         "matchCount_one": "{{count}} resultado",
         "matchCount_many": "{{count}} resultados",
         "matchCount_other": "{{count}} resultados",
-        "needsAttention": "Necesita atención",
         "nextCategories": "Categorías siguientes",
         "noResultsBody": "Prueba con el nombre de un producto o crea el tuyo a partir de una API o un servidor MCP.",
         "noResultsTitle": "Ningún conector coincide con «{{query}}»",

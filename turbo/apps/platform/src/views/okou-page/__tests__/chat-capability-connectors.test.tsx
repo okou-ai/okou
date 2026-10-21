@@ -1,4 +1,8 @@
 import {
+  customConnectorCompletionFixture,
+  connectorFixtureAccount,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
+import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
@@ -16,20 +20,20 @@ import {
   bankingUserContract,
   type BankingAccessRequestStatusResponse,
 } from "@okouai/api-contracts/contracts/banking";
-import { connectorCatalogReaderContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   builtinConnectorsMainContract,
-  builtinConnectorNoAuthGrantContract,
   builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import {
-  customConnectorsContract,
-  customConnectorValuesContract,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import { customConnectorsReaderContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+  customConnectorsReaderContract as customConnectorsContract,
+  customConnectorValuesReaderContract as customConnectorValuesContract,
+  type CustomConnectorReaderResponse as CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
+
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -126,32 +130,7 @@ function installCatalogLookup(
     slug: ConnectorSlug,
   ): ConnectorAccountConnection | null => {
     const item = lookup(slug);
-    if (!item?.connection) {
-      return null;
-    }
-    return {
-      id: item.connection.id ?? CONNECTOR_CONNECTION_ID,
-      target: { kind: "builtin", connectorSlug: slug },
-      authMethod: item.connection.authMethod,
-      displayName: null,
-      isDefault: true,
-      externalId: null,
-      externalUsername: item.connection.externalUsername,
-      externalEmail: item.connection.externalEmail,
-      oauthScopes: [],
-      connectionStatus:
-        item.connectionStatus === "reconnect-required"
-          ? "reconnect-required"
-          : "connected",
-      reconnectReason: item.connection.reconnectReason,
-      tokenExpiresAt: item.tokenExpiresAt,
-      setupStatus: "complete",
-      scopeMismatch: item.scopeMismatch,
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
-      createdAt: "2026-08-01T08:00:00.000Z",
-      updatedAt: "2026-08-01T09:00:00.000Z",
-    };
+    return item ? (connectorFixtureAccount(item) ?? null) : null;
   };
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -194,7 +173,7 @@ function installCustomConnectorApi(args: {
 }): void {
   let grants = args.grants ?? [];
   const account = () => {
-    return args.connector().connected
+    return connectorFixtureAccount(args.connector()) !== undefined
       ? customConnectorAccount(CUSTOM_CONNECTOR_ID, {
           id: CONNECTOR_CONNECTION_ID,
           configuredFieldKeys: ["apiSecret"],
@@ -585,15 +564,8 @@ test.each(["connected", "reconnect-required", "incomplete"] as const)(
       },
       authorizationUpdates,
     });
-    const {
-      connected: _connected,
-      connectedAccountId: _connectedAccountId,
-      connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
-      missingRequiredFields: _missingRequiredFields,
-      configuredFieldKeys: _configuredFieldKeys,
-      ...definition
-    } = connector;
-    context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
+    const { ...definition } = connector;
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [definition] });
     });
     let accountReads = 0;
@@ -677,15 +649,8 @@ async function attemptCustomMcpConnection(
   };
   installCustomConnectorApi({ connector, authorizationUpdates });
   if (canonicalDefinition) {
-    context.mocks.api(customConnectorsReaderContract.list, ({ respond }) => {
-      const {
-        connected: _connected,
-        connectedAccountId: _connectedAccountId,
-        connectedAccountUpdatedAt: _connectedAccountUpdatedAt,
-        missingRequiredFields: _missingRequiredFields,
-        configuredFieldKeys: _configuredFieldKeys,
-        ...definition
-      } = connector();
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+      const { ...definition } = connector();
       return respond(200, { connectors: [definition] });
     });
   }
@@ -717,7 +682,7 @@ async function attemptCustomMcpConnection(
       { key: "apiSecret", kind: "secret", value: "secret-value" },
     ]);
     connected = complete;
-    return respond(200, connector());
+    return respond(200, customConnectorCompletionFixture(connector()));
   });
   installActionConversation({
     lines: [
@@ -868,16 +833,8 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
     method: browserAuthMethod(),
     connected: true,
   });
-  const {
-    connected: _connected,
-    connection: _connection,
-    connectionStatus: _connectionStatus,
-    scopeMismatch: _scopeMismatch,
-    authMethodSupportsRefresh: _authMethodSupportsRefresh,
-    tokenExpiresAt: _tokenExpiresAt,
-    ...definition
-  } = item;
-  context.mocks.api(connectorCatalogReaderContract.get, ({ respond }) => {
+  const { ...definition } = item;
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
     return respond(200, { connector: definition });
   });
   let accountReads = 0;
@@ -972,16 +929,8 @@ test.each(["current", "canonical"] as const)(
       return requestedSlug === slug ? item() : null;
     });
     if (shape === "canonical") {
-      context.mocks.api(connectorCatalogReaderContract.get, ({ respond }) => {
-        const {
-          connected: _connected,
-          connection: _connection,
-          connectionStatus: _connectionStatus,
-          scopeMismatch: _scopeMismatch,
-          authMethodSupportsRefresh: _authMethodSupportsRefresh,
-          tokenExpiresAt: _tokenExpiresAt,
-          ...definition
-        } = item();
+      context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+        const { ...definition } = item();
         return respond(200, { connector: definition });
       });
     }
@@ -989,10 +938,12 @@ test.each(["current", "canonical"] as const)(
       builtinConnectorNoAuthGrantContract.connect,
       ({ respond }) => {
         connected = true;
-        return respond(
-          200,
-          connectedConnectorResponse({ slug, authMethod: method.id }),
-        );
+        return respond(200, {
+          connectionId: connectedConnectorResponse({
+            slug,
+            authMethod: method.id,
+          }).id,
+        });
       },
     );
     installActionConversation({
@@ -1033,7 +984,7 @@ test("Require an explicit permission selection for a custom connector", async ()
   installCustomConnectorApi({ connector });
   context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
     connected = true;
-    return respond(200, connector());
+    return respond(200, customConnectorCompletionFixture(connector()));
   });
   installActionConversation({
     lines: [
@@ -1082,7 +1033,7 @@ test("Preserve an existing custom connector permission during reconnection", asy
   installCustomConnectorApi({ connector, grants: [existingGrant] });
   context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
     connected = true;
-    return respond(200, connector());
+    return respond(200, customConnectorCompletionFixture(connector()));
   });
   installActionConversation({
     lines: [
@@ -1194,7 +1145,7 @@ test("Reconnect an expired connector before resuming the task", async () => {
     ),
   ).toBeVisible();
   const card = await screen.findByTestId("connector-action-card");
-  click(getButton("Reconnect", card));
+  click(getButton("Connect", card));
   await waitFor(() => {
     expect(popup.navigations).toContain(
       "https://provider.example.test/reconnect-drive",

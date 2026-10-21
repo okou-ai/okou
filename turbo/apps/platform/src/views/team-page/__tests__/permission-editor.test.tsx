@@ -2,10 +2,8 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogPermissionDetail,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {

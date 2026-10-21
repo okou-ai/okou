@@ -1874,7 +1874,6 @@
         "emptyCustomBody": "Buat satu dari API HTTP atau server MCP mana pun, dan Okou dapat menggunakannya seperti konektor lain.",
         "emptyCustomTitle": "Belum ada konektor kustom",
         "matchCount_other": "{{count}} hasil",
-        "needsAttention": "Perlu perhatian",
         "nextCategories": "Kategori berikutnya",
         "noResultsBody": "Coba nama produk, atau buat sendiri dari API atau server MCP.",
         "noResultsTitle": "Tidak ada konektor yang cocok dengan “{{query}}”",

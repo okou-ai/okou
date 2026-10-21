@@ -1874,7 +1874,6 @@
         "emptyCustomBody": "用任意 HTTP API 或 MCP 伺服器搭一個，Okou 就能像用其他連接器一樣使用它。",
         "emptyCustomTitle": "還沒有自定義連接器",
         "matchCount_other": "{{count}} 個匹配",
-        "needsAttention": "需要處理",
         "nextCategories": "下一組分類",
         "noResultsBody": "換個產品名稱試試，或者用 API、MCP 伺服器自己搭一個。",
         "noResultsTitle": "沒有找到匹配「{{query}}」的連接器",

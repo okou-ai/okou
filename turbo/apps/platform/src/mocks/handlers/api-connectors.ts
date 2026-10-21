@@ -10,34 +10,33 @@ import type {
   ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
-  connectorCatalogContract,
   isOneClickConnectorGrantKind,
-  publicConnectorCatalogConnectItemSchema,
   type PublicConnectorCatalogAuthMethodDetail,
-  type PublicConnectorCatalogConnectItem,
-  type PublicConnectorCatalogConnection,
-  type PublicConnectorCatalogConnectionStatus,
   type PublicConnectorCatalogPermissionDetail,
-  type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
-  onboardingSourcesContract,
-} from "@okouai/api-contracts/contracts/onboarding";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  onboardingSourcesReaderContract as onboardingSourcesContract,
+  type PublicConnectorCatalogConnectReaderItem as PublicConnectorCatalogConnectItem,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/contracts/onboarding";
 import {
-  builtinConnectorExternalCodeSessionContract,
-  builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantContract,
-  builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorScopeDiffContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorExternalCodeSessionReaderContract as builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionReaderContract as builtinConnectorOauthDeviceAuthSessionContract,
+} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
@@ -277,20 +276,6 @@ function mockPermissionDetail(
   return testConnectorPermissionDetails.get(connectorSlug) ?? null;
 }
 
-function mockConnectionForCatalogStatus(
-  connector: BuiltinConnectorResponse | null,
-): PublicConnectorCatalogConnection | null {
-  if (!connector) {
-    return null;
-  }
-  return {
-    authMethod: connector.authMethod,
-    externalUsername: connector.externalUsername,
-    externalEmail: connector.externalEmail,
-    reconnectReason: connector.reconnectReason,
-  };
-}
-
 function mockSingleAuthCodeAuthMethodId(
   authMethods: readonly PublicConnectorCatalogAuthMethodDetail[],
 ): ConnectorAuthMethodId | null {
@@ -299,17 +284,6 @@ function mockSingleAuthCodeAuthMethodId(
     return null;
   }
   return authMethod.grantKind === "auth-code" ? authMethod.id : null;
-}
-
-function mockConnectorAuthMethodSupportsRefresh(
-  definition: TestConnectorCatalogDefinition,
-  authMethod: ConnectorAuthMethodId,
-): boolean {
-  return Boolean(
-    definition.authMethods.find((method) => {
-      return method.detail.id === authMethod;
-    })?.supportsRefresh,
-  );
 }
 
 function mockConnectorHasRequestedScopes(
@@ -365,22 +339,7 @@ function mockConnectorScopeDiff(
 function mockConnectorCatalogStatusItem(
   definition: TestConnectorCatalogDefinition,
   authMethods: readonly PublicConnectorCatalogAuthMethodDetail[],
-  connector: BuiltinConnectorResponse | null,
 ): PublicConnectorCatalogStatusItem {
-  const scopeMismatch =
-    connector !== null &&
-    !mockConnectorHasRequestedScopes(definition, connector);
-  let connectionStatus: PublicConnectorCatalogConnectionStatus =
-    "not-connected";
-  if (connector !== null) {
-    connectionStatus =
-      connector.connectionStatus === "reconnect-required"
-        ? "reconnect-required"
-        : scopeMismatch
-          ? "scope-mismatch"
-          : "connected";
-  }
-
   return {
     slug: definition.connectorSlug,
     label: definition.label,
@@ -391,26 +350,12 @@ function mockConnectorCatalogStatusItem(
     tags: [...definition.tags],
     authMethods: [...authMethods],
     permissionSummary: definition.permissionSummary,
-    connection: mockConnectionForCatalogStatus(connector),
-    connected: connector !== null,
-    setupStatus: connector === null ? null : "complete",
-    connectionStatus,
-    scopeMismatch,
-    authMethodSupportsRefresh:
-      connector !== null &&
-      mockConnectorAuthMethodSupportsRefresh(definition, connector.authMethod),
-    tokenExpiresAt: connector?.tokenExpiresAt ?? null,
     singleAuthCodeAuthMethodId: mockSingleAuthCodeAuthMethodId(authMethods),
     connectNotice: definition.connectNotice,
   };
 }
 
 function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
-  const connectorsBySlug = new Map(
-    mockConnectors.map((connector) => {
-      return [connector.slug, connector];
-    }),
-  );
   return testConnectorCatalogDefinitions.map((definition) => {
     const authMethods = definition.authMethods.map((method) => {
       return {
@@ -418,11 +363,7 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
         supportsRefresh: method.supportsRefresh,
       };
     });
-    return mockConnectorCatalogStatusItem(
-      definition,
-      authMethods,
-      connectorsBySlug.get(definition.connectorSlug) ?? null,
-    );
+    return mockConnectorCatalogStatusItem(definition, authMethods);
   });
 }
 
@@ -430,13 +371,17 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
 export function connectorCatalogConnectItem(
   connector: PublicConnectorCatalogStatusItem,
 ): PublicConnectorCatalogConnectItem {
-  return publicConnectorCatalogConnectItemSchema.parse(connector);
+  return connectorCatalogContract.oneClick.responses[200].shape.connectors.element.parse(
+    connector,
+  );
 }
 
 export const apiConnectorsHandlers = [
   mockApi(connectedConnectorsContract.list, ({ respond }) => {
     const connected = mockConnectorCatalogStatus().filter((connector) => {
-      return connector.connected;
+      return mockConnectors.some((account) => {
+        return account.slug === connector.slug;
+      });
     });
     return respond(200, {
       builtinConnectors: connected.map((connector) => {
@@ -711,7 +656,7 @@ export const apiConnectorsHandlers = [
         );
       }
       upsertMockConnector(connector);
-      return respond(200, connector);
+      return respond(200, { connectionId: connector.id });
     },
   ),
 
@@ -729,7 +674,7 @@ export const apiConnectorsHandlers = [
         );
       }
       upsertMockConnector(connector);
-      return respond(200, connector);
+      return respond(200, { connectionId: connector.id });
     },
   ),
 
@@ -773,15 +718,18 @@ export const apiConnectorsHandlers = [
   mockApi(
     builtinConnectorOauthDeviceAuthSessionContract.poll,
     ({ params, respond }) => {
+      const connector = createMockOauthDeviceAuthConnector(
+        params.connectorSlug,
+      );
       const response =
-        mockOauthDeviceAuthSessionPollResponses.shift() ??
-        ({
-          status: "complete",
-          connector: createMockOauthDeviceAuthConnector(params.connectorSlug),
-        } satisfies BuiltinConnectorOauthDeviceAuthSessionPollResponse);
-
+        builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
+          mockOauthDeviceAuthSessionPollResponses.shift() ?? {
+            status: "complete",
+            connectionId: connector.id,
+          },
+        );
       if (response.status === "complete") {
-        upsertMockConnector(response.connector);
+        upsertMockConnector({ ...connector, id: response.connectionId });
       }
       return respond(200, response);
     },
@@ -813,7 +761,7 @@ export const apiConnectorsHandlers = [
         "cli",
       );
       upsertMockConnector(connector);
-      return respond(200, { status: "complete", connector });
+      return respond(200, { status: "complete", connectionId: connector.id });
     },
   ),
 ];

@@ -3,9 +3,9 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  customConnectorOAuth2Contract,
-  customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
+  customConnectorsReaderContract as customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -75,7 +75,7 @@ test.each(["feishu", "lark"] as const)(
         return respond(200, {
           result: "connected",
           connector,
-          connectedAccountId: connectionId,
+          connectionId: connectionId,
         });
       },
     );

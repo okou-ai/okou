@@ -26,7 +26,10 @@ import type {
   PlatformConnectorPermissionMetadata,
   PlatformUserPermissionGrant,
 } from "../connector-domain.ts";
-import { relatedConnectorCatalog } from "../external/connectors.ts";
+import {
+  relatedConnectorCatalog,
+  withConnectorCompletion,
+} from "../external/connectors.ts";
 import {
   customConnectors$,
   reloadCustomConnectorAuthorizedAgents$,
@@ -363,7 +366,10 @@ export function createComposerConnectorSignals(
     return await get(addDialogBrowseCatalog$);
   });
   const addDialogCatalogItems$ = computed(async (get) => {
-    return (await get(addDialogCatalog$))?.connectors ?? [];
+    return (
+      (await get(addDialogCatalog$))?.connectors.map(withConnectorCompletion) ??
+      []
+    );
   });
   const addDialogCustomConnectors$ = computed(async (get) => {
     const uiState = get(ui.connectorUiState$);

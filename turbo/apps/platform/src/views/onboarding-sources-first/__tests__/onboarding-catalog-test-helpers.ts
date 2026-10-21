@@ -1,11 +1,13 @@
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  catalogFixture,
+  connectorFixtureAccount,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
-  onboardingSourcesContract,
-} from "@okouai/api-contracts/contracts/onboarding";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+  onboardingSourcesReaderContract as onboardingSourcesContract,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/contracts/onboarding";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 
 import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
@@ -18,7 +20,7 @@ export function onboardingSourceItem(item: {
   readonly description: string;
   readonly connected: boolean;
 }): PublicConnectorCatalogStatusItem {
-  return {
+  return catalogFixture({
     slug: item.slug,
     label: item.label,
     description: item.description,
@@ -35,6 +37,7 @@ export function onboardingSourceItem(item: {
         label: "OAuth",
         description: null,
         grantKind: "auth-code",
+        supportsRefresh: true,
         manualFields: [],
         startOptions: [],
       },
@@ -50,11 +53,10 @@ export function onboardingSourceItem(item: {
     setupStatus: item.connected ? "complete" : null,
     connectionStatus: item.connected ? "connected" : "not-connected",
     scopeMismatch: false,
-    authMethodSupportsRefresh: false,
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
-  };
+  });
 }
 
 /** Gmail, connected: the source every step after the source step requires. */
@@ -144,7 +146,7 @@ export function mockOnboardingConnectorCatalog(
 
   context.mocks.data.connectors(
     items.flatMap((item) => {
-      return item.connected ? [builtinConnection(item)] : [];
+      return connectorFixtureAccount(item) ? [builtinConnection(item)] : [];
     }),
   );
 }

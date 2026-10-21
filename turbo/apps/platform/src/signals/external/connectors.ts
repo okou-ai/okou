@@ -3,34 +3,32 @@ import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/c
 import {
   connectorCatalogReaderContract as connectorCatalogContract,
   type PublicConnectorCatalogDiscoveryReaderResponse as PublicConnectorCatalogDiscoveryResponse,
-  type PublicConnectorCatalogStatusReaderItem,
-  readBuiltinConnectorAccountFacts,
+  type PublicConnectorCatalogConnectReaderItem as PublicConnectorCatalogConnectItem,
+  readBuiltinConnectorAccountFacts as builtinConnectorAccountFacts,
 } from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { PublicConnectorCatalogConnectionStatus } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { reloadUserConnectedConnectors$ } from "../okou-page/connector-overview.ts";
+import {
+  reloadUserConnectedConnectors$,
+  userConnectedConnectors$,
+} from "../okou-page/connector-overview.ts";
 import { builtinConnectorAccountProjectionVersion$ } from "../okou-page/connector-account-projection.ts";
 import { apiClient$ } from "../api-client";
 import { accept } from "../../lib/accept.ts";
 import { featureSwitch$ } from "./feature-switch.ts";
 import type {
-  PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
+  PlatformConnectorConnectionStatus,
 } from "../connector-domain.ts";
 
 /** Catalog visibility and usable default-account completion are separate facts. */
 export function withConnectorCompletion<
-  T extends PlatformConnectorCatalogConnectItem,
->(item: T): T {
-  return {
-    ...item,
-    connected:
-      item.connected === true &&
-      item.connectionStatus !== undefined &&
-      item.connectionStatus !== "reconnect-required" &&
-      item.setupStatus === "complete",
-  };
+  T extends PublicConnectorCatalogConnectItem,
+>(item: T) {
+  return withMemberAccount(item, null);
 }
 
 /**
@@ -42,7 +40,7 @@ const internalReloadBuiltinConnectors$ = state(0);
 function memberAccountConnectionStatus(
   account: ConnectorAccountConnection | null | undefined,
   scopeMismatch: boolean | undefined,
-): PublicConnectorCatalogConnectionStatus | undefined {
+): PlatformConnectorConnectionStatus | undefined {
   if (!account) {
     return "not-connected";
   }
@@ -55,60 +53,20 @@ function memberAccountConnectionStatus(
   return scopeMismatch ? "scope-mismatch" : "connected";
 }
 
-// Keep cross-request snapshot conflicts as management-only context. #41699
-// removes this old-projection comparison after catalog/client exclusion.
-function memberAccountProjectionConflict(
-  item: PlatformConnectorCatalogConnectItem,
+/** Project a known canonical default for UI; unknown setup never claims readiness. */
+export function withMemberAccount<T extends PublicConnectorCatalogConnectItem>(
+  item: T,
   account: ConnectorAccountConnection | null | undefined,
 ) {
-  if (item.accountProjectionConflict === true) {
-    return true;
-  }
-  if (item.connection === undefined) {
-    return false;
-  }
-  if ((item.connection?.id ?? null) !== (account?.id ?? null)) {
-    return true;
-  }
-  if (item.connection === null) {
-    return false;
-  }
-  return (
-    item.connection.authMethod !== account?.authMethod ||
-    (item.connectionStatus !== undefined &&
-      (item.connectionStatus === "reconnect-required") !==
-        (account?.connectionStatus === "reconnect-required"))
-  );
-}
-
-/** Project a known canonical default for UI; unknown setup never claims readiness. */
-export function withMemberAccount<
-  T extends PlatformConnectorCatalogConnectItem,
->(item: T, account: ConnectorAccountConnection | null | undefined) {
   const facts = account
-    ? readBuiltinConnectorAccountFacts(item, account)
+    ? builtinConnectorAccountFacts(item, account)
     : undefined;
   const connectionStatus = memberAccountConnectionStatus(
     account,
     facts?.scopeMismatch,
   );
-  const accountProjectionConflict = memberAccountProjectionConflict(
-    item,
-    account,
-  );
-  const {
-    connected: _connected,
-    connection: _connection,
-    connectionStatus: _connectionStatus,
-    setupStatus: _setupStatus,
-    scopeMismatch: _scopeMismatch,
-    authMethodSupportsRefresh: _authMethodSupportsRefresh,
-    tokenExpiresAt: _tokenExpiresAt,
-    ...metadata
-  } = item;
   return {
-    ...metadata,
-    accountProjectionConflict,
+    ...item,
     connected:
       account?.connectionStatus === "connected" &&
       account.setupStatus === "complete" &&
@@ -129,6 +87,50 @@ export function withMemberAccount<
         }
       : null,
   };
+}
+
+/** Visible connect lists read defaults only for their saved member targets. */
+export function withBuiltinConnectorDefaults<
+  T extends PublicConnectorCatalogConnectItem,
+>(items$: Computed<Promise<readonly T[]>>) {
+  return computed(async (get) => {
+    get(builtinConnectorsReloadVersion$);
+    const accounts = get(apiClient$)(connectorAccountsContract);
+    const [items, membership] = await Promise.all([
+      get(items$),
+      get(userConnectedConnectors$),
+    ]);
+    const saved = new Set(
+      membership.builtinConnectors.map((connector) => {
+        return connector.slug;
+      }),
+    );
+    const projected = await Promise.all(
+      items.map(async (connector) => {
+        if (!saved.has(connector.slug)) {
+          return withConnectorCompletion(connector);
+        }
+        const response = await accept(
+          accounts.connections({
+            query: {
+              kind: "builtin",
+              connectorSlug: connector.slug,
+              limit: 1,
+              includeScopeMismatch: "true",
+            },
+          }),
+          [200, 404],
+        );
+        if (response.status === 404) {
+          return null;
+        }
+        return withMemberAccount(connector, response.body.defaultConnection);
+      }),
+    );
+    return projected.flatMap((connector) => {
+      return connector ? [connector] : [];
+    });
+  });
 }
 
 export const builtinConnectorsReloadVersion$ = computed((get) => {
@@ -152,7 +154,7 @@ export const builtinConnectors$ = computed(async (get) => {
 });
 
 /**
- * Public connector catalog metadata joined with the current user's connector status.
+ * Catalog metadata initialized for UI; account readiness is loaded separately.
  */
 export const connectorCatalogStatus$ = computed(async (get) => {
   get(builtinConnectorsReloadVersion$);
@@ -171,16 +173,16 @@ export const connectorCatalogStatus$ = computed(async (get) => {
  * Every connector that connects in one browser step, each with what its card
  * draws and what starting the connection from one click needs.
  */
-export const oneClickConnectorCatalog$ = computed(
-  async (get): Promise<readonly PlatformConnectorCatalogConnectItem[]> => {
+export const oneClickConnectorCatalog$ = withBuiltinConnectorDefaults(
+  computed(async (get) => {
     get(builtinConnectorsReloadVersion$);
     get(featureSwitch$);
 
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
     const result = await accept(client.oneClick(), [200]);
-    return result.body.connectors.map(withConnectorCompletion);
-  },
+    return result.body.connectors;
+  }),
 );
 
 export const connectorCatalogStatusBySlug$ = computed(async (get) => {
@@ -295,7 +297,7 @@ export const loadConnectorCatalogItem$ = command(
     { get },
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
-  ): Promise<PublicConnectorCatalogStatusReaderItem | null> => {
+  ): Promise<PlatformConnectorCatalogStatusItem | null> => {
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
     const result = await accept(

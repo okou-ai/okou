@@ -1,9 +1,9 @@
 import { command, computed, state } from "ccstate";
 import {
-  customConnectorByIdContract,
   isIntegrationManagedCustomConnector,
   type CustomConnectorPermissionBundleResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorByIdReaderContract as customConnectorByIdContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 
 import { apiClient$ } from "../../api-client.ts";

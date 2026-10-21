@@ -186,7 +186,6 @@ function DirectoryConnectorCard({
     }
     if (
       connected ||
-      connector.accountProjectionConflict === true ||
       (connector.connection !== null && connector.connection !== undefined)
     ) {
       onOpenDetail?.();

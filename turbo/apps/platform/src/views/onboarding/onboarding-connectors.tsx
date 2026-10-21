@@ -236,6 +236,28 @@ function useSourceConnectorActivate(
   };
 }
 
+function ConnectorCatalogReadError() {
+  const retryCatalog = useSet(reloadBuiltinConnectors$);
+  const { t } = useTranslation();
+  return (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
+    >
+      <p>
+        {t(($) => {
+          return $.connectors.catalog.directory.builtinLoadFailed;
+        })}
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={retryCatalog}>
+        {t(($) => {
+          return $.connectors.catalog.directory.retry;
+        })}
+      </Button>
+    </div>
+  );
+}
+
 /** The source step's grid, on the connector directory's own entry card. */
 function SourcesConnectorGrid({
   connectorSlugs,
@@ -246,7 +268,6 @@ function SourcesConnectorGrid({
   const connectorCatalogItemsLoadable = useLastLoadable(
     onboardingSourceConnectors$,
   );
-  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const { t } = useTranslation();
   const { selectedConnector, setSelectedConnectorSlug } =
     useSelectedConnector();
@@ -263,28 +284,7 @@ function SourcesConnectorGrid({
     defaultBuiltinConnectorAccountOptions(selectedConnector);
 
   if (connectorCatalogItemsLoadable.state === "hasError") {
-    return (
-      <div
-        role="alert"
-        className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
-      >
-        <p>
-          {t(($) => {
-            return $.connectors.catalog.directory.builtinLoadFailed;
-          })}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={retryCatalog}
-        >
-          {t(($) => {
-            return $.connectors.catalog.directory.retry;
-          })}
-        </Button>
-      </div>
-    );
+    return <ConnectorCatalogReadError />;
   }
 
   if (connectorCatalogItemsLoadable.state === "loading") {
@@ -415,6 +415,10 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
 
   if (validConnectorSlugs.length === 0) {
     return null;
+  }
+
+  if (connectorCatalogItemsLoadable.state === "hasError") {
+    return <ConnectorCatalogReadError />;
   }
 
   const connectorCatalogItems =

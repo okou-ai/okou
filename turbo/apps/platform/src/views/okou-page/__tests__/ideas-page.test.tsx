@@ -1,9 +1,10 @@
+import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-  type PublicConnectorCatalogStatusResponse,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+  connectorCatalogReaderContract as connectorCatalogContract,
+  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
+  type PublicConnectorCatalogStatusReaderResponse as PublicConnectorCatalogStatusResponse,
+} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -47,7 +48,7 @@ function catalogItem(
   slug: ConnectorSlug,
   label: string,
 ): PublicConnectorCatalogStatusItem {
-  return {
+  return catalogFixture({
     slug,
     label,
     description: `${label} test connector`,
@@ -64,6 +65,7 @@ function catalogItem(
         label: "OAuth",
         description: "Sign in to grant access.",
         grantKind: "auth-code",
+        supportsRefresh: true,
         manualFields: [],
         startOptions: [],
       },
@@ -78,11 +80,10 @@ function catalogItem(
     connected: false,
     connectionStatus: "not-connected",
     scopeMismatch: false,
-    authMethodSupportsRefresh: true,
     tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
-  };
+  });
 }
 
 function catalogResponse(

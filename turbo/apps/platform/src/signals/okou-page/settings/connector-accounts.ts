@@ -4,6 +4,7 @@ import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
 import {
   connectorAccountsContract,
+  connectorAccountConnectionSchema,
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
   type ConnectorAccountTarget,
@@ -73,7 +74,7 @@ export async function requireCustomConnectorAccountReady(
   }
 }
 
-/** Completion requires facts for the operated account, including on old API responses. */
+/** Completion validates canonical facts for the exact operated account. */
 export async function readConnectorAccountCompletion(
   createClient: ApiClientFactory,
   target: ConnectorAccountTarget,
@@ -90,22 +91,25 @@ export async function readConnectorAccountCompletion(
     signal,
   );
   signal.throwIfAborted();
+  const parsed = connectorAccountConnectionSchema.safeParse(result.body);
   if (
-    result.body.id !== connectionId ||
-    connectorAccountTargetKey(result.body.target) !==
-      connectorAccountTargetKey(target) ||
-    result.body.setupStatus === undefined
+    !parsed.success ||
+    parsed.data.setupStatus === undefined ||
+    parsed.data.id !== connectionId ||
+    connectorAccountTargetKey(parsed.data.target) !==
+      connectorAccountTargetKey(target)
   ) {
     throw new Error(
       "Connector account setup information is unavailable. Refresh and try again.",
     );
   }
-  if (result.body.setupStatus !== "complete") {
+  const account = parsed.data;
+  if (account.setupStatus !== "complete") {
     throw new Error(
       "This account needs additional setup. Review its connector settings and try again.",
     );
   }
-  return result.body.connectionStatus === "connected";
+  return account.connectionStatus === "connected";
 }
 
 export async function resolveCustomConnectorAccountMutation(
