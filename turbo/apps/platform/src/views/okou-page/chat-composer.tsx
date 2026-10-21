@@ -8420,6 +8420,7 @@ function ComposerConnectorDialogsSlot({
           return completeConnectorAddition(connectorSlug, continuationSignal);
         },
         connectionId,
+        connectorSlug,
         signal,
       );
     };

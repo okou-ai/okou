@@ -1504,7 +1504,7 @@ function ConnectModalContent({
     connectionId,
     signal,
   ) => {
-    await runConnectSuccess(onSuccess, connectionId, signal);
+    await runConnectSuccess(onSuccess, connectionId, item.slug, signal);
   };
   const connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn = async (
     connectorSlug,

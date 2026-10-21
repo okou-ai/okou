@@ -1354,7 +1354,7 @@ const internalBrowserAuthOperation$ =
 // observable after release so shared loadables retain completion or rejection.
 const internalConnectOperation$ = state<Promise<unknown> | null>(null);
 type ConnectorConnectExecution = {
-  readonly connectorSlug: ConnectorSlug | null;
+  readonly connectorSlug: ConnectorSlug;
   readonly operation: Promise<unknown>;
 };
 const internalConnectResult$ = state<ConnectorConnectExecution | null>(null);
@@ -1381,6 +1381,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
     { get, set },
     onSuccess: ConnectorConnectSuccess,
     connectionId: string | null,
+    connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {
     const operation = (async (): Promise<void> => {
@@ -1394,7 +1395,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
       signal.throwIfAborted();
       return;
     }
-    set(internalConnectResult$, { connectorSlug: null, operation });
+    set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {

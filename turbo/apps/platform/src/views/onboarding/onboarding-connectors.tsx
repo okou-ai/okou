@@ -220,6 +220,7 @@ function useSourceConnectorActivate(
                   onConnected?.(item.slug);
                 },
                 connectionId,
+                item.slug,
                 signal,
               );
             },

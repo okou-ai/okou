@@ -1429,6 +1429,7 @@ export function ConnectorsPage() {
         );
       },
       connectionId,
+      connector.slug,
       attemptSignal,
     );
   };
