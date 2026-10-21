@@ -16,6 +16,10 @@ checkout retains bounded queue ancestry (32 commits; the current squash queue
 merges at most five entries); the
 archive builder needs only its own commit. Only release-only groups install an
 R2 client on macOS to resolve potential prior evidence.
+Cheap change detection selects the native jobs while the existing script
+regressions run independently on Linux. Both archive publication and the required
+gate still require those script checks to succeed. Detection and gate checkouts
+contain only their executed scripts; detection retains the bounded Git ancestry.
 The simulator job resolves locked dependencies while waiting for `simctl bootstatus`,
 then compiles after system boot readiness. Cold system-service startup must finish
 before asset compilation; requesting a boot alone does not establish readiness.

@@ -106,10 +106,12 @@ archive_job = ios['jobs']['build-archive']
 package_job = ios['jobs']['test-packages']
 assert test_job['needs'] == archive_job['needs'] == package_job['needs'] == 'detect'
 assert test_job['env'] == archive_job['env'] == package_job['env']
-assert ios['jobs']['publish-archive']['needs'] == ['detect', 'test-packages', 'build-test', 'build-archive']
+assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
+assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']
 gate = ios['jobs']['ci-gate-ios']['steps'][-1]
 assert gate['env']['PACKAGES_RESULT'] == '${{ needs.test-packages.result }}'
+assert gate['env']['SCRIPT_CHECKS_RESULT'] == '${{ needs.script-checks.result }}'
 assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
 archive = next(step for step in archive_job['steps'] if 'build-archive.sh' in step.get('run', ''))
 assert 'build-archive.sh' in archive['run']

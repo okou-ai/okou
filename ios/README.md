@@ -262,8 +262,10 @@ remain outstanding.
 ## CI
 
 `.github/workflows/ios.yml` runs on pull requests, merge groups, pushes to main,
-and manual dispatch. A lightweight Linux job tests change detection and gate
-behavior on every run. Changes to `ios/`, the iOS workflow, or the shared
+and manual dispatch. Lightweight Linux jobs detect changes and test CI contracts
+on every run. Native jobs start after change detection while script checks run
+in parallel; archive publication and the required gate both require those checks.
+Changes to `ios/`, the iOS workflow, or the shared
 changed-base helper trigger Swift formatting, property-list validation, an app
 build, standalone ChatDomain/ChatData tests, and the simulator tests on the
 GitHub-hosted `xcode-27` image with Xcode 27.1 and iOS 27.0 on iPhone 18 Pro.
