@@ -156,7 +156,8 @@ aggregate bytes in separate native cases. Generate bounded input and hash
 provider bytes incrementally; keep SSEs live after uploads to check retention.
 Exercise both HTTP versions, zero windows/stream slots, queued cancellation,
 empty DATA versus EOF, discarded-event counts, real blocked TCP writers and
-split early responses. Header cancellation must cover ordinary and eager task
+split early responses. Cover EOF in request headers as well as the last DATA
+event. Header cancellation must cover ordinary and eager task
 scheduling, including cleanup after the public hook released its parser.
 Interleave response headers before upload EOF with valid completion, policy or
 authorization rejection, and a blocked upload writer. Verify response bytes,

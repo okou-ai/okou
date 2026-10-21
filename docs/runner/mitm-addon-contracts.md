@@ -723,6 +723,9 @@ after endpoint/header checks and stream-safe credential resolution. The JSON
 scanner validates every value while capturing only bounded policy scalars.
 Object frames own exact decoded duplicate-key identity, including escaped keys;
 normal usage extraction keeps its existing duplicate semantics.
+Headers that already establish EOF reject before credential resolution: native
+framing skips the stream callback, and managed policy requires a nonempty body.
+Known EOF lets the local rejection response complete without waiting for data.
 
 Each upload validates a chunk before forwarding it. It finishes JSON at declared
 length and releases its parser, retaining one final byte until true EOF, trailer

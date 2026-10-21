@@ -7,7 +7,7 @@ import h11
 import pytest
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import DataReceived, RequestReceived, StreamEnded, StreamReset
+from h2.events import DataReceived, RequestReceived, ResponseReceived, StreamEnded, StreamReset
 from mitmproxy import connection, http
 from mitmproxy.proxy import commands, events
 from mitmproxy.proxy.context import Context
@@ -48,6 +48,7 @@ class WireSession:
         self.upstream_ended = False
         self.upstream_reset = False
         self.response = bytearray()
+        self.response_status: int | None = None
         self.response_ended = False
         self.closed = []
 
@@ -81,7 +82,9 @@ class WireSession:
                 if command.connection is self.client:
                     if self.client_h2:
                         for reply in self.guest.receive_data(command.data):
-                            if isinstance(reply, DataReceived):
+                            if isinstance(reply, ResponseReceived):
+                                self.response_status = int(dict(reply.headers)[b":status"])
+                            elif isinstance(reply, DataReceived):
                                 self.response.extend(reply.data)
                                 self.guest.acknowledge_received_data(
                                     reply.flow_controlled_length, reply.stream_id

@@ -194,12 +194,18 @@ def _validate_headers(flow: http.HTTPFlow, policy: PresetPolicy) -> int:
     return length.value
 
 
-def admit_request(flow: http.HTTPFlow, sandbox: dict) -> None:
+def admit_request(
+    flow: http.HTTPFlow, sandbox: dict, *, request_end_stream: bool | None = None
+) -> None:
     """Select incremental validation before native request-body buffering."""
     policy = policy_for_sandbox(sandbox)
     if policy is None:
         raise RequestRejectedError("captured_policy")
     length = _validate_headers(flow, policy)
+    # Native framing skips request.stream when HEADERS already ended the
+    # request. A managed request must carry a nonempty JSON document.
+    if request_end_stream is True:
+        raise RequestRejectedError("incomplete_body")
     release_from_flow(flow)
     managed_upload.attach(flow, managed_upload.Upload(flow, length, _PresetDocument(policy)))
     flow.metadata[_CAPTURED_POLICY] = _CapturedPolicy(sandbox["runId"], policy)

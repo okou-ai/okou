@@ -875,7 +875,7 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             raise
         if bounded_classification is not None and _admit_managed_openrouter_from_headers(
-            flow, bounded_classification
+            flow, bounded_classification, request_end_stream=request_end_stream
         ):
             return _authorize_managed_upload(flow, bounded_classification)
         if (
@@ -906,7 +906,9 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             flow,
             defer_unresolved_public_destination=True,
         )
-    if _admit_managed_openrouter_from_headers(flow, classification):
+    if _admit_managed_openrouter_from_headers(
+        flow, classification, request_end_stream=request_end_stream
+    ):
         return _authorize_managed_upload(flow, classification)
     if (
         isinstance(classification, request_classification.FirewallBlock)
@@ -1084,6 +1086,7 @@ def _reject_managed_openrouter_request(
     error: managed_openrouter.RequestRejectedError,
     *,
     terminate: bool = False,
+    rejection_phase: Literal["requestheaders", "request"] = "request",
 ) -> None:
     prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
     upload = managed_upload.get(flow)
@@ -1108,7 +1111,7 @@ def _reject_managed_openrouter_request(
         "Managed OpenRouter request rejected",
         type="managed_model_policy",
         reason=str(error),
-        rejection_phase="requestheaders" if terminate else "request",
+        rejection_phase=rejection_phase,
         **length_diagnostics,
     )
     if upload is not None and callable(flow.request.stream):
@@ -1137,7 +1140,10 @@ def _reject_managed_openrouter_request(
 
 
 def _admit_managed_openrouter_from_headers(
-    flow: http.HTTPFlow, classification: request_classification.RequestClassification
+    flow: http.HTTPFlow,
+    classification: request_classification.RequestClassification,
+    *,
+    request_end_stream: bool | None,
 ) -> bool:
     """Intercept managed auth before every header-phase streaming fast path."""
     if (
@@ -1148,12 +1154,21 @@ def _admit_managed_openrouter_from_headers(
     _start_request_timing(flow)
     _prebind_requestheaders_upstream_destination(flow, classification)
     try:
-        managed_openrouter.admit_request(flow, classification.sandbox_info)
+        managed_openrouter.admit_request(
+            flow, classification.sandbox_info, request_end_stream=request_end_stream
+        )
         upload = managed_upload.get(flow)
         if upload is not None:
             managed_upload_runtime.register(upload)
     except managed_openrouter.RequestRejectedError as error:
-        _reject_managed_openrouter_request(flow, classification, error, terminate=True)
+        # Known EOF lets the native local response complete without a body wait.
+        _reject_managed_openrouter_request(
+            flow,
+            classification,
+            error,
+            terminate=request_end_stream is not True,
+            rejection_phase="requestheaders",
+        )
     return True
 
 

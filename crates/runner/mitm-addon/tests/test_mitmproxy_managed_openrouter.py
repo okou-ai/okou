@@ -14,7 +14,7 @@ from mitmproxy.test import taddons
 import managed_upload
 import mitm_addon
 from logging_utils import flush_log_path
-from tests.managed_openrouter_helpers import PRESET, sandbox
+from tests.managed_openrouter_helpers import PATHS, PRESET, sandbox
 from tests.managed_wire_helpers import WireSession
 from tests.request_handler_helpers import _write_registry
 
@@ -105,6 +105,60 @@ async def test_native_stream_validates_before_forwarding_and_finishes_once(
             assert entry["request_size"] == len(complete)
             assert "request_body" not in entry
             assert "private-prompt-canary" not in saved
+
+
+@pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
+@pytest.mark.parametrize("declared_length", [10, 40 * 1024 * 1024], ids=["small", "large"])
+async def test_headers_eof_rejects_nonempty_body_before_credentials(
+    tmp_path, fake_firewall_headers, dialect, declared_length
+):
+    info = sandbox(tmp_path, dialect)
+    registry = _write_registry(tmp_path, sandbox_info=info)
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as context,
+        fake_firewall_headers() as fetch,
+    ):
+        context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry)
+        )
+        peer = WireSession(context, client_h2=True)
+        peer.guest.initiate_connection()
+        await peer.drive()
+        peer.guest.send_headers(
+            1,
+            [
+                (b":method", b"POST"),
+                (b":scheme", b"https"),
+                (b":authority", b"openrouter.ai"),
+                (b":path", PATHS[dialect].encode()),
+                (b"content-type", b"application/json"),
+                (b"content-length", str(declared_length).encode()),
+            ],
+            end_stream=True,
+        )
+        try:
+            await peer.drive(events.DataReceived(peer.client, peer.guest.data_to_send()))
+            fetch.assert_not_awaited()
+            assert not peer.request_headers
+            assert peer.response_status == 403
+            assert json.loads(peer.response)["reason"] == "incomplete_body"
+            assert peer.response_ended
+            assert peer.flow.error is None
+            assert not peer.flow.live
+            assert not peer.native.streams
+            assert managed_upload.get(peer.flow) is None
+            proxy = Path(info["proxyLogPath"])
+            assert await asyncio.to_thread(flush_log_path, str(proxy))
+            saved = await asyncio.to_thread(proxy.read_text)
+            [policy] = [
+                row
+                for line in saved.splitlines()
+                if (row := json.loads(line)).get("type") == "managed_model_policy"
+            ]
+            assert policy["rejection_phase"] == "requestheaders"
+        finally:
+            peer.close()
 
 
 @pytest.mark.parametrize("provider_h2", [False, True])
