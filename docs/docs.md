@@ -94,6 +94,8 @@ owning surface.
 - [Platform ccstate](app/platform-ccstate.md): transport, lifecycle, module state,
   and import boundaries. Read the matching shared
   [ccstate references](../.claude/skills/ccstate/SKILL.md) as needed.
+- [tapError](app/signals/tapError.md): error-swallowing misuse, fail-fast and
+  loadable alternatives, and the legacy-use lint boundary.
 - [Styles](app/styles.md): shared tokens, semantic HTML, component composition,
   and [Clerk customization](app/styles.md#clerk-customization).
 - [UI layering](app/layering.md): scenario choices, implementation links, and checks.
