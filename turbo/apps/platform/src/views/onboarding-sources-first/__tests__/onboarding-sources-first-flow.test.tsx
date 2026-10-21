@@ -1,4 +1,6 @@
 import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { requireConnectorFixtureAccount } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import {
   onboardingCompleteContract,
@@ -794,6 +796,44 @@ test("A prompt that asks for a connector shows its Connect card", async () => {
   expect(
     screen.getByText("Manage Google Ads campaigns and reports."),
   ).toBeInTheDocument();
+});
+
+test("A prompt link can retry unavailable account information", async () => {
+  mockOnboardingNeeded();
+  const gmail = onboardingSourceItem({
+    slug: "gmail",
+    label: "Gmail",
+    description: "Connect Gmail to continue",
+    connected: true,
+  });
+  const account = requireConnectorFixtureAccount(gmail);
+  mockOnboardingConnectorCatalog(context, [gmail]);
+  context.mocks.data.connectors([{ ...account, slug: gmail.slug }]);
+  let available = false;
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return available
+      ? respond(200, {
+          connections: [account],
+          defaultConnection: account,
+          nextCursor: null,
+        })
+      : respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Accounts unavailable" },
+        });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&connector=gmail`,
+  });
+
+  const failure = await screen.findByRole("alert");
+  expect(failure).toHaveTextContent("Couldn't load built-in connectors.");
+  available = true;
+  click(getButtonByName("Try again", failure));
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  expect(screen.getByText("Gmail")).toBeInTheDocument();
 });
 
 test("The sheet's connector card connects the tool the prompt link names", async () => {
