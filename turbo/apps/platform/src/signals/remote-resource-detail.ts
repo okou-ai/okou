@@ -180,13 +180,14 @@ export const closeRemoteNetworkPage$ = command(({ set }) => {
 
 export const saveRemoteTailscale$ = command(
   async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
-    await set(saveTailscale$, form, signal);
+    const savedId = await set(saveTailscale$, form, signal);
     signal.throwIfAborted();
     const remaining = await get(tailscaleDialog$);
     signal.throwIfAborted();
     if (!remaining) {
       set(closeRemoteNetworkPage$);
     }
+    return savedId;
   },
 );
 export const saveRemoteCloudflare$ = command(

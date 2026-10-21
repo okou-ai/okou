@@ -20,6 +20,7 @@ import {
   Cloud,
   Network,
   Link2,
+  Plus,
 } from "lucide-react";
 import {
   Button,
@@ -53,6 +54,7 @@ import {
   saveRemoteSsh$,
   saveRemoteTailscale$,
   saveRemoteVnc$,
+  startNewRemoteNetwork$,
   updateRemoteSetup$,
   type RemoteSetup,
   type RemoteSetupOs,
@@ -485,7 +487,7 @@ function SavedNetworkPicker({ setup }: { readonly setup: RemoteSetup }) {
   const items = configs.data.map((network) => {
     return { value: network.id, label: network.name };
   });
-  if (setup.formStarted && setup.networkId === "new") {
+  if (setup.networkId === "new") {
     items.push({
       value: "new",
       label: t(($) => {
@@ -545,6 +547,7 @@ function InstallStep({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
   const update = useSet(updateRemoteSetup$);
   const networks = useLoadable(tailscaleConfigs$);
+  const startNewNetwork = useSet(startNewRemoteNetwork$);
   return (
     <StepCard
       title={t(($) => {
@@ -577,29 +580,26 @@ function InstallStep({ setup }: { readonly setup: RemoteSetup }) {
         })}
       </ExternalGuide>
       <SavedNetworkPicker setup={setup} />
-      {setup.networkId && (
-        <Button
-          variant="quiet"
-          className="justify-self-start"
-          onClick={() => {
-            update({ networkId: "" });
-          }}
-        >
-          {t(($) => {
-            return $.remoteControlSetup.useAnotherNetwork;
-          })}
-        </Button>
-      )}
-      {!setup.networkId &&
-        networks.state === "hasData" &&
-        !!networks.data?.length && (
-          <p className="text-sm text-muted-foreground">
+      {networks.state === "hasData" &&
+        !!networks.data?.length &&
+        setup.networkId !== "new" && (
+          <Button
+            variant="outline"
+            className="justify-self-start"
+            onClick={startNewNetwork}
+          >
+            <Plus size={16} aria-hidden />
             {t(($) => {
-              return $.remoteControlSetup.anotherNetworkHelp;
+              return $.remoteControlSetup.newNetwork;
             })}
-          </p>
+          </Button>
         )}
       <ContinueButton
+        disabled={
+          networks.state !== "hasData" ||
+          !networks.data ||
+          (networks.data.length > 0 && !setup.networkId)
+        }
         onClick={() => {
           update({ step: "address" });
         }}
@@ -641,7 +641,7 @@ function AddressStep({ setup }: { readonly setup: RemoteSetup }) {
           update({
             step: cloudflare
               ? "cf-access"
-              : setup.networkId
+              : setup.networkId && setup.networkId !== "new"
                 ? "prepare"
                 : "tag",
           });

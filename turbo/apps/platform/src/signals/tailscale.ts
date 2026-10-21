@@ -757,8 +757,12 @@ export const saveTailscale$ = command(
     const identity = await get(tailscaleIdentity$);
     signal.throwIfAborted();
     if (completed && get(dialog$) === dialog && identity === dialog.identity) {
+      const savedId =
+        dialog.kind === "create" ? get(attempt$)?.id : dialog.config?.id;
       set(closeTailscaleDialog$);
       set(invalidateTailscale$);
+      return savedId;
     }
+    return;
   },
 );

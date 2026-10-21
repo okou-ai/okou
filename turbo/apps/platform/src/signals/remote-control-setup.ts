@@ -36,6 +36,7 @@ import {
   tailscaleConfigs$,
   tailscaleDialog$,
   tailscaleEnabled$,
+  tailscaleFieldsFromForm,
 } from "./tailscale.ts";
 import {
   closeCloudflareAccessDialog$,
@@ -233,6 +234,18 @@ export const updateRemoteSetup$ = command(
     }
   },
 );
+export const startNewRemoteNetwork$ = command(({ get, set }) => {
+  const current = get(remoteSetup$);
+  if (current?.step !== "install" || current.route !== "tailscale") {
+    return;
+  }
+  set(closeTailscaleDialog$);
+  set(updateRemoteSetup$, {
+    networkId: "new",
+    tailscaleTags: "tag:okou",
+    step: "address",
+  });
+});
 const PREVIOUS_STEP: Readonly<
   Partial<Record<RemoteSetupStep, RemoteSetupStep>>
 > = {
@@ -466,37 +479,22 @@ export const saveRemoteTailscale$ = command(
     if (!current) {
       return;
     }
-    const before = await get(tailscaleConfigs$);
-    signal.throwIfAborted();
-    await set(saveTailscale$, form, signal);
-    signal.throwIfAborted();
-    if (await get(tailscaleDialog$)) {
-      return;
-    }
+    const tags = tailscaleFieldsFromForm(form).tags;
+    const savedId = await set(saveTailscale$, form, signal);
     signal.throwIfAborted();
     if (
+      !savedId ||
       get(remoteSetup$)?.sessionKey !== current.sessionKey ||
       get(remoteSetup$)?.flowId !== current.flowId
     ) {
       return;
     }
-    set(updateRemoteSetup$, { step: "prepare", networkId: "" });
-    const after = await get(tailscaleConfigs$);
-    signal.throwIfAborted();
-    const added = after?.filter((network) => {
-      return !before?.some((previous) => {
-        return previous.id === network.id;
-      });
+    set(updateRemoteSetup$, {
+      step: "prepare",
+      networkId: savedId,
+      tailscaleTags: tags.join(", "),
     });
-    if (
-      get(remoteSetup$)?.sessionKey === current.sessionKey &&
-      get(remoteSetup$)?.flowId === current.flowId
-    ) {
-      set(updateRemoteSetup$, {
-        step: "prepare",
-        networkId: added?.length === 1 ? added[0]!.id : "",
-      });
-    }
+    return savedId;
   },
 );
 export const saveRemoteCloudflare$ = command(

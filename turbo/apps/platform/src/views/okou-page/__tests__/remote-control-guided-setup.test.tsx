@@ -1122,11 +1122,9 @@ test("Tailscale setup keeps custom tags consistent across instructions, credenti
   });
   expect(savedNetworks).toHaveLength(1);
 });
-test("A single saved network is explicitly selected and can be changed", async () => {
+test("A new network can be abandoned in favor of a saved network without losing the device address", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, {
-      configs: [{ ...network, tags: ["tag:existing-office"] }],
-    });
+    return respond(200, { configs: [network] });
   });
   await page("/connectors?scope=remote-control&setup=ssh");
   await screen.findByRole("heading", { name: "Set up a connection" });
@@ -1135,20 +1133,158 @@ test("A single saved network is explicitly selected and can be changed", async (
   await waitFor(() => {
     expect(picker).toHaveTextContent("Office network");
   });
-  expect(screen.queryByText("1 / 7")).not.toBeInTheDocument();
-  expect(queryAction("button", "Set up a new network")).toBeNull();
-  click(getAction("button", "Use another network"));
-  expect(picker).not.toHaveTextContent("Office network");
-  expect(
-    screen.getByText(
-      "The next steps will help you connect another network. Your saved networks will not change.",
+  click(getAction("button", "Create new network"));
+  await fill(await screen.findByLabelText("Device address"), "100.64.0.20");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", { name: "Install Tailscale" });
+  expect(screen.getByLabelText("Saved network")).toHaveTextContent(
+    "Create new network",
+  );
+  click(screen.getByLabelText("Saved network"));
+  click(await screen.findByRole("option", { name: "Office network" }));
+  click(getAction("button", "Installed, continue"));
+  await expect(screen.findByLabelText("Device address")).resolves.toHaveValue(
+    "100.64.0.20",
+  );
+  click(getAction("button", "Continue"));
+  await screen.findByRole("heading", {
+    name: "Enable SSH on the computer you want to connect",
+  });
+});
+
+async function reachNewNetworkCredentials(hasExisting: boolean) {
+  await page("/connectors?scope=remote-control&setup=ssh");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(getAction("button", "Start setup"));
+  await screen.findByRole("heading", { name: "Install Tailscale" });
+  await waitFor(() => {
+    expect(getAction("button", "Installed, continue")).toBeEnabled();
+  });
+  click(
+    getAction(
+      "button",
+      hasExisting ? "Create new network" : "Installed, continue",
     ),
+  );
+  await fill(await screen.findByLabelText("Device address"), "100.64.0.20");
+  click(getAction("button", "Continue"));
+  await screen.findByRole("heading", { name: "Create an Okou tag" });
+  expect(screen.getByText("okou")).toBeInTheDocument();
+  click(getAction("button", "Created, continue"));
+  await screen.findByRole("heading", {
+    name: "Allow Okou to reach this computer",
+  });
+  click(getAction("button", "Saved, continue"));
+  await screen.findByRole("heading", { name: "Create connection credentials" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await fill(screen.getByLabelText("Network name"), "Home network");
+  await fill(screen.getByLabelText("Client ID"), "test-client-id");
+  await fill(screen.getByLabelText("Client Secret"), "test-client-secret");
+}
+
+test.each([false, true])(
+  "New networks follow the first-time SSH guide with an existing network: %s",
+  async (hasExisting) => {
+    let savedNetworks: TailscaleConfig[] = hasExisting
+      ? [{ ...network, tags: ["tag:existing-office"] }]
+      : [];
+    context.mocks.api(tailscaleContract.list, ({ respond }) => {
+      return respond(200, { configs: savedNetworks });
+    });
+    context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
+      const created = {
+        ...network,
+        id: body.id,
+        name: body.name,
+        tags: body.tags,
+      };
+      savedNetworks = [
+        ...savedNetworks,
+        created,
+        {
+          ...network,
+          id: "a0000000-0000-4000-8000-000000000002",
+          name: "Another administrator's network",
+        },
+      ];
+      return respond(201, created);
+    });
+    await reachNewNetworkCredentials(hasExisting);
+    click(getAction("button", "Save and continue"));
+    await screen.findByRole("heading", {
+      name: "Enable SSH on the computer you want to connect",
+    });
+    click(getAction("button", "Enabled, continue"));
+    await expect(
+      screen.findByLabelText("Saved network"),
+    ).resolves.toHaveTextContent("Home network");
+    expect(screen.getByLabelText("Device address")).toHaveValue("100.64.0.20");
+  },
+);
+
+test("A failed new-network save stays in the guide and can retry the same creation", async () => {
+  let created: TailscaleConfig | null = null;
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: created ? [network, created] : [network] });
+  });
+  context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
+    if (created?.id === body.id) {
+      return respond(204);
+    }
+    created = { ...network, id: body.id, name: body.name, tags: body.tags };
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Test failure" },
+    });
+  });
+  await reachNewNetworkCredentials(true);
+  click(getAction("button", "Save and continue"));
+  await screen.findByText("Save failed.");
+  expect(screen.getByLabelText("Network name")).toHaveValue("Home network");
+  expect(
+    screen.getByRole("heading", { name: "Create connection credentials" }),
   ).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  click(getAction("button", "Retry"));
+  await screen.findByRole("heading", {
+    name: "Enable SSH on the computer you want to connect",
+  });
+  click(getAction("button", "Enabled, continue"));
+  await expect(
+    screen.findByLabelText("Saved network"),
+  ).resolves.toHaveTextContent("Home network");
+});
+
+test("Multiple saved networks require an explicit choice or the new-network guide", async () => {
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, {
+      configs: [
+        network,
+        {
+          ...network,
+          id: "a0000000-0000-4000-8000-000000000002",
+          name: "Home network",
+        },
+      ],
+    });
+  });
+  await page("/connectors?scope=remote-control&setup=ssh");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(getAction("button", "Start setup"));
+  const picker = await screen.findByLabelText("Saved network");
+  expect(getAction("button", "Installed, continue")).toBeDisabled();
+  click(picker);
+  await expect(
+    screen.findByRole("option", { name: "Office network" }),
+  ).resolves.toBeInTheDocument();
+  click(screen.getByRole("option", { name: "Home network" }));
+  expect(getAction("button", "Installed, continue")).toBeEnabled();
   click(getAction("button", "Installed, continue"));
   await fill(await screen.findByLabelText("Device address"), "100.64.0.20");
   click(getAction("button", "Continue"));
-  const tagName = await screen.findByText("existing-office");
-  expect(tagName).toBeVisible();
+  await screen.findByRole("heading", {
+    name: "Enable SSH on the computer you want to connect",
+  });
 });
 test("VNC groups actual service methods and retains the connection step while adding SSH", async () => {
   await page("/connectors?scope=remote-control&setup=vnc");
