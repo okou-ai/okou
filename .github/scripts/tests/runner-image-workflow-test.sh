@@ -65,10 +65,9 @@ image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c 
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "download-only changes must be recognized as runner image inputs"
 
-# Imported host dependencies must invalidate stable image reuse on their own.
+# Host provisioning inputs must invalidate stable image reuse on their own.
 for path in \
   ansible/playbooks/provision-runner.yml \
-  ansible/tasks/retire-runner-ingress.yml \
   ansible/playbooks/host_vars/runner.example.org.yml; do
   base_ref=$(fixture_git rev-parse HEAD)
   mkdir -p "${test_root}/$(dirname "$path")"

@@ -11,11 +11,6 @@
   hosts: all
 
   tasks:
-    - name: Retire host-installed Runner ingress
-      ansible.builtin.import_tasks: ../tasks/retire-runner-ingress.yml
-      become: true
-      tags: runner_host_cleanup
-
     - name: Wait for apt lock to be released
       shell: |
         while fuser \
