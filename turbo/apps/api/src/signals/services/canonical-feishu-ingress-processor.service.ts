@@ -20,7 +20,7 @@ import {
 import { logger } from "../../lib/log";
 import { inferMimetype } from "../../lib/mimetype";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   FeishuApiError,
   feishuReactionCreationUrl,
@@ -30,7 +30,7 @@ import {
   feishuTokenUpdateValues,
   parseFeishuReactionCreationResponse,
   readFeishuResponseJson,
-  replyWithFeishuMessage,
+  replyWithFeishuMessage$,
   resolveFeishuRequestCredentials,
 } from "../external/feishu-client";
 import {
@@ -72,8 +72,8 @@ import {
   formatFeishuConversationHistory,
   feishuMessageReceivedValues,
   feishuMessageReceivedCondition,
-  replyFeishuAgentUnavailable,
-  replyToUnconnectedFeishuMessage,
+  replyFeishuAgentUnavailable$,
+  replyToUnconnectedFeishuMessage$,
   feishuEffectiveAgentReadPlan,
   feishuEffectiveAgentFromRows,
   type FeishuDispatchConnection,
@@ -132,36 +132,35 @@ interface CanonicalFeishuInboundMessage extends FeishuInboundMessage {
   readonly platform: FeishuPlatform;
 }
 
-async function claimIngress(
-  db: Db,
-  ingressId: string,
-  currentTime: Date,
-): Promise<boolean> {
-  const staleBefore = new Date(
-    currentTime.getTime() - PROCESSING_STALE_AFTER_MS,
-  );
-  const [claimed] = await db
-    .update(feishuChatIngress)
-    .set({
-      status: "processing",
-      lastError: null,
-      updatedAt: currentTime,
-    })
-    .where(
-      and(
-        eq(feishuChatIngress.id, ingressId),
-        or(
-          inArray(feishuChatIngress.status, ["pending", "failed"]),
-          and(
-            eq(feishuChatIngress.status, "processing"),
-            lt(feishuChatIngress.updatedAt, staleBefore),
+const claimIngress$ = command(
+  async ({ set }, ingressId: string, currentTime: Date): Promise<boolean> => {
+    const db = set(writeDb$);
+    const staleBefore = new Date(
+      currentTime.getTime() - PROCESSING_STALE_AFTER_MS,
+    );
+    const [claimed] = await db
+      .update(feishuChatIngress)
+      .set({
+        status: "processing",
+        lastError: null,
+        updatedAt: currentTime,
+      })
+      .where(
+        and(
+          eq(feishuChatIngress.id, ingressId),
+          or(
+            inArray(feishuChatIngress.status, ["pending", "failed"]),
+            and(
+              eq(feishuChatIngress.status, "processing"),
+              lt(feishuChatIngress.updatedAt, staleBefore),
+            ),
           ),
         ),
-      ),
-    )
-    .returning({ id: feishuChatIngress.id });
-  return claimed !== undefined;
-}
+      )
+      .returning({ id: feishuChatIngress.id });
+    return claimed !== undefined;
+  },
+);
 
 type ClaimedFeishuIngress = Pick<
   typeof feishuChatIngress.$inferSelect,
@@ -197,97 +196,100 @@ function parseMatchingMessage(
   return { ...message, platform: ingress.platform };
 }
 
-async function loadConnection(
-  db: Db,
-  orgId: string,
-  message: CanonicalFeishuInboundMessage,
-): Promise<FeishuDispatchConnection | undefined> {
-  const [connection] = await db
-    .select({
-      id: feishuOrgConnections.id,
-      userId: feishuOrgConnections.userId,
-      connectorId: feishuOrgConnections.connectorId,
-      feishuUserName: feishuOrgConnections.feishuUserName,
-    })
-    .from(feishuOrgConnections)
-    .where(
-      and(
-        eq(feishuOrgConnections.installationId, message.installationId),
-        eq(feishuOrgConnections.feishuOpenId, message.openId),
-      ),
-    )
-    .limit(1);
-  if (!connection) {
-    return undefined;
-  }
-  const connectorId = await (async () => {
-    const scope = {
-      orgId,
-      userId: connection.userId,
-      installationId: message.installationId,
-      memberConnectorId: connection.connectorId,
-      feishuOpenId: message.openId,
-    };
-    const memberPlan = feishuOAuthMemberReadPlan(scope);
-    const memberRows = memberPlan.needsRead
-      ? await db
-          .select(memberPlan.columns)
-          .from(feishuOrgConnections)
-          .where(memberPlan.condition)
-          .limit(2)
-      : [];
-    const member = feishuOAuthMemberFromRows(scope, memberRows);
-    if (!member) {
-      return null;
-    }
-    const installationPlan = feishuOAuthInstallationReadPlan(scope);
-    const [installation] = await db
-      .select(installationPlan.columns)
-      .from(feishuOrgInstallations)
-      .where(installationPlan.condition)
+const loadConnection$ = command(
+  async (
+    { get },
+    orgId: string,
+    message: CanonicalFeishuInboundMessage,
+  ): Promise<FeishuDispatchConnection | undefined> => {
+    const db = get(db$);
+    const [connection] = await db
+      .select({
+        id: feishuOrgConnections.id,
+        userId: feishuOrgConnections.userId,
+        connectorId: feishuOrgConnections.connectorId,
+        feishuUserName: feishuOrgConnections.feishuUserName,
+      })
+      .from(feishuOrgConnections)
+      .where(
+        and(
+          eq(feishuOrgConnections.installationId, message.installationId),
+          eq(feishuOrgConnections.feishuOpenId, message.openId),
+        ),
+      )
       .limit(1);
-    const customConnectorId = installation?.customConnectorId;
-    if (!customConnectorId) {
-      return null;
+    if (!connection) {
+      return undefined;
     }
-    const accountScope = { ...scope, ...member, customConnectorId };
-    const accountPlan = feishuOAuthAccountReadPlan(accountScope);
-    const [exactRows, defaultRows] = await Promise.all([
-      accountPlan.exactWhere
-        ? db
-            .select(accountPlan.columns)
-            .from(connectors)
-            .where(accountPlan.exactWhere)
-        : [],
-      accountPlan.defaultWhere
-        ? db
-            .select(accountPlan.columns)
-            .from(connectors)
-            .where(accountPlan.defaultWhere)
-        : [],
-    ]);
-    const accountId = feishuOAuthAccountFromRows(accountPlan, {
-      exactRows,
-      defaultRows,
-    });
-    if (accountId === null) {
-      return null;
-    }
-    const credentialPlan = feishuOAuthCredentialReadPlan({
-      ...accountScope,
-      memberConnectorId: accountId,
-    });
-    const [matchedConnection] = await db
-      .select(credentialPlan.columns)
-      .from(connectors)
-      .innerJoin(orgCustomConnectors, credentialPlan.connectorJoin)
-      .innerJoin(secrets, credentialPlan.secretJoin)
-      .where(credentialPlan.condition)
-      .limit(1);
-    return matchedConnection?.id ?? null;
-  })();
-  return connectorId ? { ...connection, connectorId } : undefined;
-}
+    const connectorId = await (async () => {
+      const scope = {
+        orgId,
+        userId: connection.userId,
+        installationId: message.installationId,
+        memberConnectorId: connection.connectorId,
+        feishuOpenId: message.openId,
+      };
+      const memberPlan = feishuOAuthMemberReadPlan(scope);
+      const memberRows = memberPlan.needsRead
+        ? await db
+            .select(memberPlan.columns)
+            .from(feishuOrgConnections)
+            .where(memberPlan.condition)
+            .limit(2)
+        : [];
+      const member = feishuOAuthMemberFromRows(scope, memberRows);
+      if (!member) {
+        return null;
+      }
+      const installationPlan = feishuOAuthInstallationReadPlan(scope);
+      const [installation] = await db
+        .select(installationPlan.columns)
+        .from(feishuOrgInstallations)
+        .where(installationPlan.condition)
+        .limit(1);
+      const customConnectorId = installation?.customConnectorId;
+      if (!customConnectorId) {
+        return null;
+      }
+      const accountScope = { ...scope, ...member, customConnectorId };
+      const accountPlan = feishuOAuthAccountReadPlan(accountScope);
+      const [exactRows, defaultRows] = await Promise.all([
+        accountPlan.exactWhere
+          ? db
+              .select(accountPlan.columns)
+              .from(connectors)
+              .where(accountPlan.exactWhere)
+          : [],
+        accountPlan.defaultWhere
+          ? db
+              .select(accountPlan.columns)
+              .from(connectors)
+              .where(accountPlan.defaultWhere)
+          : [],
+      ]);
+      const accountId = feishuOAuthAccountFromRows(accountPlan, {
+        exactRows,
+        defaultRows,
+      });
+      if (accountId === null) {
+        return null;
+      }
+      const credentialPlan = feishuOAuthCredentialReadPlan({
+        ...accountScope,
+        memberConnectorId: accountId,
+      });
+      const [matchedConnection] = await db
+        .select(credentialPlan.columns)
+        .from(connectors)
+        .innerJoin(orgCustomConnectors, credentialPlan.connectorJoin)
+        .innerJoin(secrets, credentialPlan.secretJoin)
+        .where(credentialPlan.condition)
+        .limit(1);
+      return matchedConnection?.id ?? null;
+    })();
+    return connectorId ? { ...connection, connectorId } : undefined;
+  },
+);
 
 const markIngressFailed$ = command(
   async ({ set }, ingressId: string, error: unknown): Promise<void> => {
@@ -553,9 +555,9 @@ const notifyFeishuChatQueueWait$ = command(
       text: notice,
       kind: "warning",
     });
-    await replyWithFeishuMessage(
+    await set(
+      replyWithFeishuMessage$,
       {
-        db: set(writeDb$),
         installationId: args.message.installationId,
         messageId: args.message.messageId,
         message,
@@ -567,175 +569,184 @@ const notifyFeishuChatQueueWait$ = command(
   },
 );
 
-async function finishUnconnectedFeishuIngress(
-  args: {
-    readonly db: Db;
-    readonly ingressId: string;
-    readonly message: CanonicalFeishuInboundMessage;
-    readonly botName: string | null;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await replyToUnconnectedFeishuMessage(
-    {
-      db: args.db,
-      message: args.message,
-      botName: args.botName,
+const finishUnconnectedFeishuIngress$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingressId: string;
+      readonly message: CanonicalFeishuInboundMessage;
+      readonly botName: string | null;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  const processedIngressDb = args.db;
-  const processedIngressId = args.ingressId;
-  await (async (): Promise<void> => {
-    await processedIngressDb
-      .update(feishuChatIngress)
-      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(feishuChatIngress.id, processedIngressId),
-          eq(feishuChatIngress.status, "processing"),
-        ),
-      );
-  })();
-}
-
-async function finishUnavailableAgentFeishuIngress(
-  args: {
-    readonly db: Db;
-    readonly ingressId: string;
-    readonly message: CanonicalFeishuInboundMessage;
-    readonly status: "not_accessible" | "not_found";
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await replyFeishuAgentUnavailable(
-    { db: args.db, message: args.message, status: args.status },
-    signal,
-  );
-  signal.throwIfAborted();
-  const processedIngressDb = args.db;
-  const processedIngressId = args.ingressId;
-  await (async (): Promise<void> => {
-    await processedIngressDb
-      .update(feishuChatIngress)
-      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(feishuChatIngress.id, processedIngressId),
-          eq(feishuChatIngress.status, "processing"),
-        ),
-      );
-  })();
-}
-
-async function loadFeishuIngressDispatchContext(
-  db: Db,
-  ingressId: string,
-  signal: AbortSignal,
-) {
-  const claimedIngressDb = db;
-  const claimedIngressId = ingressId;
-  const ingress = await (async () => {
-    const [row] = await claimedIngressDb
-      .select({
-        ingressId: feishuChatIngress.id,
-        installationId: feishuChatIngress.installationId,
-        payload: feishuChatIngress.payload,
-        reactionId: feishuChatIngress.reactionId,
-        createdAt: feishuChatIngress.createdAt,
-        orgId: feishuOrgInstallations.orgId,
-        ownerUserId: feishuOrgInstallations.ownerUserId,
-        appId: feishuOrgInstallations.appId,
-        platform: feishuOrgInstallations.platform,
-        defaultAgentId: orgMetadata.defaultAgentId,
-        botName: feishuOrgInstallations.botName,
-        messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-      })
-      .from(feishuChatIngress)
-      .innerJoin(
-        feishuOrgInstallations,
-        eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
-      )
-      .leftJoin(
-        orgMetadata,
-        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
-      )
-      .where(
-        and(
-          eq(feishuChatIngress.id, claimedIngressId),
-          eq(feishuChatIngress.status, "processing"),
-        ),
-      )
-      .limit(1);
-    return row;
-  })();
-  signal.throwIfAborted();
-  if (!ingress) {
-    throw new Error("Canonical Feishu ingress is unavailable");
-  }
-  if (
-    !(await (async () => {
-      const plan = feishuInstallationAvailabilityReadPlan(ingress);
-      if (plan.kind === "resolved") {
-        return plan.enabled;
-      }
-      const rows = await db
-        .select(plan.columns)
-        .from(userFeatureSwitches)
-        .where(plan.condition);
-      return feishuInstallationEnabledFromRows(plan.scope, rows);
-    })())
-  ) {
-    throw new Error("Lark integration is not enabled");
-  }
-  const message = parseMatchingMessage(ingress);
-  if (ingress.defaultAgentId === null) {
-    return { ingress, message, installation: null, connection: null };
-  }
-  const installation: FeishuDispatchInstallation = {
-    orgId: ingress.orgId,
-    platform: ingress.platform,
-    ownerUserId: ingress.ownerUserId,
-    defaultAgentId: ingress.defaultAgentId,
-    botName: ingress.botName,
-    messageReceivedAt: ingress.messageReceivedAt,
-  };
-  const receiptArgs = { db, installation, message };
-  await (async () => {
-    if (receiptArgs.installation.messageReceivedAt) {
-      return;
-    }
-    const [markedAsReceived] = await receiptArgs.db
-      .update(feishuOrgInstallations)
-      .set(feishuMessageReceivedValues(receiptArgs.message.tenantKey))
-      .where(feishuMessageReceivedCondition(receiptArgs.message.installationId))
-      .returning({ id: feishuOrgInstallations.id });
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await set(
+      replyToUnconnectedFeishuMessage$,
+      {
+        message: args.message,
+        botName: args.botName,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    if (markedAsReceived) {
-      await (async () => {
-        const plan = feishuOrgChangedAdminReadPlan(
-          receiptArgs.installation.orgId,
+    const processedIngressDb = db;
+    const processedIngressId = args.ingressId;
+    await (async (): Promise<void> => {
+      await processedIngressDb
+        .update(feishuChatIngress)
+        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(feishuChatIngress.id, processedIngressId),
+            eq(feishuChatIngress.status, "processing"),
+          ),
         );
-        const admins = await receiptArgs.db
-          .select(plan.columns)
-          .from(orgMembersCache)
-          .where(plan.condition);
-        const userIds = feishuOrgChangedUserIds(
-          admins,
-          receiptArgs.installation.ownerUserId,
+    })();
+  },
+);
+
+const finishUnavailableAgentFeishuIngress$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingressId: string;
+      readonly message: CanonicalFeishuInboundMessage;
+      readonly status: "not_accessible" | "not_found";
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await set(
+      replyFeishuAgentUnavailable$,
+      { message: args.message, status: args.status },
+      signal,
+    );
+    signal.throwIfAborted();
+    const processedIngressDb = db;
+    const processedIngressId = args.ingressId;
+    await (async (): Promise<void> => {
+      await processedIngressDb
+        .update(feishuChatIngress)
+        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(feishuChatIngress.id, processedIngressId),
+            eq(feishuChatIngress.status, "processing"),
+          ),
         );
-        if (userIds.length === 0) {
-          return;
-        }
-        await publishUserSignal(userIds, "feishu:changed");
-      })();
+    })();
+  },
+);
+
+const loadFeishuIngressDispatchContext$ = command(
+  async ({ set }, ingressId: string, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const claimedIngressDb = db;
+    const claimedIngressId = ingressId;
+    const ingress = await (async () => {
+      const [row] = await claimedIngressDb
+        .select({
+          ingressId: feishuChatIngress.id,
+          installationId: feishuChatIngress.installationId,
+          payload: feishuChatIngress.payload,
+          reactionId: feishuChatIngress.reactionId,
+          createdAt: feishuChatIngress.createdAt,
+          orgId: feishuOrgInstallations.orgId,
+          ownerUserId: feishuOrgInstallations.ownerUserId,
+          appId: feishuOrgInstallations.appId,
+          platform: feishuOrgInstallations.platform,
+          defaultAgentId: orgMetadata.defaultAgentId,
+          botName: feishuOrgInstallations.botName,
+          messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
+        })
+        .from(feishuChatIngress)
+        .innerJoin(
+          feishuOrgInstallations,
+          eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
+        )
+        .leftJoin(
+          orgMetadata,
+          eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+        )
+        .where(
+          and(
+            eq(feishuChatIngress.id, claimedIngressId),
+            eq(feishuChatIngress.status, "processing"),
+          ),
+        )
+        .limit(1);
+      return row;
+    })();
+    signal.throwIfAborted();
+    if (!ingress) {
+      throw new Error("Canonical Feishu ingress is unavailable");
     }
-  })();
-  const connection = await loadConnection(db, ingress.orgId, message);
-  signal.throwIfAborted();
-  return { ingress, message, installation, connection };
-}
+    if (
+      !(await (async () => {
+        const plan = feishuInstallationAvailabilityReadPlan(ingress);
+        if (plan.kind === "resolved") {
+          return plan.enabled;
+        }
+        const rows = await db
+          .select(plan.columns)
+          .from(userFeatureSwitches)
+          .where(plan.condition);
+        return feishuInstallationEnabledFromRows(plan.scope, rows);
+      })())
+    ) {
+      throw new Error("Lark integration is not enabled");
+    }
+    const message = parseMatchingMessage(ingress);
+    if (ingress.defaultAgentId === null) {
+      return { ingress, message, installation: null, connection: null };
+    }
+    const installation: FeishuDispatchInstallation = {
+      orgId: ingress.orgId,
+      platform: ingress.platform,
+      ownerUserId: ingress.ownerUserId,
+      defaultAgentId: ingress.defaultAgentId,
+      botName: ingress.botName,
+      messageReceivedAt: ingress.messageReceivedAt,
+    };
+    const receiptArgs = { installation, message };
+    await (async () => {
+      if (receiptArgs.installation.messageReceivedAt) {
+        return;
+      }
+      const [markedAsReceived] = await db
+        .update(feishuOrgInstallations)
+        .set(feishuMessageReceivedValues(receiptArgs.message.tenantKey))
+        .where(
+          feishuMessageReceivedCondition(receiptArgs.message.installationId),
+        )
+        .returning({ id: feishuOrgInstallations.id });
+      signal.throwIfAborted();
+      if (markedAsReceived) {
+        await (async () => {
+          const plan = feishuOrgChangedAdminReadPlan(
+            receiptArgs.installation.orgId,
+          );
+          const admins = await db
+            .select(plan.columns)
+            .from(orgMembersCache)
+            .where(plan.condition);
+          const userIds = feishuOrgChangedUserIds(
+            admins,
+            receiptArgs.installation.ownerUserId,
+          );
+          if (userIds.length === 0) {
+            return;
+          }
+          await publishUserSignal(userIds, "feishu:changed");
+        })();
+      }
+    })();
+    signal.throwIfAborted();
+    const connection = await set(loadConnection$, ingress.orgId, message);
+    signal.throwIfAborted();
+    return { ingress, message, installation, connection };
+  },
+);
 
 const addFeishuThinkingReaction$ = command(
   async (
@@ -743,8 +754,8 @@ const addFeishuThinkingReaction$ = command(
     message: FeishuInboundMessage,
     signal: AbortSignal,
   ): Promise<string | undefined> => {
+    const db = set(writeDb$);
     const creationArgs = {
-      db: set(writeDb$),
       installationId: message.installationId,
       messageId: message.messageId,
       emojiType: FEISHU_THINKING_EMOJI,
@@ -755,7 +766,7 @@ const addFeishuThinkingReaction$ = command(
         const addReactionContextArgs = creationArgs;
         const addReactionContextSignal = creationSignal;
         const { token, apiOrigin, providerName } = await (async () => {
-          const [installation] = await addReactionContextArgs.db
+          const [installation] = await db
             .select()
             .from(feishuOrgInstallations)
             .where(
@@ -775,7 +786,7 @@ const addFeishuThinkingReaction$ = command(
               if (plan.kind === "resolved") {
                 return plan.enabled;
               }
-              const rows = await addReactionContextArgs.db
+              const rows = await db
                 .select(plan.columns)
                 .from(userFeatureSwitches)
                 .where(plan.condition);
@@ -789,7 +800,7 @@ const addFeishuThinkingReaction$ = command(
             addReactionContextSignal,
           );
           if (credentials.refreshedToken) {
-            await addReactionContextArgs.db
+            await db
               .update(feishuOrgInstallations)
               .set(feishuTokenUpdateValues(credentials.refreshedToken))
               .where(
@@ -845,10 +856,11 @@ const loadFeishuHistory$ = command(
   ): Promise<readonly FeishuHistoryMessage[]> => {
     const history = await tapError(
       (async () => {
-        const historyContextArgs = { db: set(writeDb$), ...args };
+        const db = set(writeDb$);
+        const historyContextArgs = args;
         const historyContextSignal = signal;
         const { token, apiOrigin, providerName } = await (async () => {
-          const [installation] = await historyContextArgs.db
+          const [installation] = await db
             .select()
             .from(feishuOrgInstallations)
             .where(
@@ -865,7 +877,7 @@ const loadFeishuHistory$ = command(
               if (plan.kind === "resolved") {
                 return plan.enabled;
               }
-              const rows = await historyContextArgs.db
+              const rows = await db
                 .select(plan.columns)
                 .from(userFeatureSwitches)
                 .where(plan.condition);
@@ -879,7 +891,7 @@ const loadFeishuHistory$ = command(
             historyContextSignal,
           );
           if (credentials.refreshedToken) {
-            await historyContextArgs.db
+            await db
               .update(feishuOrgInstallations)
               .set(feishuTokenUpdateValues(credentials.refreshedToken))
               .where(
@@ -957,17 +969,20 @@ const processClaimedIngress$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly ingressId: string;
     },
     signal: AbortSignal,
   ): Promise<PersistedCanonicalFeishuIngress | null> => {
-    const { ingress, message, installation, connection } =
-      await loadFeishuIngressDispatchContext(args.db, args.ingressId, signal);
+    const db = set(writeDb$);
+    const { ingress, message, installation, connection } = await set(
+      loadFeishuIngressDispatchContext$,
+      args.ingressId,
+      signal,
+    );
     if (!installation) {
-      await finishUnavailableAgentFeishuIngress(
+      await set(
+        finishUnavailableAgentFeishuIngress$,
         {
-          db: args.db,
           ingressId: ingress.ingressId,
           message,
           status: "not_found",
@@ -977,9 +992,9 @@ const processClaimedIngress$ = command(
       return null;
     }
     if (!connection) {
-      await finishUnconnectedFeishuIngress(
+      await set(
+        finishUnconnectedFeishuIngress$,
         {
-          db: args.db,
           ingressId: ingress.ingressId,
           message,
           botName: installation.botName,
@@ -991,24 +1006,20 @@ const processClaimedIngress$ = command(
 
     const commandHandled = await set(
       dispatchConnectedFeishuCommand$,
-      { db: args.db, installation, connection, message },
+      { installation, connection, message },
       signal,
     );
     signal.throwIfAborted();
     if (commandHandled) {
-      const processedIngressDb = args.db;
-      const processedIngressId = ingress.ingressId;
-      await (async (): Promise<void> => {
-        await processedIngressDb
-          .update(feishuChatIngress)
-          .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-          .where(
-            and(
-              eq(feishuChatIngress.id, processedIngressId),
-              eq(feishuChatIngress.status, "processing"),
-            ),
-          );
-      })();
+      await db
+        .update(feishuChatIngress)
+        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(feishuChatIngress.id, ingress.ingressId),
+            eq(feishuChatIngress.status, "processing"),
+          ),
+        );
       signal.throwIfAborted();
       return null;
     }
@@ -1016,7 +1027,7 @@ const processClaimedIngress$ = command(
     const effectiveAgent = await (async () => {
       const plan = feishuEffectiveAgentReadPlan({ installation, connection });
       const agent = await (async () => {
-        const [visibleAgent] = await args.db
+        const [visibleAgent] = await db
           .select(plan.visibleColumns)
           .from(agents)
           .where(plan.visibleCondition)
@@ -1026,7 +1037,7 @@ const processClaimedIngress$ = command(
       if (agent) {
         return feishuEffectiveAgentFromRows(agent, undefined);
       }
-      const [existing] = await args.db
+      const [existing] = await db
         .select(plan.existingColumns)
         .from(agents)
         .where(plan.existingCondition)
@@ -1035,9 +1046,9 @@ const processClaimedIngress$ = command(
     })();
     signal.throwIfAborted();
     if (effectiveAgent.status !== "resolved") {
-      await finishUnavailableAgentFeishuIngress(
+      await set(
+        finishUnavailableAgentFeishuIngress$,
         {
-          db: args.db,
           ingressId: ingress.ingressId,
           message,
           status: effectiveAgent.status,
@@ -1052,7 +1063,7 @@ const processClaimedIngress$ = command(
       (await set(addFeishuThinkingReaction$, message, signal));
     signal.throwIfAborted();
     if (reactionId && reactionId !== ingress.reactionId) {
-      await args.db
+      await db
         .update(feishuChatIngress)
         .set({ reactionId, updatedAt: nowDate() })
         .where(eq(feishuChatIngress.id, ingress.ingressId));
@@ -1093,8 +1104,7 @@ export const processCanonicalFeishuIngress$ = command(
     args: { readonly ingressId: string },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const claimed = await claimIngress(db, args.ingressId, nowDate());
+    const claimed = await set(claimIngress$, args.ingressId, nowDate());
     signal.throwIfAborted();
     if (!claimed) {
       return false;
@@ -1104,7 +1114,6 @@ export const processCanonicalFeishuIngress$ = command(
       set(
         processClaimedIngress$,
         {
-          db,
           ingressId: args.ingressId,
         },
         signal,
