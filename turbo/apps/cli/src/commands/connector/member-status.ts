@@ -42,13 +42,9 @@ export interface MemberConnectorFacts {
 /** Preserve target status output from the complete, unfiltered target inventory. */
 function memberAccountSummary(
   target: ConnectorAccountTarget,
-  accounts: ConnectorAccountConnectionsResult | null,
+  accounts: ConnectorAccountConnectionsResult,
 ): MemberConnectorFacts["accountSummary"] {
-  if (
-    !accounts ||
-    accounts.state === "unavailable" ||
-    accounts.connections.length === 0
-  ) {
+  if (accounts.state === "unavailable" || accounts.connections.length === 0) {
     return null;
   }
   return {
@@ -65,10 +61,9 @@ function memberAccountSummary(
 }
 
 function memberAccountStatus(
-  accounts: ConnectorAccountConnectionsResult | null,
+  accounts: ConnectorAccountConnectionsResult,
 ): MemberConnectionStatus {
-  if (accounts?.state === "unavailable") return "unavailable";
-  if (!accounts) return "not-connected";
+  if (accounts.state === "unavailable") return "unavailable";
   const account = accounts.defaultConnection;
   if (!account) {
     return accounts.connections.length === 0
