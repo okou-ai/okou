@@ -60,7 +60,7 @@ async fn independent_source_requires_matching_local_process_key_and_profile() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn duplicate_generic_source_does_not_extend_wait_even_after_finalization_starts() {
+async fn duplicate_generic_source_keeps_original_deadline_during_physical_wait() {
     let (config, env) = mock_run_config(test_profiles(), 4, 8192, 2);
     let reuse_key = "thread:generic-deadline";
     let source = RunId::new_v4();
@@ -105,17 +105,29 @@ async fn duplicate_generic_source_does_not_extend_wait_even_after_finalization_s
         runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source)
     );
     assert_eq!(preference.deadline(), deadline);
+    let finalization_started = tokio::time::Instant::now().into_std();
     assert!(
         guard
             .reuse_publisher()
-            .mark_finalizing(std::time::Instant::now())
+            .mark_finalizing(finalization_started)
     );
-    tokio::time::advance(FINALIZING_TEST_PREFERENCE_LIFETIME + Duration::from_millis(1)).await;
+    let grace = crate::finalizing_admission::FINALIZING_HANDOFF_ACCEPTANCE_GRACE;
+    tokio::time::advance(grace + Duration::from_millis(1)).await;
+    tokio::task::yield_now().await;
+    assert!(
+        env.handle
+            .wait_completion(successor, Duration::ZERO)
+            .await
+            .is_none()
+    );
+    let remaining = tokio::time::Instant::from_std(deadline)
+        .saturating_duration_since(tokio::time::Instant::now());
+    tokio::time::advance(remaining + Duration::from_millis(1)).await;
     let completion = env
         .handle
         .wait_completion(successor, Duration::from_secs(5))
         .await
-        .expect("generic waiting must expire at the original discovery deadline");
+        .expect("generic physical waiting must expire at its original discovery deadline");
     assert!(completion.sandbox_id.is_some());
     assert_eq!(completion.exit_code, 0);
     drop(guard);

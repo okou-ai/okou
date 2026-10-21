@@ -12,15 +12,16 @@
 //! - `Finalizing { started_at }` means that sandbox finalization is active and publication or
 //!   handoff is possible.
 //! - `ExactSandboxPublished` means that the successor may reserve the exact idle entry.
-//! - `ExactSandboxHandedOff` means that the exact entry was handed off. A live request for this
-//!   successor receives its candidate before fallback; otherwise the successor uses fallback
-//!   resources.
+//! - `ExactSandboxHandedOff` means that the selected source's physical resource was handed off.
+//!   A live request for this successor receives its candidate before fallback; otherwise the
+//!   successor uses fallback resources. This state does not grant native-history authority.
 //! - `NoExactSandbox` and `Released` mean that no exact predecessor resource will be published,
 //!   so the successor must use fallback resources.
 //!
-//! The successor requests one direct handoff while the predecessor can still publish exact
-//! reuse. Pre-finalization waiting ends at the API preference deadline. Once finalization begins,
-//! handoff acceptance remains open for `FINALIZING_HANDOFF_ACCEPTANCE_GRACE` after the later of
+//! The successor requests one physical handoff while the predecessor can still provide
+//! reuse, independently of native-history eligibility. Generic sources keep their original
+//! API preference deadline. Native-matching sources use that deadline before finalization;
+//! once finalization begins, acceptance uses `FINALIZING_HANDOFF_ACCEPTANCE_GRACE` after the later of
 //! the producer's finalization start and this successor's wait start. A late successor therefore
 //! has time to interrupt an ongoing park. An accepted handoff, including a candidate that was
 //! already delivered, wins a deadline race. Cancellation is checked with priority; if a candidate
@@ -29,7 +30,8 @@
 //!
 //! Every exact resource is reserved for the claimed successor's reuse key, profile, device
 //! limits, and history-generation run ID. A handed-off candidate is checked against the
-//! successor and history-generation identities before activation. Reserved candidates are
+//! actual producer and claimed successor before activation; physical transfer grants no native
+//! history authority and retains ordinary guest restoration. Reserved candidates are
 //! rolled back on cancellation, while identity mismatches, activation failures, preparation
 //! errors, and panics destroy or recover the candidate through the activation guards before the
 //! claimed job is completed without a sandbox. Finalizing handoff outcomes are recorded even
@@ -480,7 +482,8 @@ async fn prepare_finalizing_resource(
         return Err(ExecutionFailure::from_error(error).into());
     }
 
-    // The provider claim owns native intent; a discovery projection cannot authorize handoff.
+    // The provider claim owns native intent; physical handoff does not grant
+    // exact native-generation classification from a discovery projection.
     admission.history_generation_run_id = claimed
         .context()
         .native_continuation
@@ -493,6 +496,7 @@ async fn prepare_finalizing_resource(
     info!(
         run_id = %run_id,
         predecessor_run_id = %admission.source_run_id,
+        native_generation_matches_source = admission.history_generation_run_id.is_some(),
         "finalizing successor claimed before sandbox publication"
     );
     let selection = FinalizingSelectionRequest {

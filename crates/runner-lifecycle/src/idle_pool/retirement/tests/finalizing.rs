@@ -9,14 +9,13 @@ use crate::idle_pool::{
 };
 
 fn delivered(fixture: &mut JobFixture, successor: RunId) -> (GuardedFinalizingHandoffOwner, RunId) {
-    let mut candidate = fixture.candidate();
+    let candidate = fixture.candidate();
     let predecessor = candidate
         .resources
         .home_promotion
         .as_ref()
         .unwrap()
         .run_id();
-    candidate.metadata.history_generation_run_id = Some(predecessor);
     let mut producer = GuardedFinalizingHandoffOwner::undelivered(
         IdleParkCandidate::Ordinary(candidate),
         predecessor,

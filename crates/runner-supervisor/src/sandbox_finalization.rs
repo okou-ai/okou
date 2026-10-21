@@ -685,7 +685,9 @@ async fn finalize_sandbox_for_completion_inner(
             guest_timezone_intent,
             home_image_size_bytes,
             home_promotion,
-            handoff: publishes_exact_sandbox.then(|| active_run_reuse.handoff_signal()),
+            // Physical reuse eligibility was established above. Native history
+            // authority is independent: a failed run can still hand off its home.
+            handoff: Some(active_run_reuse.handoff_signal()),
         });
         let park_outcome = match park_request
             .park_for_idle_with_observer(&mut telemetry)
@@ -959,7 +961,7 @@ async fn finalize_sandbox_for_completion_inner(
         } else {
             close_network_log_session(run_id, network_log_session.take(), &network_log_drain).await;
             let candidate = candidate.with_last_completed_at(completed_at.clone());
-            let handoff_attempt = if publishes_exact_sandbox {
+            let handoff_attempt = {
                 let transfer_guard = cancel.transfer_guard().await;
                 if cancel.is_hard_cancelled() {
                     drop(transfer_guard);
@@ -1014,16 +1016,6 @@ async fn finalize_sandbox_for_completion_inner(
                         drop(transfer_guard);
                         UndeliveredExactHandoff::Destroy { candidate, error }
                     }
-                }
-            } else {
-                match candidate {
-                    IdleParkCandidate::Ordinary(candidate) => {
-                        UndeliveredExactHandoff::ContinueIdle(candidate)
-                    }
-                    IdleParkCandidate::Immediate(candidate) => UndeliveredExactHandoff::Destroy {
-                        candidate: IdleParkCandidate::Immediate(candidate),
-                        error: "request_unavailable",
-                    },
                 }
             };
             let candidate = match handoff_attempt {

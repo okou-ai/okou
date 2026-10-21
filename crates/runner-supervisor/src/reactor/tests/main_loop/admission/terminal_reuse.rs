@@ -143,7 +143,7 @@ async fn assert_cleanup_reuses_sandbox(
         overrides
             .completed_final_exec_park_handoff_points()
             .is_empty(),
-        "independent source without compatible native history must use generic activation"
+        "a provider that completed full park must reuse the parked sandbox"
     );
     assert_eq!(budget.allocated(), (2, 4096, 1));
 

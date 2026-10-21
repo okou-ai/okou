@@ -21,6 +21,7 @@ use runner_provider::{
 
 mod independent_source;
 mod peer_home;
+mod physical_handoff;
 mod terminal_reuse;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;
@@ -2064,8 +2065,14 @@ async fn finalizing_handoff_grace_starts_when_predecessor_enters_finalization() 
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
     let run_id = RunId::new_v4();
-    env.provider
-        .set_claim_result(run_id, Some(context_with_reuse_key(run_id, reuse_key)));
+    env.provider.set_claim_result(
+        run_id,
+        Some(context_with_native_source(
+            run_id,
+            reuse_key,
+            predecessor_run_id,
+        )),
+    );
     env.handle
         .discover_tx
         .send(finalizing_candidate_until(
