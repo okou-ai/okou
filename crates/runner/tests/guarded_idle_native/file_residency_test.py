@@ -179,6 +179,66 @@ class AcquisitionTests(unittest.TestCase):
                 acquisition.FileResidency(self.fd, self.identity)
         self.assertEqual(len(os.listdir("/proc/self/fd")), before)
 
+    def test_native_thread_reuse_does_not_transfer_authority(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                textwrap.dedent(
+                    """\
+                    import ctypes
+                    import json
+                    import os
+                    import sys
+                    from file_residency import FileResidency
+
+                    libc = ctypes.CDLL(None)
+                    callback = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p)
+                    libc.pthread_create.argtypes = [ctypes.POINTER(ctypes.c_ulong),
+                        ctypes.c_void_p, callback, ctypes.c_void_p]
+                    libc.pthread_create.restype = ctypes.c_int
+                    libc.pthread_join.argtypes = [ctypes.c_ulong, ctypes.c_void_p]
+                    libc.pthread_join.restype = ctypes.c_int
+                    owners = []
+                    outcomes = {}
+                    with open(sys.argv[1], "rb") as source:
+                        info = os.fstat(source.fileno())
+                        @callback
+                        def create(_):
+                            owners.append(FileResidency(
+                                source.fileno(), (info.st_dev, info.st_ino)))
+                        @callback
+                        def use(_):
+                            for label, action in [
+                                ("observe", lambda: owners[0].observe(0, 4096)),
+                                ("close", owners[0].close),
+                            ]:
+                                try:
+                                    action()
+                                    outcomes[label] = "accepted"
+                                except ValueError as error:
+                                    outcomes[label] = str(error)
+                        for action in (create, use):
+                            handle = ctypes.c_ulong()
+                            assert libc.pthread_create(ctypes.byref(handle), None,
+                                                      action, None) == 0
+                            assert libc.pthread_join(handle, None) == 0
+                    print(json.dumps(outcomes))
+                    """
+                ),
+                str(self.path),
+            ],
+            cwd=OWNER,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        outcomes = json.loads(result.stdout)
+        self.assertEqual(outcomes["observe"], "foreign observation owner")
+        self.assertEqual(outcomes["close"], "foreign close owner")
+
     def test_overflow_uid_cannot_claim_an_unmapped_file_owner(self):
         result = subprocess.run(
             [
@@ -407,6 +467,14 @@ class ReplayTests(unittest.TestCase):
             )
         )
         with self.assertRaisesRegex(ValueError, "order/span"):
+            self.validate()
+
+    def test_reused_native_tid_cannot_change_its_task_generation(self):
+        def mutate(events):
+            events[1]["observer"]["thread_start_ticks"] += 1
+
+        self.mutate_event(mutate)
+        with self.assertRaisesRegex(ValueError, "observer generation changed"):
             self.validate()
 
     def test_truncated_extent_vector_cannot_be_counted_as_complete(self):

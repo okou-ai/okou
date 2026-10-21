@@ -83,6 +83,20 @@ def credentials():
     }
 
 
+def task_identity():
+    native_id = threading.get_native_id()
+    with open("/proc/thread-self/stat", "rb") as stream:
+        raw = stream.read(65537)
+    require(len(raw) <= 65536, "oversized native task identity")
+    header, separator, tail = raw.rpartition(b") ")
+    fields = tail.split()
+    require(separator and len(fields) >= 20, "missing native task identity")
+    require(int(header.partition(b" (")[0]) == native_id, "foreign procfs task")
+    start_ticks = int(fields[19])
+    require(native_id > 0 and start_ticks > 0, "invalid native task generation")
+    return native_id, start_ticks
+
+
 class FileResidency:
     """Duplicate an expected original FD; the caller retains its own FD."""
 
@@ -100,6 +114,7 @@ class FileResidency:
         self._creator = (os.getpid(), threading.get_ident())
         # Numeric thread identifiers may be reused after a creator exits.
         self._creator_thread = threading.current_thread()
+        self._creator_task = task_identity()
         process = Path("/proc/self/stat").read_text()
         self._start_ticks = int(process.rsplit(") ", 1)[1].split()[19])
         self._identity = expected_identity
@@ -132,7 +147,8 @@ class FileResidency:
     def _check_owner(self):
         require(
             self._creator == (os.getpid(), threading.get_ident())
-            and self._creator_thread is threading.current_thread(),
+            and self._creator_thread is threading.current_thread()
+            and self._creator_task == task_identity(),
             "foreign observation owner",
         )
         require(
@@ -203,6 +219,8 @@ class FileResidency:
                 "pid": self._creator[0],
                 "thread_id": self._creator[1],
                 "start_ticks": self._start_ticks,
+                "native_thread_id": self._creator_task[0],
+                "thread_start_ticks": self._creator_task[1],
             },
             "before": before,
             "after": after,
@@ -228,7 +246,8 @@ class FileResidency:
     def close(self):
         require(
             self._creator == (os.getpid(), threading.get_ident())
-            and self._creator_thread is threading.current_thread(),
+            and self._creator_thread is threading.current_thread()
+            and self._creator_task == task_identity(),
             "foreign close owner",
         )
         if self._fd is None:

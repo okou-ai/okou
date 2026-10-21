@@ -122,8 +122,15 @@ def identity(value):
 
 
 def observer(value):
-    fields(value, "pid thread_id start_ticks")
-    return tuple(integer(value[key], 1) for key in ("pid", "thread_id", "start_ticks"))
+    names = (
+        "pid",
+        "thread_id",
+        "start_ticks",
+        "native_thread_id",
+        "thread_start_ticks",
+    )
+    fields(value, " ".join(names))
+    return tuple(integer(value[key], 1) for key in names)
 
 
 def replay(root, invocation, source_sha256):

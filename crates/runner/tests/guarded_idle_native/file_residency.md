@@ -9,6 +9,8 @@ effective/filesystem UID checks refuse mutation, foreign authority and descripto
 substitution. The creating process and thread own observations and cleanup;
 retained thread-object identity prevents a recycled numeric thread ID from
 transferring that authority after the creating thread exits.
+The native TID and procfs task start generation are also checked, since Python
+can cache the same dummy thread object across different native C threads.
 The effective UID must differ from the kernel's `overflowuid`, recorded with
 each authority snapshot: unmapped inode owners can otherwise share that reported
 number with a mapped namespace user. This ambiguous UID is unsupported even for
@@ -33,7 +35,8 @@ charged-window and native report formats/interpretations remain unchanged.
 
 ## Qualify and replay
 
-Use 64-bit Linux with readable procfs (including `kernel/overflowuid`), mincore
+Use 64-bit Linux with readable procfs (including `thread-self/stat` and
+`sys/kernel/overflowuid`), mincore
 and permission to lock at most 64 KiB of
 new private file pages. The qualification supports page sizes up to 16 KiB.
 It creates only a new canonical output directory and small disposable owned files.
