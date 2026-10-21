@@ -17,7 +17,7 @@ import {
   type HostedSiteShareSession,
 } from "../../signals/hosted-site-sharing.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ShareLinkRow } from "./artifact-share-menu.tsx";
+import { ShareLinkRow, ShareLinkSkeleton } from "./artifact-share-menu.tsx";
 
 interface ShareButtonProps {
   readonly ariaLabel: string;
@@ -202,14 +202,17 @@ function WebsiteUrlEditor({
 function HostedSiteShareActions({
   session,
   editing,
+  link,
+  loading,
 }: {
   readonly session: HostedSiteShareSession;
   readonly editing: boolean;
+  readonly link: string | null;
+  readonly loading: boolean;
 }) {
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
   const details = useLoadable(session.details$);
-  const link = useLoadable(session.copyUrl$);
   const returnFocus = useGet(session.returnFocus$);
   const edit = useSet(session.edit$);
   const refresh = useSet(session.refresh$);
@@ -217,15 +220,14 @@ function HostedSiteShareActions({
   if (editing || !signal) {
     return null;
   }
+  if (loading) {
+    return <ShareLinkSkeleton />;
+  }
   return (
     <>
       <ShareLinkRow
         copying={copying.state === "loading"}
-        link={
-          link.state === "hasData"
-            ? link.data.replace(/^https?:\/\//u, "")
-            : null
-        }
+        link={link?.replace(/^https?:\/\//u, "") ?? null}
         onCopy={() => {
           detach(copy(signal), Reason.DomCallback);
         }}
@@ -280,6 +282,8 @@ function HostedSiteShareSessionMenu({
   iconSize = 16,
 }: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
   const { t } = useTranslation();
+  // The preview mounts this menu before its popover, so preload the current URL here.
+  const link = useLoadable(session.copyUrl$);
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
   const editing = useGet(session.editing$);
@@ -332,7 +336,12 @@ function HostedSiteShareSessionMenu({
             }}
           />
         )}
-        <HostedSiteShareActions session={session} editing={editing} />
+        <HostedSiteShareActions
+          session={session}
+          editing={editing}
+          link={link.state === "hasData" ? link.data : null}
+          loading={link.state === "loading"}
+        />
       </PopoverContent>
     </Popover>
   );
