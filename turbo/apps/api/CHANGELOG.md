@@ -9,6 +9,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.760.1](https://github.com/okou-ai/okou/compare/api-v1.760.0...api-v1.760.1) (2026-10-21)
+
+
+### Refactoring
+
+* remove linkwallet feature switch ([#41819](https://github.com/okou-ai/okou/issues/41819)) ([5b99811](https://github.com/okou-ai/okou/commit/5b99811378d267243e4a6c9603da8dcc1c2878ce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.774.7
+    * @okouai/db bumped to 1.353.1
+    * @okouai/pi-agent-runtime bumped to 1.50.37
+
 ## [1.760.0](https://github.com/okou-ai/okou/compare/api-v1.759.4...api-v1.760.0) (2026-10-20)
 
 

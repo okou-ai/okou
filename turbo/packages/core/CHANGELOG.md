@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.774.7](https://github.com/okou-ai/okou/compare/core-v8.774.6...core-v8.774.7) (2026-10-21)
+
+
+### Refactoring
+
+* remove linkwallet feature switch ([#41819](https://github.com/okou-ai/okou/issues/41819)) ([5b99811](https://github.com/okou-ai/okou/commit/5b99811378d267243e4a6c9603da8dcc1c2878ce))
+
 ## [8.774.6](https://github.com/okou-ai/okou/compare/core-v8.774.5...core-v8.774.6) (2026-10-20)
 
 
