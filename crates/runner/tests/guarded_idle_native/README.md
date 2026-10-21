@@ -644,6 +644,24 @@ identities. Do not feed them to the current reader as new v2/current-source proo
 This format change alone does not establish complete residency, calibrated
 envelopes, bootstrap provenance, native Guest execution or production protection.
 
+## Native artifact byte verification
+
+Artifact and snapshot-preparation checks request Linux `O_DIRECT` reads instead
+of deliberately populating the observed input page cache with buffered hashing.
+The shared verifier retains complete SHA256, a no-follow regular-file descriptor,
+bounded reads and before/after length/mtime/ctime validation. It uses an initialized
+1 MiB buffer in 4 KiB aligned blocks and at most 256 IO vectors. A partial tail is
+re-read from its aligned prefix to confirm EOF without an unaligned request.
+
+The filesystem must support these direct-IO buffers/offsets; unsupported or failed
+IO is an error, with no buffered fallback in the verifier. Repeated verification
+can perform more disk IO and take longer. Kernel/filesystem behavior, including
+possible fallback, still requires actual cache observations: `O_DIRECT` alone
+proves neither cold inputs nor physical relief. The ordinary owned-file regression
+checks real before/after mincore observations and a buffered positive control;
+cache advice affects only its new disposable file. Existing report formats,
+producer bindings, native/cold completeness and P1 guards remain unchanged.
+
 ## Snapshot creation input record
 
 Current native artifact manifests also require `snapshot_preparation_sha256`.
