@@ -31,7 +31,7 @@ import type { SlackFile } from "../../lib/slack-webhook-context";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
 import {
   createSlackClient,
@@ -168,9 +168,7 @@ interface SlackInteractivePayload {
 }
 
 interface SlackEventCallbackArgs {
-  readonly db: Db;
   readonly payload: SlackEventCallback;
-  readonly signal: AbortSignal;
 }
 
 type SlackChannelType = "channel" | "dm" | "group_dm";
@@ -185,7 +183,6 @@ type SlackAgentRouteAdmission =
     };
 
 interface SlackAgentRouteArgs {
-  readonly db: Db;
   readonly workspaceId: string;
   readonly channelId: string;
   readonly channelType: SlackChannelType;
@@ -460,15 +457,14 @@ const postSlackAgentAdmissionNotice$ = command(
 
 const resolveSlackRouteCompose$ = command(
   async (
-    { set },
+    { get, set },
     args: SlackAgentAdmissionNoticeBase & {
-      readonly db: Db;
       readonly connection: SlackConnection;
       readonly orgId: string;
     },
     signal: AbortSignal,
   ): Promise<ResolvedEffectiveCompose | undefined> => {
-    const routeDb = args.db;
+    const routeDb = get(db$);
     const routeUser = args.connection.userId;
     const routeOrg = args.orgId;
     const effectiveCompose =
@@ -593,7 +589,6 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
     const effectiveCompose = await set(
       resolveSlackRouteCompose$,
       {
-        db: args.db,
         connection: args.connection,
         orgId: args.orgId,
         installation: args.installation,
@@ -636,11 +631,11 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
 
 const resolveSlackAgentRouteAdmission$ = command(
   async (
-    { set },
+    { get, set },
     args: SlackAgentRouteArgs,
     signal: AbortSignal,
   ): Promise<SlackAgentRouteAdmission> => {
-    const installationDb = args.db;
+    const installationDb = get(db$);
     const installationWorkspaceId = args.workspaceId;
     const installation = await (async (): Promise<
       SlackInstallation | undefined
@@ -659,7 +654,7 @@ const resolveSlackAgentRouteAdmission$ = command(
     if (!installation || !orgId) {
       return { kind: "ignored" };
     }
-    const connectionLookupDb = args.db;
+    const connectionLookupDb = get(db$);
     const connectionLookupWorkspaceId = args.workspaceId;
     const connectionLookupSlackUserId = args.slackUserId;
     const connection = await (async (): Promise<
@@ -714,10 +709,10 @@ const resolveSlackAgentRouteAdmission$ = command(
 const cleanupWorkspaceInstallation$ = command(
   async (
     { set },
-    db: Db,
     workspaceId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
+    const db = set(writeDb$);
     const installation = await (async (): Promise<
       SlackInstallation | undefined
     > => {
@@ -762,10 +757,10 @@ function appHomeAgentSelection() {
 const refreshOrgAppHome$ = command(
   async (
     { get },
-    db: Db,
     installation: SlackInstallation,
     slackUserId: string,
   ): Promise<void> => {
+    const db = get(db$);
     const workspaceId = installation.slackWorkspaceId;
     const connectionLookupDb = db;
     const connectionLookupWorkspaceId = workspaceId;
@@ -1006,7 +1001,7 @@ export const handleSlackCommands$ = command(
       signal.throwIfAborted();
       waitUntil(
         tapError(
-          set(refreshOrgAppHome$, db, installation, payload.user_id),
+          set(refreshOrgAppHome$, installation, payload.user_id),
           (error) => {
             L.warn("Failed to refresh App Home after disconnect", { error });
           },
@@ -1063,11 +1058,11 @@ async function postSlackUserNotice(args: {
 
 const handleAppHomeOpened$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     workspaceId: string,
     slackUserId: string,
   ): Promise<void> => {
+    const db = get(db$);
     const installation = await (async (): Promise<
       SlackInstallation | undefined
     > => {
@@ -1081,21 +1076,20 @@ const handleAppHomeOpened$ = command(
     if (!installation) {
       return;
     }
-    await set(refreshOrgAppHome$, db, installation, slackUserId);
+    await set(refreshOrgAppHome$, installation, slackUserId);
   },
 );
 
 const handleMessagesTabOpened$ = command(
   async (
-    { get },
+    { get, set },
     args: {
-      readonly db: Db;
       readonly workspaceId: string;
       readonly slackUserId: string;
       readonly channelId: string;
     },
   ): Promise<void> => {
-    const installationDb = args.db;
+    const installationDb = get(db$);
     const installationWorkspaceId = args.workspaceId;
     const installation = await (async (): Promise<
       SlackInstallation | undefined
@@ -1112,7 +1106,7 @@ const handleMessagesTabOpened$ = command(
     if (!installation) {
       return;
     }
-    const [connection] = await args.db
+    const [connection] = await get(db$)
       .select({
         id: slackOrgConnections.id,
         userId: slackOrgConnections.userId,
@@ -1128,7 +1122,7 @@ const handleMessagesTabOpened$ = command(
     if (!connection) {
       return;
     }
-    const updated = await args.db
+    const updated = await set(writeDb$)
       .update(slackOrgConnections)
       .set({ dmWelcomeSent: true })
       .where(
@@ -1142,7 +1136,7 @@ const handleMessagesTabOpened$ = command(
     }
     let agentName: string | undefined;
     if (installation.orgId) {
-      const db = args.db;
+      const db = get(db$);
       const orgId = installation.orgId;
       const composeId = await (async () => {
         const [row] = await db
@@ -1154,7 +1148,7 @@ const handleMessagesTabOpened$ = command(
       })();
       let agent: WorkspaceAgentSummary | undefined;
       if (composeId) {
-        const db = args.db;
+        const db = get(db$);
         agent = await (async () => {
           const [row] = await db
             .select({
@@ -1240,7 +1234,6 @@ const scheduleSlackAppHomeEvent$ = command(
         tapError(
           set(
             handleAppHomeOpened$,
-            args.callback.db,
             args.callback.payload.team_id,
             args.event.user,
           ),
@@ -1255,7 +1248,6 @@ const scheduleSlackAppHomeEvent$ = command(
       waitUntil(
         tapError(
           set(handleMessagesTabOpened$, {
-            db: args.callback.db,
             workspaceId: args.callback.payload.team_id,
             slackUserId: args.event.user,
             channelId: args.event.channel,
@@ -1276,14 +1268,14 @@ const scheduleSlackInstallationCleanup$ = command(
       readonly callback: SlackEventCallbackArgs;
       readonly errorMessage: string;
     },
+    signal: AbortSignal,
   ): void => {
     waitUntil(
       tapError(
         set(
           cleanupWorkspaceInstallation$,
-          args.callback.db,
           args.callback.payload.team_id,
-          args.callback.signal,
+          signal,
         ),
         (error) => {
           L.error(args.errorMessage, { error });
@@ -1294,7 +1286,7 @@ const scheduleSlackInstallationCleanup$ = command(
 );
 
 const handleEventCallback$ = command(
-  ({ set }, args: SlackEventCallbackArgs): void => {
+  ({ set }, args: SlackEventCallbackArgs, signal: AbortSignal): void => {
     const event = args.payload.event;
     if (event.type === "app_home_opened") {
       set(scheduleSlackAppHomeEvent$, {
@@ -1304,17 +1296,25 @@ const handleEventCallback$ = command(
     }
 
     if (event.type === "app_uninstalled") {
-      set(scheduleSlackInstallationCleanup$, {
-        callback: args,
-        errorMessage: "Error handling app_uninstalled",
-      });
+      set(
+        scheduleSlackInstallationCleanup$,
+        {
+          callback: args,
+          errorMessage: "Error handling app_uninstalled",
+        },
+        signal,
+      );
     }
 
     if (event.type === "tokens_revoked" && event.tokens.bot?.length) {
-      set(scheduleSlackInstallationCleanup$, {
-        callback: args,
-        errorMessage: "Error handling tokens_revoked",
-      });
+      set(
+        scheduleSlackInstallationCleanup$,
+        {
+          callback: args,
+          errorMessage: "Error handling tokens_revoked",
+        },
+        signal,
+      );
     }
   },
 );
@@ -1433,7 +1433,6 @@ export const handleSlackEvents$ = command(
             400,
           );
         }
-        const db = set(writeDb$);
         const channelType =
           agentEvent.type === "app_mention"
             ? slackAppMentionChannelType(agentEvent)
@@ -1441,7 +1440,6 @@ export const handleSlackEvents$ = command(
         const route = await set(
           resolveSlackAgentRouteAdmission$,
           {
-            db,
             workspaceId: payload.team_id,
             channelId: agentEvent.channel,
             channelType,
@@ -1498,11 +1496,7 @@ export const handleSlackEvents$ = command(
       if (retryNum) {
         return textResponse("OK");
       }
-      set(handleEventCallback$, {
-        db: set(writeDb$),
-        payload,
-        signal,
-      });
+      set(handleEventCallback$, { payload }, signal);
       return textResponse("OK");
     }
 
@@ -1511,7 +1505,8 @@ export const handleSlackEvents$ = command(
 );
 
 const handleHomeDisconnect$ = command(
-  async ({ set }, db: Db, payload: SlackInteractivePayload): Promise<void> => {
+  async ({ set }, payload: SlackInteractivePayload): Promise<void> => {
+    const db = set(writeDb$);
     const connectionLookupDb = db;
     const connectionLookupWorkspaceId = payload.team.id;
     const connectionLookupSlackUserId = payload.user.id;
@@ -1558,7 +1553,7 @@ const handleHomeDisconnect$ = command(
     if (!installation) {
       return;
     }
-    await set(refreshOrgAppHome$, db, installation, payload.user.id);
+    await set(refreshOrgAppHome$, installation, payload.user.id);
   },
 );
 
@@ -1582,14 +1577,13 @@ export const handleSlackInteractive$ = command(
     }
     const payload = parsedPayload as SlackInteractivePayload;
 
-    const db = set(writeDb$);
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];
       if (!action) {
         return emptyResponse();
       }
       if (action.action_id === "home_disconnect") {
-        await set(handleHomeDisconnect$, db, payload);
+        await set(handleHomeDisconnect$, payload);
       }
     }
     return emptyResponse();
