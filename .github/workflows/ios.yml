@@ -259,6 +259,7 @@ jobs:
           printf '\n' >> "$HOME/.gitconfig"
           cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
       - name: Measure preparation with one resolution variable
+        shell: bash
         env:
           RESOLUTION: ${{ matrix.resolution }}
           SAMPLE: ${{ matrix.sample }}
