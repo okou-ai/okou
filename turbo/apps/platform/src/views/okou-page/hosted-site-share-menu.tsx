@@ -17,7 +17,7 @@ import {
   type HostedSiteShareSession,
 } from "../../signals/hosted-site-sharing.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ShareLinkRow } from "./artifact-share-menu.tsx";
+import { ShareLinkRow, ShareLinkSkeleton } from "./artifact-share-menu.tsx";
 
 interface ShareButtonProps {
   readonly ariaLabel: string;
@@ -220,12 +220,14 @@ function HostedSiteShareActions({
   if (editing || !signal) {
     return null;
   }
+  if (loading) {
+    return <ShareLinkSkeleton />;
+  }
   return (
     <>
       <ShareLinkRow
         copying={copying.state === "loading"}
         link={link?.replace(/^https?:\/\//u, "") ?? null}
-        loading={loading}
         onCopy={() => {
           detach(copy(signal), Reason.DomCallback);
         }}

@@ -86,21 +86,15 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
   await requested.promise;
   await openShare();
   try {
-    expect(getButtonByName("Copy link")).toBeDisabled();
-    expect(getButtonByName("Copy link").closest("[aria-busy]")).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
+    const menu = await screen.findByRole("dialog", { name: "Share" });
+    expect(menu.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(queryAllByRoleFast("button", menu)).toHaveLength(0);
   } finally {
     response.resolve();
   }
 
   await screen.findByText("current-report.okou.app");
   expect(getButtonByName("Copy link")).toBeEnabled();
-  expect(getButtonByName("Copy link").closest("[aria-busy]")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
   click(getButtonByName("Copy link"));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([currentSite.url]);
