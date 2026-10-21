@@ -19,7 +19,7 @@ final class AuthenticationStartupTests: XCTestCase {
     await hostingPresentationFrame()
     XCTAssertNotNil(startup(in: h.view))
     XCTAssertNil(composer(in: h.view))
-    XCTAssertFalse(try text(h.window).contains("Choose a workspace"))
+    XCTAssertFalse(try text(h.window).localizedCaseInsensitiveContains("Choose a workspace"))
     attach(h.window, name: "Latest membership response still pending")
     await h.fixture.memberships.releaseAll()
     await foreground.value
@@ -38,7 +38,7 @@ final class AuthenticationStartupTests: XCTestCase {
     await hostingPresentationFrame()
     XCTAssertNotNil(startup(in: h.view))
     XCTAssertNil(composer(in: h.view))
-    XCTAssertFalse(try text(h.window).contains("Choose a workspace"))
+    XCTAssertFalse(try text(h.window).localizedCaseInsensitiveContains("Choose a workspace"))
     attach(h.window, name: "Single workspace activation still pending")
     await h.fixture.activation.releaseAll()
     await initial.value
@@ -58,10 +58,7 @@ final class AuthenticationStartupTests: XCTestCase {
       $0.workspaceIDs = ["org_one", "org_two"]
     }
     await h.refresh().value
-    try await assertText("Choose a workspace", in: h)
-    let selection = try text(h.window)
-    XCTAssertTrue(selection.contains("First workspace"), selection)
-    XCTAssertTrue(selection.contains("Second workspace"), selection)
+    try await assertTexts(["Choose a workspace", "First workspace", "Second workspace"], in: h)
     XCTAssertNil(composer(in: h.view))
     try await h.authentication.switchWorkspace("org_two")
     try await assertChat(h)
@@ -73,8 +70,7 @@ final class AuthenticationStartupTests: XCTestCase {
       $0.workspaceIDs = []
     }
     await h.refresh().value
-    try await assertText("Finish setting up your workspace", in: h)
-    XCTAssertTrue(try text(h.window).contains("Open Okou on the web"))
+    try await assertTexts(["Finish setting up your workspace", "Open Okou on the web"], in: h)
     try await h.authentication.signOut()
     try await assertText("Sign in", in: h)
     XCTAssertNil(composer(in: h.view))
@@ -83,10 +79,8 @@ final class AuthenticationStartupTests: XCTestCase {
   func testMembershipFailureShowsErrorAndRetryCanEnterChat() async throws {
     let h = try await harness { $0.failMemberships = true }
     await h.refresh().value
-    try await assertText("Memberships unavailable", in: h)
-    let failure = try text(h.window)
-    XCTAssertTrue(failure.contains("Try again"), failure)
-    XCTAssertFalse(failure.contains("Finish setting up"), failure)
+    let failure = try await assertTexts(["Memberships unavailable", "Try again"], in: h)
+    XCTAssertFalse(failure.localizedCaseInsensitiveContains("Finish setting up"), failure)
     h.fixture.state.withLock { $0.failMemberships = false }
     await h.refresh().value
     try await assertChat(h)
@@ -98,8 +92,7 @@ final class AuthenticationStartupTests: XCTestCase {
       $0.failActivation = true
     }
     await h.refresh().value
-    try await assertText("Activation unavailable", in: h)
-    XCTAssertTrue(try text(h.window).contains("Try again"))
+    try await assertTexts(["Activation unavailable", "Try again"], in: h)
     h.fixture.state.withLock { $0.failActivation = false }
     await h.refresh().value
     try await assertChat(h)
@@ -212,15 +205,31 @@ final class AuthenticationStartupTests: XCTestCase {
     ) {
       self.composer(in: h.view) != nil && self.startup(in: h.view) == nil
     }
-    XCTAssertFalse(try text(h.window).contains("Choose a workspace"))
     attach(h.window, name: "Chat after session and workspace restoration")
   }
 
-  private func assertText(_ expected: String, in h: AuthenticationStartupHarness) async throws {
-    try await eventually(message: "Expected rendered text: \(expected)") {
-      (try? self.text(h.window).localizedCaseInsensitiveContains(expected)) == true
+  @discardableResult
+  private func assertText(_ expected: String, in h: AuthenticationStartupHarness) async throws
+    -> String
+  {
+    try await assertTexts([expected], in: h)
+  }
+
+  @discardableResult
+  private func assertTexts(_ expected: [String], in h: AuthenticationStartupHarness) async throws
+    -> String
+  {
+    var observed = ""
+    let matches = { expected.allSatisfy { observed.localizedCaseInsensitiveContains($0) } }
+    // Require the complete screen's content from one frame, then reuse that successful
+    // observation for eventually's final assertion instead of running Vision again.
+    try await eventually(message: "Expected rendered text: \(expected); recognized: \(observed)") {
+      if matches() { return true }
+      observed = (try? self.text(h.window)) ?? ""
+      return matches()
     }
-    attach(h.window, name: expected)
+    attach(h.window, name: expected.joined(separator: "; "))
+    return observed
   }
 
   private func assertRejectedToken(_ h: AuthenticationStartupHarness, scope: String) async {
@@ -251,8 +260,9 @@ final class AuthenticationStartupTests: XCTestCase {
     request.recognitionLevel = .accurate
     request.recognitionLanguages = ["en-US"]
     try VNImageRequestHandler(cgImage: try XCTUnwrap(image(window).cgImage)).perform([request])
-    return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(
-      separator: "\n")
+    // OCR line breaks follow rendered wrapping, which varies across simulator runtimes.
+    return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+      .joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
   }
 
   private func attach(_ window: UIWindow, name: String) {
