@@ -1461,6 +1461,34 @@ describe("okou connector check command", () => {
       expect(defaultAccountRequests).toBe(0);
     });
 
+    it("does not substitute a current default when no account was admitted", async () => {
+      const target = { kind: "builtin" as const, connectorSlug: "github" };
+      writeRunConnectorAccountContext(contextPath, [
+        { ...target, connectionId: null },
+      ]);
+      server.use(
+        stubConnectorAccounts([connectorAccount(target)], API_BASE_URL),
+      );
+      stubDiagnostic(resolvedEnvironment());
+      stubResolvedDependencies();
+
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--env-name",
+        "GH_TOKEN",
+      ]);
+
+      const text = getOutput();
+      expect(text).toContain("No GitHub account was admitted for this run.");
+      expect(text).toContain(
+        "Connect or change the thread selection, then start a new run.",
+      );
+      expect(text).not.toContain("connected and active");
+      expect(text).not.toContain("/connectors/github/connect");
+      expect(text).not.toContain("/connectors/github/reconnect");
+    });
+
     it("retains a deleted run account ID without offering sibling recovery", async () => {
       const target = { kind: "builtin" as const, connectorSlug: "github" };
       writeRunConnectorAccountContext(contextPath, [

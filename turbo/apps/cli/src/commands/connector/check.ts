@@ -72,17 +72,23 @@ interface BuiltinDiagContext extends DiagContext {
   readonly connectorSlug: ConnectorSlug;
 }
 
-interface ConnectorConfigurationStatus {
+type ConnectorConfigurationStatus = {
   readonly isConnected: boolean;
   readonly isExpired: boolean;
-  readonly runAccount: RunConnectorAccountLookup | null;
-  readonly memberFacts: MemberConnectorFacts | null;
-}
+} & (
+  | {
+      readonly runAccount: RunConnectorAccountLookup;
+      readonly memberFacts: null;
+    }
+  | {
+      readonly runAccount: null;
+      readonly memberFacts: MemberConnectorFacts;
+    }
+);
 
 function printMemberConnectionStatus(
   ctx: BuiltinDiagContext,
   facts: MemberConnectorFacts,
-  hasPermission: boolean,
 ): void {
   const account = facts.accountSummary?.defaultConnection;
   console.log(`Current account status: ${memberConnectorStatusText(facts)}.`);
@@ -104,15 +110,13 @@ function printMemberConnectionStatus(
     console.log(`The ${ctx.label} connector is connected and active.`);
   } else if (facts.memberStatus === "not-connected") {
     console.log(`The ${ctx.label} connector is not connected.`);
-    if (!ctx.agentId || hasPermission) {
-      const url = connectorActionUrl({
-        origin: ctx.platformOrigin,
-        path: `/connectors/${ctx.connectorSlug}/connect`,
-        agentId: ctx.agentId,
-      });
-      console.log(`Connect it at: [Connect ${ctx.label}](${url})`);
-      printCallbackActionUrlExample(url, ctx.agentId);
-    }
+    const url = connectorActionUrl({
+      origin: ctx.platformOrigin,
+      path: `/connectors/${ctx.connectorSlug}/connect`,
+      agentId: ctx.agentId,
+    });
+    console.log(`Connect it at: [Connect ${ctx.label}](${url})`);
+    printCallbackActionUrlExample(url, ctx.agentId);
   } else {
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
@@ -128,7 +132,6 @@ function printMemberConnectionStatus(
 function printConnectorConnectionStatus(
   ctx: BuiltinDiagContext,
   status: ConnectorConfigurationStatus,
-  hasPermission: boolean,
 ): void {
   console.log(
     "### 2a: Connector status (user must configure via OAuth login or API key)",
@@ -138,75 +141,50 @@ function printConnectorConnectionStatus(
     console.log(
       `The ${ctx.label} connector is not available for this account.`,
     );
-  } else if (status.memberFacts) {
-    printMemberConnectionStatus(ctx, status.memberFacts, hasPermission);
+  } else if (status.memberFacts !== null) {
+    printMemberConnectionStatus(ctx, status.memberFacts);
   } else {
-    printRunConnectionStatus(ctx, status, hasPermission);
+    printRunConnectionStatus(ctx, status.runAccount);
   }
   console.log("");
 }
 
 function printRunConnectionStatus(
   ctx: BuiltinDiagContext,
-  status: ConnectorConfigurationStatus,
-  hasPermission: boolean,
+  runAccount: RunConnectorAccountLookup,
 ): void {
-  if (status.runAccount?.state === "context-unavailable") {
-    console.log(
-      runConnectorAccountUnavailableMessage(status.runAccount.reason),
-    );
-  } else if (status.runAccount?.state === "not-admitted") {
+  if (runAccount.state === "context-unavailable") {
+    console.log(runConnectorAccountUnavailableMessage(runAccount.reason));
+    return;
+  }
+  if (runAccount.state === "not-admitted") {
     console.log(`No ${ctx.label} account was admitted for this run.`);
     console.log(
       "Connect or change the thread selection, then start a new run.",
     );
-  } else if (status.runAccount?.state === "metadata-unavailable") {
-    console.log(`Account used by this run: ${status.runAccount.connectionId}`);
+    return;
+  }
+  if (runAccount.state === "metadata-unavailable") {
+    console.log(`Account used by this run: ${runAccount.connectionId}`);
     console.log("Current account metadata is unavailable or deleted.");
     console.log("Select an available account, then start a new run.");
-  } else if (!status.isConnected) {
-    console.log(`The ${ctx.label} connector is not connected.`);
-    if (ctx.agentId && hasPermission) {
-      const connectUrl = connectorActionUrl({
-        origin: ctx.platformOrigin,
-        path: `/connectors/${ctx.connectorSlug}/connect`,
-        agentId: ctx.agentId,
-      });
-      console.log(`Connect it at: [Connect ${ctx.label}](${connectUrl})`);
-      printCallbackActionUrlExample(connectUrl, ctx.agentId);
-    } else if (!ctx.agentId) {
-      const connectUrl = connectorActionUrl({
-        origin: ctx.platformOrigin,
-        path: `/connectors/${ctx.connectorSlug}/connect`,
-      });
-      console.log(`Connect it at: [Connect ${ctx.label}](${connectUrl})`);
-    }
-  } else if (status.isExpired) {
+    return;
+  }
+  console.log(`Account used by this run: ${runAccount.label}`);
+  console.log(`Connection ID: ${runAccount.connectionId}`);
+  if (runAccount.metadata.connectionStatus === "reconnect-required") {
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
-      path:
-        status.runAccount?.state === "available"
-          ? `/connectors/${ctx.connectorSlug}/reconnect/${status.runAccount.connectionId}`
-          : `/connectors/${ctx.connectorSlug}/connect`,
+      path: `/connectors/${ctx.connectorSlug}/reconnect/${runAccount.connectionId}`,
       agentId: ctx.agentId,
     });
-    if (status.runAccount?.state === "available") {
-      console.log(`Account used by this run: ${status.runAccount.label}`);
-      console.log(`Connection ID: ${status.runAccount.connectionId}`);
-    }
     console.log(
       `The ${ctx.label} connector is connected but has expired and needs to be reconnected.`,
     );
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
     printCallbackActionUrlExample(url, ctx.agentId);
-    if (ctx.runBound) {
-      console.log("After reconnecting, start a new run.");
-    }
+    console.log("After reconnecting, start a new run.");
   } else {
-    if (status.runAccount?.state === "available") {
-      console.log(`Account used by this run: ${status.runAccount.label}`);
-      console.log(`Connection ID: ${status.runAccount.connectionId}`);
-    }
     console.log(`The ${ctx.label} connector is connected and active.`);
   }
 }
@@ -363,7 +341,7 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
     enabledConnectorSlugs !== null &&
     enabledConnectorSlugs.includes(ctx.connectorSlug);
 
-  printConnectorConnectionStatus(ctx, configuration, hasPermission);
+  printConnectorConnectionStatus(ctx, configuration);
   printConnectorAuthorizationStatus(ctx, configuration, hasPermission);
 
   return {
