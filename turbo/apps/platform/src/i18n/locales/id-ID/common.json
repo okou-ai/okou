@@ -512,8 +512,7 @@
         "websiteAria": "Tampilkan artefak situs web"
       },
       "kindIcon": "Artefak {{kind}}",
-      "loading": "Memuat artefak",
-      "retry": "Coba lagi"
+      "loading": "Memuat artefak"
     },
     "fileBadges": {
       "artwork": "ART",
