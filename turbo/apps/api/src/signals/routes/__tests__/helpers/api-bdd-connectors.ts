@@ -22,7 +22,6 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
-import { githubOauthContract } from "@okouai/api-contracts/contracts/github-oauth";
 import {
   integrationsGithubContract,
   type GithubInstallationResponse,
@@ -69,9 +68,9 @@ import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { createDeferredPromise } from "../../../utils";
 import type { ApiTestUser } from "./api-bdd";
+import { createGithubBddApi } from "./api-bdd-github";
 import { createRouteMocks } from "./route-test";
 import { builtinConnectorsSlugCallbackRoutes } from "../../connectors-slug-callback";
-import { githubOauthRoutes } from "../../github-oauth";
 import { integrationsGithubRoutes } from "../../integrations-github";
 import { agentsRoutes } from "../../agents";
 import { connectorAccountRoutes } from "../../connector-accounts";
@@ -95,7 +94,6 @@ const customConnectorByIdTestRoutes = Object.freeze([
 
 const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsSlugCallbackRoutes,
-  ...githubOauthRoutes,
   ...integrationsGithubRoutes,
   ...agentsRoutes,
   ...connectorAccountRoutes,
@@ -190,8 +188,6 @@ const TEST_OAUTH_USERINFO_URL =
   "http://localhost:3000/api/test/oauth-provider/userinfo";
 const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
 const SLACK_OAUTH_USER_INFO_URL = "https://slack.com/api/users.info";
-const GITHUB_APP_INSTALLATIONS_URL = "https://api.github.com/app/installations";
-const GITHUB_APP_SLUG = "bdd-github-app";
 const CUSTOM_CONNECTOR_OAUTH2_ISSUER = "https://custom-oauth.example.test";
 const CUSTOM_CONNECTOR_OAUTH2_AUTHORIZATION_URL = `${CUSTOM_CONNECTOR_OAUTH2_ISSUER}/authorize`;
 const CUSTOM_CONNECTOR_OAUTH2_TOKEN_URL = `${CUSTOM_CONNECTOR_OAUTH2_ISSUER}/token`;
@@ -1469,66 +1465,6 @@ export function mockGoogleDriveArtifactUploadRejection(reason: string): void {
   );
 }
 
-function newGithubAppPrivateKeyBase64(): string {
-  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  const pem = privateKey.export({ type: "pkcs8", format: "pem" });
-  return Buffer.from(pem).toString("base64");
-}
-
-interface GithubAppInstallProviderArgs {
-  readonly installationId: string;
-  readonly targetId: string;
-  readonly targetType?: string;
-  readonly targetLogin?: string;
-}
-
-/**
- * GitHub App installation provider boundary: env credentials (real RSA key,
- * the routes sign app JWTs with it) plus the remote installations list,
- * installation-info, and installation access-token endpoints.
- */
-export function mockGithubAppInstallProvider(
-  args: GithubAppInstallProviderArgs,
-): void {
-  mockOptionalEnv("GITHUB_APP_SLUG", GITHUB_APP_SLUG);
-  mockOptionalEnv("GITHUB_APP_ID", "123456");
-  mockOptionalEnv("GITHUB_APP_PRIVATE_KEY", newGithubAppPrivateKeyBase64());
-  mockEnv("APP_URL", "https://app.okou.test");
-
-  server.use(
-    http.get(GITHUB_APP_INSTALLATIONS_URL, () => {
-      return HttpResponse.json([]);
-    }),
-    http.get(
-      `${GITHUB_APP_INSTALLATIONS_URL}/:installationId`,
-      ({ params }) => {
-        if (String(params.installationId) !== args.installationId) {
-          return HttpResponse.json({ message: "Not Found" }, { status: 404 });
-        }
-        return HttpResponse.json({
-          id: Number(args.installationId),
-          app_id: 123_456,
-          app_slug: GITHUB_APP_SLUG,
-          account: {
-            id: Number(args.targetId),
-            login: args.targetLogin ?? "bdd-github-org",
-            type: args.targetType ?? "Organization",
-          },
-        });
-      },
-    ),
-    http.post(
-      `${GITHUB_APP_INSTALLATIONS_URL}/:installationId/access_tokens`,
-      () => {
-        return HttpResponse.json({
-          token: "ghs_bdd_installation_token",
-          expires_at: "2099-01-01T00:00:00Z",
-        });
-      },
-    ),
-  );
-}
-
 /**
  * Drives the connector OAuth callback route with a raw absolute-URL request
  * so origin-dependent behavior (canonical API-host redirects, trusted
@@ -2502,92 +2438,10 @@ export function createConnectorBddApi(context: TestContext) {
       composeId: string,
       installationId: string,
     ): Promise<void> {
-      if (!actor.orgId) {
-        throw new Error("GitHub App install requires an actor with an org");
-      }
-      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
-        {
-          data: [
-            {
-              organization: { id: actor.orgId },
-              role: actor.orgRole ?? "org:admin",
-              createdAt: 1,
-            },
-          ],
-        },
-      );
-
-      const client = setupApp({ context, routes: githubOauthRoutes })(
-        githubOauthContract,
-      );
-      const install = await accept(
-        client.install({
-          query: {
-            userId: actor.userId,
-            orgId: actor.orgId,
-            composeId,
-          },
-        }),
-        [307],
-      );
-      const installLocation = install.headers.get("location");
-      if (!installLocation) {
-        throw new Error("Expected a GitHub install redirect location");
-      }
-      const installUrl = new URL(installLocation);
-      if (!installUrl.pathname.endsWith("/installations/new")) {
-        throw new Error(
-          `Unexpected GitHub install redirect: ${installLocation}`,
-        );
-      }
-      const state = installUrl.searchParams.get("state");
-      if (!state) {
-        throw new Error("Expected the GitHub install redirect to carry state");
-      }
-
-      const providerCallbackUri = installUrl.searchParams.get("redirect_uri");
-      if (!providerCallbackUri) {
-        throw new Error(
-          "Expected the GitHub install redirect to carry a callback URI",
-        );
-      }
-      const callbackQuery = {
-        installation_id: installationId,
-        setup_action: "install" as const,
-        state,
-      };
-      const requestSetupCallback = async (baseUrl: string) => {
-        const callbackClient = setupApp({
-          baseUrl,
-          context,
-          routes: githubOauthRoutes,
-        })(githubOauthContract);
-        return await accept(
-          callbackClient.setupCallback({ query: callbackQuery }),
-          [307],
-        );
-      };
-      let callback = await requestSetupCallback(
-        new URL(providerCallbackUri).origin,
-      );
-      let callbackLocation = callback.headers.get("location");
-      if (!callbackLocation) {
-        throw new Error("Expected a GitHub setup callback redirect location");
-      }
-      const firstCallbackLocation = new URL(callbackLocation);
-      if (firstCallbackLocation.pathname === "/api/github/app/setup/callback") {
-        callback = await requestSetupCallback(firstCallbackLocation.origin);
-        callbackLocation = callback.headers.get("location");
-        if (!callbackLocation) {
-          throw new Error(
-            "Expected the branded GitHub setup callback to redirect",
-          );
-        }
-      }
-      const callbackError = new URL(callbackLocation).searchParams.get("error");
-      if (callbackError) {
-        throw new Error(`GitHub setup callback failed: ${callbackError}`);
-      }
+      await createGithubBddApi(context).installGithubApp(actor, composeId, {
+        installationId,
+        targetLogin: "bdd-github-org",
+      });
     },
 
     async readGithubIntegration(
