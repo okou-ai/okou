@@ -77,6 +77,13 @@ function environment(
         contentType: "text/css",
         immutable: true,
       },
+      "/report-12345678.js": {
+        path: "/report-12345678.js",
+        size: 25,
+        sha256: "c".repeat(64),
+        contentType: "application/javascript",
+        immutable: true,
+      },
     },
   };
   const objects = new Map([
@@ -88,6 +95,7 @@ function environment(
     [`${storedPrefix}/manifest.json`, JSON.stringify(manifest)],
     [`${storedPrefix}/index.html`, html],
     [`${storedPrefix}/style-12345678.css`, "a{color:red}"],
+    [`${storedPrefix}/report-12345678.js`, "window.privateReport = 42;"],
   ]);
   if (registered) {
     for (const alias of ["demo", `dpl-${deploymentId}`]) {
@@ -188,7 +196,7 @@ it.each(["true", "invalid"])(
 );
 
 it.each(["/", "/style-12345678.css"])(
-  "never reads restricted content without configured Clerk: %s",
+  "never reads restricted content without a site session: %s",
   async (path) => {
     let reads = 0;
     server.use(
@@ -202,8 +210,51 @@ it.each(["/", "/style-12345678.css"])(
         reads++;
       }),
     );
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(401);
     expect(reads).toBe(0);
+  },
+);
+
+it.each(["GET", "HEAD"])(
+  "isolates restricted scripts from sibling hosts while preserving Public embedding: %s",
+  async (method) => {
+    const token = `okou_site_${"a".repeat(64)}`;
+    for (const restricted of [true, false]) {
+      server.use(
+        http.get(endpoint, ({ request }) => {
+          return HttpResponse.json(
+            restricted &&
+              request.headers.get("Authorization") !== `Bearer ${token}`
+              ? { allowed: false, decision: "authenticate" }
+              : { allowed: true, decision: "allow" },
+          );
+        }),
+      );
+      const response = await fetchWorker(
+        new Request("https://demo.okou.app/report-12345678.js", {
+          method,
+          headers: {
+            Cookie: `__Host-okou-site-session=${token}`,
+            Origin: "https://another-publisher.okou.app",
+            "Sec-Fetch-Site": "same-site",
+            "Sec-Fetch-Mode": "no-cors",
+            "Sec-Fetch-Dest": "script",
+          },
+        }),
+        environment(),
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe(
+        "application/javascript",
+      );
+      expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+      expect(response.headers.get("Cross-Origin-Resource-Policy")).toBe(
+        restricted ? "same-origin" : null,
+      );
+      expect(await response.text()).toBe(
+        method === "GET" ? "window.privateReport = 42;" : "",
+      );
+    }
   },
 );
 
@@ -655,3 +706,47 @@ it.each(["disabled", "unavailable"])(
     }
   },
 );
+
+it("handles a real alias's authorization callback before reading hosted HTML", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({ allowed: false, decision: "authenticate" });
+    }),
+  );
+  const env = {
+    ...environment(),
+    HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+  };
+  const initial = await fetchWorker(
+    new Request("https://demo.okou.app/", { headers: { Accept: "text/html" } }),
+    env,
+  );
+  expect(initial.status).toBe(302);
+  const bridge = new URL(initial.headers.get("Location")!);
+  expect(bridge.searchParams.get("siteId")).toBe(siteId);
+  const pending = initial.headers.getSetCookie()[0]!.split(";")[0]!;
+  server.use(
+    http.post(
+      `https://authority.test/api/host/sites/${siteId}/sessions`,
+      () => {
+        return HttpResponse.json({
+          sessionToken: `okou_site_${"a".repeat(64)}`,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+        });
+      },
+    ),
+  );
+  const response = await fetchWorker(
+    new Request(
+      `https://demo.okou.app/.okou/auth/callback?code=${"b".repeat(64)}&state=${bridge.searchParams.get("state")}`,
+      { headers: { Cookie: pending } },
+    ),
+    env,
+  );
+  expect(response.status).toBe(303);
+  expect(response.headers.get("Location")).toBe("https://demo.okou.app/");
+  expect(response.headers.getSetCookie().join(";")).toContain(
+    "__Host-okou-site-session=",
+  );
+  expect(await response.text()).toBe("");
+});
