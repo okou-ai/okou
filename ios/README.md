@@ -271,7 +271,8 @@ The image is currently a public preview; the Xcode build is the stable
 `27A9275` release. Device archive builds, the optional archive proof, and
 TestFlight signing/export select the same Xcode version. Toolchain changes
 invalidate prior archive and test fingerprints, so the merge group must produce
-fresh matching evidence. Formatting includes both package manifests, sources,
+fresh matching evidence. The App build uses two concurrent build operations on
+the standard 7 GB image and reports build timings. Formatting includes both package manifests, sources,
 and tests. Swift
 packages must match `Package.resolved`; CI checks that it remains unchanged.
 Standalone package tests run on a separate macOS runner from the App build and

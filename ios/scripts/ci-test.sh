@@ -50,7 +50,8 @@ fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   cmp "$resolved" "$build_root/Package.resolved.before"
-  xcodebuild "${xcode_args[@]}" build-for-testing
+  # Leave memory for the booted simulator on the standard 7 GB CI image.
+  xcodebuild "${xcode_args[@]}" -jobs 2 -showBuildTimingSummary build-for-testing
   cmp "$resolved" "$build_root/Package.resolved.before"
 fi
 
