@@ -17,7 +17,7 @@ private final class NativeHelperStandardError: @unchecked Sendable {
 }
 
 public actor NativeProcess {
-  private let logger = Logger(subsystem: "ai.okou.desktop", category: "native-helper")
+  private let logger = Logger(subsystem: "ai.okou.desktop", category: "computer-use-helper")
   private let executable: URL
   private let environment: [String: String]
   private var process: Process?
