@@ -56,7 +56,6 @@ pub async fn exercise(request: Request) -> TestResult<BudgetLease> {
                     reuse_key: None,
                     profile_name: fixture::PROFILE,
                     device_rate_limits: &None,
-                    history_generation_run_id: None,
                     allow_compatible_blank: false,
                     blank_pool_diagnostics: None,
                     vcpu: 2,

@@ -100,8 +100,8 @@ def validate(directory, *, cases=CASES, policy_key="native_claim_loss_policy_jso
         if not isinstance(completed_at, str) or datetime.datetime.fromisoformat(completed_at).utcoffset() is None:
             raise ValueError("original completion timestamp malformed")
         exact(held_states, [{"reuseKey": reuse, "lastCompletedAt": completed_at,
-            "reusableSandbox": {"profile": "vm0/default", "historyGenerationRunId": history}}],
-            "original advertised history/profile changed")
+            "reusableSandbox": {"profile": "vm0/default", "sourceRunId": history}}],
+            "original advertised source/profile changed")
         selected = waiting.get("selected_revision")
         if not pressure.integer(selected, 1):
             raise ValueError("claim original insertion revision missing")

@@ -80,7 +80,9 @@ pub(super) struct IdleSandboxMetadata {
     /// Verified hash-backed resume state restored into this sandbox before it
     /// was parked. Missing means reuse must fall back to materialize+restore.
     pub(super) restored_session_identity: Option<RestoredSessionIdentity>,
-    pub(super) history_generation_run_id: Option<RunId>,
+    /// Native handoff eligibility retained after successful execution. This is
+    /// never used for scheduling affinity or original resource ownership.
+    pub(super) native_generation_run_id: Option<RunId>,
     pub(super) guest_timezone_intent: GuestTimezoneIntent,
     /// Local terminal timestamp for this parked sandbox.
     ///
@@ -235,7 +237,7 @@ impl ParkedIdleCandidate {
                 source_ip,
                 storage_fingerprints: StorageFingerprints::default(),
                 restored_session_identity: None,
-                history_generation_run_id: None,
+                native_generation_run_id: None,
                 guest_timezone_intent: GuestTimezoneIntent::Unknown,
                 last_completed_at: None,
             },
@@ -539,7 +541,7 @@ impl ReusableIdleSandbox {
             source_ip,
             storage_fingerprints,
             restored_session_identity,
-            history_generation_run_id: _,
+            native_generation_run_id: _,
             guest_timezone_intent: _,
             last_completed_at: _,
         } = metadata;
@@ -1093,8 +1095,8 @@ impl ReservedIdleSandbox {
         &self.metadata().guest_timezone_intent
     }
 
-    pub fn history_generation_run_id(&self) -> Option<RunId> {
-        self.metadata().history_generation_run_id
+    pub fn native_generation_run_id(&self) -> Option<RunId> {
+        self.metadata().native_generation_run_id
     }
 
     pub fn source_run_id(&self) -> Option<RunId> {

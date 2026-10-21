@@ -19,7 +19,7 @@ struct IdlePoolSeedSpec<'a> {
     profile_name: &'a str,
     vcpu: u32,
     memory_mb: u32,
-    history_generation_run_id: Option<RunId>,
+    native_generation_run_id: Option<RunId>,
     guest_timezone_intent: GuestTimezoneIntent,
     timing: Option<std::time::Instant>,
 }
@@ -29,7 +29,7 @@ pub(in super::super) struct SpeculativeIdleSeedSpec<'a> {
     pub(in super::super) profile_name: &'a str,
     pub(in super::super) vcpu: u32,
     pub(in super::super) memory_mb: u32,
-    pub(in super::super) history_generation_run_id: RunId,
+    pub(in super::super) native_generation_run_id: RunId,
     pub(in super::super) guest_timezone_intent: GuestTimezoneIntent,
     pub(in super::super) timing: Option<std::time::Instant>,
 }
@@ -56,7 +56,7 @@ pub(in super::super) async fn seed_idle_pool(
             profile_name,
             vcpu,
             memory_mb,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             timing: None,
         },
@@ -71,7 +71,7 @@ pub(in super::super) async fn seed_idle_pool_with_history_generation(
     profile_name: &str,
     vcpu: u32,
     memory_mb: u32,
-    history_generation_run_id: RunId,
+    native_generation_run_id: RunId,
 ) -> SandboxId {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     add_healthy_reuse_preparation_matcher(&overrides);
@@ -84,7 +84,7 @@ pub(in super::super) async fn seed_idle_pool_with_history_generation(
             profile_name,
             vcpu,
             memory_mb,
-            history_generation_run_id: Some(history_generation_run_id),
+            native_generation_run_id: Some(native_generation_run_id),
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             timing: None,
         },
@@ -103,7 +103,7 @@ pub(in super::super) async fn seed_idle_pool_with_speculative_timezone(
         profile_name,
         vcpu,
         memory_mb,
-        history_generation_run_id,
+        native_generation_run_id,
         guest_timezone_intent,
         timing,
     } = spec;
@@ -116,7 +116,7 @@ pub(in super::super) async fn seed_idle_pool_with_speculative_timezone(
             profile_name,
             vcpu,
             memory_mb,
-            history_generation_run_id: Some(history_generation_run_id),
+            native_generation_run_id: Some(native_generation_run_id),
             guest_timezone_intent,
             timing,
         },
@@ -142,7 +142,7 @@ pub(in super::super) async fn seed_idle_pool_with_overrides(
             profile_name,
             vcpu,
             memory_mb,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             timing: None,
         },
@@ -164,7 +164,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
         profile_name,
         vcpu,
         memory_mb,
-        history_generation_run_id,
+        native_generation_run_id,
         guest_timezone_intent,
         timing,
     } = spec;
@@ -206,10 +206,10 @@ async fn seed_idle_pool_with_overrides_and_generation(
         .with_rootfs_hash(super::env::TEST_ROOTFS_HASH)
         .with_guest_timezone_intent(guest_timezone_intent)
         .with_last_completed_at(TEST_LAST_COMPLETED_AT);
-    let candidate = match history_generation_run_id {
+    let candidate = match native_generation_run_id {
         Some(run_id) => builder
             .with_source_run_id(run_id)
-            .with_history_generation_run_id(run_id)
+            .with_native_generation_run_id(run_id)
             .build(),
         None => builder.build(),
     };
@@ -355,7 +355,7 @@ pub(in super::super) struct TestParkedIdleCandidateSpec<'a> {
     pub(in super::super) profile_name: &'a str,
     pub(in super::super) vcpu: u32,
     pub(in super::super) memory_mb: u32,
-    pub(in super::super) history_generation_run_id: Option<RunId>,
+    pub(in super::super) native_generation_run_id: Option<RunId>,
     pub(in super::super) parked_at: std::time::Instant,
 }
 
@@ -369,10 +369,10 @@ pub(in super::super) async fn seed_idle_pool_with_timing(
     let builder = ParkedIdleCandidateBuilder::new(spec.reuse_key, budget_lease)
         .with_profile_name(spec.profile_name)
         .with_rootfs_hash(super::env::TEST_ROOTFS_HASH);
-    let candidate = match spec.history_generation_run_id {
+    let candidate = match spec.native_generation_run_id {
         Some(run_id) => builder
             .with_source_run_id(run_id)
-            .with_history_generation_run_id(run_id)
+            .with_native_generation_run_id(run_id)
             .build(),
         None => builder.build(),
     };

@@ -15,7 +15,6 @@ impl BatchFixture {
             reuse_key: None,
             profile_name: "vm0/default",
             device_rate_limits: &None,
-            history_generation_run_id: None,
             allow_compatible_blank: false,
             blank_pool_diagnostics: None,
             vcpu,

@@ -394,7 +394,6 @@ async fn cancelled_finalizing_handoff_flushes_outcome_without_executor() {
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
-                .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
@@ -462,7 +461,6 @@ async fn finalizing_no_exact_fallback_reports_atomic_idle_miss() {
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
-                .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
@@ -528,7 +526,6 @@ async fn finalizing_handoff_deadline_reports_fallback_reason() {
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
-                .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
@@ -611,7 +608,6 @@ async fn finalizing_handoff_activation_failure_is_not_reported_as_accepted() {
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
-                .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
@@ -696,7 +692,6 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
-                .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
@@ -717,7 +712,7 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: predecessor_run_id,
+            native_generation_run_id: predecessor_run_id,
             guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
             timing: None,
         },
@@ -797,7 +792,7 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
     let candidate = ParkedIdleCandidateBuilder::new(reuse_key, lease)
         .with_source_run_id(predecessor_run_id)
         .with_rootfs_hash(test_profiles()["vm0/default"].rootfs_hash.clone())
-        .with_history_generation_run_id(predecessor_run_id)
+        .with_native_generation_run_id(predecessor_run_id)
         .with_factory(factory)
         .with_sandbox(Box::new(sandbox_mock::MockSandbox::with_overrides(
             "finalizing-failure-completion",
@@ -816,7 +811,6 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
-                .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(

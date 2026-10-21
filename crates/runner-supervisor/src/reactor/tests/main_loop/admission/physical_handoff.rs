@@ -124,8 +124,7 @@ async fn assert_physical_handoff(terminal: Terminal, native_generation: Option<R
                 reuse_key,
                 predecessor,
                 std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
-            )
-            .with_history_generation_run_id(native_generation),
+            ),
         )
         .unwrap();
     wait_cancel_handle(&env.cancel_tokens, successor, Duration::from_secs(5)).await;

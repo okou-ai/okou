@@ -405,7 +405,6 @@ pub struct IdlePressureRequest<'a> {
     pub reuse_key: Option<&'a str>,
     pub profile_name: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
-    pub history_generation_run_id: Option<RunId>,
     pub allow_compatible_blank: bool,
     pub blank_pool_diagnostics: Option<&'a BlankPoolDiagnostics>,
     pub vcpu: u32,
@@ -456,26 +455,17 @@ impl Deref for ReservedIdleActivation {
     }
 }
 
-/// Reserve an ordinary or generation-matching idle sandbox and capture the
+/// Reserve an ordinary compatible idle sandbox and capture the
 /// post-reservation snapshot under the same pool lock.
 pub async fn reserve_reusable_idle_for_spawn(
     idle_pool: &SharedIdlePool,
     reuse_key: &str,
     profile_name: &str,
     device_rate_limits: &Option<DeviceRateLimits>,
-    history_generation_run_id: Option<RunId>,
 ) -> Option<ReservedIdleActivation> {
     let (reservation, snapshot) = {
         let mut pool = idle_pool.lock().await;
-        let reservation = match history_generation_run_id {
-            Some(history_generation_run_id) => pool.reserve_reusable_generation(
-                reuse_key,
-                profile_name,
-                device_rate_limits,
-                history_generation_run_id,
-            )?,
-            None => pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)?,
-        };
+        let reservation = pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)?;
         let snapshot = pool.status_snapshot();
         (reservation, snapshot)
     };
@@ -504,7 +494,7 @@ pub async fn reserve_exact_idle_for_spawn(
     reuse_key: &str,
     profile_name: &str,
     device_rate_limits: &Option<DeviceRateLimits>,
-    history_generation_run_id: RunId,
+    native_generation_run_id: RunId,
 ) -> Result<ReservedIdleActivation, ExactIdleReservationMiss> {
     let (reservation, snapshot) = {
         let mut pool = idle_pool.lock().await;
@@ -512,7 +502,7 @@ pub async fn reserve_exact_idle_for_spawn(
             reuse_key,
             profile_name,
             device_rate_limits,
-            history_generation_run_id,
+            native_generation_run_id,
         )?;
         let snapshot = pool.status_snapshot();
         (reservation, snapshot)
@@ -667,7 +657,6 @@ fn reserve_pressure_reuse(
         request.reuse_key,
         request.profile_name,
         request.device_rate_limits,
-        request.history_generation_run_id,
     ) {
         return (Some(reservation), None);
     }
@@ -888,7 +877,7 @@ mod tests {
 
     fn claimed_idle_pool(
         gate: ParkingGate,
-        history_generation_run_id: RunId,
+        native_generation_run_id: RunId,
     ) -> (SharedIdlePool, Arc<ResourceBudget>, SandboxId) {
         let budget = Arc::new(ResourceBudget::new(2, 2048, 1.0, 0));
         let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
@@ -898,8 +887,8 @@ mod tests {
             pool.park(
                 ParkedIdleCandidateBuilder::new("thread:claimed-idle", lease)
                     .with_sandbox_id(sandbox_id)
-                    .with_source_run_id(history_generation_run_id)
-                    .with_history_generation_run_id(history_generation_run_id)
+                    .with_source_run_id(native_generation_run_id)
+                    .with_native_generation_run_id(native_generation_run_id)
                     .build()
             ),
             ParkResult::Parked
@@ -924,7 +913,6 @@ mod tests {
             "thread:claimed-idle",
             "vm0/default",
             &None,
-            None,
         )
         .await
         .expect("ordinary matching sandbox should reserve");
@@ -982,7 +970,7 @@ mod tests {
                 tx_bytes_per_sec: 1024,
             },
         };
-        for (reuse_key, profile, device_rate_limits, history_generation_run_id, expected) in [
+        for (reuse_key, profile, device_rate_limits, native_generation_run_id, expected) in [
             (
                 "missing-key",
                 "vm0/default",
@@ -1017,7 +1005,7 @@ mod tests {
                 reuse_key,
                 profile,
                 &device_rate_limits,
-                history_generation_run_id,
+                native_generation_run_id,
             )
             .await;
             assert!(matches!(miss, Err(reason) if reason == expected));
@@ -1070,7 +1058,6 @@ mod tests {
             "thread:claimed-idle",
             "vm0/default",
             &None,
-            None,
         )
         .await
         .expect("sandbox should reserve before soft drain");
@@ -1262,7 +1249,7 @@ mod tests {
             source_ip: "10.0.0.1".into(),
             storage_fingerprints: StorageFingerprints::default(),
             restored_session_identity: None,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             guest_timezone_intent: runner_lifecycle::guest_timezone::GuestTimezoneIntent::Unknown,
             home_image_size_bytes:
                 runner_lifecycle::home_promotion::test_support::TEST_HOME_IMAGE_SIZE_BYTES,

@@ -38,7 +38,6 @@ async fn poll_preserves_independent_source_in_claim_request_without_native_histo
         .unwrap()
         .unwrap();
     assert_eq!(candidate.run_id(), run_id);
-    assert_eq!(candidate.history_generation_run_id(), None);
     assert_eq!(
         candidate.runner_preference().unwrap().target(),
         crate::provider::RunnerPreferenceTarget::FinalizingPredecessor(source)

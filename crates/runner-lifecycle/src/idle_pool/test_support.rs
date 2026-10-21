@@ -30,7 +30,7 @@ pub struct ParkedIdleCandidateBuilder {
     source_ip: String,
     storage_fingerprints: StorageFingerprints,
     restored_session_identity: Option<RestoredSessionIdentity>,
-    history_generation_run_id: Option<RunId>,
+    native_generation_run_id: Option<RunId>,
     guest_timezone_intent: GuestTimezoneIntent,
     last_completed_at: Option<String>,
     home_promotion: Option<HomeImagePromotionContext>,
@@ -54,7 +54,7 @@ impl ParkedIdleCandidateBuilder {
             source_ip: DEFAULT_SOURCE_IP.into(),
             storage_fingerprints: StorageFingerprints::default(),
             restored_session_identity: None,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             last_completed_at: None,
             home_promotion: None,
@@ -111,8 +111,8 @@ impl ParkedIdleCandidateBuilder {
         self
     }
 
-    pub fn with_history_generation_run_id(mut self, history_generation_run_id: RunId) -> Self {
-        self.history_generation_run_id = Some(history_generation_run_id);
+    pub fn with_native_generation_run_id(mut self, native_generation_run_id: RunId) -> Self {
+        self.native_generation_run_id = Some(native_generation_run_id);
         self
     }
 
@@ -153,7 +153,7 @@ impl ParkedIdleCandidateBuilder {
             source_ip,
             storage_fingerprints,
             restored_session_identity,
-            history_generation_run_id,
+            native_generation_run_id,
             guest_timezone_intent,
             last_completed_at,
             home_promotion,
@@ -168,7 +168,7 @@ impl ParkedIdleCandidateBuilder {
             source_ip,
             storage_fingerprints,
             restored_session_identity,
-            history_generation_run_id,
+            native_generation_run_id,
             guest_timezone_intent,
             last_completed_at,
         };

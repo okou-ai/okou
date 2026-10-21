@@ -289,9 +289,9 @@ async fn lose(
         drop(preparation);
     }
     if owner.state() != SpeculativeActivationState::Uncertain
-        || !owner.matches_claim(
+        || !owner.matches_source_claim(
             Some(&request.context.reuse_key),
-            Some(request.history),
+            request.history,
             fixture::PROFILE,
         )
     {

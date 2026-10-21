@@ -134,7 +134,7 @@ async fn inject(
         return Err(io::Error::other("native callback panic was not caught by its owner").into());
     }
     if owner.state() != SpeculativeActivationState::Uncertain
-        || !owner.matches_claim(Some(&context.reuse_key), Some(history), fixture::PROFILE)
+        || !owner.matches_source_claim(Some(&context.reuse_key), history, fixture::PROFILE)
     {
         return Err(
             io::Error::other("callback loss did not preserve original uncertain owner").into(),

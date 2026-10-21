@@ -71,32 +71,31 @@ fn matching_preference_candidate(run_id: RunId, session_id: &str) -> runner_prov
     )
 }
 
-fn exact_generation_preference_candidate(
+fn exact_source_preference_candidate(
     run_id: RunId,
     session_id: &str,
-    target_generation_run_id: RunId,
+    target_source_run_id: RunId,
 ) -> runner_provider::JobCandidate {
     ranked_candidate(
         run_id,
         Some(session_id),
-        runner_provider::RunnerPreferenceTarget::ExactSandbox,
+        runner_provider::RunnerPreferenceTarget::SourceSandbox(target_source_run_id),
         TEST_RUNNER_ID,
         TEST_HEARTBEAT_GENERATION,
     )
-    .with_history_generation_run_id(Some(target_generation_run_id))
 }
 
 fn finalizing_candidate(
     run_id: RunId,
     reuse_key: &str,
-    history_generation_run_id: RunId,
+    source_run_id: RunId,
     runner_id: &str,
     heartbeat_generation: u64,
 ) -> runner_provider::JobCandidate {
     finalizing_candidate_until(
         run_id,
         reuse_key,
-        history_generation_run_id,
+        source_run_id,
         runner_id,
         heartbeat_generation,
         std::time::Instant::now() + Duration::from_secs(30),
@@ -106,19 +105,16 @@ fn finalizing_candidate(
 fn finalizing_candidate_until(
     run_id: RunId,
     reuse_key: &str,
-    history_generation_run_id: RunId,
+    source_run_id: RunId,
     runner_id: &str,
     heartbeat_generation: u64,
     deadline: std::time::Instant,
 ) -> runner_provider::JobCandidate {
     runner_provider::JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(reuse_key.to_owned()))
-        .with_history_generation_run_id(Some(history_generation_run_id))
         .with_runner_preference(ActiveRunnerPreference::new(
             RunnerProcessIdentity::new(runner_id.parse().unwrap(), heartbeat_generation).unwrap(),
-            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
-                history_generation_run_id,
-            ),
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source_run_id),
             deadline,
         ))
 }
@@ -249,14 +245,13 @@ async fn claim_failure_rolls_back_budget() {
 
     // First job: claim returns None (unavailable).
     let run_id_1 = RunId::new_v4();
-    let target_generation_run_id = RunId::new_v4();
     env.provider.set_claim_result(run_id_1, None);
     env.handle
         .discover_tx
-        .send(
-            runner_provider::JobCandidate::new(run_id_1, "vm0/default".into())
-                .with_history_generation_run_id(Some(target_generation_run_id)),
-        )
+        .send(runner_provider::JobCandidate::new(
+            run_id_1,
+            "vm0/default".into(),
+        ))
         .unwrap();
 
     // Returning to discovery proves the failed claim was processed.
@@ -360,16 +355,13 @@ async fn exact_idle_reservation_is_restored_after_claim_conflict() {
     env.provider.set_claim_result(conflict_run_id, None);
     env.handle
         .discover_tx
-        .send(
-            ranked_candidate(
-                conflict_run_id,
-                Some(session_id),
-                runner_provider::RunnerPreferenceTarget::ExactSandbox,
-                TEST_RUNNER_ID,
-                TEST_HEARTBEAT_GENERATION,
-            )
-            .with_history_generation_run_id(Some(reserved_generation_run_id)),
-        )
+        .send(ranked_candidate(
+            conflict_run_id,
+            Some(session_id),
+            runner_provider::RunnerPreferenceTarget::SourceSandbox(reserved_generation_run_id),
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+        ))
         .unwrap();
 
     wait_discover_entered(&env, Duration::from_secs(5)).await;
@@ -385,17 +377,13 @@ async fn exact_idle_reservation_is_restored_after_claim_conflict() {
         "restored reservation should retain its original budget lease"
     );
     let followup_run_id = RunId::new_v4();
-    let followup_target_generation_run_id = RunId::new_v4();
     env.provider.set_claim_result(
         followup_run_id,
         Some(context_with_session(followup_run_id, session_id)),
     );
     env.handle
         .discover_tx
-        .send(
-            matching_preference_candidate(followup_run_id, session_id)
-                .with_history_generation_run_id(Some(followup_target_generation_run_id)),
-        )
+        .send(matching_preference_candidate(followup_run_id, session_id))
         .unwrap();
     let completion = env
         .handle
@@ -1209,7 +1197,7 @@ async fn generation_protected_different_idle_sandbox_defers_before_claim() {
         .set_claim_result(run_id, Some(context_with_session(run_id, session_id)));
     env.handle
         .discover_tx
-        .send(exact_generation_preference_candidate(
+        .send(exact_source_preference_candidate(
             run_id,
             session_id,
             target_generation_run_id,
@@ -1225,10 +1213,8 @@ async fn generation_protected_different_idle_sandbox_defers_before_claim() {
     let pool = idle_pool.lock().await;
     assert_eq!(pool.held_reuse_keys(), vec![session_id.to_string()]);
     assert_eq!(
-        pool.held_sandbox_states()[0]
-            .reusable_sandbox
-            .history_generation_run_id,
-        Some(held_generation_run_id),
+        pool.held_sandbox_states()[0].reusable_sandbox.source_run_id,
+        held_generation_run_id,
         "the different generation must remain available for fallback after expiry"
     );
     drop(pool);
@@ -1336,7 +1322,6 @@ async fn selected_finalizing_preference_without_local_proof_records_actual_defer
     assert_eq!(event.reason.as_deref(), Some("no_publishable_predecessor"));
     assert_eq!(event.reuse_key.as_deref(), Some("thread:unknown-producer"));
     assert_eq!(event.runner_id.as_deref(), Some(TEST_RUNNER_ID));
-    assert_eq!(event.history_generation_run_id, Some(generation));
     shutdown(&env, run_handle).await;
 }
 
@@ -1435,9 +1420,9 @@ async fn dropped_reactor_recovers_a_finalizing_claim_without_dispatch() {
 async fn selected_finalizing_candidate_claims_while_predecessor_is_running() {
     let (config, env) = mock_run_config(test_profiles(), 4, 8192, 2);
     let reuse_key = "thread:pending-finalization";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -1454,7 +1439,7 @@ async fn selected_finalizing_candidate_claims_while_predecessor_is_running() {
         .send(finalizing_candidate(
             pending_run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -1528,9 +1513,9 @@ async fn finalizing_fallback_starts_fresh_sandbox_before_idle_destroy_finishes()
         mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, fresh_overrides);
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:finalizing-pressure-overlap";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -1555,7 +1540,7 @@ async fn finalizing_fallback_starts_fresh_sandbox_before_idle_destroy_finishes()
         .send(finalizing_candidate(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -1626,9 +1611,9 @@ async fn finalizing_capacity_wait_rechecks_when_an_active_sandbox_parks_idle() {
     assert_eq!(env.idle_pool.lock().await.len(), 0);
 
     let finalizing_reuse_key = "thread:waiting-finalizing-capacity";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(finalizing_reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -1645,7 +1630,7 @@ async fn finalizing_capacity_wait_rechecks_when_an_active_sandbox_parks_idle() {
         .send(finalizing_candidate(
             finalizing_run_id,
             finalizing_reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -2149,9 +2134,9 @@ async fn ordinary_and_finalizing_pressure_admission_do_not_double_spend_idle_cap
     }
 
     let finalizing_reuse_key = "thread:concurrent-finalizing-pressure";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(finalizing_reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2171,7 +2156,7 @@ async fn ordinary_and_finalizing_pressure_admission_do_not_double_spend_idle_cap
         .send(finalizing_candidate(
             finalizing_run_id,
             finalizing_reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -2242,9 +2227,9 @@ async fn cancelled_finalizing_capacity_wait_releases_retiring_leases_but_keeps_c
     )
     .await;
     let reuse_key = "thread:cancelled-finalizing-capacity";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/large".into(),
     );
@@ -2259,7 +2244,6 @@ async fn cancelled_finalizing_capacity_wait_releases_retiring_leases_but_keeps_c
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/large".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
-                .with_history_generation_run_id(Some(history_generation_run_id))
                 .with_runner_preference(ActiveRunnerPreference::new(
                     RunnerProcessIdentity::new(
                         TEST_RUNNER_ID.parse().unwrap(),
@@ -2267,7 +2251,7 @@ async fn cancelled_finalizing_capacity_wait_releases_retiring_leases_but_keeps_c
                     )
                     .unwrap(),
                     runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
-                        history_generation_run_id,
+                        native_generation_run_id,
                     ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
@@ -2302,9 +2286,9 @@ async fn cancelled_finalizing_capacity_wait_releases_retiring_leases_but_keeps_c
 async fn selected_ranked_finalizing_candidate_falls_back_at_deadline() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let reuse_key = "thread:ranked-finalizing-retained";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2317,19 +2301,16 @@ async fn selected_ranked_finalizing_candidate_falls_back_at_deadline() {
     let deadline = std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME;
     env.handle
         .discover_tx
-        .send(
-            ranked_candidate_until(
-                run_id,
-                Some(reuse_key),
-                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
-                    history_generation_run_id,
-                ),
-                TEST_RUNNER_ID,
-                TEST_HEARTBEAT_GENERATION,
-                deadline,
-            )
-            .with_history_generation_run_id(Some(history_generation_run_id)),
-        )
+        .send(ranked_candidate_until(
+            run_id,
+            Some(reuse_key),
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                native_generation_run_id,
+            ),
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+            deadline,
+        ))
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(2)).await;
     let claimed = env
@@ -2382,9 +2363,9 @@ async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
     .unwrap();
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache);
 
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2399,7 +2380,7 @@ async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
         .send(finalizing_candidate_until(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
             std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
@@ -2436,20 +2417,20 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
         mock_run_config_with_overrides(test_profiles(), 5, 8192, 2, Arc::clone(&overrides));
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:pending-exact-resource";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let status_path = env._temp_dir.path().join("status.json");
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
     push_job(
         &env,
-        history_generation_run_id,
+        native_generation_run_id,
         "vm0/default",
-        Some(context_with_reuse_key(history_generation_run_id, reuse_key)),
+        Some(context_with_reuse_key(native_generation_run_id, reuse_key)),
     );
     let _predecessor_cancel = wait_cancel_token(
         &env.cancel_tokens,
-        history_generation_run_id,
+        native_generation_run_id,
         Duration::from_secs(5),
     )
     .await;
@@ -2474,29 +2455,26 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
         Some(context_with_native_source(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
         )),
     );
     env.handle
         .discover_tx
-        .send(
-            ranked_candidate(
-                run_id,
-                Some(reuse_key),
-                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
-                    history_generation_run_id,
-                ),
-                TEST_RUNNER_ID,
-                TEST_HEARTBEAT_GENERATION,
-            )
-            .with_history_generation_run_id(Some(history_generation_run_id)),
-        )
+        .send(ranked_candidate(
+            run_id,
+            Some(reuse_key),
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                native_generation_run_id,
+            ),
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+        ))
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
     wait_status_idle_reuse_keys_and_active_runs(
         &status_path,
         &[],
-        &[history_generation_run_id.to_string()],
+        &[native_generation_run_id.to_string()],
         Duration::from_secs(5),
     )
     .await;
@@ -2513,7 +2491,7 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
     );
     let predecessor = env
         .handle
-        .wait_completion(history_generation_run_id, Duration::from_secs(5))
+        .wait_completion(native_generation_run_id, Duration::from_secs(5))
         .await
         .expect("predecessor should report completion after direct handoff");
     let handoff_sandbox_id = predecessor
@@ -2559,9 +2537,9 @@ async fn published_exact_remains_reusable_past_preference_deadline() {
         mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:published-past-preference-deadline";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2574,19 +2552,16 @@ async fn published_exact_remains_reusable_past_preference_deadline() {
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, reuse_key)));
     env.handle
         .discover_tx
-        .send(
-            ranked_candidate_until(
-                run_id,
-                Some(reuse_key),
-                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
-                    history_generation_run_id,
-                ),
-                TEST_RUNNER_ID,
-                TEST_HEARTBEAT_GENERATION,
-                std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
-            )
-            .with_history_generation_run_id(Some(history_generation_run_id)),
-        )
+        .send(ranked_candidate_until(
+            run_id,
+            Some(reuse_key),
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                native_generation_run_id,
+            ),
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+            std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
+        ))
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
 
@@ -2599,7 +2574,7 @@ async fn published_exact_remains_reusable_past_preference_deadline() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id,
+            native_generation_run_id,
             guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
             timing: None,
         },
@@ -2637,9 +2612,9 @@ async fn published_exact_remains_reusable_past_preference_deadline() {
 async fn no_exact_resolution_falls_back_before_predecessor_release() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let reuse_key = "thread:no-exact-before-release";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2655,7 +2630,7 @@ async fn no_exact_resolution_falls_back_before_predecessor_release() {
         .send(finalizing_candidate(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -2790,9 +2765,9 @@ async fn competing_finalizing_successors_reserve_exact_generation_once() {
         mock_run_config_with_overrides(test_profiles(), 8, 8192, 2, Arc::clone(&overrides));
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:competing-finalizing-successors";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2810,7 +2785,7 @@ async fn competing_finalizing_successors_reserve_exact_generation_once() {
             .send(finalizing_candidate(
                 run_id,
                 reuse_key,
-                history_generation_run_id,
+                native_generation_run_id,
                 TEST_RUNNER_ID,
                 TEST_HEARTBEAT_GENERATION,
             ))
@@ -2827,7 +2802,7 @@ async fn competing_finalizing_successors_reserve_exact_generation_once() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id,
+            native_generation_run_id,
             guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
             timing: None,
         },
@@ -2875,9 +2850,9 @@ async fn competing_finalizing_successors_reserve_exact_generation_once() {
 async fn hard_stop_cancels_claimed_finalizing_candidate_without_sandbox() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let reuse_key = "thread:hard-stop-finalizing";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2892,7 +2867,7 @@ async fn hard_stop_cancels_claimed_finalizing_candidate_without_sandbox() {
         .send(finalizing_candidate(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -2934,9 +2909,9 @@ async fn pre_sandbox_panic_completes_finalizing_claim_once_without_status() {
     config.test_hooks.outer_job_panic = Some(OuterJobPanicPoint::ClaimedWithoutSandbox);
     let status_path = env._temp_dir.path().join("status.json");
     let reuse_key = "thread:panic-before-sandbox";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -2951,7 +2926,7 @@ async fn pre_sandbox_panic_completes_finalizing_claim_once_without_status() {
         .send(finalizing_candidate(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -2991,7 +2966,7 @@ async fn unselected_exact_sandbox_preempts_finalizing_preference() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:exact-preempts-finalizing";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let reused_sandbox_id = seed_idle_pool_with_history_generation(
         &env.idle_pool,
         &budget,
@@ -2999,7 +2974,7 @@ async fn unselected_exact_sandbox_preempts_finalizing_preference() {
         "vm0/default",
         2,
         4096,
-        history_generation_run_id,
+        native_generation_run_id,
     )
     .await;
     let run_handle = tokio::spawn(run(config));
@@ -3010,18 +2985,15 @@ async fn unselected_exact_sandbox_preempts_finalizing_preference() {
         .set_claim_result(run_id, Some(context_with_reuse_key(run_id, reuse_key)));
     env.handle
         .discover_tx
-        .send(
-            ranked_candidate(
-                run_id,
-                Some(reuse_key),
-                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
-                    history_generation_run_id,
-                ),
-                &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
-                1,
-            )
-            .with_history_generation_run_id(Some(history_generation_run_id)),
-        )
+        .send(ranked_candidate(
+            run_id,
+            Some(reuse_key),
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                native_generation_run_id,
+            ),
+            &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
+            1,
+        ))
         .unwrap();
 
     let completion = env
@@ -3040,7 +3012,7 @@ async fn selected_finalizing_candidate_restores_exact_resource_after_claim_loss(
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:finalizing-claim-loss";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     seed_idle_pool_with_history_generation(
         &env.idle_pool,
         &budget,
@@ -3048,7 +3020,7 @@ async fn selected_finalizing_candidate_restores_exact_resource_after_claim_loss(
         "vm0/default",
         2,
         4096,
-        history_generation_run_id,
+        native_generation_run_id,
     )
     .await;
     let run_handle = tokio::spawn(run(config));
@@ -3061,7 +3033,7 @@ async fn selected_finalizing_candidate_restores_exact_resource_after_claim_loss(
         .send(finalizing_candidate(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3082,9 +3054,9 @@ async fn selected_finalizing_candidate_restores_exact_resource_after_claim_loss(
 async fn non_selected_finalizing_candidate_is_not_retained() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let reuse_key = "thread:non-selected-finalization";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -3099,7 +3071,7 @@ async fn non_selected_finalizing_candidate_is_not_retained() {
         .send(finalizing_candidate(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
             1,
         ))
@@ -3118,9 +3090,9 @@ async fn non_selected_finalizing_candidate_is_not_retained() {
 async fn same_run_duplicate_does_not_renew_claimed_finalizing_deadline() {
     let (config, env) = mock_run_config(test_profiles(), 4, 8192, 2);
     let reuse_key = "thread:pending-duplicate";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -3136,7 +3108,7 @@ async fn same_run_duplicate_does_not_renew_claimed_finalizing_deadline() {
         .send(finalizing_candidate_until(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
             original_deadline,
@@ -3158,7 +3130,7 @@ async fn same_run_duplicate_does_not_renew_claimed_finalizing_deadline() {
         .send(finalizing_candidate_until(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
             original_deadline + FINALIZING_TEST_PREFERENCE_LIFETIME,
@@ -3213,15 +3185,15 @@ async fn multiple_finalizing_candidates_can_be_claimed_concurrently() {
     let (config, env) = mock_run_config(test_profiles(), 6, 12288, 3);
     let first_reuse_key = "thread:pending-slot-first";
     let second_reuse_key = "thread:pending-slot-second";
-    let first_history_generation_run_id = RunId::new_v4();
-    let second_history_generation_run_id = RunId::new_v4();
+    let first_native_generation_run_id = RunId::new_v4();
+    let second_native_generation_run_id = RunId::new_v4();
     let first_guard = env.active_runs.register(
-        first_history_generation_run_id,
+        first_native_generation_run_id,
         Some(first_reuse_key.to_owned()),
         "vm0/default".into(),
     );
     let second_guard = env.active_runs.register(
-        second_history_generation_run_id,
+        second_native_generation_run_id,
         Some(second_reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -3238,7 +3210,7 @@ async fn multiple_finalizing_candidates_can_be_claimed_concurrently() {
         .send(finalizing_candidate(
             first_run_id,
             first_reuse_key,
-            first_history_generation_run_id,
+            first_native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3255,7 +3227,7 @@ async fn multiple_finalizing_candidates_can_be_claimed_concurrently() {
         .send(finalizing_candidate(
             second_run_id,
             second_reuse_key,
-            second_history_generation_run_id,
+            second_native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3301,9 +3273,9 @@ async fn multiple_finalizing_candidates_can_be_claimed_concurrently() {
 async fn drain_waits_for_claimed_finalizing_candidate() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let reuse_key = "thread:pending-drain";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let predecessor_guard = env.active_runs.register(
-        history_generation_run_id,
+        native_generation_run_id,
         Some(reuse_key.to_owned()),
         "vm0/default".into(),
     );
@@ -3318,7 +3290,7 @@ async fn drain_waits_for_claimed_finalizing_candidate() {
         .send(finalizing_candidate(
             run_id,
             reuse_key,
-            history_generation_run_id,
+            native_generation_run_id,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
         ))
@@ -3397,7 +3369,6 @@ async fn selected_finalizing_candidate_without_reuse_key_uses_ordinary_admission
         .discover_tx
         .send(
             runner_provider::JobCandidate::new(run_id, "vm0/default".into())
-                .with_history_generation_run_id(Some(RunId::new_v4()))
                 .with_runner_preference(ActiveRunnerPreference::new(
                     RunnerProcessIdentity::new(
                         TEST_RUNNER_ID.parse().unwrap(),
@@ -3652,17 +3623,14 @@ async fn expired_generation_protection_preserves_local_session_claim() {
     );
     env.handle
         .discover_tx
-        .send(
-            ranked_candidate_until(
-                run_id,
-                Some("sess-held-local"),
-                runner_provider::RunnerPreferenceTarget::ExactSandbox,
-                TEST_RUNNER_ID,
-                TEST_HEARTBEAT_GENERATION,
-                std::time::Instant::now() - Duration::from_secs(1),
-            )
-            .with_history_generation_run_id(Some(RunId::new_v4())),
-        )
+        .send(ranked_candidate_until(
+            run_id,
+            Some("sess-held-local"),
+            runner_provider::RunnerPreferenceTarget::SourceSandbox(RunId::new_v4()),
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+            std::time::Instant::now() - Duration::from_secs(1),
+        ))
         .unwrap();
 
     let completion = env

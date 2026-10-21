@@ -658,7 +658,7 @@ async fn finalize_sandbox_for_completion_inner(
         // Inflate the guest balloon BEFORE acquiring the pool lock —
         // the HTTP call to Firecracker can take milliseconds, and we
         // must not block other take/park operations on it.
-        let history_generation_run_id = match sandbox_reuse_disposition {
+        let native_generation_run_id = match sandbox_reuse_disposition {
             SandboxReuseDisposition::Eligible(SandboxReuseTerminal::Success) => Some(run_id),
             SandboxReuseDisposition::Eligible(
                 SandboxReuseTerminal::NonzeroExit
@@ -667,7 +667,7 @@ async fn finalize_sandbox_for_completion_inner(
             )
             | SandboxReuseDisposition::Ineligible(_) => None,
         };
-        let publishes_exact_sandbox = history_generation_run_id == Some(run_id);
+        let publishes_exact_sandbox = native_generation_run_id == Some(run_id);
         let park_request = IdleParkRequest::new(IdleParkRequestParts {
             run_id,
             sandbox,
@@ -681,7 +681,7 @@ async fn finalize_sandbox_for_completion_inner(
             source_ip,
             storage_fingerprints,
             restored_session_identity,
-            history_generation_run_id,
+            native_generation_run_id,
             guest_timezone_intent,
             home_image_size_bytes,
             home_promotion,
@@ -1899,7 +1899,7 @@ mod tests {
         {
             let mut idle_pool = fixture.idle_pool.lock().await;
             let reservation = idle_pool
-                .reserve_reusable_generation("sess-network-log-park", "vm0/default", &None, run_id)
+                .reserve_reusable_source("sess-network-log-park", "vm0/default", &None, run_id)
                 .expect("finalized sandbox should be reusable for its generation");
             assert_eq!(
                 reservation.guest_timezone_intent(),
@@ -3293,7 +3293,7 @@ mod tests {
             storage_fingerprints:
                 runner_storage::storage_fingerprints::StorageFingerprints::default(),
             restored_session_identity: None,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             home_image_size_bytes: TEST_HOME_IMAGE_SIZE as u64,
             home_promotion: Some(old_promotion),
@@ -3514,10 +3514,7 @@ mod tests {
         );
         let held = fixture.idle_pool.lock().await.held_sandbox_states();
         assert_eq!(held.len(), 1);
-        assert_eq!(
-            held[0].reusable_sandbox.history_generation_run_id,
-            Some(run_id),
-        );
+        assert_eq!(held[0].reusable_sandbox.source_run_id, run_id,);
         let entry = fixture
             .idle_pool
             .lock()

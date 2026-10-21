@@ -122,7 +122,6 @@ interface SandboxOperationDimensionInput {
   readonly handoff_path?: string;
   readonly runner_id?: string;
   readonly runner_heartbeat_generation?: number;
-  readonly history_generation_run_id?: string;
   readonly inventory_loaded?: boolean;
   readonly inventory_observed_states?: number;
   readonly inventory_output_states?: number;
@@ -351,9 +350,6 @@ function homeObservationDimensions(
       : {
           runner_heartbeat_generation: String(op.runner_heartbeat_generation),
         }),
-    ...(op.history_generation_run_id === undefined
-      ? {}
-      : { history_generation_run_id: op.history_generation_run_id }),
     ...(op.inventory_loaded === undefined
       ? {}
       : { inventory_loaded: op.inventory_loaded }),

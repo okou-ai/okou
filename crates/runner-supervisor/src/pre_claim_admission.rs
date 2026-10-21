@@ -682,7 +682,6 @@ async fn prepare_ranked_preference_candidate(
         ctx,
     } = request;
     let selected = preference.targets(ctx.runner_identity);
-    let history_generation_run_id = candidate.history_generation_run_id();
     let source_run_id = preference.target().source_run_id();
 
     if let Some(source) = source_run_id
@@ -697,30 +696,6 @@ async fn prepare_ranked_preference_candidate(
             profile_name,
             device_rate_limits,
             source,
-        )
-        .await
-    {
-        return if reservation.guest_timezone_intent().is_usable_prediction() {
-            exact_speculative_preparation(candidate, reservation)
-        } else {
-            reusable_preparation(candidate, reservation)
-        };
-    }
-
-    // Reachable old API preferences retain their native-history meaning until #41876.
-    if source_run_id.is_none()
-        && ranked_preference_allows(
-            advertised_tier,
-            RunnerPreferenceTier::ExactSandbox,
-            selected,
-        )
-        && let Some(history_generation_run_id) = history_generation_run_id
-        && let Some(reservation) = reserve_reusable_idle_for_spawn(
-            ctx.idle_pool,
-            reuse_key,
-            profile_name,
-            device_rate_limits,
-            Some(history_generation_run_id),
         )
         .await
     {
@@ -749,7 +724,6 @@ async fn prepare_ranked_preference_candidate(
             preference.deadline(),
             reuse_key,
             source_run_id,
-            history_generation_run_id.filter(|generation| *generation == source_run_id),
         );
     }
     // Publication can resolve the selected producer between discovery and
@@ -804,7 +778,6 @@ async fn prepare_ranked_preference_candidate(
             reuse_key,
             profile_name,
             device_rate_limits,
-            None,
         )
         .await
     {
@@ -963,7 +936,6 @@ fn finalizing_preparation(
     deadline: Instant,
     reuse_key: &str,
     source_run_id: RunId,
-    history_generation_run_id: Option<RunId>,
 ) -> PreferencePreparation {
     PreferencePreparation::Ready(PreparedCandidate {
         home_source_run_id: None,
@@ -973,7 +945,8 @@ fn finalizing_preparation(
             deadline,
             reuse_key: reuse_key.to_owned(),
             source_run_id,
-            history_generation_run_id,
+            // Native handoff is established only by the authoritative claim.
+            native_generation_run_id: None,
         })),
         peer_home_preference: None,
         blank_pool_selection: None,
@@ -1030,7 +1003,6 @@ fn record_home_admission_deferral(
         HomeObservationOutcome::Deferred,
     );
     observation.run_id = Some(candidate.run_id());
-    observation.history_generation_run_id = candidate.history_generation_run_id();
     observation.reuse_key = candidate.reuse_key().map(str::to_owned);
     observation.profile_name = Some(candidate.profile_name().to_owned());
     observation.runner_id = Some(ctx.runner_identity.runner_id().to_string());
@@ -1079,7 +1051,6 @@ async fn acquire_local_admission_resource(
             reuse_key,
             profile_name,
             device_rate_limits,
-            history_generation_run_id: None,
             allow_compatible_blank,
             blank_pool_diagnostics: Some(ctx.blank_pool_diagnostics),
             vcpu: job_vcpu,

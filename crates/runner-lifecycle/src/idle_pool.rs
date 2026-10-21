@@ -110,7 +110,7 @@ pub enum ExactIdleReservationMiss {
     Absent,
     ProfileMismatch,
     DeviceLimitMismatch,
-    HistoryGenerationMismatch,
+    NativeGenerationMismatch,
     SourceMismatch,
 }
 
@@ -132,7 +132,7 @@ impl ExactIdleReservationMiss {
             Self::Absent => "absent",
             Self::ProfileMismatch => "profile_mismatch",
             Self::DeviceLimitMismatch => "device_limit_mismatch",
-            Self::HistoryGenerationMismatch => "history_generation_mismatch",
+            Self::NativeGenerationMismatch => "history_generation_mismatch",
             Self::SourceMismatch => "source_mismatch",
         }
     }
@@ -237,38 +237,6 @@ impl IdlePool {
         Some(ReservedIdleSandbox::parked(entry))
     }
 
-    pub fn reserve_reusable_generation(
-        &mut self,
-        reuse_key: &str,
-        profile_name: &str,
-        device_rate_limits: &Option<DeviceRateLimits>,
-        history_generation_run_id: RunId,
-    ) -> Option<ReservedIdleSandbox> {
-        self.reserve_reusable_generation_with_reason(
-            reuse_key,
-            profile_name,
-            device_rate_limits,
-            history_generation_run_id,
-        )
-        .ok()
-    }
-
-    pub fn reserve_reusable_generation_with_reason(
-        &mut self,
-        reuse_key: &str,
-        profile_name: &str,
-        device_rate_limits: &Option<DeviceRateLimits>,
-        history_generation_run_id: RunId,
-    ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
-        self.reserve_matching_reusable(
-            reuse_key,
-            profile_name,
-            device_rate_limits,
-            None,
-            Some(history_generation_run_id),
-        )
-    }
-
     /// Verify the producing Run and reserve from the same exclusive observation.
     pub fn reserve_reusable_source(
         &mut self,
@@ -281,7 +249,7 @@ impl IdlePool {
             reuse_key,
             profile_name,
             device_rate_limits,
-            Some(source_run_id),
+            source_run_id,
             None,
         )
     }
@@ -298,7 +266,7 @@ impl IdlePool {
             reuse_key,
             profile_name,
             device_rate_limits,
-            Some(source_run_id),
+            source_run_id,
             Some(source_run_id),
         )
     }
@@ -308,8 +276,8 @@ impl IdlePool {
         reuse_key: &str,
         profile_name: &str,
         device_rate_limits: &Option<DeviceRateLimits>,
-        source_run_id: Option<RunId>,
-        history_generation_run_id: Option<RunId>,
+        source_run_id: RunId,
+        native_generation_run_id: Option<RunId>,
     ) -> Result<ReservedIdleSandbox, ExactIdleReservationMiss> {
         let entry = match self.exact_entries.entry(reuse_key.to_owned()) {
             Entry::Vacant(_) => return Err(ExactIdleReservationMiss::Absent),
@@ -320,13 +288,13 @@ impl IdlePool {
                 if entry.get().device_rate_limits() != device_rate_limits {
                     return Err(ExactIdleReservationMiss::DeviceLimitMismatch);
                 }
-                if source_run_id.is_some() && entry.get().metadata.source_run_id != source_run_id {
+                if entry.get().metadata.source_run_id != Some(source_run_id) {
                     return Err(ExactIdleReservationMiss::SourceMismatch);
                 }
-                if history_generation_run_id.is_some()
-                    && entry.get().metadata.history_generation_run_id != history_generation_run_id
+                if native_generation_run_id.is_some()
+                    && entry.get().metadata.native_generation_run_id != native_generation_run_id
                 {
-                    return Err(ExactIdleReservationMiss::HistoryGenerationMismatch);
+                    return Err(ExactIdleReservationMiss::NativeGenerationMismatch);
                 }
                 entry.remove()
             }
@@ -341,16 +309,9 @@ impl IdlePool {
         reuse_key: Option<&str>,
         profile_name: &str,
         device_rate_limits: &Option<DeviceRateLimits>,
-        history_generation_run_id: Option<RunId>,
     ) -> Option<ReservedIdleSandbox> {
-        reuse_key.and_then(|reuse_key| match history_generation_run_id {
-            Some(history_generation_run_id) => self.reserve_reusable_generation(
-                reuse_key,
-                profile_name,
-                device_rate_limits,
-                history_generation_run_id,
-            ),
-            None => self.reserve_reusable(reuse_key, profile_name, device_rate_limits),
+        reuse_key.and_then(|reuse_key| {
+            self.reserve_reusable(reuse_key, profile_name, device_rate_limits)
         })
     }
 
@@ -611,7 +572,6 @@ impl IdlePool {
                         reusable_sandbox: ReusableSandboxState {
                             profile: entry.metadata.profile_name.clone(),
                             source_run_id,
-                            history_generation_run_id: entry.metadata.history_generation_run_id,
                         },
                     })
             })

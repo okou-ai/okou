@@ -28,10 +28,10 @@
 //! was delivered before the receiver was closed, the handoff request recovers it so the supervisor
 //! can destroy it rather than lose ownership.
 //!
-//! Every exact resource is reserved for the claimed successor's reuse key, profile, device
-//! limits, and history-generation run ID. A handed-off candidate is checked against the
-//! actual producer and claimed successor before activation; physical transfer grants no native
-//! history authority and retains ordinary guest restoration. Reserved candidates are
+//! Every exact native resource is reserved for the claimed successor's reuse key, profile, device
+//! limits, producing source Run, and authoritative native generation. A handed-off candidate is
+//! checked against the actual producer and claimed successor before activation; physical transfer
+//! grants no native history authority and retains ordinary guest restoration. Reserved candidates are
 //! rolled back on cancellation, while identity mismatches, activation failures, preparation
 //! errors, and panics destroy or recover the candidate through the activation guards before the
 //! claimed job is completed without a sandbox. Finalizing handoff outcomes are recorded even
@@ -484,7 +484,7 @@ async fn prepare_finalizing_resource(
 
     // The provider claim owns native intent; physical handoff does not grant
     // exact native-generation classification from a discovery projection.
-    admission.history_generation_run_id = claimed
+    admission.native_generation_run_id = claimed
         .context()
         .native_continuation
         .as_ref()
@@ -496,7 +496,7 @@ async fn prepare_finalizing_resource(
     info!(
         run_id = %run_id,
         predecessor_run_id = %admission.source_run_id,
-        native_generation_matches_source = admission.history_generation_run_id.is_some(),
+        native_generation_matches_source = admission.native_generation_run_id.is_some(),
         "finalizing successor claimed before sandbox publication"
     );
     let selection = FinalizingSelectionRequest {

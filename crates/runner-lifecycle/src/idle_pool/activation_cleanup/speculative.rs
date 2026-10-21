@@ -75,21 +75,6 @@ impl GuardedSpeculativeIdleOwner {
         Self::validate(owner).map_err(|error| error.to_string())
     }
 
-    pub fn matches_claim(
-        &self,
-        reuse_key: Option<&str>,
-        history: Option<RunId>,
-        profile: &str,
-    ) -> bool {
-        self.owner.as_ref().is_some_and(|owner| {
-            reuse_key.is_some()
-                && history.is_some()
-                && owner.metadata.reuse_key() == reuse_key
-                && owner.metadata.history_generation_run_id == history
-                && owner.metadata.profile_name == profile
-        })
-    }
-
     pub fn matches_source_claim(
         &self,
         reuse_key: Option<&str>,
