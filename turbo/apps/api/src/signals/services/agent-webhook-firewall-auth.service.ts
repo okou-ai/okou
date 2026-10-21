@@ -4184,27 +4184,18 @@ async function prepareFirewallAuthResolutionContext(args: {
   };
 }
 
-async function resolveMatchedBuiltinConnectorVariables(
-  db: Db,
-  body: FirewallAuthBody,
-  context: FirewallAuthResolutionContext,
-): Promise<Record<string, string> | undefined> {
-  const matchedFirewall = body.matchedFirewall;
-  if (matchedFirewall?.connectorSlug === undefined) {
-    return body.vars ?? {};
-  }
-  const connectorSlug = matchedFirewall.connectorSlug;
-  const connectorAccess = context.connectorAccessBySlug.get(connectorSlug);
-  if (connectorAccess === undefined) {
-    return undefined;
-  }
-  const referencedBindings =
-    connectorAccess.runtimeMetadata.runtimeBindings.filter((binding) => {
+function matchedVariableReadPlan(
+  runtimeMetadata: ConnectorAuthMethodRuntimeMetadata,
+  referencedVars: ReadonlySet<string>,
+) {
+  const referencedBindings = runtimeMetadata.runtimeBindings.filter(
+    (binding) => {
       return (
         binding.source.kind === "connector-variable" &&
-        context.referenced.vars.has(binding.envName)
+        referencedVars.has(binding.envName)
       );
-    });
+    },
+  );
   const storageNames = [
     ...new Set(
       referencedBindings.flatMap((binding) => {
@@ -4214,22 +4205,15 @@ async function resolveMatchedBuiltinConnectorVariables(
       }),
     ),
   ];
-  const rows =
-    storageNames.length === 0
-      ? []
-      : await db
-          .select({ name: variablesTable.name, value: variablesTable.value })
-          .from(variablesTable)
-          .where(
-            builtinConnectorCredentialVariableReadCondition({
-              groups: [
-                {
-                  access: connectorAccess.access,
-                  names: storageNames,
-                },
-              ],
-            }),
-          );
+  return { referencedBindings, storageNames };
+}
+
+function matchedVariablesFromRows(
+  rows: readonly { readonly name: string; readonly value: string }[],
+  body: FirewallAuthBody,
+  matchedFirewall: NonNullable<FirewallAuthBody["matchedFirewall"]>,
+  referencedBindings: ConnectorAuthMethodRuntimeMetadata["runtimeBindings"],
+): Record<string, string> | undefined {
   const currentValuesByName = new Map(
     rows.map((row) => {
       return [row.name, row.value] as const;
@@ -5784,11 +5768,47 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
   if (missingSecretsResponse) {
     return { ok: false, response: missingSecretsResponse };
   }
-  const vars = await resolveMatchedBuiltinConnectorVariables(
-    args.db,
-    args.body,
-    args.prepared.context,
-  );
+  const variableDb = args.db;
+  const variableBody = args.body;
+  const variableContext = args.prepared.context;
+  const vars = await (async (): Promise<Record<string, string> | undefined> => {
+    const matchedFirewall = variableBody.matchedFirewall;
+    if (matchedFirewall?.connectorSlug === undefined) {
+      return variableBody.vars ?? {};
+    }
+    const connectorSlug = matchedFirewall.connectorSlug;
+    const connectorAccess =
+      variableContext.connectorAccessBySlug.get(connectorSlug);
+    if (connectorAccess === undefined) {
+      return undefined;
+    }
+    const { referencedBindings, storageNames } = matchedVariableReadPlan(
+      connectorAccess.runtimeMetadata,
+      variableContext.referenced.vars,
+    );
+    const rows =
+      storageNames.length === 0
+        ? []
+        : await variableDb
+            .select({ name: variablesTable.name, value: variablesTable.value })
+            .from(variablesTable)
+            .where(
+              builtinConnectorCredentialVariableReadCondition({
+                groups: [
+                  {
+                    access: connectorAccess.access,
+                    names: storageNames,
+                  },
+                ],
+              }),
+            );
+    return matchedVariablesFromRows(
+      rows,
+      variableBody,
+      matchedFirewall,
+      referencedBindings,
+    );
+  })();
   if (vars === undefined) {
     return { ok: false, response: connectorNotConfigured() };
   }
