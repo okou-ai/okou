@@ -157,7 +157,7 @@ describe("retained chat input observation", () => {
         eventId: first.eventId,
         input: { eventId: first.eventId },
         status: "consumed",
-        run: { status: "pending" },
+        terminal: null,
       });
       if (assigned.status !== "consumed") {
         throw new Error("Expected the accepted input to identify its Run");
@@ -179,7 +179,7 @@ describe("retained chat input observation", () => {
       ).resolves.toMatchObject({
         status: "queued",
         runId: null,
-        run: null,
+        terminal: null,
       });
       await runs.nextSteerableInput(claimed.claim.sandboxToken, assigned.runId);
       await runs.declareSteeredInput(
@@ -194,7 +194,7 @@ describe("retained chat input observation", () => {
         input: { eventId: second.eventId },
         status: "consumed",
         runId: assigned.runId,
-        run: { status: "running" },
+        terminal: null,
       });
       expect(long.replacement?.eventId).not.toBe(second.eventId);
       expect(Buffer.byteLength(JSON.stringify(long))).toBe(
@@ -211,16 +211,41 @@ describe("retained chat input observation", () => {
       );
       await lifecycle.completeChatRunOk(assigned.runId, claimed.sandboxHeaders);
       await flushWaitUntilForTest();
+      const events = await chat.listThreadEventRows(f.actor, first.threadId);
+      const terminal = events.find((event) => {
+        return (
+          event.runId === assigned.runId && event.eventType === "run.completed"
+        );
+      });
+      if (!terminal) {
+        throw new Error("Expected the public Chat completion event");
+      }
       for (const eventId of [first.eventId, second.eventId]) {
         await expect(
           read(f.token(), first.threadId, eventId),
         ).resolves.toMatchObject({
           eventId,
-          status: "consumed",
+          status: "completed",
           runId: assigned.runId,
-          run: { status: "completed", completedAt: expect.any(String) },
+          terminal: {
+            eventId: terminal.id,
+            seqId: terminal.seqId,
+            createdAt: terminal.createdAt,
+          },
         });
       }
+      expect(
+        toolBody(
+          await mcp.call(f.token(), "get_chat_input_status", {
+            threadId: first.threadId,
+            eventId: second.eventId,
+          }),
+        ),
+      ).toMatchObject({
+        status: "completed",
+        runId: assigned.runId,
+        terminal: { eventId: terminal.id },
+      });
       expect((await chat.readThread(f.actor, first.threadId)).lastReadAt).toBe(
         before.lastReadAt,
       );
@@ -228,7 +253,7 @@ describe("retained chat input observation", () => {
   });
 
   it.each(["failed", "cancelled"] as const)(
-    "returns the matching Run's %s outcome without its error body",
+    "returns the matching Chat %s event without its error body",
     async (status) => {
       const f = await fixture();
       await f.run(async () => {
@@ -247,19 +272,106 @@ describe("retained chat input observation", () => {
           );
         } else {
           await runs.requestCancelRun(f.actor, run.runId, [200]);
+          await expect(
+            read(f.token(), run.threadId, eventId),
+          ).resolves.toMatchObject({
+            status: "consumed",
+            runId: run.runId,
+            terminal: null,
+          });
+          await lifecycle.failChatRun(
+            run.runId,
+            claim.sandboxHeaders,
+            "private failure detail",
+          );
         }
         await flushWaitUntilForTest();
         const result = await read(f.token(), run.threadId, eventId);
         expect(result).toMatchObject({
           eventId,
-          status: "consumed",
+          status,
           runId: run.runId,
-          run: { status, completedAt: expect.any(String) },
+          terminal: {
+            eventId: expect.any(String),
+            seqId: expect.any(Number),
+            createdAt: expect.any(String),
+          },
         });
         expect(JSON.stringify(result)).not.toContain("private failure detail");
       });
     },
   );
+
+  it("keeps each input's Chat outcome when a later execution uses the same thread", async () => {
+    const f = await fixture();
+    await f.run(async () => {
+      const firstEventId = randomUUID();
+      const first = await f.sendChatRun(f.actor, {
+        agentId: f.agentId,
+        prompt: "Complete the first request",
+        clientEventId: firstEventId,
+      });
+      const firstClaim = await f.claimChatRun(f.runnerGroup, first.runId);
+      await lifecycle.completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+      await flushWaitUntilForTest();
+      const completed = await read(f.token(), first.threadId, firstEventId);
+      expect(completed).toMatchObject({
+        status: "completed",
+        runId: first.runId,
+        terminal: { eventId: expect.any(String) },
+      });
+
+      const nextEventId = randomUUID();
+      const next = await f.sendChatRun(f.actor, {
+        agentId: f.agentId,
+        threadId: first.threadId,
+        prompt: "Start a separate execution",
+        clientEventId: nextEventId,
+      });
+      expect(next.runId).not.toBe(first.runId);
+      await expect(
+        read(f.token(), first.threadId, nextEventId),
+      ).resolves.toMatchObject({
+        status: "consumed",
+        runId: next.runId,
+        terminal: null,
+      });
+      await expect(
+        read(f.token(), first.threadId, firstEventId),
+      ).resolves.toStrictEqual(completed);
+
+      const nextClaim = await f.claimChatRun(f.runnerGroup, next.runId);
+      await lifecycle.failChatRun(
+        next.runId,
+        nextClaim.sandboxHeaders,
+        "The later request failed",
+      );
+      await flushWaitUntilForTest();
+      await expect(
+        read(f.token(), first.threadId, nextEventId),
+      ).resolves.toMatchObject({
+        status: "failed",
+        runId: next.runId,
+        terminal: { eventId: expect.any(String) },
+      });
+
+      context.mocks.s3.send.mockRejectedValue(
+        new Error("Snapshot provider is unavailable"),
+      );
+      await expect(
+        read(f.token(), first.threadId, firstEventId),
+      ).resolves.toStrictEqual(completed);
+      await expect(
+        read(f.token(), first.threadId, randomUUID()),
+      ).resolves.toMatchObject({
+        status: "unavailable",
+        input: null,
+        replacement: null,
+        runId: null,
+        terminal: null,
+      });
+    });
+  });
 
   it("distinguishes an unassigned queued input, its recall and unavailable evidence", async () => {
     const f = await fixture();
@@ -287,7 +399,7 @@ describe("retained chat input observation", () => {
         input: { eventId },
         replacement: null,
         runId: null,
-        run: null,
+        terminal: null,
       });
       toolBody(
         await mcp.call(f.token(), "revoke_queued_message", {
@@ -301,7 +413,7 @@ describe("retained chat input observation", () => {
       ).resolves.toMatchObject({
         status: "revoked",
         runId: null,
-        run: null,
+        terminal: null,
         replacement: { eventId: expect.any(String) },
       });
       await expect(
@@ -311,7 +423,7 @@ describe("retained chat input observation", () => {
         input: null,
         replacement: null,
         runId: null,
-        run: null,
+        terminal: null,
       });
     });
   });
@@ -350,7 +462,7 @@ describe("retained chat input observation", () => {
         input: { eventId },
         replacement: { eventId: expect.any(String) },
         runId: null,
-        run: null,
+        terminal: null,
       });
     });
   });
@@ -402,6 +514,18 @@ describe("retained chat input observation", () => {
       if (!known.replacement) {
         throw new Error("Expected a consuming event coordinate");
       }
+      const otherThread = await chat.createThread(f.actor, {
+        agentId: f.agentId,
+      });
+      await expect(
+        read(f.token(), otherThread.id, eventId),
+      ).resolves.toMatchObject({
+        status: "unavailable",
+        input: null,
+        replacement: null,
+        runId: null,
+        terminal: null,
+      });
       expect(
         (
           await mcp.web(

@@ -1,8 +1,9 @@
 import type { ChatInputStatusResponse } from "@okouai/api-contracts/contracts/chat-input-status";
-import { runStatusSchema } from "@okouai/api-contracts/contracts/runs";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEvents,
+  chatEventTerminalPredicate,
+} from "@okouai/db/schema/chat-event";
 import { agents } from "@okouai/db/schema/agent";
 import { computed, type Computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
@@ -22,30 +23,29 @@ interface EventCoordinate {
   readonly createdAt: Date;
 }
 
-function coordinate(event: EventCoordinate | null) {
-  return event === null
-    ? null
-    : {
-        eventId: event.id,
-        seqId: event.seqId,
-        createdAt: event.createdAt.toISOString(),
-      };
+function coordinate(event: EventCoordinate) {
+  return {
+    eventId: event.id,
+    seqId: event.seqId,
+    createdAt: event.createdAt.toISOString(),
+  };
 }
 
-function runMetadata(
-  run: Pick<
-    typeof agentRuns.$inferSelect,
-    "status" | "createdAt" | "startedAt" | "completedAt"
-  > | null,
-) {
-  return run === null
-    ? null
-    : {
-        status: runStatusSchema.parse(run.status),
-        createdAt: run.createdAt.toISOString(),
-        startedAt: run.startedAt?.toISOString() ?? null,
-        completedAt: run.completedAt?.toISOString() ?? null,
-      };
+function terminalStatus(eventType: string) {
+  switch (eventType) {
+    case "run.completed": {
+      return "completed" as const;
+    }
+    case "run.failed": {
+      return "failed" as const;
+    }
+    case "run.cancelled": {
+      return "cancelled" as const;
+    }
+    default: {
+      throw new Error("Observed Chat terminal event has an invalid type");
+    }
+  }
 }
 
 /** One statement snapshot; no payloads, history pagination, writes or archive I/O. */
@@ -56,6 +56,7 @@ export function chatInputStatus(
     const args = await get(identity$);
     const original = alias(chatEvents, "observed_input");
     const replacement = alias(chatEvents, "observed_input_replacement");
+    const terminal = alias(chatEvents, "observed_input_terminal");
     const [observed] = await get(db$)
       .select({
         threadId: chatThreads.id,
@@ -73,12 +74,11 @@ export function chatInputStatus(
           eventType: replacement.eventType,
           runId: replacement.runId,
         },
-        run: {
-          id: agentRuns.id,
-          status: agentRuns.status,
-          createdAt: agentRuns.createdAt,
-          startedAt: agentRuns.startedAt,
-          completedAt: agentRuns.completedAt,
+        terminal: {
+          id: terminal.id,
+          seqId: terminal.seqId,
+          createdAt: terminal.createdAt,
+          eventType: terminal.eventType,
         },
       })
       .from(chatThreads)
@@ -101,12 +101,11 @@ export function chatInputStatus(
         ),
       )
       .leftJoin(
-        agentRuns,
+        terminal,
         and(
-          eq(agentRuns.id, replacement.runId),
-          eq(agentRuns.chatThreadId, chatThreads.id),
-          eq(agentRuns.userId, args.userId),
-          eq(agentRuns.orgId, args.orgId),
+          eq(terminal.runId, replacement.runId),
+          eq(terminal.chatThreadId, chatThreads.id),
+          chatEventTerminalPredicate(terminal.eventType),
         ),
       )
       .where(
@@ -133,17 +132,24 @@ export function chatInputStatus(
     const base = {
       threadId: observed.threadId,
       eventId: args.eventId,
-      input: coordinate(source),
-      replacement: coordinate(consumer),
+      input: source ? coordinate(source) : null,
+      replacement: consumer ? coordinate(consumer) : null,
     };
     let response: ChatInputStatusResponse;
     if (consumer?.eventType === "input.prompt" && consumer.runId !== null) {
-      response = {
-        ...base,
-        status: "consumed",
-        runId: consumer.runId,
-        run: runMetadata(observed.run),
-      };
+      response = observed.terminal
+        ? {
+            ...base,
+            status: terminalStatus(observed.terminal.eventType),
+            runId: consumer.runId,
+            terminal: coordinate(observed.terminal),
+          }
+        : {
+            ...base,
+            status: "consumed",
+            runId: consumer.runId,
+            terminal: null,
+          };
     } else {
       let status: "queued" | "rejected" | "revoked" | "unavailable";
       if (consumer?.eventType === "input.rejected") {
@@ -155,7 +161,7 @@ export function chatInputStatus(
       } else {
         status = source ? "queued" : "unavailable";
       }
-      response = { ...base, status, runId: null, run: null };
+      response = { ...base, status, runId: null, terminal: null };
     }
     return { kind: "observed" as const, response };
   });

@@ -920,7 +920,7 @@ describe("workflow queue", () => {
     expect(
       (await readInputStatus(webhookAutomation.threadId, orphanedEvent.id))
         .body,
-    ).toMatchObject({ status: "revoked", runId: null, run: null });
+    ).toMatchObject({ status: "revoked", runId: null, terminal: null });
     await expect(
       pendingAutomationEvents(webhookAutomation.threadId),
     ).resolves.toStrictEqual([scheduleEvent]);
@@ -1010,7 +1010,7 @@ describe("workflow queue", () => {
 
     expect(
       (await readInputStatus(threadId, queuedEvent.id)).body,
-    ).toMatchObject({ status: "revoked", runId: null, run: null });
+    ).toMatchObject({ status: "revoked", runId: null, terminal: null });
     const events = await wf.readThreadEvents(threadId);
     expect(
       events.filter((event) => {
@@ -1048,7 +1048,7 @@ describe("workflow queue", () => {
     await completeRunThroughSandbox(scenario, runningRunId);
     expect(
       (await readInputStatus(automation.threadId, queuedEvent.id)).body,
-    ).toMatchObject({ status: "revoked", runId: null, run: null });
+    ).toMatchObject({ status: "revoked", runId: null, terminal: null });
     const events = await wf.readThreadEvents(automation.threadId);
     expect(events).toContainEqual(
       expect.objectContaining({
