@@ -299,6 +299,52 @@ class PromotionTest(unittest.TestCase):
             b"compiled-device-code",
         )
 
+    def test_binary_and_repeated_blobs_preserve_exact_input_fingerprints(self):
+        for name in ("ios/data space\nfile.bin", "ios/copy.bin"):
+            (self.repo / name).write_bytes(b"\x00\nblob 123\n\xff\n")
+        self.file("ios/CHANGELOG.md", "excluded release notes\n")
+        self.file("ios/check.sh", "#!/bin/sh\nexit 0\n")
+        (self.repo / "ios/check.sh").chmod(0o755)
+        self.commit()
+        actual = self.capture()
+        archive, tests = [], []
+        entries = subprocess.check_output(
+            ["git", "ls-tree", "-r", "-z", "HEAD"], cwd=self.repo
+        )
+        for entry in entries.split(b"\0"):
+            if not entry:
+                continue
+            header, raw_path = entry.split(b"\t", 1)
+            path = raw_path.decode()
+            if (
+                not (
+                    path.startswith("ios/")
+                    or path
+                    in (".github/workflows/ios.yml", "release-please-config.json")
+                )
+                or path == "ios/CHANGELOG.md"
+            ):
+                continue
+            mode, _, oid = header.decode().split()
+            data = subprocess.check_output(
+                ["git", "cat-file", "blob", oid], cwd=self.repo
+            )
+            archive.append([path, mode, hashlib.sha256(data).hexdigest()])
+            if path == "ios/version.txt":
+                data = b"<release-version>\n"
+            elif path == "ios/Config/Shared.xcconfig":
+                data = data.replace(
+                    b"MARKETING_VERSION = 1.0.0",
+                    b"MARKETING_VERSION = <release-version>",
+                )
+            tests.append([path, mode, hashlib.sha256(data).hexdigest()])
+        tools = json.loads((self.root / "toolchain.json").read_bytes())
+        for key, files in (("archiveInputSha256", archive), ("testInputSha256", tests)):
+            expected = (
+                json.dumps([files, tools], sort_keys=True, indent=2) + "\n"
+            ).encode()
+            self.assertEqual(actual[key], hashlib.sha256(expected).hexdigest())
+
     def test_shallow_release_checkout_fetches_prior_tests_and_publishes(self):
         builder = self.git("rev-parse", "HEAD")
         old = self.capture()
