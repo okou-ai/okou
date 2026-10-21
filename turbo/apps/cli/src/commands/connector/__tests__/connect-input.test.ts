@@ -7,7 +7,7 @@ import { server } from "../../../mocks/server";
 import {
   catalogStatusItem,
   manualAuthMethod,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
 import {
   customConnector,
@@ -16,7 +16,7 @@ import {
 } from "../../__tests__/helpers/custom-connectors";
 import { connectCommand } from "../connect";
 import {
-  stubConnectorAccountSummaries,
+  stubConnectorAccounts,
   stubConnectorAccountDetails,
 } from "../../__tests__/helpers/connector-accounts";
 
@@ -30,10 +30,7 @@ describe("connector connect safe input and custom member accounts", () => {
     directory = mkdtempSync(join(tmpdir(), "connector-input-"));
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    server.use(
-      stubConnectorAccountSummaries([]),
-      stubConnectorAccountDetails(),
-    );
+    server.use(stubConnectorAccounts([]), stubConnectorAccountDetails());
     for (const key of [
       "add",
       "reconnect",
@@ -45,7 +42,7 @@ describe("connector connect safe input and custom member accounts", () => {
       connectCommand.setOptionValue(key, undefined);
     connectCommand.setOptionValueWithSource("value", [], "default");
     server.use(
-      stubConnectorCatalogStatus([
+      stubConnectorCatalog([
         catalogStatusItem({
           connectorSlug: "openai",
           authMethods: [manualAuthMethod("api-token")],

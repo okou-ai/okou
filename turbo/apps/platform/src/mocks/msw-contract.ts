@@ -160,7 +160,7 @@ class ContractHttpHandler extends HttpHandler {
 function routePattern(route: AppRoute): string | RegExp {
   if (route.path === "/api/connector-accounts/:connectionId") {
     // Account detail cannot swallow static list endpoints.
-    return /\/api\/connector-accounts\/(?!connections$|summaries$)([^/]+)$/;
+    return /\/api\/connector-accounts\/(?!connections$)([^/]+)$/;
   }
   if (route.path === "/api/chat-threads/:id") {
     // Keep thread detail mocks from swallowing static sibling routes while

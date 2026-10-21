@@ -424,23 +424,35 @@ export function applyGeometry(
     );
     if (tableIndex !== page.tables.length)
       throw new Error("Measured table was omitted by the renderer");
-    entries.set(
-      name,
-      Buffer.from(
-        applyNativePaint(
-          separateRoundedText(
-            xml,
-            page.roundedTextShapes,
-            scale,
-            offsetX,
-            offsetY,
-          ),
-          nativePaint[String(pageIndex + 1)],
-          scale,
-        ),
-        "utf8",
-      ),
+    const painted = applyNativePaint(
+      separateRoundedText(xml, page.roundedTextShapes, scale, offsetX, offsetY),
+      nativePaint[String(pageIndex + 1)],
+      scale,
     );
+    // Optional per-shape provenance survives independently of embedded font
+    // aliases. Older editors ignore the extension; the upload adapter reads it
+    // from the original PPTX before Google rewrites shape identifiers.
+    const annotated = painted.replace(/<p:sp\b[\s\S]*?<\/p:sp>/gu, (shape) => {
+      const identity = /<p:cNvPr\b[^>]*\bname="([^"]+)"/u.exec(shape)?.[1];
+      const source =
+        identity === undefined
+          ? undefined
+          : nativePaint[String(pageIndex + 1)]?.[identity]?.textSource;
+      if (!source || !shape.includes("<a:t>")) return shape;
+      const runs = source.runs
+        .map((run) => {
+          return `<okou:run family="${xmlValue(run.family)}" weight="${run.weight}" italic="${run.italic ? "1" : "0"}">${xmlValue(run.text)}</okou:run>`;
+        })
+        .join("");
+      const extension = `<p:ext uri="https://okou.ai/presentation/text-source/v1"><okou:text xmlns:okou="https://okou.ai/presentation/text-source/v1" line="${xmlValue(source.line)}">${runs}</okou:text></p:ext>`;
+      return shape.includes("</p:extLst>")
+        ? shape.replace("</p:extLst>", extension + "</p:extLst>")
+        : shape.replace(
+            "</p:sp>",
+            "<p:extLst>" + extension + "</p:extLst></p:sp>",
+          );
+    });
+    entries.set(name, Buffer.from(annotated, "utf8"));
   }
   return pack(entries);
 }

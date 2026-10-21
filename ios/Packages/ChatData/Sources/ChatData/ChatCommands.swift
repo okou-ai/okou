@@ -3,14 +3,18 @@ import Foundation
 
 /// Workspace-scoped mutations. Read synchronization belongs to ChatSync.
 public actor ChatCommands {
-  private let client: APIClient
+  public nonisolated let permissions: ChatPermissions
+  let client: APIClient
+  public nonisolated let connectorActions: ChatConnectorService
   private let sync: ChatSync
   private var sendingThreads = Set<String>()
   private var writingReadState = false
   private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
   public init(client: APIClient, sync: ChatSync) {
+    permissions = ChatPermissions(client: client)
     self.client = client
+    connectorActions = ChatConnectorService(client: client)
     self.sync = sync
   }
 
@@ -80,7 +84,9 @@ public actor ChatCommands {
     thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
     document: ChatDraftDocument? = nil,
     clientEventID: String = UUID().uuidString,
-    modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil
+    chatThreadSortEventID: String = UUID().uuidString,
+    modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil,
+    expectedAgentID: String? = nil
   )
     async throws -> SendReceipt
   {
@@ -96,11 +102,17 @@ public actor ChatCommands {
     }
     defer { sendingThreads.remove(thread.id) }
 
-    let metadata = try await normalizeMobileSettings(threadID: thread.id)
+    let metadata = try await normalizeMobileSettings(
+      threadID: thread.id, expectedAgentID: expectedAgentID)
+    if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
+      throw ChatError.agentUnavailable
+    }
     let body = SendBody(
       agentId: metadata.agentId, threadId: thread.id,
-      prompt: prompt.isEmpty ? "(see attached files)" : prompt,
-      clientEventId: clientEventID, chatThreadSortEventId: UUID().uuidString,
+      prompt: prompt.isEmpty
+        ? (document?.hasFeedback == true ? "(see quoted passages)" : "(see attached files)")
+        : prompt,
+      clientEventId: clientEventID, chatThreadSortEventId: chatThreadSortEventID,
       userMessage: document
         ?? ChatDraftDocument(
           parts: (prompt.isEmpty
@@ -111,7 +123,8 @@ public actor ChatCommands {
                 "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
               ])
             }),
-      hasTextContent: !prompt.isEmpty, modelSelection: modelSelection,
+      hasTextContent: !prompt.isEmpty || document?.hasFeedback == true,
+      modelSelection: modelSelection,
       reasoningEffort: reasoningEffort)
     do {
       let result: ChatSendResponse = try await client.request(
@@ -190,9 +203,13 @@ public actor ChatCommands {
     }
   }
 
-  public func setPinned(threadID: String, pinned: Bool) async throws {
+  public func setPinned(
+    threadID: String, pinned: Bool, eventID: String, pinOrder: String? = nil
+  ) async throws {
     let action = pinned ? "pin" : "unpin"
-    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
+    var query = [URLQueryItem(name: "eventId", value: eventID)]
+    if pinned, let pinOrder { query.append(URLQueryItem(name: "pinOrder", value: pinOrder)) }
+    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST", query: query)
   }
 
   public func setArchived(threadID: String, archived: Bool) async throws {
@@ -205,27 +222,21 @@ public actor ChatCommands {
     try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)
   }
 
-  private func normalizeMobileSettings(threadID: String) async throws -> ThreadMetadata {
+  private func normalizeMobileSettings(threadID: String, expectedAgentID: String?) async throws
+    -> ThreadMetadata
+  {
     let path = "/api/chat-threads/\(threadID)"
-    let selections: ConnectorSelections = try await client.request(path + "/connector-selections")
-    for selection in selections.selections {
-      try await client.data(
-        path + "/connector-selections", method: "DELETE",
-        body: JSONEncoder().encode(selection.target))
-    }
     let metadata: ThreadMetadata = try await client.request(path + "/metadata")
+    if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
+      throw ChatError.agentUnavailable
+    }
     if metadata.computerUseHostId != nil || metadata.cloudBrowserEnabled {
       try await client.data(
         path + "/computer-use-host", method: "POST",
         body: JSONEncoder().encode(ComputerAccessBody()))
     }
-    async let verifiedSelections: ConnectorSelections = client.request(
-      path + "/connector-selections")
-    async let verifiedMetadata: ThreadMetadata = client.request(path + "/metadata")
-    let (accounts, settings) = try await (verifiedSelections, verifiedMetadata)
-    guard accounts.selections.isEmpty, settings.computerUseHostId == nil,
-      !settings.cloudBrowserEnabled
-    else {
+    let settings: ThreadMetadata = try await client.request(path + "/metadata")
+    guard settings.computerUseHostId == nil, !settings.cloudBrowserEnabled else {
       throw ChatError.settingsChanged
     }
     return settings

@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { z } from "zod";
 
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import outgoing from "./fixtures/vnc-native-outgoing-sql.json";
 
@@ -94,7 +94,7 @@ try {
   await admin.query(`CREATE DATABASE "${name}"`);
   created = true;
   await client.connect();
-  await applyPendingMigrations(migrationSql, { beforeMillis: migration.when });
+  await applyFixtureMigrations(migrationSql, { beforeMillis: migration.when });
   await client.query(
     `INSERT INTO vnc_credentials (id, org_id, user_id, name, auth_method, encrypted_password)
     VALUES ($1, 'vnc-native-outgoing', 'owner', 'Retained credential', 'vnc_password', 'retained-ciphertext')`,
@@ -141,7 +141,7 @@ try {
     [sshVncId],
   );
   const before = await retainedState();
-  await applyPendingMigrations(migrationSql);
+  await applyFixtureMigrations(migrationSql);
   assert.deepEqual(
     await retainedState(),
     before,

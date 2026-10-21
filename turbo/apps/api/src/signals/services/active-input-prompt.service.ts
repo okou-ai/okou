@@ -32,13 +32,13 @@ import {
   feishuInstallationAvailabilityReadPlan,
   feishuInstallationEnabledFromRows,
 } from "./feishu-config";
-import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
+import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
 import {
   DiscordQueuedLaunchUnavailableError,
   loadDiscordQueuedLaunchMaterial$,
 } from "./discord-queued-launch-context.service";
 import { loadTeamsQueuedLaunchMaterial } from "./teams-queued-launch-context.service";
-import { loadTelegramQueuedLaunchMaterial } from "./telegram-queued-launch-context.service";
+import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
@@ -227,7 +227,7 @@ const loadIntegrationPromptMaterial$ = command(
     };
     switch (event.contextType) {
       case "slack": {
-        return await loadSlackQueuedLaunchMaterial(db, loaderArgs);
+        return await set(loadSlackQueuedLaunchMaterial$, loaderArgs);
       }
       case "feishu": {
         return await (async () => {
@@ -276,18 +276,13 @@ const loadIntegrationPromptMaterial$ = command(
         return await set(loadWechatQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "discord": {
-        return await set(
-          loadDiscordQueuedLaunchMaterial$,
-          db,
-          loaderArgs,
-          signal,
-        );
+        return await set(loadDiscordQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "teams": {
         return await loadTeamsQueuedLaunchMaterial(db, loaderArgs);
       }
       case "telegram": {
-        return await loadTelegramQueuedLaunchMaterial(db, loaderArgs);
+        return await set(loadTelegramQueuedLaunchMaterial$, loaderArgs);
       }
       case "agentphone": {
         return await loadAgentPhoneQueuedLaunchMaterial(db, loaderArgs);

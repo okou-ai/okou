@@ -90,6 +90,20 @@ impl GuardedSpeculativeIdleOwner {
         })
     }
 
+    pub fn matches_source_claim(
+        &self,
+        reuse_key: Option<&str>,
+        source: RunId,
+        profile: &str,
+    ) -> bool {
+        self.owner.as_ref().is_some_and(|owner| {
+            reuse_key.is_some()
+                && owner.metadata.reuse_key() == reuse_key
+                && owner.metadata.source_run_id == Some(source)
+                && owner.metadata.profile_name == profile
+        })
+    }
+
     /// Capture once before any provider wait, with no pool/accounting lock.
     pub fn capture_backing(&mut self) -> Result<(), MemoryOperationError> {
         let owner = self.owner.as_mut().ok_or(MemoryOperationError::Consumed)?;
@@ -174,7 +188,7 @@ impl GuardedSpeculativeIdleOwner {
         Ok(())
     }
 
-    /// Re-run the real guest cleanup/park with the original history generation.
+    /// Re-run real guest cleanup/park with the original resource producer.
     /// A report rejection or provider panic retains required promotion/context.
     pub async fn repark(&mut self, home_image_size_bytes: u64) -> Result<(), String> {
         if self.state != SpeculativeActivationState::Prepared {
@@ -184,7 +198,7 @@ impl GuardedSpeculativeIdleOwner {
         let owner = self.owner.as_mut().ok_or("speculative resource consumed")?;
         let result: Result<(), String> = AssertUnwindSafe(async {
             Self::validate(owner).map_err(|e| e.to_string())?;
-            let history = owner.metadata.history_generation_run_id.ok_or("speculative history generation missing")?;
+            let source = owner.metadata.source_run_id.ok_or("speculative resource producer missing")?;
             if let Some(promotion) = &owner.promotion {
                 promotion.validate_stored_cache_identity(HomeImagePromotionIdentityRequest {
                     sandbox_id: owner.metadata.sandbox_id,
@@ -200,7 +214,7 @@ impl GuardedSpeculativeIdleOwner {
                 .map(|verification| verification.runtime_dir);
             let preparation = IdleReusePreparation::new(
                 owner.sandbox.as_deref().ok_or("speculative resource consumed")?.id(),
-                self.run_id.ok_or("speculative operation run missing")?, history, retained,
+                self.run_id.ok_or("speculative operation run missing")?, source, retained,
             ).map_err(|e| e.to_string())?;
             let outcome = owner.sandbox.as_mut().ok_or("speculative resource consumed")?
                 .final_exec_and_park(&preparation.exec_request(), "idle-reuse-preparation-and-park")

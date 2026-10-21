@@ -29,10 +29,7 @@ beforeEach(() => {
   mockEnv("AXIOM_TOKEN_TELEMETRY", "test-telemetry-token");
 });
 
-async function linkStatus(
-  source?: "onboarding" | "works",
-  callbackProtocol?: "2",
-) {
+async function linkStatus(source?: "onboarding" | "works") {
   const client = setupApp({ context, routes: integrationsTelegramRoutes })(
     integrationsTelegramContract,
   );
@@ -47,7 +44,6 @@ async function linkStatus(
         botId: OFFICIAL_TELEGRAM_BOT_ID,
         origin: APP_ORIGIN,
         source,
-        callbackProtocol,
       },
     }),
     [200],
@@ -55,37 +51,6 @@ async function linkStatus(
 }
 
 describe("Telegram connection readiness diagnostics", () => {
-  it("advertises the callback protocol only to explicitly opted-in callers", async () => {
-    server.use(
-      http.head(OAUTH_URL, () => {
-        return new HttpResponse(null, {
-          headers: { "content-length": "5000" },
-        });
-      }),
-    );
-    const legacy = await linkStatus("works");
-    const optedIn = await linkStatus("works", "2");
-    expect(legacy.body).toStrictEqual({
-      linked: false,
-      installation: {
-        id: OFFICIAL_TELEGRAM_BOT_ID,
-        botUsername: "test_okou_bot",
-        loginBotId: "9876543210",
-        domainConfigured: true,
-      },
-    });
-    expect(optedIn.body).toStrictEqual({
-      linked: false,
-      installation: {
-        id: OFFICIAL_TELEGRAM_BOT_ID,
-        botUsername: "test_okou_bot",
-        loginBotId: "9876543210",
-        domainConfigured: true,
-        authCallbackProtocol: 2,
-      },
-    });
-  });
-
   it.each([
     { length: "5000", status: 200, configured: true },
     { length: "38", status: 200, configured: false },

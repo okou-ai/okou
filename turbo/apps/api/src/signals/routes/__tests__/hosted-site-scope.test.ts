@@ -31,7 +31,7 @@ async function prepareCaseSite(site: string) {
   const actor = fixture.bdd.user();
   fixture.routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   host.captureHostedSitesS3();
-  const app = await setupApp({ context, routes: hostRoutes, isolatePg: true });
+  const app = await setupApp({ context, routes: hostRoutes });
   const response = await accept(
     app(hostContract).prepare({
       headers: { authorization: "Bearer clerk-session" },

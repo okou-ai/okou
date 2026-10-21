@@ -15,15 +15,16 @@ import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
+  publishDesktopShellAuthorizationChangedSafely,
 } from "../external/realtime";
 import { tapError } from "../utils";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
-import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
+import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import {
@@ -189,15 +190,11 @@ function runOutputInputForCompletion(
   if (!completion) {
     return null;
   }
-  const { artifactSnapshots, ...metadata } = completion;
   return {
     auth: input.auth,
     recovery: input.body.exitCode !== 0,
     body: {
-      ...metadata,
-      // Remove the old Runner field adapter with #41332 after old owners finish
-      // execution/finalization and exit, with compatible rollback artifacts.
-      storageOutputs: metadata.storageOutputs ?? artifactSnapshots,
+      ...completion,
       runId: input.body.runId,
     },
   };
@@ -630,6 +627,18 @@ export const dispatchCompleteSideEffectsCore$ = command(
     input: DispatchCompleteSideEffectsInput,
     signal: AbortSignal,
   ): Promise<void> => {
+    // Both the requesting Run's terminal status and the released chat slot
+    // participate in shell approval eligibility, even without appended events.
+    const shellOwnerId =
+      input.kind === "terminal"
+        ? input.deliveryNotification?.userId
+        : input.chatThreadId !== null
+          ? input.userId
+          : undefined;
+    if (shellOwnerId !== undefined) {
+      await publishDesktopShellAuthorizationChangedSafely(shellOwnerId);
+      signal.throwIfAborted();
+    }
     if (input.kind === "cancellation-recovery") {
       if (input.chatThreadId !== null) {
         await publishChatThreadDetailChangedSafely(
@@ -669,24 +678,29 @@ export const dispatchCompleteSideEffectsCore$ = command(
  * Expire the run's unconsumed time budget steer after the completion commit;
  * the heartbeat-timeout branch never finalizes input, so it is skipped too.
  */
-async function expireCommittedRunTimeBudget<T extends CompletionCommit>(
-  db: Db,
-  runId: string,
-  commit: T,
-  signal: AbortSignal,
-): Promise<T> {
-  if (commit.run.chatThreadId === null || commit.run.status === "timeout") {
-    return commit;
-  }
-  const expired = await expireRunTimeBudgetInput(
-    db,
-    { runId, chatThreadId: commit.run.chatThreadId },
-    signal,
-  );
-  return expired
-    ? { ...commit, finalization: { finalized: true, chatEventsAppended: true } }
-    : commit;
-}
+const expireCommittedRunTimeBudget$ = command(
+  async (
+    { set },
+    runId: string,
+    commit: ReleasedCompletionCommit,
+    signal: AbortSignal,
+  ): Promise<ReleasedCompletionCommit> => {
+    if (commit.run.chatThreadId === null || commit.run.status === "timeout") {
+      return commit;
+    }
+    const expired = await set(
+      expireRunTimeBudgetInput$,
+      { runId, chatThreadId: commit.run.chatThreadId },
+      signal,
+    );
+    return expired
+      ? {
+          ...commit,
+          finalization: { finalized: true, chatEventsAppended: true },
+        }
+      : commit;
+  },
+);
 
 /**
  * Record telemetry for the committed completion: terminal-transition metrics
@@ -799,8 +813,8 @@ export function createAgentRunCompletion(runId: string, userId: string) {
         break;
       }
 
-      commit = await expireCommittedRunTimeBudget(
-        db,
+      commit = await set(
+        expireCommittedRunTimeBudget$,
         input.body.runId,
         commit,
         signal,

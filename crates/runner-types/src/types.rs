@@ -79,7 +79,7 @@ pub struct ExecutionContext {
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
-    /// Absent for captured Storage instructions; empty explicitly replaces the managed file.
+    /// Absent for agentless jobs; empty explicitly replaces the managed file.
     #[serde(
         default,
         deserialize_with = "deserialize_agent_instructions",
@@ -1719,6 +1719,8 @@ impl ExecutionContext {
 #[serde(rename_all = "camelCase")]
 pub struct ReusableSandboxState {
     pub profile: String,
+    /// Run that produced this resource, independent of native history.
+    pub source_run_id: RunId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_generation_run_id: Option<RunId>,
 }
@@ -1737,6 +1739,8 @@ pub struct HeldSandboxState {
 pub struct HomeCacheCapability {
     pub profile: String,
     pub home_affinity_version: u8,
+    /// Producer of this profile's committed home image generation.
+    pub source_run_id: RunId,
 }
 
 /// Canonical home evidence for reusable home images.
@@ -1783,8 +1787,6 @@ pub struct HeartbeatState {
     /// Inventory updates use the shared snapshot order.
     pub held_home_states: Vec<HeldHomeState>,
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
-    /// Host-local WSS ingress service state, not public WSS reachability.
-    pub wss_ingress_service_active: bool,
     pub mode: String,
 }
 
@@ -2020,8 +2022,8 @@ mod tests {
             "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "codex",
             "platformEnvironment": {}, "connectorRuntimeTargets": []
         });
-        let legacy: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
-        assert_eq!(legacy.agent_instructions, None);
+        let agentless: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
+        assert_eq!(agentless.agent_instructions, None);
         for body in ["", "  指令\n\n"] {
             let mut current = claim.clone();
             current["agentInstructions"] = json!(body);
@@ -2528,12 +2530,11 @@ mod tests {
         let json = execution_context_with_storage_manifest(json!({
             "storageMounts": [
                 {
-                    "name": "instructions",
+                    "name": "workflow",
                     "storageId": "storage-read-only",
                     "versionId": "version-1",
-                    "mountPath": "/home/user/.claude",
-                    "archiveUrl": "https://example.com/instructions.tar.gz",
-                    "instructionsTargetFilename": "CLAUDE.md",
+                    "mountPath": "/home/user/.claude/skills/workflow",
+                    "archiveUrl": "https://example.com/workflow.tar.gz",
                     "futureMountField": true
                 },
                 {
@@ -2553,8 +2554,8 @@ mod tests {
         let manifest = context.storage_manifest.unwrap();
 
         assert_eq!(manifest.storages.len(), 1);
-        assert_eq!(manifest.storages[0].name, "instructions");
-        assert_eq!(manifest.storages[0].vas_storage_name, "instructions");
+        assert_eq!(manifest.storages[0].name, "workflow");
+        assert_eq!(manifest.storages[0].vas_storage_name, "workflow");
         assert_eq!(manifest.storages[0].vas_version_id, "version-1");
         assert_eq!(manifest.artifacts.len(), 1);
         assert_eq!(manifest.artifacts[0].vas_storage_name, "memory");
@@ -2631,15 +2632,6 @@ mod tests {
                 "missingRootPolicy": "preserveParentVersion"
             }),
             json!({
-                "name": "writeback-instructions",
-                "storageId": "storage-4",
-                "versionId": "version-4",
-                "mountPath": "/writeback-instructions",
-                "archiveUrl": "https://example.com/instructions.tar.gz",
-                "instructionsTargetFilename": "AGENTS.md",
-                "writeback": true
-            }),
-            json!({
                 "name": "writeback-without-archive",
                 "storageId": "storage-5",
                 "versionId": "version-5",
@@ -2675,6 +2667,7 @@ mod tests {
                 reuse_key: "thread:thread-abc".into(),
                 last_completed_at: "2026-05-28T00:00:00.000Z".into(),
                 reusable_sandbox: ReusableSandboxState {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: "vm0/default".into(),
                     history_generation_run_id: Some(
                         "11111111-1111-4111-8111-111111111111".parse().unwrap(),
@@ -2685,6 +2678,7 @@ mod tests {
                 reuse_key: "thread:thread-abc".into(),
                 last_completed_at: "2026-05-28T00:00:00.000Z".into(),
                 home_caches: vec![HomeCacheCapability {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: "vm0/large".into(),
                     home_affinity_version: HOME_AFFINITY_VERSION,
                 }],
@@ -2694,7 +2688,6 @@ mod tests {
                 reuse_key: "thread:thread-abc".into(),
                 profile: "vm0/default".into(),
             }],
-            wss_ingress_service_active: true,
             mode: "running".into(),
         };
         let json: serde_json::Value = serde_json::to_value(&state).unwrap();
@@ -2717,6 +2710,7 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "lastCompletedAt": "2026-05-28T00:00:00.000Z",
                     "reusableSandbox": {
+                        "sourceRunId": "33333333-3333-4333-8333-333333333333",
                         "profile": "vm0/default",
                         "historyGenerationRunId": "11111111-1111-4111-8111-111111111111"
                     }
@@ -2725,6 +2719,7 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "lastCompletedAt": "2026-05-28T00:00:00.000Z",
                     "homeCaches": [{
+                        "sourceRunId": "33333333-3333-4333-8333-333333333333",
                         "profile": "vm0/large",
                         "homeAffinityVersion": 1
                     }]
@@ -2734,7 +2729,6 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "profile": "vm0/default"
                 }],
-                "wssIngressServiceActive": true,
                 "mode": "running"
             })
         );
@@ -2746,6 +2740,7 @@ mod tests {
             reuse_key: "thread:thread-current".into(),
             last_completed_at: "2026-05-28T00:00:00.000Z".into(),
             reusable_sandbox: ReusableSandboxState {
+                source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                 profile: "vm0/default".into(),
                 history_generation_run_id: None,
             },
@@ -2777,7 +2772,6 @@ mod tests {
             held_sandbox_states: Vec::new(),
             held_home_states: Vec::new(),
             active_reuse_producers: Vec::new(),
-            wss_ingress_service_active: false,
             mode: "running".into(),
         };
 

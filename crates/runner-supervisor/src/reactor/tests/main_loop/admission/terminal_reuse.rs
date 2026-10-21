@@ -29,18 +29,12 @@ pub(super) fn generic_finalizing_candidate(
 ) -> runner_provider::JobCandidate {
     runner_provider::JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(reuse_key.into()))
-        .with_runner_preference(
-            ActiveRunnerPreference::new(
-                RunnerProcessIdentity::new(
-                    TEST_RUNNER_ID.parse().unwrap(),
-                    TEST_HEARTBEAT_GENERATION,
-                )
+        .with_runner_preference(ActiveRunnerPreference::new(
+            RunnerProcessIdentity::new(TEST_RUNNER_ID.parse().unwrap(), TEST_HEARTBEAT_GENERATION)
                 .unwrap(),
-                RunnerPreferenceTier::FinalizingPredecessor,
-                deadline,
-            )
-            .with_finalizing_source_run_id(source),
-        )
+            runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(source),
+            deadline,
+        ))
 }
 
 async fn assert_cleanup_reuses_sandbox(
@@ -94,10 +88,11 @@ async fn assert_cleanup_reuses_sandbox(
     assert_eq!(budget.allocated(), (2, 4096, 1));
 
     let successor = RunId::new_v4();
-    env.provider.set_claim_result(
-        successor,
-        Some(context_with_reuse_key(successor, reuse_key)),
+    let context = native_generation.map_or_else(
+        || context_with_reuse_key(successor, reuse_key),
+        |source| context_with_native_source(successor, reuse_key, source),
     );
+    env.provider.set_claim_result(successor, Some(context));
     env.handle
         .discover_tx
         .send(
@@ -166,6 +161,15 @@ async fn assert_cleanup_reuses_sandbox(
 
 #[tokio::test]
 async fn resolved_finalizing_preference_consumes_ready_generic_sandbox() {
+    assert_ready_sandbox(false).await;
+}
+
+#[tokio::test]
+async fn source_exact_preference_consumes_and_republishes_actual_producer_without_native_history() {
+    assert_ready_sandbox(true).await;
+}
+
+async fn assert_ready_sandbox(source_exact: bool) {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let (config, env) =
         mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
@@ -180,6 +184,9 @@ async fn resolved_finalizing_preference_consumes_ready_generic_sandbox() {
         4096,
     )
     .await;
+    let producer = env.idle_pool.lock().await.held_sandbox_states()[0]
+        .reusable_sandbox
+        .source_run_id;
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(5)).await;
     let successor = RunId::new_v4();
@@ -189,11 +196,16 @@ async fn resolved_finalizing_preference_consumes_ready_generic_sandbox() {
     );
     env.handle
         .discover_tx
-        .send(generic_finalizing_candidate(
+        .send(ranked_candidate(
             successor,
-            reuse_key,
-            RunId::new_v4(),
-            std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
+            Some(reuse_key),
+            if source_exact {
+                runner_provider::RunnerPreferenceTarget::SourceSandbox(producer)
+            } else {
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4())
+            },
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
         ))
         .unwrap();
     let completion = env
@@ -204,35 +216,64 @@ async fn resolved_finalizing_preference_consumes_ready_generic_sandbox() {
     assert_eq!(completion.sandbox_id, Some(sandbox_id));
     assert!(env.handle.deferred_poll_deadlines().is_empty());
     assert_eq!(overrides.unpark_call_count(), 1);
+    crate::reactor::tests::support::wait_idle_pool_reuse_keys(
+        &env.idle_pool,
+        &[reuse_key],
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(
+        env.idle_pool.lock().await.held_sandbox_states()[0]
+            .reusable_sandbox
+            .source_run_id,
+        successor
+    );
     shutdown(&env, run_handle).await;
 }
 
 #[tokio::test]
 async fn resolved_finalizing_preference_consumes_ready_home_cache() {
-    assert_finalizing_preference_consumes_home_cache(false).await;
+    assert_finalizing_preference_consumes_home_cache(false, false).await;
+}
+
+#[tokio::test]
+async fn source_home_preference_consumes_matching_home_before_generic_sandbox() {
+    assert_finalizing_preference_consumes_home_cache(false, true).await;
 }
 
 #[tokio::test]
 async fn waiting_finalizing_successor_consumes_home_without_exact_sandbox() {
-    assert_finalizing_preference_consumes_home_cache(true).await;
+    assert_finalizing_preference_consumes_home_cache(true, false).await;
 }
 
-async fn assert_finalizing_preference_consumes_home_cache(waiting: bool) {
+async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, source_home: bool) {
     let image_size_bytes = 1024 * 1024;
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let overrides = Arc::new(MockSandboxOverrides::new());
     let (mut config, env) =
-        mock_run_config_with_overrides(profiles, 2, 4096, 1, Arc::clone(&overrides));
+        mock_run_config_with_overrides(profiles, 4, 8192, 2, Arc::clone(&overrides));
     let paths = RunnerPaths::new(config.paths.base_dir.clone());
     let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
     let reuse_key = "thread:ready-terminal-home";
-    let predecessor = RunId::new_v4();
+    let predecessor =
+        seed_home_cache_state(&cache, &paths, reuse_key, "vm0/default", image_size_bytes).await;
     let guard = waiting.then(|| {
         env.active_runs
             .register(predecessor, Some(reuse_key.into()), "vm0/default".into())
     });
-    seed_home_cache_state(&cache, &paths, reuse_key, "vm0/default", image_size_bytes).await;
+    if source_home {
+        seed_idle_pool_with_overrides(
+            &env.idle_pool,
+            &config.capacity.budget,
+            &overrides,
+            reuse_key,
+            "vm0/default",
+            2,
+            4096,
+        )
+        .await;
+    }
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(5)).await;
@@ -243,11 +284,16 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool) {
     );
     env.handle
         .discover_tx
-        .send(generic_finalizing_candidate(
+        .send(ranked_candidate(
             successor,
-            reuse_key,
-            predecessor,
-            std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
+            Some(reuse_key),
+            if source_home {
+                runner_provider::RunnerPreferenceTarget::SourceHomeCache(predecessor)
+            } else {
+                runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(predecessor)
+            },
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
         ))
         .unwrap();
     if let Some(guard) = &guard {
@@ -260,9 +306,16 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool) {
         .expect("resolved producer must admit its ready home with available capacity");
     assert!(env.handle.deferred_poll_deadlines().is_empty());
     let created = overrides.create_configs();
-    assert_eq!(created.len(), 1);
+    assert_eq!(created.len(), if source_home { 2 } else { 1 });
     assert!(
-        created[0].home_drive.as_ref().unwrap().seed_image.is_some(),
+        created
+            .last()
+            .unwrap()
+            .home_drive
+            .as_ref()
+            .unwrap()
+            .seed_image
+            .is_some(),
         "the admitted successor must pass the actual cached home into sandbox creation"
     );
     drop(guard);

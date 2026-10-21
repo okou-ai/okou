@@ -16,7 +16,6 @@ export async function publicChatActor(
     readonly tier?: "pro" | "team";
     readonly stripeTransport?: "http";
     readonly restoreEnvironment?: () => void;
-    readonly isolatePg?: true;
     readonly clockTime?: number | (() => number);
     readonly beforeWorkspaceCleanup?: (actor: ApiTestUser) => Promise<void>;
     readonly optionalEnvironmentNames?: readonly string[];
@@ -99,14 +98,6 @@ export async function publicChatActor(
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   fixture.chatCallbacks.disableVapid();
   const runnerGroup = fixture.api.configureRunnerGroup();
-  if (options.isolatePg) {
-    const me = await run(() => {
-      return fixture.bdd.readMe(actor, { isolatePg: true });
-    });
-    if (me.userId !== actor.userId || me.orgId !== orgId) {
-      throw new Error("Expected the isolated public chat workspace owner");
-    }
-  }
   const { customerId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
       tier: options.tier,

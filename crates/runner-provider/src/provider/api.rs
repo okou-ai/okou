@@ -2860,6 +2860,7 @@ mod tests {
                 reuse_key: "thread:heartbeat-test".to_string(),
                 last_completed_at: "2026-07-08T00:00:00.000Z".to_string(),
                 reusable_sandbox: runner_types::types::ReusableSandboxState {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
                     history_generation_run_id: None,
                 },
@@ -2868,12 +2869,12 @@ mod tests {
                 reuse_key: "thread:heartbeat-test".to_string(),
                 last_completed_at: "2026-07-08T00:00:00.000Z".to_string(),
                 home_caches: vec![runner_types::types::HomeCacheCapability {
+                    source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
                     home_affinity_version: runner_types::types::HOME_AFFINITY_VERSION,
                 }],
             }],
             active_reuse_producers: vec![],
-            wss_ingress_service_active: false,
             mode: "running".to_string(),
         }
     }
@@ -4209,7 +4210,7 @@ mod tests {
     fn claim_request_body_serializes_canonical_preference_at_claim_time() {
         let active_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTier::HomeCache,
+            crate::provider::RunnerPreferenceTarget::HomeCache,
             Instant::now() + Duration::from_secs(60),
         );
         let active = JobCandidate::new(
@@ -4237,7 +4238,7 @@ mod tests {
 
         let expired_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTier::ExactSandbox,
+            crate::provider::RunnerPreferenceTarget::ExactSandbox,
             Instant::now() - Duration::from_secs(1),
         );
         let expired = JobCandidate::new(
@@ -4253,7 +4254,7 @@ mod tests {
 
         let cleared_preference = ActiveRunnerPreference::new(
             RunnerProcessIdentity::new(Uuid::from_u128(8), TEST_HEARTBEAT_GENERATION).unwrap(),
-            RunnerPreferenceTier::FinalizingPredecessor,
+            crate::provider::RunnerPreferenceTarget::FinalizingPredecessor(RunId::new_v4()),
             Instant::now() + Duration::from_secs(60),
         );
         let cleared = JobCandidate::new(
@@ -4511,6 +4512,7 @@ mod tests {
                                 "heartbeatGeneration": 7
                             },
                             "tier": "exactSandbox",
+                            "finalizingSourceRunId": "33333333-3333-4333-8333-333333333333",
                             "expiresAt": "2999-01-01T00:00:00.000Z"
                         }
                     }
@@ -4539,6 +4541,10 @@ mod tests {
             .runner_preference()
             .expect("canonical preference should be parsed");
         assert_eq!(preference.tier(), RunnerPreferenceTier::ExactSandbox);
+        assert_eq!(
+            preference.target().source_run_id(),
+            Some("33333333-3333-4333-8333-333333333333".parse().unwrap())
+        );
         assert!(
             preference.targets(
                 RunnerProcessIdentity::new(
@@ -4553,10 +4559,9 @@ mod tests {
             .expect("canonical preference telemetry");
         assert!(matches!(
             telemetry.runner_preference,
-            RunnerPreference::Preference {
-                tier: RunnerPreferenceTier::ExactSandbox,
-                ..
-            }
+            RunnerPreference::Preference(
+                crate::provider::RunnerPreferenceDecision::ExactSandbox { .. }
+            )
         ));
         assert_eq!(telemetry.state, Some(RunnerPreferenceClaimState::Active));
         assert_eq!(

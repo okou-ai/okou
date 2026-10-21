@@ -102,24 +102,36 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
   it.each(survivorCases)(
     "$type preserves active publication with $peerScope isolation",
     async ({ type, peerScope }) => {
-      const { first, active, target } = await activeOwners(peerScope);
-      await deleteOwner(type, target);
-      const survivor = active.find((run) => {
-        return type === "user.deleted"
-          ? run.actor.userId !== target.userId
-          : run.actor.orgId !== target.orgId;
+      const survivor = await prepareMaintenance({
+        independentOwner: true,
+        peerScope,
       });
-      if (!survivor) {
-        throw new Error("Expected a genuinely surviving maintenance owner");
+      const target = [
+        survivor.sourceActor.actor,
+        survivor.peerActor?.actor,
+      ].find((actor) => {
+        return (
+          actor &&
+          (type === "user.deleted"
+            ? actor.userId !== survivor.actor.userId
+            : actor.orgId !== survivor.actor.orgId)
+        );
+      });
+      if (!target) {
+        throw new Error("Expected a genuinely independent deletion target");
       }
+      await deleteOwner(type, target);
+      await expect(cancellation(survivor, survivor)).resolves.toMatchObject({
+        state: "present",
+        mode: null,
+      });
       // A surviving user, not a resurrected deleted identity, observes HEAD.
       const content = `Surviving ${survivor.runId}.\n`;
       const output = await publish(survivor, content);
       await completeMaintenance(survivor, output.versionId);
-      expect(
-        (await observeMemory({ ...first, ...survivor }, content)).memory
-          .versionId,
-      ).toBe(output.versionId);
+      expect((await observeMemory(survivor, content)).memory.versionId).toBe(
+        output.versionId,
+      );
     },
   );
 

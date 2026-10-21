@@ -188,17 +188,22 @@ async fn upgraded_server(
     listener: TcpListener,
     tls: Option<Arc<rustls::ServerConfig>>,
 ) -> Upgraded {
-    let (socket, _) = listener.accept().await.unwrap();
-    if let Some(tls) = tls {
-        upgraded_io(
-            tokio_rustls::TlsAcceptor::from(tls)
+    loop {
+        let (socket, _) = listener.accept().await.unwrap();
+        if let Some(tls) = &tls {
+            match tokio_rustls::TlsAcceptor::from(Arc::clone(tls))
                 .accept(socket)
                 .await
-                .unwrap(),
-        )
-        .await
-    } else {
-        upgraded_io(socket).await
+            {
+                Ok(socket) => return upgraded_io(socket).await,
+                // An abandoned unauthenticated connection must not consume
+                // the listener intended for the genuine DERP session.
+                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => continue,
+                Err(error) => panic!("DERP TLS handshake failed: {error:?}"),
+            }
+        } else {
+            return upgraded_io(socket).await;
+        }
     }
 }
 

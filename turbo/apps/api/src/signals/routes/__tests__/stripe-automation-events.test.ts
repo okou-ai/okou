@@ -37,10 +37,9 @@ const workflows = createWorkflowsBddApi(context);
 const mocks = createRouteMocks(context);
 
 const AUTOMATION_WEBHOOK_SECRET = "whsec_stripe_automation_events";
-const STRIPE_ACCOUNT_ID = "acct_stripe_workflow_live";
-
 interface Scenario {
   readonly actor: ApiTestUser;
+  readonly accountId: string;
   readonly agentId: string;
   readonly workflowId: string;
   readonly automationId: string;
@@ -79,7 +78,6 @@ async function connectStripeOAuth(
 
 async function setupScenario(
   options: {
-    readonly isolatePg?: true;
     readonly accountId?: string;
     readonly billingReasons?: readonly (
       "manual" | "subscription_cycle" | "subscription_create"
@@ -87,9 +85,7 @@ async function setupScenario(
   } = {},
 ): Promise<Scenario> {
   const runnerGroup = runs.configureRunnerGroup();
-  const { actor } = await workflows.setupWorkflowOrg({
-    isolatePg: options.isolatePg,
-  });
+  const { actor } = await workflows.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped workflow owner");
   }
@@ -107,10 +103,8 @@ async function setupScenario(
   await connectors.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
   });
-  const connector = await connectStripeOAuth(
-    actor,
-    options.accountId ?? STRIPE_ACCOUNT_ID,
-  );
+  const accountId = options.accountId ?? `acct_stripe_workflow_${randomUUID()}`;
+  const connector = await connectStripeOAuth(actor, accountId);
   mocks.clerk.session(actor.userId, actor.orgId);
   const created = await accept(
     automationsClient().create({
@@ -143,6 +137,7 @@ async function setupScenario(
     agentId,
     workflowId,
     automationId: created.body.id,
+    accountId,
     chatThreadId: created.body.chatThreadId,
     connector,
     runnerGroup,
@@ -162,7 +157,7 @@ function invoicePaidEvent(
   return {
     id: options.eventId ?? `evt_${randomUUID()}`,
     type: "invoice.paid",
-    account: options.accountId ?? STRIPE_ACCOUNT_ID,
+    account: options.accountId ?? `acct_stripe_workflow_${randomUUID()}`,
     livemode: options.livemode ?? true,
     created: Math.floor(now() / 1000),
     data: {
@@ -364,7 +359,6 @@ describe("Stripe automation event webhook", () => {
     const defaultAccountId = `acct_stripe_clear_default_${randomUUID()}`;
     const scenario = await setupScenario({
       accountId: originalAccountId,
-      isolatePg: true,
     });
     const orgId = scenario.actor.orgId;
     if (!orgId) {
@@ -427,7 +421,6 @@ describe("Stripe automation event webhook", () => {
     const threadAccountId = `acct_stripe_create_thread_${randomUUID()}`;
     const scenario = await setupScenario({
       accountId: originalAccountId,
-      isolatePg: true,
     });
     const orgId = scenario.actor.orgId;
     if (!orgId) {
@@ -532,17 +525,22 @@ describe("Stripe automation event webhook", () => {
 
     await postStripeAutomationEvent(
       {
-        ...invoicePaidEvent({ eventId: "evt_missing_account" }),
+        ...invoicePaidEvent({ eventId: `evt_missing_account_${randomUUID()}` }),
         account: undefined,
       },
       400,
     );
     await postStripeAutomationEvent(
-      invoicePaidEvent({ eventId: "evt_test_mode", livemode: false }),
+      invoicePaidEvent({
+        eventId: `evt_test_mode_${randomUUID()}`,
+        livemode: false,
+      }),
       200,
     );
     await postStripeAutomationEvent({ type: "customer.created" }, 200);
-    const unmapped = invoicePaidEvent({ eventId: "evt_unmapped_live" });
+    const unmapped = invoicePaidEvent({
+      eventId: `evt_unmapped_live_${randomUUID()}`,
+    });
     await postStripeAutomationEvent(unmapped, 200);
 
     expect(
@@ -577,7 +575,9 @@ describe("Stripe automation event webhook", () => {
     const scenario = await setupScenario({
       billingReasons: ["subscription_cycle"],
     });
-    await postStripeAutomationEvent(invoicePaidEvent());
+    await postStripeAutomationEvent(
+      invoicePaidEvent({ accountId: scenario.accountId }),
+    );
     const pendingHealth = {
       lastMatchingEventReceivedAt: receivedAt,
       lastDeliveryStatus: "pending",
@@ -634,8 +634,9 @@ describe("Stripe automation event webhook", () => {
     });
 
     const event = invoicePaidEvent({
-      eventId: "evt_workflow_once",
-      invoiceId: "in_workflow_once",
+      accountId: scenario.accountId,
+      eventId: `evt_workflow_once_${randomUUID()}`,
+      invoiceId: `in_workflow_once_${randomUUID()}`,
     });
 
     await Promise.all([
@@ -652,14 +653,12 @@ describe("Stripe automation event webhook", () => {
   });
 
   it("ignores receipts for disabled automations", async () => {
-    const disabledAtReceipt = await setupScenario({
-      accountId: "acct_stripe_disabled_at_receipt",
-    });
+    const disabledAtReceipt = await setupScenario();
     await setAutomationEnabled(disabledAtReceipt, false);
     await postStripeAutomationEvent(
       invoicePaidEvent({
-        accountId: "acct_stripe_disabled_at_receipt",
-        eventId: "evt_disabled_at_receipt",
+        accountId: disabledAtReceipt.accountId,
+        eventId: `evt_disabled_at_receipt_${randomUUID()}`,
       }),
     );
     expect(
@@ -671,16 +670,14 @@ describe("Stripe automation event webhook", () => {
   });
 
   it("ignores receipts when the owner feature flag is off", async () => {
-    const featureOffAtReceipt = await setupScenario({
-      accountId: "acct_stripe_feature_off_at_receipt",
-    });
+    const featureOffAtReceipt = await setupScenario();
     await connectors.updateFeatureSwitches(featureOffAtReceipt.actor, {
       [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: false,
     });
     await postStripeAutomationEvent(
       invoicePaidEvent({
-        accountId: "acct_stripe_feature_off_at_receipt",
-        eventId: "evt_feature_off_at_receipt",
+        accountId: featureOffAtReceipt.accountId,
+        eventId: `evt_feature_off_at_receipt_${randomUUID()}`,
       }),
     );
     expect(
@@ -700,7 +697,7 @@ describe("Stripe automation event webhook", () => {
     const unfiltered = await setupScenario({ accountId });
     const unknownReasonEvent = invoicePaidEvent({
       accountId,
-      eventId: "evt_unknown_billing_reason",
+      eventId: `evt_unknown_billing_reason_${randomUUID()}`,
       billingReason: "future_reason",
     });
 

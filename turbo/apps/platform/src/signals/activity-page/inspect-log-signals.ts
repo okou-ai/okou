@@ -4,18 +4,11 @@ import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import type { AgentEvent } from "../okou-page/log-types.ts";
 import { parseInspectLog, type InspectLogMeta } from "./inspect-log-parser.ts";
 import { logger } from "../log.ts";
-import { tapError } from "../utils.ts";
 import { groupVisibleGroups, type EventGroup } from "./log-detail-utils.ts";
 import { i18n } from "../../i18n/index.ts";
 
 const L = logger("InspectLogSignals");
 const MAX_INSPECT_LOG_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-
-function inspectLogLoadErrorMessage(): string {
-  return i18n.t(($) => {
-    return $.activity.inspect.errors.load;
-  });
-}
 
 function invalidInspectLogMessage(): string {
   return i18n.t(($) => {
@@ -77,20 +70,11 @@ export const loadInspectLogFile$ = command(
       return;
     }
 
-    const text = await tapError(file.text(), (error) => {
-      L.warn("Failed to read inspect log file", file.name, error);
-    });
+    const text = await file.text();
     signal.throwIfAborted();
     if (generation !== get(internalInspectLogLoadGeneration$)) {
       return;
     }
-    if (text === undefined) {
-      set(internalInspectLogData$, null);
-      set(internalInspectLogLoadError$, inspectLogLoadErrorMessage());
-      set(internalInspectStepSearch$, "");
-      return;
-    }
-
     const data = parseInspectLog(text);
     if (!data) {
       L.warn("Failed to parse inspect log file", file.name);

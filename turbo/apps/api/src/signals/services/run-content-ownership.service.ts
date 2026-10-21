@@ -1,8 +1,9 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { eq } from "drizzle-orm";
+import { command } from "ccstate";
 
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import { isAbortError, settleIncludingAbort } from "../utils";
 
 type RunOutputPhase =
@@ -142,66 +143,70 @@ export interface RunContentOwnership {
   } | null;
 }
 
+export interface PreparedRunOutputOwnership {
+  readonly ownership: RunContentOwnership;
+  readonly modelProvider: string | null;
+}
+
 /** Preserve timeout disposition before potentially remote history preparation.
  * One primary-key run read, then the thread owner, outside any transaction.
  * The append holds no run lock, so a timeout committed after this read may
  * still admit one batch.
  */
-export async function prepareRunOutputOwnership(
-  db: Db,
-  runId: string,
-  diagnostics?: RunOutputDiagnostics,
-): Promise<
-  | {
-      readonly ownership: RunContentOwnership;
-      readonly modelProvider: string | null;
-    }
-  | undefined
-> {
-  return await observeOutputFailure(
-    (async () => {
-      const [run] = await db
-        .select({
-          status: agentRuns.status,
-          modelProvider: agentRuns.modelProvider,
-          userId: agentRuns.userId,
-          orgId: agentRuns.orgId,
-          chatThreadId: agentRuns.chatThreadId,
-          triggerSource: agentRuns.triggerSource,
-        })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, runId));
-      if (!run) {
-        throw new AgentEventRunNotFoundError(runId);
-      }
-      if (run.status === "timeout") {
-        return undefined;
-      }
-      const [thread] = run.chatThreadId
-        ? await db
+export const prepareRunOutputOwnership$ = command(
+  (
+    { get },
+    runId: string,
+    diagnostics?: RunOutputDiagnostics,
+  ): Promise<PreparedRunOutputOwnership | undefined> => {
+    const db = get(db$);
+    return (async () => {
+      return await observeOutputFailure(
+        (async () => {
+          const [run] = await db
             .select({
-              chatThreadId: chatThreads.id,
-              userId: chatThreads.userId,
+              status: agentRuns.status,
+              modelProvider: agentRuns.modelProvider,
+              userId: agentRuns.userId,
+              orgId: agentRuns.orgId,
+              chatThreadId: agentRuns.chatThreadId,
+              triggerSource: agentRuns.triggerSource,
             })
-            .from(chatThreads)
-            .where(eq(chatThreads.id, run.chatThreadId))
-        : [];
-      if (run.chatThreadId && !thread) {
-        throw new RunContentOwnershipChangedError();
-      }
-      return {
-        ownership: Object.freeze({
-          userId: run.userId,
-          orgId: run.orgId,
-          triggerSource: run.triggerSource,
-          thread: thread ? Object.freeze(thread) : null,
-        }),
-        modelProvider: run.modelProvider,
-      };
-    })(),
-    diagnostics,
-  );
-}
+            .from(agentRuns)
+            .where(eq(agentRuns.id, runId));
+          if (!run) {
+            throw new AgentEventRunNotFoundError(runId);
+          }
+          if (run.status === "timeout") {
+            return undefined;
+          }
+          const [thread] = run.chatThreadId
+            ? await db
+                .select({
+                  chatThreadId: chatThreads.id,
+                  userId: chatThreads.userId,
+                })
+                .from(chatThreads)
+                .where(eq(chatThreads.id, run.chatThreadId))
+            : [];
+          if (run.chatThreadId && !thread) {
+            throw new RunContentOwnershipChangedError();
+          }
+          return {
+            ownership: Object.freeze({
+              userId: run.userId,
+              orgId: run.orgId,
+              triggerSource: run.triggerSource,
+              thread: thread ? Object.freeze(thread) : null,
+            }),
+            modelProvider: run.modelProvider,
+          };
+        })(),
+        diagnostics,
+      );
+    })();
+  },
+);
 
 /** The sandbox token's user and organization must own the prepared run. */
 export function assertRunOutputOwner(

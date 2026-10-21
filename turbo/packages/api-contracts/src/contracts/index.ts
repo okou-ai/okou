@@ -556,7 +556,6 @@ export {
   connectorAccountMutationIntentSchema,
   connectorAccountTargetQuerySchema,
   connectorAccountListQuerySchema,
-  connectorAccountSummarySchema,
   connectorAccountsContract,
   type ConnectorAccountTarget,
   type ConnectorAccountConnection,
@@ -564,7 +563,6 @@ export {
   type ConnectorAccountSelection,
   type ConnectorAccountInspectionResult,
   type ConnectorAccountMutationIntent,
-  type ConnectorAccountSummary,
 } from "./connector-accounts";
 
 export {

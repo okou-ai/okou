@@ -251,7 +251,7 @@ describe("CHAT-02: model-first routing", () => {
       ],
     );
     expect(publishedMemory.storageId).toBe(lunaMemoryMount.storageId);
-    const memoryArtifactSnapshots = [
+    const memoryStorageOutputs = [
       {
         name: lunaMemoryMount.name,
         version: publishedMemory.versionId,
@@ -271,7 +271,7 @@ describe("CHAT-02: model-first routing", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryDisposition: "native_only",
-          artifactSnapshots: memoryArtifactSnapshots,
+          storageOutputs: memoryStorageOutputs,
         },
       },
       claimed.sandboxHeaders,
@@ -286,7 +286,7 @@ describe("CHAT-02: model-first routing", () => {
     await flushWaitUntilForTest();
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       result: {
-        storageOutputs: memoryArtifactSnapshots,
+        storageOutputs: memoryStorageOutputs,
       },
     });
     const committedOutputs = await webhooks.requestAgentRunOutputs(
@@ -295,7 +295,7 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryDisposition: "native_only",
-        artifactSnapshots: memoryArtifactSnapshots,
+        storageOutputs: memoryStorageOutputs,
       },
       claimed.sandboxHeaders,
       [200],
@@ -311,7 +311,7 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryDisposition: "native_only",
-        artifactSnapshots: memoryArtifactSnapshots,
+        storageOutputs: memoryStorageOutputs,
       },
       claimed.sandboxHeaders,
       [200],
@@ -442,7 +442,7 @@ describe("CHAT-02: model-first routing", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryDisposition: "native_only",
-          artifactSnapshots: memoryArtifactSnapshots,
+          storageOutputs: memoryStorageOutputs,
         },
       },
       claimed.sandboxHeaders,

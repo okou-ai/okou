@@ -25,10 +25,9 @@ jq -e '
   ($steps[$cache].uses | startswith("actions/cache@")) and
   $steps[$cache].if == $steps[$detect].if and
   $steps[$cache].if == "steps.identity.outputs.release-skip != '\''true'\''" and
-  $steps[$cache].with.path ==
-    "${{ runner.temp }}/runner-image-turbo-npm/_cacache\n${{ runner.temp }}/runner-image-turbo-npm/_npx\n" and
-  $steps[$cache].with.key ==
-    "runner-image-turbo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('\''scripts/changed.sh'\'') }}" and
+  $steps[$cache].with.path == $steps[$detect].env.TURBO_TOOL_DIR and
+  $steps[$cache].with.path == "${{ runner.temp }}/runner-image-turbo-tool" and
+  ($steps[$cache].with.key | contains("${{ hashFiles('\''scripts/changed.sh'\'') }}")) and
   ($steps[$cache].with | has("restore-keys") | not) and
   $steps[$detect].env.npm_config_cache == "${{ runner.temp }}/runner-image-turbo-npm" and
   $steps[$detect].env.npm_config_prefer_offline == "true" and
@@ -68,11 +67,9 @@ grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
 
 # Imported host dependencies must invalidate stable image reuse on their own.
 for path in \
-  ansible/tasks/provision-runner-caddy.yml \
-  ansible/files/validate-runner-wss-namespace.py \
-  ansible/templates/runner-caddy.Caddyfile.j2 \
-  ansible/templates/okou-runner-caddy.service.j2 \
-  ansible/playbooks/host_vars/runner-wss.example.org.yml; do
+  ansible/playbooks/provision-runner.yml \
+  ansible/tasks/retire-runner-ingress.yml \
+  ansible/playbooks/host_vars/runner.example.org.yml; do
   base_ref=$(fixture_git rev-parse HEAD)
   mkdir -p "${test_root}/$(dirname "$path")"
   printf 'host dependency fixture\n' >"${test_root}/${path}"

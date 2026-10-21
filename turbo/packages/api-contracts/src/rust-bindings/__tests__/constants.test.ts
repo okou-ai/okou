@@ -48,6 +48,7 @@ import {
   CANONICAL_CODEX_SESSIONS_DIR,
   CANONICAL_GUEST_HOME_DIR,
   CANONICAL_PI_SESSION_DIR,
+  PI_AGENT_DIR,
   CANONICAL_WORKING_DIR,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
@@ -68,15 +69,6 @@ import {
   STORAGE_MANIFEST_MAX_FILES,
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../../contracts/storages";
-import { SANDBOX_CHANNEL_LIMITS } from "../../contracts/sandbox-channel";
-import {
-  SANDBOX_FS_VERSION,
-  SANDBOX_FS_LIMITS,
-} from "../../contracts/sandbox-channel-fs";
-import {
-  SANDBOX_DIAGNOSTICS_VERSION,
-  SANDBOX_DIAGNOSTICS_MAX_BYTES,
-} from "../../contracts/sandbox-channel-diagnostics";
 
 const codexOauthPlaceholders =
   MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"].placeholders!;
@@ -207,219 +199,7 @@ function placeholderRustDoc(name: string): readonly string[] {
   ];
 }
 
-function channelConstant(
-  rustModulePath: readonly string[],
-  rustConstName: string,
-  value: number,
-  field: string,
-): RustConstantBinding {
-  return {
-    rustModulePath,
-    rustConstName,
-    value: rustU32(value),
-    rustDoc: [`Shared finite policy: ${field}.`],
-  };
-}
-
 const expectedBindings = [
-  channelConstant(
-    ["sandbox_channel"],
-    "SCHEMA_VERSION",
-    SANDBOX_CHANNEL_LIMITS.schemaVersion,
-    "schemaVersion",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "RESPONSE_OVERHEAD_BYTES",
-    SANDBOX_CHANNEL_LIMITS.responseOverheadBytes,
-    "responseOverheadBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_FRAME_BYTES",
-    SANDBOX_CHANNEL_LIMITS.maxFrameBytes,
-    "maxFrameBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_QUEUED_BYTES",
-    SANDBOX_CHANNEL_LIMITS.maxQueuedBytes,
-    "maxQueuedBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_QUEUED_FRAMES",
-    SANDBOX_CHANNEL_LIMITS.maxQueuedFrames,
-    "maxQueuedFrames",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_PENDING",
-    SANDBOX_CHANNEL_LIMITS.maxPending,
-    "maxPending",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_INCOMING",
-    SANDBOX_CHANNEL_LIMITS.maxIncoming,
-    "maxIncoming",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "HELLO_TIMEOUT_MS",
-    SANDBOX_CHANNEL_LIMITS.helloTimeoutMs,
-    "helloTimeoutMs",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "REQUEST_TIMEOUT_MS",
-    SANDBOX_CHANNEL_LIMITS.requestTimeoutMs,
-    "requestTimeoutMs",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "WRITE_TIMEOUT_MS",
-    SANDBOX_CHANNEL_LIMITS.writeTimeoutMs,
-    "writeTimeoutMs",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_CATEGORIES",
-    SANDBOX_CHANNEL_LIMITS.maxCategories,
-    "maxCategories",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_CATEGORY_NAME_BYTES",
-    SANDBOX_CHANNEL_LIMITS.maxCategoryNameBytes,
-    "maxCategoryNameBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_CATEGORY_VERSION",
-    SANDBOX_CHANNEL_LIMITS.maxCategoryVersion,
-    "maxCategoryVersion",
-  ),
-  channelConstant(
-    ["sandbox_channel"],
-    "MAX_JSON_DEPTH",
-    SANDBOX_CHANNEL_LIMITS.maxJsonDepth,
-    "maxJsonDepth",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "VERSION",
-    SANDBOX_FS_VERSION,
-    "version",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_ENTRIES",
-    SANDBOX_FS_LIMITS.maxEntries,
-    "maxEntries",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_RESPONSE_BYTES",
-    SANDBOX_FS_LIMITS.maxResponseBytes,
-    "maxResponseBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_PATH_COMPONENTS",
-    SANDBOX_FS_LIMITS.maxPathComponents,
-    "maxPathComponents",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_PATH_BYTES",
-    SANDBOX_FS_LIMITS.maxPathBytes,
-    "maxPathBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_NAME_BYTES",
-    SANDBOX_FS_LIMITS.maxNameBytes,
-    "maxNameBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_DISPLAY_NAME_BYTES",
-    SANDBOX_FS_LIMITS.maxDisplayNameBytes,
-    "maxDisplayNameBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_CURSORS",
-    SANDBOX_FS_LIMITS.maxCursors,
-    "maxCursors",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "CURSOR_IDLE_MS",
-    SANDBOX_FS_LIMITS.cursorIdleMs,
-    "cursorIdleMs",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_ENUMERATION_STEPS",
-    SANDBOX_FS_LIMITS.maxEnumerationSteps,
-    "maxEnumerationSteps",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "PROCESSING_BUDGET_MS",
-    SANDBOX_FS_LIMITS.processingBudgetMs,
-    "processingBudgetMs",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_CHUNK_BYTES",
-    SANDBOX_FS_LIMITS.maxChunkBytes,
-    "maxChunkBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_HANDLES",
-    SANDBOX_FS_LIMITS.maxHandles,
-    "maxHandles",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_IN_FLIGHT_READS",
-    SANDBOX_FS_LIMITS.maxInFlightReads,
-    "maxInFlightReads",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "HANDLE_IDLE_MS",
-    SANDBOX_FS_LIMITS.handleIdleMs,
-    "handleIdleMs",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_PREVIEW_BYTES",
-    SANDBOX_FS_LIMITS.maxPreviewBytes,
-    "maxPreviewBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel", "fs"],
-    "MAX_PREFIX_BYTES",
-    SANDBOX_FS_LIMITS.maxPrefixBytes,
-    "maxPrefixBytes",
-  ),
-  channelConstant(
-    ["sandbox_channel", "diagnostics"],
-    "VERSION",
-    SANDBOX_DIAGNOSTICS_VERSION,
-    "version",
-  ),
-  channelConstant(
-    ["sandbox_channel", "diagnostics"],
-    "MAX_BYTES",
-    SANDBOX_DIAGNOSTICS_MAX_BYTES,
-    "maxBytes",
-  ),
   {
     rustModulePath: ["runners"],
     rustConstName: "OFFICIAL_RUNNER_TOKEN_PREFIX",
@@ -727,6 +507,14 @@ const expectedBindings = [
     rustConstName: "CANONICAL_WORKING_DIR",
     value: rustString(CANONICAL_WORKING_DIR),
     rustDoc: canonicalWorkingDirDoc,
+  },
+  {
+    rustModulePath: ["runners", "paths"],
+    rustConstName: "PI_AGENT_DIR",
+    value: rustString(PI_AGENT_DIR),
+    rustDoc: [
+      "Canonical Pi agent directory containing instructions, skills and native state.",
+    ],
   },
   {
     rustModulePath: ["runners", "paths"],

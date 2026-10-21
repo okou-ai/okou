@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.2...runner-provider-v0.11.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
+
+### Refactoring
+
+* **runner-provider:** converge catalog refresh cancellation completion ([#41899](https://github.com/okou-ai/okou/issues/41899)) ([6c63f17](https://github.com/okou-ai/okou/commit/6c63f175ba93c0b7b1f13357e42cd4ea5d2b8b06))
+
+## [0.10.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.1...runner-provider-v0.10.2) (2026-10-20)
+
+
+### Refactoring
+
+* **runner-provider:** converge local completion cleanup ([#41870](https://github.com/okou-ai/okou/issues/41870)) ([12efe2a](https://github.com/okou-ai/okou/commit/12efe2aeb72a20ca0284c13b3e126e589be2a6f0))
+
+## [0.10.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.10.0...runner-provider-v0.10.1) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+* **runner:** require explicit finalizing resource sources ([#41825](https://github.com/okou-ai/okou/issues/41825)) ([52e13a4](https://github.com/okou-ai/okou/commit/52e13a4346eb63d84ef247820acd8f09c709619c))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.9.1...runner-provider-v0.10.0) (2026-10-20)
 
 

@@ -38,15 +38,20 @@ Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
 transient token output and tool cards are not rendered. Sharing, Cloud Browser,
-Computer Use, artifact controls, and connector selection are outside this local UI. The composer uses a combined send/stop
+Computer Use, artifact controls, and the global connector picker are outside this local UI.
+Trusted connector and permission action links in assistant messages render as native cards,
+including exact-account reconnect, conversation account confirmation, and permission decisions.
+Permission details and confirmation use a native sheet. Credential forms remain
+native; external authorization uses system Safari and verifies owned server receipts
+before continuing the conversation. The composer uses a combined send/stop
 control: a nonempty draft can be sent while work is active, and the empty-draft
 control can stop active work.
 
-Before sending in an existing conversation, the app clears thread-level connector
-overrides and disables Cloud Browser and Computer Use through existing APIs,
+Before sending in an existing conversation, the app preserves confirmed connector
+account selections and disables Cloud Browser and Computer Use through existing APIs,
 then reads the settings back. These are shared conversation settings: the same
-conversation on the web will also reflect the changes. The agent's default
-connectors remain in use.
+conversation on the web will also reflect the changes. Existing Agent connector
+authorizations and confirmed chat account choices remain in use.
 
 ## Local setup
 
@@ -116,7 +121,7 @@ swift test --package-path ios/Packages/ChatData
 They retain real HTTP decoding, loopback snapshot transfers, and temporary SQLite
 files. ChatDataTestSupport shares the existing HTTP fixture with App integration
 tests and is linked only by test targets. Store and UI tests remain in
-`OkouTests`. The CI script runs both package suites and the App suite.
+`OkouTests`. CI requires both package suites and the App suite.
 
 The project uses synchronized folders: adding Swift files beneath `Okou/` or
 `OkouTests/` adds them to the corresponding target. `Resources/Info.plist` is
@@ -259,10 +264,13 @@ build, standalone ChatDomain/ChatData tests, and the simulator tests on macOS 26
 with Xcode 26.3 and iOS 26.2. Formatting includes both package manifests, sources,
 and tests. Swift
 packages must match `Package.resolved`; CI checks that it remains unchanged.
+Standalone package tests run on a separate macOS runner from the App build and
+simulator suite, so package compilation does not consume the simulator job's
+15-minute budget. Both jobs are required by the gate.
 
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or
 after change detection confirms they are unnecessary. Detection failures,
-cancelled builds, and unexpectedly skipped builds fail the gate. Register this
+cancelled jobs, and unexpectedly skipped jobs fail the gate. Register this
 check alongside the existing required checks after the workflow is on main.
 Pure `ios/` pull requests and merge groups skip Turbo TypeScript lint, types,
 formatting, Knip, App/API/CLI and other JavaScript tests, benchmarks, and App/CLI
@@ -282,7 +290,13 @@ Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
-server contract verification. To run the same CI build locally:
+server contract verification. CI starts its configured simulator while resolving
+locked dependencies, then waits for system boot readiness before asset and App
+compilation. This keeps cold system-service startup out of asset-tool discovery.
+After `build-for-testing` succeeds, CI executes every native test with
+`test-without-building`. Failed or
+cancelled preparation still blocks the required gate. The standalone command
+builds and runs every suite sequentially with an explicit local simulator:
 
 ```sh
 RUNNER_TEMP="$(mktemp -d)" \

@@ -10,6 +10,14 @@ struct ChatComposerTextInput: UIViewRepresentable {
   let acceptsImages: Bool
   let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
+  var editor: ComposerEditor? = nil
+  var editorOrder = 0
+  var isAppendTarget = true
+  var searchableRanges: (@MainActor () -> [NSRange])? = nil
+  var focusRequested: (@MainActor () -> Void)? = nil
+  var placeholder = "Message Okou"
+  var identifier = "message-input"
+  var expanded = false
   @Environment(\.isEnabled) private var isEnabled
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -31,6 +39,17 @@ struct ChatComposerTextInput: UIViewRepresentable {
 
   func updateUIView(_ view: ComposerTextView, context: Context) {
     context.coordinator.input = self
+    editor?.register(
+      view, order: editorOrder, canAppend: isAppendTarget,
+      isCurrent: { [weak coordinator = context.coordinator] in
+        coordinator?.input.isCurrent() == true
+      },
+      searchableRanges: { [weak coordinator = context.coordinator] in
+        coordinator?.input.searchableRanges?()
+      },
+      focusRequested: { [weak coordinator = context.coordinator] in
+        coordinator?.input.focusRequested?()
+      })
     // Reassigning text during composition cancels the system's marked range.
     if view.text != text, view.markedTextRange == nil {
       let selection = view.selectedRange
@@ -40,6 +59,9 @@ struct ChatComposerTextInput: UIViewRepresentable {
         location: min(selection.location, end),
         length: min(selection.length, max(0, end - selection.location)))
     }
+    view.placeholder.text = placeholder
+    view.accessibilityLabel = placeholder
+    view.accessibilityIdentifier = identifier
     view.isEditable = isEnabled
     view.acceptsImages = acceptsImages && isEnabled
     view.pasteImages = pasteImages
@@ -57,10 +79,12 @@ struct ChatComposerTextInput: UIViewRepresentable {
     guard let width = proposal.width else { return nil }
     let line = uiView.font?.lineHeight ?? 20
     let height = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
-    return CGSize(width: width, height: isFocused ? min(max(height, line * 2), line * 6) : line)
+    return CGSize(
+      width: width, height: isFocused || expanded ? min(max(height, line * 2), line * 6) : line)
   }
 
   static func dismantleUIView(_ view: ComposerTextView, coordinator: Coordinator) {
+    coordinator.input.editor?.unregister(view)
     view.delegate = nil
     view.pasteDelegate = nil
     view.pasteImages = { _ in }
@@ -81,11 +105,11 @@ struct ChatComposerTextInput: UIViewRepresentable {
     }
 
     func textViewDidBeginEditing(_ textView: UITextView) {
-      guard input.isCurrent() else { return }
+      guard input.isCurrent(), !input.isFocused else { return }
       input.isFocused = true
     }
     func textViewDidEndEditing(_ textView: UITextView) {
-      guard input.isCurrent() else { return }
+      guard input.isCurrent(), input.isFocused else { return }
       input.isFocused = false
     }
 

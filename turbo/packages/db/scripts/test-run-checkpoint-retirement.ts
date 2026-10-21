@@ -5,7 +5,7 @@ import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -65,7 +65,7 @@ async function retainedState() {
 }
 
 try {
-  await applyPendingMigrations(migrationSql, { beforeMillis: migration.when });
+  await applyFixtureMigrations(migrationSql, { beforeMillis: migration.when });
   const agentId = randomUUID();
   const sessionId = randomUUID();
   const runId = randomUUID();
@@ -136,11 +136,11 @@ try {
   );
 
   const before = await retainedState();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: migration.when + 1,
   });
   assert.deepEqual(await retainedState(), before);
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: migration.when + 1,
   });
   assert.deepEqual(await retainedState(), before);

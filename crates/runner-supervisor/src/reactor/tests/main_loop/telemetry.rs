@@ -1,9 +1,10 @@
 use super::super::super::*;
 use super::super::support::{
-    SpeculativeIdleSeedSpec, context_with_session, minimal_context, mock_run_config_with_api_url,
-    mock_run_config_with_overrides_and_api_url, push_job, seed_idle_pool,
-    seed_idle_pool_with_speculative_timezone, shutdown, test_profiles, test_runner_identity,
-    wait_budget_count, wait_cancel_handle, wait_cancel_token_removed, wait_discover_entered,
+    SpeculativeIdleSeedSpec, context_with_native_source, context_with_session, minimal_context,
+    mock_run_config_with_api_url, mock_run_config_with_overrides_and_api_url, push_job,
+    seed_idle_pool, seed_idle_pool_with_speculative_timezone, shutdown, test_profiles,
+    test_runner_identity, wait_budget_count, wait_cancel_handle, wait_cancel_token_removed,
+    wait_discover_entered,
 };
 use crate::home_image_cache::HomeImageCache;
 use runner_host::paths::RunnerPaths;
@@ -396,7 +397,9 @@ async fn cancelled_finalizing_handoff_flushes_outcome_without_executor() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -452,8 +455,7 @@ async fn finalizing_no_exact_fallback_reports_atomic_idle_miss() {
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
     let run_id = RunId::new_v4();
-    let mut context = minimal_context(run_id);
-    context.reuse_key = Some(reuse_key.to_owned());
+    let context = context_with_native_source(run_id, reuse_key, predecessor_run_id);
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
@@ -463,7 +465,9 @@ async fn finalizing_no_exact_fallback_reports_atomic_idle_miss() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -517,8 +521,7 @@ async fn finalizing_handoff_deadline_reports_fallback_reason() {
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
     let run_id = RunId::new_v4();
-    let mut context = minimal_context(run_id);
-    context.reuse_key = Some(reuse_key.to_owned());
+    let context = context_with_native_source(run_id, reuse_key, predecessor_run_id);
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
@@ -528,7 +531,9 @@ async fn finalizing_handoff_deadline_reports_fallback_reason() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(1),
                 )),
         )
@@ -599,8 +604,7 @@ async fn finalizing_handoff_activation_failure_is_not_reported_as_accepted() {
     wait_discover_entered(&env, Duration::from_secs(5)).await;
 
     let run_id = RunId::new_v4();
-    let mut context = minimal_context(run_id);
-    context.reuse_key = Some(reuse_key.to_owned());
+    let context = context_with_native_source(run_id, reuse_key, predecessor_run_id);
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
@@ -610,7 +614,9 @@ async fn finalizing_handoff_activation_failure_is_not_reported_as_accepted() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -683,8 +689,7 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
     let run_id = RunId::new_v4();
-    let mut context = minimal_context(run_id);
-    context.reuse_key = Some(reuse_key.to_owned());
+    let context = context_with_native_source(run_id, reuse_key, predecessor_run_id);
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
@@ -694,7 +699,9 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )
@@ -788,6 +795,7 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
         sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
     ));
     let candidate = ParkedIdleCandidateBuilder::new(reuse_key, lease)
+        .with_source_run_id(predecessor_run_id)
         .with_rootfs_hash(test_profiles()["vm0/default"].rootfs_hash.clone())
         .with_history_generation_run_id(predecessor_run_id)
         .with_factory(factory)
@@ -801,8 +809,7 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
     wait_discover_entered(&env, Duration::from_secs(5)).await;
 
     let run_id = RunId::new_v4();
-    let mut context = minimal_context(run_id);
-    context.reuse_key = Some(reuse_key.to_owned());
+    let context = context_with_native_source(run_id, reuse_key, predecessor_run_id);
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
@@ -812,7 +819,9 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
                     test_runner_identity(),
-                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    runner_provider::RunnerPreferenceTarget::FinalizingPredecessor(
+                        predecessor_run_id,
+                    ),
                     std::time::Instant::now() + Duration::from_secs(30),
                 )),
         )

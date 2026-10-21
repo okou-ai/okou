@@ -9,7 +9,7 @@ import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyPayloadLoop$, waitAblyPayloadLoopUntil$ } from "../realtime.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef, onRejection, withCleanup } from "../utils.ts";
+import { onRef, withCleanup } from "../utils.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
@@ -71,9 +71,9 @@ function createWalletConnectSignals(
   context: ChatActionContext,
 ) {
   const reload$ = state(0);
-  const busy$ = state(false);
   const continued$ = state(false);
-  const callbackFailed$ = state(false);
+  const internalOperation$ = state<Promise<void> | undefined>(undefined);
+  const running$ = state<Promise<void> | null>(null);
   const status$ = computed(async (get) => {
     get(reload$);
     const result = await accept(
@@ -110,58 +110,73 @@ function createWalletConnectSignals(
       return await set(refreshCompletion$, signal);
     },
   );
-  const start$ = command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(busy$) || get(continued$)) {
-      return;
-    }
-    set(busy$, true);
-    set(callbackFailed$, false);
-    await withCleanup(
-      (async () => {
+  const continueAfterAuthorization$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      if (get(continued$)) {
+        return;
+      }
+      // Refresh for this user action so stale consent and failed reads can
+      // recover before waiting for future notifications.
+      if (!(await set(refreshCompletion$, signal))) {
         await set(
           waitAblyPayloadLoopUntil$,
           {
             topic: "wallet:changed",
             loopCommand$: onWalletChanged$,
             initializeCommand$: refreshCompletion$,
+            options: { runOnSubscribe: false },
           },
           signal,
         );
-        const status = await get(status$);
-        signal.throwIfAborted();
-        if (status.status !== "authorized") {
-          return;
-        }
-        await onRejection(
-          set(
-            runChatActionCallback$,
-            {
-              ...context,
-              callbackPrompt: i18n.t(($) => {
-                return $.chat.walletAction.callbackPrompt;
-              }),
-              // The authorization identifies this continuation in both event
-              // tables, so retries and other tabs cannot create another run.
-              callbackIds: {
-                clientEventId: status.authorizationId,
-                chatThreadSortEventId: status.authorizationId,
-              },
-            },
-            signal,
-          ),
-          () => {
-            set(callbackFailed$, true);
+      }
+      const status = await get(status$);
+      signal.throwIfAborted();
+      if (status.status !== "authorized") {
+        return;
+      }
+      await set(
+        runChatActionCallback$,
+        {
+          ...context,
+          callbackPrompt: i18n.t(($) => {
+            return $.chat.walletAction.callbackPrompt;
+          }),
+          // The authorization identifies this continuation in both event
+          // tables, so retries and other tabs cannot create another run.
+          callbackIds: {
+            clientEventId: status.authorizationId,
+            chatThreadSortEventId: status.authorizationId,
           },
-        );
-        signal.throwIfAborted();
-        set(continued$, true);
-      })(),
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      set(continued$, true);
+    },
+  );
+  const start$ = command(({ get, set }, signal: AbortSignal) => {
+    const running = get(running$);
+    if (running) {
+      return running;
+    }
+    const operation = withCleanup(
+      set(continueAfterAuthorization$, signal),
       () => {
-        set(busy$, false);
+        set(running$, null);
       },
     );
+    set(running$, operation);
+    set(internalOperation$, operation);
+    return operation;
   });
-  return { status$, busy$, continued$, callbackFailed$, start$ };
+  return {
+    status$,
+    continued$,
+    operation$: computed((get) => {
+      return get(internalOperation$);
+    }),
+    start$,
+  };
 }
 
 export type WalletConnectSignals = ReturnType<
@@ -225,6 +240,7 @@ function createWalletApprovalSignals(
             topic: "wallet:changed",
             loopCommand$: changed$,
             initializeCommand$: refresh$,
+            options: { runOnSubscribe: false },
           },
           signal,
         );

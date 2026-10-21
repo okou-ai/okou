@@ -19,9 +19,9 @@ import {
 } from "@okouai/core/storage-names";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { piMemorySummaryTokenCount } from "@okouai/pi-agent-runtime/api";
 import { command, computed, type Computed } from "ccstate";
 import { and, asc, count, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
-import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { Parser } from "tar";
 import { z } from "zod";
 
@@ -681,7 +681,7 @@ const downloadProjectionArchive$ = command(
       return { status: "missing" };
     }
     const tokenCount = safeSync(() => {
-      return encode(decoded.ok).length;
+      return piMemorySummaryTokenCount(decoded.ok);
     });
     if (!("ok" in tokenCount)) {
       return { status: "invalid" };
@@ -905,7 +905,7 @@ function readyProjectionIsAuthentic(
 ): boolean {
   const content = Buffer.from(projection.content, "utf8");
   const tokenCount = safeSync(() => {
-    return encode(projection.content).length;
+    return piMemorySummaryTokenCount(projection.content);
   });
   // `tokenCount` describes the full stored source. The prompt budget is applied
   // by the runtime renderer, so a larger authentic source is not corrupt here.

@@ -4278,24 +4278,6 @@ function firewallAuthRunIsActive(
   });
 }
 
-async function findFirewallAuthRun(
-  db: Db,
-  auth: SandboxAuth,
-): Promise<FirewallAuthRun | undefined> {
-  const [run] = await db
-    .select({ orgId: agentRuns.orgId, status: agentRuns.status })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, auth.runId),
-        eq(agentRuns.orgId, auth.orgId),
-        eq(agentRuns.userId, auth.userId),
-      ),
-    )
-    .limit(1);
-  return run;
-}
-
 /** Final admission owns its single statement. Credential/provider work has
  * finished; no transaction handle or callback is passed in from preparation. */
 export const admitPreparedFirewallAuthResponse$ = command(
@@ -6010,7 +5992,20 @@ async function prepareFirewallAuthRequest(
 ): Promise<PreparedFirewallAuthRequest> {
   const matchedFirewall = body.matchedFirewall;
   const customConnectorId = matchedFirewall?.customConnectorId;
-  const run = await findFirewallAuthRun(db, auth);
+  const run = await (async (): Promise<FirewallAuthRun | undefined> => {
+    const [run] = await db
+      .select({ orgId: agentRuns.orgId, status: agentRuns.status })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, auth.runId),
+          eq(agentRuns.orgId, auth.orgId),
+          eq(agentRuns.userId, auth.userId),
+        ),
+      )
+      .limit(1);
+    return run;
+  })();
   if (!run) {
     L.warn(`[${auth.runId}] Run not found for firewall auth`);
     return { ok: false, response: badRequestMessage("Run not found") };
@@ -6123,7 +6118,20 @@ const resolveFirewallAuthWithTimings$ = command(
     if (!resolution.ok) {
       // A terminal transition can remove the final retained credential while the
       // complete bundle is reloaded after refresh. Preserve terminal-run guidance.
-      const run = await findFirewallAuthRun(db, auth);
+      const run = await (async (): Promise<FirewallAuthRun | undefined> => {
+        const [run] = await db
+          .select({ orgId: agentRuns.orgId, status: agentRuns.status })
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.id, auth.runId),
+              eq(agentRuns.orgId, auth.orgId),
+              eq(agentRuns.userId, auth.userId),
+            ),
+          )
+          .limit(1);
+        return run;
+      })();
       signal.throwIfAborted();
       return run && !firewallAuthRunIsActive(run.status)
         ? forbiddenTerminalRun()

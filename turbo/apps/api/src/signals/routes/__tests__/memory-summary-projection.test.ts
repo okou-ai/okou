@@ -2,19 +2,28 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { cronMaterializeMemorySummariesContract } from "@okouai/api-contracts/contracts/cron";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import type { BddStorageFileEntry } from "./helpers/api-bdd-storage-files";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  requireOrgId,
+} from "./helpers/chat-events-fixture";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { cronMaterializeMemorySummariesRoutes } from "../cron-materialize-memory-summaries";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
@@ -27,6 +36,9 @@ interface TarEntry {
 }
 
 interface PublishedVersion {
+  readonly actor: ApiTestUser;
+  readonly agentId: string;
+  readonly runnerGroup: string;
   readonly runId: string;
   readonly sandboxHeaders: { readonly authorization: string };
   readonly memoryStorageId: string;
@@ -157,11 +169,14 @@ function canonicalManifest(files: readonly BddStorageFileEntry[]): Buffer {
 
 // Memory ownership and writes come from a real claimed native Run.
 async function publishVersion(args: {
+  readonly isolatePg?: true;
   readonly files: readonly BddStorageFileEntry[];
   readonly archive: Buffer;
 }): Promise<PublishedVersion> {
   const fixture = createChatEventsFixture(context);
-  const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+  const { actor, agentId, runnerGroup } = await fixture.entitledChatActor(
+    args.isolatePg ? { isolatePg: true } : {},
+  );
   const storage = context.mocks.s3.send.getMockImplementation();
   const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
@@ -271,6 +286,9 @@ async function publishVersion(args: {
   }
   expect(committed.body.versionId).toBe(prepared.versionId);
   return {
+    actor,
+    agentId,
+    runnerGroup,
     runId: run.runId,
     sandboxHeaders: claimed.sandboxHeaders,
     memoryStorageId: memory.storageId,
@@ -286,6 +304,76 @@ beforeEach(() => {
 });
 
 describe("Runner memory publication", () => {
+  it("freezes the exact Unicode summary count after authenticated materialization", async () => {
+    const content = "v1\nKeep café notes, 中文记忆 and 👩🏽‍💻 examples exact.\n";
+    const summary = Buffer.from(content, "utf8");
+    // Materialization scans across tenants. Bind this case's database on its
+    // first real entitlement webhook, before publishing any memory versions.
+    const version = await publishVersion({
+      isolatePg: true,
+      files: [declaredFile("memory_summary.md", summary)],
+      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
+    });
+    const fixture = createChatEventsFixture(context);
+    await fixture.cancelChatRun(
+      version.actor,
+      version.runId,
+      version.sandboxHeaders,
+    );
+    installS3Objects();
+
+    // Exercise the production operator boundary, then observe the persisted
+    // summary only through a subsequent ordinary Runner claim.
+    // Each call processes a bounded batch, including earlier empty versions
+    // created by the real publication lifecycle. Drain that public work queue.
+    for (;;) {
+      const materialized = await accept(
+        setupApp({ context, routes: cronMaterializeMemorySummariesRoutes })(
+          cronMaterializeMemorySummariesContract,
+        ).materialize({
+          headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
+        }),
+        [200],
+      );
+      if (materialized.body.claimed === 0) {
+        break;
+      }
+    }
+    await fixture.configureSubscriptionPiModel(version.actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...version.actor, orgId: requireOrgId(version.actor) },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    fixture.mockPiResourceArchiveDownloads();
+    const run = await fixture.sendChatRun(version.actor, {
+      agentId: version.agentId,
+      model: "gpt-6-luna",
+      prompt: "Recall the published Unicode summary",
+    });
+    const consumer: {
+      sandboxHeaders?: { readonly authorization: string };
+    } = {};
+    onTestFinished(async () => {
+      await fixture.cancelChatRun(
+        version.actor,
+        run.runId,
+        consumer.sandboxHeaders,
+      );
+    });
+    const claimed = await fixture.claimChatRun(version.runnerGroup, run.runId);
+    consumer.sandboxHeaders = claimed.sandboxHeaders;
+    expect(claimed.claim.piLaunchConfig?.memoryRecall).toStrictEqual({
+      status: "ready",
+      memoryStorageId: version.memoryStorageId,
+      storageVersionId: version.storageVersionId,
+      content,
+      sourceHash: createHash("sha256").update(summary).digest("hex"),
+      sourceSize: summary.length,
+      tokenCount: encode(content).length,
+    });
+  });
+
   it("deduplicates memory publication through the claimed Run's upload authorization", async () => {
     const summary = Buffer.from("summary with stable logical contents", "utf8");
     const version = await publishVersion({

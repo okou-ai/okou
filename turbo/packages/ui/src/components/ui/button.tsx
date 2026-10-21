@@ -1,10 +1,11 @@
 import * as React from "react";
+import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Loader2 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import {
-  ButtonBase,
+  withButtonTooltip,
   buttonBaseClassName,
   type ButtonBaseProps,
   type ButtonTooltipOptions,
@@ -90,43 +91,64 @@ export type ButtonProps = StyledButtonProps & ButtonTooltipOptions;
 
 const Button = React.forwardRef<HTMLElement, ButtonProps>(
   (
-    { children, className, iconSize, pending = false, size, variant, ...props },
+    {
+      children,
+      className,
+      iconSize,
+      pending = false,
+      size,
+      variant,
+      nativeButton,
+      render,
+      showTooltip = false,
+      tooltipFullWidth = false,
+      title: _title,
+      ...props
+    }: ButtonProps & Pick<ButtonBaseProps, "tooltipFullWidth">,
     ref,
   ) => {
-    if (!pending) {
-      return (
-        <ButtonBase
-          {...props}
-          className={cn(buttonVariants({ variant, size, iconSize, className }))}
-          ref={ref}
-        >
-          {children}
-        </ButtonBase>
-      );
-    }
-    return (
-      <ButtonBase
-        {...props}
-        disabled
-        focusableWhenDisabled
-        aria-busy
-        data-pending=""
+    const buttonProps = pending
+      ? {
+          ...props,
+          disabled: true,
+          focusableWhenDisabled: true,
+          "aria-busy": true,
+          "data-pending": "",
+        }
+      : props;
+    const button = (
+      <ButtonPrimitive
         className={cn(
           buttonVariants({ variant, size, iconSize, className }),
-          "relative cursor-default",
+          pending && "relative cursor-default",
         )}
+        data-slot="button"
+        nativeButton={nativeButton}
         ref={ref}
+        render={render}
+        {...buttonProps}
       >
-        {/* `opacity-0`, not `invisible`: hidden text drops out of the
-            accessible name, and the focused busy button would be unnamed. */}
-        <span className="inline-flex items-center gap-2 opacity-0">
-          {children}
-        </span>
-        <span className="absolute inset-0 flex items-center justify-center">
-          <Loader2 className="animate-spin" aria-hidden />
-        </span>
-      </ButtonBase>
+        {pending ? (
+          <>
+            {/* The transparent label keeps both its layout and accessible name. */}
+            <span className="inline-flex items-center gap-2 opacity-0">
+              {children}
+            </span>
+            <span className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="animate-spin" aria-hidden />
+            </span>
+          </>
+        ) : (
+          children
+        )}
+      </ButtonPrimitive>
     );
+    return withButtonTooltip(button, {
+      disabled: buttonProps.disabled,
+      showTooltip,
+      tooltipFullWidth,
+      "aria-label": buttonProps["aria-label"],
+    });
   },
 );
 Button.displayName = "Button";

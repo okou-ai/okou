@@ -185,7 +185,6 @@ test("Bare setup opts in without treating a blocked window as connection or canc
   ).toBeInTheDocument();
   click(getAction("button", "Authorize Microsoft Teams"));
   const opened = new URL(open.calls[0]?.url ?? "");
-  expect(opened.searchParams.get("completion")).toBe("settings");
   expect(opened.searchParams.get("prompt")).toBe("Keep my draft");
   expect(window.location.pathname).toBe("/settings/teams");
   expect(

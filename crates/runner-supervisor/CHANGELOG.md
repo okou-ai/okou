@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.20.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.0...runner-supervisor-v0.20.1) (2026-10-21)
+
+## [0.20.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.19.3...runner-supervisor-v0.20.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
+## [0.19.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.19.2...runner-supervisor-v0.19.3) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
+## [0.19.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.19.1...runner-supervisor-v0.19.2) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+* **runner:** require explicit finalizing resource sources ([#41825](https://github.com/okou-ai/okou/issues/41825)) ([52e13a4](https://github.com/okou-ai/okou/commit/52e13a4346eb63d84ef247820acd8f09c709619c))
+
+## [0.19.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.19.0...runner-supervisor-v0.19.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **api:** prefer same-host runners for draining predecessor homes ([#41799](https://github.com/okou-ai/okou/issues/41799)) ([ca63626](https://github.com/okou-ai/okou/commit/ca6362664686066960a89b36b4c99c2beee508d0))
+
 ## [0.19.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.18.1...runner-supervisor-v0.19.0) (2026-10-20)
 
 

@@ -19,7 +19,6 @@ import * as blobSchema from "./schema/blob";
 import * as sandboxTelemetrySchema from "./schema/sandbox-telemetry";
 import * as runnerSchema from "./schema/runner-job-queue";
 import * as runnerStateSchema from "./runtime/runner-state";
-import * as runnerWssTicketSchema from "./schema/runner-wss-ticket";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
 import * as chatRelationSchema from "./schema/chat-relation";
 import * as chatNetworkBodyCaptureSchema from "./schema/chat-network-body-capture";
@@ -186,7 +185,6 @@ export const schema = {
   ...sandboxTelemetrySchema,
   ...runnerSchema,
   ...runnerStateSchema,
-  ...runnerWssTicketSchema,
   ...chatAgentRunContextSchema,
   ...chatRelationSchema,
   ...chatNetworkBodyCaptureSchema,

@@ -22,7 +22,7 @@ import {
   getConnectorSwitch,
   listAgent,
   mockConnectors,
-  mockConnectorOverviewAccountSummaries,
+  mockSavedConnectorAccounts,
   mockGithubAccounts,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
@@ -107,18 +107,9 @@ test("Keep the exact account and current reconnect UI when future setup metadata
     missingRequiredFields: [],
     configuredFieldKeys: ["accessToken"],
   };
-  const summary = {
-    target: account.target,
-    accountCount: 1,
-    attentionCount: 1,
-    defaultConnection: account,
-  };
   const accountsResponse = context.mocks.deferred<void>();
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [summary];
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, { summaries: [summary] });
+  mockSavedConnectorAccounts(context, () => {
+    return [account];
   });
   context.mocks.api(
     connectorAccountsContract.connections,
@@ -180,15 +171,8 @@ test("Show Mercury disclosures while managing its accounts", async () => {
       },
     }),
   ]);
-  mockConnectorOverviewAccountSummaries(context, () => {
-    return [
-      {
-        target: account.target,
-        accountCount: 1,
-        attentionCount: 0,
-        defaultConnection: account,
-      },
-    ];
+  mockSavedConnectorAccounts(context, () => {
+    return [account];
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, {
@@ -350,40 +334,7 @@ async function openDefaultAccountManager(rejectFirst = false) {
       };
     });
   };
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    const defaultConnection = accounts().find((account) => {
-      return account.isDefault;
-    });
-    if (!defaultConnection) {
-      throw new Error("Expected default account");
-    }
-    return respond(200, {
-      summaries: [
-        {
-          target: work.target,
-          accountCount: 2,
-          attentionCount: 0,
-          defaultConnection,
-        },
-      ],
-    });
-  });
-  mockConnectorOverviewAccountSummaries(context, () => {
-    const defaultConnection = accounts().find((account) => {
-      return account.isDefault;
-    });
-    if (!defaultConnection) {
-      throw new Error("Expected default account");
-    }
-    return [
-      {
-        target: work.target,
-        accountCount: 2,
-        attentionCount: 0,
-        defaultConnection,
-      },
-    ];
-  });
+  mockSavedConnectorAccounts(context, accounts);
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, {
       connections: accounts(),
@@ -680,20 +631,6 @@ async function openNamedConnectorAccountRename() {
     isDefault: true,
     externalUsername: "octocat",
   });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: account
-        ? [
-            {
-              target: account.target,
-              accountCount: 1,
-              attentionCount: 0,
-              defaultConnection: account,
-            },
-          ]
-        : [],
-    });
-  });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, {
       connections: account ? [account] : [],
@@ -827,18 +764,6 @@ test("Review and reconnect the connector account the user selected", async () =>
     isDefault: false,
     externalUsername: "personal",
     scopeMismatch: true,
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: work.target,
-          accountCount: 2,
-          attentionCount: 1,
-          defaultConnection: work,
-        },
-      ],
-    });
   });
   context.mocks.api(
     connectorAccountsContract.scopeDiff,
@@ -1119,30 +1044,9 @@ test("Manage access for a connector without configurable permissions", async () 
 });
 
 test("Prevent account additions when a connector target is unavailable", async () => {
-  const [connector] = mockConnectors(context, [
+  mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "work" },
   ]);
-  if (!connector) {
-    throw new Error("Expected GitHub connector");
-  }
-  const account = builtinAccount({
-    id: connector.id,
-    displayName: "Work",
-    isDefault: true,
-    externalUsername: "work",
-  });
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        },
-      ],
-    });
-  });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(404, {
       error: { message: "Target unavailable", code: "NOT_FOUND" },
@@ -1176,9 +1080,6 @@ test("Read accounts only inside the manager and refresh them each time it opens"
     displayName: "Work",
     isDefault: true,
     externalUsername: "work",
-  });
-  context.mocks.api(connectorAccountsContract.summaries, () => {
-    throw new Error("The directory must not request global account summaries");
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, {

@@ -64,19 +64,29 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
     version == 1
       && parts.allSatisfy {
         guard let type = $0["type"]?.string else { return false }
+        if type == "feedback" {
+          guard let quote = $0["quote"]?.string, !quote.isEmpty,
+            case .array(let note) = $0["note"]
+          else { return false }
+          return note.allSatisfy {
+            ["text", "chat_thread", "agent", "template"].contains($0["type"]?.string ?? "")
+          }
+        }
         return [
           "text", "file", "chat_thread", "agent", "template", "source", "additional_info",
           "automation", "feedback",
         ].contains(type)
       }
   }
+  public var hasFeedback: Bool { parts.contains { $0["type"]?.string == "feedback" } }
+
   public var contextLabels: [String] {
     parts.compactMap { part in
       switch part["type"]?.string {
       case "text", "file": return nil
       case "agent": return part["nameSnapshot"]?.string
       case "chat_thread", "template": return part["titleSnapshot"]?.string
-      case "feedback": return part["quote"]?.string
+      case "feedback": return nil
       case "source": return "Source context"
       case "additional_info": return "Additional context"
       case "automation": return part["workflowName"]?.string

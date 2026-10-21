@@ -193,22 +193,36 @@ export const runnerInstalledVersionsSchema = z
  * runner is not an exclusive assignee; another runner with a better compatible
  * local resource remains eligible to claim.
  */
-export const runnerPreferenceSchema = z.discriminatedUnion("kind", [
+export const runnerPreferenceSchema = z.union([
   z
     .object({
       kind: z.literal("preference"),
       runnerIdentity: runnerProcessIdentitySchema,
       tier: z.enum([
-        "exactSandbox",
         "finalizingPredecessor",
         "peerFinalizingPredecessor",
-        "reusableSandbox",
-        "homeCache",
+        "sourceHomeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
-      // Reader preparation only; API discovery writers enable this separately.
-      // Require it for finalizing preferences after the rollout gates in #41657.
+      finalizingSourceRunId: z.uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("preference"),
+      runnerIdentity: runnerProcessIdentitySchema,
+      tier: z.literal("exactSandbox"),
+      expiresAt: z.string().datetime({ offset: true }),
+      // Old serving API writers omit this until #41875; retire in #41876.
       finalizingSourceRunId: z.uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("preference"),
+      runnerIdentity: runnerProcessIdentitySchema,
+      tier: z.enum(["reusableSandbox", "homeCache"]),
+      expiresAt: z.string().datetime({ offset: true }),
     })
     .strict(),
   z
@@ -486,6 +500,8 @@ export const heldSandboxStateSchema = z.object({
   reusableSandbox: z.object({
     profile: z.string(),
     historyGenerationRunId: z.uuid().optional(),
+    // Optional until old observation writers/rows retire under #41876.
+    sourceRunId: z.uuid().optional(),
   }),
 });
 
@@ -499,7 +515,13 @@ export const heldHomeStateSchema = z.object({
   reuseKey: z.string(),
   lastCompletedAt: z.string().datetime({ offset: true }),
   homeCaches: z
-    .array(z.object({ profile: z.string(), homeAffinityVersion: z.literal(1) }))
+    .array(
+      z.object({
+        profile: z.string(),
+        homeAffinityVersion: z.literal(1),
+        sourceRunId: z.uuid().optional(),
+      }),
+    )
     .min(1)
     .max(8),
 });
@@ -550,7 +572,6 @@ export const storageMountEntrySchema = z
     archiveUrl: z.string().optional(),
     archiveSize: archiveSizeSchema.optional(),
     empty: z.boolean().optional(),
-    instructionsTargetFilename: z.string().optional(),
     missingRootPolicy: artifactMissingRootPolicySchema.optional(),
     writeback: z.boolean().optional(),
   })
@@ -572,13 +593,6 @@ export const storageMountEntrySchema = z
         code: z.ZodIssueCode.custom,
         path: ["empty"],
         message: "empty is only valid for writeback mounts",
-      });
-    }
-    if (writeback && mount.instructionsTargetFilename !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["instructionsTargetFilename"],
-        message: "instructionsTargetFilename is not valid for writeback mounts",
       });
     }
     if (!writeback && mount.missingRootPolicy !== undefined) {
@@ -1069,8 +1083,8 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
-  // Absent on retained contexts that captured an instruction Storage mount.
-  // API-only protocol metadata; the body is read from the Agent at claim time.
+  // Keep emitting this marker for supported DB-reader API rollback artifacts.
+  // Current claims select instructions through the Run's Agent association.
   agentInstructionsSource: z.literal("agent").optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
@@ -1179,7 +1193,7 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
-  // Claim-only current Agent body; absence retains the captured Storage protocol.
+  // Claim-only current Agent body; absent for jobs without an Agent.
   agentInstructions: z.string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: z.boolean().optional(),
@@ -1518,9 +1532,6 @@ export const heartbeatBodySchema = z
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldHomeStates: z.array(heldHomeStateSchema).max(1024),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
-    // This shared endpoint also accepts PAT and older Runner heartbeats without
-    // a host observation. Absence is a first-class unknown, never WSS-eligible.
-    wssIngressServiceActive: z.boolean().optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {

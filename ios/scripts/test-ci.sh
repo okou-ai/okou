@@ -54,7 +54,15 @@ echo main-change > ios/App.swift
 commit main-advanced
 git switch --quiet -c pull-merge
 git merge --quiet --no-ff unrelated-pr -m merge
+# A shallow PR merge ref has both parents even when its original base is absent.
+git clone --quiet --depth=2 --branch pull-merge "file://$repo" "$test_root/shallow-pr"
+cd "$test_root/shallow-pr"
+if git cat-file -e "${base}^{commit}" 2>/dev/null; then
+  echo "Expected the original PR base to be outside the shallow checkout" >&2
+  exit 1
+fi
 expect false EVENT_NAME=pull_request CHECKOUT_REF=refs/pull/1/merge PULL_REQUEST_BASE_SHA="$base"
+cd "$repo"
 
 # A direct PR head still uses the supplied PR base and its merge base.
 git switch --quiet --detach "$pr_head"
@@ -75,9 +83,13 @@ expect true EVENT_NAME=workflow_dispatch HEAD_REF=release-please--branches--main
 # An iOS change earlier in a multi-entry merge group/main push must not disappear.
 echo later > turbo/app.ts
 commit later-unrelated-change
+# Preserve every entry's changes with only the group's bounded ancestry present.
+git clone --quiet --depth=3 --branch ios-pr "file://$repo" "$test_root/shallow-group"
+cd "$test_root/shallow-group"
 expect true EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$base"
 expect true EVENT_NAME=push PUSH_BEFORE_SHA="$base"
 expect false EVENT_NAME=push PUSH_BEFORE_SHA="$(git rev-parse HEAD^)"
+cd "$repo"
 expect true EVENT_NAME=workflow_dispatch
 
 # Deletions and renames across the iOS boundary also select checks.
@@ -115,13 +127,19 @@ reject EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr
 reject EVENT_NAME=unexpected
 
 gate() {
-  EVENT_NAME=pull_request DETECT_RESULT=$1 IOS_NEEDED=$2 BUILD_RESULT=$3 ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+  EVENT_NAME=pull_request DETECT_RESULT=$1 IOS_NEEDED=$2 BUILD_RESULT=$3 PACKAGES_RESULT=${4-$3} ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 }
 gate success true success
 gate success false skipped
 for build_result in failure cancelled skipped; do
   if gate success true "$build_result" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted required build result $build_result" >&2
+    exit 1
+  fi
+done
+for package_result in failure cancelled skipped ''; do
+  if gate success true success "$package_result" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted required package result $package_result" >&2
     exit 1
   fi
 done
@@ -135,15 +153,19 @@ if gate success "" skipped > "$test_root/rejected.log" 2>&1; then
   echo "Gate accepted a missing change decision" >&2
   exit 1
 fi
-EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
-EVENT_NAME=push DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=skipped ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
+EVENT_NAME=push DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=skipped BUILD_RESULT=skipped ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 for result in failure cancelled skipped; do
-  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=$result bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=$result bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted failed/missing archive publication $result" >&2
     exit 1
   fi
-  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true BUILD_RESULT=success ARCHIVE_RESULT=$result PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=$result PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted failed/missing native archive build $result" >&2
+    exit 1
+  fi
+  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=$result BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted failed/missing package tests $result" >&2
     exit 1
   fi
 done

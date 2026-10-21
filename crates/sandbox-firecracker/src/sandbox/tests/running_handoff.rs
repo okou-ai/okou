@@ -9,7 +9,7 @@ async fn coordinated_park(
 ) -> sandbox::Result<(TestNormalOperationFence, PhysicalParkOutcome, ())> {
     super::super::park_with_ready_for_park_and_preparation_with_observer(
         "running-handoff-test",
-        coordinator,
+        coordinator.into(),
         None,
         |outcome| matches!(outcome, PhysicalParkOutcome::Handoff(_)),
         || async { Ok((TestNormalOperationFence, ())) },
@@ -21,6 +21,7 @@ async fn coordinated_park(
                 api_sock,
                 "running-handoff-test",
                 PhysicalParkRequest {
+                    pause_custody: None,
                     guest: Arc::new(tokio::sync::Mutex::new(None)),
                     handoff,
                     memory_policy: ParkMemoryPolicy::Reclaim,
@@ -477,6 +478,7 @@ async fn exact_handoff_interrupts_deflation_after_foreground_deadline_without_pa
             api.socket_path(),
             "handoff-during-deflation",
             PhysicalParkRequest {
+                pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
                 memory_policy: ParkMemoryPolicy::Reclaim,

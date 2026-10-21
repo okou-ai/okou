@@ -51,6 +51,7 @@ import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
+  publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
@@ -89,6 +90,7 @@ import {
   pendingChatQueueEventFromRow,
   pendingChatQueueEventReadPlan,
 } from "./chat-event-queue.service";
+import { notifyBrowserUserActionCallback$ } from "./browser-user-action-callback.service";
 import { touchSentChatThreadSort$ } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
@@ -1710,6 +1712,14 @@ const publishEnqueuedNormalSend$ = command(
   ): Promise<void> => {
     const { args, thread, touchedAt, enqueueCommit, context, requestFacts } =
       input;
+    if (
+      thread.kind === "existing" &&
+      thread.computerAccess.computerUseHostId !==
+        thread.current.computerUseHostId
+    ) {
+      await publishDesktopShellAuthorizationChangedSafely(args.userId);
+      signal.throwIfAborted();
+    }
     const picked = await settle(
       set(
         pickEnqueuedChatThread$,
@@ -1737,6 +1747,20 @@ const publishEnqueuedNormalSend$ = command(
       orgId: args.orgId,
     });
     signal.throwIfAborted();
+    if (args.body.clientEventId !== undefined) {
+      await bestEffort(
+        set(
+          notifyBrowserUserActionCallback$,
+          {
+            userId: args.userId,
+            threadId: thread.threadId,
+            eventId: args.body.clientEventId,
+          },
+          signal,
+        ),
+        signal,
+      );
+    }
     if (!picked.ok) {
       throw picked.error;
     }

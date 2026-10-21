@@ -233,7 +233,11 @@ function AccountDropdownContainer({
 
 // --- Expanded mobile drawer ---
 
-function ExpandedSidebar() {
+function ExpandedSidebarSurface({
+  children,
+}: {
+  readonly children: ReactNode;
+}) {
   const expanded = useGet(sidebarExpanded$);
   const { t } = useTranslation();
   return (
@@ -265,13 +269,21 @@ function ExpandedSidebar() {
         })}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <ExpandedHeader />
-        <ExpandedMainNav />
-        <InstatusStatusNotice placement="sidebar" />
-        <ExpandedUpgradeSection />
-        <ExpandedFooter />
+        {children}
       </aside>
     </SheetContent>
+  );
+}
+
+function ExpandedSidebar() {
+  return (
+    <ExpandedSidebarSurface>
+      <ExpandedHeader />
+      <ExpandedMainNav />
+      <InstatusStatusNotice placement="sidebar" />
+      <ExpandedUpgradeSection />
+      <ExpandedFooter />
+    </ExpandedSidebarSurface>
   );
 }
 

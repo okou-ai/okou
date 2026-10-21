@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { z } from "zod";
 
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const journal = z
   .object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })
@@ -53,7 +53,7 @@ try {
   await admin.query(`CREATE DATABASE "${name}"`);
   created = true;
   await client.connect();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when,
   });
   const credentialId = randomUUID();
@@ -154,7 +154,7 @@ try {
     await client.query(dependency.create);
     try {
       await assert.rejects(
-        applyPendingMigrations(migrationSql, {
+        applyFixtureMigrations(migrationSql, {
           beforeMillis: contraction.when + 1,
         }),
         (error: unknown) => {
@@ -180,7 +180,7 @@ try {
       await client.query(dependency.drop);
     }
   }
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when + 1,
   });
   assert.deepEqual(
@@ -203,7 +203,7 @@ try {
     "Contraction must preserve every surviving host field",
   );
   const contractedJournal = await readJournal();
-  await applyPendingMigrations(migrationSql, {
+  await applyFixtureMigrations(migrationSql, {
     beforeMillis: contraction.when + 1,
   });
   assert.deepEqual(

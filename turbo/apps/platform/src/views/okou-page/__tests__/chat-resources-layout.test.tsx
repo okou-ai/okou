@@ -242,7 +242,7 @@ test("Preserve category expansion controls after switching to mobile", async () 
   const panel = await screen.findByRole("region", { name: "Resources" });
   await userEvent.click(
     buttonNamed(
-      "Expand",
+      "Show more",
       within(panel).getByRole("region", { name: "Artifacts" }),
     ),
   );
@@ -260,7 +260,7 @@ test("Preserve category expansion controls after switching to mobile", async () 
   const artifacts = within(mobilePanel).getByRole("region", {
     name: "Artifacts",
   });
-  await userEvent.click(buttonNamed("Expand", artifacts));
+  await userEvent.click(buttonNamed("Show more", artifacts));
   await within(artifacts).findByText("report-4.pdf");
   await userEvent.click(buttonNamed("Collapse", artifacts));
   expect(within(artifacts).queryByText("report-4.pdf")).not.toBeInTheDocument();

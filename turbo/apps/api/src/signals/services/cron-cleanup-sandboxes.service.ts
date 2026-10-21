@@ -28,7 +28,7 @@ import {
 } from "../external/realtime";
 import { deleteS3Objects } from "../external/s3";
 import { settle, settleIncludingAbort, tapError } from "../utils";
-import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
+import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import {
@@ -399,8 +399,8 @@ const cleanupSingleRun$ = command(
     set(scheduleReleasedSlotPicks$, committed.releasedSlots, signal);
     const budgetExpired =
       committed.previousStatus === "running" && committed.chatThreadId !== null
-        ? await expireRunTimeBudgetInput(
-            db,
+        ? await set(
+            expireRunTimeBudgetInput$,
             { runId: run.id, chatThreadId: committed.chatThreadId },
             signal,
           )

@@ -11,30 +11,24 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
-import { storages } from "@okouai/db/schema/storage";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   agentDeletionAdmissionPlan,
   agentDeletionIdentityCondition,
   agentDeletionAutomationCondition,
   agentDeletionThreadSequencesSql,
-  agentInstructionDeletionCondition,
-  agentInstructionStoragesSql,
-  deletedInstructionStorageSchema,
   conversationReferenceBatches,
   conversationBlobLockCondition,
   conversationBlobReleaseValues,
   conversationDeletionDatabaseError,
   type DeleteAgentArgs,
 } from "./agent-deletion-queries";
-import { env } from "../../lib/env";
 import { conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { agentPublicationFenceDeletionSql } from "./agent-lifecycle.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
-import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
   deletedRunHistoryReferences,
   logCommittedConversationDeletion,
@@ -122,14 +116,6 @@ const deleteAgentRows$ = command(
         throw new Error("Conversation deletion lost a locked run");
       }
       const removed = deletedRunHistoryReferences(deleted);
-      // Storage publication and lifecycle deletion prelock parents in UUID order.
-      const instructions = parseRawRows(
-        deletedInstructionStorageSchema,
-        await tx.execute(
-          agentInstructionStoragesSql(args.orgId, lifecycle.agentName),
-        ),
-      );
-      signal.throwIfAborted();
       for (const statement of agentPublicationFenceDeletionSql(args.agentId)) {
         await tx.execute(statement);
         signal.throwIfAborted();
@@ -140,12 +126,6 @@ const deleteAgentRows$ = command(
       // initialization after the cascade, preserving generation-before-token order.
       for (const statement of agentPublicationFenceDeletionSql(args.agentId)) {
         await tx.execute(statement);
-        signal.throwIfAborted();
-      }
-      if (instructions.length > 0) {
-        await tx
-          .delete(storages)
-          .where(agentInstructionDeletionCondition(instructions));
         signal.throwIfAborted();
       }
       // Blob locks and reference release remain LAST, after all parent mutations.
@@ -188,7 +168,6 @@ const deleteAgentRows$ = command(
       }
       return {
         kind: "deleted" as const,
-        s3Prefix: instructions[0]?.s3Prefix ?? null,
         automations,
         conversationDeletion: release.receipt,
       };
@@ -363,16 +342,6 @@ export const deleteAgentById$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.s3Prefix) {
-      await set(
-        purgeDeletedStoragePrefix$,
-        {
-          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-          s3Prefix: result.s3Prefix,
-        },
-        signal,
-      );
-    }
     return undefined;
   },
 );

@@ -49,7 +49,7 @@ function createDiskTelemetryFixture(context: TestContext) {
       }
       context.mocks.ably.publish.mockResolvedValue(undefined);
       await settle(flushWaitUntilForTest);
-      // Failed initialization must not make teardown use shared PostgreSQL.
+      // Failed initialization must not make teardown query an uninitialized actor.
       if (!databaseReady) {
         if (errors.length) {
           throw new AggregateError(errors, "Disk telemetry cleanup failed");
@@ -105,7 +105,6 @@ function createDiskTelemetryFixture(context: TestContext) {
         }
       }
       await settle(flushWaitUntilForTest);
-      // testContext disposes the isolated database after protocol shutdown.
       if (errors.length) {
         throw new AggregateError(errors, "Disk telemetry cleanup failed");
       }
@@ -144,7 +143,6 @@ function createDiskTelemetryFixture(context: TestContext) {
         const client = await setupApp({
           context,
           routes: billingStatusRoutes,
-          isolatePg: true,
         });
         databaseReady = true;
         createRouteMocks(context).clerk.session(

@@ -56,11 +56,7 @@ beforeEach(() => {
   mockEnv("LINK_STRIPE_PUBLISHABLE_KEY", "pk_live_wallet_fixture");
 });
 
-async function carrier(
-  enabled: boolean | null = null,
-  existingActor?: ApiTestUser,
-  unattended = false,
-) {
+async function carrier(existingActor?: ApiTestUser, unattended = false) {
   const bdd = createBddApi(context);
   const api = createRunsApi(context);
   const actor = existingActor ?? bdd.user();
@@ -78,13 +74,6 @@ async function carrier(
     displayName: "Wallet agent",
     visibility: "private",
   });
-  if (enabled !== null) {
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId },
-      { [FeatureSwitchKey.LinkWallet]: enabled },
-    );
-  }
   const run = unattended
     ? await createWorkflowsBddApi(context).startEventAutomationRun(
         actor,
@@ -261,32 +250,7 @@ function spendProvider(input: WalletCreateSpend) {
   };
 }
 
-test("is unavailable with a flag-off token and rejects a previously issued token after disabling the switch", async () => {
-  const off = await carrier(false);
-  expect(off.prompt).not.toContain("okou wallet");
-  expect(
-    off.environmentNames.filter((name) => {
-      return name.startsWith("LINK_");
-    }),
-  ).toStrictEqual([]);
-  await accept(client().status({ headers: off.headers }), [403]);
-  await accept(
-    userClient().connectStatus({
-      headers: sessionHeaders,
-      body: { agentId: off.agentId, state: "unknown-wallet-state".repeat(3) },
-    }),
-    [403],
-  );
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: off.actor.userId, orgId: off.actor.orgId },
-    { [FeatureSwitchKey.LinkWallet]: true },
-  );
-  const missingCapability = await accept(
-    client().transactions({ headers: off.headers, query: {} }),
-    [403],
-  );
-  expect(missingCapability.body.error.code).toBe("MISSING_CAPABILITY");
+test("provides wallet access and purchase approval guidance to run tokens", async () => {
   const active = await carrier();
   expect(active.prompt).toContain("okou wallet guide");
   expect(active.prompt).toContain(
@@ -297,20 +261,11 @@ test("is unavailable with a flag-off token and rejects a previously issued token
       return name.startsWith("LINK_");
     }),
   ).toStrictEqual([]);
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: active.actor.userId, orgId: active.actor.orgId },
-    { [FeatureSwitchKey.LinkWallet]: false },
+  const status = await accept(
+    client().status({ headers: active.headers }),
+    [200],
   );
-  await accept(client().connect({ headers: active.headers, body: {} }), [403]);
-  await accept(
-    client().spendCredentials({
-      headers: active.headers,
-      params: { id: randomUUID() },
-      body: {},
-    }),
-    [403],
-  );
+  expect(status.body.connected).toBeFalsy();
 });
 
 test("accepts hosted PKCE consent after 20 minutes, binds the callback to the session owner, and consumes state once", async () => {
@@ -376,11 +331,7 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
   if (!other.orgId) {
     throw new Error("Missing peer organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: other.userId, orgId: other.orgId },
-    { [FeatureSwitchKey.LinkWallet]: true },
-  );
+  mocks.clerk.session(other.userId, other.orgId);
   expect(
     (await accept(userClient().connectStatus(statusRequest), [200])).body,
   ).toStrictEqual({ status: "unavailable" });
@@ -967,7 +918,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
     }),
     [200],
   );
-  const otherAgent = await carrier(true, fixture.actor);
+  const otherAgent = await carrier(fixture.actor);
   expect(
     (await accept(client().status({ headers: otherAgent.headers }), [200])).body
       .connected,
@@ -1103,8 +1054,8 @@ test("shares a workspace wallet across agents while isolating purchase approvals
   }
 });
 
-test("denies unattended automation runs even when the user's switch is enabled", async () => {
-  const fixture = await carrier(true, undefined, true);
+test("denies unattended automation runs", async () => {
+  const fixture = await carrier(undefined, true);
   const denied = await accept(
     client().status({ headers: fixture.headers }),
     [403],
@@ -2234,16 +2185,15 @@ test("manages a personal workspace wallet from a member session without an agent
   ).toBeFalsy();
 });
 
-test("gates session wallet management and rejects run tokens on settings endpoints", async () => {
-  const fixture = await carrier(false);
-  for (const headers of [sessionHeaders, fixture.headers]) {
-    const denied = await accept(userClient().status({ headers }), [403]);
-    expect(denied.status).toBe(403);
-    await accept(userClient().connect({ headers, body: {} }), [403]);
-    await accept(userClient().disconnect({ headers, body: {} }), [403]);
-    await accept(userClient().transactions({ headers, query: {} }), [403]);
-    await accept(userClient().paymentMethods({ headers, query: {} }), [403]);
-  }
+test("rejects run tokens on settings endpoints", async () => {
+  const fixture = await carrier();
+  const headers = fixture.headers;
+  const denied = await accept(userClient().status({ headers }), [403]);
+  expect(denied.status).toBe(403);
+  await accept(userClient().connect({ headers, body: {} }), [403]);
+  await accept(userClient().disconnect({ headers, body: {} }), [403]);
+  await accept(userClient().transactions({ headers, query: {} }), [403]);
+  await accept(userClient().paymentMethods({ headers, query: {} }), [403]);
 });
 
 test("reads Link transactions with explicit financial consent and keeps a grant without payment access unable to spend", async () => {
@@ -2701,7 +2651,7 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
       return row.id;
     }),
   ).toStrictEqual([first.body.id]);
-  const other = await carrier(true, fixture.actor);
+  const other = await carrier(fixture.actor);
   await connect(other);
   expect(
     (
@@ -2925,7 +2875,6 @@ test("requests payment, profile and transaction consent from both CLI and settin
 const APPROVAL_WORKER_SECRET = randomBytes(32).toString("hex");
 
 async function trackedPurchase(startFails = false, expiresIn = 3600) {
-  await setupApp({ context, routes: walletRoutes, isolatePg: true });
   const fixture = await carrier();
   mockEnv("LINK_APPROVAL_WORKER_URL", "https://approval.example.test");
   mockEnv("LINK_APPROVAL_WORKER_SECRET", APPROVAL_WORKER_SECRET);
@@ -3267,6 +3216,7 @@ test("approval callbacks authenticate exact bodies and stop after the feature is
 });
 
 test("cron repairs a failed durable approval Workflow start without querying Link", async () => {
+  await setupApp({ context, routes: walletRoutes, isolatePg: true });
   const fixture = await trackedPurchase(true);
   let reads = 0;
   server.use(

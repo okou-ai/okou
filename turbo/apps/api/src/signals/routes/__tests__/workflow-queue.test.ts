@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { aroundEach, it, describe, beforeEach } from "vitest";
+import {
+  workflowAutomationsContract,
+  workflowsDetailContract,
+} from "@okouai/api-contracts/contracts/workflows";
+import { aroundEach, it, describe, beforeEach, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -14,9 +18,11 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatInputStatusRoutes } from "../chat-input-status";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -30,6 +36,7 @@ import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
+import { holdSecretKms } from "./helpers/hold-secret-kms";
 const TEST_APP_ROUTES = Object.freeze([
   ...webhooksWorkflowAutomationsRoutes,
   ...chatEventsRoutes,
@@ -283,6 +290,15 @@ async function pendingAutomationEvents(threadId: string) {
         !revokedIds.has(event.id)
       );
     },
+  );
+}
+
+async function readInputStatus(threadId: string, eventId: string) {
+  return await accept(
+    setupApp({ context, routes: chatInputStatusRoutes })(
+      chatInputStatusContract,
+    ).get({ headers: authHeaders(), params: { threadId, eventId } }),
+    [200],
   );
 }
 
@@ -835,7 +851,7 @@ describe("workflow queue", () => {
     await runsApi.requestCancelRun(scenario.actor, runId, [200]);
   });
 
-  it("rejects a deleted automation's queued event and drains the next automation", async () => {
+  it("revokes a deleted automation's queued event and drains the next automation", async () => {
     const scenario = await setup();
     const webhookAutomation = await createWebhookAutomation(scenario);
     const runningRunId = await expectAcceptedRunId(
@@ -891,45 +907,35 @@ describe("workflow queue", () => {
       [204],
     );
 
-    await completeRunThroughSandbox(scenario, runningRunId);
-
-    // One organization pass rejects this thread's invalid head. A later
-    // business wake visits the remaining automation without retrying the pick.
-    await expect(
-      workflowRunIds(webhookAutomation.threadId),
-    ).resolves.toStrictEqual([runningRunId]);
+    const eventsAfterDelete = await readProjectedChatEvents(context, {
+      threadId: webhookAutomation.threadId,
+      headers: authHeaders(),
+    });
+    expect(eventsAfterDelete).toContainEqual(
+      expect.objectContaining({
+        eventType: "control.revoke",
+        revokesEventId: orphanedEvent.id,
+      }),
+    );
+    expect(
+      (await readInputStatus(webhookAutomation.threadId, orphanedEvent.id))
+        .body,
+    ).toMatchObject({ status: "revoked", runId: null, run: null });
     await expect(
       pendingAutomationEvents(webhookAutomation.threadId),
     ).resolves.toStrictEqual([scheduleEvent]);
-    await refreshConcurrencyEntitlement(
-      scenario.actor,
-      scenario.customerId,
-      context.signal,
-    );
+
+    await completeRunThroughSandbox(scenario, runningRunId);
 
     const events = await readProjectedChatEvents(context, {
       threadId: webhookAutomation.threadId,
       headers: authHeaders(),
     });
-    const rejectedEvent = events.find((event) => {
-      return (
-        event.eventType === "input.rejected" &&
-        event.revokesEventId === orphanedEvent.id
-      );
-    });
-    if (rejectedEvent?.eventType !== "input.rejected") {
-      throw new Error("Expected the orphaned automation event to be rejected");
-    }
-    expect(rejectedEvent.error).toBe("conflict");
-    expect(rejectedEvent.userMessage).toStrictEqual(orphanedEvent.userMessage);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        content: "Workflow automation no longer exists",
-        error: "conflict",
+    expect(
+      events.filter((event) => {
+        return event.eventType === "output.error";
       }),
-    );
-
+    ).toStrictEqual([]);
     const runIds = await workflowRunIds(webhookAutomation.threadId);
     expect(runIds).toHaveLength(2);
     const scheduleRunId = runIds[1];
@@ -975,6 +981,86 @@ describe("workflow queue", () => {
       )}`,
     );
     await runsApi.requestCancelRun(scenario.actor, scheduleRunId, [200]);
+  });
+
+  it("revokes an automation input when deletion wins during run preparation", async () => {
+    const scenario = await setup();
+    const automation = await createScheduleAutomation(scenario);
+    const kms = holdSecretKms(1, context.signal);
+    onTestFinished(() => {
+      kms.release();
+    });
+    const requested = await requestAutomationNow(automation.automationId);
+    const threadId = requested.body.chatThreadId;
+    await kms.entered;
+    const [queuedEvent] = await pendingAutomationEvents(threadId);
+    if (!queuedEvent) {
+      throw new Error("Expected the input waiting for run preparation");
+    }
+
+    await accept(
+      automationsClient().delete({
+        headers: authHeaders(),
+        params: { id: automation.automationId },
+      }),
+      [204],
+    );
+    kms.release();
+    await flushWaitUntilForTest();
+
+    expect(
+      (await readInputStatus(threadId, queuedEvent.id)).body,
+    ).toMatchObject({ status: "revoked", runId: null, run: null });
+    const events = await wf.readThreadEvents(threadId);
+    expect(
+      events.filter((event) => {
+        return event.eventType === "output.error";
+      }),
+    ).toStrictEqual([]);
+
+    const successor = await createScheduleAutomation(scenario);
+    expect(successor.threadId).toBe(threadId);
+    await runAutomationNow(successor.automationId);
+    const [successorRunId] = await workflowRunIds(threadId);
+    if (!successorRunId) {
+      throw new Error("Expected the successor automation to start");
+    }
+    await runsApi.requestCancelRun(scenario.actor, successorRunId, [200]);
+  });
+
+  it("revokes an orphaned queued input after its workflow is deleted", async () => {
+    const { scenario, automation, runningRunId } = await busyQueueFixture(1);
+    const [queuedEvent] = await pendingAutomationEvents(automation.threadId);
+    if (!queuedEvent) {
+      throw new Error("Expected the workflow's queued input");
+    }
+    await accept(
+      setupApp({ context, routes: workflowsRoutes })(
+        workflowsDetailContract,
+      ).delete({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+      }),
+      [204],
+    );
+    // Workflow deletion cascades the automation row without deleting its
+    // historical chat context. The next pick must retire that queued input.
+    await completeRunThroughSandbox(scenario, runningRunId);
+    expect(
+      (await readInputStatus(automation.threadId, queuedEvent.id)).body,
+    ).toMatchObject({ status: "revoked", runId: null, run: null });
+    const events = await wf.readThreadEvents(automation.threadId);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "run.completed",
+        runId: runningRunId,
+      }),
+    );
+    expect(
+      events.filter((event) => {
+        return event.eventType === "output.error";
+      }),
+    ).toStrictEqual([]);
   });
 
   it("rejects only the failed webhook trigger and accepts the next event", async () => {

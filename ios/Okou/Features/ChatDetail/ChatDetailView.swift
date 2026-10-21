@@ -5,17 +5,28 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let topContentInset: CGFloat
+  let sidebar: SidebarInteraction?
   private var thread: ChatThread { conversation.thread }
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openURL) private var openURL
+  @Environment(\.openChatSource) private var openChatSource
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
+  @State private var messageToSelect: ChatMessage?
+  @State private var usageDetails: UsageDetails?
+  @State private var selectionToQuote: ChatFeedbackSelection?
+
+  private struct UsageDetails: Identifiable { let id: String }
 
   init(
-    conversation: ConversationStore, topContentInset: CGFloat = 0
+    conversation: ConversationStore, topContentInset: CGFloat = 0,
+    sidebar: SidebarInteraction? = nil
   ) {
     self.conversation = conversation
     self.topContentInset = topContentInset
+    self.sidebar = sidebar
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -38,6 +49,10 @@ struct ChatDetailView: View {
         result.append(
           .work(section, expanded: expanded, showsAvatar: true, topSpacing: spacing))
       case .message(let message, let isWorkHistory):
+        if let failure = message.failure {
+          result.append(.failure(message, conversation.failureState(failure), topSpacing: spacing))
+          continue
+        }
         let pendingRetry = conversation.pending.first { $0.id == message.id }?.needsRetry
         result.append(
           .message(
@@ -45,9 +60,14 @@ struct ChatDetailView: View {
             pendingRetry: pendingRetry,
             isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory)
         )
+      case .usage(let runID):
+        result.append(.usage(runID: runID, state: conversation.runUsage.states[runID] ?? .loading))
       }
     }
-    result.append(.footer(history.executionState, hasMessages: !items.isEmpty))
+    if let source = history.recommendedFollowups, conversation.pending.isEmpty {
+      result.append(.followups(source, finishedAt: history.latestRunFinishAt))
+    }
+    result.append(.footer(history.executionState))
     return result
   }
 
@@ -59,10 +79,16 @@ struct ChatDetailView: View {
         top: topContentInset, leading: 0, bottom: composerHeight, trailing: 0),
       anchor: scrolling.anchor,
       scroll: scrolling.scroll,
-      followsBottom: scrolling.followsBottom,
+      followsBottom: scrolling.followsBottom, sidebar: sidebar,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
-      refresh: { await conversation.refresh() }, content: rowContent
-    )
+      refresh: {
+        await conversation.refresh()
+        await conversation.connectorActions.refreshKnown()
+      }
+    ) { row, anchor in
+      rowContent(row, anchor: anchor).environment(\.openURL, openURL)
+        .environment(\.openChatSource, openChatSource)
+    }
     .ignoresSafeArea(.container, edges: .vertical)
     .onAppear {
       scrolling.activate(reduceMotion: reduceMotion)
@@ -89,8 +115,14 @@ struct ChatDetailView: View {
     .onChange(of: conversation.readingPosition?.messageID) { previousID, id in
       scrolling.readingPositionChanged(previousID: previousID, currentID: id)
     }
+    .onChange(of: conversation.navigationRequest) { _, request in
+      if let request { scrolling.reveal(request.position) }
+    }
     .onDisappear {
+      selectionToQuote = nil
+      messageToSelect = nil
       scrolling.deactivate()
+      conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
     }
     .sheet(
@@ -101,10 +133,48 @@ struct ChatDetailView: View {
     ) {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
     }
+    .sheet(
+      item: $messageToSelect,
+      onDismiss: {
+        if let selection = selectionToQuote { conversation.quote(selection) }
+        selectionToQuote = nil
+      }
+    ) { message in
+      MessageTextSelectionSheet(
+        text: message.copyText, message: message,
+        quote: message.role == .assistant
+          ? { selection in
+            selectionToQuote = selection
+            messageToSelect = nil
+          } : nil)
+    }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
+    .sheet(item: $usageDetails) { selection in
+      ConversationRunUsageDetails(
+        state: conversation.runUsage.states[selection.id] ?? .loading,
+        catalog: conversation.modelSelection?.models.usageCatalog,
+        retry: { conversation.runUsage.retry(selection.id) }
+      )
+      .presentationDetents([.medium, .large])
+      .presentationDragIndicator(.visible)
+      .task { await conversation.modelSelection?.models.loadUsageCatalog() }
+    }
+    .sheet(
+      item: Binding(
+        get: { conversation.connectorActions.active },
+        set: { if $0 == nil { conversation.connectorActions.cancel() } }
+      )
+    ) { flow in
+      ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
+    }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       ChatComposerView(
-        draft: $conversation.draft, isBusy: conversation.isSending || conversation.isStopping,
+        draft: $conversation.draft,
+        isBusy: conversation.isSending || conversation.isStopping
+          || conversation.isRecoveringFailure,
         showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
         error: conversation.error,
         attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
@@ -137,6 +207,18 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .failure(let message, let state, let topSpacing):
+      AssistantFailureCard(state: state, conversation: conversation)
+        .background {
+          if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
+        }
+        .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
+    case .followups(let source, let finishedAt):
+      RecommendedFollowupList(
+        source: source, finishedAt: finishedAt,
+        select: conversation.composer.editor.selectOrAppendText
+      )
+      .padding(EdgeInsets(top: 24, leading: 26, bottom: 0, trailing: 20))
     case .earlier(let isLoading):
       Button {
         scrolling.loadEarlierMessages()
@@ -176,23 +258,25 @@ struct ChatDetailView: View {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
       }
       .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
-    case .footer(let executionState, let hasMessages):
+    case .footer(let executionState):
       VStack(alignment: .leading, spacing: 24) {
         if executionState.isActive {
           ConversationActivityLabel(
             summary: conversation.activitySummary, state: executionState)
         }
-        if hasMessages {
-          Link(
-            "Open conversation on web",
-            destination: conversation.webURL.appending(path: "chats/\(thread.id)")
-          )
-          .font(.caption).foregroundStyle(.secondary)
-        }
         Color.clear.frame(height: 1)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
+    case .usage(let runID, let state):
+      ConversationRunUsageView(
+        runID: runID, state: state, showDetails: { usageDetails = UsageDetails(id: runID) }
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        if let anchor { ConversationRowAnchor(messageID: "usage:\(runID)", anchor: anchor) }
+      }
+      .padding(.horizontal, 26)
     }
   }
 
@@ -230,6 +314,7 @@ struct ChatDetailView: View {
     .contextMenu {
       if !message.copyText.isEmpty {
         Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.copyText }
+        Button("Select Text", systemImage: "text.cursor") { messageToSelect = message }
       }
     }
   }
@@ -256,7 +341,11 @@ struct ChatDetailView: View {
           .padding(.leading, 6)
       } else if !message.text.isEmpty {
         MessageBodyView(
-          text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown
+          text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown,
+          actionContext: message.role == .assistant
+            ? MessageActionContext(agentID: thread.agentID, threadID: thread.id) : nil,
+          connectorActions: conversation.connectorActions,
+          permissionActions: conversation.permissionActions, loadsActions: loadsAttachments
         )
         .equatable()
         .foregroundStyle(

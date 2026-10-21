@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.236.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.1...runner-rs-v0.236.2) (2026-10-21)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.0...runner-rs-v0.236.1) (2026-10-21)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.5...runner-rs-v0.236.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.235.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.4...runner-rs-v0.235.5) (2026-10-20)
+
+
+### Bug Fixes
+
+* **sandbox-firecracker:** retain cancelled physical pause custody ([#41856](https://github.com/okou-ai/okou/issues/41856)) ([f648f6d](https://github.com/okou-ai/okou/commit/f648f6ddb863ba069c99ba18274b1e0cfdd88f3c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.235.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.3...runner-rs-v0.235.4) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.235.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.2...runner-rs-v0.235.3) (2026-10-20)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.235.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.235.1...runner-rs-v0.235.2) (2026-10-20)
 
 

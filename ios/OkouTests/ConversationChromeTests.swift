@@ -16,10 +16,7 @@ final class ConversationChromeTests: XCTestCase {
     conversation.rememberReadingPosition(
       ConversationReadingPosition(messageID: ConversationHistoryFixture.id(1), offset: 0))
     let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation, topContentInset: 60)
-        .safeAreaBar(edge: .top, spacing: 0) {
-          Text("Chat").frame(height: 60)
-        })
+      rootView: ConversationHeaderTestView(conversation: conversation))
     let window = try await mountConversationHost(host)
     defer { unmount(window) }
     let collection = try XCTUnwrap(
@@ -98,6 +95,42 @@ final class ConversationChromeTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(scroll.adjustedContentInset.top, window.safeAreaInsets.top + 58)
     XCTAssertGreaterThanOrEqual(
       scroll.adjustedContentInset.bottom, window.safeAreaInsets.bottom + 66)
+  }
+}
+
+private struct ConversationHeaderTestView: View {
+  let conversation: ConversationStore
+
+  var body: some View {
+    ChatDetailView(conversation: conversation, topContentInset: 60)
+      .safeAreaBar(edge: .top, spacing: 0) {
+        headerContent
+      }
+      .compositingGroup()
+  }
+
+  private var headerContent: some View {
+    ZStack {
+      Text("✅ #41703 Morning Brief 按…")
+        .font(.system(size: 17, weight: .semibold)).lineLimit(1)
+        .padding(.horizontal, 66)
+      HStack {
+        Button {
+        } label: {
+          Image(systemName: "line.3.horizontal").frame(width: 32, height: 32)
+        }
+        .buttonStyle(.glass).buttonBorderShape(.circle)
+        .accessibilityLabel("Open sidebar")
+        Spacer()
+        Button {
+        } label: {
+          Image(systemName: "pin.fill").frame(width: 32, height: 32)
+        }
+        .buttonStyle(.glass).buttonBorderShape(.circle)
+        .accessibilityLabel("Unpin chat")
+      }
+    }
+    .buttonStyle(.plain).padding(.horizontal, 16).frame(height: 60)
   }
 }
 

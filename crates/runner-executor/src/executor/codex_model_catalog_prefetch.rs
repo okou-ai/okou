@@ -281,7 +281,6 @@ impl<'a> CodexModelCatalogPrefetch<'a> {
         tokio::pin!(phase);
         tokio::select! {
             result = &mut process.wait => {
-                self.process = None;
                 self.complete(result);
                 phase.await
             }
@@ -311,7 +310,6 @@ impl<'a> CodexModelCatalogPrefetch<'a> {
             .as_mut()
             .and_then(|process| process.wait.as_mut().now_or_never())
         {
-            self.process = None;
             self.complete(result);
         }
         if let Some(process) = self.process.take() {
@@ -326,6 +324,8 @@ impl<'a> CodexModelCatalogPrefetch<'a> {
     }
 
     fn complete(&mut self, result: sandbox::Result<ProcessExit>) {
+        // A terminal wait must not participate in another execution-phase race.
+        self.process = None;
         let duration = result
             .as_ref()
             .ok()

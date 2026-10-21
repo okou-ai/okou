@@ -234,9 +234,9 @@ struct ChatSidebarView: View {
             thread.pinnedAt == nil ? "Pin" : "Unpin",
             systemImage: thread.pinnedAt == nil ? "pin" : "pin.slash"
           ) {
-            Task { await store.list.setPinned(thread, pinned: thread.pinnedAt == nil) }
+            Task { await store.list.togglePinned(thread.id) }
           }
-          .disabled(store.list.updatingThreads.contains(thread.id))
+          .disabled(!store.list.canPin(thread.id) || store.needsUpgrade)
           Button("Rename", systemImage: "pencil") {
             renameTitle = thread.displayTitle
             renamingThread = thread

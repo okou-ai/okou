@@ -6,9 +6,11 @@ import {
 } from "@okouai/api-contracts/contracts/banking";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { onRef, setLoop } from "../utils.ts";
+import { setAblyLoop$ } from "../realtime.ts";
+import { withCleanup } from "../utils.ts";
 import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
@@ -32,52 +34,33 @@ export interface BankingActionDescriptor {
   readonly threadId: string;
 }
 
-export type BankingBusyAction =
-  "connect" | "save" | "revoke" | "continue" | null;
+type BankingCardAction =
+  | {
+      readonly type: "connect";
+      readonly mode: BankingConnectSessionRequest["mode"];
+      readonly institutionLoginId?: string;
+    }
+  | {
+      readonly type: "save";
+      readonly accountIds: readonly string[];
+      readonly duration: BankingGrantDuration;
+    }
+  | { readonly type: "revoke" | "continue" };
 
 export interface BankingCardUiState {
   readonly selectedAccountIds: readonly string[] | null;
   readonly duration: BankingGrantDuration;
   readonly editing: boolean | null;
   readonly confirmingRevoke: boolean;
-  readonly busy: BankingBusyAction;
-  readonly localError: string | null;
 }
 
 export interface BankingSignals extends BankingActionDescriptor {
   readonly status$: Computed<Promise<BankingAccessRequestStatusResponse>>;
   readonly refresh$: Command<void, []>;
-  readonly startSession$: Command<
-    Promise<string>,
-    [
-      {
-        readonly mode: BankingConnectSessionRequest["mode"];
-        readonly institutionLoginId?: string;
-      },
-      AbortSignal,
-    ]
-  >;
-  readonly saveGrant$: Command<
-    Promise<BankingAccessRequestStatusResponse>,
-    [
-      {
-        readonly accountIds: readonly string[];
-        readonly duration: BankingGrantDuration;
-      },
-      AbortSignal,
-    ]
-  >;
-  readonly revokeGrant$: Command<
-    Promise<BankingAccessRequestStatusResponse>,
-    [AbortSignal]
-  >;
-  readonly continue$: Command<Promise<void>, [AbortSignal]>;
-  readonly pendingSessionPollerRef$: Command<
-    void | (() => void),
-    [HTMLElement | null]
-  >;
+  readonly subscribe$: Command<void, [AbortSignal]>;
   readonly uiState$: Computed<BankingCardUiState>;
-  readonly startRequest$: Command<boolean, [Exclude<BankingBusyAction, null>]>;
+  readonly operation$: Computed<Promise<void> | undefined>;
+  readonly runAction$: Command<Promise<void>, [BankingCardAction, AbortSignal]>;
   readonly updateUiState$: Command<void, [Partial<BankingCardUiState>]>;
 }
 
@@ -154,7 +137,7 @@ function createBankingStatusSignals(descriptor: BankingActionDescriptor) {
 function createBankingMutationSignals(
   descriptor: BankingActionDescriptor,
   refresh$: BankingSignals["refresh$"],
-): Pick<BankingSignals, "startSession$" | "saveGrant$" | "revokeGrant$"> {
+) {
   const startSession$ = command(
     async (
       { get, set },
@@ -231,9 +214,7 @@ function createBankingMutationSignals(
   return { startSession$, saveGrant$, revokeGrant$ };
 }
 
-function createBankingContinueSignal(
-  descriptor: BankingActionDescriptor,
-): BankingSignals["continue$"] {
+function createBankingContinueSignal(descriptor: BankingActionDescriptor) {
   return command(async ({ set }, signal: AbortSignal) => {
     await set(
       runChatActionCallback$,
@@ -247,29 +228,20 @@ function createBankingContinueSignal(
   });
 }
 
-function createPendingSessionPoller(
-  status$: BankingSignals["status$"],
+function createBankingSubscription(
   refresh$: BankingSignals["refresh$"],
-): BankingSignals["pendingSessionPollerRef$"] {
-  const pollPendingSession$ = command(
-    ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      setLoop(
-        async () => {
-          const status = await get(status$);
-          signal.throwIfAborted();
-          if (status.session?.status !== "pending") {
-            return true;
-          }
-          set(refresh$);
-          return false;
-        },
-        2000,
-        signal,
-        { retryTransientErrors: true, logTransientErrors: false },
-      );
-    },
-  );
-  return onRef(pollPendingSession$);
+): BankingSignals["subscribe$"] {
+  const invalidate$ = command(({ set }) => {
+    set(refresh$);
+    return false;
+  });
+  return command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyLoop$,
+      { topic: "bankingAccessChanged", loopCommand$: invalidate$ },
+      signal,
+    );
+  });
 }
 
 function initialBankingCardUiState(): BankingCardUiState {
@@ -278,14 +250,12 @@ function initialBankingCardUiState(): BankingCardUiState {
     duration: "7d",
     editing: null,
     confirmingRevoke: false,
-    busy: null,
-    localError: null,
   };
 }
 
 function createBankingUiSignals(): Pick<
   BankingSignals,
-  "uiState$" | "startRequest$" | "updateUiState$"
+  "uiState$" | "updateUiState$"
 > {
   const internalUiState$ = state(initialBankingCardUiState());
   const uiState$ = computed((get): BankingCardUiState => {
@@ -298,18 +268,7 @@ function createBankingUiSignals(): Pick<
       });
     },
   );
-  // Duplicate cards share this owner; acquire it synchronously so an older
-  // request's cleanup cannot release a newer request's busy state.
-  const startRequest$ = command(
-    ({ get, set }, action: Exclude<BankingBusyAction, null>) => {
-      if (get(internalUiState$).busy !== null) {
-        return false;
-      }
-      set(updateUiState$, { localError: null, busy: action });
-      return true;
-    },
-  );
-  return { uiState$, startRequest$, updateUiState$ };
+  return { uiState$, updateUiState$ };
 }
 
 function createBankingSignals(
@@ -321,16 +280,74 @@ function createBankingSignals(
     statusSignals.refresh$,
   );
   const uiSignals = createBankingUiSignals();
+  const continue$ = createBankingContinueSignal(descriptor);
+  const performAction$ = command(
+    async ({ set }, action: BankingCardAction, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      switch (action.type) {
+        case "connect": {
+          const popup = window.open("about:blank", "_blank");
+          if (!popup) {
+            throw new Error(
+              i18n.t(($) => {
+                return $.chat.banking.popupBlocked;
+              }),
+            );
+          }
+          popup.opener = null;
+          const url = await set(mutationSignals.startSession$, action, signal);
+          signal.throwIfAborted();
+          popup.location.replace(url);
+          return;
+        }
+        case "save": {
+          await set(mutationSignals.saveGrant$, action, signal);
+          signal.throwIfAborted();
+          set(uiSignals.updateUiState$, { editing: false });
+          return;
+        }
+        case "revoke": {
+          await set(mutationSignals.revokeGrant$, signal);
+          signal.throwIfAborted();
+          set(uiSignals.updateUiState$, {
+            confirmingRevoke: false,
+            editing: true,
+            selectedAccountIds: [],
+          });
+          return;
+        }
+        case "continue": {
+          await set(continue$, signal);
+        }
+      }
+    },
+  );
+  const internalOperation$ = state<Promise<void> | undefined>(undefined);
+  const running$ = state<Promise<void> | null>(null);
+  const runAction$ = command(
+    ({ get, set }, action: BankingCardAction, signal: AbortSignal) => {
+      const running = get(running$);
+      if (running) {
+        return running;
+      }
+      // Duplicate cards share one execution; the Promise also owns their UI state.
+      const operation = withCleanup(set(performAction$, action, signal), () => {
+        set(running$, null);
+      });
+      set(running$, operation);
+      set(internalOperation$, operation);
+      return operation;
+    },
+  );
   return {
     ...descriptor,
     ...statusSignals,
-    ...mutationSignals,
     ...uiSignals,
-    continue$: createBankingContinueSignal(descriptor),
-    pendingSessionPollerRef$: createPendingSessionPoller(
-      statusSignals.status$,
-      statusSignals.refresh$,
-    ),
+    subscribe$: createBankingSubscription(statusSignals.refresh$),
+    runAction$,
+    operation$: computed((get) => {
+      return get(internalOperation$);
+    }),
   };
 }
 
@@ -338,5 +355,8 @@ export function createBankingCardSignalsRegistry(): BankingCardSignalsRegistry {
   return createCardSignalsRegistry(
     bankingActionResourceKey,
     createBankingSignals,
+    (signals) => {
+      return signals.subscribe$;
+    },
   );
 }

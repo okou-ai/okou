@@ -31,11 +31,6 @@ describe("Runner claim-time Agent instructions", () => {
         queued.runId,
       );
       expect(claim.agentInstructions).toBe(current);
-      expect(
-        claim.storageManifest?.storageMounts.every((mount) => {
-          return mount.instructionsTargetFilename === undefined;
-        }),
-      ).toBeTruthy();
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
@@ -82,7 +77,7 @@ describe("Runner claim-time Agent instructions", () => {
   });
 
   it("refuses a now-private Agent without consuming the queued claim", async () => {
-    const owned = await publicChatActor(context, { isolatePg: true });
+    const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
       const member = bdd.user({

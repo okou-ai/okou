@@ -525,7 +525,6 @@ export {
   MIN_VERSION_PREFIX_LENGTH,
 } from "./version-id";
 export {
-  getInstructionsStorageName,
   getSkillStorageName,
   getCustomSkillStorageName,
   getCustomConnectorSkillStorageName,

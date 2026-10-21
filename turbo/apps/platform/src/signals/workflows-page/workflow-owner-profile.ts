@@ -8,7 +8,7 @@ import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { clerk$, currentOrgInfo$, currentUserInfo$ } from "../auth.ts";
-import { onRejection, resetSignal } from "../utils.ts";
+import { resetSignal } from "../utils.ts";
 import { pageVersion$ } from "../page-signal.ts";
 
 const MAX_PROFILES = 32;
@@ -16,8 +16,8 @@ const PROFILE_TTL_MS = 15 * 60 * 1000;
 const UNAVAILABLE_TTL_MS = 60 * 1000;
 
 interface ProfileEntry {
-  readonly promise: Promise<WorkflowOwnerProfile>;
-  expiresAt: number;
+  readonly profile: WorkflowOwnerProfile;
+  readonly expiresAt: number;
 }
 
 function scopeKey(page: number, userId?: string, orgId?: string): string {
@@ -47,7 +47,6 @@ async function readOwnerProfile(
     }),
     [200],
     signal,
-    { showErrorToast: false },
   );
   return response.body;
 }
@@ -109,38 +108,29 @@ function createProfileLoader(page: number) {
       }
       const cached = cache.profiles.get(workflowId);
       if (cached) {
-        const profile = await cached.promise;
-        signal.throwIfAborted();
-        requestSignal.throwIfAborted();
-        return { scopeKey: identity, workflowId, profile };
+        return { scopeKey: identity, workflowId, profile: cached.profile };
       }
-      if (cache.profiles.size >= MAX_PROFILES) {
-        const oldest = [...cache.profiles].find(([, entry]) => {
-          return Number.isFinite(entry.expiresAt);
-        });
-        if (!oldest) {
-          throw new Error("Workflow owner profiles are busy");
-        }
-        cache.profiles.delete(oldest[0]);
-      }
-      const entry: ProfileEntry = {
-        promise: readOwnerProfile(get(apiClient$), workflowId, requestSignal),
-        expiresAt: Infinity,
-      };
-      cache.profiles.set(workflowId, entry);
-      const profile = await onRejection(entry.promise, () => {
-        // Keep the original error; a later open retries this optional row.
-        if (cache.profiles.get(workflowId) === entry) {
-          cache.profiles.delete(workflowId);
-        }
-      });
+      const profile = await readOwnerProfile(
+        get(apiClient$),
+        workflowId,
+        requestSignal,
+      );
       signal.throwIfAborted();
       requestSignal.throwIfAborted();
-      entry.expiresAt =
-        now() +
-        (profile.displayName === null && profile.imageUrl === null
-          ? UNAVAILABLE_TTL_MS
-          : PROFILE_TTL_MS);
+      if (cache.profiles.size >= MAX_PROFILES) {
+        const oldest = cache.profiles.keys().next().value;
+        if (oldest !== undefined) {
+          cache.profiles.delete(oldest);
+        }
+      }
+      cache.profiles.set(workflowId, {
+        profile,
+        expiresAt:
+          now() +
+          (profile.displayName === null && profile.imageUrl === null
+            ? UNAVAILABLE_TTL_MS
+            : PROFILE_TTL_MS),
+      });
       return { scopeKey: identity, workflowId, profile };
     },
   );

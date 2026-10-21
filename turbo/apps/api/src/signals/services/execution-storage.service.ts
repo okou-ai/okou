@@ -39,7 +39,6 @@ export interface ExecutionStorageIdentity {
 
 export interface ReadOnlyStorageRequest extends ExecutionStorageIdentity {
   readonly mode: "readonly";
-  readonly instructionsTargetFilename?: string;
 }
 
 export interface WritebackStorageRequest extends ExecutionStorageIdentity {
@@ -62,7 +61,6 @@ export interface PreparedReadOnlyMount extends PreparedStorageIdentity {
   readonly archiveUrl: string;
   readonly archiveSize: number;
   readonly presignedUrlCacheWrite?: PresignedUrlCacheWrite;
-  readonly instructionsTargetFilename?: string;
 }
 
 export interface PreparedArchivedWritebackMount extends PreparedStorageIdentity {
@@ -139,9 +137,6 @@ function validateRequests(mounts: readonly ExecutionStorageRequest[]): void {
         mount.missingRootPolicy !== "preserveParentVersion"
       ) {
         throw new Error("Invalid writeback missing-root policy");
-      }
-      if ("instructionsTargetFilename" in mount) {
-        throw new Error("Read-only mount options cannot be used for writeback");
       }
     } else if (mount.mode !== "readonly" || "missingRootPolicy" in mount) {
       throw new Error("Invalid read-only storage mount configuration");
@@ -374,9 +369,6 @@ function preparedMounts(
         writeback: false,
         archiveUrl,
         archiveSize: version.archiveSize,
-        ...(mount.instructionsTargetFilename === undefined
-          ? {}
-          : { instructionsTargetFilename: mount.instructionsTargetFilename }),
         ...cacheWrite,
       };
     },

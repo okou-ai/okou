@@ -63,9 +63,6 @@ test("Show saved membership without loading accounts when catalog projections ha
   context.mocks.api(connectorAccountsContract.connections, () => {
     throw new Error("The directory must not load account lists");
   });
-  context.mocks.api(connectorAccountsContract.summaries, () => {
-    throw new Error("The directory must not load account summaries");
-  });
 
   await setupPage({ context, path: "/connectors?scope=connected" });
 

@@ -184,19 +184,10 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
 
   return {
     run: owner.run,
-    async create(
-      options:
-        | {
-            readonly withDefaultAgent: boolean;
-            readonly paidNative?: boolean;
-            readonly isolatePg?: false;
-          }
-        | {
-            readonly withDefaultAgent: true;
-            readonly paidNative?: false;
-            readonly isolatePg: true;
-          },
-    ): Promise<OwnedTeamsDispatch> {
+    async create(options: {
+      readonly withDefaultAgent: boolean;
+      readonly paidNative?: boolean;
+    }): Promise<OwnedTeamsDispatch> {
       const installation = teamsConnectFixture();
       const fixture: OwnedTeamsDispatch = {
         installation,
@@ -217,7 +208,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
       if (options.withDefaultAgent) {
         fixture.defaultAgentId = await bdd.bootstrapLimitedFreeOnboarding(
           fixture.actor,
-          { displayName: "Teams dispatch", isolatePg: options.isolatePg },
+          { displayName: "Teams dispatch" },
         );
       }
       if (options.paidNative) {

@@ -140,7 +140,6 @@ function withPublishedDiscordFixture(
     const result = await settleIncludingAbort(() => {
       return lifecycle.run(async () => {
         const fixture = await boundFixture({
-          isolatePg: true,
           registerCleanup(actor) {
             disconnect = async () => {
               mockDiscordMemberships(cleanupContext, [actor]);
@@ -166,15 +165,12 @@ function withPublishedDiscordFixture(
   };
 }
 
-async function actorSession(
-  options: Parameters<typeof bdd.user>[0] = {},
-  requestOptions: { readonly isolatePg?: true } = {},
-) {
+async function actorSession(options: Parameters<typeof bdd.user>[0] = {}) {
   const actor = bdd.user(options);
   if (!actor.orgId) {
     throw new Error("Discord file test actor must have an organization");
   }
-  await bdd.readMe(actor, requestOptions);
+  await bdd.readMe(actor);
   return { ...actor, orgId: actor.orgId };
 }
 
@@ -187,11 +183,10 @@ interface BoundFixture extends DiscordFileProviderIdentity {
 
 async function boundFixture(
   options: {
-    readonly isolatePg?: true;
     readonly registerCleanup?: (actor: BoundFixture["actor"]) => void;
   } = {},
 ): Promise<BoundFixture> {
-  const actor = await actorSession({}, options);
+  const actor = await actorSession();
   options.registerCleanup?.(actor);
   const identity = {
     guildId: discordSnowflake(),

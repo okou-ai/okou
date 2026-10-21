@@ -577,6 +577,27 @@ impl HomeImageCache {
         request: HomeImagePrepareRequest<'_>,
         lock_policy: HomeImagePrepareLockPolicy,
     ) -> HomeImageLease {
+        self.prepare_with_source_selection(request, lock_policy, None)
+            .await
+    }
+
+    /// Match the producer after locking the entry, then retain its immutable image pins.
+    pub async fn prepare_from_source(
+        &self,
+        request: HomeImagePrepareRequest<'_>,
+        source_run_id: RunId,
+        lock_policy: HomeImagePrepareLockPolicy,
+    ) -> HomeImageLease {
+        self.prepare_with_source_selection(request, lock_policy, Some(source_run_id))
+            .await
+    }
+
+    async fn prepare_with_source_selection(
+        &self,
+        request: HomeImagePrepareRequest<'_>,
+        lock_policy: HomeImagePrepareLockPolicy,
+        source_run_id: Option<RunId>,
+    ) -> HomeImageLease {
         let common = HomeImageLeaseCommon::new(self, request.identity);
         let home_drive = |result,
                           source_image: Option<PathBuf>,
@@ -751,7 +772,10 @@ impl HomeImageCache {
             )
             .await
         {
-            Ok(Some(metadata)) => {
+            Ok(Some(metadata))
+                if source_run_id
+                    .is_none_or(|source| metadata.image_generation == source.to_string()) =>
+            {
                 let previous = metadata.storage_fingerprints.clone();
                 let source = self
                     .entry_paths(&cache_key)
@@ -767,7 +791,7 @@ impl HomeImageCache {
                     Err(_) => None,
                 }
             }
-            Ok(None) => None,
+            Ok(Some(_)) | Ok(None) => None,
             Err(e) => {
                 warn!(
                     run_id = %common.run_id,
@@ -1142,6 +1166,7 @@ impl HomeImageCache {
             .read_metadata_file(&self.home_image_cache_metadata(cache_key))
             .await
             .ok()?;
+        let source_run_id = metadata.image_generation.parse().ok()?;
         self.metadata_is_publishable_held_home_state(
             cache_key,
             &metadata,
@@ -1154,6 +1179,7 @@ impl HomeImageCache {
             home_caches: vec![HomeCacheCapability {
                 profile: metadata.profile_name,
                 home_affinity_version: HOME_AFFINITY_VERSION,
+                source_run_id,
             }],
         })
     }

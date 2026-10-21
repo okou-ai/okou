@@ -180,7 +180,6 @@ impl Fixture {
             mitm_jsonl_flush: None,
             connector_runtime_sync: None,
             guest_rpc: None,
-            guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
             fresh_archive_delivery: FreshArchiveDeliveryAdmission::new(),
             background_fill: StorageCacheBackgroundFillCoordinator::new()?,
             decoded_cache: DecodedCache::new(home.clone()),
@@ -333,7 +332,7 @@ impl Fixture {
         let this = self.clone();
         let work = permit.spawn(move |mut operation| async move {
             let idle = custody.lock().map_err(|_| io::Error::other("native reused custody poisoned"))?.take();
-            let params = JobParams { profile_name: fixture::PROFILE.into(), vcpu: 2, memory_mb: 4096, home_disk_mb: 16384, rootfs_hash: this.rootfs_hash.clone(), restore_guest_state: true, device_rate_limits: None, home_image_prepare_lock_policy: Default::default() };
+            let params = JobParams { home_source_run_id: None, profile_name: fixture::PROFILE.into(), vcpu: 2, memory_mb: 4096, home_disk_mb: 16384, rootfs_hash: this.rootfs_hash.clone(), restore_guest_state: true, device_rate_limits: None, home_image_prepare_lock_policy: Default::default() };
             let (mut outcome, _telemetry) = if let Some(idle) = idle {
                 executor::execute_job_reuse_with_hooks(
                     executor::ReusedSandboxDispatch {
@@ -568,6 +567,7 @@ impl Fixture {
             max_idle: 0,
         })));
         let mut candidate = ParkedIdleCandidateBuilder::new(request.key, lease)
+            .with_source_run_id(run)
             .with_sandbox(prepared.sandbox)
             .with_factory(request.factory.clone())
             .with_sandbox_id(id)

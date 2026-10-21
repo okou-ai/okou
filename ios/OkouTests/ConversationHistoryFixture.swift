@@ -11,18 +11,29 @@ final class ConversationHistoryFixture: Sendable {
   static let threadID = "60000000-0000-4000-8000-000000000001"
   static let agentID = "60000000-0000-4000-8000-000000000002"
   let http: ChatHTTPFixture
+  let requests = HistoryRequests()
   private let rows: HistoryRows
 
   convenience init(count: Int = 100) {
     self.init(rows: (0..<count).map { Self.row($0 + 1) })
   }
 
-  init(rows initial: [String], fileOrigin: URL? = nil) {
+  init(
+    rows initial: [String], fileOrigin: URL? = nil,
+    usage: ChatHTTPFixture.Handler? = nil
+  ) {
     let rows = HistoryRows(initial)
     self.rows = rows
+    let requests = requests
     http = ChatHTTPFixture { request in
+      requests.values.withLock {
+        $0.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
+      }
       let path = "/api/chat-threads/\(Self.threadID)"
       switch request.url?.path {
+      case path + "/usage":
+        guard let usage else { throw URLError(.unsupportedURL) }
+        return try await usage(request)
       case "/api/web/file-url":
         guard let fileOrigin else { throw URLError(.unsupportedURL) }
         let id =
@@ -77,7 +88,9 @@ final class ConversationHistoryFixture: Sendable {
   }
 
   @MainActor
-  func conversation(cache: ChatCache? = nil) -> ConversationStore {
+  func conversation(
+    cache: ChatCache? = nil, isVisible: @escaping @MainActor () -> Bool = { true }
+  ) -> ConversationStore {
     let sync = ChatSync(client: http.client, cache: cache)
     return ConversationStore(
       thread: ChatThread(
@@ -85,7 +98,7 @@ final class ConversationHistoryFixture: Sendable {
         updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
-      isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
+      isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }
 
   static func id(_ sequence: Int) -> String {
@@ -130,4 +143,8 @@ final class ConversationHistoryFixture: Sendable {
 private final class HistoryRows: Sendable {
   let values: Mutex<[String]>
   init(_ rows: [String]) { values = Mutex(rows) }
+}
+
+final class HistoryRequests: Sendable {
+  let values = Mutex<[String]>([])
 }

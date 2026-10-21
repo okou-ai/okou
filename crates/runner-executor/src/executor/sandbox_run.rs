@@ -456,8 +456,7 @@ pub(super) async fn prepare_storage(
     };
     let apply_started = Instant::now();
     let result: RunnerResult<Option<PreparedStorage>> = async {
-        let runtime_dir = super::guest_runtime_dir(context.run_id)?;
-        let mut plan = build_storage_plan(manifest, runtime_dir.as_str(), previous_storage)?;
+        let mut plan = build_storage_plan(manifest, previous_storage)?;
         let delivery = crate::storage_cache::prepare_fresh_archive_delivery(
             &mut plan,
             &config.home,
@@ -937,12 +936,18 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
-    let lease = match params.home_image_prepare_lock_policy {
-        HomeImagePrepareLockPolicy::WaitForTransientContention => cache.prepare(request).await,
-        HomeImagePrepareLockPolicy::ImmediateFallback => {
-            cache
-                .prepare_with_lock_policy(request, params.home_image_prepare_lock_policy)
-                .await
+    let lease = if let Some(source) = params.home_source_run_id {
+        cache
+            .prepare_from_source(request, source, params.home_image_prepare_lock_policy)
+            .await
+    } else {
+        match params.home_image_prepare_lock_policy {
+            HomeImagePrepareLockPolicy::WaitForTransientContention => cache.prepare(request).await,
+            HomeImagePrepareLockPolicy::ImmediateFallback => {
+                cache
+                    .prepare_with_lock_policy(request, params.home_image_prepare_lock_policy)
+                    .await
+            }
         }
     };
     let prepare_error = home_image_prepare_error(lease.result());
@@ -1412,10 +1417,6 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         .guest_rpc
         .as_ref()
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context, &cleanup_cancel));
-    let guest_duplex_registration =
-        config
-            .guest_duplex
-            .register(context.run_id, sandbox.as_ref(), &cleanup_cancel);
     let reuse_result = start.reuse_result;
     let home_reuse_result = start.home_reuse_result;
     let sandbox_startup_path = start.sandbox_startup_path;
@@ -1447,8 +1448,6 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         Some(guest_rpc) => guest_rpc.shutdown().await,
         None => Ok(()),
     };
-    // Revoke before cleanup, park, or release to an idle/reused sandbox.
-    drop(guest_duplex_registration);
 
     let pre_process_resource_diagnostics = match result.as_ref() {
         Err(error) if explicit_enospc_evidence([error.to_string().as_str()]) => {

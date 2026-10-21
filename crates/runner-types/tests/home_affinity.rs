@@ -20,7 +20,6 @@ fn heartbeat() -> HeartbeatState {
         held_sandbox_states: vec![],
         held_home_states: vec![],
         active_reuse_producers: Vec::<ActiveReuseProducer>::new(),
-        wss_ingress_service_active: false,
         mode: "running".into(),
     }
 }
@@ -40,6 +39,7 @@ fn home_inventory_keeps_the_per_cache_format_discriminator() {
         reuse_key: "thread:thread-a".into(),
         last_completed_at: "2026-10-09T00:00:00.000Z".into(),
         home_caches: vec![HomeCacheCapability {
+            source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
             profile: "vm0/default".into(),
             home_affinity_version: HOME_AFFINITY_VERSION,
         }],
@@ -50,7 +50,7 @@ fn home_inventory_keeps_the_per_cache_format_discriminator() {
         json!([{
             "reuseKey": "thread:thread-a",
             "lastCompletedAt": "2026-10-09T00:00:00.000Z",
-            "homeCaches": [{"profile": "vm0/default", "homeAffinityVersion": 1}]
+            "homeCaches": [{"profile": "vm0/default", "homeAffinityVersion": 1, "sourceRunId": "33333333-3333-4333-8333-333333333333"}]
         }])
     );
     state.held_home_states.clear();

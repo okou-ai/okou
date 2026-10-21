@@ -153,7 +153,7 @@ import {
 import { sendUserPushNotifications } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
-import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
+import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
 import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
@@ -163,7 +163,7 @@ import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
-import { loadTelegramQueuedLaunchMaterial } from "./telegram-queued-launch-context.service";
+import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 
 const log = logger("callback:chat");
 type ChatCallbackPreCreateTimingSpanKind = "top_level" | "nested";
@@ -2653,7 +2653,7 @@ export const recordQueuedPromptRunLaunch$ = command(
     signal: AbortSignal,
   ): void => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
+    set(writeDb$);
     const { userId, runInput } = args;
     const threadId = runInput.threadId;
     waitUntil(
@@ -2670,7 +2670,7 @@ export const recordQueuedPromptRunLaunch$ = command(
       ),
     );
     if (runInput.discordDelivery) {
-      set(scheduleDiscordRunTyping$, db, {
+      set(scheduleDiscordRunTyping$, {
         runId,
         chatThreadId: threadId,
         target: runInput.discordDelivery,
@@ -3478,7 +3478,7 @@ const processChatInternalCallback$ = command(
         );
       }
       if (payload.data.discordDelivery) {
-        set(scheduleDiscordRunTyping$, args.db, {
+        set(scheduleDiscordRunTyping$, {
           runId: args.callback.runId,
           chatThreadId: payload.data.threadId,
           target: payload.data.discordDelivery,
@@ -3609,7 +3609,7 @@ const loadQueuedRejectionChannel$ = command(
     );
     switch (contextType) {
       case "slack": {
-        const material = await loadSlackQueuedLaunchMaterial(db, source);
+        const material = await set(loadSlackQueuedLaunchMaterial$, source);
         signal.throwIfAborted();
         return material
           ? { ...delivery, kind: "Slack", target: material.slackDelivery }
@@ -3672,7 +3672,6 @@ const loadQueuedRejectionChannel$ = command(
       case "discord": {
         const material = await set(
           loadDiscordQueuedLaunchMaterial$,
-          db,
           source,
           signal,
         );
@@ -3691,7 +3690,7 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "telegram": {
-        const material = await loadTelegramQueuedLaunchMaterial(db, source);
+        const material = await set(loadTelegramQueuedLaunchMaterial$, source);
         signal.throwIfAborted();
         return material
           ? { ...delivery, kind: "Telegram", target: material.telegramDelivery }

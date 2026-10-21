@@ -2189,7 +2189,8 @@ mod tests {
                         "runnerId": "00000000-0000-0000-0000-000000000005",
                         "heartbeatGeneration": 7
                     },
-                    "tier": "reusableSandbox",
+                    "tier": "sourceHomeCache",
+                    "finalizingSourceRunId": "33333333-3333-4333-8333-333333333333",
                     "expiresAt": "2999-01-01T00:00:00.000Z"
                 }
             }),
@@ -2212,7 +2213,11 @@ mod tests {
         let preference = candidate
             .runner_preference()
             .expect("canonical preference should be parsed");
-        assert_eq!(preference.tier(), RunnerPreferenceTier::ReusableSandbox);
+        assert_eq!(preference.tier(), RunnerPreferenceTier::SourceHomeCache);
+        assert_eq!(
+            preference.target().source_run_id(),
+            Some("33333333-3333-4333-8333-333333333333".parse().unwrap())
+        );
         assert!(
             preference.targets(
                 runner_host::runner_process_identity::RunnerProcessIdentity::new(
@@ -2227,10 +2232,9 @@ mod tests {
             .expect("canonical preference telemetry");
         assert!(matches!(
             telemetry.runner_preference,
-            RunnerPreference::Preference {
-                tier: RunnerPreferenceTier::ReusableSandbox,
-                ..
-            }
+            RunnerPreference::Preference(
+                crate::provider::RunnerPreferenceDecision::SourceHomeCache { .. }
+            )
         ));
         assert_eq!(
             telemetry.state,

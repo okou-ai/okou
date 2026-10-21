@@ -67,7 +67,7 @@ describe("explicit Owner Kerberos sources", () => {
     "rejects unavailable %s RFB and KDC bindings before encryption without changing saved data",
     async (type) => {
       const kms = useSecretKmsProbe();
-      await owner({ isolatePg: true });
+      await owner();
       const original = await accept(
         connections().create({ headers, body: hostBody() }),
         [201],
@@ -390,22 +390,16 @@ function sshConnectionsClient() {
   );
 }
 async function owner(
-  options: Partial<{ orgId: string; userId: string }> & {
-    readonly isolatePg?: true;
-  } = {},
+  overrides: Partial<{ orgId: string; userId: string }> = {},
 ) {
-  const { isolatePg, ...overrides } = options;
   const value = {
     orgId: `org_vnc_${randomUUID()}`,
     userId: `user_vnc_${randomUUID()}`,
     ...overrides,
   };
-  await updateFeatureSwitchesForUser(
-    context,
-    value,
-    { [FeatureSwitchKey.VncAccess]: true },
-    { isolatePg },
-  );
+  await updateFeatureSwitchesForUser(context, value, {
+    [FeatureSwitchKey.VncAccess]: true,
+  });
   mocks.clerk.session(value.userId, value.orgId);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {

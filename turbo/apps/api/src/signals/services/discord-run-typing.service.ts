@@ -7,7 +7,7 @@ import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { tapError } from "../utils";
 import { requireDiscordBinding$ } from "./discord-access.service";
@@ -187,8 +187,7 @@ function typingAccessDenied(response: DiscordFailureResponse): null {
  */
 const currentTypingAccess$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     args: {
       readonly chatThreadId: string;
       readonly orgId: string;
@@ -201,6 +200,7 @@ const currentTypingAccess$ = command(
     readonly accessKey: string;
     readonly channelId: string;
   } | null> => {
+    const db = get(db$);
     const route = await (async () => {
       const plan = discordChatRouteReadPlan(args);
       const [route] = await db
@@ -272,8 +272,7 @@ const currentTypingAccess$ = command(
 
 const refreshDiscordRunTyping$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     args: {
       readonly runId: string;
       readonly chatThreadId: string;
@@ -281,6 +280,7 @@ const refreshDiscordRunTyping$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    const db = get(db$);
     if (typingHeld(args.target.channelId)) {
       return;
     }
@@ -305,7 +305,6 @@ const refreshDiscordRunTyping$ = command(
     }
     const access = await set(
       currentTypingAccess$,
-      db,
       { ...args, orgId: run.orgId, userId: run.userId },
       signal,
     );
@@ -351,7 +350,6 @@ const refreshDiscordRunTyping$ = command(
 export const scheduleDiscordRunTyping$ = command(
   (
     { set },
-    db: Db,
     args: {
       readonly runId: string;
       readonly chatThreadId: string;
@@ -359,7 +357,7 @@ export const scheduleDiscordRunTyping$ = command(
     },
   ): void => {
     const backgroundSignal = new AbortController().signal;
-    scheduleTyping(set(refreshDiscordRunTyping$, db, args, backgroundSignal), {
+    scheduleTyping(set(refreshDiscordRunTyping$, args, backgroundSignal), {
       runId: args.runId,
     });
   },

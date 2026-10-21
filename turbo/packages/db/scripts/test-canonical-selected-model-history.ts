@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -39,7 +39,7 @@ assert.ok(migration);
 await admin.query(`CREATE DATABASE "${databaseName}"`);
 const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
 try {
-  await applyPendingMigrations(sql, { beforeMillis: entry.when });
+  await applyFixtureMigrations(sql, { beforeMillis: entry.when });
   const user = `user-${randomUUID()}`;
   const org = `org-${randomUUID()}`;
   const thread = randomUUID();
@@ -90,7 +90,7 @@ try {
   await sql`INSERT INTO chat_events (chat_thread_id, event_type, context_type, seq_id, payload)
     VALUES (${thread}, 'input.prompt', 'web', 2, '{"userMessage":{"version":1,"parts":[{"type":"text","text":"uncaptured"}]}}')`;
   await assert.rejects(
-    applyPendingMigrations(sql, { beforeMillis: nextEntry.when }),
+    applyFixtureMigrations(sql, { beforeMillis: nextEntry.when }),
     /Unconsumed legacy model decisions/,
   );
   const [before] =
@@ -108,7 +108,7 @@ try {
   const retainedHistory =
     await sql`SELECT * FROM conversations WHERE run_id = ${run}`;
   // Isolate this historical transform from later additive columns and renames.
-  await applyPendingMigrations(sql, { beforeMillis: nextEntry.when });
+  await applyFixtureMigrations(sql, { beforeMillis: nextEntry.when });
   const [threads] =
     await sql`SELECT count(*)::int AS total, count(*) FILTER (WHERE selected_model = 'auto')::int AS auto,
     count(*) FILTER (WHERE model_settings = ${sql.json(personalSettings)})::int AS settings FROM chat_threads WHERE user_id = ${user}`;

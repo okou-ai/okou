@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { runnersPollContract } from "@okouai/api-contracts/contracts/runners";
+import { setupApp } from "../../../../__tests__/test-helpers";
+import { runnersRoutes } from "../../runners";
 import { expect, onTestFinished } from "vitest";
-import type { TestContext } from "../../../../__tests__/test-context";
+import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../../lib/time";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createRunsApi } from "./api-bdd-runs";
@@ -21,8 +24,12 @@ export async function peerFinalizingFixture(
   const clock = now();
   mockNow(clock);
   onTestFinished(clearMockNow);
+  // Heartbeats prune stale Runner rows across groups, including with this clock.
+  // Bind before actor setup; the returned client drives the actual peer polls.
+  const pollClient = (
+    await setupApp({ context, routes: runnersRoutes, isolatePg: true })
+  )(runnersPollContract);
   const owned = await publicChatActor(context, {
-    isolatePg: true,
     clockTime: now,
   });
   const api = createRunsApi(context);
@@ -34,6 +41,7 @@ export async function peerFinalizingFixture(
   });
   const fixture = {
     api,
+    pollClient,
     owned,
     source,
     clock,
@@ -159,9 +167,14 @@ export async function peerContinuation(f: PeerFixture) {
 
 export async function peerPoll(f: PeerFixture, runnerId = f.receiverId) {
   return await f.owned.run(async () => {
-    const response = await f.api.requestPollRunner(
-      true,
-      { runnerId, group: f.group, supportedProfiles: ["vm0/default"] },
+    const response = await accept(
+      f.pollClient.poll({
+        headers: {
+          authorization:
+            "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        },
+        body: { runnerId, group: f.group, supportedProfiles: ["vm0/default"] },
+      }),
       [200],
     );
     if (response.status !== 200) {

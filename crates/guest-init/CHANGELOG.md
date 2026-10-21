@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.13](https://github.com/okou-ai/okou/compare/guest-init-v0.20.12...guest-init-v0.20.13) (2026-10-20)
+
+## [0.20.12](https://github.com/okou-ai/okou/compare/guest-init-v0.20.11...guest-init-v0.20.12) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
 ## [0.20.11](https://github.com/okou-ai/okou/compare/guest-init-v0.20.10...guest-init-v0.20.11) (2026-10-20)
 
 ## [0.20.10](https://github.com/okou-ai/okou/compare/guest-init-v0.20.9...guest-init-v0.20.10) (2026-10-19)

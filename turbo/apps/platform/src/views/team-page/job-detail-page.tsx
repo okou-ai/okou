@@ -1065,7 +1065,7 @@ function AgentProfileSettings({
   const workflowsStatus = useLoadable(currentAgentVisibleWorkflows$);
   const agentsLoadable = useLastLoadable(agents$);
   const user = useLastResolved(user$);
-  const [, copyWorkflow] = useLoadableSet(copyWorkflow$);
+  const copyWorkflow = useSet(copyWorkflow$);
 
   const deleteWorkflows =
     workflowsLoadable.state === "hasData"

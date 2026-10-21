@@ -125,6 +125,60 @@ async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_public
 }
 
 #[tokio::test]
+async fn source_checkout_rechecks_replaced_publication_and_pins_matching_generation() {
+    let f = Fixture::new().await;
+    let first = f.commit("thread", b"first", "2026-10-20T00:00:00Z").await;
+    let current = f.commit("thread", b"second", "2026-10-20T00:01:00Z").await;
+    let request = || HomeImagePrepareRequest {
+        identity: HomeImageLeaseIdentity {
+            run_id: RunId::new_v4(),
+            sandbox_id: sandbox::SandboxId::new_v4(),
+            profile_name: PROFILE,
+            rootfs_hash: ROOTFS,
+            reuse_key: Some("thread"),
+            working_dir: CWD,
+            image_size_bytes: SIZE,
+        },
+        home_drive_required: true,
+    };
+    let stale = f
+        .cache
+        .prepare_from_source(
+            request(),
+            first.image_generation.parse().unwrap(),
+            HomeImagePrepareLockPolicy::ImmediateFallback,
+        )
+        .await;
+    assert_eq!(stale.result(), HomeCacheCheckoutResult::Miss);
+    assert!(stale.source_identity().is_none());
+    drop(stale);
+    assert_eq!(
+        f.metadata("thread").await.image_generation,
+        current.image_generation
+    );
+    let selected = f
+        .cache
+        .prepare_from_source(
+            request(),
+            current.image_generation.parse().unwrap(),
+            HomeImagePrepareLockPolicy::ImmediateFallback,
+        )
+        .await;
+    assert!(selected.is_cache_hit());
+    assert_eq!(
+        selected.source_identity().unwrap().image_generation,
+        current.image_generation
+    );
+    assert_eq!(
+        &tokio::fs::read(selected.source_image.as_ref().unwrap())
+            .await
+            .unwrap()[4096..4102],
+        b"second"
+    );
+    assert_eq!(f.cache.gc(false).await.unwrap(), 0);
+}
+
+#[tokio::test]
 async fn checkout_selects_exact_committed_generation_and_pins_it() {
     let f = Fixture::new().await;
     let committed = f
@@ -337,6 +391,7 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
         reuse_key: "template".into(),
         last_completed_at: original.last_completed_at.clone(),
         home_caches: vec![HomeCacheCapability {
+            source_run_id: original.image_generation.parse().unwrap(),
             profile: PROFILE.into(),
             home_affinity_version: HOME_AFFINITY_VERSION,
         }],
@@ -350,9 +405,11 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
         std::fs::create_dir_all(paths.entry_dir()).unwrap();
         // Real sparse images and metadata exercise the disk validator without
         // invoking unrelated publication capacity/GC policy for every fixture.
-        let image = paths.image(&original.image_generation).unwrap();
+        let generation = RunId::new_v4();
+        let image = paths.image(&generation.to_string()).unwrap();
         write_image(&image, b"home", SIZE);
         let mut metadata = original.clone();
+        metadata.image_generation = generation.to_string();
         metadata.profile_name = profile.into();
         metadata.reuse_key = reuse_key.into();
         metadata.last_completed_at = completed_at.into();
@@ -364,6 +421,7 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
             reuse_key: reuse_key.into(),
             last_completed_at: completed_at.into(),
             home_caches: vec![HomeCacheCapability {
+                source_run_id: generation,
                 profile: profile.into(),
                 home_affinity_version: HOME_AFFINITY_VERSION,
             }],

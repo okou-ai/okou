@@ -1,5 +1,84 @@
 # Changelog
 
+## [9.405.7](https://github.com/okou-ai/okou/compare/cli-v9.405.6...cli-v9.405.7) (2026-10-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.774.8
+    * @okouai/pi-agent-runtime bumped to 1.50.38
+
+## [9.405.6](https://github.com/okou-ai/okou/compare/cli-v9.405.5...cli-v9.405.6) (2026-10-21)
+
+
+### Refactoring
+
+* remove linkwallet feature switch ([#41819](https://github.com/okou-ai/okou/issues/41819)) ([5b99811](https://github.com/okou-ai/okou/commit/5b99811378d267243e4a6c9603da8dcc1c2878ce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.774.7
+    * @okouai/pi-agent-runtime bumped to 1.50.37
+
+## [9.405.5](https://github.com/okou-ai/okou/compare/cli-v9.405.4...cli-v9.405.5) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.583.0
+    * @okouai/core bumped to 8.774.6
+    * @okouai/pi-agent-runtime bumped to 1.50.36
+
+## [9.405.4](https://github.com/okou-ai/okou/compare/cli-v9.405.3...cli-v9.405.4) (2026-10-20)
+
+
+### Refactoring
+
+* require connector account default selection ([#41863](https://github.com/okou-ai/okou/issues/41863)) ([8324bc6](https://github.com/okou-ai/okou/commit/8324bc6bba77fe6626a44297f261d3beef0a29f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.582.2
+    * @okouai/core bumped to 8.774.5
+    * @okouai/pi-agent-runtime bumped to 1.50.35
+
+## [9.405.3](https://github.com/okou-ai/okou/compare/cli-v9.405.2...cli-v9.405.3) (2026-10-20)
+
+
+### Refactoring
+
+* retire global connector account summaries ([#41847](https://github.com/okou-ai/okou/issues/41847)) ([2f6fdb8](https://github.com/okou-ai/okou/commit/2f6fdb830bf8d476e8a1c935b76896080dc15527))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.582.1
+    * @okouai/core bumped to 8.774.4
+    * @okouai/pi-agent-runtime bumped to 1.50.34
+
+## [9.405.2](https://github.com/okou-ai/okou/compare/cli-v9.405.1...cli-v9.405.2) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.582.0
+    * @okouai/core bumped to 8.774.3
+    * @okouai/pi-agent-runtime bumped to 1.50.33
+
 ## [9.405.1](https://github.com/okou-ai/okou/compare/cli-v9.405.0...cli-v9.405.1) (2026-10-20)
 
 

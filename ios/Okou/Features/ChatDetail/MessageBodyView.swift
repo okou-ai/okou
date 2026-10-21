@@ -1,32 +1,87 @@
+import ChatData
 import SwiftUI
 import Textual
+
+struct MessageActionContext: Equatable {
+  let agentID: String
+  let threadID: String
+}
 
 struct MessageBodyView: View, Equatable {
   let text: String
   let baseURL: URL
   let markdown: MessageMarkdownCache
+  let actionContext: MessageActionContext?
+  let connectorActions: ConnectorActionStore?
+  let permissionActions: PermissionActionRegistry?
+  let loadsActions: Bool
+  @Environment(\.openURL) private var openURL
   private struct Prepared {
     let source: String
     let content: AttributedString
   }
   @State private var prepared: Prepared?
 
-  init(text: String, baseURL: URL, markdown: MessageMarkdownCache) {
+  init(
+    text: String, baseURL: URL, markdown: MessageMarkdownCache,
+    actionContext: MessageActionContext? = nil, connectorActions: ConnectorActionStore? = nil,
+    permissionActions: PermissionActionRegistry? = nil,
+    loadsActions: Bool = false
+  ) {
     self.text = text
     self.baseURL = baseURL
     self.markdown = markdown
+    self.actionContext = actionContext
+    self.connectorActions = connectorActions
+    self.permissionActions = permissionActions
+    self.loadsActions = loadsActions
     _prepared = State(
       initialValue: markdown.cached(text).map { Prepared(source: text, content: $0) })
   }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.text == rhs.text && lhs.baseURL == rhs.baseURL && lhs.markdown === rhs.markdown
+      && lhs.actionContext == rhs.actionContext && lhs.connectorActions === rhs.connectorActions
+      && lhs.permissionActions === rhs.permissionActions
+      && lhs.loadsActions == rhs.loadsActions
+  }
+
+  @ViewBuilder private func preparedBody(_ content: AttributedString) -> some View {
+    if let context = actionContext, let connectorActions {
+      let blocks = MessageActionBody.blocks(
+        content, webURL: baseURL, agentID: context.agentID, threadID: context.threadID,
+        permissionsEnabled: permissionActions != nil)
+      VStack(alignment: .leading, spacing: 12) {
+        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+          switch block {
+          case .markdown(let fragment):
+            if !String(fragment.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+              StructuredText(text, parser: PreparedMessageParser(content: fragment))
+            }
+          case .connector(let action):
+            ConnectorActionCard(action: action, store: connectorActions, loadsState: loadsActions)
+          case .permission(let action):
+            if let permissionActions {
+              PermissionActionCard(store: permissionActions.card(action), loadsState: loadsActions)
+            }
+          case .unavailablePermission:
+            Label("Permission request unavailable", systemImage: "exclamationmark.shield")
+              .font(.subheadline).foregroundStyle(.secondary)
+              .padding(14).frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
+              .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+          }
+        }
+      }
+    } else {
+      StructuredText(text, parser: PreparedMessageParser(content: content))
+    }
   }
 
   var body: some View {
     Group {
       if let prepared, prepared.source == text {
-        StructuredText(text, parser: PreparedMessageParser(content: prepared.content))
+        preparedBody(prepared.content)
       } else {
         Text(text).textSelection(.enabled)
       }
@@ -44,7 +99,8 @@ struct MessageBodyView: View, Equatable {
         guard ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") else {
           return .discarded
         }
-        return .systemAction(url)
+        openURL(url)
+        return .handled
       }
     )
     .task(id: text) {

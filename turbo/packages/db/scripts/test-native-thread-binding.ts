@@ -5,7 +5,7 @@ import postgres from "postgres";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { nativeThreadBindingSql } from "../src/operations/native-thread-binding";
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required (disposable PostgreSQL only)");
@@ -140,7 +140,7 @@ async function binding(threadId: string) {
 }
 
 try {
-  await applyPendingMigrations(migrations);
+  await applyFixtureMigrations(migrations);
   await Promise.all(
     clients.map((connection) => {
       return connection.connect();

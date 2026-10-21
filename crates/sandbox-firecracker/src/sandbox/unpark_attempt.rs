@@ -26,7 +26,9 @@ impl Step {
                 AssertUnwindSafe(future)
                     .catch_unwind()
                     .await
-                    .unwrap_or_else(|_| Err(io::Error::other("unpark readiness producer panicked")))
+                    .unwrap_or_else(|_| {
+                        Err(io::Error::other("native transition producer panicked"))
+                    })
                     .map_err(|error| {
                         Arc::new(Failure {
                             kind: error.kind(),
@@ -56,11 +58,12 @@ pub(super) struct Attempt {
 
 impl Attempt {
     pub(super) fn new(
+        id: Uuid,
         native: impl Future<Output = io::Result<()>> + Send + 'static,
         guest: impl Future<Output = io::Result<()>> + Send + 'static,
     ) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id,
             native: Step::new(native),
             guest: Step::new(guest),
         }

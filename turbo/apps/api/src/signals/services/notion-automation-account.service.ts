@@ -8,12 +8,7 @@ import type { WorkflowAutomationEventConfig } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import {
-  workflowAutomationDefaultAccountReadPlan,
-  workflowAutomationSelectedAccountReadPlan,
-} from "./workflow-automation-account.service";
 
 const NOTION_EVENT_TYPES = [
   "notion-child-page-created",
@@ -97,102 +92,60 @@ export function notionPendingEventsReconnectScope(connectorId: string) {
   };
 }
 
-export async function reprojectNotionAutomationsForOwner(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): Promise<void> {
-  const automations = await db
-    .select({
-      id: workflowAutomations.id,
-      workflowId: workflowAutomations.workflowId,
-      eventType: workflowAutomations.eventType,
-      eventConfig: workflowAutomations.eventConfig,
-      eventConnectorId: workflowAutomations.eventConnectorId,
-    })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.kind, "event"),
-        inArray(workflowAutomations.eventType, [...NOTION_EVENT_TYPES]),
-      ),
-    );
+export function notionAutomationProjectionColumns() {
+  return {
+    id: workflowAutomations.id,
+    workflowId: workflowAutomations.workflowId,
+    eventType: workflowAutomations.eventType,
+    eventConfig: workflowAutomations.eventConfig,
+    eventConnectorId: workflowAutomations.eventConnectorId,
+  };
+}
 
-  for (const automation of automations) {
-    const workflowScope = {
-      ...args,
-      workflowId: automation.workflowId,
-    };
-    const eventConnectorId = await (async () => {
-      const accountScope = {
-        ...workflowScope,
-        connectorSlug: "notion" as const,
-      };
-      return await (async () => {
-        const selected =
-          workflowAutomationSelectedAccountReadPlan(accountScope);
-        const [selection] = await db
-          .select(selected.columns)
-          .from(selected.from)
-          .innerJoin(selected.join.table, selected.join.on)
-          .where(selected.where)
-          .limit(selected.limit);
-        if (selection) {
-          return selection.connectorId;
-        }
-        const fallback = workflowAutomationDefaultAccountReadPlan(accountScope);
-        const [defaultAccount] = await db
-          .select(fallback.columns)
-          .from(fallback.from)
-          .where(fallback.where)
-          .limit(fallback.limit);
-        return defaultAccount?.connectorId ?? null;
-      })();
-    })();
-    if (
-      automation.eventConnectorId === eventConnectorId &&
-      (eventConnectorId === null ||
-        notionConfigConnectorId(
+export function notionAutomationProjectionCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return and(
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.kind, "event"),
+    inArray(workflowAutomations.eventType, [...NOTION_EVENT_TYPES]),
+  );
+}
+
+export function notionAutomationProjectionValues(
+  automation: Pick<
+    typeof workflowAutomations.$inferSelect,
+    "eventType" | "eventConfig" | "eventConnectorId"
+  >,
+  eventConnectorId: string | null,
+) {
+  if (
+    automation.eventConnectorId === eventConnectorId &&
+    (eventConnectorId === null ||
+      notionConfigConnectorId(automation.eventType, automation.eventConfig) ===
+        eventConnectorId)
+  ) {
+    return null;
+  }
+  const eventConfig =
+    eventConnectorId === null
+      ? automation.eventConfig
+      : notionConfigWithConnectorId(
           automation.eventType,
           automation.eventConfig,
-        ) === eventConnectorId)
-    ) {
-      continue;
-    }
-    const eventConfig =
-      eventConnectorId === null
-        ? automation.eventConfig
-        : notionConfigWithConnectorId(
-            automation.eventType,
-            automation.eventConfig,
-            eventConnectorId,
-          );
-    await db
-      .update(workflowAutomations)
-      .set({
-        eventConnectorId,
-        ...(eventConfig === null ? {} : { eventConfig }),
-      })
-      .where(eq(workflowAutomations.id, automation.id));
-    const pendingEventDb = db;
-    const pendingEventCondition = eq(
-      notionWorkflowPendingEvents.automationId,
-      automation.id,
-    );
-    const pendingEventReason = NOTION_ACCOUNT_CHANGED_SKIP_REASON;
-    await (async () => {
-      const write = notionPendingEventsSkipWrite(
-        pendingEventCondition,
-        pendingEventReason,
-      );
-      await pendingEventDb
-        .update(write.table)
-        .set(write.values)
-        .where(write.where);
-    })();
-  }
+          eventConnectorId,
+        );
+  return {
+    eventConnectorId,
+    ...(eventConfig === null ? {} : { eventConfig }),
+  };
+}
+
+export function notionAutomationPendingEventsScope(automationId: string) {
+  return {
+    condition: eq(notionWorkflowPendingEvents.automationId, automationId),
+    reason: NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+  };
 }

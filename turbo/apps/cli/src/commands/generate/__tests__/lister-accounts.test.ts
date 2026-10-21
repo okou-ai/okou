@@ -1,30 +1,23 @@
-import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
+import { stubConnectedConnectors } from "../../__tests__/helpers/connector-accounts";
 import {
-  connectorAccount,
-  connectorAccountSummary,
-  stubConnectorAccountSummaries,
-} from "../../__tests__/helpers/connector-accounts";
-import {
-  catalogStatusItem,
-  catalogStatusMetadata,
+  catalogItem,
   manualAuthMethod,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
 import { generateCommand } from "../index";
 
-const target = { kind: "builtin", connectorSlug: "fal" } as const;
-const metadata = catalogStatusMetadata({
+const metadata = catalogItem({
   connectorSlug: "fal",
   label: "fal.ai",
   generation: ["image"],
   authMethods: [manualAuthMethod()],
 });
 
-describe("generation current-member accounts", () => {
+describe("generation current-member directory", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   const exit = vi.spyOn(process, "exit").mockImplementation(() => {
@@ -34,14 +27,6 @@ describe("generation current-member accounts", () => {
   function output(): string {
     return log.mock.calls.flat().join("\n");
   }
-  function install(accounts: readonly ConnectorAccountConnection[]): void {
-    server.use(
-      stubConnectorCatalogStatus([metadata]),
-      stubConnectorAccountSummaries([
-        connectorAccountSummary(target, accounts),
-      ]),
-    );
-  }
 
   beforeEach(() => {
     chalk.level = 0;
@@ -50,7 +35,9 @@ describe("generation current-member accounts", () => {
     vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
+    server.use(stubConnectorCatalog([metadata]));
   });
+
   afterEach(() => {
     log.mockClear();
     error.mockClear();
@@ -58,220 +45,72 @@ describe("generation current-member accounts", () => {
     vi.unstubAllEnvs();
   });
 
-  it("lists the saved default with no catalog account projections and batches account reads", async () => {
-    const account = connectorAccount(target, {
-      authMethod: "api-token",
-      displayName: "Work",
-      externalUsername: "canonical",
-    });
-    const accounts = [
-      account,
-      connectorAccount(target, {
-        isDefault: false,
-        connectionStatus: "reconnect-required",
-        externalUsername: "sibling",
-      }),
-    ];
-    install(accounts);
-    let requests = 0;
+  it("discovers matching saved providers without claiming readiness", async () => {
     server.use(
-      http.get(
-        "http://localhost:3000/api/connector-accounts",
-        ({ request }) => {
-          requests += 1;
-          expect(
-            new URL(request.url).searchParams.get("includeScopeMismatch"),
-          ).toBe("true");
-          return HttpResponse.json({
-            summaries: [connectorAccountSummary(target, accounts)],
-          });
-        },
-      ),
-    );
-    await generateCommand.parseAsync(["node", "okou", "image", "--all"]);
-    expect(output()).toContain("Work (@canonical)");
-    expect(output()).not.toContain("sibling");
-    expect(output()).not.toContain("Other image generation connectors");
-    expect(requests).toBe(1);
-  });
-
-  it("keeps canonical false scope and ready credentials authoritative over conflicting catalog state", async () => {
-    const account = connectorAccount(target, {
-      id: "00000000-0000-4000-8000-000000000001",
-      authMethod: "api-token",
-      externalUsername: "canonical",
-      scopeMismatch: false,
-    });
-    install([account]);
-    server.use(
-      stubConnectorCatalogStatus([
-        catalogStatusItem({
-          connectorSlug: "fal",
-          label: "fal.ai",
-          generation: ["image"],
-          scopeMismatch: true,
-          connected: false,
-          connectionStatus: "reconnect-required",
-          connection: {
-            id: account.id,
-            authMethod: "api-token",
-            externalUsername: "stale",
-            externalEmail: null,
-            reconnectReason: "authorization_expired_or_revoked",
-          },
+      stubConnectorCatalog([
+        metadata,
+        catalogItem({
+          connectorSlug: "openai",
+          label: "OpenAI",
+          generation: ["text"],
         }),
       ]),
+      stubConnectedConnectors(["fal", "openai"]),
     );
-    await generateCommand.parseAsync(["node", "okou", "image", "--all"]);
-    expect(output()).toContain("@canonical");
-    expect(output()).not.toContain("stale");
-    expect(output()).not.toContain("Next actions:");
-  });
 
-  it("requires reconnect when canonical credentials fail despite a healthy catalog projection", async () => {
-    const account = connectorAccount(target, {
-      connectionStatus: "reconnect-required",
-      externalUsername: "canonical",
-    });
-    install([account]);
-    server.use(
-      stubConnectorCatalogStatus([
-        catalogStatusItem({
-          connectorSlug: "fal",
-          label: "fal.ai",
-          generation: ["image"],
-          connected: true,
-          connectionStatus: "connected",
-          connection: {
-            id: account.id,
-            authMethod: account.authMethod,
-            externalUsername: "stale",
-            externalEmail: null,
-            reconnectReason: null,
-          },
-        }),
-      ]),
-    );
     await generateCommand.parseAsync(["node", "okou", "image", "--all"]);
-    expect(output()).toContain("connected, reconnect required");
+
+    expect(output()).toContain("fal.ai");
     expect(output()).toContain(
-      "[Reconnect fal.ai](http://localhost:3000/connectors)",
+      "saved accounts; inspect with okou connector status fal",
     );
-    expect(output()).not.toContain("stale");
-  });
-
-  it.each([
-    {
-      name: "reconnect",
-      changes: { connectionStatus: "reconnect-required" as const },
-      reason: "reconnect required",
-      action: "Reconnect fal.ai",
-      path: "/connectors",
-    },
-    {
-      name: "incomplete setup",
-      changes: {
-        setupStatus: "incomplete" as const,
-        missingRequiredFields: ["apiKey"],
-      },
-      reason: "missing apiKey",
-      action: "Manage fal.ai accounts",
-      path: "/connectors",
-    },
-    {
-      name: "invalid setup",
-      changes: { setupStatus: "invalid" as const },
-      reason: "setup invalid",
-      action: "Manage fal.ai accounts",
-      path: "/connectors",
-    },
-    {
-      name: "unknown setup",
-      changes: { setupStatus: undefined },
-      reason: "account review required",
-      action: "Manage fal.ai accounts",
-      path: "/connectors",
-    },
-    {
-      name: "unknown scope",
-      changes: { scopeMismatch: undefined },
-      reason: "account review required",
-      action: "Manage fal.ai accounts",
-      path: "/connectors",
-    },
-    {
-      name: "scope update",
-      changes: { scopeMismatch: true },
-      reason: "permissions update required",
-      action: "Update fal.ai permissions",
-      path: "/connectors/fal/connect",
-    },
-  ])(
-    "guides $name from canonical account facts",
-    async ({ changes, reason, action, path }) => {
-      install([connectorAccount(target, changes)]);
-      await generateCommand.parseAsync(["node", "okou", "image", "--all"]);
-      expect(output()).toContain(reason);
-      expect(output()).toContain(`[${action}](http://localhost:3000${path})`);
-    },
-  );
-
-  it("requires a default rather than offering a new connection for existing accounts", async () => {
-    install([
-      connectorAccount(target, { isDefault: false }),
-      connectorAccount(target, { isDefault: false }),
-    ]);
-    await generateCommand.parseAsync(["node", "okou", "image", "--all"]);
-    expect(output()).toContain("default account required");
     expect(output()).toContain(
-      "[Manage fal.ai accounts](http://localhost:3000/connectors)",
+      "Saved accounts may need setup, reconnect, or permission updates.",
     );
+    expect(output()).toContain(
+      "directory membership does not establish runtime availability or agent authorization",
+    );
+    expect(output()).not.toMatch(/^ {2}openai\s/mu);
+    expect(error).not.toHaveBeenCalled();
   });
 
-  it("offers a connection when no saved account exists", async () => {
-    install([]);
+  it("offers a connection when a matching provider has no saved account", async () => {
+    server.use(stubConnectedConnectors([]));
+
     await generateCommand.parseAsync(["node", "okou", "image", "--all"]);
+
+    expect(output()).toContain(
+      "No image generation connectors with saved accounts found.",
+    );
+    expect(output()).toContain("no saved accounts");
     expect(output()).toContain(
       "[Connect fal.ai](http://localhost:3000/connectors/fal/connect)",
     );
   });
 
-  it("fails visibly when saved accounts cannot be read", async () => {
-    install([connectorAccount(target)]);
+  it("fails visibly when the saved-account directory cannot be read", async () => {
     server.use(
-      http.get("http://localhost:3000/api/connector-accounts", () => {
+      http.get("http://localhost:3000/api/connectors/connected", () => {
         return HttpResponse.json(
           {
             error: {
               code: "UNAVAILABLE",
-              message: "Account metadata unavailable",
+              message: "Saved-account directory unavailable",
             },
           },
           { status: 503 },
         );
       }),
     );
+
     await expect(
       generateCommand.parseAsync(["node", "okou", "image", "--all"]),
     ).rejects.toThrow("command exited");
+
     expect(error.mock.calls.flat().join("\n")).toContain(
-      "Account metadata unavailable",
+      "Saved-account directory unavailable",
     );
+    expect(exit).toHaveBeenCalledWith(1);
     expect(log).not.toHaveBeenCalled();
   });
-
-  it.each(["image", "presentation"])(
-    "does not need account summaries for %s without connector candidates",
-    async (type) => {
-      install([]);
-      server.use(
-        stubConnectorCatalogStatus([]),
-        http.get("http://localhost:3000/api/connector-accounts", () => {
-          throw new Error("No account request is needed");
-        }),
-      );
-      await generateCommand.parseAsync(["node", "okou", type]);
-      expect(output()).toContain("Built-in command:");
-    },
-  );
 });

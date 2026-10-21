@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/ios-v0.15.0...ios-v0.16.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add native chat connector authorization cards ([#41798](https://github.com/okou-ai/okou/issues/41798)) ([faeb0f9](https://github.com/okou-ai/okou/commit/faeb0f9992cf8d9750780a89538ea0d0aebc02c3))
+* **ios:** add native chat connector permission cards ([#41815](https://github.com/okou-ai/okou/issues/41815)) ([ec4c254](https://github.com/okou-ai/okou/commit/ec4c2541550380dbf2fbfad690352f020b35b6b8))
+* **ios:** add native chat failure recovery ([#41835](https://github.com/okou-ai/okou/issues/41835)) ([14202e2](https://github.com/okou-ai/okou/commit/14202e2fbac3612ac2705abbe94b5699c0d37ad2))
+
+
+### Bug Fixes
+
+* **ios:** align optimistic chat pin interactions with pwa ([#41879](https://github.com/okou-ai/okou/issues/41879)) ([37a8415](https://github.com/okou-ai/okou/commit/37a8415d88fe906316c678243cf5e057881eef80))
+* **ios:** blend chat headers with native scroll edges ([#41901](https://github.com/okou-ai/okou/issues/41901)) ([a9752b3](https://github.com/okou-ai/okou/commit/a9752b39593bc4887f1ddbf65f3f99815bf40728))
+* **ios:** dismiss the keyboard when sending chat messages ([#41885](https://github.com/okou-ai/okou/issues/41885)) ([45387a2](https://github.com/okou-ai/okou/commit/45387a2507fad5b8e0e06162ba34045a40f67fdc))
+* **ios:** keep model settings visible beside send ([#41894](https://github.com/okou-ai/okou/issues/41894)) ([79e882a](https://github.com/okou-ai/okou/commit/79e882a83882832794d8b4e9745b1876c8478257))
+* **ios:** suspend transcript scrolling during sidebar gestures ([#41888](https://github.com/okou-ai/okou/issues/41888)) ([e284c6a](https://github.com/okou-ai/okou/commit/e284c6ae6f6eb4447d89510e1729e2cf00efdfe2))
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/ios-v0.14.0...ios-v0.15.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** quote assistant passages in chat drafts ([#41853](https://github.com/okou-ai/okou/issues/41853)) ([06785aa](https://github.com/okou-ai/okou/commit/06785aadea213019f4e9ecdc26c5bc1483249507))
+* **ios:** show settled credit usage for chat runs ([#41840](https://github.com/okou-ai/okou/issues/41840)) ([6931d82](https://github.com/okou-ai/okou/commit/6931d82185f10dc94b25acb56fa0d1d13c4086be))
+
+
+### Bug Fixes
+
+* **ios:** keep chat titles readable over scrolling history ([#41844](https://github.com/okou-ai/okou/issues/41844)) ([c41783d](https://github.com/okou-ai/okou/commit/c41783d5602554fca036f534ac84f09cdfcdce37))
+* **ios:** open message source chats in the app ([#41871](https://github.com/okou-ai/okou/issues/41871)) ([4c67ec9](https://github.com/okou-ai/okou/commit/4c67ec998e787dcd4b9e9ca17ace8aed6e089134))
+* **ios:** remove the redundant web conversation link ([#41877](https://github.com/okou-ai/okou/issues/41877)) ([8a4b623](https://github.com/okou-ai/okou/commit/8a4b623400075ad6820632f0dc3d1ab50b740228))
+
+## [0.14.0](https://github.com/okou-ai/okou/compare/ios-v0.13.0...ios-v0.14.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** add native message text selection ([#41848](https://github.com/okou-ai/okou/issues/41848)) ([a77dd33](https://github.com/okou-ai/okou/commit/a77dd33a57f584d60ed24610fa588ce4a5240275))
+* **ios:** add native recommended follow-up suggestions ([#41852](https://github.com/okou-ai/okou/issues/41852)) ([e46045a](https://github.com/okou-ai/okou/commit/e46045a1ec7a30435dc9890774c13b389e8b4b64))
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/ios-v0.12.1...ios-v0.13.0) (2026-10-20)
+
+
+### Features
+
+* **ios:** render structured user messages ([#41810](https://github.com/okou-ai/okou/issues/41810)) ([8ec30fd](https://github.com/okou-ai/okou/commit/8ec30fd1b5c5b197c824dc353a68744d77c657a4))
+
 ## [0.12.1](https://github.com/okou-ai/okou/compare/ios-v0.12.0...ios-v0.12.1) (2026-10-20)
 
 

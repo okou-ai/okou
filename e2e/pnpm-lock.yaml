@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@okouai/api-contracts>@okouai/connectors': file:../turbo/packages/connectors
-
 importers:
 
   .:
@@ -21,21 +18,12 @@ importers:
         specifier: ^18.0.8
         version: 18.0.8
     devDependencies:
-      '@okouai/api-contracts':
-        specifier: file:../turbo/packages/api-contracts
-        version: file:../turbo/packages/api-contracts
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.2
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
       typescript:
         specifier: 7.0.2
         version: 7.0.2
-      ws:
-        specifier: ^8.20.0
-        version: 8.22.0
 
 packages:
 
@@ -195,12 +183,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@okouai/api-contracts@file:../turbo/packages/api-contracts':
-    resolution: {directory: ../turbo/packages/api-contracts, type: directory}
-
-  '@okouai/connectors@file:../turbo/packages/connectors':
-    resolution: {directory: ../turbo/packages/connectors, type: directory}
-
   '@playwright/test@1.64.1':
     resolution: {integrity: sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==}
     engines: {node: '>=20'}
@@ -208,9 +190,6 @@ packages:
 
   '@types/node@26.6.5':
     resolution: {integrity: sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg==}
-
-  '@types/ws@8.18.2':
-    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -357,14 +336,6 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  punycode@2.3.1:
-    resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
-    engines: {node: '>=6'}
-
-  tr46@5.1.1:
-    resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
-    engines: {node: '>=18'}
-
   tsx@4.23.15:
     resolution: {integrity: sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==}
     engines: {node: '>=18.0.0'}
@@ -377,21 +348,6 @@ packages:
 
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
-
-  ws@8.22.0:
-    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
-
-  zod@4.6.7:
-    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -473,16 +429,6 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@okouai/api-contracts@file:../turbo/packages/api-contracts':
-    dependencies:
-      '@okouai/connectors': file:../turbo/packages/connectors
-      zod: 4.6.7
-
-  '@okouai/connectors@file:../turbo/packages/connectors':
-    dependencies:
-      tr46: 5.1.1
-      zod: 4.6.7
-
   '@playwright/test@1.64.1':
     dependencies:
       playwright: 1.64.1
@@ -490,10 +436,6 @@ snapshots:
   '@types/node@26.6.5':
     dependencies:
       undici-types: 8.9.0
-
-  '@types/ws@8.18.2':
-    dependencies:
-      '@types/node': 26.6.5
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
@@ -595,12 +537,6 @@ snapshots:
     dependencies:
       playwright-core: 1.64.1
 
-  punycode@2.3.1: {}
-
-  tr46@5.1.1:
-    dependencies:
-      punycode: 2.3.1
-
   tsx@4.23.15:
     dependencies:
       esbuild: 0.28.2
@@ -631,7 +567,3 @@ snapshots:
       '@typescript/typescript-win32-x64': 7.0.2
 
   undici-types@8.9.0: {}
-
-  ws@8.22.0: {}
-
-  zod@4.6.7: {}

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.67](https://github.com/okou-ai/okou/compare/runner-network-v0.2.66...runner-network-v0.2.67) (2026-10-21)
+
+
+### Refactoring
+
+* **runner-network:** converge upload request completion ([#41936](https://github.com/okou-ai/okou/issues/41936)) ([913e8ba](https://github.com/okou-ai/okou/commit/913e8ba3a0a365c180d629b291344e875b45de1d))
+
+## [0.2.66](https://github.com/okou-ai/okou/compare/runner-network-v0.2.65...runner-network-v0.2.66) (2026-10-20)
+
+## [0.2.65](https://github.com/okou-ai/okou/compare/runner-network-v0.2.64...runner-network-v0.2.65) (2026-10-20)
+
+## [0.2.64](https://github.com/okou-ai/okou/compare/runner-network-v0.2.63...runner-network-v0.2.64) (2026-10-20)
+
 ## [0.2.63](https://github.com/okou-ai/okou/compare/runner-network-v0.2.62...runner-network-v0.2.63) (2026-10-20)
 
 ## [0.2.62](https://github.com/okou-ai/okou/compare/runner-network-v0.2.61...runner-network-v0.2.62) (2026-10-20)

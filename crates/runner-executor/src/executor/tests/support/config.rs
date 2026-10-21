@@ -41,7 +41,6 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
         mitm_jsonl_flush: None,
         connector_runtime_sync: None,
         guest_rpc: None,
-        guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
         decoded_cache: crate::storage_cache::decoded::DecodedCache::new(HomePaths::with_root(
             dir.to_owned(),
@@ -77,6 +76,7 @@ pub(in crate::executor::tests) async fn test_executor_config_with_startup_api(
 
 pub(in crate::executor::tests) fn default_params() -> JobParams {
     JobParams {
+        home_source_run_id: None,
         profile_name: "vm0/default".into(),
         rootfs_hash: "test-rootfs".into(),
         vcpu: 2,

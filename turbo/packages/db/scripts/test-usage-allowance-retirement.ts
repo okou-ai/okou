@@ -5,7 +5,7 @@ import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 
-import { applyPendingMigrations } from "./migration-runner";
+import { applyFixtureMigrations } from "./fixtures/migrate-with-empty-instructions";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -83,7 +83,7 @@ async function assertUncontracted() {
 }
 
 try {
-  await applyPendingMigrations(sql, { beforeMillis: target.when });
+  await applyFixtureMigrations(sql, { beforeMillis: target.when });
   await client.connect();
   await blocker.connect();
   await client.query(`
@@ -104,7 +104,7 @@ try {
   `);
   const before = await retainedState();
   const apply = async () => {
-    await applyPendingMigrations(sql, { beforeMillis: target.when + 1 });
+    await applyFixtureMigrations(sql, { beforeMillis: target.when + 1 });
   };
 
   const backend = await blocker.query<{ pid: unknown; id: unknown }>(

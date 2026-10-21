@@ -761,7 +761,7 @@ impl<'a> NetworkLogBatchUploader<'a> {
 
         let result = request.send().await;
 
-        match result {
+        let outcome = match result {
             Ok(resp) if resp.status().is_success() => {
                 let status = resp.status();
                 // File is kept locally for debugging; gc_job_logs deletes after 7 days.
@@ -786,7 +786,6 @@ impl<'a> NetworkLogBatchUploader<'a> {
                     request_state = BatchRequestState::ConfirmedSuccess.as_str(),
                     "network log batch uploaded"
                 );
-                self.active_request = None;
                 BatchUploadOutcome::Continue
             }
             Ok(resp) => {
@@ -813,7 +812,6 @@ impl<'a> NetworkLogBatchUploader<'a> {
                     response_body_read_error = rejection.body_read_error.as_deref().unwrap_or(""),
                     "network logs upload rejected"
                 );
-                self.active_request = None;
                 BatchUploadOutcome::Failed(UploadFailure::Other)
             }
             Err(e) => {
@@ -849,10 +847,11 @@ impl<'a> NetworkLogBatchUploader<'a> {
                         UploadFailure::Other
                     }
                 };
-                self.active_request = None;
                 BatchUploadOutcome::Failed(failure)
             }
-        }
+        };
+        self.active_request = None;
+        outcome
     }
 }
 
@@ -1054,6 +1053,8 @@ mod tests {
     use super::*;
 
     const SANDBOX_TOKEN: &str = "sandbox-token";
+
+    mod rejection;
 
     fn eligible_success() -> EligibleNetworkLogUploadOutcome {
         EligibleNetworkLogUploadOutcome::Success

@@ -1,4 +1,5 @@
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
+import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -5909,10 +5910,16 @@ export const deleteWorkflowAutomation$ = command(
       signal,
     );
     signal.throwIfAborted();
-    // Delete the automation row only; the bound chat thread is kept.
+    // Keep the bound thread and claimed turns; retire only pending inputs.
     await writeDb
       .delete(workflowAutomations)
       .where(eq(workflowAutomations.id, owned.automation.id));
+    signal.throwIfAborted();
+    await set(
+      revokeDeletedWorkflowAutomationInputs$,
+      { orgId: args.orgId, automationId: owned.automation.id },
+      signal,
+    );
     signal.throwIfAborted();
     await set(
       reconcileAutomationEventWatches$,

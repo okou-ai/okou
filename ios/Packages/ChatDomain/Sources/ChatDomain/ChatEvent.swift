@@ -48,15 +48,18 @@ public struct ChatEvent: Sendable {
   public struct Payload: Decodable, Sendable {
     public let content: String?
     public let error: String?
+    public let failureReason: String?
     public let userMessage: UserMessage?
 
     public init(
       content: String? = nil,
       error: String? = nil,
+      failureReason: String? = nil,
       userMessage: UserMessage? = nil
     ) {
       self.content = content
       self.error = error
+      self.failureReason = failureReason
       self.userMessage = userMessage
     }
   }

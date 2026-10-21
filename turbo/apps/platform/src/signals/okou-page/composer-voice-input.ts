@@ -4,7 +4,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { logger } from "../log.ts";
-import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
+import { onRef, resetSignal, settle } from "../utils.ts";
 import {
   readVoiceDraftRecording,
   createVoiceDraftRecording,
@@ -85,7 +85,9 @@ function createVoiceDraftData(draftTarget: string) {
     async (get): Promise<VoiceDraftRecordingRecord | null> => {
       const owned = get(ownedRecording$);
       const key = await get(storageKey$);
-      return owned?.key === key ? owned.recording : await get(storedRecording$);
+      const recording =
+        owned?.key === key ? owned.recording : await get(storedRecording$);
+      return recording?.sampleCount ? recording : null;
     },
   );
   // Retry reads storage again so a failed restore can recover and a recording
@@ -100,14 +102,12 @@ function createVoiceDraftData(draftTarget: string) {
     },
   );
   const capture = createVoiceDraftCaptureSignals();
-  const captureError$ = state<unknown>(null);
   const providerUnavailable$ = state<{
     readonly recordingId: string;
     readonly message: string;
   } | null>(null);
   const state$ = computed(async (get): Promise<ComposerVoiceInputState> => {
     const active = get(capture.capture$);
-    const captureError = get(captureError$);
     const unavailable = get(providerUnavailable$);
     const restored = await settle(get(recording$));
     if (!restored.ok) {
@@ -121,13 +121,11 @@ function createVoiceDraftData(draftTarget: string) {
       status: active ? "recording" : restored.value ? "failed" : "idle",
       recording: restored.value,
       message:
-        captureError || restored.value?.sampleCount === 0
-          ? voiceDraftStorageFailedMessage()
-          : unavailable && unavailable.recordingId === restored.value?.id
-            ? `${unavailable.message} ${i18n.t(($) => {
-                return $.chat.voice.retryReady;
-              })}`
-            : undefined,
+        unavailable && unavailable.recordingId === restored.value?.id
+          ? `${unavailable.message} ${i18n.t(($) => {
+              return $.chat.voice.retryReady;
+            })}`
+          : undefined,
     };
   });
   return {
@@ -136,7 +134,6 @@ function createVoiceDraftData(draftTarget: string) {
     recording$,
     restoreRecording$,
     capture,
-    captureError$,
     providerUnavailable$,
     state$,
   };
@@ -226,8 +223,7 @@ function createVoiceDraftMutations(
   appendTranscription$: Command<Promise<void>, [boolean, AbortSignal]>,
   cancelTranscription$: VoiceDraftCommand,
 ) {
-  const { recording$, storageKey$, ownedRecording$, capture, captureError$ } =
-    data;
+  const { recording$, storageKey$, ownedRecording$, capture } = data;
   const discard$ = command(async ({ get, set }, signal: AbortSignal) => {
     await set(cancelTranscription$, signal);
     signal.throwIfAborted();
@@ -265,62 +261,39 @@ function createVoiceDraftMutations(
       return;
     }
     await set(initializeTranscription$, signal);
-    const removeEmptyRecording = async () => {
-      // Storage orders this read after every committed chunk write, so audio
-      // that was still being saved when capture stopped is kept.
-      const current = await readVoiceDraftRecording(key);
-      if (current?.id === id && current.sampleCount === 0) {
-        await deleteVoiceDraftRecording(key, id);
-        set(ownedRecording$, { key, recording: null });
-      }
-    };
-    set(captureError$, null);
-    const started = await withVoiceDraftFailureToast(
-      onRejection(
-        set(
-          capture.start$,
-          {
-            append: async (samples, sequence) => {
-              const appended = await appendVoiceDraftSamples(
-                key,
-                id,
-                sequence,
-                samples,
-              );
-              set(ownedRecording$, (owned) => {
-                return owned?.recording?.id === id
-                  ? { key, recording: appended }
-                  : owned;
-              });
-              signal.throwIfAborted();
-              await set(appendTranscription$, false, signal);
-            },
-            fail: (error) => {
-              L.error("Voice recording could not be saved", error);
-              toast.error(voiceDraftStorageFailedMessage());
-              set(captureError$, error);
-              set(capture.cancel$);
-            },
+    await withVoiceDraftFailureToast(
+      set(
+        capture.start$,
+        {
+          append: async (samples, sequence) => {
+            const appended = await appendVoiceDraftSamples(
+              key,
+              id,
+              sequence,
+              samples,
+            );
+            set(ownedRecording$, (owned) => {
+              return owned?.recording?.id === id
+                ? { key, recording: appended }
+                : owned;
+            });
+            signal.throwIfAborted();
+            await set(appendTranscription$, false, signal);
           },
-          signal,
-        ),
-        removeEmptyRecording,
+        },
+        signal,
       ),
       signal,
     );
     signal.throwIfAborted();
-    if (!started) {
-      await withVoiceDraftFailureToast(removeEmptyRecording(), signal);
-      signal.throwIfAborted();
-    }
   });
-  const finish$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const finish$ = command(async ({ set }, signal: AbortSignal) => {
     const finished = await withVoiceDraftFailureToast(
       set(capture.finish$, signal),
       signal,
     );
     signal.throwIfAborted();
-    if (finished && !get(captureError$)) {
+    if (finished) {
       await set(transcribe$, signal);
     }
   });

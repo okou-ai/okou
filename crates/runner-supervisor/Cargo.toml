@@ -1,6 +1,6 @@
 [package]
 name = "runner-supervisor"
-version = "0.19.0"
+version = "0.20.1"
 edition.workspace = true
 description = "Runner start-loop idle, finalization, heartbeat, and orphan orchestration"
 
@@ -19,17 +19,14 @@ runner-host.workspace = true
 runner-lifecycle.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
-runner-remote.workspace = true
 runner-storage.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
-url = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
-tokio-tungstenite = { workspace = true, features = ["handshake"] }
-futures-util = { workspace = true, features = ["async-await", "sink", "std"] }
+futures-util = { workspace = true, features = ["async-await", "std"] }
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }

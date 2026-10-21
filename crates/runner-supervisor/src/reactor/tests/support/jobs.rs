@@ -49,3 +49,19 @@ pub(in super::super) fn context_with_session(
     ctx.local_resume_session_id = Some(session_id.into());
     ctx
 }
+
+/// Authoritative claim intent for native-compatible finalizing handoff fixtures.
+pub(in super::super) fn context_with_native_source(
+    run_id: RunId,
+    reuse_key: &str,
+    source: RunId,
+) -> runner_types::types::ExecutionContext {
+    let mut context = minimal_context(run_id);
+    context.reuse_key = Some(reuse_key.into());
+    context.native_continuation = Some(guest_contracts::env::NativeContinuation {
+        session_id: Some("native-finalizing-session".into()),
+        generation_run_id: Some(source.to_string()),
+        recovery_prompt: None,
+    });
+    context
+}

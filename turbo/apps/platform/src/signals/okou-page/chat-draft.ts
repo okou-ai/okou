@@ -7,7 +7,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { onRejection, resetSignal, settle, tapError } from "../utils.ts";
+import { resetSignal, settle } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -57,16 +57,6 @@ function uploadFileInfo(
 ): FileInfo {
   return { id: file.id, url: file.url, contentType };
 }
-
-type AttachmentUploadState =
-  | {
-      readonly status: "pending";
-      readonly promise: Promise<FileInfo> | null;
-    }
-  | {
-      readonly status: "uploaded";
-      readonly fileInfo: FileInfo;
-    };
 
 const log = logger("chat-draft");
 
@@ -424,6 +414,7 @@ function createAttachmentAnnotationSignals(args: {
 export interface ChatAttachment {
   /** Stable identity for this attachment inside its owning composer. */
   key: string;
+  readonly source: "upload" | "restored";
   filename: string;
   contentType: string;
   size: number;
@@ -432,10 +423,8 @@ export interface ChatAttachment {
   /** Reactive file info (id + url) — loading while uploading, hasData when done. */
   fileInfo$: Computed<Promise<FileInfo | null>>;
   preview$: Computed<Promise<AttachmentPreviewSignals | null>>;
-  /** Whether either the original or its annotated derivative is uploading. */
-  uploadPending$: Computed<boolean>;
-  /** Whether every file required by a send has been uploaded successfully. */
-  sendReady$: Computed<boolean>;
+  /** Whether the annotated derivative required by a send is available. */
+  annotationReady$: Computed<boolean>;
   /** Cancel the in-flight upload. Always safe to call (no-op if already completed). */
   cancel$: Command<void, []>;
   /** Start the upload and publish its fileInfo$ promise for later send-time resolution. */
@@ -468,36 +457,15 @@ function createChatAttachment(file: File): ChatAttachment {
   const contentType = inferUploadContentType(file);
   const imageLoad = createImageLoadSignals();
   const resetSignal$ = resetSignal();
-  const internalUpload$ = state<AttachmentUploadState>({
-    status: "pending",
-    promise: null,
-  });
-
-  const fileInfo$ = computed(async (get) => {
-    const upload = get(internalUpload$);
-    if (upload.status === "uploaded") {
-      return upload.fileInfo;
-    }
-    if (upload.promise === null) {
-      return null;
-    }
-    return await upload.promise;
+  const internalUpload$ = state<Promise<FileInfo | null>>(
+    Promise.resolve(null),
+  );
+  const fileInfo$ = computed((get) => {
+    return get(internalUpload$);
   });
   const annotation = createAttachmentAnnotationSignals({
     filename: file.name,
     fileInfo$,
-  });
-  const uploadPending$ = computed((get): boolean => {
-    return (
-      get(internalUpload$).status === "pending" ||
-      get(annotation.annotationUploadStatus$) === "pending"
-    );
-  });
-  const sendReady$ = computed((get): boolean => {
-    return (
-      get(internalUpload$).status === "uploaded" &&
-      get(annotation.annotationReady$)
-    );
   });
   const cancel$ = command(({ set }) => {
     set(resetSignal$);
@@ -507,22 +475,19 @@ function createChatAttachment(file: File): ChatAttachment {
   const upload$ = command(async ({ set }, parentSignal: AbortSignal) => {
     const signal = set(resetSignal$, parentSignal);
     const promise = set(uploadFileToStorage$, file, signal);
-    set(internalUpload$, { status: "pending", promise });
-    const fileInfo = await promise;
-    signal.throwIfAborted();
-    set(internalUpload$, { status: "uploaded", fileInfo });
+    set(internalUpload$, promise);
+    await promise;
   });
 
   return {
     key: crypto.randomUUID(),
+    source: "upload",
     filename: file.name,
     contentType,
     size: file.size,
     imageLoad,
     fileInfo$,
     preview$: createComposerAttachmentPreview(fileInfo$),
-    uploadPending$,
-    sendReady$,
     cancel$,
     upload$,
     ...annotation,
@@ -558,7 +523,8 @@ export interface DraftSignals {
     [GenerationTemplateRequest | undefined]
   >;
   attachments$: Computed<ChatAttachment[]>;
-  attachmentUploadsReady$: Computed<boolean>;
+  usableAttachments$: Computed<Promise<ChatAttachment[]>>;
+  attachmentUploadsReady$: Computed<Promise<boolean>>;
   uploadAttachment$: Command<Promise<void>, [File, AbortSignal]>;
   /**
    * Adds persisted attachments to the draft and drops the ones whose artifact
@@ -672,12 +638,9 @@ export function createRestoredAttachment(
   const upload$ = command((_visitor, _signal: AbortSignal): Promise<void> => {
     return Promise.resolve();
   });
-  const uploadPending$ = computed((get): boolean => {
-    return get(annotation.annotationUploadStatus$) === "pending";
-  });
-
   return {
     key: crypto.randomUUID(),
+    source: "restored",
     filename: persisted.filename,
     contentType: persisted.contentType,
     size: persisted.size,
@@ -686,8 +649,6 @@ export function createRestoredAttachment(
     preview$: computed(async (get) => {
       return (await get(restored$))?.preview ?? null;
     }),
-    uploadPending$,
-    sendReady$: annotation.annotationReady$,
     cancel$,
     upload$,
     ...annotation,
@@ -832,9 +793,12 @@ function createReconcileRestoredAttachments(
   return command(
     async (
       { get, set },
-      candidates: readonly ChatAttachment[],
+      attachments: readonly ChatAttachment[],
       signal: AbortSignal,
     ): Promise<boolean> => {
+      const candidates = attachments.filter((attachment) => {
+        return attachment.source === "restored";
+      });
       if (candidates.length === 0) {
         return false;
       }
@@ -1070,54 +1034,46 @@ function createComposerDraftHandoffSignals({
       restored: RestoredDraftState | null,
       signal: AbortSignal,
     ): Promise<boolean> => {
+      signal.throwIfAborted();
       const handoff = get(composerDraftHandoffState$);
       if (!handoff) {
         return false;
       }
-      // Claim before awaiting attachment reconciliation so concurrent page
-      // setup and click handlers cannot merge the same remote draft twice.
+      // The merge is applied synchronously by seed$ before reconciliation.
+      // Consume the handoff once, even if reconciling an attachment fails.
       set(composerDraftHandoffState$, null);
-      return await onRejection(
-        async () => {
-          if (handoff.needsRemoteMerge && restored) {
-            const localInput = get(draftInput.input$);
-            const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
-              set(draftDocument.readEditorDocument$)?.toMessageDocument() ?? {
-                version: 1 as const,
-                parts: [{ type: "text" as const, text: localInput }],
-              };
-            const mergedDocument = mergeComposerDraftDocument(
-              localDocument,
-              restored,
-            );
-            const mergedContent = mergedDocument
-              ? messageDocumentToPrompt(mergedDocument)
-              : null;
-            if (mergedDocument && mergedContent !== null) {
-              await set(
-                seed$,
-                {
-                  content: mergedContent,
-                  userMessage: mergedDocument,
-                  generationTemplate: get(internalGenerationTemplate$),
-                  attachments: [
-                    ...get(internalAttachments$),
-                    ...restored.attachments.map(createRestoredAttachment),
-                  ],
-                },
-                signal,
-              );
-            }
-          }
-          signal.throwIfAborted();
-          return true;
-        },
-        () => {
-          if (get(composerDraftHandoffState$) === null) {
-            set(composerDraftHandoffState$, handoff);
-          }
-        },
-      );
+      if (handoff.needsRemoteMerge && restored) {
+        const localInput = get(draftInput.input$);
+        const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
+          set(draftDocument.readEditorDocument$)?.toMessageDocument() ?? {
+            version: 1 as const,
+            parts: [{ type: "text" as const, text: localInput }],
+          };
+        const mergedDocument = mergeComposerDraftDocument(
+          localDocument,
+          restored,
+        );
+        const mergedContent = mergedDocument
+          ? messageDocumentToPrompt(mergedDocument)
+          : null;
+        if (mergedDocument && mergedContent !== null) {
+          await set(
+            seed$,
+            {
+              content: mergedContent,
+              userMessage: mergedDocument,
+              generationTemplate: get(internalGenerationTemplate$),
+              attachments: [
+                ...get(internalAttachments$),
+                ...restored.attachments.map(createRestoredAttachment),
+              ],
+            },
+            signal,
+          );
+        }
+      }
+      signal.throwIfAborted();
+      return true;
     },
   );
 
@@ -1151,9 +1107,21 @@ export function createDraftSignals(): DraftSignals {
     return get(internalAttachments$);
   });
 
-  const attachmentUploadsReady$ = computed((get): boolean => {
-    return get(internalAttachments$).every((attachment) => {
-      return get(attachment.sendReady$);
+  const usableAttachments$ = computed(async (get) => {
+    const attachments = get(internalAttachments$);
+    const infos = await Promise.allSettled(
+      attachments.map((attachment) => {
+        return get(attachment.fileInfo$);
+      }),
+    );
+    return attachments.filter((_attachment, index) => {
+      const info = infos[index];
+      return info?.status === "fulfilled" && info.value !== null;
+    });
+  });
+  const attachmentUploadsReady$ = computed(async (get): Promise<boolean> => {
+    return (await get(usableAttachments$)).every((attachment) => {
+      return get(attachment.annotationReady$);
     });
   });
 
@@ -1165,21 +1133,7 @@ export function createDraftSignals(): DraftSignals {
         return [...prev, attachment];
       });
 
-      await tapError(upload, () => {
-        set(internalAttachments$, (prev) => {
-          return prev.filter((a) => {
-            return a !== attachment;
-          });
-        });
-        toast.error(
-          i18n.t(
-            ($) => {
-              return $.chat.attachments.uploadFailed;
-            },
-            { filename: file.name },
-          ),
-        );
-      });
+      await upload;
     },
   );
 
@@ -1253,6 +1207,7 @@ export function createDraftSignals(): DraftSignals {
     generationTemplate$,
     setGenerationTemplate$,
     attachments$,
+    usableAttachments$,
     attachmentUploadsReady$,
     uploadAttachment$,
     restoreAttachments$,

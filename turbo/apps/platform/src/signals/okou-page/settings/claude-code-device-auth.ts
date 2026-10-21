@@ -10,7 +10,7 @@ import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { bestEffort, resetSignal, tapError } from "../../utils.ts";
+import { bestEffort, resetSignal, withCleanup } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type ClaudeCodeDeviceAuthDialogMode = "connect" | "reconnect";
@@ -46,8 +46,7 @@ type ClaudeCodeDeviceAuthFlowState =
   | { readonly status: "idle" }
   | { readonly status: "starting"; readonly requestId: string }
   | ActiveClaudeCodeDeviceAuthFlowState
-  | { readonly status: "expired"; readonly message: string }
-  | { readonly status: "error"; readonly message: string };
+  | { readonly status: "expired"; readonly message: string };
 
 function createInitialDialogState(): ClaudeCodeDeviceAuthDialogState {
   return {
@@ -170,47 +169,48 @@ function createClaudeCodeRunFlow$(ctx: ClaudeCodeDeviceAuthSignalContext) {
       const requestId = createRequestId(ctx.scope);
       set(ctx.internalFlowState$, { status: "starting", requestId });
 
-      const dialog = get(ctx.internalDialogState$);
-      const startArgs: {
-        readonly scope: ClaudeCodeDeviceAuthScope;
-        readonly mode?: ClaudeCodeDeviceAuthMode;
-        readonly modelProviderId?: string;
-      } = {
-        scope: "personal",
-        mode: dialog.mode === "reconnect" ? "reconnect" : "add",
-        ...(dialog.modelProviderId
-          ? { modelProviderId: dialog.modelProviderId }
-          : {}),
-      };
+      return await withCleanup(
+        (async () => {
+          const dialog = get(ctx.internalDialogState$);
+          const startArgs: {
+            readonly scope: ClaudeCodeDeviceAuthScope;
+            readonly mode?: ClaudeCodeDeviceAuthMode;
+            readonly modelProviderId?: string;
+          } = {
+            scope: "personal",
+            mode: dialog.mode === "reconnect" ? "reconnect" : "add",
+            ...(dialog.modelProviderId
+              ? { modelProviderId: dialog.modelProviderId }
+              : {}),
+          };
 
-      const started = await tapError(
-        set(startClaudeCodeDeviceAuth$, startArgs, signal),
+          const started = await set(
+            startClaudeCodeDeviceAuth$,
+            startArgs,
+            signal,
+          );
+          signal.throwIfAborted();
+
+          if (!isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
+            return false;
+          }
+          set(ctx.internalFlowState$, {
+            status: "pending",
+            requestId,
+            sessionToken: started.sessionToken,
+            browserUrl: started.browserUrl,
+            expiresAtMs: now() + secondsToMilliseconds(started.expiresIn),
+            authorizationCode: "",
+            errorMessage: null,
+          });
+          return true;
+        })(),
+        () => {
+          if (isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
+            set(ctx.internalFlowState$, createIdleFlowState());
+          }
+        },
       );
-      signal.throwIfAborted();
-
-      if (!isCurrentStarting(get(ctx.internalFlowState$), requestId)) {
-        return false;
-      }
-      if (!started) {
-        set(ctx.internalFlowState$, {
-          status: "error",
-          message: i18n.t(($) => {
-            return $.settings.models.deviceAuth.claude.error;
-          }),
-        });
-        return false;
-      }
-
-      set(ctx.internalFlowState$, {
-        status: "pending",
-        requestId,
-        sessionToken: started.sessionToken,
-        browserUrl: started.browserUrl,
-        expiresAtMs: now() + secondsToMilliseconds(started.expiresIn),
-        authorizationCode: "",
-        errorMessage: null,
-      });
-      return true;
     },
   );
 }

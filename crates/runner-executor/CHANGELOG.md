@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.15.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.0...runner-executor-v0.15.1) (2026-10-21)
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.22...runner-executor-v0.15.0) (2026-10-20)
+
+
+### Features
+
+* **runner:** track resource producers and prepare source matching ([#41900](https://github.com/okou-ai/okou/issues/41900)) ([f762cad](https://github.com/okou-ai/okou/commit/f762cada760922b815c9ad6d32012be39c5a3c08))
+
+## [0.14.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.21...runner-executor-v0.14.22) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
+## [0.14.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.20...runner-executor-v0.14.21) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+## [0.14.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.19...runner-executor-v0.14.20) (2026-10-20)
+
 ## [0.14.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.18...runner-executor-v0.14.19) (2026-10-20)
 
 ## [0.14.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.17...runner-executor-v0.14.18) (2026-10-20)

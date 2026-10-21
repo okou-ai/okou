@@ -15,10 +15,7 @@ export async function terminalPredecessor(
   const clock = now();
   mockNow(clock);
   onTestFinished(clearMockNow);
-  const owned = await publicChatActor(context, {
-    isolatePg: true,
-    clockTime: now,
-  });
+  const owned = await publicChatActor(context, { clockTime: now });
   const api = createRunsApi(context);
   const { actor, agentId, runnerGroup: group } = owned;
   const run = await owned.run(() => {

@@ -5,29 +5,15 @@ serves authorized consumers for official API-backed Runs. The SSH dispatcher
 (`crates/runner-remote/src/ssh`) owns only its business handlers and run-local
 authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
-The private run-scoped Guest duplex (`crates/runner-remote/src/guest_duplex`) has its own
-**52002 listener** and long-lived stream protocol. Guest RPC remains on 52001:
-its request bytes, one-operation lifetime, admission budget and decoder are not
-part of a shared protocol classifier. Both listeners rely on the same sandbox
-assignment and authoritative normal-operation reservation. Idle duplex candidates
-hold no park reservation.
+Guest RPC uses its own **52001 listener**, with one-operation lifetimes and
+bounded admission under the sandbox assignment and authoritative
+normal-operation reservation.
 SSH consumers require current API authority; the transport itself does not
 grant SSH access.
 
-The admitted duplex application peer lives in
-[`guest-channel-server`](../../crates/guest-channel-server/src/lib.rs), composed by
-`guest-init` in PID 2. Each active stream worker creates its current-thread runtime
-after fork, adopts its descriptor with nonblocking readiness, and keeps response
-reading independent of bounded service tasks and serialized writes. The
-[shared application contracts](../../turbo/packages/core/sandbox-channel.md)
-own schema/category equality, message identities and business fault isolation;
-Runner routing remains opaque. Connection teardown cancels pending calls and
-joins owned tasks before physical stream capacity returns. Application handlers
-must retain any physical work that can outlive cancellation of its observer.
-
 ## Choosing a Guest/Runner transport for new work
 
-The three private Firecracker vsock ports connect the Guest to host CID 2. A
+The two private Firecracker vsock ports connect the Guest to host CID 2. A
 vsock connection is bidirectional; choose by **operation ownership and lifetime**,
 not by which side can write bytes or by the product feature's name. None is a
 public sandbox endpoint.
@@ -46,12 +32,6 @@ Apply these questions in order:
    RPC on port **52001**. Add an explicitly authorized method/consumer, not a
    new port. `run.usage`, `ssh.*`, and `vnc.*` belong here; file methods use the
    existing opt-in binary stream contract.
-4. **Does the Runner attach an opaque, long-lived bidirectional channel to the
-   exact live Run rather than service one Guest RPC?** Use the separate private
-   duplex listener on **52002**. Its connection is not an RPC request and cannot
-   acquire an operation reservation until exact-run attachment. Ticket admission
-   must precede any public WSS acknowledgement. See the
-   [duplex owner](../../crates/runner-remote/src/guest_duplex).
 
 Port 52000 has one accepted control connection: the Guest control service owns its
 end, and the host removes the listener after acceptance. Its current reader
@@ -71,9 +51,7 @@ The helper connects once per request, while the Runner owns the handler,
 capacity, current-Run authorization, normal-operation reservation, deadline,
 and cancellation. A new business method does not justify another vsock port.
 For run-scoped work, 52001 admission uses the control client's authoritative
-normal-operation tracker and the host's current Run assignment; 52002 uses that
-same authority with a separate listener and connection lifetime. A separate
-listener does not create a second source of authority. See the
+normal-operation tracker and the host's current Run assignment. See the
 [helper](../../crates/runner-rpc-client/src/lib.rs) and
 [dispatch owner](../../crates/runner-remote/src/guest_rpc/mod.rs).
 

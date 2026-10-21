@@ -25,8 +25,6 @@ const SLACK_QUESTION = "Keep Okou a message away";
 const CODEX_CARD = "Codex";
 const NEW_TO_THIS_CARD = "I'm new to AI agents";
 const CONNECT_CODEX = "Connect Codex";
-const FAILED_NOTE =
-  "We couldn’t connect Codex. You can try again, or continue and connect it later.";
 
 /** The step is only reachable once a source is connected. */
 function mockConnectedSource(): void {
@@ -186,7 +184,7 @@ test("The step reports connected once the account lists the subscription", async
   });
 });
 
-test("A failed connect says so and still lets the person continue", async () => {
+test("A failed connect still lets the person retry or continue", async () => {
   context.mocks.data.personalModelProviders([]);
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
     return respond(503, {
@@ -213,7 +211,9 @@ test("A failed connect says so and still lets the person continue", async () => 
 
   closeDeviceAuthDialog();
 
-  await expect(screen.findByText(FAILED_NOTE)).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getButtonByName("Try again")).toBeEnabled();
+  });
 
   click(getButtonByName("Continue"));
 

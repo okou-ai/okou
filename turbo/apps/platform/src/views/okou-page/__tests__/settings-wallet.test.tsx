@@ -5,7 +5,6 @@ import {
   type WalletConnectionStatus,
   type WalletPurchaseHistoryEntry,
 } from "@okouai/api-contracts/contracts/wallet";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -59,9 +58,7 @@ beforeEach(() => {
   });
 });
 
-async function openWallet(
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-) {
+async function openWallet() {
   context.mocks.data.org({ id: "org_1", name: "Test Org", role: "member" });
   await setupPage({
     context,
@@ -72,11 +69,6 @@ async function openWallet(
         activeOrg: { id: "org_1", name: "Test Org" },
         memberships: [{ id: "org_1" }],
       },
-    },
-    featureSwitches: {
-      [FeatureSwitchKey.LinkWallet]: true,
-      [FeatureSwitchKey.WalletSettings]: true,
-      ...featureSwitches,
     },
   });
 }
@@ -162,30 +154,6 @@ test("lets a member connect their workspace wallet and disconnect after consent 
   });
   await expect(button("Connect")).resolves.toBeEnabled();
 });
-
-test.each([FeatureSwitchKey.LinkWallet, FeatureSwitchKey.WalletSettings])(
-  "hides Wallet and its deep link without fetching or subscribing when %s is disabled",
-  async (feature) => {
-    context.mocks.api(walletUserContract.status, ({ never }) => {
-      return never();
-    });
-    context.mocks.api(walletUserContract.transactions, ({ never }) => {
-      return never();
-    });
-    context.mocks.api(walletUserContract.paymentMethods, ({ never }) => {
-      return never();
-    });
-    await openWallet({ [feature]: false });
-    await screen.findByRole("dialog");
-    expect(
-      queryAllByRoleFast("button").some((element) => {
-        return element.textContent?.trim() === "Wallet";
-      }),
-    ).toBeFalsy();
-    expect(screen.queryByText("Link")).not.toBeInTheDocument();
-    expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
-  },
-);
 
 test("updates the wallet after a workspace notification", async () => {
   let connected = false;

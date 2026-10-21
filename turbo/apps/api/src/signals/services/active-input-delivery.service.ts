@@ -146,46 +146,46 @@ function replacementTarget(source: ActiveInputSourceRow) {
  * the meantime, so the anchor is the position of the input it revoked. Two
  * bounded reads: the run's latest replacement, then its source by primary key.
  */
-async function steeringAnchorSeqId(
-  db: Db,
-  scope: ActiveInputRunThread,
-): Promise<number> {
-  const [ownInput] = await db
-    .select({
-      seqId: chatEvents.seqId,
-      revokesEventId: chatEvents.revokesEventId,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, scope.chatThreadId),
-        eq(chatEvents.runId, scope.runId),
-        inArray(chatEvents.eventType, [...RUN_QUEUE_INPUT_EVENT_TYPES]),
-      ),
-    )
-    .orderBy(desc(chatEvents.seqId))
-    .limit(1);
-  if (!ownInput) {
-    return 0;
-  }
-  if (ownInput.revokesEventId === null) {
-    return ownInput.seqId;
-  }
-  const [source] = await db
-    .select({ seqId: chatEvents.seqId })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, scope.chatThreadId),
-        eq(chatEvents.id, ownInput.revokesEventId),
-      ),
-    )
-    .limit(1);
-  if (!source) {
-    throw new Error("Consumed run input source is missing from its thread");
-  }
-  return source.seqId;
-}
+const steeringAnchorSeqId$ = command(
+  async ({ get }, scope: ActiveInputRunThread): Promise<number> => {
+    const db = get(db$);
+    const [ownInput] = await db
+      .select({
+        seqId: chatEvents.seqId,
+        revokesEventId: chatEvents.revokesEventId,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, scope.chatThreadId),
+          eq(chatEvents.runId, scope.runId),
+          inArray(chatEvents.eventType, [...RUN_QUEUE_INPUT_EVENT_TYPES]),
+        ),
+      )
+      .orderBy(desc(chatEvents.seqId))
+      .limit(1);
+    if (!ownInput) {
+      return 0;
+    }
+    if (ownInput.revokesEventId === null) {
+      return ownInput.seqId;
+    }
+    const [source] = await db
+      .select({ seqId: chatEvents.seqId })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, scope.chatThreadId),
+          eq(chatEvents.id, ownInput.revokesEventId),
+        ),
+      )
+      .limit(1);
+    if (!source) {
+      throw new Error("Consumed run input source is missing from its thread");
+    }
+    return source.seqId;
+  },
+);
 
 /**
  * The next run-less, unrevoked prompt or budget a running sandbox may steer.
@@ -215,7 +215,7 @@ export const loadNextSteerableInput$ = command(
     if (scope.status !== "running") {
       return { outcome: "found", input: null };
     }
-    const afterSeqId = await steeringAnchorSeqId(db, scope);
+    const afterSeqId = await set(steeringAnchorSeqId$, scope);
     signal.throwIfAborted();
     const [next] = await listPendingChatInputs(db, {
       chatThreadId: scope.chatThreadId,
@@ -373,51 +373,53 @@ export const declareSteeredInput$ = command(
  * effort: a failed expiry leaves an unconsumed budget that neither a later
  * run's steering nor the ordinary queue picker can consume.
  */
-export async function expireRunTimeBudgetInput(
-  db: Db,
-  args: ActiveInputRunThread,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const expired = await settle(revokePendingRunTimeBudgetInput(db, args));
-  signal.throwIfAborted();
-  if (!expired.ok) {
-    L.error("Failed to expire run time budget input", {
-      runId: args.runId,
-      error: expired.error,
-    });
-    return false;
-  }
-  return expired.value;
-}
+export const expireRunTimeBudgetInput$ = command(
+  async (
+    { set },
+    args: ActiveInputRunThread,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const expired = await settle(set(revokePendingRunTimeBudgetInput$, args));
+    signal.throwIfAborted();
+    if (!expired.ok) {
+      L.error("Failed to expire run time budget input", {
+        runId: args.runId,
+        error: expired.error,
+      });
+      return false;
+    }
+    return expired.value;
+  },
+);
 
-async function revokePendingRunTimeBudgetInput(
-  db: Db,
-  args: ActiveInputRunThread,
-): Promise<boolean> {
-  const sourceChatThreadId = args.chatThreadId;
-  const sourceEventIds = [runTimeBudgetEventIdForRun(args.runId)];
-  const [source] = await db
-    .select(activeInputSourceFields())
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, sourceChatThreadId),
-        inArray(chatEvents.id, sourceEventIds),
-      ),
-    );
-  if (!source) {
-    return false;
-  }
-  const revoked =
-    parseRawRows(
-      chatEventCommandResultSchema,
-      await db.execute(
-        chatEventReplacementInsertSql(replacementTarget(source), {
-          chatThreadId: args.chatThreadId,
-          eventType: "control.revoke",
-          runId: args.runId,
-        }),
-      ),
-    )[0] ?? null;
-  return revoked !== null;
-}
+const revokePendingRunTimeBudgetInput$ = command(
+  async ({ set }, args: ActiveInputRunThread): Promise<boolean> => {
+    const db = set(writeDb$);
+    const sourceChatThreadId = args.chatThreadId;
+    const sourceEventIds = [runTimeBudgetEventIdForRun(args.runId)];
+    const [source] = await db
+      .select(activeInputSourceFields())
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, sourceChatThreadId),
+          inArray(chatEvents.id, sourceEventIds),
+        ),
+      );
+    if (!source) {
+      return false;
+    }
+    const revoked =
+      parseRawRows(
+        chatEventCommandResultSchema,
+        await db.execute(
+          chatEventReplacementInsertSql(replacementTarget(source), {
+            chatThreadId: args.chatThreadId,
+            eventType: "control.revoke",
+            runId: args.runId,
+          }),
+        ),
+      )[0] ?? null;
+    return revoked !== null;
+  },
+);

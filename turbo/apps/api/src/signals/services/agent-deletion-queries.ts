@@ -4,14 +4,9 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { blobs } from "@okouai/db/schema/blob";
-import { storages } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
-import {
-  getInstructionsStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
 import { and, asc, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
@@ -28,7 +23,6 @@ export interface DeleteAgentArgs {
 const agentRows = z.array(
   z.object({
     id: z.string(),
-    name: z.string(),
     owner: z.string(),
     visibility: z.enum(["public", "private"]),
   }),
@@ -67,7 +61,6 @@ type AdmissionResult =
   | AdmissionFailure
   | {
       readonly kind: "ready";
-      readonly agentName: string;
       readonly runIds: readonly string[];
     };
 type AdmissionPlan<T> = Generator<AdmissionStatement, T, readonly unknown[]>;
@@ -96,21 +89,10 @@ export function agentDeletionThreadSequencesSql(agentId: string) {
     .for("update", { of: chatEventSequences })
     .getSQL();
 }
-export function agentInstructionDeletionCondition(
-  instructions: readonly { readonly id: string }[],
-) {
-  return inArray(
-    storages.id,
-    instructions.map((storage) => {
-      return storage.id;
-    }),
-  );
-}
 function agentSnapshotSql(args: DeleteAgentArgs, lock = false) {
   const query = new QueryBuilder()
     .select({
       id: agents.id,
-      name: agents.name,
       owner: agents.owner,
       visibility: agents.visibility,
     })
@@ -213,35 +195,12 @@ export function* agentDeletionAdmissionPlan(
   }
   return {
     kind: "ready",
-    agentName: agent.name,
     runIds: runs.map((run) => {
       return run.id;
     }),
   };
 }
 
-export const deletedInstructionStorageSchema = z.object({
-  id: z.string(),
-  s3Prefix: z.string(),
-});
-export function agentInstructionStoragesSql(orgId: string, agentName: string) {
-  return new QueryBuilder()
-    .select({
-      id: storages.id,
-      s3Prefix: sql`${storages.s3Prefix}`.as("s3Prefix"),
-    })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, getInstructionsStorageName(agentName)),
-      ),
-    )
-    .orderBy(asc(storages.id))
-    .for("update")
-    .getSQL();
-}
 export function conversationReferenceBatches(
   removed: ReturnType<typeof deletedRunHistoryReferences>,
 ) {

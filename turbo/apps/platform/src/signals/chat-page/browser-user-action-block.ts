@@ -26,15 +26,8 @@ import { fetchResource } from "../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import {
-  onRef,
-  onRejection,
-  resetSignal,
-  settle,
-  waitForOperation,
-  waitLoopUntil,
-  withAbortAfter,
-} from "../utils.ts";
+import { setAblyLoop$ } from "../realtime.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -51,9 +44,6 @@ import {
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 
 const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
-const RECOVERY_INTERVAL_MS = 2000;
-const RECOVERY_MAX_READS = 35;
-const RECOVERY_DEADLINE_MS = 90_000;
 export const BROWSER_INPUT_CANCELLATION_PROMPT =
   "The user cancelled the browser input request.";
 
@@ -128,7 +118,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
   readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
   readonly removeFileDraft$: Command<void, [string]>;
-  readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
   readonly entryState$: Computed<
@@ -137,15 +126,11 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly entryAction$: Computed<BrowserInputAction | null>;
   readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
   readonly invalidateEntry$: Command<void, []>;
-  readonly startStandaloneEntry$: Command<Promise<void>, [AbortSignal]>;
-  readonly retryStandaloneRequest$: Command<Promise<void>, [AbortSignal]>;
-  readonly refresh$: Command<void, [signal?: AbortSignal]>;
-  readonly recoveryState$: Computed<"idle" | "checking" | "exhausted">;
-  readonly recover$: Command<void, []>;
-  readonly recoveryRef$: Command<
+  readonly standaloneEntryRef$: Command<
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
+  readonly subscribe$: Command<void, [AbortSignal]>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly updateChoiceDraft$: Command<
     void,
@@ -162,14 +147,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
-  readonly resumeRef$: Command<
-    (() => void) | undefined,
-    [HTMLDivElement | null]
-  >;
-  readonly dialogRef$: Command<
-    (() => void) | undefined,
-    [HTMLDivElement | null]
-  >;
   readonly formRef$: Command<
     (() => void) | undefined,
     [HTMLFormElement | null]
@@ -181,7 +158,6 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
-  refresh$: BrowserUserActionSignals["refresh$"],
 ): Pick<
   BrowserUserActionSignals,
   "entryState$" | "entryAction$" | "beginEntry$" | "invalidateEntry$"
@@ -224,10 +200,6 @@ function createEntrySignals(
       return;
     }
     set(internalState$, "unavailable");
-    const status: number = checked.value.status;
-    if (status !== 502 && status !== 503) {
-      set(refresh$);
-    }
   });
   const invalidateEntry$ = command(({ set }) => {
     set(internalAction$, null);
@@ -246,36 +218,15 @@ function createEntrySignals(
 }
 
 function createStandaloneEntrySignals(
-  request$: BrowserUserActionSignals["request$"],
-  refresh$: BrowserUserActionSignals["refresh$"],
   beginEntry$: BrowserUserActionSignals["beginEntry$"],
-): Pick<
-  BrowserUserActionSignals,
-  "startStandaloneEntry$" | "retryStandaloneRequest$"
-> {
-  const startStandaloneEntry$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const loaded = await settle(get(request$), signal);
-      if (!loaded.ok) {
-        return;
-      }
-      const request = loaded.value;
-      if (
-        request.kind === "action" &&
-        request.action.kind === "input" &&
-        request.action.state === "pending"
-      ) {
-        await set(beginEntry$, signal);
-      }
-    },
+): Pick<BrowserUserActionSignals, "standaloneEntryRef$"> {
+  // A standalone form checks the website whenever a pending state is shown.
+  const standaloneEntryRef$ = onRef(
+    command(async ({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      await set(beginEntry$, signal);
+    }),
   );
-  const retryStandaloneRequest$ = command(
-    async ({ set }, signal: AbortSignal) => {
-      set(refresh$, signal);
-      await set(startStandaloneEntry$, signal);
-    },
-  );
-  return { startStandaloneEntry$, retryStandaloneRequest$ };
+  return { standaloneEntryRef$ };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -441,8 +392,8 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
         readBrowserUserAction(get(apiClient$), descriptor));
     },
   );
-  const refresh$ = command(({ get, set }, parentSignal?: AbortSignal) => {
-    const signal = set(resetRead$, parentSignal ?? get(pageSignal$));
+  const refresh$ = command(({ get, set }) => {
+    const signal = set(resetRead$, get(pageSignal$));
     signal.throwIfAborted();
     if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
       return;
@@ -455,100 +406,27 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
   return { request$, refresh$ };
 }
 
-function createRecoverySignals(
-  request$: BrowserUserActionSignals["request$"],
-  refresh$: BrowserUserActionSignals["refresh$"],
-  beginEntry$: BrowserUserActionSignals["beginEntry$"],
+function createSubscriptionSignals(
+  threadId: string,
+  refresh$: ReturnType<typeof createRequestSignals>["refresh$"],
 ) {
-  const internalState$ = state<"idle" | "checking" | "exhausted">("idle");
-  const ownerCount$ = state(0);
-  const resetRecovery$ = resetSignal();
-  const recoveryState$ = computed((get) => {
-    return get(internalState$);
+  const invalidate$ = command(({ set }) => {
+    set(refresh$);
+    return false;
   });
-  const recover$ = command(({ set }) => {
-    set(internalState$, "checking");
-  });
-  const recoveryRef$ = onRef(
-    command(
-      async (
-        { get, set },
-        _element: HTMLDivElement,
-        ownerSignal: AbortSignal,
-      ) => {
-        ownerSignal.throwIfAborted();
-        set(ownerCount$, (count) => {
-          return count + 1;
-        });
-        ownerSignal.addEventListener(
-          "abort",
-          () => {
-            set(ownerCount$, (count) => {
-              return Math.max(0, count - 1);
-            });
-            if (get(ownerCount$) === 0) {
-              set(resetRecovery$);
-            }
-          },
-          { once: true },
-        );
-        if (get(ownerCount$) > 1) {
-          return;
-        }
-        // Duplicate cards share one loop, cancelled when their last owner leaves.
-        const signal = set(resetRecovery$, get(pageSignal$));
-        set(internalState$, "checking");
-        let reads = 0;
-        let reconciled = false;
-        await withAbortAfter(
-          RECOVERY_DEADLINE_MS,
-          signal,
-          async (recoverySignal) => {
-            await onRejection(
-              waitLoopUntil(
-                async () => {
-                  set(refresh$, recoverySignal);
-                  const result = await settle(
-                    waitForOperation(get(request$), recoverySignal),
-                    recoverySignal,
-                  );
-                  if (
-                    result.ok &&
-                    (result.value.kind !== "action" ||
-                      result.value.action.state !== "applying")
-                  ) {
-                    if (
-                      result.value.kind === "action" &&
-                      result.value.action.state === "pending"
-                    ) {
-                      await set(beginEntry$, recoverySignal);
-                      recoverySignal.throwIfAborted();
-                    }
-                    reconciled = true;
-                    return true;
-                  }
-                  reads += 1;
-                  return reads >= RECOVERY_MAX_READS;
-                },
-                RECOVERY_INTERVAL_MS,
-                recoverySignal,
-                { retryTransientErrors: false },
-              ),
-              () => {
-                // The deadline can reject with TimeoutError or a wrapped AbortError.
-                signal.throwIfAborted();
-                set(internalState$, "exhausted");
-              },
-            );
-          },
-          new DOMException("The operation timed out", "TimeoutError"),
-        );
-        signal.throwIfAborted();
-        set(internalState$, reconciled ? "idle" : "exhausted");
+  // Re-read on subscribe: cached cards may have missed changes while unowned.
+  const subscribe$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyLoop$,
+      {
+        topic: `browserUserActionChanged:${threadId}`,
+        loopCommand$: invalidate$,
+        options: { runOnSubscribe: true },
       },
-    ),
-  );
-  return { recoveryState$, recover$, recoveryRef$ };
+      signal,
+    );
+  });
+  return { subscribe$ };
 }
 
 function createCheckboxDraftSignals() {
@@ -895,8 +773,6 @@ function callbackArgs(
 interface BrowserUserActionMutationContext {
   readonly descriptor: BrowserUserActionDescriptor;
   readonly request$: BrowserUserActionSignals["request$"];
-  readonly refresh$: BrowserUserActionSignals["refresh$"];
-  readonly recover$: BrowserUserActionSignals["recover$"];
   readonly busy$: BrowserUserActionSignals["busy$"];
   readonly write$: ReturnType<typeof createBrowserMutationSignal>;
   readonly draft$: BrowserUserActionSignals["draft$"];
@@ -1449,7 +1325,6 @@ function browserInputSubmissionError(error: unknown): Error {
 function createBrowserMutationSignal(
   descriptor: BrowserUserActionDescriptor,
   activeMutation$: State<boolean>,
-  recover$: BrowserUserActionSignals["recover$"],
 ) {
   return command(
     async (
@@ -1471,15 +1346,11 @@ function createBrowserMutationSignal(
         mutation.kind === "apply"
           ? client.apply({ ...options, body: { values: mutation.values } })
           : client.cancel({ ...options, body: {} });
-      return await onRejection(
-        accept(request, [200, 403, 404, 409, 410], signal),
+      return await accept(request, [200, 403, 404, 409, 410], signal).finally(
         () => {
-          signal.throwIfAborted();
-          set(recover$);
+          set(activeMutation$, false);
         },
-      ).finally(() => {
-        set(activeMutation$, false);
-      });
+      );
     },
   );
 }
@@ -1487,7 +1358,6 @@ function createBrowserMutationSignal(
 function createSubmitSignal({
   descriptor,
   request$,
-  refresh$,
   busy$,
   write$,
   draft$,
@@ -1577,7 +1447,6 @@ function createSubmitSignal({
     }
     if (status !== 200) {
       set(clearDraft$);
-      set(refresh$);
       return;
     }
     if (
@@ -1585,7 +1454,6 @@ function createSubmitSignal({
       result.body.kind !== "input"
     ) {
       set(clearDraft$);
-      set(refresh$);
       return;
     }
     if (result.body.state !== "pending") {
@@ -1600,21 +1468,15 @@ function createSubmitSignal({
         signal,
       ).finally(() => {
         set(activeMutation$, false);
-        if (!signal.aborted) {
-          set(refresh$, signal);
-        }
       });
       signal.throwIfAborted();
-      return;
     }
-    set(refresh$);
   });
 }
 
 function createCancelSignal({
   descriptor,
   request$,
-  refresh$,
   busy$,
   write$,
   clearDraft$,
@@ -1652,21 +1514,15 @@ function createCancelSignal({
         signal,
       ).finally(() => {
         set(activeMutation$, false);
-        if (!signal.aborted) {
-          set(refresh$, signal);
-        }
       });
       signal.throwIfAborted();
-      return;
     }
-    set(refresh$);
   });
 }
 
 function createContinueSignal({
   descriptor,
   request$,
-  refresh$,
   busy$,
   activeMutation$,
   deliverCallback$,
@@ -1699,24 +1555,17 @@ function createContinueSignal({
       return;
     }
     set(activeMutation$, true);
-    await onRejection(
-      set(deliverCallback$, callback.prompt, callback.ids, signal),
+    await set(deliverCallback$, callback.prompt, callback.ids, signal).finally(
       () => {
-        signal.throwIfAborted();
-        set(refresh$, signal);
+        set(activeMutation$, false);
       },
-    ).finally(() => {
-      set(activeMutation$, false);
-    });
+    );
   });
 }
 
 function createMutationSignals({
   descriptor,
   request$,
-  refresh$,
-  recoveryState$,
-  recover$,
   draft$,
   choiceDraft$,
   checkboxDraft$,
@@ -1732,8 +1581,6 @@ function createMutationSignals({
   BrowserUserActionMutationContext,
   | "descriptor"
   | "request$"
-  | "refresh$"
-  | "recover$"
   | "draft$"
   | "choiceDraft$"
   | "checkboxDraft$"
@@ -1745,27 +1592,16 @@ function createMutationSignals({
   | "entryAction$"
   | "entryState$"
   | "invalidateEntry$"
-> &
-  Pick<BrowserUserActionSignals, "recoveryState$">): Pick<
+>): Pick<
   BrowserUserActionSignals,
-  | "callbackDelivered$"
-  | "callbackFailed$"
-  | "busy$"
-  | "submit$"
-  | "cancel$"
-  | "continue$"
+  "callbackFailed$" | "busy$" | "submit$" | "cancel$" | "continue$"
 > {
-  const callbackDeliveredState$ = state(false);
   const callbackFailedState$ = state(false);
   const activeMutation$ = state(false);
   const busy$ = computed((get) => {
-    return get(activeMutation$) || get(recoveryState$) !== "idle";
+    return get(activeMutation$);
   });
-  const write$ = createBrowserMutationSignal(
-    descriptor,
-    activeMutation$,
-    recover$,
-  );
+  const write$ = createBrowserMutationSignal(descriptor, activeMutation$);
   const deliverCallback$ = command(
     async (
       { set },
@@ -1785,14 +1621,11 @@ function createMutationSignals({
         },
       );
       signal.throwIfAborted();
-      set(callbackDeliveredState$, true);
     },
   );
   const context: BrowserUserActionMutationContext = {
     descriptor,
     request$,
-    refresh$,
-    recover$,
     busy$,
     write$,
     draft$,
@@ -1811,9 +1644,6 @@ function createMutationSignals({
   };
 
   return {
-    callbackDelivered$: computed((get) => {
-      return get(callbackDeliveredState$);
-    }),
     callbackFailed$: computed((get) => {
       return get(callbackFailedState$);
     }),
@@ -1828,81 +1658,18 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
-  const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
-  const recoverySignals = createRecoverySignals(
-    requestSignals.request$,
+  const entrySignals = createEntrySignals(descriptor);
+  const subscriptionSignals = createSubscriptionSignals(
+    descriptor.threadId,
     requestSignals.refresh$,
-    entrySignals.beginEntry$,
-  );
-  const openDialogCount$ = state(0);
-  const pendingReturnRefresh$ = state(false);
-  const dialogRef$ = onRef(
-    command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
-      const pageSignal = get(pageSignal$);
-      set(openDialogCount$, (count) => {
-        return count + 1;
-      });
-      signal.addEventListener(
-        "abort",
-        () => {
-          set(openDialogCount$, (count) => {
-            return Math.max(0, count - 1);
-          });
-          if (get(openDialogCount$) === 0 && get(pendingReturnRefresh$)) {
-            set(pendingReturnRefresh$, false);
-            if (!pageSignal.aborted) {
-              set(requestSignals.refresh$, pageSignal);
-            }
-          }
-        },
-        { once: true },
-      );
-    }),
-  );
-  const resumeRef$ = onRef(
-    command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
-      const pageSignal = get(pageSignal$);
-      const refresh = () => {
-        if (pageSignal.aborted) {
-          return;
-        }
-        if (get(recoverySignals.recoveryState$) === "checking") {
-          return;
-        }
-        if (get(recoverySignals.recoveryState$) === "exhausted") {
-          set(recoverySignals.recover$);
-          return;
-        }
-        if (get(openDialogCount$) > 0) {
-          set(pendingReturnRefresh$, true);
-          return;
-        }
-        set(requestSignals.refresh$, pageSignal);
-      };
-      window.addEventListener("focus", refresh, { signal });
-      document.addEventListener(
-        "visibilitychange",
-        () => {
-          if (document.visibilityState === "visible") {
-            refresh();
-          }
-        },
-        { signal },
-      );
-    }),
   );
   const standaloneEntrySignals = createStandaloneEntrySignals(
-    requestSignals.request$,
-    requestSignals.refresh$,
     entrySignals.beginEntry$,
   );
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals({
     descriptor,
     request$: requestSignals.request$,
-    refresh$: requestSignals.refresh$,
-    recoveryState$: recoverySignals.recoveryState$,
-    recover$: recoverySignals.recover$,
     draft$: draftSignals.draft$,
     choiceDraft$: draftSignals.choiceDraft$,
     checkboxDraft$: draftSignals.checkboxDraft$,
@@ -1917,10 +1684,8 @@ export function createBrowserUserActionSignals(
   });
   return {
     ...descriptor,
-    ...requestSignals,
-    ...recoverySignals,
-    resumeRef$,
-    dialogRef$,
+    request$: requestSignals.request$,
+    ...subscriptionSignals,
     ...entrySignals,
     ...standaloneEntrySignals,
     ...draftSignals,
@@ -1932,5 +1697,8 @@ export function createBrowserUserActionCardSignalsRegistry(): BrowserUserActionC
   return createCardSignalsRegistry(
     browserUserActionResourceKey,
     createBrowserUserActionSignals,
+    (signals) => {
+      return signals.subscribe$;
+    },
   );
 }

@@ -321,17 +321,11 @@ const connectOauth$ = command(({ get }) => {
     userId: string;
     prompt?: string;
     redirectUri: string;
-    completion?: "settings";
   } = {
     orgId: query.orgId,
     userId,
     redirectUri,
   };
-  // Rollback-target APIs before the settings-only completion still read this
-  // marker from states minted here; this API always completes in settings.
-  if (query.completion) {
-    stateObj.completion = query.completion;
-  }
   if (query.prompt) {
     stateObj.prompt = truncatePrompt(query.prompt);
   }

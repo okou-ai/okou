@@ -9,7 +9,7 @@ import { server } from "../../../../mocks/server";
 import {
   authCodeMethod,
   catalogStatusItem,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalog,
 } from "../../../__tests__/helpers/connector-catalog";
 import {
   customConnector,
@@ -44,7 +44,7 @@ function availableInspection(
 }
 
 function stubCatalog(): ReturnType<typeof http.get> {
-  return stubConnectorCatalogStatus([
+  return stubConnectorCatalog([
     catalogStatusItem({
       connectorSlug: "github",
       label: "GitHub",

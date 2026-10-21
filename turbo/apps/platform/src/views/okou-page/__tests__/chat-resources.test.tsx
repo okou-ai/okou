@@ -184,7 +184,7 @@ test("Show all three artifacts without an overflow control at the limit", async 
   expect(within(section).getAllByRole("listitem")).toHaveLength(3);
   expect(
     queryAllByRoleFast("button", section).find((button) => {
-      return button.getAttribute("aria-label") === "Expand";
+      return button.getAttribute("aria-label") === "Show more";
     }),
   ).toBeUndefined();
   expect(within(panel).queryByText("View all")).not.toBeInTheDocument();
@@ -195,7 +195,7 @@ test("Expand and collapse the artifacts list in place", async () => {
   const section = within(panel).getByRole("region", { name: "Artifacts" });
   expect(within(section).getAllByRole("listitem")).toHaveLength(3);
   expect(within(panel).queryByText("report-4.pdf")).not.toBeInTheDocument();
-  const more = buttonNamed("Expand", section);
+  const more = buttonNamed("Show more", section);
   more.focus();
   await userEvent.keyboard("{Enter}");
 
@@ -214,7 +214,7 @@ test("Expand and collapse the artifacts list in place", async () => {
   await userEvent.keyboard("{Enter}");
   expect(within(section).getAllByRole("listitem")).toHaveLength(3);
   expect(within(section).queryByText("report-4.pdf")).not.toBeInTheDocument();
-  expect(buttonNamed("Expand", section)).toHaveAttribute(
+  expect(buttonNamed("Show more", section)).toHaveAttribute(
     "aria-expanded",
     "false",
   );

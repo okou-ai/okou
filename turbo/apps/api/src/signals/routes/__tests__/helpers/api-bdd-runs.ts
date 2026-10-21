@@ -54,8 +54,8 @@ import type { z } from "zod";
 
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
+import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
@@ -169,25 +169,6 @@ function runApp(context: TestContext) {
   });
 }
 
-async function postIsolatedEntitlementWebhook(
-  context: TestContext,
-  payload: string,
-  signature: string,
-) {
-  const app = await setupApp({
-    context,
-    routes: runRoutes,
-    isolatePg: true,
-  });
-  return await accept(
-    app(webhookStripeContract).post({
-      body: payload,
-      extraHeaders: { "stripe-signature": signature },
-    }),
-    [200],
-  );
-}
-
 function clerkUserProfile(actor: ApiTestUser): ClerkUserProfile {
   const emailId = `email_${actor.userId}`;
   return {
@@ -261,7 +242,6 @@ function runnerHeartbeatBody(
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
-    readonly wssIngressServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
   } = {},
 ): RunnerHeartbeatBody {
@@ -283,9 +263,6 @@ function runnerHeartbeatBody(
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldHomeStates: args.heldHomeStates ?? [],
     activeReuseProducers: args.activeReuseProducers ?? [],
-    ...(args.wssIngressServiceActive === undefined
-      ? {}
-      : { wssIngressServiceActive: args.wssIngressServiceActive }),
     mode: args.mode ?? "running",
   };
 }
@@ -607,6 +584,7 @@ export function createRunsApi(context: TestContext) {
     async grantProEntitlement(
       actor: ApiTestUser,
       options: {
+        /** Select the case database for a later cross-tenant operator. */
         readonly isolatePg?: true;
         readonly customerId?: string;
         readonly subscriptionId?: string;
@@ -754,12 +732,14 @@ export function createRunsApi(context: TestContext) {
       }
       // Retain the exact provider boundary if accepted setup outlives mock reset.
       options.onExternalStateReady?.(restoreWebhook);
-      await run(() => {
-        if (options.isolatePg) {
-          return postIsolatedEntitlementWebhook(context, payload, signature);
-        }
+      await run(async () => {
+        const client = options.isolatePg
+          ? (await setupApp({ context, routes: runRoutes, isolatePg: true }))(
+              webhookStripeContract,
+            )
+          : runApp(context)(webhookStripeContract);
         return accept(
-          runApp(context)(webhookStripeContract).post({
+          client.post({
             body: payload,
             extraHeaders: { "stripe-signature": signature },
           }),
@@ -1372,7 +1352,6 @@ export function createRunsApi(context: TestContext) {
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
-        readonly wssIngressServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];
       } = {},
     ) {

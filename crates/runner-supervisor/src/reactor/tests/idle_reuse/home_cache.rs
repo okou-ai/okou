@@ -95,7 +95,7 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
         16 * 1024 * 1024,
     )
     .await;
-    seed_home_cache_state(
+    let cancel_safe_source = seed_home_cache_state(
         &publisher_cache,
         &publisher_paths,
         "thread:cancel-safe-home-cache",
@@ -115,11 +115,7 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
     );
 
     let reuse_key = "thread:external-home-cache";
-    let expected_home = HomeCacheCapability {
-        profile: "vm0/default".to_string(),
-        home_affinity_version: HOME_AFFINITY_VERSION,
-    };
-    seed_home_cache_state(
+    let source_run_id = seed_home_cache_state(
         &publisher_cache,
         &publisher_paths,
         reuse_key,
@@ -127,6 +123,15 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
         16 * 1024 * 1024,
     )
     .await;
+    let expected_home = HomeCacheCapability {
+        source_run_id,
+        profile: "vm0/default".to_string(),
+        home_affinity_version: HOME_AFFINITY_VERSION,
+    };
+    let expected_cancel_home = HomeCacheCapability {
+        source_run_id: cancel_safe_source,
+        ..expected_home.clone()
+    };
     env.start_observer
         .wait_home_cache_change_observed_after(watcher_cursor, Duration::from_secs(5))
         .await;
@@ -148,7 +153,7 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
                     state.reuse_key == reuse_key && state.home_caches.contains(&expected_home)
                 }) && heartbeat.held_home_states.iter().any(|state| {
                     state.reuse_key == "thread:cancel-safe-home-cache"
-                        && state.home_caches.contains(&expected_home)
+                        && state.home_caches.contains(&expected_cancel_home)
                 })
             },
         )
@@ -790,6 +795,7 @@ async fn home_cache_promotion_triggers_immediate_heartbeat_without_park() {
     let provider_session_id = "provider-session-cache-heartbeat";
     let reuse_key = "thread:cache-heartbeat";
     let expected_home = HomeCacheCapability {
+        source_run_id: run_id,
         profile: "vm0/default".to_string(),
         home_affinity_version: HOME_AFFINITY_VERSION,
     };
@@ -988,12 +994,13 @@ async fn reuse_take_preserves_cached_home_snapshot_state() {
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(5)).await;
     let promotion_heartbeat_count = env.handle.heartbeat_count();
+    let cache_run_id = RunId::new_v4();
     let expected_home = HomeCacheCapability {
+        source_run_id: cache_run_id,
         profile: "vm0/default".to_string(),
         home_affinity_version: HOME_AFFINITY_VERSION,
     };
 
-    let cache_run_id = RunId::new_v4();
     push_job(
         &env,
         cache_run_id,

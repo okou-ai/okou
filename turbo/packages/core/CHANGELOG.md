@@ -1,5 +1,70 @@
 # Changelog
 
+## [8.774.8](https://github.com/okou-ai/okou/compare/core-v8.774.7...core-v8.774.8) (2026-10-21)
+
+
+### Refactoring
+
+* **app:** remove wallet settings feature switch ([#41822](https://github.com/okou-ai/okou/issues/41822)) ([12ab93f](https://github.com/okou-ai/okou/commit/12ab93f6e3704b6318dfa41cd6269844ebc45ed0))
+
+## [8.774.7](https://github.com/okou-ai/okou/compare/core-v8.774.6...core-v8.774.7) (2026-10-21)
+
+
+### Refactoring
+
+* remove linkwallet feature switch ([#41819](https://github.com/okou-ai/okou/issues/41819)) ([5b99811](https://github.com/okou-ai/okou/commit/5b99811378d267243e4a6c9603da8dcc1c2878ce))
+
+## [8.774.6](https://github.com/okou-ai/okou/compare/core-v8.774.5...core-v8.774.6) (2026-10-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.583.0
+
+## [8.774.5](https://github.com/okou-ai/okou/compare/core-v8.774.4...core-v8.774.5) (2026-10-20)
+
+
+### Refactoring
+
+* retire agent instruction storage ([#41860](https://github.com/okou-ai/okou/issues/41860)) ([b4a90a6](https://github.com/okou-ai/okou/commit/b4a90a6b3f79527f91836df6a2bcc8fe81c622e8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.2
+
+## [8.774.4](https://github.com/okou-ai/okou/compare/core-v8.774.3...core-v8.774.4) (2026-10-20)
+
+
+### Refactoring
+
+* retire sandbox file debugging stack ([#41808](https://github.com/okou-ai/okou/issues/41808)) ([430cb92](https://github.com/okou-ai/okou/commit/430cb92b5431e1554d0a1dceed6d9cfb27762921))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.1
+
+## [8.774.3](https://github.com/okou-ai/okou/compare/core-v8.774.2...core-v8.774.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* **app:** fit pwa keyboard viewport behind a targeted rollout ([#41753](https://github.com/okou-ai/okou/issues/41753)) ([244e8ab](https://github.com/okou-ai/okou/commit/244e8ab6447c3de11d805c814969dcf15cb6e39c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.582.0
+
 ## [8.774.2](https://github.com/okou-ai/okou/compare/core-v8.774.1...core-v8.774.2) (2026-10-20)
 
 

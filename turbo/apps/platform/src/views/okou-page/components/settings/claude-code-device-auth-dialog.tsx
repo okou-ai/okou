@@ -123,7 +123,6 @@ function ClaudeCodeDeviceAuthBody({
 }) {
   const { t } = useTranslation();
   switch (flow.status) {
-    case "idle":
     case "starting": {
       return (
         <DeviceAuthLoadingContent
@@ -144,11 +143,11 @@ function ClaudeCodeDeviceAuthBody({
         />
       );
     }
-    case "expired":
-    case "error": {
+    case "idle":
+    case "expired": {
       return (
         <DeviceAuthRetryContent
-          message={flow.message}
+          message={flow.status === "idle" ? undefined : flow.message}
           testId="claude-code-device-auth-start"
           onStart={onStart}
           label={

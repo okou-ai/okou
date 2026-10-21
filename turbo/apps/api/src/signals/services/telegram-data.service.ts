@@ -220,12 +220,7 @@ export function telegramIntegrationLinkStatus(args: {
   readonly origin?: string;
   readonly source?: "onboarding" | "works" | "connect_page";
   readonly clientRequestId?: string;
-  readonly callbackProtocol?: "2";
 }): Computed<Promise<TelegramLinkStatusResult>> {
-  // Old Apps can be strict readers. Keep their exact shape until they are
-  // excluded; #40196 owns the opt-in compatibility gate.
-  const capability =
-    args.callbackProtocol === "2" ? { authCallbackProtocol: 2 as const } : {};
   return computed(async (get): Promise<TelegramLinkStatusResult> => {
     const telegramLoginOrigin = resolveTelegramLoginOrigin(args.origin);
 
@@ -305,7 +300,6 @@ export function telegramIntegrationLinkStatus(args: {
             botUsername: config.botUsername,
             ...(config.botId ? { loginBotId: config.botId } : {}),
             domainConfigured: domainCheck?.configured ?? false,
-            ...capability,
           },
         },
       };

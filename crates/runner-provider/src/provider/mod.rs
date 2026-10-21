@@ -43,6 +43,7 @@ pub enum RunnerPreferenceTier {
     ExactSandbox,
     FinalizingPredecessor,
     PeerFinalizingPredecessor,
+    SourceHomeCache,
     ReusableSandbox,
     HomeCache,
 }
@@ -52,8 +53,9 @@ impl RunnerPreferenceTier {
         match self {
             Self::HomeCache => 1,
             Self::ReusableSandbox => 2,
-            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 3,
-            Self::ExactSandbox => 4,
+            Self::SourceHomeCache => 3,
+            Self::FinalizingPredecessor | Self::PeerFinalizingPredecessor => 4,
+            Self::ExactSandbox => 5,
         }
     }
 }
@@ -85,57 +87,226 @@ pub enum RunnerPreferenceRemovalReason {
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum RunnerPreference {
     #[serde(rename = "preference")]
-    Preference {
-        #[serde(rename = "runnerIdentity")]
-        runner_identity: RunnerProcessIdentity,
-        tier: RunnerPreferenceTier,
-        #[serde(rename = "expiresAt")]
-        expires_at: DateTime<FixedOffset>,
-        #[serde(
-            rename = "finalizingSourceRunId",
-            default,
-            deserialize_with = "deserialize_finalizing_source_run_id",
-            skip_serializing_if = "Option::is_none"
-        )]
-        finalizing_source_run_id: Option<RunId>,
-    },
+    Preference(RunnerPreferenceDecision),
     #[serde(rename = "noPreference")]
     NoPreference { reason: RunnerNoPreferenceReason },
 }
 
-// Missing is the old API shape; explicit null is not a valid source hint.
-// Remove this optional-field adapter with the old writer shape in #41657.
-fn deserialize_finalizing_source_run_id<'de, D>(deserializer: D) -> Result<Option<RunId>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(
+    tag = "tier",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum RunnerPreferenceDecision {
+    ExactSandbox {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        // Old API writers omit this until #41875; retire that shape in #41876.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_present_source"
+        )]
+        finalizing_source_run_id: Option<RunId>,
+    },
+    FinalizingPredecessor {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        finalizing_source_run_id: RunId,
+    },
+    PeerFinalizingPredecessor {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        finalizing_source_run_id: RunId,
+    },
+    ReusableSandbox {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+    },
+    HomeCache {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+    },
+    SourceHomeCache {
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+        finalizing_source_run_id: RunId,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunnerPreferenceTarget {
+    ExactSandbox,
+    SourceSandbox(RunId),
+    FinalizingPredecessor(RunId),
+    PeerFinalizingPredecessor(RunId),
+    ReusableSandbox,
+    HomeCache,
+    SourceHomeCache(RunId),
+}
+
+fn deserialize_present_source<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<RunId>, D::Error> {
     RunId::deserialize(deserializer).map(Some)
+}
+
+impl RunnerPreferenceTarget {
+    fn tier(self) -> RunnerPreferenceTier {
+        match self {
+            Self::ExactSandbox | Self::SourceSandbox(_) => RunnerPreferenceTier::ExactSandbox,
+            Self::FinalizingPredecessor(_) => RunnerPreferenceTier::FinalizingPredecessor,
+            Self::PeerFinalizingPredecessor(_) => RunnerPreferenceTier::PeerFinalizingPredecessor,
+            Self::ReusableSandbox => RunnerPreferenceTier::ReusableSandbox,
+            Self::HomeCache => RunnerPreferenceTier::HomeCache,
+            Self::SourceHomeCache(_) => RunnerPreferenceTier::SourceHomeCache,
+        }
+    }
+
+    pub fn source_run_id(self) -> Option<RunId> {
+        match self {
+            Self::SourceSandbox(source)
+            | Self::FinalizingPredecessor(source)
+            | Self::PeerFinalizingPredecessor(source)
+            | Self::SourceHomeCache(source) => Some(source),
+            Self::ExactSandbox | Self::ReusableSandbox | Self::HomeCache => None,
+        }
+    }
+
+    fn into_wire(
+        self,
+        runner_identity: RunnerProcessIdentity,
+        expires_at: DateTime<FixedOffset>,
+    ) -> RunnerPreferenceDecision {
+        match self {
+            Self::ExactSandbox => RunnerPreferenceDecision::ExactSandbox {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id: None,
+            },
+            Self::SourceSandbox(source) => RunnerPreferenceDecision::ExactSandbox {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id: Some(source),
+            },
+            Self::FinalizingPredecessor(finalizing_source_run_id) => {
+                RunnerPreferenceDecision::FinalizingPredecessor {
+                    runner_identity,
+                    expires_at,
+                    finalizing_source_run_id,
+                }
+            }
+            Self::PeerFinalizingPredecessor(finalizing_source_run_id) => {
+                RunnerPreferenceDecision::PeerFinalizingPredecessor {
+                    runner_identity,
+                    expires_at,
+                    finalizing_source_run_id,
+                }
+            }
+            Self::ReusableSandbox => RunnerPreferenceDecision::ReusableSandbox {
+                runner_identity,
+                expires_at,
+            },
+            Self::HomeCache => RunnerPreferenceDecision::HomeCache {
+                runner_identity,
+                expires_at,
+            },
+            Self::SourceHomeCache(source) => RunnerPreferenceDecision::SourceHomeCache {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id: source,
+            },
+        }
+    }
+}
+
+impl RunnerPreferenceDecision {
+    fn active(&self) -> Result<ActiveRunnerPreference, serde_json::Error> {
+        let (runner_identity, target, expires_at) = match self {
+            Self::ExactSandbox {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id,
+            } => (
+                runner_identity,
+                finalizing_source_run_id.map_or(
+                    RunnerPreferenceTarget::ExactSandbox,
+                    RunnerPreferenceTarget::SourceSandbox,
+                ),
+                expires_at,
+            ),
+            Self::FinalizingPredecessor {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id,
+            } => (
+                runner_identity,
+                RunnerPreferenceTarget::FinalizingPredecessor(*finalizing_source_run_id),
+                expires_at,
+            ),
+            Self::PeerFinalizingPredecessor {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id,
+            } => (
+                runner_identity,
+                RunnerPreferenceTarget::PeerFinalizingPredecessor(*finalizing_source_run_id),
+                expires_at,
+            ),
+            Self::ReusableSandbox {
+                runner_identity,
+                expires_at,
+            } => (
+                runner_identity,
+                RunnerPreferenceTarget::ReusableSandbox,
+                expires_at,
+            ),
+            Self::HomeCache {
+                runner_identity,
+                expires_at,
+            } => (
+                runner_identity,
+                RunnerPreferenceTarget::HomeCache,
+                expires_at,
+            ),
+            Self::SourceHomeCache {
+                runner_identity,
+                expires_at,
+                finalizing_source_run_id,
+            } => (
+                runner_identity,
+                RunnerPreferenceTarget::SourceHomeCache(*finalizing_source_run_id),
+                expires_at,
+            ),
+        };
+        Ok(ActiveRunnerPreference::new(
+            *runner_identity,
+            target,
+            preference_deadline(*expires_at)?,
+        ))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActiveRunnerPreference {
     runner_identity: RunnerProcessIdentity,
-    tier: RunnerPreferenceTier,
+    target: RunnerPreferenceTarget,
     deadline: Instant,
-    finalizing_source_run_id: Option<RunId>,
 }
 
 impl ActiveRunnerPreference {
     pub fn tier(&self) -> RunnerPreferenceTier {
-        self.tier
+        self.target.tier()
     }
 
     pub fn deadline(&self) -> Instant {
         self.deadline
     }
 
-    pub fn finalizing_source_run_id(&self) -> Option<RunId> {
-        self.finalizing_source_run_id
-    }
-
-    pub fn with_finalizing_source_run_id(mut self, run_id: RunId) -> Self {
-        self.finalizing_source_run_id = Some(run_id);
-        self
+    pub fn target(&self) -> RunnerPreferenceTarget {
+        self.target
     }
 
     pub fn remaining(&self) -> Duration {
@@ -152,14 +323,13 @@ impl ActiveRunnerPreference {
 
     pub fn new(
         runner_identity: RunnerProcessIdentity,
-        tier: RunnerPreferenceTier,
+        target: RunnerPreferenceTarget,
         deadline: Instant,
     ) -> Self {
         Self {
             runner_identity,
-            tier,
+            target,
             deadline,
-            finalizing_source_run_id: None,
         }
     }
 }
@@ -172,17 +342,7 @@ pub fn parse_runner_preference(
     };
     let runner_preference: RunnerPreference = serde_json::from_value(value)?;
     let active_preference = match &runner_preference {
-        RunnerPreference::Preference {
-            runner_identity,
-            tier,
-            expires_at,
-            finalizing_source_run_id,
-        } => Some(ActiveRunnerPreference {
-            runner_identity: *runner_identity,
-            tier: *tier,
-            deadline: preference_deadline(*expires_at)?,
-            finalizing_source_run_id: *finalizing_source_run_id,
-        }),
+        RunnerPreference::Preference(decision) => Some(decision.active()?),
         RunnerPreference::NoPreference { .. } => None,
     };
     Ok(Some(RunnerPreferenceContext {
@@ -233,17 +393,13 @@ impl RunnerPreferenceContext {
 
     fn from_active_preference(preference: ActiveRunnerPreference) -> Self {
         let runner_identity = preference.runner_identity;
-        let tier = preference.tier;
         let expires_at = (Utc::now()
             + chrono::Duration::from_std(preference.remaining()).unwrap_or(chrono::Duration::MAX))
         .fixed_offset();
         Self {
-            runner_preference: RunnerPreference::Preference {
-                runner_identity,
-                tier,
-                expires_at,
-                finalizing_source_run_id: preference.finalizing_source_run_id,
-            },
+            runner_preference: RunnerPreference::Preference(
+                preference.target.into_wire(runner_identity, expires_at),
+            ),
             active_preference: Some(preference),
             removal_reason: None,
         }
@@ -465,7 +621,7 @@ impl JobCandidate {
         let context = self.runner_preference_context.as_ref()?;
         let state = match &context.runner_preference {
             RunnerPreference::NoPreference { .. } => None,
-            RunnerPreference::Preference { .. } => Some(match context.preference() {
+            RunnerPreference::Preference(..) => Some(match context.preference() {
                 Some(preference) if preference.is_expired() => RunnerPreferenceClaimState::Expired,
                 Some(_) => RunnerPreferenceClaimState::Active,
                 None => match context.removal_reason {

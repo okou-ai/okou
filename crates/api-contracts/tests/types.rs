@@ -269,14 +269,13 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
 }
 
 #[test]
-fn generated_completion_metadata_omits_absent_snapshots() {
+fn generated_completion_metadata_omits_absent_outputs() {
     let request = complete::RequestCompletion {
         cli_agent_type: "claude-code".to_string(),
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
         storage_outputs: None,
-        artifact_snapshots: None,
         volume_versions_snapshot: None,
     };
 
@@ -289,24 +288,23 @@ fn generated_completion_metadata_omits_absent_snapshots() {
             "cliAgentSessionHistoryDisposition": "native_only",
         })
     );
-    assert!(value.get("artifactSnapshots").is_none());
+    assert!(value.get("storageOutputs").is_none());
     assert!(value.get("volumeVersionsSnapshot").is_none());
 }
 
 #[test]
-fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
+fn generated_completion_metadata_round_trips_preserve_parent_output() {
     let request = complete::RequestCompletion {
         cli_agent_type: "codex".to_string(),
         cli_agent_session_id: "session-1".to_string(),
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
-        storage_outputs: None,
-        artifact_snapshots: Some(vec![complete::RequestCompletionArtifactSnapshot {
+        storage_outputs: Some(vec![complete::RequestCompletionStorageOutput {
             name: "memory".to_string(),
             version: "version-1".to_string(),
             mount_path: "/memory".to_string(),
             missing_root_policy: Some(
-                complete::RequestCompletionArtifactSnapshotMissingRootPolicy::PreserveParentVersion,
+                complete::RequestCompletionStorageOutputMissingRootPolicy::PreserveParentVersion,
             ),
         }]),
         volume_versions_snapshot: None,
@@ -319,7 +317,7 @@ fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
             "cliAgentType": "codex",
             "cliAgentSessionId": "session-1",
             "cliAgentSessionHistoryDisposition": "native_only",
-            "artifactSnapshots": [{
+            "storageOutputs": [{
                 "name": "memory",
                 "version": "version-1",
                 "mountPath": "/memory",

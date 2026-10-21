@@ -1,32 +1,19 @@
 import { walletUserContract } from "@okouai/api-contracts/contracts/wallet";
 import { walletChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../../auth-context.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { generateRouterPath } from "../../route.ts";
 import { ROUTES } from "../../route-paths.ts";
 import { withCleanup } from "../../utils.ts";
 
-export const walletSettingsEnabled$ = computed((get) => {
-  const features = get(featureSwitch$);
-  return (
-    features[FeatureSwitchKey.LinkWallet] &&
-    features[FeatureSwitchKey.WalletSettings]
-  );
-});
-
 const version$ = state(0);
 const cardsVersion$ = state(0);
 export const walletCards$ = computed(async (get) => {
   get(cardsVersion$);
-  if (!get(walletSettingsEnabled$)) {
-    return [];
-  }
   const connection = await get(walletConnection$);
   if (
     !connection.connected ||
@@ -55,9 +42,6 @@ export const refreshWalletCards$ = command(({ set }) => {
 const transactionsVersion$ = state(0);
 export const walletTransactions$ = computed(async (get) => {
   get(transactionsVersion$);
-  if (!get(walletSettingsEnabled$)) {
-    return null;
-  }
   const connection = await get(walletConnection$);
   if (
     connection.connected &&

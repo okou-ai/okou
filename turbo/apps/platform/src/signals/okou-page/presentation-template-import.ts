@@ -172,18 +172,8 @@ export const importPresentationTemplateDeck$ = command(
       get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true,
     );
 
-    const before = new Set(get(signals.draft.attachments$));
     await set(signals.draft.uploadAttachment$, file, signal);
     signal.throwIfAborted();
-    // A failed upload resolves normally: the composer drops the attachment and
-    // toasts. Sending now would ask for an analysis of a file that never
-    // arrived, so stop at the error the user was already shown.
-    const attached = get(signals.draft.attachments$).some((attachment) => {
-      return !before.has(attachment);
-    });
-    if (!attached) {
-      return false;
-    }
     // Import analyses the source, regardless of which creation task opened
     // the picker. Do not append that task's generation instructions.
     set(signals.create.setMode$, null, false);

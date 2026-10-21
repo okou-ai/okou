@@ -16,7 +16,6 @@ import type { CustomConnectorAccountMutationIntent } from "./connector-account-d
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
-  requireConnectorAccountDefault,
 } from "../connector-accounts.ts";
 
 /** Read one target only when an account surface or mutation needs its facts. */
@@ -40,7 +39,7 @@ export async function readConnectorAccountPage(
     [200],
     signal,
   );
-  return requireConnectorAccountDefault(result.body);
+  return result.body;
 }
 
 export async function readConnectorAccountCount(

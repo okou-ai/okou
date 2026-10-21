@@ -161,6 +161,7 @@ pub async fn exercise(setup: Setup<'_>) -> TestResult<()> {
         return Err(failure("dual original promotion unavailable"));
     };
     let candidate = ParkedIdleCandidateBuilder::new(&key, lease)
+        .with_source_run_id(original)
         .with_sandbox(prepared.sandbox)
         .with_factory(factory.clone())
         .with_sandbox_id(id)
@@ -330,6 +331,7 @@ impl Histories {
             return Err(failure("dual incoming identity missing"));
         };
         let mut candidate = ParkedIdleCandidateBuilder::new(&context.reuse_key, lease)
+            .with_source_run_id(run)
             .with_sandbox(prepared.sandbox)
             .with_factory(context.factory.clone())
             .with_sandbox_id(id)
@@ -486,6 +488,7 @@ impl Histories {
             return Err(failure("dual continued promotion unavailable"));
         };
         let mut candidate = ParkedIdleCandidateBuilder::new(&context.reuse_key, lease)
+            .with_source_run_id(run)
             .with_sandbox(prepared.sandbox)
             .with_factory(context.factory.clone())
             .with_sandbox_id(history.id)

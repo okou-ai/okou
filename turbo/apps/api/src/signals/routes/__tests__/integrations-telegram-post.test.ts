@@ -1258,9 +1258,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     return result.value;
   }
 
-  async function prepareTelegramDm(
-    options: { readonly isolatePg?: true } = {},
-  ) {
+  async function prepareTelegramDm() {
     const runnerGroup = configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
@@ -1277,7 +1275,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const { run, finish } = ownedRuns;
     const prepared = run(async () => {
       await runs.grantProEntitlement(actor, {
-        ...options,
         run,
         onExternalStateReady: ownedRuns.retainWebhook,
       });
@@ -1534,9 +1531,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         );
         return timer.promise;
       });
-      dm = await prepareTelegramDm(
-        scenario === "models" ? { isolatePg: true } : {},
-      );
+      dm = await prepareTelegramDm();
       await onRejection(dm.run(prepareReplyChain), (error) => {
         return closeTelegramDm(() => {
           throw error;

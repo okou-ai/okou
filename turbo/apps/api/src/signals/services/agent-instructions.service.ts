@@ -37,9 +37,6 @@ export function agentInstructions(args: {
     if (!agent) {
       return null;
     }
-    if (agent.instructions === null) {
-      throw new Error("Agent instructions have not been migrated");
-    }
     return {
       content: agentInstructionsContent(agent.instructions),
       filename: getInstructionsFilename(),

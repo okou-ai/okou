@@ -13,13 +13,7 @@ import type {
   PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
-import {
-  onRef,
-  onRejection,
-  resetSignal,
-  waitForOperation,
-  waitLoopUntil,
-} from "../../utils.ts";
+import { onRef, resetSignal, waitLoopUntil } from "../../utils.ts";
 import {
   connectorAccountDeletionImpact$,
   readConnectorAccount$,
@@ -407,10 +401,7 @@ const saveConnectorAccountRenameCommand$ = command(
     await waitLoopUntil(
       async (loopSignal) => {
         const accountsPromise = get(settingsConnectorAccounts.accounts$);
-        const [refresh] = await waitForOperation(
-          Promise.allSettled([accountsPromise]),
-          loopSignal,
-        );
+        const [refresh] = await Promise.allSettled([accountsPromise]);
         loopSignal.throwIfAborted();
         // Search or pagination may change while the mutation refresh is pending.
         // A superseded debounced search can also reject with its own cancellation.
@@ -446,14 +437,7 @@ export const saveConnectorAccountRename$ = command(
     const signal = set(resetConnectorAccountRenameSave$, pageSignal);
     // Save becomes disabled while pending; keep its focus in the mounted form.
     get(internalAccountRenameInput$)?.focus();
-    return onRejection(
-      set(saveConnectorAccountRenameCommand$, target, signal),
-      () => {
-        if (!signal.aborted) {
-          get(internalAccountRenameInput$)?.focus();
-        }
-      },
-    );
+    return set(saveConnectorAccountRenameCommand$, target, signal);
   },
 );
 

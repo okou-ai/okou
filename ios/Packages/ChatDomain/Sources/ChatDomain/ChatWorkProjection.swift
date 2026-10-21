@@ -7,7 +7,7 @@ enum ChatWorkProjection {
   }
 
   static func build(rows: [ChatEvent], messages: [ChatMessage])
-    -> (messages: [ChatMessage], sections: [ChatWorkSection])
+    -> (messages: [ChatMessage], sections: [ChatWorkSection], usageAnchors: [String: String])
   {
     let byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
     let revoked = Set(rows.compactMap(\.revokesEventId))
@@ -43,6 +43,7 @@ enum ChatWorkProjection {
     var sections: [ChatWorkSection] = []
     var statusIDs = Set<String>()
     var latestStatusIDs = Set<String>()
+    var historicalFailureIDs = Set<String>()
     for (index, phase) in phases.enumerated() {
       let outputs = phase.events.filter { $0.eventType == .outputMessage && byID[$0.id] != nil }
       let anchor = outputs.last
@@ -52,7 +53,7 @@ enum ChatWorkProjection {
       }
       statusIDs.formUnion(trailing.map(\.id))
       if phase.events.contains(where: { isInput($0.eventType) || byID[$0.id] != nil }) {
-        // A new input retires the previous outcome before it has assistant output.
+        // A new input retires the live outcome; historical failure facts stay readable.
         // Deduplicate repeated outcomes without discarding distinct recovery details.
         var seen = Set<String>()
         latestStatusIDs = Set(
@@ -60,6 +61,7 @@ enum ChatWorkProjection {
             guard let message = byID[row.id] else { return false }
             return seen.insert("\(message.isError):\(message.text)").inserted
           }.map(\.id))
+        historicalFailureIDs.formUnion(latestStatusIDs.filter { byID[$0]?.failure != nil })
       }
       guard let runID = phase.runID, let anchor, let anchorIndex,
         let first = phase.events.first
@@ -78,9 +80,27 @@ enum ChatWorkProjection {
           hiddenMessageIDs: hidden, stepCount: outputs.count - 1,
           startTime: eventTime(first), endTime: endTimes[index]))
     }
-    return (
-      messages.filter { !statusIDs.contains($0.id) || latestStatusIDs.contains($0.id) }, sections
-    )
+    let visibleMessages = messages.filter {
+      !statusIDs.contains($0.id) || latestStatusIDs.contains($0.id)
+        || historicalFailureIDs.contains($0.id)
+    }
+    let visibleIDs = Set(visibleMessages.map(\.id))
+    var usageAnchors: [String: String] = [:]
+    for phase in phases {
+      let assistant = phase.events.filter {
+        visibleIDs.contains($0.id) && byID[$0.id]?.role != .user
+      }
+      // Match PWA's last eligible assistant group. Local lifecycle placeholders
+      // alone are not server output; a later steer must not move an older total.
+      guard let runID = phase.runID,
+        assistant.contains(where: {
+          $0.eventType == .outputMessage || $0.payload?.error?.isEmpty == false
+        }),
+        let anchor = assistant.last
+      else { continue }
+      usageAnchors[runID] = anchor.id
+    }
+    return (visibleMessages, sections, usageAnchors)
   }
 
   private static func isInput(_ type: ChatEventType) -> Bool {

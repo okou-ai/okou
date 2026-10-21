@@ -70,7 +70,7 @@ use runner_provider::{
 use runner_supervisor::reactor::{
     self, CapacityPolicy, EarlySignals, OrphanReapState, ProviderState, ProxyState, RunConfig,
     RunPaths, RunnerInfo, RunnerSharedState, RuntimeProfile, SandboxRuntimeConfig, ShutdownHandles,
-    SignalSource, SignalState, WssConfig,
+    SignalSource, SignalState,
 };
 
 mod signals;
@@ -482,10 +482,6 @@ async fn run_start_observed(
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
-    // Official socket health belongs to Supervisor; optional Caddy availability
-    // only suppresses issuance. Admission uses the executor's exact registry.
-    let wss = (!args.local)
-        .then(|| WssConfig::official(&home, http.clone(), server.token.clone(), hostname.clone()));
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -782,7 +778,6 @@ async fn run_start_observed(
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
         guest_rpc,
-        guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
         decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
         background_fill,
@@ -855,11 +850,6 @@ async fn run_start_observed(
             cancel_tokens,
             cancel,
         },
-        wss_ingress_service_probe: if args.local {
-            Arc::new(|| Box::pin(async { false }))
-        } else {
-            Arc::new(|| Box::pin(runner_host::wss_ingress_service_status::is_active()))
-        },
         proxy: ProxyState {
             mitm,
             mitm_crash_rx,
@@ -872,7 +862,6 @@ async fn run_start_observed(
         },
         usage_flush_tx,
         usage_flush_rx,
-        wss,
         signals: SignalState {
             signal_source: SignalSource::Real(signals),
         },

@@ -16,7 +16,6 @@ async function setup() {
   onTestFinished(clearMockNow);
   const api = createRunsApi(context);
   const owned = await publicChatActor(context, {
-    isolatePg: true,
     clockTime: now,
   });
   const { actor, agentId, runnerGroup: group } = owned;
@@ -94,42 +93,57 @@ async function cancel(f: Fixture) {
 
 // Construction and observations use normal chat, provider auth and official
 // Runner heartbeat/poll/claim. No DB schemas, private services or fixture routes.
-// Case-owned PGlite isolates all resources; concurrent requests below do not
-// establish native PostgreSQL multi-session scheduling or race guarantees.
+// Unique actor, Runner group and thread IDs own these resources. Concurrent
+// requests exercise the public contract, not a specific database schedule.
 describe("canonical API home affinity", () => {
-  it("keeps home affinity advisory when another canonical runner claims the job", async () => {
-    const f = await setup();
-    await heartbeat(f);
-    const job = await poll(f);
-    expect(job?.runnerPreference).toMatchObject({
-      kind: "preference",
-      tier: "homeCache",
-      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-    });
-    const otherRunnerId = randomUUID();
-    await heartbeat(f, {
-      runnerId: otherRunnerId,
-      heldHomeStates: [],
-    });
-    const otherPoll = await poll(f, otherRunnerId);
-    expect(otherPoll?.runnerPreference).toMatchObject({ tier: "homeCache" });
-    const claim = await f.claim(f.run.runId, {
-      runnerIdentity: { runnerId: otherRunnerId, heartbeatGeneration: 7 },
-      telemetry: { runnerPreference: job?.runnerPreference },
-    });
-    expect(claim).toMatchObject({
-      runId: f.run.runId,
-      prompt: "Keep captured execution intact",
-    });
-    expect(claim).not.toHaveProperty("runnerPreference");
-    await f.own(() => {
-      return createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: f.run.runId, exitCode: 0 },
-        { authorization: `Bearer ${claim.sandboxToken}` },
-        [200],
-      );
-    });
-  });
+  it.each([undefined, "33333333-3333-4333-8333-333333333333"])(
+    "keeps home affinity advisory with producer %s when another runner claims",
+    async (sourceRunId) => {
+      const f = await setup();
+      await heartbeat(f, {
+        heldHomeStates: f.heldHomeStates.map((state) => {
+          return {
+            ...state,
+            homeCaches: state.homeCaches.map((cache) => {
+              return {
+                ...cache,
+                ...(sourceRunId === undefined ? {} : { sourceRunId }),
+              };
+            }),
+          };
+        }),
+      });
+      const job = await poll(f);
+      expect(job?.runnerPreference).toMatchObject({
+        kind: "preference",
+        tier: "homeCache",
+        runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
+      });
+      const otherRunnerId = randomUUID();
+      await heartbeat(f, {
+        runnerId: otherRunnerId,
+        heldHomeStates: [],
+      });
+      const otherPoll = await poll(f, otherRunnerId);
+      expect(otherPoll?.runnerPreference).toMatchObject({ tier: "homeCache" });
+      const claim = await f.claim(f.run.runId, {
+        runnerIdentity: { runnerId: otherRunnerId, heartbeatGeneration: 7 },
+        telemetry: { runnerPreference: job?.runnerPreference },
+      });
+      expect(claim).toMatchObject({
+        runId: f.run.runId,
+        prompt: "Keep captured execution intact",
+      });
+      expect(claim).not.toHaveProperty("runnerPreference");
+      await f.own(() => {
+        return createWebhookCallbackApi(context).requestAgentComplete(
+          { runId: f.run.runId, exitCode: 0 },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+      });
+    },
+  );
 
   it("finds another holder and clears its preference after an accepted empty state", async () => {
     const f = await setup();
@@ -372,6 +386,7 @@ describe("canonical API home affinity", () => {
           reusableSandbox: {
             profile: "vm0/default",
             historyGenerationRunId: f.run.runId,
+            sourceRunId: f.run.runId,
           },
         },
       ],
