@@ -26,6 +26,7 @@ xcode_args=(
   -destination "$IOS_TEST_DESTINATION"
   -derivedDataPath "$build_root/DerivedData"
   -clonedSourcePackagesDirPath "$build_root/SourcePackages"
+  -scmProvider system
   -onlyUsePackageVersionsFromResolvedFile
   -disableAutomaticPackageResolution
   -skipPackageUpdates
@@ -50,8 +51,7 @@ fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   cmp "$resolved" "$build_root/Package.resolved.before"
-  # Leave memory for the booted simulator on the standard 7 GB CI image.
-  xcodebuild "${xcode_args[@]}" -jobs 2 -showBuildTimingSummary build-for-testing
+  xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
   cmp "$resolved" "$build_root/Package.resolved.before"
 fi
 
