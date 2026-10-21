@@ -509,6 +509,31 @@ describe("Commerce Amazon routes", () => {
     await expect(credits(user)).resolves.toBe(before);
   });
 
+  it("rejects invalid product items before settling a successful provider envelope", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const before = await credits(user);
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/asin/live/advanced`, () => {
+        calls += 1;
+        return HttpResponse.json(
+          providerResponse(0.005, [{ type: "asin", items: null }]),
+        );
+      }),
+    );
+    const response = await accept(
+      client()(commerceContract).inspect({
+        headers: authenticate(user),
+        body: { target: "B085RFFC9Q" },
+      }),
+      [502],
+    );
+    expect(response.body.error.code).toBe("COMMERCE_INVALID_RESPONSE");
+    expect(calls).toBe(1);
+    await expect(credits(user)).resolves.toBe(before);
+  });
+
   it("rejects an invalid provider cost rather than returning or settling untrusted usage", async () => {
     const user = await fundedActor();
     configureProvider();

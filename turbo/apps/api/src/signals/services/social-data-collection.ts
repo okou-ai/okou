@@ -48,17 +48,14 @@ function deduplicatedPage(
     if (accepted.length >= remaining) {
       break;
     }
-    const key = item.id
-      ? `id:${item.id}`
-      : item.url
-        ? `url:${item.url}`
-        : undefined;
-    if (key && seen.has(key)) {
+    if (!item.id) {
+      throw new Error("Completed China Social data record has no ID");
+    }
+    const key = `id:${item.id}`;
+    if (seen.has(key)) {
       continue;
     }
-    if (key) {
-      seen.add(key);
-    }
+    seen.add(key);
     accepted.push(item);
   }
   return { items: accepted, seenKeys: [...seen] };
@@ -110,7 +107,7 @@ export function completedSocialDataPage(
     hasMore: null,
   };
   const page = deduplicatedPage(data.items, prior);
-  const hasMore = outcome.hasMore ?? data.pagination?.hasMore ?? null;
+  const hasMore = outcome.hasMore ?? null;
   return {
     result: { ...data, items: page.items, pagination: { hasMore } },
     collectionProgress: {

@@ -569,6 +569,22 @@ describe("Social data explicit page continuation", () => {
       );
       await accept(quoteNext(setup, root.body.jobId), [403]);
       await accept(continuePage(setup, root.body.jobId), [403]);
+      const recoveredList = await accept(
+        setup.social.list({
+          headers: authenticate(setup.actor),
+          query: { limit: 20, includeExpanded: "true" },
+        }),
+        [200],
+      );
+      expect(recoveredList.body.jobs).toStrictEqual([saved.body]);
+      const otherList = await accept(
+        setup.social.list({
+          headers: authenticate(other),
+          query: { limit: 20, includeExpanded: "true" },
+        }),
+        [200],
+      );
+      expect(otherList.body.jobs).toStrictEqual([]);
       const recovered = await setup.get(root.body.jobId);
       expect(recovered.body.data).toStrictEqual(saved.body.data);
       expect(recovered.body.billing).toStrictEqual(saved.body.billing);

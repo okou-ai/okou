@@ -66,9 +66,7 @@ const taskSchema = z
       .array(
         z
           .object({
-            items: z
-              .array(z.object({ type: z.string() }).passthrough())
-              .nullable(),
+            items: z.array(z.object({ type: z.string() }).passthrough()),
           })
           .passthrough(),
       )
@@ -96,7 +94,7 @@ function projectItems(body: ProviderBody, request: CommerceRequest): unknown[] {
   // source, but are not products and must not consume the requested product limit.
   const items = pages
     .flatMap((page) => {
-      return page.items ?? [];
+      return page.items;
     })
     .filter((item) => {
       return request.operation === "search"

@@ -853,9 +853,6 @@ export const listSocialDataJobs$ = command(
     if (args.query.cursor && !cursor) {
       return errorResponse(404, "NOT_FOUND", "Social data cursor not found.");
     }
-    const includeExpanded =
-      args.query.includeExpanded &&
-      (await set(expandedSocialAccess$, args.auth, signal));
     const rows = await db
       .select()
       .from(socialDataJobs)
@@ -863,7 +860,7 @@ export const listSocialDataJobs$ = command(
         and(
           eq(socialDataJobs.orgId, args.auth.orgId),
           eq(socialDataJobs.userId, args.auth.userId),
-          includeExpanded
+          args.query.includeExpanded
             ? undefined
             : and(
                 notInArray(socialDataJobs.platform, ["douyin", "weibo"]),
