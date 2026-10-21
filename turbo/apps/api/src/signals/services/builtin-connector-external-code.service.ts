@@ -445,7 +445,6 @@ const persistClaimedExternalCodeConnector$ = command(
       status: 200,
       body: {
         status: "complete",
-        connector: persisted.connector,
         connectionId: persisted.connector.id,
       },
     };
@@ -542,7 +541,7 @@ const completedExternalCodeSessionResponse$ = command(
     return (
       error ?? {
         status: 200,
-        body: { status: "complete", connector, connectionId: connector.id },
+        body: { status: "complete", connectionId: connector.id },
       }
     );
   },

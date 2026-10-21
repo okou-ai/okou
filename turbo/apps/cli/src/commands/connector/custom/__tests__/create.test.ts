@@ -256,9 +256,7 @@ describe("okou connector custom create", () => {
               authMode: "manual",
               permissionBundleRef: null,
               storageVersion: 1,
-              connected: false,
-              missingRequiredFields: ["secret"],
-              configuredFieldKeys: [],
+
               createdAt: "2026-01-01T00:00:00.000Z",
               updatedAt: "2026-01-01T00:00:00.000Z",
             },

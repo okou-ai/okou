@@ -1542,10 +1542,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
           { key: "host", kind: "variable", value: pinnedHost },
         ],
       );
-      if (!connectedCustom.connectedAccountId) {
+      if (!connectedCustom.connectionId) {
         throw new Error("Expected a connected custom connector account");
       }
-      const customConnectionId = connectedCustom.connectedAccountId;
+      const customConnectionId = connectedCustom.connectionId;
       const { runId, agentId } = await createOwnedRun(actor, {
         builtinConnectorSlugs: ["reap"],
         customConnectorIds: [custom.id],

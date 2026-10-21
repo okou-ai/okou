@@ -2,7 +2,7 @@ import {
   builtinConnectorsSlugCallbackContract,
   type ConnectorOauthCallbackResult,
 } from "@okouai/api-contracts/contracts/connectors-slug-callback";
-import { customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorSlugSchema,

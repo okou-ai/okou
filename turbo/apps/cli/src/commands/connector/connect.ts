@@ -189,11 +189,8 @@ Examples:
         values,
       );
       if (
-        (connector.slug !== undefined && connector.slug !== metadata.slug) ||
-        (connector.authMethod !== undefined &&
-          connector.authMethod !== method.id) ||
-        (account.intent === "reconnect" &&
-          connector.connectionId !== account.connectionId)
+        account.intent === "reconnect" &&
+        connector.connectionId !== account.connectionId
       )
         throw new Error("Connector account response identity mismatch.");
       const connectedAccount = await showConnectorAccount({

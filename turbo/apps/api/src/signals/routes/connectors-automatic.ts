@@ -191,7 +191,6 @@ const startBuiltinAutomaticInner$ = command(
       status: 200 as const,
       body: {
         result: "connected" as const,
-        connectedAccountId: result.connectionId,
         connectionId: result.connectionId,
       },
     };

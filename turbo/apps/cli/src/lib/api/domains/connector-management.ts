@@ -10,19 +10,17 @@ import {
   type ConnectorAccountSelection,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { type SetCustomConnectorValuesBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+  type SetCustomConnectorValuesBody,
+  customConnectorValuesContract,
+  customConnectorOAuth2Contract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   builtinConnectorOauthStartContract,
   builtinConnectorOpenIdStartContract,
+  builtinConnectorAutomaticContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  builtinConnectorAutomaticReaderContract as builtinConnectorAutomaticContract,
-  connectorCompletedOperationReaderSchema,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
+import { connectorCompletedOperationResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
   ConnectorSlug,
   ConnectorAuthMethodId,
@@ -186,9 +184,8 @@ const memberConnectionSchema = z
     kind: z.enum(["http", "mcp"]),
     displayName: z.string(),
     authMode: z.enum(["manual", "none", "oauth", "automatic"]),
-    connected: z.boolean().optional(),
   })
-  .and(connectorCompletedOperationReaderSchema);
+  .and(connectorCompletedOperationResponseSchema);
 
 export async function connectCustomConnectorMember(
   id: string,
@@ -238,7 +235,7 @@ const automaticSchema = z.union([
   authorizationSchema.extend({ result: z.literal("authorization") }),
   z
     .object({ result: z.literal("connected") })
-    .and(connectorCompletedOperationReaderSchema),
+    .and(connectorCompletedOperationResponseSchema),
 ]);
 
 function verifyAuthorizationAccount<T extends z.output<typeof automaticSchema>>(

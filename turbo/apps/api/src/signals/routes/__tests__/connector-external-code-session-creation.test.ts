@@ -41,8 +41,8 @@ async function completeSession(
   );
   expect(completed).toMatchObject({
     status: "complete",
-    connector: {
-      slug: "aws",
+    account: {
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       connectionStatus: "connected",
     },
@@ -105,12 +105,12 @@ describe("Builtin external-code session creation", () => {
           "cli",
         );
         const siblingAccount = await completeSession(actor, siblingSession);
-        expect(siblingAccount.connector.id).not.toBe(
-          defaultAccount.connector.id,
+        expect(siblingAccount.connectionId).not.toBe(
+          defaultAccount.connectionId,
         );
         const choice = {
           intent: "reconnect",
-          connectionId: siblingAccount.connector.id,
+          connectionId: siblingAccount.connectionId,
         } as const;
         const pending = await connectors.startExternalCode(
           actor,
@@ -146,7 +146,7 @@ describe("Builtin external-code session creation", () => {
         await expect(
           completeSession(actor, defaultSession),
         ).resolves.toMatchObject({
-          connector: { id: defaultAccount.connector.id },
+          connectionId: defaultAccount.connectionId,
         });
         const foreignAccount = await completeSession(
           foreign.actor,
@@ -157,7 +157,7 @@ describe("Builtin external-code session creation", () => {
           "aws",
           "cli",
           [404],
-          { intent: "reconnect", connectionId: foreignAccount.connector.id },
+          { intent: "reconnect", connectionId: foreignAccount.connectionId },
         );
         expect(foreignReconnect.body).toStrictEqual({
           error: { code: "NOT_FOUND", message: "Connector account not found" },
@@ -165,14 +165,14 @@ describe("Builtin external-code session creation", () => {
         await expect(
           completeSession(actor, replacement),
         ).resolves.toMatchObject({
-          connector: { id: siblingAccount.connector.id },
+          connectionId: siblingAccount.connectionId,
         });
         await expectAccounts(actor, [
-          { id: defaultAccount.connector.id, isDefault: true },
-          { id: siblingAccount.connector.id, isDefault: false },
+          { id: defaultAccount.connectionId, isDefault: true },
+          { id: siblingAccount.connectionId, isDefault: false },
         ]);
         await expectAccounts(foreign.actor, [
-          { id: foreignAccount.connector.id, isDefault: true },
+          { id: foreignAccount.connectionId, isDefault: true },
         ]);
       });
     });
@@ -199,28 +199,28 @@ describe("Builtin external-code session creation", () => {
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "aws",
-        deletedAccount.connector.id,
+        deletedAccount.connectionId,
       );
       const pending = await connectors.startExternalCode(actor, "aws", "cli", {
         intent: "reconnect",
-        connectionId: siblingAccount.connector.id,
+        connectionId: siblingAccount.connectionId,
       });
       const rejected = await connectors.requestExternalCodeStart(
         actor,
         "aws",
         "cli",
         [404],
-        { intent: "reconnect", connectionId: deletedAccount.connector.id },
+        { intent: "reconnect", connectionId: deletedAccount.connectionId },
       );
       expect(rejected.body).toStrictEqual({
         error: { code: "NOT_FOUND", message: "Connector account not found" },
       });
       await expect(completeSession(actor, pending)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expectAccounts(actor, [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
     });
   });
@@ -244,7 +244,7 @@ describe("Builtin external-code session creation", () => {
       );
       const choice = {
         intent: "reconnect",
-        connectionId: siblingAccount.connector.id,
+        connectionId: siblingAccount.connectionId,
       } as const;
       const pending = await connectors.startExternalCode(
         actor,
@@ -282,17 +282,17 @@ describe("Builtin external-code session creation", () => {
       });
       provider.releaseTokenResponse();
       await expect(inFlight).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expect(completeSession(actor, replacement)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expect(completeSession(actor, pending)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expectAccounts(actor, [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
     });
   });

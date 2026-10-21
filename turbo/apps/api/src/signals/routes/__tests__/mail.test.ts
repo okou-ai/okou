@@ -942,7 +942,7 @@ describe("POST /api/mail/drafts/link", () => {
         fixture.agent.agentId,
         [customConnectorId],
       );
-      const connectorId = connection.connectedAccountId;
+      const connectorId = connection.connectionId;
       if (!connectorId) {
         throw new Error(
           "Expected a custom connector account with a thread selection",

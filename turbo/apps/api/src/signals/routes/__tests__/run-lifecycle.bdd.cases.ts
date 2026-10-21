@@ -182,7 +182,7 @@ async function connectAutomaticRuntime(args: {
     [200],
   );
   if (started.body.result === "connected") {
-    return started.body.connectedAccountId;
+    return started.body.connectionId;
   }
   const state = new URL(started.body.authorizationUrl).searchParams.get(
     "state",
@@ -5708,10 +5708,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await connectors.setDefaultBuiltinConnectorAccount(
             actor,
             "lark",
-            sibling.body.id,
+            sibling.body.connectionId,
           );
         expect(defaultAccount).toMatchObject({
-          id: sibling.body.id,
+          id: sibling.body.connectionId,
           isDefault: true,
         });
         const [exactRuntimeWithSibling] = await api.syncConnectorRuntime(
@@ -6307,7 +6307,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           customConnectorRuntimeRegistration(claim, automaticConnector.id),
         ).toMatchObject({
           baseUrlVars: {},
-          sourceId: automaticConnection.body.connectedAccountId,
+          sourceId: automaticConnection.body.connectionId,
         });
 
         const runtimeResults = await api.syncConnectorRuntime(run.runId, {
@@ -8147,8 +8147,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           custom.id,
         ]);
         await expect(
-          connectors.readCustomConnector(actor, custom.id),
-        ).resolves.toMatchObject({ connected: true });
+          connectors.listCustomConnectorAccounts(actor, custom.id),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            isDefault: true,
+            connectionStatus: "connected",
+            setupStatus: "complete",
+          }),
+        );
 
         const target = expect.objectContaining({
           kind: "custom",
@@ -8166,11 +8172,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         mockNow(connectedAt + 31_000);
         await expect(
-          connectors.readCustomConnector(actor, custom.id),
-        ).resolves.toMatchObject({
-          connected: false,
-          missingRequiredFields: ["oauth"],
-        });
+          connectors.listCustomConnectorAccounts(actor, custom.id),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            isDefault: true,
+            connectionStatus: "reconnect-required",
+            setupStatus: "complete",
+            reconnectReason: "credential_expired",
+          }),
+        );
         const expiredRun = await api.createThreadRun(actor, {
           agentId,
           prompt: "try the expired unrefreshable custom connector",
@@ -8387,12 +8397,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await expect(
           own(() => {
-            return connectors.readCustomConnector(actor, custom.id);
+            return connectors.listCustomConnectorAccounts(actor, custom.id);
           }),
-        ).resolves.toMatchObject({
-          connected: false,
-          missingRequiredFields: ["oauth"],
-        });
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            isDefault: true,
+            connectionStatus: "reconnect-required",
+            setupStatus: "complete",
+          }),
+        );
         expect(provider.tokenBodies).toHaveLength(2);
 
         const firstRefreshAt = now() + 2 * 3_600_000;
@@ -8459,17 +8472,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]);
         await expect(
           own(() => {
-            return connectors.readCustomConnector(actor, custom.id);
-          }),
-        ).resolves.toMatchObject({
-          connected: true,
-          missingRequiredFields: [],
-        });
-        await expect(
-          own(() => {
             return connectors.listCustomConnectorAccounts(actor, custom.id);
           }),
-        ).resolves.toMatchObject([{ oauthScopes: ["read", "refreshed"] }]);
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            isDefault: true,
+            connectionStatus: "connected",
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            oauthScopes: ["read", "refreshed"],
+          }),
+        );
 
         const currentResolved = await own(() => {
           return fw.requestFirewallAuth(
@@ -8674,15 +8687,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).toStrictEqual(["authorization_code", "refresh_token"]);
 
-        const customConnectors = await connectors.listCustomConnectors(actor);
-        expect(
-          customConnectors.find((connector) => {
-            return connector.id === custom.id;
+        await expect(
+          connectors.listCustomConnectorAccounts(actor, custom.id),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            isDefault: true,
+            connectionStatus: "reconnect-required",
+            setupStatus: "complete",
           }),
-        ).toMatchObject({
-          connected: false,
-          missingRequiredFields: ["oauth"],
-        });
+        );
 
         const secondRun = await api.createThreadRun(actor, {
           agentId,
@@ -9297,8 +9310,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(connectedWithoutAuth.body).toMatchObject({
           result: "connected",
-          connector: { connected: true },
+          connectionId: sourceId,
         });
+        await expect(
+          own(() => {
+            return connectors.listCustomConnectorAccounts(actor, mcp.id);
+          }),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: sourceId,
+            connectionStatus: "connected",
+            setupStatus: "complete",
+          }),
+        );
         await own(() => {
           return api.requestCancelRun(actor, run.runId, [200]);
         });
@@ -9878,22 +9902,20 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const unavailable = await own(() => {
-          return connectors.listCustomConnectors(actor);
+          return connectors.listCustomConnectorAccounts(
+            actor,
+            saved.connector.id,
+          );
         });
-        expect(
-          unavailable.find((connector) => {
-            return connector.id === saved.connector.id;
+        expect(unavailable).toContainEqual(
+          expect.objectContaining({
+            isDefault: true,
+            connectionStatus: "reconnect-required",
+            setupStatus: "invalid",
+            configuredFieldKeys: [],
+            missingRequiredFields: ["replacement_key"],
           }),
-        ).toMatchObject({
-          connected: false,
-          configuredFieldKeys: [],
-          missingRequiredFields: ["replacement_key"],
-        });
-        await expect(
-          own(() => {
-            return connectors.readCustomConnector(actor, saved.connector.id);
-          }),
-        ).resolves.toMatchObject({ connected: false });
+        );
 
         const blockedRun = await own(() => {
           return api.createThreadRun(actor, {
@@ -9956,12 +9978,24 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             },
           );
         });
-        expect(reconnected).toMatchObject({ connected: true });
+        expect(reconnected).toMatchObject({ connectionId });
         await expect(
           own(() => {
-            return connectors.readCustomConnector(actor, saved.connector.id);
+            return connectors.listCustomConnectorAccounts(
+              actor,
+              saved.connector.id,
+            );
           }),
-        ).resolves.toMatchObject({ connected: true });
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: connectionId,
+            isDefault: true,
+            connectionStatus: "connected",
+            setupStatus: "complete",
+            configuredFieldKeys: ["replacement_key"],
+            missingRequiredFields: [],
+          }),
+        );
 
         const admittedRun = await own(() => {
           return api.createThreadRun(actor, {
@@ -10088,7 +10122,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             { key: "subdomain", kind: "variable", value: longSubdomain },
           ],
         );
-        if (!recoveredConnection.connectedAccountId) {
+        if (!recoveredConnection.connectionId) {
           throw new Error("Expected the recovered custom connector account");
         }
 
@@ -10129,7 +10163,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [{ key: "subdomain", kind: "variable", value: "version-two" }],
           {
             intent: "reconnect",
-            connectionId: recoveredConnection.connectedAccountId,
+            connectionId: recoveredConnection.connectionId,
           },
         );
 

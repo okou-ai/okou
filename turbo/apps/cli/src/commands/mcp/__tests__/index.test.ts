@@ -297,7 +297,7 @@ describe("okou mcp command", () => {
           slug: "_alpha",
           displayName: "Alpha MCP",
           endpoint: "https://alpha-mcp.example.test/server",
-          connected: false,
+          runtimeAvailable: false,
         }),
         runMcpConnector({ slug: "_zulu" }),
       ]),
@@ -317,6 +317,10 @@ describe("okou mcp command", () => {
             endpoint: "https://alpha-mcp.example.test/server",
             runtimeAvailable: false,
             connected: false,
+            connectionStatus: "connected",
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: [],
           },
           {
             slug: "_zulu",
@@ -327,6 +331,10 @@ describe("okou mcp command", () => {
             endpoint: MCP_ENDPOINT,
             runtimeAvailable: true,
             connected: true,
+            connectionStatus: "connected",
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: [],
           },
         ],
       }),
@@ -361,7 +369,7 @@ describe("okou mcp command", () => {
   ])("reports $label for the exact admitted account", async (facts) => {
     const metadata = Object.fromEntries(
       Object.entries(runMcpConnector()).filter(([key]) => {
-        return key !== "connected";
+        return key !== "connected" && key !== "runtimeAvailable";
       }),
     );
     server.use(
@@ -408,7 +416,7 @@ describe("okou mcp command", () => {
   ])("rejects unavailable or malformed runtime facts: %j", async (facts) => {
     const metadata = Object.fromEntries(
       Object.entries(runMcpConnector()).filter(([key]) => {
-        return key !== "connected";
+        return key !== "connected" && key !== "runtimeAvailable";
       }),
     );
     server.use(

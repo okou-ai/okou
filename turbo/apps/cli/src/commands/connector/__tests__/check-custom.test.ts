@@ -79,6 +79,9 @@ function account(
   connectionStatus: AvailableAccount["connectionStatus"] = "connected",
 ): AvailableAccount {
   return {
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     kind: "available",
     target: TARGET,
     connectionId: ACCOUNT_ID,

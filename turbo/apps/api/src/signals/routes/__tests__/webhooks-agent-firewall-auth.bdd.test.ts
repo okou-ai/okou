@@ -1387,19 +1387,19 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       registration: "cimd" as const,
       refreshError: "invalid_grant" as const,
       failureReason: "reconnect_required",
-      connectedAfterFailure: false,
+      connectionStatusAfterFailure: "reconnect-required",
     },
     {
       registration: "cimd" as const,
       refreshError: "temporarily_unavailable" as const,
       failureReason: "upstream_provider",
-      connectedAfterFailure: true,
+      connectionStatusAfterFailure: "connected",
     },
     {
       registration: "dcr" as const,
       refreshError: "invalid_client" as const,
       failureReason: "reconnect_required",
-      connectedAfterFailure: false,
+      connectionStatusAfterFailure: "reconnect-required",
     },
   ])(
     "classifies Automatic MCP OAuth $refreshError refresh failures",
@@ -1407,7 +1407,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       registration,
       refreshError,
       failureReason,
-      connectedAfterFailure,
+      connectionStatusAfterFailure,
     }) => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -1502,10 +1502,14 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
           failureReason,
         });
         await expect(
-          connectors.readCustomConnector(actor, mcp.id),
-        ).resolves.toMatchObject({
-          connected: connectedAfterFailure,
-        });
+          connectors.listCustomConnectorAccounts(actor, mcp.id),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: account.id,
+            connectionStatus: connectionStatusAfterFailure,
+            setupStatus: "complete",
+          }),
+        );
         expect(
           provider.tokenBodies.map((body) => {
             return body.get("grant_type");

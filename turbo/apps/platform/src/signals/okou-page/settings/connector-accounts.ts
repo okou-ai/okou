@@ -94,7 +94,6 @@ export async function readConnectorAccountCompletion(
   const parsed = connectorAccountConnectionSchema.safeParse(result.body);
   if (
     !parsed.success ||
-    parsed.data.setupStatus === undefined ||
     parsed.data.id !== connectionId ||
     connectorAccountTargetKey(parsed.data.target) !==
       connectorAccountTargetKey(target)

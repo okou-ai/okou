@@ -833,32 +833,6 @@ export function serialiseCustomConnector(args: {
   readonly connectedAccountId: string | null;
   readonly connectedAccountUpdatedAt?: Date | null;
 }): CustomConnectorResponse {
-  const connectorMarkers = args.valueMarkers.filter((marker) => {
-    return (
-      marker.connectorId === args.row.id &&
-      marker.authMode === args.row.authMode &&
-      marker.storageVersion === args.row.storageVersion
-    );
-  });
-  const missingRequiredFields = customConnectorMissingRequiredFieldKeys({
-    fields: args.row.fields,
-    markers: connectorMarkers,
-  });
-  const configured = configuredFieldKeys({
-    fields: args.row.fields,
-    markers: connectorMarkers,
-  });
-  const connected = customConnectorIsConnected({
-    row: args.row,
-    connectedAccountId: args.connectedAccountId,
-    missingRequiredFields,
-  });
-  const responseMissingRequiredFields = [
-    ...missingRequiredFields,
-    ...(args.row.authMode === "oauth" && args.connectedAccountId === null
-      ? ["oauth"]
-      : []),
-  ];
   const auth = (() => {
     if (args.row.authMode === "none") {
       return { authMode: "none" as const };
@@ -870,9 +844,56 @@ export function serialiseCustomConnector(args: {
       return { authMode: "automatic" as const };
     }
     if (args.row.authMode === "oauth" && args.row.oauthConfig) {
+      const oauthConfig = serialiseOAuthConfig(args.row.oauthConfig);
+      if (oauthConfig.providerAdapter === "feishu") {
+        const connectorMarkers = args.valueMarkers.filter((marker) => {
+          return (
+            marker.connectorId === args.row.id &&
+            marker.authMode === args.row.authMode &&
+            marker.storageVersion === args.row.storageVersion
+          );
+        });
+        const missingRequiredFields = customConnectorMissingRequiredFieldKeys({
+          fields: args.row.fields,
+          markers: connectorMarkers,
+        });
+        const configured = configuredFieldKeys({
+          fields: args.row.fields,
+          markers: connectorMarkers,
+        });
+        const connected = customConnectorIsConnected({
+          row: args.row,
+          connectedAccountId: args.connectedAccountId,
+          missingRequiredFields,
+        });
+        const responseMissingRequiredFields = [
+          ...missingRequiredFields,
+          ...(args.row.authMode === "oauth" && args.connectedAccountId === null
+            ? ["oauth"]
+            : []),
+        ];
+        return {
+          authMode: "oauth" as const,
+          oauthConfig: { ...oauthConfig, providerAdapter: "feishu" as const },
+          connected,
+          ...(connected && args.connectedAccountId
+            ? {
+                connectedAccountId: args.connectedAccountId,
+                ...(args.connectedAccountUpdatedAt
+                  ? {
+                      connectedAccountUpdatedAt:
+                        args.connectedAccountUpdatedAt.toISOString(),
+                    }
+                  : {}),
+              }
+            : {}),
+          missingRequiredFields: [...responseMissingRequiredFields],
+          configuredFieldKeys: [...configured],
+        };
+      }
       return {
         authMode: "oauth" as const,
-        oauthConfig: serialiseOAuthConfig(args.row.oauthConfig),
+        oauthConfig: { ...oauthConfig, providerAdapter: "standard" as const },
       };
     }
     throw new Error("Invalid normalized Custom Connector OAuth setup");
@@ -886,20 +907,6 @@ export function serialiseCustomConnector(args: {
     queryInjections: [...args.row.queryInjections],
     skillMarkdown: args.row.skillMarkdown,
     storageVersion: args.row.storageVersion,
-    connected,
-    ...(connected && args.connectedAccountId
-      ? {
-          connectedAccountId: args.connectedAccountId,
-          ...(args.connectedAccountUpdatedAt
-            ? {
-                connectedAccountUpdatedAt:
-                  args.connectedAccountUpdatedAt.toISOString(),
-              }
-            : {}),
-        }
-      : {}),
-    missingRequiredFields: [...responseMissingRequiredFields],
-    configuredFieldKeys: [...configured],
     createdAt: args.row.createdAt.toISOString(),
     updatedAt: args.row.updatedAt.toISOString(),
   };
@@ -3094,7 +3101,6 @@ export const setCustomConnectorValues$ = command(
     signal: AbortSignal,
   ): Promise<
     | (CustomConnectorResponse & {
-        readonly connectedAccountId: string;
         readonly connectionId: string;
       })
     | BadRequestResponse
@@ -3187,7 +3193,6 @@ export const setCustomConnectorValues$ = command(
         valueMarkers: markers,
         connectedAccountId: writeResult.connectedAccountId,
       }),
-      connectedAccountId: writeResult.connectedAccountId,
       connectionId: writeResult.connectedAccountId,
     };
   },
@@ -3693,6 +3698,7 @@ export const saveCustomConnectorProposal$ = command(
         fields: proposalDefinition.fields,
         markers: proposalValues,
       });
+    let connectionId: string | undefined;
     if (args.values.length > 0 || missingRequiredProposalValues.length === 0) {
       const valueResult = await set(
         setCustomConnectorValues$,
@@ -3710,6 +3716,7 @@ export const saveCustomConnectorProposal$ = command(
           ? badRequestMessage(valueResult.body.error.message)
           : valueResult;
       }
+      connectionId = valueResult.connectionId;
     }
 
     const authorizedAgentId = await set(
@@ -3739,6 +3746,7 @@ export const saveCustomConnectorProposal$ = command(
     }
     return {
       connector: response,
+      ...(connectionId ? { connectionId } : {}),
       ...(authorizedAgentId ? { authorizedAgentId } : {}),
     };
   },

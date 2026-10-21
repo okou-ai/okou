@@ -64,8 +64,8 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
       sessionToken: session.sessionToken,
       code: awsVerificationCode(session.authorizationUrl),
     });
-    ownedAccountIds.add(result.connector.id);
-    return result.connector;
+    ownedAccountIds.add(result.connectionId);
+    return result.account;
   }
 
   const account = await connect({ intent: "add" });

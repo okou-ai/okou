@@ -15,6 +15,7 @@ import {
   builtinConnectorExternalCodeSessionCompleteResponseSchema,
   builtinConnectorExternalCodeSessionStartResponseSchema,
   builtinConnectorOauthStartResponseSchema,
+  connectorCompletedOperationResponseSchema,
   builtinConnectorListResponseSchema,
   builtinConnectorResponseSchema,
   scopeDiffResponseSchema,
@@ -105,8 +106,23 @@ export const builtinConnectorOauthStartContract = c.router({
   },
 });
 
+export const builtinConnectorAutomaticResponseSchema = z.discriminatedUnion(
+  "result",
+  [
+    z.object({
+      result: z.literal("connected"),
+      connectionId: z.uuid(),
+    }),
+    z.object({
+      result: z.literal("authorization"),
+      authorizationUrl: z.url(),
+      oauthAttemptId: z.uuid(),
+      connectionId: z.uuid().optional(),
+    }),
+  ],
+);
+
 export const builtinConnectorAutomaticContract = c.router({
-  // Optional receipt IDs cover current/rollback APIs until #41309's retirement gates.
   start: {
     method: "POST",
     path: "/api/connectors/:connectorSlug/automatic/start",
@@ -119,19 +135,7 @@ export const builtinConnectorAutomaticContract = c.router({
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
-      200: z.discriminatedUnion("result", [
-        z.object({
-          result: z.literal("connected"),
-          connectedAccountId: z.uuid(),
-          connectionId: z.uuid().optional(),
-        }),
-        z.object({
-          result: z.literal("authorization"),
-          authorizationUrl: z.url(),
-          oauthAttemptId: z.uuid(),
-          connectionId: z.uuid().optional(),
-        }),
-      ]),
+      200: builtinConnectorAutomaticResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -187,7 +191,6 @@ export const builtinConnectorOpenIdStartContract = c.router({
 });
 
 export const builtinConnectorManualGrantContract = c.router({
-  // Optional receipt IDs cover current/rollback APIs until #41309's retirement gates.
   connect: {
     method: "POST",
     path: "/api/connectors/:connectorSlug/manual-grant",
@@ -201,9 +204,7 @@ export const builtinConnectorManualGrantContract = c.router({
       values: z.record(z.string(), z.string()),
     }),
     responses: {
-      200: builtinConnectorResponseSchema.extend({
-        connectionId: z.uuid().optional(),
-      }),
+      200: connectorCompletedOperationResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -216,7 +217,6 @@ export const builtinConnectorManualGrantContract = c.router({
 });
 
 export const builtinConnectorNoAuthGrantContract = c.router({
-  // Optional receipt IDs cover current/rollback APIs until #41309's retirement gates.
   connect: {
     method: "POST",
     path: "/api/connectors/:connectorSlug/no-auth",
@@ -229,9 +229,7 @@ export const builtinConnectorNoAuthGrantContract = c.router({
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
-      200: builtinConnectorResponseSchema.extend({
-        connectionId: z.uuid().optional(),
-      }),
+      200: connectorCompletedOperationResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

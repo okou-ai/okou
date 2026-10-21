@@ -164,6 +164,9 @@ describe("okou whoami command", () => {
       const connectionStatus = fixture.connectionStatus ?? "connected";
       return [
         {
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
           kind: "available" as const,
           target,
           connectionId,
@@ -1273,9 +1276,7 @@ describe("okou whoami command", () => {
       permissionBundleRef: null,
       authMode: "none",
       storageVersion: 1,
-      connected: true,
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
+
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
@@ -1322,6 +1323,9 @@ describe("okou whoami command", () => {
     ): void {
       const accounts: AvailableConnectorAccount[] = [
         {
+          setupStatus: "complete",
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
           kind: "available",
           target: { kind: "builtin", connectorSlug: "github" },
           connectionId: "22222222-2222-4222-8222-222222222222",
@@ -1335,6 +1339,9 @@ describe("okou whoami command", () => {
         },
         ...definitions.map((definition, index): AvailableConnectorAccount => {
           return {
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: [],
             kind: "available",
             target: { kind: "custom", customConnectorId: definition.id },
             connectionId: `00000000-0000-4000-8000-${(index + 100).toString().padStart(12, "0")}`,
@@ -1423,7 +1430,7 @@ describe("okou whoami command", () => {
         );
         expect(output).not.toContain("full access");
         expect(output).not.toContain("Named permissions:");
-        expect(output).not.toContain(ordinaryHttp.connectedAccountId);
+        expect(output).not.toContain("55555555-5555-4555-8555-555555555555");
         expect(connectorOutput("github")).toContain("@octocat");
       },
     );
@@ -1678,7 +1685,7 @@ describe("okou whoami command", () => {
       const output = connectorOutput(ordinaryHttp.slug);
       expect(output).toContain("metadata unavailable or deleted");
       expect(output).toContain("Agent enablement: enabled");
-      expect(output).not.toContain(ordinaryHttp.connectedAccountId);
+      expect(output).not.toContain("55555555-5555-4555-8555-555555555555");
     });
 
     it("does not read custom authorization details for ordinary whoami", async () => {

@@ -12,14 +12,16 @@ import {
   agentsMainContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorHttpResponse,
+  type CustomConnectorMcpResponse,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
-  CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
-  CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
-  CustomConnectorReaderResponse as CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
-import type { PublicConnectorCatalogPermissionDetail } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  PublicConnectorCatalogPermissionDetail,
+  PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";

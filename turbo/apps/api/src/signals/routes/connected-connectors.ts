@@ -1,6 +1,6 @@
+import { builtinConnectorAccountSlugs } from "../services/connector-account-lifecycle.service";
 import { command, computed } from "ccstate";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import {
@@ -10,7 +10,7 @@ import {
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { and, eq, exists, isNotNull } from "drizzle-orm";
+import { and, eq, exists } from "drizzle-orm";
 
 import { providerUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -31,23 +31,7 @@ import { effectiveCustomConnectorPermissionBundleRef } from "../services/feishu-
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { settle } from "../utils";
 
-const builtinSlugs$ = computed(async (get) => {
-  const owner = get(organizationAuthContext$);
-  const db = get(db$);
-  const rows = await db
-    .selectDistinct({ connectorSlug: connectors.connectorSlug })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, owner.orgId),
-        eq(connectors.userId, owner.userId),
-        isNotNull(connectors.connectorSlug),
-      ),
-    );
-  return rows.map((row) => {
-    return connectorSlugSchema.parse(row.connectorSlug);
-  });
-});
+const builtinSlugs$ = builtinConnectorAccountSlugs(organizationAuthContext$);
 
 const builtinBriefs$ = computed(async (get) => {
   const owner = get(organizationAuthContext$);

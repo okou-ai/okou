@@ -5,7 +5,6 @@ import {
   connectorAuthMethodIdSchema,
   connectorSlugSchema,
 } from "./connector-identity";
-import { connectorReconnectReasonSchema } from "./connector-schemas";
 import { apiErrorSchema } from "./errors";
 
 export { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
@@ -16,9 +15,7 @@ const publicConnectorCatalogAuthMethodSummarySchema = z.object({
   id: connectorAuthMethodIdSchema,
   label: z.string(),
   description: z.string().nullable(),
-  // Optional while prepared readers can still reach an older serving API.
-  // #41699 requires this method-owned fact after preparation and API drain.
-  supportsRefresh: z.boolean().optional(),
+  supportsRefresh: z.boolean(),
   grantKind: z.enum([
     "none",
     "automatic",
@@ -104,33 +101,8 @@ const publicConnectorCatalogListResponseSchema = z.object({
   connectors: z.array(publicConnectorCatalogItemSchema),
 });
 
-const publicConnectorCatalogConnectionStatusSchema = z.enum([
-  "not-connected",
-  "connected",
-  "scope-mismatch",
-  "reconnect-required",
-]);
-
-const publicConnectorCatalogConnectionSchema = z.object({
-  id: z.uuid().optional(),
-  authMethod: connectorAuthMethodIdSchema,
-  externalUsername: z.string().nullable(),
-  externalEmail: z.string().nullable(),
-  reconnectReason: connectorReconnectReasonSchema.nullable(),
-});
-
 export const publicConnectorCatalogStatusItemSchema =
   publicConnectorCatalogDetailSchema.extend({
-    connection: publicConnectorCatalogConnectionSchema.nullable(),
-    connected: z.boolean(),
-    connectionStatus: publicConnectorCatalogConnectionStatusSchema,
-    setupStatus: z
-      .enum(["complete", "incomplete", "invalid"])
-      .nullable()
-      .optional(),
-    scopeMismatch: z.boolean(),
-    authMethodSupportsRefresh: z.boolean(),
-    tokenExpiresAt: z.string().nullable(),
     singleAuthCodeAuthMethodId: connectorAuthMethodIdSchema.nullable(),
     connectNotice: z.enum(["google-security-warning"]).nullable(),
   });
@@ -149,13 +121,6 @@ export const publicConnectorCatalogConnectItemSchema =
     icon: true,
     popularityRank: true,
     authMethods: true,
-    connection: true,
-    connected: true,
-    connectionStatus: true,
-    setupStatus: true,
-    scopeMismatch: true,
-    authMethodSupportsRefresh: true,
-    tokenExpiresAt: true,
     singleAuthCodeAuthMethodId: true,
     connectNotice: true,
   });
@@ -272,12 +237,6 @@ export type PublicConnectorCatalogListResponse = z.infer<
 export type PublicConnectorCatalogDetailResponse = z.infer<
   typeof publicConnectorCatalogDetailResponseSchema
 >;
-export type PublicConnectorCatalogConnectionStatus = z.infer<
-  typeof publicConnectorCatalogConnectionStatusSchema
->;
-export type PublicConnectorCatalogConnection = z.infer<
-  typeof publicConnectorCatalogConnectionSchema
->;
 export type PublicConnectorCatalogStatusItem = z.infer<
   typeof publicConnectorCatalogStatusItemSchema
 >;
@@ -323,7 +282,7 @@ export const connectorCatalogContract = c.router({
       403: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "List public connector catalog metadata with connection status",
+    summary: "List public connector catalog metadata and connect hints",
   },
   discovery: {
     method: "GET",
@@ -356,8 +315,7 @@ export const connectorCatalogContract = c.router({
       403: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary:
-      "List connectors that connect in one browser step, with connection status",
+    summary: "List metadata for connectors that connect in one browser step",
   },
   get: {
     method: "GET",
@@ -372,7 +330,7 @@ export const connectorCatalogContract = c.router({
       404: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Get public connector catalog metadata with connection status",
+    summary: "Get public connector catalog metadata and connect hints",
   },
   permissions: {
     method: "GET",

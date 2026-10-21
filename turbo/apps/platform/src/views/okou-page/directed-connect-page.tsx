@@ -7,9 +7,11 @@ import {
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PublicConnectorCatalogAuthMethodDetail } from "@okouai/api-contracts/contracts/connector-catalog";
+import type {
+  CustomConnectorSlug,
+  CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { CustomConnectorSlug } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { withMemberAccount } from "../../signals/external/connectors.ts";
 import { Input } from "@okouai/ui/components/ui/input";

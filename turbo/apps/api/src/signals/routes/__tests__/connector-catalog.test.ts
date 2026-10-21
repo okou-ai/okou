@@ -452,12 +452,7 @@ describe("GET /api/connector-catalog", () => {
     expect(openai).toMatchObject({
       slug: "openai",
       label: "OpenAI",
-      connected: false,
-      connection: null,
-      connectionStatus: "not-connected",
-      scopeMismatch: false,
-      authMethodSupportsRefresh: false,
-      tokenExpiresAt: null,
+
       singleAuthCodeAuthMethodId: null,
       connectNotice: null,
     });
@@ -553,13 +548,7 @@ describe("GET /api/connector-catalog", () => {
         ? {}
         : { popularityRank: githubStatus.popularityRank }),
       authMethods: githubStatus?.authMethods,
-      connection: githubStatus?.connection,
-      connected: true,
-      connectionStatus: "connected",
-      setupStatus: "complete",
-      scopeMismatch: false,
-      authMethodSupportsRefresh: githubStatus?.authMethodSupportsRefresh,
-      tokenExpiresAt: githubStatus?.tokenExpiresAt,
+
       singleAuthCodeAuthMethodId: "oauth",
       connectNotice: null,
     });
@@ -591,13 +580,10 @@ describe("GET /api/connector-catalog", () => {
     });
     expect(openai).toMatchObject({
       slug: "openai",
-      connected: true,
-      connectionStatus: "connected",
-      scopeMismatch: false,
-      authMethodSupportsRefresh: false,
-      tokenExpiresAt: null,
     });
-    expect(openai?.connection).toStrictEqual({
+    expect(
+      (await connectorsApi.listBuiltinConnectorAccounts(actor, "openai"))[0],
+    ).toMatchObject({
       id: connection.id,
       authMethod: "api-token",
       externalUsername: null,
@@ -630,17 +616,15 @@ describe("GET /api/connector-catalog", () => {
     });
     expect(github).toMatchObject({
       slug: "github",
-      connected: true,
-      connectionStatus: "connected",
-      setupStatus: "complete",
-      scopeMismatch: false,
+
       singleAuthCodeAuthMethodId: "oauth",
     });
-    expect(github?.connection).toMatchObject({
+    expect(
+      (await connectorsApi.listBuiltinConnectorAccounts(actor, "github"))[0],
+    ).toMatchObject({
       authMethod: "oauth",
       externalUsername: "bdd-github-user",
     });
-    expect(github?.connection).not.toHaveProperty("oauthScopes");
   });
 
   it("reports a normal empty provider grant without exposing scope storage", async () => {
@@ -702,16 +686,13 @@ describe("GET /api/connector-catalog", () => {
     });
     expect(github).toMatchObject({
       slug: "github",
-      connected: true,
-      connectionStatus: "connected",
-      scopeMismatch: false,
-      authMethodSupportsRefresh: false,
     });
-    expect(github?.connection).toMatchObject({
+    expect(
+      (await connectorsApi.listBuiltinConnectorAccounts(actor, "github"))[0],
+    ).toMatchObject({
       authMethod: "oauth",
       reconnectReason: null,
     });
-    expect(github?.connection).not.toHaveProperty("oauthScopes");
   });
 
   it("returns reconnect-required status for expired non-refreshable connectors", async () => {
@@ -752,11 +733,9 @@ describe("GET /api/connector-catalog", () => {
     if (completed.status !== "complete") {
       throw new Error("Expected successful Stripe CLI device authorization");
     }
-    expect(completed.connector.connectionStatus).toBe("connected");
-    expect(completed.connector.tokenExpiresAt).toStrictEqual(
-      expect.any(String),
-    );
-    const expiresAt = Date.parse(completed.connector.tokenExpiresAt ?? "");
+    expect(completed.account.connectionStatus).toBe("connected");
+    expect(completed.account.tokenExpiresAt).toStrictEqual(expect.any(String));
+    const expiresAt = Date.parse(completed.account.tokenExpiresAt ?? "");
     expect(expiresAt).toBeGreaterThan(startedAt);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
@@ -775,19 +754,37 @@ describe("GET /api/connector-catalog", () => {
       });
       expect(stripe).toMatchObject({
         slug: "stripe",
-        connected: true,
-        connectionStatus: "reconnect-required",
-        setupStatus: "complete",
-        scopeMismatch: false,
-        authMethodSupportsRefresh: false,
       });
-      expect(stripe?.connection).toMatchObject({
+      await expect(
+        connectorsApi.readBuiltinConnectorAccount(
+          actor,
+          "stripe",
+          completed.connectionId,
+        ),
+      ).resolves.toMatchObject({
         authMethod: "cli",
         reconnectReason: "credential_expired",
       });
-      expect(stripe?.tokenExpiresAt).toBe(completed.connector.tokenExpiresAt);
-      expect(Date.parse(stripe?.tokenExpiresAt ?? "")).toBeLessThan(now());
-      expect(stripe?.connection).not.toHaveProperty("oauthScopes");
+      expect(
+        (
+          await connectorsApi.readBuiltinConnectorAccount(
+            actor,
+            "stripe",
+            completed.connectionId,
+          )
+        ).tokenExpiresAt,
+      ).toBe(completed.account.tokenExpiresAt);
+      expect(
+        Date.parse(
+          (
+            await connectorsApi.readBuiltinConnectorAccount(
+              actor,
+              "stripe",
+              completed.connectionId,
+            )
+          ).tokenExpiresAt ?? "",
+        ),
+      ).toBeLessThan(now());
     });
   });
 
@@ -824,14 +821,9 @@ describe("GET /api/connector-catalog", () => {
 
   it("returns exact connector metadata with the current connection status", async () => {
     const actor = bdd.user();
-    const connection = await connectorsApi.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      {
-        apiKey: "sk-public-detail-status",
-      },
-    );
+    await connectorsApi.connectManualGrant(actor, "openai", "api-token", {
+      apiKey: "sk-public-detail-status",
+    });
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -848,15 +840,6 @@ describe("GET /api/connector-catalog", () => {
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
     expect(response.body.connector).toMatchObject({
       slug: "openai",
-      connected: true,
-      connectionStatus: "connected",
-      connection: {
-        id: connection.id,
-        authMethod: "api-token",
-        externalUsername: null,
-        externalEmail: null,
-        reconnectReason: null,
-      },
     });
   });
 
@@ -1090,12 +1073,9 @@ describe("GET /api/connector-catalog", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization");
     }
-    const connection = await connectorsApi.connectManualGrant(
-      actor,
-      "mercury",
-      "api-token",
-      { apiToken: "test-mercury-token" },
-    );
+    await connectorsApi.connectManualGrant(actor, "mercury", "api-token", {
+      apiToken: "test-mercury-token",
+    });
     await enableConnectorFeatureSwitches(actor.orgId, actor.userId, {
       [FeatureSwitchKey.MercuryConnector]: true,
     });
@@ -1114,12 +1094,6 @@ describe("GET /api/connector-catalog", () => {
     });
     expect(mercury).toMatchObject({
       slug: "mercury",
-      connected: true,
-      connectionStatus: "connected",
-      connection: {
-        id: connection.id,
-        authMethod: "api-token",
-      },
     });
     expect(
       mercury?.authMethods.map((authMethod) => {

@@ -34,6 +34,9 @@ function accountMetadata(
   },
 ) {
   return {
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     kind: "available" as const,
     connectionId,
     target,
@@ -61,9 +64,7 @@ function customMcpConnector(): CustomConnectorMcpResponse {
     queryInjections: [],
     authMode: "manual",
     storageVersion: 1,
-    connected: true,
-    missingRequiredFields: [],
-    configuredFieldKeys: [],
+
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };

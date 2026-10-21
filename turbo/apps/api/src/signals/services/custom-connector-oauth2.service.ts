@@ -1082,7 +1082,6 @@ async function persistAutomaticNoAuthConnection(
       connectedAccountId: result.connection.id,
       connectedAccountUpdatedAt: result.connection.updatedAt,
     }),
-    connectedAccountId: result.connection.id,
     connectionId: result.connection.id,
   };
 }

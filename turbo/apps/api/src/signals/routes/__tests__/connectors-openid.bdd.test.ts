@@ -197,7 +197,6 @@ describe("Steam OpenID connector", () => {
     });
     expect(steam).toMatchObject({
       slug: "steam",
-      connected: false,
       authMethods: [
         expect.objectContaining({
           id: "openid",

@@ -489,8 +489,8 @@ describe("createApp", () => {
   });
 
   describe("web client compatibility", () => {
-    it.each(["0.1028.0", "0.1031.1"])(
-      "force-upgrades App %s before native VNC metadata route matching",
+    it.each(["0.1047.1", "0.1048.5"])(
+      "force-upgrades App %s before route matching",
       async (version) => {
         const app = createApp({
           signal: context.signal,

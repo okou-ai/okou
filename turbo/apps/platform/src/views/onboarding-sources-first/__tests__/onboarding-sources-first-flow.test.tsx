@@ -1,13 +1,13 @@
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { requireConnectorFixtureAccount } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import {
   onboardingCompleteContract,
   onboardingRecommendationContract,
   onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";

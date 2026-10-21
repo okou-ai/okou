@@ -1,4 +1,4 @@
-import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";

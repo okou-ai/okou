@@ -13,10 +13,10 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-  customConnectorsReaderContract as customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+  customConnectorOAuth2Contract,
+  customConnectorValuesContract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 

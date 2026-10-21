@@ -10,18 +10,15 @@ import { connectorResponseConnectionStatusSchema } from "./connector-schemas";
 const c = initContract();
 
 export const mcpConnectorSchema = z.object({
-  // #41309 requires old-API retirement and client/Runner gates before requiring these facts.
-  ...connectorAccountSetupSchema.partial().shape,
+  ...connectorAccountSetupSchema.shape,
   target: connectorAccountTargetSchema,
   connectionId: z.uuid(),
   slug: z.string().min(1),
   displayName: z.string().min(1),
   transport: z.literal("streamable-http"),
   endpoint: z.string().min(1),
-  // Reader-first rollout; #41699 requires this after the prepared API/CLI/Runner release.
-  runtimeAvailable: z.boolean().optional(),
-  connected: z.boolean(),
-  connectionStatus: connectorResponseConnectionStatusSchema.optional(),
+  runtimeAvailable: z.boolean(),
+  connectionStatus: connectorResponseConnectionStatusSchema,
 });
 export type McpConnector = z.infer<typeof mcpConnectorSchema>;
 

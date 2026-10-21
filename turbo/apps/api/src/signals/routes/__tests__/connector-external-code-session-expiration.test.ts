@@ -58,8 +58,8 @@ async function completeSession(
   );
   expect(completed).toMatchObject({
     status: "complete",
-    connector: {
-      slug: "aws",
+    account: {
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       connectionStatus: "connected",
     },
@@ -152,10 +152,10 @@ describe("Builtin external-code session expiration", () => {
         },
       );
       const siblingAccount = await completeSession(actor, siblingSession);
-      expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
       const expected = [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ];
       await expectAccounts(actor, expected);
       const reconnect = await connectors.startExternalCode(
@@ -164,7 +164,7 @@ describe("Builtin external-code session expiration", () => {
         "cli",
         {
           intent: "reconnect",
-          connectionId: siblingAccount.connector.id,
+          connectionId: siblingAccount.connectionId,
         },
       );
       const deadline = startedAt + reconnect.expiresIn * 1000;
@@ -194,27 +194,27 @@ describe("Builtin external-code session expiration", () => {
       await expect(
         connectors.readConnectorBySlug(actor, "aws"),
       ).resolves.toMatchObject({
-        id: defaultAccount.connector.id,
+        id: defaultAccount.connectionId,
       });
 
       const recoveredAt = now();
       const recovery = await connectors.startExternalCode(actor, "aws", "cli", {
         intent: "reconnect",
-        connectionId: siblingAccount.connector.id,
+        connectionId: siblingAccount.connectionId,
       });
       await expect(completeSession(actor, recovery)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expectExpiredSession(actor, reconnect);
       mockNow(recoveredAt + recovery.expiresIn * 1000 + 1);
       await expect(completeSession(actor, recovery)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expectAccounts(actor, expected);
       await expect(
         connectors.readConnectorBySlug(actor, "aws"),
       ).resolves.toMatchObject({
-        id: defaultAccount.connector.id,
+        id: defaultAccount.connectionId,
       });
     });
   });

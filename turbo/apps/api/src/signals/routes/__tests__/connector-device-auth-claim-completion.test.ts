@@ -34,7 +34,7 @@ async function completeSession(actor: ApiTestUser, session: Session) {
   if (completed.status !== "complete") {
     throw new Error("Expected completed device session: " + completed.status);
   }
-  expect(completed.connector).toMatchObject({
+  expect(completed.account).toMatchObject({
     authMethod: "oauth",
     connectionStatus: "connected",
   });
@@ -58,7 +58,7 @@ async function createAccountPair(actor: ApiTestUser) {
     "oauth",
   );
   const siblingAccount = await completeSession(actor, second);
-  expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+  expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
   return { defaultAccount, siblingAccount };
 }
 
@@ -152,7 +152,7 @@ describe("Builtin device-auth retained-claim completion", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       const held = holdSuccessfulResponse("read obsolete");
       release = held.release;
@@ -174,12 +174,12 @@ describe("Builtin device-auth retained-claim completion", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       expect(replacement.sessionId).not.toBe(old.sessionId);
       const completed = await completeSession(actor, replacement);
-      expect(completed.connector).toMatchObject({
-        id: siblingAccount.connector.id,
+      expect(completed.account).toMatchObject({
+        id: siblingAccount.connectionId,
         oauthScopes: ["read", "replacement"],
       });
       held.release();
@@ -190,8 +190,8 @@ describe("Builtin device-auth retained-claim completion", () => {
       );
       await expectAccounts(
         actor,
-        defaultAccount.connector.id,
-        siblingAccount.connector.id,
+        defaultAccount.connectionId,
+        siblingAccount.connectionId,
         ["read", "replacement"],
       );
     });
@@ -226,7 +226,7 @@ describe("Builtin device-auth retained-claim completion", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       mockNow(startedAt + 3000);
       const oldProvider = holdSuccessfulResponse("read obsolete");
@@ -264,16 +264,16 @@ describe("Builtin device-auth retained-claim completion", () => {
       await expect(pollSession(actor, session)).resolves.toStrictEqual(pending);
       await expectAccounts(
         actor,
-        defaultAccount.connector.id,
-        siblingAccount.connector.id,
+        defaultAccount.connectionId,
+        siblingAccount.connectionId,
         ["read", "baseline"],
       );
       winnerProvider.release();
       const completed = await winningPoll;
       expect(completed).toMatchObject({
         status: "complete",
-        connector: {
-          id: siblingAccount.connector.id,
+        account: {
+          id: siblingAccount.connectionId,
           authMethod: "oauth",
           connectionStatus: "connected",
           oauthScopes: ["read", "winner"],
@@ -284,8 +284,8 @@ describe("Builtin device-auth retained-claim completion", () => {
       );
       await expectAccounts(
         actor,
-        defaultAccount.connector.id,
-        siblingAccount.connector.id,
+        defaultAccount.connectionId,
+        siblingAccount.connectionId,
         ["read", "winner"],
       );
     });

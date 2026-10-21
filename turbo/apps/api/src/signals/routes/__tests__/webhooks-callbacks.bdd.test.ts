@@ -6432,9 +6432,15 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       ).resolves.toStrictEqual([customManual.id]);
       await expect(
         own(() => {
-          return connectors.readCustomConnector(peer, customManual.id);
+          return connectors.listCustomConnectorAccounts(peer, customManual.id);
         }),
-      ).resolves.toMatchObject({ connected: true });
+      ).resolves.toContainEqual(
+        expect.objectContaining({
+          isDefault: true,
+          connectionStatus: "connected",
+          setupStatus: "complete",
+        }),
+      );
       await expect(
         own(() => {
           return connectors.listBuiltinConnectorAccounts(peer, "openai");

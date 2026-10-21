@@ -1,20 +1,27 @@
 import { http, HttpResponse } from "msw";
-import type {
-  CustomConnectorHttpResponse,
-  CustomConnectorMcpResponse,
-  CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
+  type CustomConnectorHttpResponse,
+  type CustomConnectorMcpResponse,
+  type CustomConnectorResponse,
   customConnectorHttpResponseSchema,
   customConnectorMcpResponseSchema,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+
 import type { McpConnector } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 
+interface CustomFixtureAccount {
+  readonly connected?: boolean;
+  readonly connectedAccountId?: string;
+  readonly connectedAccountUpdatedAt?: string;
+  readonly missingRequiredFields?: readonly string[];
+  readonly configuredFieldKeys?: readonly string[];
+}
+
 export function customConnector(
-  overrides: Partial<CustomConnectorHttpResponse> = {},
+  overrides: Partial<CustomConnectorHttpResponse> & CustomFixtureAccount = {},
 ): CustomConnectorHttpResponse {
-  return customConnectorHttpResponseSchema.parse({
+  const connector = customConnectorHttpResponseSchema.parse({
     kind: "http",
     id: "33333333-3333-4333-8333-333333333333",
     slug: "_acme-search",
@@ -37,19 +44,19 @@ export function customConnector(
     queryInjections: [],
     authMode: "manual",
     storageVersion: 1,
-    connected: false,
     missingRequiredFields: ["apiKey"],
     configuredFieldKeys: [],
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   });
+  return connector;
 }
 
 export function customMcpConnector(
-  overrides: Partial<CustomConnectorMcpResponse> = {},
+  overrides: Partial<CustomConnectorMcpResponse> & CustomFixtureAccount = {},
 ): CustomConnectorMcpResponse {
-  return customConnectorMcpResponseSchema.parse({
+  const connector = customConnectorMcpResponseSchema.parse({
     ...customConnector(),
     kind: "mcp",
     id: "44444444-4444-4444-8444-444444444444",
@@ -60,6 +67,7 @@ export function customMcpConnector(
     prefixTemplates: [],
     ...overrides,
   });
+  return connector;
 }
 
 export function stubCustomConnectors(
@@ -84,7 +92,11 @@ export function runMcpConnector(
     displayName: "Acme MCP",
     transport: "streamable-http",
     endpoint: "https://mcp.example.test/server",
-    connected: true,
+    runtimeAvailable: true,
+    connectionStatus: "connected",
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     ...overrides,
   };
 }

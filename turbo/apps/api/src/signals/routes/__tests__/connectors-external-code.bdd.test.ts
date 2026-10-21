@@ -367,18 +367,16 @@ describe("CONN-02: external-code session lifecycle", () => {
       code: "AWS-CODE",
       redirectUri: AWS_REDIRECT_URI,
     });
-    expect(complete.connector).toMatchObject({
-      slug: "aws",
+    expect(complete.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       externalId: "123456789012",
       externalUsername:
         "arn:aws:iam::123456789012:user/external-code (AIDAEXTERNALUSER)",
       oauthScopes: ["openid"],
     });
-    expect(complete.connector.tokenExpiresAt).not.toBeNull();
-    const tokenExpiresAtMs = Date.parse(
-      complete.connector.tokenExpiresAt ?? "",
-    );
+    expect(complete.account.tokenExpiresAt).not.toBeNull();
+    const tokenExpiresAtMs = Date.parse(complete.account.tokenExpiresAt ?? "");
     expect(tokenExpiresAtMs).toBeGreaterThanOrEqual(beforeComplete + 899_000);
     expect(tokenExpiresAtMs).toBeLessThanOrEqual(afterComplete + 901_000);
     expectNoVisibleSecret(complete, "aws-secret-access-key");
@@ -386,7 +384,7 @@ describe("CONN-02: external-code session lifecycle", () => {
     expectNoVisibleSecret(complete, "aws-session-token");
 
     const readBack = await connectorsApi.readConnectorBySlug(actor, "aws");
-    expect(readBack.id).toBe(complete.connector.id);
+    expect(readBack.id).toBe(complete.connectionId);
     expect(readBack.connectionStatus).toBe("connected");
 
     const listed = await connectorsApi.listBuiltinConnectors(actor);
@@ -394,7 +392,7 @@ describe("CONN-02: external-code session lifecycle", () => {
       listed.connectors.find((connector) => {
         return connector.slug === "aws";
       })?.id,
-    ).toBe(complete.connector.id);
+    ).toBe(complete.connectionId);
     for (const name of [
       "AWS_ACCESS_KEY_ID",
       "AWS_SECRET_ACCESS_KEY",
@@ -425,9 +423,9 @@ describe("CONN-02: external-code session lifecycle", () => {
       sessionToken: session.sessionToken,
       code: awsVerificationCode(session.authorizationUrl),
     });
-    expect(replay.connector.id).toBe(complete.connector.id);
-    expect(replay.connector).toMatchObject({
-      slug: "aws",
+    expect(replay.connectionId).toBe(complete.connectionId);
+    expect(replay.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       externalId: "123456789012",
     });
@@ -437,7 +435,7 @@ describe("CONN-02: external-code session lifecycle", () => {
       actor,
       "aws",
       "cli",
-      { intent: "reconnect", connectionId: complete.connector.id },
+      { intent: "reconnect", connectionId: complete.connectionId },
     );
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "aws");
     const rejectedReconnect = await connectorsApi.requestExternalCodeComplete(
@@ -499,7 +497,7 @@ describe("CONN-02: external-code session lifecycle", () => {
       },
     );
 
-    expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+    expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
     const accounts = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
       "aws",
@@ -507,11 +505,11 @@ describe("CONN-02: external-code session lifecycle", () => {
     expect(accounts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: defaultAccount.connector.id,
+          id: defaultAccount.connectionId,
           isDefault: true,
         }),
         expect.objectContaining({
-          id: siblingAccount.connector.id,
+          id: siblingAccount.connectionId,
           isDefault: false,
         }),
       ]),
@@ -527,7 +525,7 @@ describe("CONN-02: external-code session lifecycle", () => {
         connectorAccountsContract,
       ).rename({
         headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: siblingAccount.connector.id },
+        params: { connectionId: siblingAccount.connectionId },
         body: {
           target: { kind: "builtin", connectorSlug: "aws" },
           displayName: "Renamed AWS sibling",
@@ -540,8 +538,9 @@ describe("CONN-02: external-code session lifecycle", () => {
       sessionToken: siblingSession.sessionToken,
       code: awsVerificationCode(siblingSession.authorizationUrl),
     });
-    expect(replay.connector).toStrictEqual({
-      ...siblingAccount.connector,
+    expect(replay.account).toStrictEqual({
+      ...siblingAccount.account,
+      displayName: renamed.body.displayName,
       updatedAt: renamed.body.updatedAt,
     });
     expect(provider.tokenRequests).toHaveLength(2);
@@ -549,12 +548,12 @@ describe("CONN-02: external-code session lifecycle", () => {
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "aws",
-      siblingAccount.connector.id,
+      siblingAccount.connectionId,
     );
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "aws",
-      defaultAccount.connector.id,
+      defaultAccount.connectionId,
     );
     await connectorsApi.deleteFeatureSwitches(actor);
   });
@@ -602,15 +601,15 @@ describe("CONN-02: external-code session lifecycle", () => {
       sessionToken: second.sessionToken,
       code: awsVerificationCode(second.authorizationUrl),
     });
-    expect(retried.connector).toMatchObject({
-      slug: "aws",
+    expect(retried.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       externalId: "123456789012",
     });
     expect(provider.tokenRequests).toHaveLength(2);
 
     const readBack = await connectorsApi.readConnectorBySlug(actor, "aws");
-    expect(readBack.id).toBe(retried.connector.id);
+    expect(readBack.id).toBe(retried.connectionId);
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "aws");
   });
@@ -717,8 +716,8 @@ describe("CONN-02: external-code session lifecycle", () => {
         grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer-session-token",
       },
     ]);
-    expect(complete.connector).toMatchObject({
-      slug: "nintendo-store",
+    expect(complete.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "nintendo-store" },
       authMethod: "api",
       externalId: "bdd-nintendo-account-id",
       externalUsername: "bdd-nintendo-player",
@@ -730,7 +729,7 @@ describe("CONN-02: external-code session lifecycle", () => {
         "user.links[].id",
       ],
     });
-    expect(complete.connector.tokenExpiresAt).not.toBeNull();
+    expect(complete.account.tokenExpiresAt).not.toBeNull();
     expectNoVisibleSecret(complete, "bdd-nintendo-session-token");
     expectNoVisibleSecret(complete, "bdd-nintendo-access-token");
 
@@ -823,14 +822,17 @@ describe("CONN-02: external-code session lifecycle", () => {
         notificationToken: null,
       },
     });
-    expect(complete.connector).toMatchObject({
-      slug: "nintendo-switch-parental-controls",
+    expect(complete.account).toMatchObject({
+      target: {
+        kind: "builtin",
+        connectorSlug: "nintendo-switch-parental-controls",
+      },
       authMethod: "api",
       externalId: "bdd-switch-parental-controls-account-id",
       externalUsername: "bdd-nintendo-parent",
       oauthScopes: NINTENDO_SWITCH_PARENTAL_CONTROLS_SCOPES,
     });
-    expect(complete.connector.tokenExpiresAt).not.toBeNull();
+    expect(complete.account.tokenExpiresAt).not.toBeNull();
     expectNoVisibleSecret(
       complete,
       NINTENDO_SWITCH_PARENTAL_CONTROLS_INITIAL_SESSION_TOKEN,
@@ -900,13 +902,13 @@ describe("CONN-02: external-code session lifecycle", () => {
     expect(provider.federatedSmartDeviceIds[1]).not.toBe(
       provider.federatedSmartDeviceIds[0],
     );
-    expect(replacementComplete.connector.id).not.toBe(complete.connector.id);
+    expect(replacementComplete.connectionId).not.toBe(complete.connectionId);
     expect(provider.logoutBodies).toStrictEqual([]);
 
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "nintendo-switch-parental-controls",
-      complete.connector.id,
+      complete.connectionId,
     );
     expect(provider.logoutBodies).toStrictEqual([
       { smartDeviceId: provider.federatedSmartDeviceIds[0] },
@@ -916,7 +918,7 @@ describe("CONN-02: external-code session lifecycle", () => {
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "nintendo-switch-parental-controls",
-      replacementComplete.connector.id,
+      replacementComplete.connectionId,
     );
     expect(
       provider.tokenBodies.map((body) => {
@@ -982,8 +984,8 @@ describe("CONN-02: external-code session lifecycle", () => {
 
     provider.releaseTokenResponse();
     const heldComplete = await heldCompletePromise;
-    expect(heldComplete.connector).toMatchObject({
-      slug: "aws",
+    expect(heldComplete.account).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       externalId: "123456789012",
     });
@@ -998,7 +1000,10 @@ describe("CONN-02: external-code session lifecycle", () => {
         code: awsVerificationCode(second.authorizationUrl),
       },
     );
-    expect(secondComplete.connector.slug).toBe("aws");
+    expect(secondComplete.account.target).toStrictEqual({
+      kind: "builtin",
+      connectorSlug: "aws",
+    });
     expect(provider.tokenRequests).toHaveLength(2);
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "aws");

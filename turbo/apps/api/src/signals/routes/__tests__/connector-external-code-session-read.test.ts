@@ -123,9 +123,9 @@ async function expectReplay(
   );
   expect(replay).toMatchObject({
     status: "complete",
-    connector: {
+    account: {
       id: connectionId,
-      slug: "aws",
+      target: { kind: "builtin", connectorSlug: "aws" },
       authMethod: "cli",
       connectionStatus: "connected",
     },
@@ -158,8 +158,8 @@ describe("external-code owned-session read", () => {
     );
     expect(completed).toMatchObject({
       status: "complete",
-      connector: {
-        slug: "aws",
+      account: {
+        target: { kind: "builtin", connectorSlug: "aws" },
         authMethod: "cli",
         connectionStatus: "connected",
       },
@@ -167,13 +167,13 @@ describe("external-code owned-session read", () => {
     expectNoSecrets(completed, [session.sessionToken]);
     const readBack = await connectors.readConnectorBySlug(actor, "aws");
     expect(readBack).toMatchObject({
-      id: completed.connector.id,
+      id: completed.connectionId,
       slug: "aws",
       authMethod: "cli",
     });
 
     await expectIdentityBoundaries(actor, peer, foreignOrg, session);
-    await expectReplay(actor, session, completed.connector.id);
+    await expectReplay(actor, session, completed.connectionId);
     const accounts = await connectors.listBuiltinConnectorAccounts(
       actor,
       "aws",
@@ -182,7 +182,7 @@ describe("external-code owned-session read", () => {
       accounts.map((account) => {
         return account.id;
       }),
-    ).toStrictEqual([completed.connector.id]);
+    ).toStrictEqual([completed.connectionId]);
   });
 
   it("requires each exact token across real supersession and completed-account replay", async () => {
@@ -210,8 +210,8 @@ describe("external-code owned-session read", () => {
     );
     expect(completed).toMatchObject({
       status: "complete",
-      connector: {
-        slug: "aws",
+      account: {
+        target: { kind: "builtin", connectorSlug: "aws" },
         authMethod: "cli",
         connectionStatus: "connected",
       },
@@ -220,7 +220,7 @@ describe("external-code owned-session read", () => {
     await expectSessionNotFound(actor, "aws", first, latest.sessionToken);
     await expectSessionNotFound(actor, "aws", latest, first.sessionToken);
     await expectSuperseded(actor, first);
-    await expectReplay(actor, latest, completed.connector.id);
+    await expectReplay(actor, latest, completed.connectionId);
     const accounts = await connectors.listBuiltinConnectorAccounts(
       actor,
       "aws",
@@ -229,6 +229,6 @@ describe("external-code owned-session read", () => {
       accounts.map((account) => {
         return account.id;
       }),
-    ).toStrictEqual([completed.connector.id]);
+    ).toStrictEqual([completed.connectionId]);
   });
 });

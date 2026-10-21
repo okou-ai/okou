@@ -17,36 +17,32 @@ import {
   type ConnectorAccountSelection,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type {
-  PublicConnectorCatalogAuthMethodDetail,
-  PublicConnectorCatalogPermissionDetail,
+import {
+  type PublicConnectorCatalogAuthMethodDetail,
+  type PublicConnectorCatalogPermissionDetail,
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
+  builtinConnectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+} from "@okouai/api-contracts/contracts/connectors";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorValueInput,
+  type CustomConnectorHttpResponse,
+  type CustomConnectorMcpResponse,
+  type CustomConnectorResponse,
+  customConnectorsContract,
+  customConnectorValuesContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import {
-  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
-import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorValueInput,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  type CustomConnectorHttpReaderResponse as CustomConnectorHttpResponse,
-  type CustomConnectorMcpReaderResponse as CustomConnectorMcpResponse,
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
-  customConnectorsReaderContract as customConnectorsContract,
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import {
   chatThreadConnectorSelectionContract,
   type ChatThreadServiceTier,

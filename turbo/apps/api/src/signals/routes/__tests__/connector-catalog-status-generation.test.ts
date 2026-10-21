@@ -113,9 +113,6 @@ describe("single-connector current catalog status", () => {
     expect(initial.body.connector).toMatchObject({
       slug: "openai",
       label: "Initial status catalog",
-      connected: true,
-      connectionStatus: "connected",
-      connection: { id: connection.id, authMethod: "api-token" },
     });
 
     serve(catalog(`${generation}.replacement`, "Replacement status catalog"));
@@ -158,6 +155,14 @@ describe("single-connector current catalog status", () => {
         ...initial.body.connector,
         label: "Restored status catalog",
       },
+    });
+    await expect(
+      connectors.readBuiltinConnectorAccount(owner, "openai", connection.id),
+    ).resolves.toMatchObject({
+      id: connection.id,
+      target: { kind: "builtin", connectorSlug: "openai" },
+      connectionStatus: "connected",
+      setupStatus: "complete",
     });
   });
 });

@@ -44,8 +44,8 @@ async function completeSession(
   if (completed.status !== "complete") {
     throw new Error(`Expected completed device session: ${completed.status}`);
   }
-  expect(completed.connector).toMatchObject({
-    slug: "test-oauth-device",
+  expect(completed.account).toMatchObject({
+    target: { kind: "builtin", connectorSlug: "test-oauth-device" },
     authMethod: "oauth",
     connectionStatus: "connected",
   });
@@ -123,12 +123,12 @@ describe("Builtin device-auth session creation", () => {
           actor,
           await connectors.startDeviceAuth(actor, "test-oauth-device", "oauth"),
         );
-        expect(siblingAccount.connector.id).not.toBe(
-          defaultAccount.connector.id,
+        expect(siblingAccount.connectionId).not.toBe(
+          defaultAccount.connectionId,
         );
         const choice = {
           intent: "reconnect",
-          connectionId: siblingAccount.connector.id,
+          connectionId: siblingAccount.connectionId,
         } as const;
         const pending = await connectors.startDeviceAuth(
           actor,
@@ -155,7 +155,7 @@ describe("Builtin device-auth session creation", () => {
         await expect(
           completeSession(actor, defaultSession),
         ).resolves.toMatchObject({
-          connector: { id: defaultAccount.connector.id },
+          connectionId: defaultAccount.connectionId,
         });
         const foreignAccount = await completeSession(
           foreign.actor,
@@ -167,7 +167,7 @@ describe("Builtin device-auth session creation", () => {
           "oauth",
           undefined,
           [404],
-          { intent: "reconnect", connectionId: foreignAccount.connector.id },
+          { intent: "reconnect", connectionId: foreignAccount.connectionId },
         );
         expect(foreignReconnect.body).toStrictEqual({
           error: { code: "NOT_FOUND", message: "Connector account not found" },
@@ -175,14 +175,14 @@ describe("Builtin device-auth session creation", () => {
         await expect(
           completeSession(actor, replacement),
         ).resolves.toMatchObject({
-          connector: { id: siblingAccount.connector.id },
+          connectionId: siblingAccount.connectionId,
         });
         await expectAccounts(actor, [
-          { id: defaultAccount.connector.id, isDefault: true },
-          { id: siblingAccount.connector.id, isDefault: false },
+          { id: defaultAccount.connectionId, isDefault: true },
+          { id: siblingAccount.connectionId, isDefault: false },
         ]);
         await expectAccounts(foreign.actor, [
-          { id: foreignAccount.connector.id, isDefault: true },
+          { id: foreignAccount.connectionId, isDefault: true },
         ]);
       });
     });
@@ -213,14 +213,14 @@ describe("Builtin device-auth session creation", () => {
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "test-oauth-device",
-        deletedAccount.connector.id,
+        deletedAccount.connectionId,
       );
       const pending = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.connectionId },
       );
       const rejected = await connectors.requestDeviceAuthStart(
         actor,
@@ -228,17 +228,17 @@ describe("Builtin device-auth session creation", () => {
         "oauth",
         undefined,
         [404],
-        { intent: "reconnect", connectionId: deletedAccount.connector.id },
+        { intent: "reconnect", connectionId: deletedAccount.connectionId },
       );
       expect(rejected.body).toStrictEqual({
         error: { code: "NOT_FOUND", message: "Connector account not found" },
       });
       await expect(completeSession(actor, pending)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expectAccounts(actor, [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
     });
   });
@@ -269,7 +269,7 @@ describe("Builtin device-auth session creation", () => {
       );
       const choice = {
         intent: "reconnect",
-        connectionId: siblingAccount.connector.id,
+        connectionId: siblingAccount.connectionId,
       } as const;
       const pending = await connectors.startDeviceAuth(
         actor,
@@ -302,17 +302,17 @@ describe("Builtin device-auth session creation", () => {
       provider.release();
       await expect(inFlight).resolves.toStrictEqual(supersededResponse);
       await expectAccounts(actor, [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
       mockTestOAuthDeviceConnectorProvider();
       await expect(completeSession(actor, replacement)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expectSuperseded(actor, pending);
       await expectAccounts(actor, [
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.connectionId, isDefault: true },
+        { id: siblingAccount.connectionId, isDefault: false },
       ]);
     });
   });

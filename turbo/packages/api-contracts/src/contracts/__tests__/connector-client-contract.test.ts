@@ -64,9 +64,6 @@ const customHttpConnectorPayloadBase = {
   permissionBundleRef: null,
   skillMarkdown: null,
   storageVersion: 1,
-  connected: true,
-  missingRequiredFields: [],
-  configuredFieldKeys: ["token"],
   createdAt: "2026-08-11T00:00:00.000Z",
   updatedAt: "2026-08-11T00:00:00.000Z",
   prefixTemplates: ["https://api.example.test"],
@@ -120,29 +117,39 @@ const connectorIdentity = {
 } as const;
 
 describe("connector client response contracts", () => {
+  it("parses canonical completed-operation receipts", () => {
+    const receipt = { connectionId: connector.id };
+    for (const schema of [
+      builtinConnectorManualGrantContract.connect.responses[200],
+      builtinConnectorNoAuthGrantContract.connect.responses[200],
+    ]) {
+      expect(schema.parse(receipt)).toStrictEqual(receipt);
+    }
+    const automatic = { result: "connected", ...receipt };
+    expect(
+      builtinConnectorAutomaticContract.start.responses[200].parse(automatic),
+    ).toStrictEqual(automatic);
+    const completion = { status: "complete", ...receipt };
+    for (const schema of [
+      builtinConnectorOauthDeviceAuthSessionPollResponseSchema,
+      builtinConnectorExternalCodeSessionCompleteResponseSchema,
+    ]) {
+      expect(schema.parse(completion)).toStrictEqual(completion);
+    }
+    const values = { ...customHttpConnectorPayload, ...receipt };
+    expect(setCustomConnectorValuesResponseSchema.parse(values)).toStrictEqual(
+      values,
+    );
+    const custom = { ...automatic, connector: customHttpConnectorPayload };
+    expect(
+      startCustomConnectorOAuth2ResponseSchema.parse(custom),
+    ).toStrictEqual(custom);
+  });
+
   it.each([false, true])(
-    "preserves optional operation identity when present: %s",
-    (prepared) => {
-      const identity = prepared ? { connectionId: connector.id } : {};
-      const manual = { ...connector, ...identity };
-      expect(
-        builtinConnectorManualGrantContract.connect.responses[200].parse(
-          manual,
-        ),
-      ).toStrictEqual(manual);
-      expect(
-        builtinConnectorNoAuthGrantContract.connect.responses[200].parse(
-          manual,
-        ),
-      ).toStrictEqual(manual);
-      const automatic = {
-        result: "connected",
-        connectedAccountId: connector.id,
-        ...identity,
-      };
-      expect(
-        builtinConnectorAutomaticContract.start.responses[200].parse(automatic),
-      ).toStrictEqual(automatic);
+    "keeps optional identity on pending authorization and proposal outcomes: %s",
+    (known) => {
+      const identity = known ? { connectionId: connector.id } : {};
       const authorization = {
         result: "authorization",
         authorizationUrl: "https://example.test/authorize",
@@ -154,44 +161,10 @@ describe("connector client response contracts", () => {
           authorization,
         ),
       ).toStrictEqual(authorization);
-      const completion = { status: "complete", connector, ...identity };
+      const proposal = { connector: customHttpConnectorPayload, ...identity };
       expect(
-        builtinConnectorOauthDeviceAuthSessionPollResponseSchema.parse(
-          completion,
-        ),
-      ).toStrictEqual(completion);
-      expect(
-        builtinConnectorExternalCodeSessionCompleteResponseSchema.parse(
-          completion,
-        ),
-      ).toStrictEqual(completion);
-      const values = { ...customHttpConnectorPayload, ...identity };
-      expect(
-        setCustomConnectorValuesResponseSchema.parse(values),
-      ).toMatchObject(values);
-      const automaticConnector = {
-        ...customHttpConnectorPayloadBase,
-        kind: "mcp",
-        authMode: "automatic",
-        endpoint: "https://mcp.example.test/server",
-        transport: "streamable-http",
-        prefixTemplates: [],
-        fields: [],
-        headerInjections: [],
-        connectedAccountId: connector.id,
-      };
-      expect(
-        startCustomConnectorOAuth2ResponseSchema.parse({
-          ...automatic,
-          connector: automaticConnector,
-        }),
-      ).toMatchObject({ ...automatic, connector: automaticConnector });
-      expect(
-        saveCustomConnectorProposalResponseSchema.parse({
-          connector: customHttpConnectorPayload,
-          ...identity,
-        }),
-      ).toMatchObject({ connector: customHttpConnectorPayload, ...identity });
+        saveCustomConnectorProposalResponseSchema.parse(proposal),
+      ).toStrictEqual(proposal);
     },
   );
 
@@ -371,9 +344,6 @@ describe("custom connector response contracts", () => {
       permissionBundleRef: null,
       skillMarkdown: null,
       storageVersion: 1,
-      connected: false,
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
       createdAt: "2026-08-11T00:00:00.000Z",
       updatedAt: "2026-08-11T00:00:00.000Z",
       endpoint: "https://mcp.example.test",
@@ -411,9 +381,6 @@ describe("custom connector response contracts", () => {
       permissionBundleRef: null,
       skillMarkdown: null,
       storageVersion: 1,
-      connected: true,
-      missingRequiredFields: [],
-      configuredFieldKeys: [],
       createdAt: "2026-08-11T00:00:00.000Z",
       updatedAt: "2026-08-11T00:00:00.000Z",
       endpoint: "https://mcp.example.test",

@@ -10,11 +10,11 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   chatThreadArtifactsContract,
   type ChatThreadArtifactRun,

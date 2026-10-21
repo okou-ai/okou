@@ -1,8 +1,10 @@
-import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import {
+  type PublicConnectorCatalogIcon,
+  connectorCatalogContract,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 

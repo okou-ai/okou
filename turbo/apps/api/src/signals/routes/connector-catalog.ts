@@ -40,9 +40,13 @@ import {
   connectorCatalogSlugJoin,
   connectorCatalogSlugSourceFromRows,
 } from "../services/connector-catalog-slug-source.service";
-import { builtinConnectorCatalogConnectionList } from "../services/connector-data.service";
 import { notFound, providerUnavailable } from "../../lib/error";
 import { settle } from "../utils";
+import { builtinConnectorAccountSlugs } from "../services/connector-account-lifecycle.service";
+
+const savedBuiltinSlugs$ = builtinConnectorAccountSlugs(
+  organizationAuthContext$,
+);
 
 export const connectorCatalogAuth = {
   requireOrganization: true,
@@ -113,34 +117,17 @@ const listConnectorCatalogInner$ = command(
 );
 
 const listConnectorCatalogStatusInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
+  async ({ set }, signal: AbortSignal) => {
     const context = await set(connectorCatalogRequestContext$);
-    signal.throwIfAborted();
-
-    const connectorState = await settleConnectorCatalogRead(
-      get(
-        builtinConnectorCatalogConnectionList({
-          orgId: auth.orgId,
-          userId: auth.userId,
-        }),
-      ),
-      signal,
-    );
-    if (!connectorState.ok) {
-      return connectorCatalogUnavailable();
-    }
     signal.throwIfAborted();
 
     const catalogStatusDb = context.db;
     const catalogStatusFeatureStates = context.featureStates;
-    const catalogStatusConnections = connectorState.value;
     const catalog = await settleConnectorCatalogRead(
       (async () => {
         const read = await listExternalPublicConnectorCatalogStatus({
           db: catalogStatusDb,
           featureStates: catalogStatusFeatureStates,
-          connections: catalogStatusConnections,
           referenceConnectorSlugs: [],
         });
         return read.status;
@@ -156,12 +143,12 @@ const listConnectorCatalogStatusInner$ = command(
 );
 
 /**
- * Connect items for a connect surface, joined with the caller's connections.
+ * Metadata for connect surfaces.
  * Shared by the one-click picker and the onboarding sources.
  */
 export const listConnectorCatalogConnectItems$ = command(
   async (
-    { get, set },
+    { set },
     filter:
       | {
           readonly kind: "slugs";
@@ -170,29 +157,13 @@ export const listConnectorCatalogConnectItems$ = command(
       | { readonly kind: "one-click" },
     signal: AbortSignal,
   ) => {
-    const auth = get(organizationAuthContext$);
     const context = await set(connectorCatalogRequestContext$);
-    signal.throwIfAborted();
-
-    const connectorState = await settleConnectorCatalogRead(
-      get(
-        builtinConnectorCatalogConnectionList({
-          orgId: auth.orgId,
-          userId: auth.userId,
-        }),
-      ),
-      signal,
-    );
-    if (!connectorState.ok) {
-      return connectorCatalogUnavailable();
-    }
     signal.throwIfAborted();
 
     const catalog = await settleConnectorCatalogRead(
       (async () => {
         const catalogDb = context.db;
         const featureStates = context.featureStates;
-        const connections = connectorState.value;
         let source: ConnectorCatalogSlugSource<ConnectorCatalogDisplayConnector>;
         if (filter.kind === "slugs") {
           const slugs = filter.connectorSlugs;
@@ -238,7 +209,6 @@ export const listConnectorCatalogConnectItems$ = command(
         return connectorCatalogConnectItemsFromSource({
           catalog: source,
           featureStates,
-          connections,
           oneClickOnly: filter.kind === "one-click",
         });
       })(),
@@ -264,28 +234,14 @@ const listOneClickConnectorCatalogInner$ = command(
 
 const discoverConnectorCatalogInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
     const query = get(queryOf(connectorCatalogContract.discovery));
     const context = await set(connectorCatalogRequestContext$);
     signal.throwIfAborted();
-
-    const connectorState = await settleConnectorCatalogRead(
-      get(
-        builtinConnectorCatalogConnectionList({
-          orgId: auth.orgId,
-          userId: auth.userId,
-        }),
-      ),
-      signal,
-    );
-    if (!connectorState.ok) {
-      return connectorCatalogUnavailable();
-    }
+    const savedConnectorSlugs = await get(savedBuiltinSlugs$);
     signal.throwIfAborted();
 
     const catalogDiscoveryDb = context.db;
     const catalogDiscoveryFeatureStates = context.featureStates;
-    const catalogDiscoveryConnections = connectorState.value;
     const catalogDiscoveryKeyword = query.keyword;
     const catalogDiscoveryCategory = query.category;
     const catalog = await settleConnectorCatalogRead(
@@ -293,7 +249,7 @@ const discoverConnectorCatalogInner$ = command(
         const read = await discoverExternalPublicConnectorCatalogStatus({
           db: catalogDiscoveryDb,
           featureStates: catalogDiscoveryFeatureStates,
-          connections: catalogDiscoveryConnections,
+          savedConnectorSlugs,
           keyword: catalogDiscoveryKeyword,
           category: catalogDiscoveryCategory,
           referenceConnectorSlugs: [],
@@ -342,24 +298,9 @@ const connectorCatalogStatusSource$ = computed(async (get) => {
 
 const getConnectorCatalogInner$ = command(
   async ({ get }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
     const featureStates = getAllFeatureStates(
       await get(connectorCatalogFeatureContext$),
     );
-    signal.throwIfAborted();
-
-    const connectorState = await settleConnectorCatalogRead(
-      get(
-        builtinConnectorCatalogConnectionList({
-          orgId: auth.orgId,
-          userId: auth.userId,
-        }),
-      ),
-      signal,
-    );
-    if (!connectorState.ok) {
-      return connectorCatalogUnavailable();
-    }
     signal.throwIfAborted();
 
     const params = get(pathParamsOf(connectorCatalogContract.get));
@@ -370,7 +311,6 @@ const getConnectorCatalogInner$ = command(
           catalog,
           connectorSlug: params.connectorSlug,
           featureStates,
-          connections: connectorState.value,
         });
       })(),
       signal,

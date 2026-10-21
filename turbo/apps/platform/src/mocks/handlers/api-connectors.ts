@@ -10,33 +10,32 @@ import type {
   ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
+  connectorCatalogContract,
   isOneClickConnectorGrantKind,
+  publicConnectorCatalogConnectItemSchema,
   type PublicConnectorCatalogAuthMethodDetail,
+  type PublicConnectorCatalogConnectItem,
   type PublicConnectorCatalogPermissionDetail,
+  type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  onboardingSourcesReaderContract as onboardingSourcesContract,
-  type PublicConnectorCatalogConnectReaderItem as PublicConnectorCatalogConnectItem,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/contracts/onboarding";
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+  onboardingSourcesContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import {
+  builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorScopeDiffContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  builtinConnectorExternalCodeSessionReaderContract as builtinConnectorExternalCodeSessionContract,
-  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
-  builtinConnectorOauthDeviceAuthSessionReaderContract as builtinConnectorOauthDeviceAuthSessionContract,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { customConnectorsReaderContract as customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
@@ -371,9 +370,7 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
 export function connectorCatalogConnectItem(
   connector: PublicConnectorCatalogStatusItem,
 ): PublicConnectorCatalogConnectItem {
-  return connectorCatalogContract.oneClick.responses[200].shape.connectors.element.parse(
-    connector,
-  );
+  return publicConnectorCatalogConnectItemSchema.parse(connector);
 }
 
 export const apiConnectorsHandlers = [
@@ -722,12 +719,11 @@ export const apiConnectorsHandlers = [
         params.connectorSlug,
       );
       const response =
-        builtinConnectorOauthDeviceAuthSessionContract.poll.responses[200].parse(
-          mockOauthDeviceAuthSessionPollResponses.shift() ?? {
-            status: "complete",
-            connectionId: connector.id,
-          },
-        );
+        mockOauthDeviceAuthSessionPollResponses.shift() ??
+        ({
+          status: "complete",
+          connectionId: connector.id,
+        } satisfies BuiltinConnectorOauthDeviceAuthSessionPollResponse);
       if (response.status === "complete") {
         upsertMockConnector({ ...connector, id: response.connectionId });
       }

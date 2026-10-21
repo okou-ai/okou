@@ -85,8 +85,6 @@ describe("GET /api/onboarding/sources", () => {
       return connector.slug === "github";
     });
     expect(github).toMatchObject({
-      connected: true,
-      connectionStatus: "connected",
       singleAuthCodeAuthMethodId: "oauth",
     });
     expect(github).not.toHaveProperty("permissionSummary");

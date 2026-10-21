@@ -73,8 +73,16 @@ teardown() {
         -X PUT \
         -d "$values_payload"
     assert_success
+    local connection_id
+    connection_id=$(jq -er \
+        '.connectionId | select(type == "string" and length > 0)' \
+        <<<"$output")
+    run runner_api_curl \
+        "/api/connector-accounts/${connection_id}?kind=custom&customConnectorId=${CUSTOM_CONNECTOR_ID}"
+    assert_success
     run jq -e '
-        .connected == true and
+        .connectionStatus == "connected" and
+        .setupStatus == "complete" and
         .missingRequiredFields == [] and
         .configuredFieldKeys == ["probe_secret"]
     ' <<<"$output"
@@ -221,14 +229,8 @@ EOF
     public_surfaces+="$default_account_response"$'\n'
     local default_connection_id
     default_connection_id=$(jq -er \
-        '.connectedAccountId | select(type == "string" and length > 0)' \
+        '.connectionId | select(type == "string" and length > 0)' \
         <<<"$default_account_response")
-    run jq -e '
-        .connected == true and
-        .missingRequiredFields == [] and
-        (.configuredFieldKeys | sort) == ["host", "probe_secret"]
-    ' <<<"$default_account_response"
-    assert_success
 
     local selected_values_payload
     selected_values_payload=$(jq -nc \
@@ -250,7 +252,7 @@ EOF
     public_surfaces+="$selected_account_response"$'\n'
     local selected_connection_id
     selected_connection_id=$(jq -er \
-        '.connectedAccountId | select(type == "string" and length > 0)' \
+        '.connectionId | select(type == "string" and length > 0)' \
         <<<"$selected_account_response")
     [[ "$selected_connection_id" != "$default_connection_id" ]]
 
@@ -274,7 +276,10 @@ EOF
                 } and
                 .displayName == "Default account" and
                 .isDefault == true and
-                .connectionStatus == "connected"
+                .connectionStatus == "connected" and
+                .setupStatus == "complete" and
+                .missingRequiredFields == [] and
+                (.configuredFieldKeys | sort) == ["host", "probe_secret"]
             ) and
             any(.connections[];
                 .id == $selectedConnectionId and
@@ -284,7 +289,10 @@ EOF
                 } and
                 .displayName == "Selected account" and
                 .isDefault == false and
-                .connectionStatus == "connected"
+                .connectionStatus == "connected" and
+                .setupStatus == "complete" and
+                .missingRequiredFields == [] and
+                (.configuredFieldKeys | sort) == ["host", "probe_secret"]
             )
         ' <<<"$accounts_response"
     echo "$output"

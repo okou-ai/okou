@@ -40,6 +40,7 @@ import {
   exists,
   ilike,
   inArray,
+  isNotNull,
   isNull,
   lt,
   ne,
@@ -352,7 +353,10 @@ function builtinConnection(
   snapshot: ConnectorRuntimeAuthLookup | null,
   now: Date,
   includeScopeMismatch = false,
-): ConnectorAccountConnection | null {
+): Omit<
+  ConnectorAccountConnection,
+  keyof ReturnType<typeof connectorAccountSetup>
+> | null {
   const parsedSlug = connectorSlugSchema.safeParse(row.connectorSlug);
   if (!parsedSlug.success) {
     throw new Error("Stored connector account has an invalid builtin identity");
@@ -433,7 +437,10 @@ function builtinConnection(
 function customConnection(
   row: ConnectorAccountRow,
   now: Date,
-): ConnectorAccountConnection | null {
+): Omit<
+  ConnectorAccountConnection,
+  keyof ReturnType<typeof connectorAccountSetup>
+> | null {
   if (
     row.customConnectorId === null ||
     row.definitionAuthMode === null ||
@@ -581,6 +588,34 @@ function connectorAccountAuthLookup(
       )
       .where(connectorCatalogCurrentWhere());
     return accountAuthLookupFromCatalogRows(catalogRows, connectorSlugs);
+  });
+}
+
+interface ConnectorAccountOwnerScope {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+/** Saved membership for discovery, independent of default-account readiness. */
+export function builtinConnectorAccountSlugs(
+  owner$: Computed<ConnectorAccountOwnerScope>,
+): Computed<Promise<readonly ConnectorSlug[]>> {
+  return computed(async (get) => {
+    const owner = get(owner$);
+    const db = get(db$);
+    const rows = await db
+      .selectDistinct({ connectorSlug: connectors.connectorSlug })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, owner.orgId),
+          eq(connectors.userId, owner.userId),
+          isNotNull(connectors.connectorSlug),
+        ),
+      );
+    return rows.map((row) => {
+      return connectorSlugSchema.parse(row.connectorSlug);
+    });
   });
 }
 

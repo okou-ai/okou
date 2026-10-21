@@ -1,7 +1,9 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import type { CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   getAgent,
   getAgentCustomConnectorGrants,

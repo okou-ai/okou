@@ -10,16 +10,14 @@ import {
 import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
-  builtinConnectorManualGrantReaderContract as builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract,
-} from "@okouai/api-contracts/contracts/connector-operation-readers";
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  connectorCatalogReaderContract as connectorCatalogContract,
-  type PublicConnectorCatalogStatusReaderItem as PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog-readers";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";

@@ -366,7 +366,7 @@ describe("connector catalog v4 preparation", () => {
               }),
               [200],
             );
-            created.connectionId = connected.body.id;
+            created.connectionId = connected.body.connectionId;
           } else {
             mockAutomaticMcpOAuthProvider(context, {
               registration: "none",
@@ -384,7 +384,7 @@ describe("connector catalog v4 preparation", () => {
             if (connected.body.result !== "connected") {
               throw new Error("Expected accepted no-auth Automatic connection");
             }
-            created.connectionId = connected.body.connectedAccountId;
+            created.connectionId = connected.body.connectionId;
           }
           const run = await runs.createThreadRun(actor, {
             agentId: agent.agentId,

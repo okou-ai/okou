@@ -34,7 +34,7 @@ teardown() {
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \
-        '.id | select(type == "string" and length > 0)' \
+        '.connectionId | select(type == "string" and length > 0)' \
         <<<"$output")
 
     local prompt

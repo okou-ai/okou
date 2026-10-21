@@ -30,6 +30,9 @@ function availableInspection(
   },
 ): ConnectorAccountInspectionResult {
   return {
+    setupStatus: "complete",
+    missingRequiredFields: [],
+    configuredFieldKeys: [],
     kind: "available",
     connectionId: CONNECTION_ID,
     target,

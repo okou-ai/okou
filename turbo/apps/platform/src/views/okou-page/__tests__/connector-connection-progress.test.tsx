@@ -7,13 +7,13 @@ import {
   builtinConnectorOauthStartContract,
   builtinConnectorOpenIdStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
+import {
+  type CustomConnectorOAuthConfig,
+  customConnectorOAuth2Contract,
+  customConnectorsContract,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import type { CustomConnectorOAuthConfig } from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  customConnectorOAuth2ReaderContract as customConnectorOAuth2Contract,
-  customConnectorsReaderContract as customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";

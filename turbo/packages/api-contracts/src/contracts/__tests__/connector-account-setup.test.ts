@@ -51,15 +51,15 @@ function payloads(target: ConnectorAccountTarget, setup: object) {
       displayName: "Example",
       transport: "streamable-http",
       endpoint: "https://mcp.example.test/server",
-      connected: true,
+      runtimeAvailable: true,
+      connectionStatus: "connected",
       ...setup,
     },
   };
 }
 
-describe.each(targets)("$kind account reader preparation", (target) => {
+describe.each(targets)("$kind account setup", (target) => {
   it.each([
-    {},
     {
       setupStatus: "complete",
       missingRequiredFields: [],
@@ -75,7 +75,7 @@ describe.each(targets)("$kind account reader preparation", (target) => {
       missingRequiredFields: [],
       configuredFieldKeys: ["token"],
     },
-  ])("retains old or additive setup metadata without defaults: %j", (setup) => {
+  ])("preserves canonical setup metadata: %j", (setup) => {
     const { account, inspection, mcp } = payloads(target, setup);
     expect(
       connectorAccountsContract.connections.responses[200].parse({
@@ -111,51 +111,5 @@ describe.each(targets)("$kind account reader preparation", (target) => {
         connectors: [admitted],
       }),
     ).toStrictEqual({ connectors: [admitted] });
-  });
-
-  it.each([
-    { setupStatus: "unknown" },
-    { setupStatus: null },
-    { missingRequiredFields: "token" },
-    { configuredFieldKeys: [42] },
-  ])("rejects malformed account metadata: %j", (setup) => {
-    const { account, inspection, mcp } = payloads(target, setup);
-    expect(
-      connectorAccountsContract.connections.responses[200].safeParse({
-        connections: [account],
-        nextCursor: null,
-      }).success,
-    ).toBe(false);
-    expect(
-      connectorAccountsContract.inspect.responses[200].safeParse({
-        results: [inspection],
-      }).success,
-    ).toBe(false);
-    expect(
-      mcpConnectorsContract.list.responses[200].safeParse({ connectors: [mcp] })
-        .success,
-    ).toBe(false);
-  });
-
-  it("keeps unrelated fields and unavailable inspection details out of strict account responses", () => {
-    const { account } = payloads(target, {});
-    expect(
-      connectorAccountsContract.connections.responses[200].safeParse({
-        connections: [{ ...account, accessToken: "secret" }],
-        nextCursor: null,
-      }).success,
-    ).toBe(false);
-    expect(
-      connectorAccountsContract.inspect.responses[200].safeParse({
-        results: [
-          {
-            kind: "unavailable",
-            connectionId,
-            target,
-            setupStatus: "complete",
-          },
-        ],
-      }).success,
-    ).toBe(false);
   });
 });

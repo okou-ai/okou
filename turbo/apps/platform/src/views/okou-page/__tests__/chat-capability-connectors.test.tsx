@@ -20,19 +20,19 @@ import {
   bankingUserContract,
   type BankingAccessRequestStatusResponse,
 } from "@okouai/api-contracts/contracts/banking";
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
-
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   builtinConnectorsMainContract,
   builtinConnectorOauthStartContract,
+  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { builtinConnectorNoAuthGrantReaderContract as builtinConnectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connector-operation-readers";
 import {
-  customConnectorsReaderContract as customConnectorsContract,
-  customConnectorValuesReaderContract as customConnectorValuesContract,
-  type CustomConnectorReaderResponse as CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connector-readers";
+  customConnectorsContract,
+  customConnectorValuesContract,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";

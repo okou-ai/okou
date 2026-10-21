@@ -42,7 +42,7 @@ async function completeSession(
   if (completed.status !== "complete") {
     throw new Error(`Expected completed device session: ${completed.status}`);
   }
-  expect(completed.connector).toMatchObject({
+  expect(completed.account).toMatchObject({
     authMethod: "oauth",
     connectionStatus: "connected",
   });
@@ -99,10 +99,10 @@ describe("Builtin device-auth initial poll claims", () => {
         "oauth",
       );
       const siblingAccount = await completeSession(actor, siblingSession);
-      expect(siblingAccount.connector.id).not.toBe(defaultAccount.connector.id);
+      expect(siblingAccount.account.id).not.toBe(defaultAccount.account.id);
       const expected = accountIdentities([
-        { id: defaultAccount.connector.id, isDefault: true },
-        { id: siblingAccount.connector.id, isDefault: false },
+        { id: defaultAccount.account.id, isDefault: true },
+        { id: siblingAccount.account.id, isDefault: false },
       ]);
 
       const reconnect = await connectors.startDeviceAuth(
@@ -110,7 +110,7 @@ describe("Builtin device-auth initial poll claims", () => {
         "test-oauth-device",
         "oauth",
         undefined,
-        { intent: "reconnect", connectionId: siblingAccount.connector.id },
+        { intent: "reconnect", connectionId: siblingAccount.account.id },
       );
       mockTestOAuthDeviceConnectorProvider({ tokenBehavior: "emptyJson" });
       const failed = await connectors.requestDeviceAuthPoll(
@@ -129,14 +129,14 @@ describe("Builtin device-auth initial poll claims", () => {
       expect(accountIdentities(afterFailure)).toStrictEqual(expected);
       await expect(
         connectors.readConnectorBySlug(actor, "test-oauth-device"),
-      ).resolves.toMatchObject({ id: defaultAccount.connector.id });
+      ).resolves.toMatchObject({ id: defaultAccount.account.id });
 
       mockTestOAuthDeviceConnectorProvider();
       await expect(completeSession(actor, reconnect)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       await expect(completeSession(actor, reconnect)).resolves.toMatchObject({
-        connector: { id: siblingAccount.connector.id },
+        connectionId: siblingAccount.connectionId,
       });
       const afterRecovery = await connectors.listBuiltinConnectorAccounts(
         actor,
@@ -145,7 +145,7 @@ describe("Builtin device-auth initial poll claims", () => {
       expect(accountIdentities(afterRecovery)).toStrictEqual(expected);
       await expect(
         connectors.readConnectorBySlug(actor, "test-oauth-device"),
-      ).resolves.toMatchObject({ id: defaultAccount.connector.id });
+      ).resolves.toMatchObject({ id: defaultAccount.account.id });
     });
   });
 
@@ -236,7 +236,7 @@ describe("Builtin device-auth initial poll claims", () => {
         mockNow(startedAt + 30_001);
         mockTestOAuthDeviceConnectorProvider({ tokenScope: "read reclaimed" });
         const completed = await completeSession(actor, session);
-        expect(completed.connector.oauthScopes).toStrictEqual([
+        expect(completed.account.oauthScopes).toStrictEqual([
           "read",
           "reclaimed",
         ]);
@@ -254,7 +254,7 @@ describe("Builtin device-auth initial poll claims", () => {
         );
         expect(accounts).toStrictEqual([
           expect.objectContaining({
-            id: completed.connector.id,
+            id: completed.account.id,
             authMethod: "oauth",
             isDefault: true,
             oauthScopes: ["read", "reclaimed"],

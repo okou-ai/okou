@@ -7,7 +7,7 @@ import {
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { connectorCatalogReaderContract as connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog-readers";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,

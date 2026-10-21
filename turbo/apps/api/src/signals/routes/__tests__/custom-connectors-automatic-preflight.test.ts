@@ -245,7 +245,6 @@ describe("Automatic custom connector preflight", () => {
         connectors.readCustomConnector(actor, connector.id),
       ).resolves.toMatchObject({
         storageVersion: 2,
-        connected: false,
       });
     },
   );

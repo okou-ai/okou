@@ -11,8 +11,8 @@ import {
   customConnectorSlugSchema,
   isIntegrationManagedCustomConnector,
   type CustomConnectorSlug,
+  customConnectorManagedStatusSchema,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { customConnectorManagedStatusSchema } from "@okouai/api-contracts/contracts/custom-connector-readers";
 import { z } from "zod";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";

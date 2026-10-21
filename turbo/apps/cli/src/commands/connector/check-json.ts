@@ -247,7 +247,9 @@ function checkConnectionActions(
   } else if (
     memberStatus !== null
       ? memberStatus !== "connected"
-      : definition === null || !definition.connected
+      : definition === null ||
+        !isIntegrationManagedCustomConnector(definition) ||
+        !definition.connected
   ) {
     connectionActions.push({
       label: `Review ${label} accounts and agent access`,
@@ -271,6 +273,39 @@ function checkConnectionActions(
     );
   }
   return connectionActions;
+}
+
+/** Keep the CLI's current-member output separate from admitted Run account facts. */
+function currentMemberConnection(
+  target: ConnectorAccountTarget,
+  evidence: Awaited<ReturnType<typeof loadCheckEvidence>>,
+  runBound: boolean,
+) {
+  if (runBound) {
+    return null;
+  }
+  if (target.kind === "builtin") {
+    return evidence.currentConnection;
+  }
+  const definition = evidence.definition;
+  if (definition === null) {
+    return null;
+  }
+  if (isIntegrationManagedCustomConnector(definition)) {
+    return {
+      connected: definition.connected,
+      connectionId: definition.connectedAccountId ?? null,
+      missingRequiredFields: definition.missingRequiredFields,
+    };
+  }
+  const account = evidence.accountSummary?.defaultConnection;
+  return account
+    ? {
+        connected: evidence.memberStatus === "connected",
+        connectionId: account.id,
+        missingRequiredFields: account.missingRequiredFields,
+      }
+    : null;
 }
 
 export async function printConnectorCheckJson(
@@ -312,8 +347,7 @@ export async function printConnectorCheckJson(
     diagnostic.mode === "url" &&
     diagnostic.permission.kind === "unknown-endpoint";
   const evidence = await loadCheckEvidence(target, runBound, agentId);
-  const { definition, currentConnection, account, authorized, origin } =
-    evidence;
+  const { definition, account, authorized, origin } = evidence;
   const label =
     target.kind === "builtin"
       ? diagnostic.connector.label
@@ -369,17 +403,7 @@ export async function printConnectorCheckJson(
         account,
         accountSummary: evidence.accountSummary,
         memberStatus: evidence.memberStatus,
-        connection: runBound
-          ? null
-          : target.kind === "builtin"
-            ? currentConnection
-            : definition === null
-              ? null
-              : {
-                  connected: definition.connected,
-                  connectionId: definition.connectedAccountId ?? null,
-                  missingRequiredFields: definition.missingRequiredFields,
-                },
+        connection: currentMemberConnection(target, evidence, runBound),
         authorization: agentId === undefined ? null : { agentId, authorized },
         guidance: [
           "Routing and permission diagnostics describe current intended state; they do not confirm that the runner has applied the latest update.",

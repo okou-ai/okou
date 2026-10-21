@@ -1,10 +1,12 @@
 import {
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
+  builtinConnectorAccountFacts,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
-import { readBuiltinConnectorAccountFacts } from "@okouai/api-contracts/contracts/connector-catalog-readers";
-import { type CustomConnectorReaderResponse as CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connector-readers";
+import {
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   listConnectorAccountConnections,
   type ConnectorAccountConnectionsResult,
@@ -75,9 +77,6 @@ export function memberAccountStatus(
   if (account.connectionStatus === "reconnect-required") {
     return "reconnect-required";
   }
-  if (account.setupStatus === undefined) {
-    return "account-review-required";
-  }
   if (account.setupStatus !== "complete") return "setup-required";
   return "connected";
 }
@@ -105,7 +104,7 @@ export async function readMemberConnectorFacts(
   const account = accountSummary?.defaultConnection;
   const scopeMismatch =
     !("kind" in connector) && account
-      ? readBuiltinConnectorAccountFacts(connector, account).scopeMismatch
+      ? builtinConnectorAccountFacts(connector, account).scopeMismatch
       : undefined;
   const memberStatus = memberAccountStatus(accounts);
   return {
@@ -135,7 +134,7 @@ export function memberConnectorStatusText(facts: MemberConnectorFacts): string {
     case "setup-required":
       return facts.accountSummary?.defaultConnection?.setupStatus === "invalid"
         ? "setup invalid"
-        : `missing ${facts.accountSummary?.defaultConnection?.missingRequiredFields?.join(", ") ?? "configuration"}`;
+        : `missing ${facts.accountSummary?.defaultConnection?.missingRequiredFields.join(", ") ?? "configuration"}`;
     case "account-review-required":
       return "account review required";
     case "connected":

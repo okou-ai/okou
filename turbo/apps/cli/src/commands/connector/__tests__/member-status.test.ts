@@ -161,12 +161,6 @@ describe("current-member connector status", () => {
           changes: { setupStatus: "invalid" },
           expected: "setup-required",
         },
-        {
-          ...reader,
-          state: "unknown",
-          changes: { setupStatus: undefined },
-          expected: "account-review-required",
-        },
       ] satisfies readonly (typeof reader & {
         state: string;
         changes: Partial<ConnectorAccountConnection>;

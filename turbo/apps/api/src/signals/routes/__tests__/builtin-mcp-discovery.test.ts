@@ -69,7 +69,7 @@ describe("builtin MCP discovery authority", () => {
         {
           target: { kind: "builtin", connectorSlug: "manual-mcp" },
           connectionId: account.id,
-          connected: true,
+          runtimeAvailable: true,
         },
       ]);
       await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
