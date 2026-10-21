@@ -10,7 +10,7 @@ public struct ChatConnectorAccount: Decodable, Equatable, Sendable, Identifiable
   public let externalId: String?
   public let connectionStatus: String
   public let reconnectReason: String?
-  public let setupStatus: String?
+  public let setupStatus: String
   public var label: String {
     displayName ?? externalEmail ?? externalUsername ?? externalId ?? "Account"
   }
@@ -94,7 +94,6 @@ public struct ChatConnectorReceipt: Decodable, Sendable {
   public let authorizationUrl: URL?
   public let oauthAttemptId: String?
   public let connectionId: String?
-  public let connectedAccountId: String?
   public let sessionId: String?
   public let sessionToken: String?
   public let userCode: String?
@@ -105,10 +104,7 @@ public struct ChatConnectorReceipt: Decodable, Sendable {
   public let errorMessage: String?
   public var operatedID: String {
     get throws {
-      if let connectionId, let connectedAccountId, connectionId != connectedAccountId {
-        throw APIClientError.invalidResponse
-      }
-      guard let id = connectionId ?? connectedAccountId, UUID(uuidString: id) != nil else {
+      guard let id = connectionId, UUID(uuidString: id) != nil else {
         throw APIClientError.incompatibleData
       }
       return id.lowercased()
@@ -171,15 +167,40 @@ public struct ChatConnectorService: Sendable {
     } else if custom?.managed == true {
       account = nil
     } else {
-      struct Summary: Decodable, Sendable {
-        let target: ChatConnectorTarget
+      struct Response: Decodable, Sendable {
+        let connections: [ChatConnectorAccount]
+        let nextCursor: String?
         let defaultConnection: ChatConnectorAccount?
+        enum CodingKeys: String, CodingKey { case connections, nextCursor, defaultConnection }
+        // A missing nullable field cannot establish an empty account inventory.
+        init(from decoder: any Decoder) throws {
+          let values = try decoder.container(keyedBy: CodingKeys.self)
+          connections = try values.decode([ChatConnectorAccount].self, forKey: .connections)
+          nextCursor = try values.decode(String?.self, forKey: .nextCursor)
+          defaultConnection = try values.decode(
+            ChatConnectorAccount?.self, forKey: .defaultConnection)
+        }
       }
-      struct Response: Decodable, Sendable { let summaries: [Summary] }
-      let response: Response = try await client.request("/api/connector-accounts")
-      account = response.summaries.first { $0.target == target }?.defaultConnection
-      if let account, account.target != target { throw APIClientError.invalidResponse }
-      if let account, account.setupStatus == nil { throw APIClientError.incompatibleData }
+      let response: Response = try await client.request(
+        "/api/connector-accounts/connections",
+        query: target.query + [URLQueryItem(name: "limit", value: "1")])
+      guard
+        response.connections.allSatisfy({
+          $0.target == target && UUID(uuidString: $0.id) != nil
+        })
+      else { throw APIClientError.invalidResponse }
+      account = response.defaultConnection
+      if let account {
+        guard account.target == target, UUID(uuidString: account.id) != nil else {
+          throw APIClientError.invalidResponse
+        }
+      } else if !response.connections.isEmpty || response.nextCursor != nil {
+        throw APIClientError.http(
+          status: 409,
+          message:
+            "This connector has saved accounts but no default. Choose an account on the web, then refresh."
+        )
+      }
     }
     if case .reconnect = action.kind {
       guard let account,
