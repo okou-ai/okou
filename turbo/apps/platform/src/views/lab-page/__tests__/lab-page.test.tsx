@@ -104,6 +104,7 @@ test("Lab groups active feature switches", async () => {
     context,
     path: "/_/lab",
     auth: {
+      user: { id: "data-rollout-lab-user", fullName: "Rollout Tester" },
       organization: {
         activeOrg: { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" },
         memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
