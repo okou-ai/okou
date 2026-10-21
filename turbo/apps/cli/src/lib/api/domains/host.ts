@@ -5,6 +5,7 @@ import type {
   HostedSiteDeleteResponse,
   HostedSiteDeploymentsResponse,
   HostedSiteFilesResponse,
+  HostedSiteTitleResponse,
 } from "@okouai/api-contracts/contracts/host";
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 import { getActiveToken } from "../config";
@@ -175,4 +176,27 @@ export async function deleteHostedSite(
     throw new ApiRequestError(message, code, response.status);
   }
   return (await response.json()) as HostedSiteDeleteResponse;
+}
+
+export async function updateHostedSiteTitle(
+  publicSlug: string,
+  title: string,
+): Promise<HostedSiteTitleResponse> {
+  const { baseUrl, token } = await getAuthContext();
+  const response = await fetch(
+    new URL(`/api/host/sites/${encodeURIComponent(publicSlug)}/title`, baseUrl),
+    {
+      method: "PATCH",
+      headers: headersWithCliClientHeaders(authHeaders(token, { json: true })),
+      body: JSON.stringify({ title }),
+    },
+  );
+  if (!response.ok) {
+    const { message, code } = await parseErrorBody(
+      response,
+      "Failed to update hosted-site title",
+    );
+    throw new ApiRequestError(message, code, response.status);
+  }
+  return (await response.json()) as HostedSiteTitleResponse;
 }

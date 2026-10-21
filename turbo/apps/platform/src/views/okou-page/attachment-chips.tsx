@@ -426,6 +426,7 @@ function artifactDialogMetadataFromItem(params: {
       : {}),
     ...(connectionId ? { googleDriveConnectionId: connectionId } : {}),
     aliasUrl: params.item.file.aliasUrl,
+    title: params.item.file.title,
     artifactKind: params.item.file.artifactKind,
     contentType: params.item.file.contentType,
     createdAt: params.item.file.createdAt,
@@ -1475,6 +1476,7 @@ function ArtifactPreviewDialogContent({
   const { t } = useTranslation();
   const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
+  const title = artifact?.title ?? filename;
   const subtitle = artifactDialogKindLabel(preview, artifact);
   const titleLink = artifact ? artifactTitleLink(preview.kind, artifact) : null;
 
@@ -1484,7 +1486,7 @@ function ArtifactPreviewDialogContent({
         ($) => {
           return $.artifacts.preview.dialogLabel;
         },
-        { filename },
+        { filename: title },
       )}
       kind={preview.kind}
     >
@@ -1496,7 +1498,7 @@ function ArtifactPreviewDialogContent({
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">
-              <ArtifactTitle filename={filename} link={titleLink} />
+              <ArtifactTitle title={title} link={titleLink} />
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {subtitle}

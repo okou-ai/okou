@@ -30,6 +30,7 @@ const HTML_RESOURCE_INDEX_URLS: Record<HtmlArtifactKind, string> = {
 interface HtmlArtifactAuthoringOptions {
   readonly kind: HtmlArtifactKind;
   readonly prompt: string;
+  readonly title?: string;
   readonly slugSource?: string;
   readonly siteSlug?: string;
   readonly visibility?: ArtifactVisibility;
@@ -79,11 +80,14 @@ export function createHtmlArtifactAuthoringInstructions(
     options.siteSlug ?? slugify(options.slugSource ?? options.prompt);
   const outputDir = outputDirForSite(site);
   const previewPath = `./generated/previews/${site}.png`;
+  const displayTitle = options.title
+    ? `'${options.title.replaceAll("'", "'\\''")}'`
+    : '"<descriptive display title>"';
   const visibilityFlag =
     options.kind === "website" || options.visibility === undefined
       ? ""
       : ` --visibility ${options.visibility}`;
-  const hostCommand = `okou host ${outputDir} --site ${site}${
+  const hostCommand = `okou host ${outputDir} --site ${site} --title ${displayTitle}${
     options.kind === "website" ? " --spa" : ""
   }${visibilityFlag} --preview ${previewPath} --json`;
   const title = titleForKind(options.kind);
@@ -191,6 +195,7 @@ export function createHtmlArtifactAuthoringInstructions(
     }),
     "",
     "## Publish",
+    "Choose a concise, human-readable display title and pass it with --title. Keep it separate from the URL slug; replace any title placeholder before running the command.",
     "The hosted URL is the preview and user-accessible view for this static HTML artifact.",
     options.kind === "website"
       ? "Return the exact URL from the host command."

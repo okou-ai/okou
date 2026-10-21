@@ -39,6 +39,7 @@ interface RecordWebUploadedFileArgs {
 }
 
 interface RecordHostedSiteArtifactArgs {
+  readonly title?: string;
   readonly previewImageUrl?: string;
   readonly runId: string | null | undefined;
   readonly userId: string;
@@ -264,6 +265,7 @@ export const recordHostedSiteArtifact$ = command(
           url: args.url,
           metadata: {
             generatedBy: "zero-official-website",
+            ...(args.title === undefined ? {} : { title: args.title }),
             artifactKind: args.artifactKind,
             siteId: args.siteId,
             deploymentId: args.deploymentId,

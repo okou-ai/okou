@@ -564,6 +564,20 @@ const upsertGeneratedMediaEntity$ = command(
   },
 );
 
+/** Catalog titles survive redeploys and preview refreshes after a rename. */
+function hostedArtifactTitle(
+  site: { readonly requestedSlug: string | null; readonly slug: string },
+  metadata: CatalogFileRow["metadata"],
+  existing: { readonly title: string } | undefined,
+): string {
+  return (
+    existing?.title ??
+    metadataString(metadata, "title") ??
+    site.requestedSlug ??
+    site.slug
+  );
+}
+
 const syncHostedArtifact$ = command(
   async (
     { set },
@@ -620,7 +634,7 @@ const syncHostedArtifact$ = command(
 
       const logicalKey = `site:${site.id}`;
       const [existingArtifact] = await tx
-        .select({ id: artifacts.id })
+        .select({ id: artifacts.id, title: artifacts.title })
         .from(artifacts)
         .where(
           and(
@@ -666,7 +680,7 @@ const syncHostedArtifact$ = command(
         projectionFileId: args.row.id,
         projectionCreatedAt: args.row.createdAt,
         orgId: args.orgId,
-        title: site.requestedSlug ?? site.slug,
+        title: hostedArtifactTitle(site, args.row.metadata, existingArtifact),
         thumbnail: args.row.previewImageUrl
           ? { url: args.row.previewImageUrl }
           : null,

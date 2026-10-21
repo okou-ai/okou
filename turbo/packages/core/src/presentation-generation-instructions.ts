@@ -16,7 +16,7 @@ export function presentationDeliveryInstructions(
 ): readonly string[] {
   const hostCommand =
     options.hostCommand ??
-    "okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png --json";
+    'okou host <output-dir> --site <slug> --title "<presentation title>" --artifact-kind presentation-html --preview ./generated/previews/cover.png --json';
   return [
     PRESENTATION_DELIVERY_INSTRUCTION,
     "- For PPTX, follow the platform's conversion instructions. For HTML, follow the preview and hosting steps below.",

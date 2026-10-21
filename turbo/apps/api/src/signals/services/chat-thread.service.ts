@@ -148,12 +148,21 @@ function publicHostedSiteIds(rows: readonly { readonly metadata: unknown }[]) {
   ];
 }
 
-function currentHostedArtifactAliasUrl(
+interface PublicHostedSite {
+  readonly url: string;
+  readonly title: string | null;
+}
+
+function currentHostedArtifactMetadata(
   metadata: unknown,
-  publicSiteUrls: ReadonlyMap<string, string>,
-): string | undefined {
+  publicSites: ReadonlyMap<string, PublicHostedSite>,
+) {
   const parsed = publicHostedArtifactMetadataSchema.safeParse(metadata);
-  return parsed.success ? publicSiteUrls.get(parsed.data.siteId) : undefined;
+  const site = parsed.success ? publicSites.get(parsed.data.siteId) : undefined;
+  return {
+    ...(site ? { aliasUrl: site.url } : {}),
+    ...(site?.title ? { title: site.title } : {}),
+  };
 }
 
 function canonicalAssetMaterialization(
@@ -610,16 +619,15 @@ function chatThreadArtifactRows(args: {
   });
 }
 
-export function chatThreadArtifacts(args: {
-  readonly threadId: string;
-  readonly userId: string;
-}): Computed<Promise<readonly ChatThreadArtifactRun[] | null>> {
-  const thread$ = ownedChatThread(args.threadId, args.userId);
-  const rows$ = chatThreadArtifactRows(args);
-  const publicSiteUrls$ = computed(async (get) => {
+function publicHostedArtifactSites(
+  userId: string,
+  thread$: ReturnType<typeof ownedChatThread>,
+  rows$: ReturnType<typeof chatThreadArtifactRows>,
+) {
+  return computed(async (get) => {
     const thread = await get(thread$);
     if (!thread) {
-      return new Map<string, string>();
+      return new Map<string, PublicHostedSite>();
     }
     const rows = await get(rows$);
     const publicSiteIds = publicHostedSiteIds(rows);
@@ -630,15 +638,27 @@ export function chatThreadArtifacts(args: {
         ? await get(db$)
             .select({
               id: hostedSites.id,
+              title: artifacts.title,
               publicSlug: hostedSites.publicSlug,
               linkLayoutSegment: hostedSites.linkLayoutSegment,
             })
             .from(hostedSites)
+            .leftJoin(
+              artifacts,
+              and(
+                eq(
+                  artifacts.logicalKey,
+                  sql`'site:' || ${hostedSites.id}::text`,
+                ),
+                eq(artifacts.orgId, hostedSites.orgId),
+                eq(artifacts.authorUserId, userId),
+              ),
+            )
             .where(
               and(
                 inArray(hostedSites.id, publicSiteIds),
                 eq(hostedSites.orgId, thread.orgId),
-                eq(hostedSites.userId, args.userId),
+                eq(hostedSites.userId, userId),
                 isNull(hostedSites.deletedAt),
                 isNotNull(hostedSites.activeDeploymentId),
               ),
@@ -648,14 +668,26 @@ export function chatThreadArtifacts(args: {
       publicSites.map((site) => {
         return [
           site.id,
-          hostedLinkOrigin(
-            linkLayoutFromSegment(site.linkLayoutSegment),
-            site.publicSlug,
-          ),
+          {
+            url: hostedLinkOrigin(
+              linkLayoutFromSegment(site.linkLayoutSegment),
+              site.publicSlug,
+            ),
+            title: site.title,
+          },
         ];
       }),
     );
   });
+}
+
+export function chatThreadArtifacts(args: {
+  readonly threadId: string;
+  readonly userId: string;
+}): Computed<Promise<readonly ChatThreadArtifactRun[] | null>> {
+  const thread$ = ownedChatThread(args.threadId, args.userId);
+  const rows$ = chatThreadArtifactRows(args);
+  const publicSites$ = publicHostedArtifactSites(args.userId, thread$, rows$);
   return computed(
     async (get): Promise<readonly ChatThreadArtifactRun[] | null> => {
       const thread = await get(thread$);
@@ -664,7 +696,7 @@ export function chatThreadArtifacts(args: {
       }
 
       const rows = await get(rows$);
-      const publicSiteUrls = await get(publicSiteUrls$);
+      const publicSites = await get(publicSites$);
 
       const visibleRows = rows.filter((row) => {
         return row.runId !== null;
@@ -690,10 +722,7 @@ export function chatThreadArtifacts(args: {
           files: [],
         };
         const artifactKind = parseHostedArtifactKindFromMetadata(row.metadata);
-        const aliasUrl = currentHostedArtifactAliasUrl(
-          row.metadata,
-          publicSiteUrls,
-        );
+        const hosted = currentHostedArtifactMetadata(row.metadata, publicSites);
         const canonical =
           row.assetVersion === CANONICAL_ASSET_VERSION &&
           row.classification === "published-output" &&
@@ -704,13 +733,13 @@ export function chatThreadArtifacts(args: {
           // outside its current projection keep their own stored resource ID.
           artifactId: row.artifactId ?? row.assetId,
           filename,
+          ...hosted,
           contentType: row.contentType ?? inferMimetype(filename),
           size: row.sizeBytes ?? 0,
           url: row.url,
           ...(row.previewImageUrl
             ? { previewImageUrl: row.previewImageUrl }
             : {}),
-          ...(aliasUrl ? { aliasUrl } : {}),
           ...(canonical
             ? {
                 assetRef: {

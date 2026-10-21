@@ -159,6 +159,7 @@ ${formatRegistryListing(templates, "website templates")}`;
       const instructions = createHtmlArtifactAuthoringInstructions({
         kind: "website",
         prompt,
+        title: options.title,
         slugSource: options.title,
         siteSlug: options.siteSlug,
         details: [

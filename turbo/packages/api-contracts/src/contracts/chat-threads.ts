@@ -266,6 +266,8 @@ const chatThreadArtifactGoogleDriveSyncSchema = z.discriminatedUnion("status", [
 
 const chatThreadArtifactFileSchema = resolvedAttachFileSchema.extend({
   artifactId: z.uuid().optional(),
+  /** Current catalog display name, independent of the stored filename. */
+  title: z.string().optional(),
   googleDriveConnectionId: z.uuid().optional(),
   createdAt: z.string(),
   artifactKind: hostedArtifactKindSchema.optional(),

@@ -37,6 +37,8 @@ export interface HostedSiteManifest {
   readonly deploymentId: string;
   readonly siteId: string;
   readonly site?: string;
+  /** Initial catalog title; later renames belong to artifacts.title. */
+  readonly title?: string;
   readonly publicSlug: string;
   readonly deploymentVersion?: number;
   readonly createdAt: string;

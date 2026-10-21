@@ -14,6 +14,7 @@ interface PublishStaticSiteProgress {
 }
 
 interface PublishStaticSiteResult {
+  readonly title: string;
   readonly siteId: string;
   readonly deploymentId: string;
   readonly publicSlug: string;
@@ -31,6 +32,7 @@ interface PublishStaticSiteResult {
 interface PublishStaticSiteOptions {
   readonly dir: string;
   readonly site: string;
+  readonly title: string;
   readonly slugSuffix?: string;
   readonly artifactKind?: HostedArtifactKind;
   readonly spaFallback?: boolean;
@@ -80,6 +82,7 @@ export async function publishStaticSite(
 
   const prepared = await prepareHostedSite({
     site: options.site,
+    title: options.title,
     ...(options.slugSuffix !== undefined && { slugSuffix: options.slugSuffix }),
     artifactKind,
     spaFallback: Boolean(options.spaFallback),
@@ -94,6 +97,12 @@ export async function publishStaticSite(
       };
     }),
   });
+
+  if (!prepared.title) {
+    throw new Error(
+      "The API did not acknowledge the supplied site title; no files were uploaded or activated. Retry after the API supports site titles.",
+    );
+  }
 
   if (preview && prepared.preview?.sha256 !== preview.metadata.sha256) {
     throw new Error(
@@ -144,14 +153,17 @@ export async function publishStaticSite(
     );
   }
 
-  return publicationResult(completed, scan.files.length, totalSize);
+  return {
+    ...publicationResult(completed, scan.files.length, totalSize),
+    title: prepared.title,
+  };
 }
 
 function publicationResult(
   completed: HostedSiteCompleteResponse,
   fileCount: number,
   size: number,
-): PublishStaticSiteResult {
+): Omit<PublishStaticSiteResult, "title"> {
   return {
     siteId: completed.siteId,
     deploymentId: completed.deploymentId,

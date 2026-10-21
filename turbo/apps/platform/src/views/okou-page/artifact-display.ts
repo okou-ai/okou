@@ -265,9 +265,8 @@ export function hostedSiteLink(
 }
 
 /**
- * A public hosted site is addressed by its own URL, so the header shows that
- * address in place of the entry filename. Private sites have no public alias
- * and keep the filename.
+ * A public site's title links to its live address. The display name remains
+ * independent of the URL; private sites have no public title link.
  */
 export function artifactTitleLink(
   kind: ArtifactDisplayKind,

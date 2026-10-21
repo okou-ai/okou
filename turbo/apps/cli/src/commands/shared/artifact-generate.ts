@@ -168,6 +168,7 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
         const instructions = createHtmlArtifactAuthoringInstructions({
           kind: config.target,
           prompt,
+          title: options.title,
           slugSource: options.title,
           siteSlug: options.siteSlug,
           visibility: options.visibility,

@@ -431,6 +431,7 @@ function buildWebsiteTemplatePackagePrompt(
       "- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.",
       ...artifactPreviewInstructions({ outputDir: "./publish" }),
       "- Publish once: `okou host ./publish --site <slug> --preview ./generated/previews/cover.png --json`.",
+      "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable site name, independently of the URL slug.",
       "- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.",
       "- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.",
       "- Return the hosted website URL and keep the generated static site as the final deliverable.",

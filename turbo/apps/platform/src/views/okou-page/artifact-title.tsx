@@ -6,14 +6,13 @@ import {
 import { hostedSiteLink, type ArtifactTitleLink } from "./artifact-display.ts";
 
 /**
- * A public hosted site is identified by its address rather than its entry
- * filename, so the header title becomes a link to the live site.
+ * Keep the display title stable while a public site's link follows URL changes.
  */
 export function ArtifactTitle({
-  filename,
+  title,
   link,
 }: {
-  readonly filename: string;
+  readonly title: string;
   readonly link: ArtifactTitleLink | null;
 }) {
   const changes = useGet(hostedSiteUrlChanges$);
@@ -21,7 +20,7 @@ export function ArtifactTitle({
     ? hostedSiteLink(currentHostedSiteUrl(link.href, changes))
     : null;
   if (!currentLink) {
-    return filename;
+    return title;
   }
   return (
     <a
@@ -31,7 +30,7 @@ export function ArtifactTitle({
       className="hover:underline"
       data-testid="artifact-title-link"
     >
-      {currentLink.label}
+      {title}
     </a>
   );
 }

@@ -65,6 +65,7 @@ import {
   storedObject,
 } from "./hosted-site-publication-migration.service";
 import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
+import { artifacts } from "@okouai/db/schema/artifact";
 import {
   completeHostedPreview$,
   prepareHostedPreview$,
@@ -533,6 +534,7 @@ function hostedSiteArtifactArgs(
     deploymentVersion: legacyHostedDeploymentVersion(deployment.manifest),
     immutableContent: deployment.manifest.immutableContent === true,
     site: deployment.manifest.site ?? deployment.manifest.publicSlug,
+    title: deployment.manifest.title,
     publicSlug,
     aliasUrl: deployment.manifest.access
       ? undefined
@@ -708,10 +710,29 @@ export const prepareHostedSiteDeployment$ = command(
           signal,
         )
       : undefined;
+    // The caller supplies an initial name; a published site's catalog owns
+    // subsequent title changes, including redeploys from another chat.
+    const [artifact] =
+      args.body.title === undefined
+        ? []
+        : await get(db$)
+            .select({ title: artifacts.title })
+            .from(artifacts)
+            .where(
+              and(
+                eq(artifacts.orgId, args.orgId),
+                eq(artifacts.logicalKey, `site:${siteAndDeployment.site.id}`),
+              ),
+            )
+            .limit(1);
+    signal.throwIfAborted();
     return {
       status: "ok",
       body: {
         siteId: siteAndDeployment.site.id,
+        ...(args.body.title === undefined
+          ? {}
+          : { title: artifact?.title ?? args.body.title }),
         deploymentId: siteAndDeployment.deployment.id,
         publicSlug,
         url,

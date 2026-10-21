@@ -73,6 +73,7 @@ function mockPublicPublication({
     chatEvents: [siteMessage(sourceUrl)],
     artifacts: [
       artifactFile("launch-site.html", {
+        title: "Quarterly launch report",
         contentType: "text/html",
         url: sourceUrl,
         artifactKind: "hosted-site",
@@ -195,12 +196,15 @@ test.each([
   }
 });
 
-test("a public site containing one page downloads that HTML file", async () => {
+test("a public site's display title preserves its original HTML download filename", async () => {
   mockPublicPublication({ members: publicationMembers().slice(0, 1) });
   const browser = context.mocks.browser.blobDownload({ deferRead: true });
 
   await downloadSite();
 
+  await expect(
+    screen.findByText("Quarterly launch report"),
+  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);
   });

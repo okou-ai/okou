@@ -46,7 +46,9 @@ Notes:
         if (result.deployments.length === 0) {
           console.log(chalk.dim("No deployments found"));
           console.log(
-            chalk.dim(`Deploy one with: okou host <dir> --site ${result.site}`),
+            chalk.dim(
+              `Deploy one with: okou host <dir> --site ${result.site} --title "<display title>"`,
+            ),
           );
           return;
         }
