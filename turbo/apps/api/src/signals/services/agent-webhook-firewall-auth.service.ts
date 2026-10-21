@@ -1240,59 +1240,20 @@ async function getVariableValue(args: {
   return row?.value ?? null;
 }
 
-async function upsertModelProviderSecretValue(
-  db: Db,
-  args: {
+function providerSecretScope(
+  sourceId: string,
+  scope: {
+    readonly runId: string | undefined;
     readonly orgId: string;
     readonly userId: string;
-    readonly name: string;
-    readonly value: string;
-    readonly sourceId?: string;
-    readonly runId?: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
   },
-): Promise<void> {
-  const encryptedValue = await encryptStoredSecretValue(
-    args.value,
-    args.featureSwitchContext,
+) {
+  return and(
+    eq(modelProviderAccounts.id, sourceId),
+    personalSubscriptionAccountAccessCondition(scope.runId),
+    eq(modelProviderAccounts.orgId, scope.orgId),
+    eq(modelProviderAccounts.userId, scope.userId),
   );
-  if (args.sourceId) {
-    const [account] = await db
-      .select({ id: modelProviderAccounts.id })
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    if (!account) {
-      return;
-    }
-    await db
-      .insert(modelProviderAccountSecrets)
-      .values({
-        modelProviderAccountId: args.sourceId,
-        name: args.name,
-        encryptedValue,
-        description: `Personal model provider account secret: ${args.name}`,
-      })
-      .onConflictDoUpdate({
-        target: [
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccountSecrets.name,
-        ],
-        set: {
-          encryptedValue,
-          updatedAt: nowDate(),
-        },
-      });
-    return;
-  }
-  throw new Error("Personal subscription refresh requires an account identity");
 }
 
 function modelProviderRuntimeSecretName(args: {
@@ -2151,7 +2112,8 @@ async function persistRefreshOutputValues(
     switch (target.kind) {
       case "secret": {
         if (prepared.sourceType === "model-provider") {
-          await upsertModelProviderSecretValue(args.db, {
+          const db = args.db;
+          const secretWrite = {
             orgId: args.orgId,
             userId: context.secretUserId,
             name: target.name,
@@ -2159,7 +2121,45 @@ async function persistRefreshOutputValues(
             sourceId: args.sourceId,
             runId: args.runId,
             featureSwitchContext: args.featureSwitchContext,
-          });
+          };
+          await (async (): Promise<void> => {
+            const encryptedValue = await encryptStoredSecretValue(
+              secretWrite.value,
+              secretWrite.featureSwitchContext,
+            );
+            if (secretWrite.sourceId) {
+              const [account] = await db
+                .select({ id: modelProviderAccounts.id })
+                .from(modelProviderAccounts)
+                .where(providerSecretScope(secretWrite.sourceId, secretWrite))
+                .limit(1);
+              if (!account) {
+                return;
+              }
+              await db
+                .insert(modelProviderAccountSecrets)
+                .values({
+                  modelProviderAccountId: secretWrite.sourceId,
+                  name: secretWrite.name,
+                  encryptedValue,
+                  description: `Personal model provider account secret: ${secretWrite.name}`,
+                })
+                .onConflictDoUpdate({
+                  target: [
+                    modelProviderAccountSecrets.modelProviderAccountId,
+                    modelProviderAccountSecrets.name,
+                  ],
+                  set: {
+                    encryptedValue,
+                    updatedAt: nowDate(),
+                  },
+                });
+              return;
+            }
+            throw new Error(
+              "Personal subscription refresh requires an account identity",
+            );
+          })();
         } else {
           const encryptedValue = await encryptStoredSecretValue(
             value,
