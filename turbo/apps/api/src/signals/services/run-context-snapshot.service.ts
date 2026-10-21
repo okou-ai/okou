@@ -562,10 +562,10 @@ export function normalizeRunContextSnapshot(
     environment: environmentFromEntries(snapshot.environmentEntries),
     firewalls: firewallsFromUnknown(snapshot.firewalls),
     networkPolicies: networkPoliciesFromEntries(snapshot.networkPolicyEntries),
-    // Old Axiom snapshots predate storageMounts. Preserve their captured
-    // observations without rewriting historical telemetry (#41332).
+    // Old Axiom snapshots omit storageMounts or return it as null. Preserve
+    // captured observations without rewriting historical telemetry (#41332).
     storageMounts:
-      snapshot.storageMounts === undefined
+      snapshot.storageMounts === undefined || snapshot.storageMounts === null
         ? runContextStorageMounts({ volumes, artifact })
         : z.array(runContextStorageMountSchema).parse(snapshot.storageMounts),
     volumes,
