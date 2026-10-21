@@ -87,6 +87,11 @@ const dialogMaxWidthClasses = {
   1440: { base: "max-w-[1440px]", sm: "sm:max-w-[1440px]" },
 } as const;
 
+const dialogPositionClasses = {
+  center: "items-center p-safe-offset-6",
+  top: "items-start p-safe-offset-6 pt-[calc(var(--sat,env(safe-area-inset-top,0px))+min(10dvh,4.5rem))]",
+} as const;
+
 const dialogHeightClasses = {
   content: "h-auto",
   fill: "h-full",
@@ -112,6 +117,10 @@ interface DialogContentProps extends Omit<
   /** Maximum width from the shared sm breakpoint onward. */
   readonly smMaxWidth?: keyof typeof dialogMaxWidthClasses;
   readonly height?: keyof typeof dialogHeightClasses;
+  /** Top anchoring keeps search controls stationary as results change height. */
+  readonly position?: "center" | "top";
+  /** Disable only when a constrained child owns scrolling. */
+  readonly scrollable?: boolean;
   readonly mode?: "windowed" | "fullscreen";
   readonly surface?: "card" | "canvas" | "transparent";
   readonly overlayClassName?: string;
@@ -130,6 +139,8 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
       maxWidth = "lg",
       smMaxWidth,
       height = "content",
+      position = "center",
+      scrollable = true,
       mode = "windowed",
       surface = "card",
       overlayClassName,
@@ -150,8 +161,10 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"
           className={cn(
-            "fixed inset-x-0 top-0 flex h-[var(--okou-viewport-height,100dvh)] items-center justify-center overflow-hidden",
-            mode === "windowed" && "p-safe-offset-6",
+            "fixed inset-x-0 top-0 flex h-[var(--okou-viewport-height,100dvh)] justify-center overflow-hidden",
+            mode === "windowed"
+              ? dialogPositionClasses[position]
+              : "items-center",
           )}
         >
           <DialogPrimitive.Popup
@@ -196,12 +209,13 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <DialogBody
                 data-slot="dialog-inner"
+                scrollable={scrollable}
                 className={cn(
                   "grid gap-4 p-6",
                   contentClassName,
                   // A caller's clipping utility must not make footer actions
                   // unreachable when the safe viewport constrains the panel.
-                  "overflow-y-auto!",
+                  scrollable ? "overflow-y-auto!" : "overflow-hidden!",
                 )}
               >
                 {children}
