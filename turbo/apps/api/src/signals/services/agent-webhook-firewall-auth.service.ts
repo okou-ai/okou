@@ -3309,32 +3309,6 @@ function resolveModelProviderRuntimeSecretLookup(
   };
 }
 
-async function loadModelProviderRuntimeRefreshState(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly runId?: string;
-  readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
-}): Promise<ModelProviderRuntimeRefreshState | null> {
-  const [row] = await args.db
-    .select({
-      tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-      needsReconnect: modelProviderAccounts.needsReconnect,
-      lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
-    })
-    .from(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.id, args.lookup.sourceId),
-        personalSubscriptionAccountAccessCondition(args.runId),
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.lookup.userId),
-        eq(modelProviderAccounts.type, args.lookup.providerType),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
 async function readModelProviderRuntimeSecretForApi(
   args: ModelProviderRuntimeSecretForApiArgs,
   lookup: ResolvedModelProviderRuntimeSecretLookup,
@@ -3360,7 +3334,27 @@ async function unavailableModelProviderRuntimeSecretForApi(
   },
   signal: AbortSignal,
 ): Promise<CurrentModelProviderRuntimeSecretForApiResult> {
-  const state = await loadModelProviderRuntimeRefreshState(args);
+  const state =
+    await (async (): Promise<ModelProviderRuntimeRefreshState | null> => {
+      const [row] = await args.db
+        .select({
+          tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+          needsReconnect: modelProviderAccounts.needsReconnect,
+          lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
+        })
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.id, args.lookup.sourceId),
+            personalSubscriptionAccountAccessCondition(args.runId),
+            eq(modelProviderAccounts.orgId, args.orgId),
+            eq(modelProviderAccounts.userId, args.lookup.userId),
+            eq(modelProviderAccounts.type, args.lookup.providerType),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    })();
   signal.throwIfAborted();
   return {
     status: "unavailable",
@@ -3389,12 +3383,36 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
       : { status: "available", value };
   }
 
-  const initialState = await loadModelProviderRuntimeRefreshState({
+  const refreshStateArgs = {
     db: args.db,
     orgId: args.orgId,
     runId: args.runId,
     lookup,
-  });
+  };
+  const initialState =
+    await (async (): Promise<ModelProviderRuntimeRefreshState | null> => {
+      const [row] = await refreshStateArgs.db
+        .select({
+          tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+          needsReconnect: modelProviderAccounts.needsReconnect,
+          lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
+        })
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.id, refreshStateArgs.lookup.sourceId),
+            personalSubscriptionAccountAccessCondition(refreshStateArgs.runId),
+            eq(modelProviderAccounts.orgId, refreshStateArgs.orgId),
+            eq(modelProviderAccounts.userId, refreshStateArgs.lookup.userId),
+            eq(
+              modelProviderAccounts.type,
+              refreshStateArgs.lookup.providerType,
+            ),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    })();
   signal.throwIfAborted();
   if (!initialState) {
     return { status: "unavailable", reconnectState: null };
