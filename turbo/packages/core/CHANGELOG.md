@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.774.8](https://github.com/okou-ai/okou/compare/core-v8.774.7...core-v8.774.8) (2026-10-21)
+
+
+### Refactoring
+
+* **app:** remove wallet settings feature switch ([#41822](https://github.com/okou-ai/okou/issues/41822)) ([12ab93f](https://github.com/okou-ai/okou/commit/12ab93f6e3704b6318dfa41cd6269844ebc45ed0))
+
 ## [8.774.7](https://github.com/okou-ai/okou/compare/core-v8.774.6...core-v8.774.7) (2026-10-21)
 
 

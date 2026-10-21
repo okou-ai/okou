@@ -9,6 +9,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.760.2](https://github.com/okou-ai/okou/compare/api-v1.760.1...api-v1.760.2) (2026-10-21)
+
+
+### Refactoring
+
+* **api:** inline firewall run admission reads ([#41951](https://github.com/okou-ai/okou/issues/41951)) ([c626a26](https://github.com/okou-ai/okou/commit/c626a2602a368316e828b305523b656e2aa82f16))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.774.8
+    * @okouai/db bumped to 1.353.2
+    * @okouai/pi-agent-runtime bumped to 1.50.38
+
 ## [1.760.1](https://github.com/okou-ai/okou/compare/api-v1.760.0...api-v1.760.1) (2026-10-21)
 
 

@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1048.5](https://github.com/okou-ai/okou/compare/app-v0.1048.4...app-v0.1048.5) (2026-10-21)
+
+
+### Refactoring
+
+* **app:** remove wallet settings feature switch ([#41822](https://github.com/okou-ai/okou/issues/41822)) ([12ab93f](https://github.com/okou-ai/okou/commit/12ab93f6e3704b6318dfa41cd6269844ebc45ed0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.774.8
+
 ## [0.1048.4](https://github.com/okou-ai/okou/compare/app-v0.1048.3...app-v0.1048.4) (2026-10-21)
 
 

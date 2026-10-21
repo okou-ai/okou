@@ -1,6 +1,6 @@
 [package]
 name = "guest-agent-tests"
-version = "0.1.26"
+version = "0.1.27"
 edition.workspace = true
 description = "Isolated guest-agent integration tests with compiled shared fixtures"
 publish = false
