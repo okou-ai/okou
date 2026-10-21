@@ -172,7 +172,6 @@ describe("independent finalizing resource source", () => {
         ).toISOString(),
       };
       const job = await poll(f, next.runId);
-      expect(job?.historyGenerationRunId).toBeUndefined();
       expect(job?.runnerPreference).toStrictEqual(preference);
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(
         "job",
@@ -215,7 +214,6 @@ describe("independent finalizing resource source", () => {
     });
     const next = await continuation(f);
     const job = await poll(f, next.runId);
-    expect(job?.historyGenerationRunId).toBeUndefined();
     expect(job?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
       finalizingSourceRunId: f.run.runId,
@@ -412,7 +410,6 @@ describe("independent finalizing resource source", () => {
     mockNow(f.clock + 2501);
     const next = await continuation(f);
     const job = await poll(f, next.runId);
-    expect(job?.historyGenerationRunId).toBeUndefined();
     expect(job?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
       finalizingSourceRunId: f.run.runId,

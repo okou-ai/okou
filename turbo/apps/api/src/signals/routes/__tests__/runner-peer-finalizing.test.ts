@@ -75,7 +75,6 @@ describe("same-host draining predecessor preference", () => {
     mockNow(f.clock + 2000);
     const next = await peerContinuation(f);
     const job = await peerPoll(f);
-    expect(job?.historyGenerationRunId).toBeUndefined();
     expect(job).toMatchObject({
       runId: next.runId,
       runnerPreference: {

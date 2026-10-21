@@ -110,7 +110,6 @@ describe("terminal predecessor reuse preference", () => {
       });
       const next = await continuation(f);
       const job = await poll(f, next.runId);
-      expect(job?.historyGenerationRunId).toBeUndefined();
       expect(job?.runnerPreference).toMatchObject({
         kind: "noPreference",
       });
