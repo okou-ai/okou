@@ -149,7 +149,8 @@ jobs:
           mkdir "$RUNNER_TEMP/okou-ios-ci"
           python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
           # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
-          git config --global --add include.path "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig"
+          printf '\n' >> "$HOME/.gitconfig"
+          cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
       - name: Capture promotion inputs
         run: |
           mkdir "$IOS_ARCHIVE_DIR"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+shopt -s nullglob
 
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
@@ -64,6 +65,12 @@ export GIT_CONFIG_COUNT=$((git_config_index + 1))
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
+  for repository in "$build_root"/SourcePackages/repositories/*; do
+    printf 'Resolved package repository %s shallow: ' "${repository##*/}"
+    git --git-dir="$repository" rev-parse --is-shallow-repository
+    printf 'Resolved package repository %s commits: ' "${repository##*/}"
+    git --git-dir="$repository" rev-list --count --all
+  done
 fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
@@ -75,7 +82,6 @@ fi
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
   cmp "$resolved" "$build_root/Package.resolved.before"
   # Use the build's test specification without loading the package graph again.
-  shopt -s nullglob
   test_runs=("$build_root"/DerivedData/Build/Products/*.xctestrun)
   if [[ ${#test_runs[@]} -ne 1 ]]; then
     echo "Expected exactly one built test specification, found ${#test_runs[@]}" >&2
