@@ -59,9 +59,10 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import {
-  replaceConnectorConnection,
+  connectorConnectionWrittenRow,
+  replaceConnectorConnectionOutcome,
   resolveConnectorConnectionMutation,
-  writeConnectorConnectionMetadata,
+  writeConnectorConnectionMetadataOutcome,
   type ConnectorConnectionMetadataArgs,
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
@@ -3042,14 +3043,36 @@ type CustomConnectorValueWriteResult =
   | NotFoundResponse
   | ConflictResponse;
 
-async function persistCustomConnectorValues(
-  args: {
-    readonly tx: Tx;
-    readonly request: SetCustomConnectorValuesArgs;
-    readonly expectedConnector: CustomConnectorRow;
-    readonly expectedValues: readonly CustomConnectorValueInput[];
-    readonly preparedValues: readonly PreparedCustomConnectorValue[];
+interface CustomConnectorValuePersistenceArgs {
+  readonly tx: Tx;
+  readonly request: SetCustomConnectorValuesArgs;
+  readonly expectedConnector: CustomConnectorRow;
+  readonly expectedValues: readonly CustomConnectorValueInput[];
+  readonly preparedValues: readonly PreparedCustomConnectorValue[];
+}
+
+type CustomConnectorReplacementArgs = Parameters<
+  typeof replaceConnectorConnectionOutcome
+>[1];
+
+function customConnectorValueCredentialScope(
+  preparedWrite: {
+    readonly connectionId: string;
+    readonly orgId: string;
+    readonly userId: string;
   },
+  storage: ReturnType<typeof customConnectorStorageDeclaration>,
+) {
+  return {
+    connectorId: preparedWrite.connectionId,
+    storage,
+    orgId: preparedWrite.orgId,
+    userId: preparedWrite.userId,
+  };
+}
+
+async function persistCustomConnectorValues(
+  args: CustomConnectorValuePersistenceArgs,
   signal: AbortSignal,
 ): Promise<CustomConnectorValueWriteResult> {
   const state = await prepareCustomConnectorValueWrite(args);
@@ -3073,10 +3096,7 @@ async function persistCustomConnectorValues(
     for (const value of preparedWrite.values) {
       if (value.kind === "secret") {
         const credential = {
-          connectorId: preparedWrite.connectionId,
-          storage,
-          orgId: preparedWrite.orgId,
-          userId: preparedWrite.userId,
+          ...customConnectorValueCredentialScope(preparedWrite, storage),
           name: value.key,
           encryptedValue: value.encryptedValue,
           description: null,
@@ -3095,10 +3115,7 @@ async function persistCustomConnectorValues(
         }
       } else {
         const credential = {
-          connectorId: preparedWrite.connectionId,
-          storage,
-          orgId: preparedWrite.orgId,
-          userId: preparedWrite.userId,
+          ...customConnectorValueCredentialScope(preparedWrite, storage),
           name: value.key,
           value: value.value,
           description: null,
@@ -3134,25 +3151,41 @@ async function persistCustomConnectorValues(
   };
   let connectedAccountId: string;
   if (state.preservesStoredValues) {
-    const connection = await writeConnectorConnectionMetadata(args.tx, {
+    const connectionDb = args.tx;
+    const metadataArgs = {
       ...connectionArgs,
       resolution: state.resolution,
-    });
+    };
+    const connection = await (async () => {
+      return connectorConnectionWrittenRow(
+        await writeConnectorConnectionMetadataOutcome(
+          connectionDb,
+          metadataArgs,
+        ),
+      );
+    })();
     connectedAccountId = connection.id;
     signal.throwIfAborted();
     await writeValues(args.tx, connection.id, signal);
   } else {
-    const connection = await replaceConnectorConnection(
-      args.tx,
-      {
-        ...connectionArgs,
-        resolution: state.resolution,
-        writeCredentials: async ({ db, connectorId }, writeSignal) => {
-          await writeValues(db, connectorId, writeSignal);
-        },
+    const connectionDb = args.tx;
+    const replacementArgs: CustomConnectorReplacementArgs = {
+      ...connectionArgs,
+      resolution: state.resolution,
+      writeCredentials: async ({ db, connectorId }, writeSignal) => {
+        await writeValues(db, connectorId, writeSignal);
       },
-      signal,
-    );
+    };
+    const connectionSignal = signal;
+    const connection = await (async () => {
+      return connectorConnectionWrittenRow(
+        await replaceConnectorConnectionOutcome(
+          connectionDb,
+          replacementArgs,
+          connectionSignal,
+        ),
+      );
+    })();
     connectedAccountId = connection.id;
   }
   return {

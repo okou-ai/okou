@@ -72,8 +72,9 @@ import { customConnectorDefinitionSelection } from "./custom-connector-definitio
 import type { StoredCustomConnectorOAuthState } from "./connector-oauth-state.service";
 import {
   type ConnectorConnectionMutationResolution,
+  connectorConnectionWrittenRow,
   existingConnectorConnectionSelection,
-  replaceConnectorConnection,
+  replaceConnectorConnectionOutcome,
   resolveConnectorConnectionMutation,
 } from "./connector-connection-write.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
@@ -977,6 +978,16 @@ type AutomaticNoAuthConnector = CustomConnectorRow & {
   readonly oauthConfig: null;
 };
 
+type CustomConnectorReplacementArgs = Parameters<
+  typeof replaceConnectorConnectionOutcome
+>[1];
+
+interface AutomaticNoAuthPersistenceContext {
+  readonly db: Db;
+  readonly connector: AutomaticNoAuthConnector;
+  readonly args: StartCustomConnectorOAuth2Args;
+}
+
 function automaticNoAuthCredentialContractRef(
   args: StartCustomConnectorOAuth2Args,
   connector: AutomaticNoAuthConnector,
@@ -1024,11 +1035,7 @@ function automaticNoAuthConnectionResponse(
 }
 
 async function persistAutomaticNoAuthConnection(
-  context: {
-    readonly db: Db;
-    readonly connector: AutomaticNoAuthConnector;
-    readonly args: StartCustomConnectorOAuth2Args;
-  },
+  context: AutomaticNoAuthPersistenceContext,
   signal: AbortSignal,
 ) {
   const { db, connector, args } = context;
@@ -1057,23 +1064,30 @@ async function persistAutomaticNoAuthConnection(
     if (resolution.kind !== "ready") {
       return { resolution, connection: null };
     }
-    const connection = await replaceConnectorConnection(
-      tx,
-      {
-        ...automaticNoAuthConnectionWriteValues(args, connector, resolution),
-        writeCredentials: async ({ db: credentialDb, connectorId }) => {
-          await credentialDb
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-        },
+    const connectionDb = tx;
+    const connectionArgs: CustomConnectorReplacementArgs = {
+      ...automaticNoAuthConnectionWriteValues(args, connector, resolution),
+      writeCredentials: async ({ db: credentialDb, connectorId }) => {
+        await credentialDb
+          .delete(customConnectorAccountOauthBindings)
+          .where(
+            eq(
+              customConnectorAccountOauthBindings.connectorAccountId,
+              connectorId,
+            ),
+          );
       },
-      signal,
-    );
+    };
+    const connectionSignal = signal;
+    const connection = await (async () => {
+      return connectorConnectionWrittenRow(
+        await replaceConnectorConnectionOutcome(
+          connectionDb,
+          connectionArgs,
+          connectionSignal,
+        ),
+      );
+    })();
     return { resolution, connection };
   });
   let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
@@ -1756,44 +1770,51 @@ export async function storeCustomConnectorOAuth2Connection(
     if (resolution.kind !== "ready") {
       return resolution;
     }
-    const connection = await replaceConnectorConnection(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        authMethod: "oauth",
-        storageVersion: args.storageVersion,
-        tokenExpiresAt: args.token.expiresAt,
-        target: customOAuthConnectionTarget(args.connectorId, args.token),
-        resolution: resolution.mutation,
-        insertConnectionId: args.insertConnectionId,
-        writeCredentials: async ({ db, connectorId }) => {
-          await db.insert(secrets).values(
-            connectionTokenRows({
-              ...args,
-              connectionId: connectorId,
-              encrypted,
-            }),
+    const connectionDb = tx;
+    const connectionArgs: CustomConnectorReplacementArgs = {
+      orgId: args.orgId,
+      userId: args.userId,
+      authMethod: "oauth",
+      storageVersion: args.storageVersion,
+      tokenExpiresAt: args.token.expiresAt,
+      target: customOAuthConnectionTarget(args.connectorId, args.token),
+      resolution: resolution.mutation,
+      insertConnectionId: args.insertConnectionId,
+      writeCredentials: async ({ db, connectorId }) => {
+        await db.insert(secrets).values(
+          connectionTokenRows({
+            ...args,
+            connectionId: connectorId,
+            encrypted,
+          }),
+        );
+        await db
+          .delete(customConnectorAccountOauthBindings)
+          .where(
+            eq(
+              customConnectorAccountOauthBindings.connectorAccountId,
+              connectorId,
+            ),
           );
-          await db
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-          if (args.automaticOAuthBinding) {
-            await db.insert(customConnectorAccountOauthBindings).values({
-              connectorAccountId: connectorId,
-              customConnectorId: args.connectorId,
-              ...args.automaticOAuthBinding,
-            });
-          }
-        },
+        if (args.automaticOAuthBinding) {
+          await db.insert(customConnectorAccountOauthBindings).values({
+            connectorAccountId: connectorId,
+            customConnectorId: args.connectorId,
+            ...args.automaticOAuthBinding,
+          });
+        }
       },
-      signal,
-    );
+    };
+    const connectionSignal = signal;
+    const connection = await (async () => {
+      return connectorConnectionWrittenRow(
+        await replaceConnectorConnectionOutcome(
+          connectionDb,
+          connectionArgs,
+          connectionSignal,
+        ),
+      );
+    })();
     await tx.execute(
       completedGetStartedQuestSql(
         {
