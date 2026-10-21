@@ -224,7 +224,12 @@ final class GeneratedResultTests: XCTestCase {
       rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
     let window = try await mountResultHost(host)
     defer { unmount(window) }
-    try await eventually { findWebView(host.view)?.isLoading == false }
+    try await eventually {
+      guard viewer.preview?.renewedHTMLSignature == true,
+        let url = viewer.preview?.contentURL, let web = findWebView(host.view)
+      else { return false }
+      return web.url == url && !web.isLoading
+    }
     let web = try XCTUnwrap(findWebView(host.view))
     XCTAssertFalse(web.configuration.websiteDataStore.isPersistent)
     XCTAssertTrue(viewer.preview?.renewedHTMLSignature == true)
@@ -570,15 +575,21 @@ private final class GeneratedResultFixture: Sendable {
         if request.url?.path.hasSuffix("/artifacts") == true {
           return ChatHTTPResponse(body: catalog)
         }
-        state.resolutions.withLock { $0 += 1 }
+        let resolution = state.resolutions.withLock {
+          $0 += 1
+          return $0
+        }
         if state.denied.withLock({ $0 }) {
           return ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Forbidden\"}}")
         }
         guard let file = files.first(where: { request.url?.lastPathComponent == $0.reference })
         else { return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"Deleted\"}}") }
+        let contentURL = origin.appendingPathComponent(file.reference).appending(queryItems: [
+          URLQueryItem(name: "signature", value: String(resolution))
+        ])
         var body: [String: String] = [
-          "url": origin.appendingPathComponent(file.reference).absoluteString,
-          "downloadUrl": origin.appendingPathComponent(file.reference).absoluteString,
+          "url": contentURL.absoluteString,
+          "downloadUrl": contentURL.absoluteString,
           "filename": file.filename, "contentType": file.type, "expiresAt": "2026-10-21T00:00:00Z",
         ]
         if (file.type == "video/mp4" && !state.omitVideoPoster.withLock({ $0 }))
