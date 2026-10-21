@@ -48,9 +48,10 @@ public enum ConnectorHTTPFixtures {
       return ChatHTTPResponse(body: custom(mode: customMode))
     }
     if path == "/api/connector-accounts/connections" {
-      let query = request.url.flatMap {
-        URLComponents(url: $0, resolvingAgainstBaseURL: false)
-      }?.queryItems ?? []
+      let query =
+        request.url.flatMap {
+          URLComponents(url: $0, resolvingAgainstBaseURL: false)
+        }?.queryItems ?? []
       let kind = query.first { $0.name == "kind" }?.value
       guard kind == "builtin" || kind == "custom" else { return nil }
       let custom = kind == "custom"
