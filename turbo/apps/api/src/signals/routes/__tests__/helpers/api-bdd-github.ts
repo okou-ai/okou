@@ -193,6 +193,8 @@ function mockGithubInstallationApi(args: {
 
 function mockGithubUserOAuthExchange(args: {
   readonly code: string;
+  readonly organizationId?: string;
+  readonly organizationRole?: "admin" | "member";
   readonly githubUserId: string;
   readonly accessToken?: string;
   readonly login?: string;
@@ -208,6 +210,25 @@ function mockGithubUserOAuthExchange(args: {
   const accessToken = args.accessToken ?? `gho_bdd_${args.code}`;
 
   server.use(
+    http.get("https://api.github.com/user/memberships/orgs", ({ request }) => {
+      if (request.headers.get("authorization") !== `Bearer ${accessToken}`) {
+        return HttpResponse.json(
+          { message: "Bad credentials" },
+          { status: 401 },
+        );
+      }
+      return HttpResponse.json(
+        args.organizationId
+          ? [
+              {
+                state: "active",
+                role: args.organizationRole ?? "admin",
+                organization: { id: Number(args.organizationId) },
+              },
+            ]
+          : [],
+      );
+    }),
     http.post("https://github.com/login/oauth/access_token", async (info) => {
       const body = new URLSearchParams(await info.request.text());
       recorded.calls += 1;
@@ -304,6 +325,7 @@ export function createGithubBddApi(context: TestContext) {
   async function requestInstall(
     query: string,
     options: {
+      readonly auth?: GithubActorAuth;
       readonly origin?: string;
       readonly webOriginHeader?: string;
     } = {},
@@ -313,26 +335,79 @@ export function createGithubBddApi(context: TestContext) {
       {
         method: "GET",
         origin: options.origin,
-        headers: options.webOriginHeader
-          ? { "x-okou-web-origin": options.webOriginHeader }
-          : undefined,
+        headers: {
+          ...authenticate(options.auth ?? null),
+          ...(options.webOriginHeader
+            ? { "x-okou-web-origin": options.webOriginHeader }
+            : {}),
+        },
       },
     );
   }
 
   async function requestSetupCallback(
     query: string,
-    options: { readonly origin?: string } = {},
+    options: { readonly origin?: string; readonly auth?: GithubActorAuth } = {},
   ): Promise<RawRouteResponse> {
     return await rawRequest(
       `/api/github/app/setup/callback${query ? `?${query}` : ""}`,
-      { method: "GET", origin: options.origin },
+      {
+        method: "GET",
+        origin: options.origin,
+        headers:
+          options.auth === undefined ? undefined : authenticate(options.auth),
+      },
     );
+  }
+
+  async function finishInstallationCallback(
+    callback: RawRouteResponse,
+    args: {
+      readonly installationId: string;
+      readonly githubUserId: string;
+      readonly organizationId?: string;
+    },
+  ): Promise<RawRouteResponse> {
+    if (callback.location) {
+      const replayUrl = new URL(callback.location);
+      if (replayUrl.pathname === "/api/github/app/setup/callback") {
+        callback = await requestSetupCallback(replayUrl.search.slice(1), {
+          origin: replayUrl.origin,
+        });
+      }
+    }
+    if (
+      callback.location &&
+      new URL(callback.location).pathname === "/login/oauth/authorize"
+    ) {
+      const authorization = new URL(callback.location);
+      const continuationState = authorization.searchParams.get("state");
+      if (!continuationState) {
+        throw new Error("Expected an installation verification state");
+      }
+      const code = `verify-install-${args.installationId}`;
+      mockGithubUserOAuthExchange({
+        code,
+        githubUserId: args.githubUserId,
+        organizationId: args.organizationId,
+      });
+      callback = await requestSetupCallback(
+        new URLSearchParams({ code, state: continuationState }).toString(),
+        {
+          origin: new URL(authorization.searchParams.get("redirect_uri")!)
+            .origin,
+        },
+      );
+    }
+    return callback;
   }
 
   return {
     requestInstall,
     requestSetupCallback,
+    configureApp: mockGithubAppEnv,
+    mockInstallation: mockGithubInstallationApi,
+    mockUserAuthorization: mockGithubUserOAuthExchange,
 
     async readInstallation(
       auth: GithubActorAuth,
@@ -404,7 +479,7 @@ export function createGithubBddApi(context: TestContext) {
      * Composite Given: full GitHub App install through the real install
      * redirect and setup callback. With `oauthCode` set the setup callback
      * exchanges the code against the GitHub App OAuth client and links the
-     * installing admin; without it the install stays unlinked.
+     * installing admin; without it the provider verification continuation leaves the install unlinked.
      */
     async installGithubApp(
       actor: ApiTestUser,
@@ -418,6 +493,7 @@ export function createGithubBddApi(context: TestContext) {
         readonly beforeCallback?: () => Promise<void>;
         readonly targetType?: string;
         readonly targetLogin?: string;
+        readonly installationId?: string;
       } = {},
     ): Promise<{
       readonly remoteInstallationId: string;
@@ -438,6 +514,7 @@ export function createGithubBddApi(context: TestContext) {
       }).toString();
       const install = await requestInstall(installQuery, {
         origin: "https://api.okou.ai",
+        auth: actor,
       });
       if (install.status !== 307 || !install.location) {
         throw new Error(
@@ -457,8 +534,12 @@ export function createGithubBddApi(context: TestContext) {
         );
       }
 
-      const remoteInstallationId = newRemoteInstallationId();
-      const targetId = newGithubUserId();
+      const remoteInstallationId =
+        options.installationId ?? newRemoteInstallationId();
+      const targetId =
+        options.targetType === "User" && options.oauthCode
+          ? options.oauthCode.githubUserId
+          : newGithubUserId();
       mockGithubInstallationApi({
         installationId: remoteInstallationId,
         targetId,
@@ -467,6 +548,7 @@ export function createGithubBddApi(context: TestContext) {
       });
       if (options.oauthCode) {
         mockGithubUserOAuthExchange({
+          organizationId: options.targetType === "User" ? undefined : targetId,
           code: options.oauthCode.code,
           githubUserId: options.oauthCode.githubUserId,
           login: options.oauthCode.login,
@@ -483,14 +565,11 @@ export function createGithubBddApi(context: TestContext) {
       let callback = await requestSetupCallback(callbackQuery, {
         origin: "https://api.okou.ai",
       });
-      if (callback.location) {
-        const replayUrl = new URL(callback.location);
-        if (replayUrl.pathname === "/api/github/app/setup/callback") {
-          callback = await requestSetupCallback(replayUrl.search.slice(1), {
-            origin: replayUrl.origin,
-          });
-        }
-      }
+      callback = await finishInstallationCallback(callback, {
+        installationId: remoteInstallationId,
+        githubUserId: targetId,
+        organizationId: options.targetType === "User" ? undefined : targetId,
+      });
       if (callback.status !== 307 || !callback.location) {
         throw new Error(
           `Expected GitHub setup callback redirect, received ${callback.status}`,
