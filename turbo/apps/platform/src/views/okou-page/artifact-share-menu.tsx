@@ -155,24 +155,33 @@ function PermissionChoices({
 export function ShareLinkRow({
   copying,
   link,
+  loading = false,
   onCopy,
 }: {
   readonly copying: boolean;
   readonly link: string | null;
+  readonly loading?: boolean;
   readonly onCopy: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1">
+    <div
+      aria-busy={loading}
+      className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1"
+    >
       <Link2 size={14} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-        {link}
-      </span>
+      {loading ? (
+        <Skeleton className="h-3 min-w-0 flex-1 rounded" />
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          {link}
+        </span>
+      )}
       <Button
         variant="quiet"
         size="sm"
         className="shrink-0"
-        disabled={copying || link === null}
+        disabled={copying || loading || link === null}
         onClick={() => {
           return onCopy();
         }}

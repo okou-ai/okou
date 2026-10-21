@@ -10,6 +10,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   artifact,
   findArtifactAction,
@@ -65,6 +66,46 @@ async function openShare() {
   click(getButtonByName("Share"));
   await screen.findByText("Published");
 }
+
+test("opening a site preloads its share URL and shows a skeleton until the current address is ready", async () => {
+  const requested = createDeferredPromise<void>(context.signal);
+  const response = createDeferredPromise<void>(context.signal);
+  const currentSite = {
+    ...site,
+    publicSlug: "current-report",
+    url: "https://current-report.okou.app",
+  };
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(hostContract.siteUrl, async ({ respond }) => {
+    requested.resolve();
+    await response.promise;
+    return respond(200, currentSite);
+  });
+
+  await openSite();
+  await requested.promise;
+  await openShare();
+  try {
+    expect(getButtonByName("Copy link")).toBeDisabled();
+    expect(getButtonByName("Copy link").closest("[aria-busy]")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+  } finally {
+    response.resolve();
+  }
+
+  await screen.findByText("current-report.okou.app");
+  expect(getButtonByName("Copy link")).toBeEnabled();
+  expect(getButtonByName("Copy link").closest("[aria-busy]")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([currentSite.url]);
+  });
+});
 
 test("published sites customize their address in Share and copy the saved URL without permission choices", async () => {
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
