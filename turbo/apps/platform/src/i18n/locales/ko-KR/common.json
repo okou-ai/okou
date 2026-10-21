@@ -610,6 +610,7 @@
     },
     "sharing": {
       "accessLabel": "액세스 권한",
+      "copied": "복사됨",
       "copyLink": "링크 복사",
       "loadFailed": "권한을 불러올 수 없습니다",
       "loadingPermissions": "권한을 불러오는 중",

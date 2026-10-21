@@ -611,6 +611,7 @@
     },
     "sharing": {
       "accessLabel": "किसे ऐक्सेस है",
+      "copied": "कॉपी हो गया",
       "copyLink": "लिंक कॉपी करें",
       "loadFailed": "अनुमतियाँ लोड नहीं हो सकीं",
       "loadingPermissions": "अनुमतियाँ लोड हो रही हैं",

@@ -1,13 +1,13 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, ChevronRight, Globe, Loader2, Share2 } from "lucide-react";
+import { Check, Globe, Loader2, Pencil, Share2 } from "lucide-react";
 import {
   Button,
   Input,
-  MENU_ROW_HEIGHT_CLASS,
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Skeleton,
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -17,7 +17,7 @@ import {
   type HostedSiteShareSession,
 } from "../../signals/hosted-site-sharing.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ShareLinkRow } from "./artifact-share-menu.tsx";
+import { ShareCopyButton } from "./artifact-share-menu.tsx";
 
 interface ShareButtonProps {
   readonly ariaLabel: string;
@@ -25,65 +25,156 @@ interface ShareButtonProps {
   readonly iconSize?: number;
 }
 
-function WebsiteUrlFeedback({
-  session,
-  checking,
-  checkFailed,
-  saveFailed,
-}: {
-  readonly session: HostedSiteShareSession;
-  readonly checking: boolean;
-  readonly checkFailed: boolean;
-  readonly saveFailed: boolean;
-}) {
+/**
+ * The published address is the menu's title. It is plain text rather than a
+ * boxed field because a box is for typing, and the site opens from it. The
+ * scheme says nothing the reader needs; the subdomain is the part they chose
+ * and the part that tells two sites apart, so it gives way first while the
+ * domain stays readable.
+ */
+function SiteAddress({ link }: { readonly link: string }) {
+  const address = link.replace(/^https?:\/\//u, "");
+  const dot = address.indexOf(".");
+  return (
+    <a
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex min-w-0 font-medium text-foreground underline-offset-4 hover:underline"
+    >
+      <span className="truncate">
+        {dot > 0 ? address.slice(0, dot) : address}
+      </span>
+      {dot > 0 && (
+        <span className="shrink-0 text-muted-foreground">
+          {address.slice(dot)}
+        </span>
+      )}
+    </a>
+  );
+}
+
+function SiteStatus({ link }: { readonly link: string | null }) {
   const { t } = useTranslation();
-  const id = session.inputId;
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <Globe size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        {link === null ? (
+          <Skeleton className="h-5 w-40 rounded" />
+        ) : (
+          <SiteAddress link={link} />
+        )}
+        <p className="text-xs text-muted-foreground">
+          <span>
+            {t(($) => {
+              return $.artifacts.siteUrl.published;
+            })}
+          </span>
+          {" · "}
+          <span>
+            {t(($) => {
+              return $.artifacts.sharing.publicOption;
+            })}
+          </span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+type WebsiteUrlFeedback = {
+  // A short state that sits beside the field's label.
+  readonly status: "checking" | "available" | null;
+  readonly message: string;
+  readonly error: boolean;
+};
+
+function useWebsiteUrlFeedback(
+  session: HostedSiteShareSession,
+  checking: boolean,
+  checkFailed: boolean,
+  saveFailed: boolean,
+): WebsiteUrlFeedback {
+  const { t } = useTranslation();
   const validation = useGet(session.validation$);
   const conflict = useGet(session.saveConflict$);
-  const failed = saveFailed || conflict;
-  const message = failed
-    ? t(($) => {
+  if (saveFailed || conflict) {
+    return {
+      status: null,
+      error: true,
+      message: t(($) => {
         return $.artifacts.siteUrl.saveFailed;
-      })
-    : validation === "invalid"
-      ? t(($) => {
-          return $.artifacts.siteUrl.invalid;
-        })
-      : validation === "taken"
-        ? t(($) => {
-            return $.artifacts.siteUrl.taken;
-          })
-        : checking
+      }),
+    };
+  }
+  if (validation === "invalid" || validation === "taken") {
+    return {
+      status: null,
+      error: true,
+      message:
+        validation === "invalid"
           ? t(($) => {
-              return $.artifacts.siteUrl.checking;
+              return $.artifacts.siteUrl.invalid;
             })
-          : checkFailed
-            ? t(($) => {
-                return $.artifacts.siteUrl.checkFailed;
-              })
-            : validation === "available"
-              ? t(($) => {
-                  return $.artifacts.siteUrl.available;
-                })
-              : t(($) => {
-                  return $.artifacts.siteUrl.hint;
-                });
+          : t(($) => {
+              return $.artifacts.siteUrl.taken;
+            }),
+    };
+  }
+  if (!checking && checkFailed) {
+    return {
+      status: null,
+      error: true,
+      message: t(($) => {
+        return $.artifacts.siteUrl.checkFailed;
+      }),
+    };
+  }
+  // Moving the site breaks every link already handed out, so that is said
+  // once an address can actually be saved, not before anything was typed.
+  return {
+    status: checking
+      ? "checking"
+      : validation === "available"
+        ? "available"
+        : null,
+    error: false,
+    message:
+      !checking && validation === "available"
+        ? t(($) => {
+            return $.artifacts.siteUrl.oldUrlWarning;
+          })
+        : t(($) => {
+            return $.artifacts.siteUrl.hint;
+          }),
+  };
+}
+
+function WebsiteUrlStatus({
+  status,
+}: {
+  readonly status: WebsiteUrlFeedback["status"];
+}) {
+  const { t } = useTranslation();
   return (
-    <p
-      id={`${id}-hint`}
+    <span
       role="status"
-      className={cn(
-        "text-xs",
-        failed ||
-          validation === "invalid" ||
-          validation === "taken" ||
-          checkFailed
-          ? "text-destructive"
-          : "text-muted-foreground",
-      )}
+      className="flex items-center gap-1 text-xs text-muted-foreground"
     >
-      {message}
-    </p>
+      {status === "checking" &&
+        t(($) => {
+          return $.artifacts.siteUrl.checking;
+        })}
+      {status === "available" && (
+        <>
+          <Check size={14} className="text-green-600" />
+          {t(($) => {
+            return $.artifacts.siteUrl.available;
+          })}
+        </>
+      )}
+    </span>
   );
 }
 
@@ -106,69 +197,77 @@ function WebsiteUrlEditor({
   const validation = useGet(session.validation$);
   const [checking, change] = useLoadableSet(session.change$);
   const cancel = useSet(session.cancel$);
+  const feedback = useWebsiteUrlFeedback(
+    session,
+    checking.state === "loading",
+    checking.state === "hasError",
+    saveFailed,
+  );
   if (!details || draft === null || !signal) {
     return null;
   }
   const suffix = new URL(details.url).hostname.slice(details.publicSlug.length);
   return (
     <form
-      className="space-y-3 px-2 pb-2 pt-3"
+      className="mt-4"
       onSubmit={(event) => {
         // This form owns URL submission; keep navigation with the current preview.
         event.preventDefault();
         onSave();
       }}
     >
-      <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
         <label htmlFor={id} className="text-sm font-medium">
           {t(($) => {
             return $.artifacts.siteUrl.label;
           })}
         </label>
-        <div className="relative">
-          <Input
-            id={id}
-            autoFocus
-            value={draft}
-            disabled={saving}
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            maxLength={63}
-            aria-describedby={`${id}-hint`}
-            aria-invalid={validation === "invalid" || validation === "taken"}
-            className="pr-24"
-            onChange={(event) => {
-              detach(change(event.target.value, signal), Reason.DomCallback);
-            }}
-            onKeyDown={(event) => {
-              // Composition confirmation, including Safari's final key, cannot submit.
-              if (
-                event.key === "Enter" &&
-                (event.nativeEvent.isComposing ||
-                  event.nativeEvent.keyCode === 229)
-              ) {
-                event.preventDefault();
-              }
-            }}
-          />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
-            {suffix}
-          </span>
-        </div>
-        <WebsiteUrlFeedback
-          session={session}
-          checking={checking.state === "loading"}
-          checkFailed={checking.state === "hasError"}
-          saveFailed={saveFailed}
-        />
+        <WebsiteUrlStatus status={feedback.status} />
       </div>
-      <p className="text-xs text-muted-foreground">
-        {t(($) => {
-          return $.artifacts.siteUrl.oldUrlWarning;
-        })}
+      {/* The fixed domain is a segment of the field rather than text laid
+          over it, so the subdomain keeps the field's full width to itself. */}
+      <div className="mt-2 flex h-9 overflow-hidden rounded-lg border border-[hsl(var(--gray-400))] bg-input text-sm transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10 has-aria-invalid:border-destructive has-aria-invalid:ring-destructive/10">
+        <Input
+          id={id}
+          autoFocus
+          value={draft}
+          disabled={saving}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          maxLength={63}
+          aria-describedby={`${id}-hint`}
+          aria-invalid={validation === "invalid" || validation === "taken"}
+          className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent focus:ring-0"
+          onChange={(event) => {
+            detach(change(event.target.value, signal), Reason.DomCallback);
+          }}
+          onKeyDown={(event) => {
+            // Composition confirmation, including Safari's final key, cannot submit.
+            if (
+              event.key === "Enter" &&
+              (event.nativeEvent.isComposing ||
+                event.nativeEvent.keyCode === 229)
+            ) {
+              event.preventDefault();
+            }
+          }}
+        />
+        <span className="flex shrink-0 items-center border-l border-[hsl(var(--gray-400))] bg-muted/60 px-3 text-muted-foreground">
+          {suffix}
+        </span>
+      </div>
+      <p
+        id={`${id}-hint`}
+        role="status"
+        className={cn(
+          "mt-2 text-xs",
+          feedback.error ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {feedback.message}
       </p>
-      <div className="flex justify-end gap-1">
+      <div className="mt-4 flex justify-end gap-1">
         <Button
           type="button"
           variant="quiet"
@@ -201,56 +300,29 @@ function WebsiteUrlEditor({
 
 function HostedSiteShareActions({
   session,
-  editing,
+  link,
+  customizable,
+  loadFailed,
 }: {
   readonly session: HostedSiteShareSession;
-  readonly editing: boolean;
+  readonly link: string | null;
+  readonly customizable: boolean;
+  readonly loadFailed: boolean;
 }) {
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
-  const details = useLoadable(session.details$);
-  const link = useLoadable(session.copyUrl$);
   const returnFocus = useGet(session.returnFocus$);
+  const copiedUrl = useGet(session.copiedUrl$);
   const edit = useSet(session.edit$);
   const refresh = useSet(session.refresh$);
-  const [copying, copy] = useLoadableSet(session.copy$);
-  if (editing || !signal) {
+  const copy = useSet(session.copy$);
+  if (!signal) {
     return null;
   }
   return (
     <>
-      <ShareLinkRow
-        copying={copying.state === "loading"}
-        link={
-          link.state === "hasData"
-            ? link.data.replace(/^https?:\/\//u, "")
-            : null
-        }
-        onCopy={() => {
-          detach(copy(signal), Reason.DomCallback);
-        }}
-      />
-      {details.state === "hasData" &&
-        details.data?.isActive &&
-        new URL(details.data.url).hostname.endsWith(
-          `.${resolveEditableHostedSiteDomain()}`,
-        ) && (
-          <Button
-            autoFocus={returnFocus}
-            variant="quiet"
-            className="mt-1 w-full justify-between px-2"
-            onClick={() => {
-              detach(edit(signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.artifacts.siteUrl.customize;
-            })}
-            <ChevronRight size={14} className="text-muted-foreground" />
-          </Button>
-        )}
-      {details.state === "hasError" && (
-        <div className="flex items-center justify-between gap-2 px-2 py-1">
+      {loadFailed && (
+        <div className="mt-3 flex items-center justify-between gap-2">
           <span role="status" className="text-xs text-muted-foreground">
             {t(($) => {
               return $.artifacts.siteUrl.loadFailed;
@@ -269,6 +341,79 @@ function HostedSiteShareActions({
           </Button>
         </div>
       )}
+      <div className="mt-4 flex items-center gap-2">
+        {customizable && (
+          // `-ml-2` pulls the quiet button's padding into the gutter so its
+          // pencil lines up with the globe above it.
+          <Button
+            autoFocus={returnFocus}
+            variant="quiet"
+            size="sm"
+            className="-ml-2 px-2"
+            onClick={() => {
+              detach(edit(signal), Reason.DomCallback);
+            }}
+          >
+            <Pencil />
+            {t(($) => {
+              return $.artifacts.siteUrl.customize;
+            })}
+          </Button>
+        )}
+        <ShareCopyButton
+          className="ml-auto"
+          copied={link !== null && copiedUrl === link}
+          disabled={link === null}
+          onCopy={() => {
+            detach(copy(signal), Reason.DomCallback);
+          }}
+        />
+      </div>
+    </>
+  );
+}
+
+function HostedSiteShareBody({
+  session,
+  saving,
+  saveFailed,
+  onSave,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly saveFailed: boolean;
+  readonly onSave: () => void;
+}) {
+  // Both reads stay subscribed while the editor is open, so Cancel and Save
+  // return to settled actions instead of a loading frame.
+  const link = useLoadable(session.copyUrl$);
+  const details = useLoadable(session.details$);
+  const editing = useGet(session.editing$);
+  const current = link.state === "hasData" ? link.data : null;
+  return (
+    <>
+      <SiteStatus link={current} />
+      {editing ? (
+        <WebsiteUrlEditor
+          session={session}
+          saving={saving}
+          saveFailed={saveFailed}
+          onSave={onSave}
+        />
+      ) : (
+        <HostedSiteShareActions
+          session={session}
+          link={current}
+          customizable={
+            details.state === "hasData" &&
+            details.data?.isActive === true &&
+            new URL(details.data.url).hostname.endsWith(
+              `.${resolveEditableHostedSiteDomain()}`,
+            )
+          }
+          loadFailed={details.state === "hasError"}
+        />
+      )}
     </>
   );
 }
@@ -279,10 +424,8 @@ function HostedSiteShareSessionMenu({
   className,
   iconSize = 16,
 }: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
-  const { t } = useTranslation();
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
-  const editing = useGet(session.editing$);
   const setOpen = useSet(session.setOpen$);
   const [saving, save] = useLoadableSet(session.save$);
   if (!signal) {
@@ -303,36 +446,22 @@ function HostedSiteShareSessionMenu({
       >
         <Share2 size={iconSize} />
       </PopoverTrigger>
+      {/* A small dialog rather than a menu: there are no list rows to inset,
+          so it keeps the popover's own padding and grows wide enough for a
+          full site address. */}
       <PopoverContent
         align="end"
         aria-label={ariaLabel}
-        className="w-80 max-w-[calc(100vw-2rem)] p-1.5"
+        className="w-90 max-w-[calc(100vw-2rem)]"
       >
-        <div
-          className={cn(
-            "flex items-center gap-2 rounded-lg px-2",
-            MENU_ROW_HEIGHT_CLASS,
-          )}
-        >
-          <Globe size={16} className="text-muted-foreground" />
-          <span className="flex-1 font-medium">
-            {t(($) => {
-              return $.artifacts.siteUrl.published;
-            })}
-          </span>
-          <Check size={16} />
-        </div>
-        {editing && (
-          <WebsiteUrlEditor
-            session={session}
-            saving={saving.state === "loading"}
-            saveFailed={saving.state === "hasError"}
-            onSave={() => {
-              detach(save(signal), Reason.DomCallback);
-            }}
-          />
-        )}
-        <HostedSiteShareActions session={session} editing={editing} />
+        <HostedSiteShareBody
+          session={session}
+          saving={saving.state === "loading"}
+          saveFailed={saving.state === "hasError"}
+          onSave={() => {
+            detach(save(signal), Reason.DomCallback);
+          }}
+        />
       </PopoverContent>
     </Popover>
   );

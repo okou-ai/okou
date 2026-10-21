@@ -611,6 +611,7 @@
     },
     "sharing": {
       "accessLabel": "Who can access",
+      "copied": "Copied",
       "copyLink": "Copy link",
       "loadFailed": "Unable to load permissions",
       "loadingPermissions": "Loading permissions",
