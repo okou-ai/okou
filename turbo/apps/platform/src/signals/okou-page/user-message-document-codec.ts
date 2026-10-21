@@ -241,6 +241,29 @@ function appendFileParts(
   }
 }
 
+/** Serialize an unmounted draft using its owned document and current files. */
+export function restoredMessageToDraftDocument(
+  document: UserMessageDocument,
+  attachments: readonly MessageDocumentAttachment[],
+): UserMessageInputDocument | null {
+  const parts: UserMessagePart[] = [];
+  let filesAppended = false;
+  for (const part of document.parts) {
+    if (part.type === "file") {
+      if (!filesAppended) {
+        appendFileParts(parts, attachments);
+        filesAppended = true;
+      }
+      continue;
+    }
+    parts.push(part);
+  }
+  if (!filesAppended) {
+    appendFileParts(parts, attachments);
+  }
+  return completedEditorDraft(parts)?.userMessage ?? null;
+}
+
 function feedbackSource(
   node: ProseMirrorNode,
 ): FeedbackSource | null | undefined {

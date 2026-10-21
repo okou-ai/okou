@@ -120,6 +120,7 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
     const payload = buildDraftPersistencePayload({
       input: get(draft.input$),
       editorDocument: set(draft.readEditorDocument$),
+      restoredUserMessage: set(draft.peekRestoredUserMessage$),
       generationTemplate: get(draft.generationTemplate$),
       attachments,
     });

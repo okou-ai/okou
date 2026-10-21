@@ -460,8 +460,8 @@ test("A conflicting consumption does not send or change the home draft", async (
   expect(composer()).toHaveTextContent("Keep this draft");
   expect(screen.queryByText("Restore draft")).not.toBeInTheDocument();
 });
-test("A failed suggestion's retained recovery cannot overwrite a newer edit in its mounted target", async () => {
-  mockPool([{ ...makeSuggestion(), threadId }]);
+test("A failed suggestion preserves unmounted structured recovery and cannot overwrite a newer mounted edit", async () => {
+  const pool = mockPool([{ ...makeSuggestion(), threadId }]);
   mockChatLifecycle(context, { threadId, threadTitle: "Recovery target" });
   let persisted: ChatThreadDraft = {
     draftUserMessage: {
@@ -477,15 +477,23 @@ test("A failed suggestion's retained recovery cannot overwrite a newer edit in i
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, persisted);
   });
+  let holdRecovery = false;
   let heldRecovery = false;
+  let unmountedRecoveryRoute: string | null = null;
   context.mocks.api(
     chatThreadByIdContract.patch,
     async ({ body, request, respond }) => {
       if (body.draftUserMessage === undefined) {
         return respond(204);
       }
-      const recovery =
-        !heldRecovery && JSON.stringify(body).includes("Referenced decision");
+      const structuredRecovery = JSON.stringify(body).includes(
+        "Referenced decision",
+      );
+      if (!holdRecovery && structuredRecovery) {
+        // This write must happen before navigation installs the target editor.
+        unmountedRecoveryRoute = pathname();
+      }
+      const recovery = holdRecovery && !heldRecovery && structuredRecovery;
       if (recovery) {
         heldRecovery = true;
         recoveryStarted.resolve();
@@ -525,7 +533,51 @@ test("A failed suggestion's retained recovery cannot overwrite a newer edit in i
   await waitFor(() => {
     return button("Restore draft");
   });
-  // The root-owned recovery action survives navigation to the ordinary panel.
+  // First recover with no target editor: storage, not a later rich mount,
+  // must preserve the reference through the pre-navigation write.
+  click(button("Restore draft"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${threadId}`);
+    expect(composer()).toHaveTextContent("Referenced decision");
+  });
+  const client = context.store.get(apiClient$)(chatThreadDraftContract);
+  const restored = await client.get({ params: { id: threadId } });
+  expect(restored.status).toBe(200);
+  expect(unmountedRecoveryRoute).toBe(`/agents/${agentId}/chat`);
+  expect(restored.body).toStrictEqual({
+    draftUserMessage: {
+      version: 1,
+      parts: [
+        { type: "text", text: "Review the pending decision in " },
+        {
+          type: "chat_thread",
+          threadId,
+          titleSnapshot: "Referenced decision",
+        },
+        { type: "text", text: "\n\n" },
+        { type: "text", text: "Existing target draft" },
+      ],
+    },
+    draftAttachments: null,
+  });
+  click(button("New chat"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${agentId}/chat`);
+    expect(composer()).toHaveTextContent("Keep this draft");
+  });
+  holdRecovery = true;
+  pool.publish({
+    ...makeSuggestion(),
+    id: "a0000000-0000-4000-a000-000000000002",
+    threadId,
+  });
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  await screen.findByText(makeSuggestion().title);
+  click(button(makeSuggestion().title));
+  await waitFor(() => {
+    return button("Restore draft");
+  });
+  // The second retained action survives navigation to the ordinary panel.
   click(await screen.findByText("Recovery target"));
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${threadId}`);
@@ -545,7 +597,6 @@ test("A failed suggestion's retained recovery cannot overwrite a newer edit in i
     expect(composer()).toHaveTextContent("Keep this draft");
   });
   // Read the public persisted draft, not the still-cached local editor state.
-  const client = context.store.get(apiClient$)(chatThreadDraftContract);
   const response = await client.get({ params: { id: threadId } });
   expect(response.status).toBe(200);
   expect(response.body).toStrictEqual({
@@ -555,7 +606,7 @@ test("A failed suggestion's retained recovery cannot overwrite a newer edit in i
     },
     draftAttachments: null,
   });
-  expect(attempts).toBe(1);
+  expect(attempts).toBe(2);
 });
 test("A failed new-chat suggestion offers draft recovery without automatically sending again", async () => {
   mockPool([{ ...makeSuggestion(), threadId: null }]);

@@ -527,6 +527,7 @@ export interface DraftSignals {
   >;
   setInputSyncTarget$: Command<void, [DraftInputSyncTarget | null]>;
   takeRestoredUserMessage$: Command<UserMessageDocument | null, []>;
+  peekRestoredUserMessage$: Command<UserMessageDocument | null, []>;
   readEditorDocument$: Command<EditorDocumentSnapshot | null, []>;
   setEditorDocument$: Command<void, [EditorDocumentSnapshot | null]>;
   generationTemplate$: Computed<GenerationTemplateRequest | undefined>;
@@ -714,7 +715,9 @@ function reportUnavailableAttachments(filenames: readonly string[]): string {
   return message;
 }
 
-function createDraftInputSignals() {
+function createDraftInputSignals(
+  draftDocument: ReturnType<typeof createDraftDocumentSignals>,
+) {
   const internalInput$ = state<string | undefined>(undefined);
   const hasLocalInput$ = computed((get) => {
     return get(internalInput$) !== undefined;
@@ -748,6 +751,7 @@ function createDraftInputSignals() {
     },
   );
   const setInput$ = command(({ set }, value: string) => {
+    set(draftDocument.setRestoredUserMessage$, null);
     set(syncInput$, value);
     set(internalInput$, value);
   });
@@ -926,10 +930,10 @@ function createDraftLifecycleSignals({
     ({ set }, value: DraftSeed, signal: AbortSignal): Promise<boolean> => {
       signal.throwIfAborted();
       set(draftDocument.setEditorDocument$, null);
-      set(draftDocument.setRestoredUserMessage$, value.userMessage);
       set(internalGenerationTemplate$, value.generationTemplate);
       set(internalAttachments$, value.attachments);
       set(draftInput.setInput$, value.content);
+      set(draftDocument.setRestoredUserMessage$, value.userMessage);
       if (
         value.userMessage &&
         set(draftInput.syncUserMessage$, value.userMessage)
@@ -1165,8 +1169,8 @@ function createComposerDraftHandoffSignals({
 }
 
 export function createDraftSignals(): DraftSignals {
-  const draftInput = createDraftInputSignals();
   const draftDocument = createDraftDocumentSignals();
+  const draftInput = createDraftInputSignals(draftDocument);
   const internalGenerationTemplate$ = state<
     GenerationTemplateRequest | undefined
   >(undefined);
@@ -1284,6 +1288,7 @@ export function createDraftSignals(): DraftSignals {
     composerDraftHandoff$,
     finishComposerDraftHandoff$,
     takeRestoredUserMessage$: draftDocument.takeRestoredUserMessage$,
+    peekRestoredUserMessage$: draftDocument.peekRestoredUserMessage$,
     readEditorDocument$: draftDocument.readEditorDocument$,
     setEditorDocument$: draftDocument.setEditorDocument$,
     generationTemplate$,
