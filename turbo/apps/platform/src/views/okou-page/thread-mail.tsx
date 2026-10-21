@@ -400,20 +400,18 @@ function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
           disabled={disabled}
+          className="text-destructive hover:text-destructive"
           onClick={() => {
             detach(prepare("delete", signal), Reason.DomCallback);
           }}
         >
-          <Trash size={14} />
-          {t(
-            ($) => {
-              return $.chat.mail.manager.delete;
-            },
-            { quantity: draftCount },
-          )}
+          <Trash size={15} />
+          {t(($) => {
+            return $.chat.actions.delete;
+          })}
         </Button>
         <Button
           type="button"
@@ -424,13 +422,10 @@ function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
             detach(prepare("send", signal), Reason.DomCallback);
           }}
         >
-          <Send size={14} />
-          {t(
-            ($) => {
-              return $.chat.mail.manager.send;
-            },
-            { quantity: draftCount },
-          )}
+          <Send size={15} />
+          {t(($) => {
+            return $.chat.actions.send;
+          })}
         </Button>
       </div>
     </div>
@@ -598,10 +593,10 @@ function ThreadMailConfirmation({
             )}
             {sending
               ? t(($) => {
-                  return $.chat.mail.manager.confirmSend;
+                  return $.chat.actions.send;
                 })
               : t(($) => {
-                  return $.chat.mail.manager.confirmDelete;
+                  return $.chat.actions.delete;
                 })}
           </Button>
         </DialogFooter>

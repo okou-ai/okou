@@ -185,8 +185,8 @@ describe("thread email manager", () => {
     ).toHaveAttribute("aria-checked", "mixed");
     await click(within(list).getByRole("checkbox", { name: "Select all" }));
     await within(list).findByText("12 selected");
-    await expect(button("Send drafts (2)", list)).resolves.toBeEnabled();
-    await expect(button("Delete drafts (2)", list)).resolves.toBeEnabled();
+    await expect(button("Send", list)).resolves.toBeEnabled();
+    await expect(button("Delete", list)).resolves.toBeEnabled();
     expect(
       within(list).getByLabelText("Select email: Proposal 12"),
     ).toHaveAttribute("aria-checked", "true");
@@ -194,8 +194,8 @@ describe("thread email manager", () => {
     await click(await button("Sent", list));
     await click(within(list).getByRole("checkbox", { name: "Select all" }));
     await within(list).findByText("10 selected");
-    await expect(button("Send drafts (0)", list)).resolves.toBeDisabled();
-    await expect(button("Delete drafts (0)", list)).resolves.toBeDisabled();
+    await expect(button("Send", list)).resolves.toBeDisabled();
+    await expect(button("Delete", list)).resolves.toBeDisabled();
   });
 
   it("preserves selection, search and scroll when returning from list details; chat details have no list navigation", async () => {
@@ -266,19 +266,19 @@ describe("thread email manager", () => {
     await openChat();
     const list = await openList();
     await click(within(list).getByRole("checkbox", { name: "Select all" }));
-    await click(await button("Send drafts (2)", list));
+    await click(await button("Send", list));
     const confirmation = await screen.findByRole("dialog", {
       name: "Send selected drafts?",
     });
-    await click(await button("Send drafts", confirmation));
+    await click(await button("Send", confirmation));
     await screen.findByText("1 completed · 1 failed");
     expect(fixture.sent).toStrictEqual([id(1)]);
     fixture.reject.delete(id(2));
-    await click(await button("Send drafts (1)"));
+    await click(await button("Send", list));
     const retry = await screen.findByRole("dialog", {
       name: "Send selected drafts?",
     });
-    await click(await button("Send drafts", retry));
+    await click(await button("Send", retry));
     await screen.findByText("1 completed · 0 failed");
     expect(fixture.sent).toStrictEqual([id(1), id(2)]);
   });
@@ -288,20 +288,20 @@ describe("thread email manager", () => {
     await openChat();
     const list = await openList();
     await click(within(list).getByRole("checkbox", { name: "Select all" }));
-    await click(await button("Delete drafts (2)", list));
+    await click(await button("Delete", list));
     const confirmation = await screen.findByRole("dialog", {
       name: "Delete selected drafts?",
     });
     await click(await button("Cancel", confirmation));
     expect(fixture.deleted).toStrictEqual([]);
-    await click(await button("Delete drafts (2)", list));
+    await click(await button("Delete", list));
     const second = await screen.findByRole("dialog", {
       name: "Delete selected drafts?",
     });
-    await click(await button("Delete drafts", second));
+    await click(await button("Delete", second));
     await screen.findByText("2 completed · 0 failed");
     expect(fixture.deleted).toStrictEqual([id(1), id(2)]);
     expect(fixture.mails.get(id(12))?.status).toBe("sent");
-    await expect(button("Delete drafts (0)")).resolves.toBeDisabled();
+    await expect(button("Delete", list)).resolves.toBeDisabled();
   });
 });
