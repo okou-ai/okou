@@ -40,7 +40,7 @@ function SiteAddress({ link }: { readonly link: string }) {
       href={link}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex min-w-0 font-medium text-foreground underline-offset-4 hover:underline"
+      className="inline-flex max-w-full font-medium text-foreground underline-offset-4 hover:underline"
     >
       <span className="truncate">
         {dot > 0 ? address.slice(0, dot) : address}
@@ -54,17 +54,22 @@ function SiteAddress({ link }: { readonly link: string }) {
   );
 }
 
-function SiteStatus({ link }: { readonly link: string | null }) {
+function SiteStatus({
+  link,
+  loading,
+}: {
+  readonly link: string | null;
+  readonly loading: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex items-start gap-2 text-sm">
       <Globe size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        {link === null ? (
-          <Skeleton className="h-5 w-40 rounded" />
-        ) : (
-          <SiteAddress link={link} />
-        )}
+        {/* A failed read names no address; Retry below the title owns that
+            state, so only a pending read shows a placeholder. */}
+        {link !== null && <SiteAddress link={link} />}
+        {loading && <Skeleton className="h-5 w-40 rounded" />}
         <p className="text-xs text-muted-foreground">
           <span>
             {t(($) => {
@@ -226,37 +231,32 @@ function WebsiteUrlEditor({
       </div>
       {/* The fixed domain is a segment of the field rather than text laid
           over it, so the subdomain keeps the field's full width to itself. */}
-      <div className="mt-2 flex h-9 overflow-hidden rounded-lg border border-[hsl(var(--gray-400))] bg-input text-sm transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10 has-aria-invalid:border-destructive has-aria-invalid:ring-destructive/10">
-        <Input
-          id={id}
-          autoFocus
-          value={draft}
-          disabled={saving}
-          autoComplete="off"
-          autoCapitalize="none"
-          spellCheck={false}
-          maxLength={63}
-          aria-describedby={`${id}-hint`}
-          aria-invalid={validation === "invalid" || validation === "taken"}
-          className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent focus:ring-0"
-          onChange={(event) => {
-            detach(change(event.target.value, signal), Reason.DomCallback);
-          }}
-          onKeyDown={(event) => {
-            // Composition confirmation, including Safari's final key, cannot submit.
-            if (
-              event.key === "Enter" &&
-              (event.nativeEvent.isComposing ||
-                event.nativeEvent.keyCode === 229)
-            ) {
-              event.preventDefault();
-            }
-          }}
-        />
-        <span className="flex shrink-0 items-center border-l border-[hsl(var(--gray-400))] bg-muted/60 px-3 text-muted-foreground">
-          {suffix}
-        </span>
-      </div>
+      <Input
+        id={id}
+        autoFocus
+        value={draft}
+        disabled={saving}
+        autoComplete="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        maxLength={63}
+        aria-describedby={`${id}-hint`}
+        aria-invalid={validation === "invalid" || validation === "taken"}
+        suffix={suffix}
+        className="mt-2"
+        onChange={(event) => {
+          detach(change(event.target.value, signal), Reason.DomCallback);
+        }}
+        onKeyDown={(event) => {
+          // Composition confirmation, including Safari's final key, cannot submit.
+          if (
+            event.key === "Enter" &&
+            (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+          ) {
+            event.preventDefault();
+          }
+        }}
+      />
       <p
         id={`${id}-hint`}
         role="status"
@@ -392,7 +392,7 @@ function HostedSiteShareBody({
   const current = link.state === "hasData" ? link.data : null;
   return (
     <>
-      <SiteStatus link={current} />
+      <SiteStatus link={current} loading={link.state === "loading"} />
       {editing ? (
         <WebsiteUrlEditor
           session={session}

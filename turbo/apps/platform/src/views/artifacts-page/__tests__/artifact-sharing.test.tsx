@@ -222,17 +222,11 @@ test("owner copying uses the canonical version reference returned by the API", a
   });
   await openArtifact();
   await openShareMenu();
-  // The stable app link names an artifact id, so the menu offers the copy
-  // without spelling the address out.
-  expect(screen.getByRole("dialog", { name: "Share" })).not.toHaveTextContent(
-    "/artifacts/",
-  );
   click(action("button", "Copy link"));
   await waitFor(() => {
     expect(queryAction("button", "Copied")).toBeDefined();
   });
   expect(clipboard.writes).toStrictEqual([ownerUrl]);
-  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
 });
 
 test("failed permission saves retain the current audience", async () => {

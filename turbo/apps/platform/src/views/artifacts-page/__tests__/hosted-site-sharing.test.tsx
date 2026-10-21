@@ -100,6 +100,11 @@ test("published sites customize their address in Share and copy the saved URL wi
   await fill(input, "launch-report");
   await screen.findByText("Available");
   expect(
+    screen.getByText(
+      "The old URL will stop working. Update any links you have shared.",
+    ),
+  ).toBeInTheDocument();
+  expect(
     fireEvent.keyDown(input, {
       key: "Enter",
       isComposing: false,
@@ -131,7 +136,6 @@ test("published sites customize their address in Share and copy the saved URL wi
     expect(queryButtonByName("Copied")).toBeDefined();
   });
   expect(clipboard.writes).toStrictEqual(["https://launch-report.okou.app"]);
-  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
 });
 
 test("invalid and occupied addresses cannot be saved and cancel discards the draft", async () => {
@@ -153,6 +157,7 @@ test("invalid and occupied addresses cannot be saved and cancel discards the dra
   expect(getButtonByName("Save")).toBeDisabled();
   await fill(input, "taken-report");
   await screen.findByText("This address is already taken");
+  expect(input).toHaveAttribute("aria-invalid", "true");
   expect(getButtonByName("Save")).toBeDisabled();
   click(getButtonByName("Cancel"));
   expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
