@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/okou-ai/okou/compare/ios-v0.17.0...ios-v0.17.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **ios:** right-align model and fast mode change labels ([#41973](https://github.com/okou-ai/okou/issues/41973)) ([3d35a3f](https://github.com/okou-ai/okou/commit/3d35a3fbf92be40da04f61f139b513faa38dff16))
+
 ## [0.17.0](https://github.com/okou-ai/okou/compare/ios-v0.16.0...ios-v0.17.0) (2026-10-21)
 
 

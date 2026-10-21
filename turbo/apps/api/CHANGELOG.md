@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.761.0](https://github.com/okou-ai/okou/compare/api-v1.760.4...api-v1.761.0) (2026-10-21)
+
+
+### Features
+
+* support independent hosted site titles ([#41997](https://github.com/okou-ai/okou/issues/41997)) ([87ae8c9](https://github.com/okou-ai/okou/commit/87ae8c9f3481e1fc8b193dd6076e55b21022c0b0))
+
+
+### Refactoring
+
+* **api:** inline model provider refresh row reads ([#42026](https://github.com/okou-ai/okou/issues/42026)) ([3731d81](https://github.com/okou-ai/okou/commit/3731d8167d8f11fae3075e6f34b24fdf6dc4116e))
+* **api:** inline model provider source state reads ([#42010](https://github.com/okou-ai/okou/issues/42010)) ([bd4f516](https://github.com/okou-ai/okou/commit/bd4f516edcb591deacbe96b412de72150047d9b5))
+* **api:** inline subscription runtime secret synchronization ([#42006](https://github.com/okou-ai/okou/issues/42006)) ([ea268d7](https://github.com/okou-ai/okou/commit/ea268d71603602c42bafd0029214e14bf6a1aadb))
+* **api:** keep discord database operations with their owners ([#42007](https://github.com/okou-ai/okou/issues/42007)) ([82e4d11](https://github.com/okou-ai/okou/commit/82e4d11b6e13c842c32e91ea09f628bc81f4c696))
+* **api:** keep teams database operations with their owners ([#42037](https://github.com/okou-ai/okou/issues/42037)) ([8727d2a](https://github.com/okou-ai/okou/commit/8727d2afca808c1c5cdaf106e1f8d7ce0893f8c8))
+* **api:** localize accepted catalog runtime reads ([#42040](https://github.com/okou-ai/okou/issues/42040)) ([f91a91a](https://github.com/okou-ai/okou/commit/f91a91ac3aca8311abf28dae9e90f33d5b4baa7d))
+* **connector:** retire status contracts after app reader preparation ([#41862](https://github.com/okou-ai/okou/issues/41862)) ([4ddecef](https://github.com/okou-ai/okou/commit/4ddecefcad0e97d13b75106bcc0bca13a0a45fa6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.584.0
+    * @okouai/core bumped to 8.775.0
+    * @okouai/db bumped to 1.354.0
+    * @okouai/pi-agent-runtime bumped to 1.50.40
+
 ## [1.760.4](https://github.com/okou-ai/okou/compare/api-v1.760.3...api-v1.760.4) (2026-10-21)
 
 

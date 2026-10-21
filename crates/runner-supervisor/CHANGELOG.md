@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.3...runner-supervisor-v0.20.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* **runner:** hand off reusable non-success predecessors with home custody ([#42000](https://github.com/okou-ai/okou/issues/42000)) ([cd921b9](https://github.com/okou-ai/okou/commit/cd921b9542b8d9ffc50fe934a2a1cc6e156ba530))
+
 ## [0.20.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.2...runner-supervisor-v0.20.3) (2026-10-21)
 
 
