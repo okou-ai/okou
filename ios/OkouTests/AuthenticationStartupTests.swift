@@ -273,18 +273,24 @@ final class AuthenticationStartupTests: XCTestCase {
     (view as? ComposerTextView) ?? view.subviews.compactMap { composer(in: $0) }.first
   }
 
-  private func image(_ window: UIWindow) -> UIImage {
-    UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+  private func image(_ window: UIWindow, scale: CGFloat? = nil) -> UIImage {
+    let format = UIGraphicsImageRendererFormat()
+    if let scale { format.scale = scale }
+    return UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
       window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
     }
   }
 
   private func text(_ window: UIWindow) async throws -> String {
-    let captured = try XCTUnwrap(image(window).cgImage)
+    // Body-sized English labels need no full-resolution or language-model correction.
+    // Keep the separate evidence attachments at the window's original display scale.
+    let captured = try XCTUnwrap(image(window, scale: 2).cgImage)
     return try await Task.detached {
       let request = VNRecognizeTextRequest()
-      request.recognitionLevel = .accurate
+      request.recognitionLevel = .fast
       request.recognitionLanguages = ["en-US"]
+      request.usesLanguageCorrection = false
+      request.minimumTextHeight = 0.01
       try VNImageRequestHandler(cgImage: captured).perform([request])
       // OCR line breaks follow rendered wrapping, which varies across simulator runtimes.
       return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
