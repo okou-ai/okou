@@ -748,7 +748,12 @@ inside the safe-area insets. The environment values come from the existing
 `--sat`, `--sar`, `--sab`, `--sal`, and `--okou-viewport-height` properties; the
 shared primitive also works with native `env()` insets outside Platform.
 
-Callers select `maxWidth`, `smMaxWidth`, `height`, and `mode`. The popup fills
+Callers select `maxWidth`, `smMaxWidth`, `height`, `position`, and `mode`.
+`position="top"` anchors windowed search palettes below a responsive safe-area
+inset instead of recentering them when results change height. Other dialogs
+remain centered. Use `scrollable={false}` only when a constrained child owns
+scrolling, keeping search controls outside that child's scrolling region.
+The popup fills
 the available safe width and is capped by `maxWidth` (default `lg`);
 `smMaxWidth` changes that upper bound only from the shared `sm` breakpoint.
 Width caps never set a fixed width or determine height. Preserve existing
@@ -760,8 +765,8 @@ available viewport, so increasing a cap cannot increase the safe boundary.
 The popup does not accept `className`, `style`, or `render`. Use
 `contentClassName` for the inner layout and `DialogBody` for a scrolling body
 below a fixed header. `contentClassName` remains subject to the style policy.
-The shared inner container protects vertical scrolling even when caller layout
-classes include `overflow-hidden`. Short panels must keep their footer actions
+By default, the shared inner container protects vertical scrolling even when
+caller layout classes include `overflow-hidden`. Short panels must keep their footer actions
 reachable by scrolling; clipping the popup to its safe boundary is not enough.
 Use `showCloseButton` instead of CSS selectors that hide the close control.
 `hideWhenNestedOpen` takes the popup out of view for as long as a dialog opened
