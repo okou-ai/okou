@@ -301,13 +301,20 @@ cancelled jobs remain failures. Desktop and Rust retain their own input filters.
 
 Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
+Root-view tests pass a fixture-owned HTTP session and service origin; unconfigured
+startup API requests fail with their method and URL. Fixture sessions reject
+unknown HTTP origins locally instead of falling through to DNS, while preserving
+the loopback HTTP servers used by attachment integration tests.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
 server contract verification. CI starts its configured simulator while resolving
 locked dependencies, then waits for system boot readiness before asset and App
 compilation. This keeps cold system-service startup out of asset-tool discovery.
 After `build-for-testing` succeeds, CI executes every native test with
-`test-without-building`. Failed or
+`test-without-building`. Test results and attachments remain in `Tests.xcresult`;
+automatic simulator sysdiagnose collection is disabled so it cannot delay the
+failure verdict. Native prerequisite waits throw after recording a failed
+assertion, stopping dependent actions. Failed or
 cancelled preparation still blocks the required gate. The standalone command
 builds and runs every suite sequentially with an explicit local simulator:
 

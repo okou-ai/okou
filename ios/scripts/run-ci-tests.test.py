@@ -85,6 +85,11 @@ elif command == 'xcodebuild':
         if specification.read_text() != 'built tests':
             sys.exit('Tests require the current build specification')
         mark('tests-ran')
+        if scenario == 'test-failure':
+            bundle = pathlib.Path(args[args.index('-resultBundlePath') + 1])
+            bundle.mkdir(parents=True)
+            (bundle / 'failure.txt').write_text('First failed assertion')
+            sys.exit(65)
     else:
         raise ValueError(args)
 else:
@@ -201,6 +206,13 @@ class CIProcessTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertIn("Expected exactly one built test specification", result.stderr)
         self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_native_failure_preserves_its_status_and_result_bundle(self):
+        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 65, result.stderr)
+        bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
+        self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
 
     def test_cancellation_retires_both_owned_process_groups(self):
         self.env["CI_PROCESS_SCENARIO"] = "cancel"
