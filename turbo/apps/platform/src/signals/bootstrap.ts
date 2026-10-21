@@ -26,7 +26,7 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { bestEffort, onDomEventFn, resetSignal } from "./utils.ts";
+import { onDomEventFn, resetSignal } from "./utils.ts";
 import { setupVisualViewportKeyboardState } from "../lib/visual-viewport-keyboard.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
@@ -644,11 +644,7 @@ export const bootstrap$ = command(
     set(setupAuthenticatedRealtime$, signal);
     const ready = set(completeBootstrap$, render, signal);
 
-    await Promise.all([
-      bestEffort(clerkIdentitySetup, signal),
-      bestEffort(sharedDatabaseSetup, signal),
-      ready,
-    ]);
+    await Promise.all([clerkIdentitySetup, sharedDatabaseSetup, ready]);
     signal.throwIfAborted();
   },
 );
