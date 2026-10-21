@@ -3444,7 +3444,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       return connectorsApi.listCustomConnectors(peer);
     });
     await expectCustomAccountReadiness(
-      admin,
+      peer,
       peerAfterExpiry.find((candidate) => {
         return candidate.id === connector.id;
       }),
