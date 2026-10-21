@@ -2091,7 +2091,7 @@ export function SshHostCard({
       )}
       <div className="flex flex-wrap gap-2">
         <Button
-          variant={detail ? "quiet" : "outline"}
+          variant="outline"
           disabled={unavailable || (tailscale && !tailscaleEnabled)}
           onClick={() => {
             return detach(open("edit", connection, signal), Reason.DomCallback);
@@ -2102,7 +2102,7 @@ export function SshHostCard({
           })}
         </Button>
         <Button
-          variant={detail ? "quiet" : "outline"}
+          variant="outline"
           disabled={unavailable || !connection.learnedHostKey}
           onClick={() => {
             return detach(
@@ -2116,7 +2116,7 @@ export function SshHostCard({
           })}
         </Button>
         <Button
-          variant={detail ? "quiet" : "outline"}
+          variant="outline"
           disabled={unavailable}
           onClick={() => {
             return detach(
