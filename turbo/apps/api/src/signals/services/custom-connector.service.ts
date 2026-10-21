@@ -1517,6 +1517,11 @@ function validateDefinitionAuth(
   fields: readonly CustomConnectorField[],
 ): CustomConnectorAuthMode | BadRequestResponse {
   const authMode = input.authMode ?? "manual";
+  if (authMode === "oauth" && fields.length > 0) {
+    return badRequestMessage(
+      "OAuth custom connectors cannot declare fields; remove all fields and their template references",
+    );
+  }
   const issue = customConnectorDefinitionFieldCompatibility({
     authMode,
     kind: input.kind ?? "http",
