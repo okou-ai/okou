@@ -276,7 +276,8 @@ if args[0] == 'exec':
         sys.exit(23)
     assert host_timeout == 20, 'release omitted host timeout'
     assert guest_args[:2] == ['timeout', '10'], 'release omitted guest timeout'
-    result = subprocess.run(guest_args, timeout=host_timeout)
+    # Keep the simulated guest timeout inside the case-owned process group.
+    result = subprocess.run([guest_args[0], '--foreground', *guest_args[1:]], timeout=host_timeout)
     if result.returncode == 0:
         (root / f'released-{number}').touch()
     sys.exit(result.returncode)
