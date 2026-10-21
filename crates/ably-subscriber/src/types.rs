@@ -294,6 +294,11 @@ pub struct SubscribeConfig {
     /// Like [`host`](Self::host), this must be a host/authority rather than a
     /// base URL.
     pub rest_host: Option<String>,
+    /// Request Ably's server heartbeat interval, between five seconds and
+    /// thirty minutes, sent as the `heartbeatInterval` transport parameter.
+    /// `None` retains the service default. The server's negotiated
+    /// `maxIdleInterval` remains authoritative for local idle detection.
+    pub heartbeat_interval: Option<Duration>,
     /// Override timing parameters. `None` uses [`TimingConfig::default()`].
     pub timing: Option<TimingConfig>,
 }
@@ -301,8 +306,7 @@ pub struct SubscribeConfig {
 impl SubscribeConfig {
     /// Create a new configuration with the required fields.
     ///
-    /// Optional fields (`channel_params`, `host`, `rest_host`, `timing`) default
-    /// to `None` and can be set directly after construction.
+    /// Optional fields default to `None` and can be set after construction.
     pub fn new(
         get_token: Box<dyn Fn() -> TokenFuture + Send + Sync>,
         channel: impl Into<String>,
@@ -313,6 +317,7 @@ impl SubscribeConfig {
             channel_params: None,
             host: None,
             rest_host: None,
+            heartbeat_interval: None,
             timing: None,
         }
     }

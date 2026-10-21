@@ -1,5 +1,7 @@
 //! Public entry point: [`subscribe`] and [`Subscription`].
 
+use std::time::Duration;
+
 use tokio::sync::oneshot;
 
 use crate::connection::{
@@ -129,6 +131,14 @@ impl Drop for Subscription {
 /// receiving messages on the established connection. See [`Subscription`] for the
 /// event queue's memory and consumer-lifetime contract.
 pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
+    if config.heartbeat_interval.is_some_and(|interval| {
+        !(Duration::from_secs(5)..=Duration::from_secs(1800)).contains(&interval)
+    }) {
+        return Err(Error::Protocol {
+            code: error_code::BAD_REQUEST,
+            message: "Heartbeat interval must be between five seconds and thirty minutes".into(),
+        });
+    }
     let timing = config.timing.unwrap_or_default();
     let close_timeout = timing.close_timeout;
     let (event_tx, event_rx) = event_queue();
@@ -165,6 +175,7 @@ pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
             token,
             &config.channel,
             config.channel_params.as_ref(),
+            config.heartbeat_interval,
             &timing,
             transport_close_tracker.clone(),
         ),
@@ -187,6 +198,7 @@ pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
             channel_params: config.channel_params,
             realtime_host,
             rest_host: rest,
+            heartbeat_interval: config.heartbeat_interval,
             http,
             get_token: config.get_token,
             pending_token_renewal: None,
