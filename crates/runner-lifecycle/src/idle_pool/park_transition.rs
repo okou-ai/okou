@@ -98,10 +98,10 @@ pub struct IdleParkRequest {
 /// Resources and metadata supplied while the active job still owns the
 /// sandbox.
 ///
-/// The optional `handoff` is a caller-side native-continuation capability: the
-/// finalization path supplies it only when a waiting successor is claiming the
-/// predecessor's exact native generation. Speculative rollback deliberately
-/// calls the shared transition without an observer or handoff.
+/// The optional `handoff` carries a waiting successor's source-bound request
+/// for physical resource transfer. It does not authorize native continuation.
+/// Speculative rollback deliberately calls the shared transition without an
+/// observer or handoff.
 #[must_use = "idle park request parts own active sandbox and budget"]
 pub struct IdleParkRequestParts {
     pub run_id: RunId,
