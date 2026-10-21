@@ -185,7 +185,9 @@ func mentionInputs(in view: UIView) -> [ComposerTextView] {
 func focusMentionInput(_ input: ComposerTextView) async throws {
   input.becomeFirstResponder()
   try await eventually(
-    message: "Native composer focus/expansion: \(input.isFirstResponder), \(input.bounds)"
+    message:
+      "Native composer focus/expansion: \(input.isFirstResponder), \(input.bounds); "
+      + "window: \(input.window != nil); current: \(input.isCurrent())"
   ) {
     input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
   }
@@ -206,7 +208,13 @@ func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> U
   window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
   window.rootViewController = host
   window.makeKeyAndVisible()
-  try await eventually { mentionInputs(in: host.view).first?.bounds.isEmpty == false }
+  host.view.layoutIfNeeded()
+  try await eventually {
+    guard let input = mentionInputs(in: host.view).first else { return false }
+    return input.window === window && !input.bounds.isEmpty
+  }
+  // Native focus must follow the initial hosting transaction's presented frame.
+  await hostingPresentationFrame()
   return window
 }
 
