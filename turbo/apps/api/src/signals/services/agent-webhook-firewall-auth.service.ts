@@ -5512,26 +5512,6 @@ function requestedAutomaticMcpCatalogAuth(args: {
  * Every slug this request can resolve is the matched firewall or an access
  * source named by the secret map; only the matched slug needs firewall rules.
  */
-async function loadFirewallAuthConnectorCatalog(
-  db: Db,
-  body: FirewallAuthBody,
-): Promise<ConnectorRuntimeAuthSelection> {
-  const connectorSlug = body.matchedFirewall?.connectorSlug;
-  const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
-    connectorSlugs: Object.values(body.secretConnectorMap ?? {}),
-    firewallConnectorSlugs: connectorSlug === undefined ? [] : [connectorSlug],
-  });
-  return connectorRuntimeAuthSelectionFromRows(
-    await db
-      .select(catalogPlan.columns)
-      .from(connectorCatalog)
-      .leftJoin(connectorCatalogEntries, catalogPlan.join)
-      .where(connectorCatalogCurrentWhere()),
-    catalogPlan.requestedConnectorSlugs,
-    catalogPlan.firewallConnectorSlugs,
-  );
-}
-
 async function prepareNonCustomFirewallAuth(args: {
   readonly db: Db;
   readonly auth: SandboxAuth;
@@ -5545,10 +5525,23 @@ async function prepareNonCustomFirewallAuth(args: {
   >
 > {
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
-  const connectorCatalogSnapshot = await loadFirewallAuthConnectorCatalog(
-    args.db,
-    args.body,
-  );
+  const { db, body } = args;
+  const connectorCatalogSnapshot = await (async () => {
+    const firewallSlug = body.matchedFirewall?.connectorSlug;
+    const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
+      connectorSlugs: Object.values(body.secretConnectorMap ?? {}),
+      firewallConnectorSlugs: firewallSlug === undefined ? [] : [firewallSlug],
+    });
+    return connectorRuntimeAuthSelectionFromRows(
+      await db
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+      catalogPlan.requestedConnectorSlugs,
+      catalogPlan.firewallConnectorSlugs,
+    );
+  })();
   const requestedAutomaticMcpAuth = requestedAutomaticMcpCatalogAuth({
     snapshot: connectorCatalogSnapshot,
     body: args.body,
