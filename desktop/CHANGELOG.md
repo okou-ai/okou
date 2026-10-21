@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.1](https://github.com/okou-ai/okou/compare/desktop-v0.54.0...desktop-v0.54.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **desktop:** preserve native helper protocol diagnostics ([#41974](https://github.com/okou-ai/okou/issues/41974)) ([4f16cbf](https://github.com/okou-ai/okou/commit/4f16cbfee06bdeb9094e3d5fbc23e3d90893ee82))
+
 ## [0.54.0](https://github.com/okou-ai/okou/compare/desktop-v0.53.4...desktop-v0.54.0) (2026-10-16)
 
 

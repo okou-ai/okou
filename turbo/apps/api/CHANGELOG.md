@@ -9,6 +9,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.760.4](https://github.com/okou-ai/okou/compare/api-v1.760.3...api-v1.760.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* **api:** match reusable resources to the previous chat run ([#41959](https://github.com/okou-ai/okou/issues/41959)) ([dc8dcb1](https://github.com/okou-ai/okou/commit/dc8dcb1953234778490929baa283a864da837aec))
+* **api:** read null storage mounts from retained run snapshots ([#41995](https://github.com/okou-ai/okou/issues/41995)) ([2139c0c](https://github.com/okou-ai/okou/commit/2139c0c089cc785b68f0f23832431a668fea9e2a))
+* **api:** reject declared fields on custom oauth definitions ([#41990](https://github.com/okou-ai/okou/issues/41990)) ([9fa152a](https://github.com/okou-ai/okou/commit/9fa152ad2f7263beb777c70828927b31e4c4c8e2))
+* **wallet:** refresh authorization before loading wallet details ([#41971](https://github.com/okou-ai/okou/issues/41971)) ([27c40fb](https://github.com/okou-ai/okou/commit/27c40fb6e047a8f42d21ca9d8f8d43bc349fb1cc))
+
+
+### Refactoring
+
+* **api:** inline firewall auth catalog reader ([#41979](https://github.com/okou-ai/okou/issues/41979)) ([98f9a61](https://github.com/okou-ai/okou/commit/98f9a617f0f2e3b494739f2c13e054fd7089143f))
+* **api:** inline subscription refresh state reads ([#41986](https://github.com/okou-ai/okou/issues/41986)) ([5c929d8](https://github.com/okou-ai/okou/commit/5c929d8ab4186f099c2925c9aacbff4e81b68d10))
+* **api:** keep Slack webhook database handles local ([#41982](https://github.com/okou-ai/okou/issues/41982)) ([1874d7d](https://github.com/okou-ai/okou/commit/1874d7dcf422f99e5b0983a8bd40a4dc0ca19222))
+* **api:** localize custom catalog permission wakeups ([#41926](https://github.com/okou-ai/okou/issues/41926)) ([63a9553](https://github.com/okou-ai/okou/commit/63a9553d4db11e75a02942892866722994503e8d))
+* **api:** own slack callback and reward database operations ([#41989](https://github.com/okou-ai/okou/issues/41989)) ([1e9e067](https://github.com/okou-ai/okou/commit/1e9e06755a36ccecdf528ea344be1c352b33cb16))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.353.4
+
 ## [1.760.3](https://github.com/okou-ai/okou/compare/api-v1.760.2...api-v1.760.3) (2026-10-21)
 
 

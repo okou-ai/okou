@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/okou-ai/okou/compare/ios-v0.16.0...ios-v0.17.0) (2026-10-21)
+
+
+### Features
+
+* **ios:** move chat list actions into the recent menu ([#41975](https://github.com/okou-ai/okou/issues/41975)) ([42acd54](https://github.com/okou-ai/okou/commit/42acd549abb1badc67a40b9c10798c7a01fd8f00))
+
+
+### Bug Fixes
+
+* **ios:** remove simplified chinese localization ([#41996](https://github.com/okou-ai/okou/issues/41996)) ([7354b16](https://github.com/okou-ai/okou/commit/7354b16deac91ae677fa1edbfb82d16c5c6e5504))
+
 ## [0.16.0](https://github.com/okou-ai/okou/compare/ios-v0.15.0...ios-v0.16.0) (2026-10-20)
 
 

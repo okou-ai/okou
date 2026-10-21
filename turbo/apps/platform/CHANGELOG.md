@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1048.7](https://github.com/okou-ai/okou/compare/app-v0.1048.6...app-v0.1048.7) (2026-10-21)
+
+
+### Bug Fixes
+
+* **app:** keep long messages from widening the resources panel ([#41981](https://github.com/okou-ai/okou/issues/41981)) ([a45a9e7](https://github.com/okou-ai/okou/commit/a45a9e74af8ee90ec389a4be1ed7f5d6ab81e70d))
+
 ## [0.1048.6](https://github.com/okou-ai/okou/compare/app-v0.1048.5...app-v0.1048.6) (2026-10-21)
 
 

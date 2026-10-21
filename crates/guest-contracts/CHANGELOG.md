@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.6...guest-contracts-v0.26.7) (2026-10-21)
+
+
+### Bug Fixes
+
+* **runner:** report event delivery response observations ([#41984](https://github.com/okou-ai/okou/issues/41984)) ([475bb68](https://github.com/okou-ai/okou/commit/475bb6814312a44d248c696149dfae0364418dd7))
+
 ## [0.26.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.5...guest-contracts-v0.26.6) (2026-10-20)
 
 

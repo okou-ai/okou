@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.2...runner-executor-v0.15.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* **runner:** report event delivery response observations ([#41984](https://github.com/okou-ai/okou/issues/41984)) ([475bb68](https://github.com/okou-ai/okou/commit/475bb6814312a44d248c696149dfae0364418dd7))
+
 ## [0.15.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.1...runner-executor-v0.15.2) (2026-10-21)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.236.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.3...runner-rs-v0.236.4) (2026-10-21)
+
+
+### Performance Improvements
+
+* **runner:** stream managed requests without admission caps ([#41903](https://github.com/okou-ai/okou/issues/41903)) ([dfa4371](https://github.com/okou-ai/okou/commit/dfa4371b15d498adf176a7cd44ee2cc9184ba68b))
+
 ## [0.236.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.2...runner-rs-v0.236.3) (2026-10-21)
 
 ### Release Dependencies
