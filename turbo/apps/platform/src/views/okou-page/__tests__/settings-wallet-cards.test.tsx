@@ -11,7 +11,6 @@ import {
   type WalletConnectionStatus,
   type WalletPaymentMethod,
 } from "@okouai/api-contracts/contracts/wallet";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -79,9 +78,6 @@ async function openWallet() {
         activeOrg: { id: "org_1", name: "Test Org" },
         memberships: [{ id: "org_1" }],
       },
-    },
-    featureSwitches: {
-      [FeatureSwitchKey.WalletSettings]: true,
     },
   });
 }
