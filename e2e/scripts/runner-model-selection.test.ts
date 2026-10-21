@@ -54,8 +54,16 @@ test("runner behavioral E2E tests select the mock Codex profile", async () => {
   const violations: string[] = [];
 
   for (const file of files) {
-    if (providerTests.has(file)) continue;
     const source = await readFile(join(directory, file), "utf8");
+    // Terminal events settle all pending usage in the organization. Keep the
+    // billing case's identity exclusive even when assertions use owned IDs.
+    const usesBillingIdentity = source.includes(
+      "e2e-api-credentials-runner-real-codex-built-in.json",
+    );
+    if (usesBillingIdentity !== (file === "run-t11-auto-billing.bats")) {
+      violations.push(`${file}: billing requires an exclusive identity`);
+    }
+    if (providerTests.has(file)) continue;
     if (!/^\s*runner_e2e_use_mock_codex_profile\s*$/m.test(source)) {
       violations.push(`${file}: select the mock Codex profile in setup`);
     }

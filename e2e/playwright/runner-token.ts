@@ -52,21 +52,14 @@ async function main(): Promise<void> {
   }
 
   const accounts = runnerTestAccounts();
-  // Paid upgrades dominate each fixed batch; every runner account is paid.
+  // Keep separate identities for mock native, ordinary real Auto, and billing.
+  // Historical role names remain stable for retained artifacts and cleanup.
   const targets: readonly RunnerCredentialTarget[] = [
     {
       email: accounts.codex,
       fileName: "e2e-api-credentials-runner-real-codex.json",
       organizationId: requiredEnvironmentVariable(
         "E2E_RUNNER_CODEX_ORGANIZATION_ID",
-      ),
-      upgradeToPro: true,
-    },
-    {
-      email: accounts.claude,
-      fileName: "e2e-api-credentials-runner-real-claude.json",
-      organizationId: requiredEnvironmentVariable(
-        "E2E_RUNNER_CLAUDE_ORGANIZATION_ID",
       ),
       upgradeToPro: true,
     },
@@ -84,14 +77,6 @@ async function main(): Promise<void> {
       organizationId: requiredEnvironmentVariable(
         "E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID",
       ),
-      upgradeToPro: true,
-    },
-    {
-      email: accounts.runner,
-      fileName: "e2e-api-credentials-runner.json",
-      organizationId: requiredEnvironmentVariable("E2E_RUNNER_ORGANIZATION_ID"),
-      // Free plans admit Built-in runs against the limited free credit
-      // allowance; the runner suites launch many runs across parallel shards.
       upgradeToPro: true,
     },
   ];
