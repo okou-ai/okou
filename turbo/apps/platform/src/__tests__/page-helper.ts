@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, isInaccessible, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "@okouai/ui/components/ui/sonner";
 
@@ -568,16 +568,17 @@ export function holdElementAnimations(element: Element): () => void {
 }
 
 /**
- * Text-content ARIA roles — roles whose accessible name is derived from a
+ * ARIA roles with fast native selectors. Text-content roles derive names from a
  * subtree text walk, so `*ByRole(role)` from @testing-library pays for an
  * O(documentSize) ARIA tree traversal even without `{ name }`. Profiling
  * showed `screen.getAllByRole("button")` taking ~360ms on the /connectors
  * page with only 5 buttons rendered.
  */
-type TextContentRole =
+type FastRole =
   | "button"
   | "combobox"
   | "link"
+  | "listitem"
   | "menuitem"
   | "menuitemcheckbox"
   | "menuitemradio"
@@ -589,10 +590,11 @@ type TextContentRole =
   | "rowheader"
   | "gridcell";
 
-const ROLE_SELECTORS: Record<TextContentRole, string> = {
+const ROLE_SELECTORS: Record<FastRole, string> = {
   button: 'button, [role="button"]',
   combobox: 'select, [role="combobox"]',
   link: 'a[href], [role="link"]',
+  listitem: 'li, [role~="listitem"]',
   menuitem: '[role="menuitem"]',
   menuitemcheckbox: '[role="menuitemcheckbox"]',
   menuitemradio: '[role="menuitemradio"]',
@@ -634,14 +636,23 @@ function isAccessibilityHidden(element: Element): boolean {
  * elements that override their role explicitly. Elements inside an
  * `aria-hidden`, `hidden`, or `inert` subtree are filtered out to match the
  * default `getAllByRole` visibility semantics.
+ * List items retain Testing Library's full CSS accessibility filter and
+ * first-explicit-role semantics while avoiding generic implicit-role matching.
  */
 export function queryAllByRoleFast(
-  role: TextContentRole,
+  role: FastRole,
   container: ParentNode = document.body,
 ): HTMLElement[] {
   return Array.from(
     container.querySelectorAll<HTMLElement>(ROLE_SELECTORS[role]),
   ).filter((el) => {
+    if (role === "listitem") {
+      const explicitRole = el.getAttribute("role");
+      return (
+        (explicitRole === null || explicitRole.split(" ")[0] === role) &&
+        !isInaccessible(el)
+      );
+    }
     return !isAccessibilityHidden(el);
   });
 }
