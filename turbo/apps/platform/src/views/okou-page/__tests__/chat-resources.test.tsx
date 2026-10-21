@@ -175,6 +175,40 @@ test("Ignore presses while the resources load", async () => {
   expect(resourceState()).toStrictEqual({ open: true, visible: true });
 });
 
+test("Keep loading when the panel loses its room before the resources answer", async () => {
+  const resize = installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
+    await response.promise;
+    return respond(200, {
+      artifacts: [artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf")],
+      nextCursor: null,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  await screen.findByTestId("chat-thread-header-title");
+  // The saved default asks for the panel while it has room.
+  await waitFor(() => {
+    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
+  });
+  // A side panel takes the room away; a press would otherwise peek.
+  resize(200);
+  await userEvent.click(resourceButton());
+  response.resolve();
+  await waitFor(() => {
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  });
+  // Without room the automatic opening steps aside; the press was not taken.
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
+});
+
 test("Retry a resource loading error without showing an empty state", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);

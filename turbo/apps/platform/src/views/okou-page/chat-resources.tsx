@@ -83,17 +83,19 @@ function ChatResourcesButtonInner({
   const { t } = useTranslation();
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
-  const explicit = useGet(resources.chosen$) !== null;
+  const chosen = useGet(resources.chosen$);
   const requested = useLastResolved(resources.requested$) ?? false;
+  const wanted = useLastResolved(resources.wanted$) ?? false;
   const settled = useLastResolved(resources.settled$) ?? null;
   // Nothing draws before the resources have answered. Until then the button
-  // breathes and takes no presses, however long the answer takes.
-  const loading = requested && settled === null;
+  // breathes and takes no presses, however long the answer takes and even if
+  // the layout no longer has room for the panel.
+  const loading = wanted && settled === null;
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown =
-    settled !== null && requested && (settled.hasContent || explicit);
-  const pressed = shown || (loading && explicit);
+    settled !== null && requested && (settled.hasContent || chosen !== null);
+  const pressed = shown || (loading && chosen === true);
   const wide = useGet(resources.wide$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
