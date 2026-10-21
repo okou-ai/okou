@@ -77,7 +77,9 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
       }
       actions.append(UIMenu(options: .displayInline, children: [archive]))
     }
-    button.menu = UIMenu(children: actions)
+    let menu = UIMenu(children: actions)
+    button.menu = menu
+    button.contextMenuInteraction?.updateVisibleMenu { _ in menu }
     button.tintColor = .label
     // A pending action only disables the relevant menu items, never the entry.
     button.isEnabled = !store.needsUpgrade

@@ -90,8 +90,19 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertTrue(try action("chat-mute", in: button).attributes.contains(.disabled))
     await store.setMuted(ThreadActionsFixture.thread, muted: true)
     XCTAssertEqual(fixture.writes.filter { $0.action == "mute" }.count, 1)
+    button.performPrimaryAction()
+    try await eventually {
+      window.windowScene?.windows.contains { hasLabel("Mute chat", in: $0) } == true
+    }
     gate.open()
     try await eventually { (try? self.action("chat-mute", in: button))?.title == "Unmute chat" }
+    try await eventually {
+      window.windowScene?.windows.contains { hasLabel("Unmute chat", in: $0) } == true
+    }
+    button.contextMenuInteraction?.dismissMenu()
+    try await eventually {
+      window.windowScene?.windows.contains { hasLabel("Unmute chat", in: $0) } == false
+    }
     XCTAssertEqual(button.accessibilityValue, "Not pinned, Muted")
     XCTAssertFalse(try action("chat-rename", in: button).attributes.contains(.disabled))
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
