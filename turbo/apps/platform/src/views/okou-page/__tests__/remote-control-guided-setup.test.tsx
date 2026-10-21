@@ -1305,6 +1305,74 @@ test("Changing category abandons setup and returns to management", async () => {
   expect(screen.queryByLabelText("SSH username")).toBeNull();
 });
 
+test("SSH login methods are explicit keyboard choices that show only the matching secret fields", async () => {
+  const username = await directForm();
+  await fill(username, "operator");
+  const methods = screen.getByRole("radiogroup", { name: "Login method" });
+  const password = within(methods).getByLabelText("Use an account password");
+  const key = within(methods).getByLabelText("Use an SSH key");
+  expect(password).toHaveAttribute("aria-checked", "true");
+  expect(key).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByLabelText("Password")).toBeRequired();
+  expect(screen.queryByLabelText("Private key")).toBeNull();
+
+  await userEvent.click(password);
+  await userEvent.keyboard("{ArrowRight}");
+  expect(key).toHaveAttribute("aria-checked", "true");
+  expect(key).toHaveFocus();
+  expect(screen.getByLabelText("Private key")).toBeRequired();
+  expect(screen.getByLabelText("Choose private key file")).toBeEnabled();
+  expect(screen.getByLabelText("Passphrase (optional)")).not.toBeRequired();
+  expect(screen.queryByLabelText("Password")).toBeNull();
+  expect(username).toHaveValue("operator");
+
+  await userEvent.keyboard("{ArrowLeft}");
+  expect(password).toHaveAttribute("aria-checked", "true");
+  expect(password).toHaveFocus();
+  expect(screen.getByLabelText("Password")).toBeRequired();
+  expect(screen.queryByLabelText("Private key")).toBeNull();
+  expect(screen.queryByLabelText("Passphrase (optional)")).toBeNull();
+  expect(username).toHaveValue("operator");
+});
+
+test("Selecting SSH key login submits the private key rather than the previous password", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(204);
+  });
+  const username = await directForm();
+  await fill(screen.getByLabelText("Device address"), "ssh.example.com");
+  await fill(username, "operator");
+  await fill(screen.getByLabelText("Password"), "unused-password");
+  click(screen.getByLabelText("Use an SSH key"));
+  await fill(screen.getByLabelText("Private key"), " test-private-key\n");
+  await fill(screen.getByLabelText("Passphrase (optional)"), "test-passphrase");
+  await fill(screen.getByLabelText(/Connection name/u), "Key login device");
+  click(getAction("button", "Save"));
+  await screen.findByRole("heading", { name: "Connection added" });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Key login device",
+      host: "ssh.example.com",
+      port: 22,
+      transport: { type: "direct" },
+      credential: {
+        create: {
+          name: "Key login device",
+          username: "operator",
+          authentication: {
+            method: "private_key",
+            privateKey: " test-private-key\n",
+            passphrase: "test-passphrase",
+          },
+        },
+      },
+    },
+  ]);
+});
+
 test("A rejected SSH save retains the entered name and does not show a success state", async () => {
   context.mocks.api(sshConnectionsContract.create, ({ respond }) => {
     return respond(400, {
@@ -1504,6 +1572,14 @@ test("An idempotent retry keeps the connection name from the locked draft", asyn
   click(getAction("button", "Save"));
   await screen.findByText("Save failed.");
   expect(name).toBeDisabled();
+  expect(screen.getByLabelText("Use an account password")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(screen.getByLabelText("Use an SSH key")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   click(getAction("button", "Retry"));
   await screen.findByRole("heading", { name: "Connection added" });
   expect(screen.getByText("Office retry")).toBeInTheDocument();
@@ -1703,12 +1779,86 @@ test.each(["ssh", "vnc"] as const)(
   },
 );
 
+test("SSH login reuse is optional, shows the selected account, and can return to manual entry", async () => {
+  mockSavedConnections();
+  await directForm();
+  await fill(screen.getByLabelText("Device address"), "new-device.example.com");
+  await fill(screen.getByLabelText("SSH username"), "new-operator");
+  await fill(screen.getByLabelText("Password"), "draft-password");
+  click(getAction("button", "Choose saved login details"));
+  const picker = await screen.findByRole("dialog", {
+    name: "Choose saved login details",
+  });
+  expect(picker).toHaveTextContent(
+    "Choose login details from an existing connection. Make sure they also work for this device.",
+  );
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(screen.getByLabelText("SSH username")).toHaveValue("new-operator");
+  expect(screen.getByLabelText("Password")).toHaveValue("draft-password");
+  click(getAction("button", "Choose saved login details"));
+  const reopened = await screen.findByRole("dialog", {
+    name: "Choose saved login details",
+  });
+  click(within(reopened).getByText("Office computer, Backup computer"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(
+    screen.getByText("Office computer, Backup computer"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("operator · Password")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Password")).toBeNull();
+  expect(screen.queryByLabelText("Use an SSH key")).toBeNull();
+  click(getAction("button", "Enter details manually"));
+  await expect(screen.findByLabelText("SSH username")).resolves.toHaveValue("");
+  expect(screen.getByLabelText("Password")).toHaveValue("");
+  expect(screen.getByLabelText("Device address")).toHaveValue(
+    "new-device.example.com",
+  );
+});
+
+test("VNC can reuse a saved password and switch back to manual entry", async () => {
+  mockSavedConnections();
+  await page("/connectors?scope=remote-control&setup=vnc");
+  await screen.findByRole("heading", { name: "Set up a connection" });
+  click(getAction("button", "Start setup"));
+  await screen.findByRole("heading", {
+    name: "Enable screen sharing on the computer you want to connect",
+  });
+  click(getAction("button", "Enabled, continue"));
+  await screen.findByLabelText("Login method");
+  click(getAction("button", "Continue"));
+  await fill(
+    await screen.findByLabelText("Device address"),
+    "screen.example.com",
+  );
+  click(getAction("button", "Continue"));
+  await screen.findByRole("heading", {
+    name: "Enter device login information",
+  });
+  click(getAction("button", "Choose saved login details"));
+  const picker = await screen.findByRole("dialog", {
+    name: "Choose saved login details",
+  });
+  click(within(picker).getByText("Office screen, Backup screen"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(screen.getByText("Office screen, Backup screen")).toBeInTheDocument();
+  expect(screen.queryByLabelText("VNC password")).toBeNull();
+  click(getAction("button", "Enter details manually"));
+  await expect(screen.findByLabelText("VNC password")).resolves.toHaveValue("");
+});
+
 test("VNC reuse offers only login information matching the configured authentication profile", async () => {
   mockSavedConnections();
   await editConnection("vnc");
-  click(getAction("button", "Use saved login information"));
+  click(getAction("button", "Choose saved login details"));
   const picker = await screen.findByRole("dialog", {
-    name: "Use saved login information",
+    name: "Choose saved login details",
   });
   expect(picker).toHaveTextContent("Office screen");
   expect(picker).not.toHaveTextContent("Office computer");
@@ -1720,7 +1870,7 @@ test("VNC reuse offers only login information matching the configured authentica
       name: "Encrypted without a VNC password (X509None)",
     }),
   );
-  expect(queryAction("button", "Use saved login information")).toBeNull();
+  expect(queryAction("button", "Choose saved login details")).toBeNull();
   expect(screen.queryByLabelText("VNC password")).toBeNull();
 });
 

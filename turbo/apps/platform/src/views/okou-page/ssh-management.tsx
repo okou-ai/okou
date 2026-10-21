@@ -52,13 +52,15 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { cn } from "@okouai/ui/lib/utils";
-import { ExternalLink, Plus } from "lucide-react";
+import { ExternalLink, KeyRound, LockKeyhole, Plus } from "lucide-react";
 import {
   Button,
   DialogBody,
   Input,
   Textarea,
   Checkbox,
+  Radio,
+  RadioGroup,
   SegmentControl,
   SegmentControlItem,
   surfaceVariants,
@@ -378,7 +380,8 @@ function EndpointFields({
 
 function PrivateKeyFields({
   optional = false,
-}: { readonly optional?: boolean } = {}) {
+  guided = false,
+}: { readonly optional?: boolean; readonly guided?: boolean } = {}) {
   const { t } = useTranslation();
   const importFile = useSet(importSshPrivateKeyFile$);
   const cancelRead = useSet(cancelSshPrivateKeyFile$);
@@ -389,7 +392,9 @@ function PrivateKeyFields({
     <>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return $.ssh.credentialsHelp;
+          return guided
+            ? $.remoteControlSetup.sshPrivateKeyHelp
+            : $.ssh.credentialsHelp;
         })}
       </p>
       <div className="grid gap-2">
@@ -478,6 +483,84 @@ function PrivateKeyFields({
   );
 }
 
+function GuidedSshAuthenticationMethod({
+  disabled,
+}: {
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshCredentialEditor$);
+  const chooseMethod = useSet(chooseSshAuthMethod$);
+  const options = [
+    {
+      value: "password",
+      label: t(($) => {
+        return $.remoteControlSetup.usePassword;
+      }),
+      description: t(($) => {
+        return $.remoteControlSetup.sshPasswordDescription;
+      }),
+      icon: <LockKeyhole size={20} aria-hidden />,
+    },
+    {
+      value: "private_key",
+      label: t(($) => {
+        return $.remoteControlSetup.useSshKey;
+      }),
+      description: t(($) => {
+        return $.remoteControlSetup.sshKeyDescription;
+      }),
+      icon: <KeyRound size={20} aria-hidden />,
+    },
+  ];
+  return (
+    <div className="grid gap-3">
+      <span id="guided-ssh-auth-method-label" className="font-medium">
+        {t(($) => {
+          return $.remoteControlSetup.sshLoginMethod;
+        })}
+      </span>
+      <RadioGroup
+        aria-labelledby="guided-ssh-auth-method-label"
+        value={editor.method}
+        onValueChange={chooseMethod}
+        disabled={disabled}
+        className="grid gap-3 sm:grid-cols-2"
+      >
+        {options.map((option) => {
+          return (
+            <label
+              key={option.value}
+              className="flex cursor-pointer items-center gap-3 rounded-lg border border-divider p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50 has-data-disabled:cursor-not-allowed has-data-disabled:opacity-50 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+            >
+              <span className="shrink-0 text-muted-foreground">
+                {option.icon}
+              </span>
+              <span className="grid min-w-0 flex-1 gap-1">
+                <span id={`ssh-${option.value}-label`} className="font-medium">
+                  {option.label}
+                </span>
+                <span
+                  id={`ssh-${option.value}-description`}
+                  className="text-sm leading-5 text-muted-foreground"
+                >
+                  {option.description}
+                </span>
+              </span>
+              <Radio
+                value={option.value}
+                aria-labelledby={`ssh-${option.value}-label`}
+                aria-describedby={`ssh-${option.value}-description`}
+                className="data-checked:border-foreground data-checked:bg-foreground"
+              />
+            </label>
+          );
+        })}
+      </RadioGroup>
+    </div>
+  );
+}
+
 function SshAuthenticationFields({
   credential,
   disabled,
@@ -562,31 +645,13 @@ function SshAuthenticationFields({
       ) : (
         <PrivateKeyFields
           key="private-key"
+          guided={guided}
           optional={
             !!credential &&
             connectionLogin &&
             editor.method === credential.authMethod
           }
         />
-      )}
-      {guided && (
-        <Button
-          type="button"
-          variant="quiet"
-          className="h-auto justify-self-start px-0 text-xs"
-          disabled={disabled}
-          onClick={() => {
-            chooseMethod(
-              editor.method === "password" ? "private_key" : "password",
-            );
-          }}
-        >
-          {t(($) => {
-            return editor.method === "password"
-              ? $.remoteControlSetup.useSshKey
-              : $.remoteControlSetup.usePassword;
-          })}
-        </Button>
       )}
     </>
   );
@@ -630,6 +695,9 @@ function CredentialFields({
             defaultValue={credential?.name}
           />
         </label>
+      )}
+      {guided && (!credential || editor.replace || connectionLogin) && (
+        <GuidedSshAuthenticationMethod disabled={disabled} />
       )}
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-2">
@@ -764,12 +832,53 @@ function missingSshCredential({
   );
 }
 
+function SshSelectedLogin({ disabled }: { readonly disabled: boolean }) {
+  const { t } = useTranslation();
+  const credentials = useLoadable(sshCredentials$);
+  const editor = useGet(sshCredentialEditor$);
+  const choose = useSet(chooseSshCredential$);
+  const selectedCredential =
+    credentials.state === "hasData"
+      ? credentials.data?.find((credential) => {
+          return credential.id === editor.selection;
+        })
+      : undefined;
+  return (
+    <RemoteSelectedLogin
+      disabled={disabled}
+      label={
+        selectedCredential?.hosts
+          .map((host) => {
+            return host.displayName;
+          })
+          .join(", ") || selectedCredential?.name
+      }
+      description={
+        selectedCredential &&
+        `${selectedCredential.username} · ${t(($) => {
+          return selectedCredential.authMethod === "password"
+            ? $.ssh.credential.password
+            : $.ssh.privateKey;
+        })}`
+      }
+      chooseNew={() => {
+        choose("new");
+      }}
+    />
+  );
+}
+
 function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const { credentials, editor, guided, login, choose, credentialItems } =
     useSshCredentialSelection();
   return (
-    <fieldset className="grid min-w-0 gap-4">
+    <fieldset
+      className={cn(
+        "grid min-w-0 gap-4",
+        guided && "border-y border-divider py-5",
+      )}
+    >
       <legend hidden={guided} className="mb-3 text-sm font-semibold">
         <label htmlFor="ssh-selected-credential">
           {t(($) => {
@@ -777,6 +886,16 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
           })}
         </label>
       </legend>
+      {guided && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">
+            {t(($) => {
+              return $.remoteControlSetup.loginHeading;
+            })}
+          </h3>
+          <SshSavedLoginPicker disabled={disabled} />
+        </div>
+      )}
       <div
         hidden={
           guided && credentials.state === "hasData" && credentials.data !== null
@@ -844,17 +963,7 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
         />
       )}
       {guided && editor.selection && editor.selection !== "new" && !login && (
-        <RemoteSelectedLogin
-          disabled={disabled}
-          label={
-            credentialItems.find((item) => {
-              return item.value === editor.selection;
-            })?.label
-          }
-          chooseNew={() => {
-            choose("new");
-          }}
-        />
+        <SshSelectedLogin disabled={disabled} />
       )}
       {editor.selection === "new" && (
         <div
@@ -871,7 +980,6 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
           />
         </div>
       )}
-      {guided && <SshSavedLoginPicker disabled={disabled} />}
     </fieldset>
   );
 }

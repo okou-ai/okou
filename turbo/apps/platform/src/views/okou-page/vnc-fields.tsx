@@ -1992,9 +1992,11 @@ export function VncCredentialSelection({
     login,
     choose,
     compatibleCredentials,
-    credentialItems,
     selectedCredentialUnavailable,
   } = useVncCredentialSelection();
+  const selectedCredential = compatibleCredentials.find((credential) => {
+    return credential.id === selection;
+  });
   return (
     <fieldset className="grid min-w-0 gap-4">
       <legend hidden={guided} className="mb-3 text-sm font-semibold">
@@ -2004,6 +2006,19 @@ export function VncCredentialSelection({
           })}
         </label>
       </legend>
+      {guided && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">
+            {t(($) => {
+              return $.remoteControlSetup.loginHeading;
+            })}
+          </h3>
+          <VncSavedLoginPicker
+            disabled={disabled}
+            credentials={compatibleCredentials}
+          />
+        </div>
+      )}
       <VncCredentialMenu disabled={disabled} />
       {selectedCredentialUnavailable && (
         <p role="alert" className="text-sm text-muted-foreground">
@@ -2024,9 +2039,23 @@ export function VncCredentialSelection({
         <RemoteSelectedLogin
           disabled={disabled}
           label={
-            credentialItems.find((item) => {
-              return item.value === editor.selection;
-            })?.label
+            selectedCredential?.hosts
+              .map((host) => {
+                return host.displayName;
+              })
+              .join(", ") || selectedCredential?.name
+          }
+          description={
+            selectedCredential && (
+              <>
+                <VncAuthenticationLabel
+                  method={selectedCredential.authMethod}
+                />
+                {"username" in selectedCredential
+                  ? ` · ${selectedCredential.username}`
+                  : ""}
+              </>
+            )
           }
           chooseNew={() => {
             choose("new");
@@ -2048,12 +2077,6 @@ export function VncCredentialSelection({
             connectionLogin={guided}
           />
         </div>
-      )}
-      {guided && (
-        <VncSavedLoginPicker
-          disabled={disabled}
-          credentials={compatibleCredentials}
-        />
       )}
     </fieldset>
   );

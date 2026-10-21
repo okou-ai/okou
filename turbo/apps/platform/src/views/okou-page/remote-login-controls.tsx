@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { KeyRound, ChevronRight } from "lucide-react";
+import { KeyRound, ChevronRight, History, Check } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -44,12 +44,14 @@ export function RemoteLoginPicker({
       <Button
         type="button"
         variant="quiet"
-        className="h-auto justify-self-start px-0 text-sm"
+        size="sm"
+        className="h-auto min-h-9 whitespace-normal text-left text-sm"
         disabled={disabled}
         onClick={() => {
           setOpen(protocol);
         }}
       >
+        <History size={16} aria-hidden />
         {t(($) => {
           return $.remoteControlSetup.useSavedLogin;
         })}
@@ -171,21 +173,28 @@ export function RemoteLoginConfirmation({
 
 export function RemoteSelectedLogin({
   label,
+  description,
   disabled,
   chooseNew,
 }: {
   readonly label: string | undefined;
+  readonly description: ReactNode;
   readonly disabled: boolean;
   readonly chooseNew: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-divider bg-gray-50 p-3 text-sm">
-      <span>{label}</span>
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-divider bg-gray-50 p-4">
+      <Check size={20} className="shrink-0" aria-hidden />
+      <div className="grid min-w-0 flex-1 gap-1 break-words">
+        <span className="font-medium">{label}</span>
+        <span className="text-sm text-muted-foreground">{description}</span>
+      </div>
       <Button
         type="button"
-        variant="quiet"
+        variant="outline"
         size="sm"
+        className="h-auto min-h-9 whitespace-normal text-left"
         disabled={disabled}
         onClick={chooseNew}
       >
