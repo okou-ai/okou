@@ -2008,39 +2008,6 @@ function shouldUseCurrentAccess(args: {
   return false;
 }
 
-async function loadConnectorRefreshStateRow(
-  db: Db,
-  args: RefreshAccessTokenArgs,
-): Promise<RefreshStateRow | null> {
-  const connectorSlug = args.accessSourceKey;
-  const connectorId =
-    args.connectorAccessBySlug.get(connectorSlug)?.connectorId;
-  if (connectorId === undefined) {
-    return null;
-  }
-  const query = db
-    .select({
-      authMethod: connectors.authMethod,
-      connectorId: connectors.id,
-      storageVersion: connectors.storageVersion,
-      tokenExpiresAt: connectors.tokenExpiresAt,
-      needsReconnect: connectors.needsReconnect,
-      lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
-      reconnectReason: connectors.reconnectReason,
-    })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.id, connectorId),
-        eq(connectors.connectorSlug, connectorSlug),
-      ),
-    );
-  const rows = await query.limit(1);
-  return rows[0] ?? null;
-}
-
 async function loadRefreshState(
   db: Db,
   args: RefreshAccessTokenArgs,
@@ -2082,7 +2049,35 @@ async function loadRefreshState(
           }
           return null;
         })()
-      : await loadConnectorRefreshStateRow(db, args);
+      : await (async (): Promise<RefreshStateRow | null> => {
+          const connectorSlug = args.accessSourceKey;
+          const connectorId =
+            args.connectorAccessBySlug.get(connectorSlug)?.connectorId;
+          if (connectorId === undefined) {
+            return null;
+          }
+          const query = db
+            .select({
+              authMethod: connectors.authMethod,
+              connectorId: connectors.id,
+              storageVersion: connectors.storageVersion,
+              tokenExpiresAt: connectors.tokenExpiresAt,
+              needsReconnect: connectors.needsReconnect,
+              lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
+              reconnectReason: connectors.reconnectReason,
+            })
+            .from(connectors)
+            .where(
+              and(
+                eq(connectors.orgId, args.orgId),
+                eq(connectors.userId, args.userId),
+                eq(connectors.id, connectorId),
+                eq(connectors.connectorSlug, connectorSlug),
+              ),
+            );
+          const rows = await query.limit(1);
+          return rows[0] ?? null;
+        })();
 
   if (!row) {
     return null;
