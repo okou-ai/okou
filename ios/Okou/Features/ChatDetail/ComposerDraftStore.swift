@@ -40,6 +40,7 @@ final class ComposerDraftStore {
       for part in content.parts {
         guard part["type"]?.string == "text", let text = part["text"]?.string else {
           continuesText = false
+          if ComposerAttributedDocument.isInline(part) { offset += 1 }
           continue
         }
         let length = text.utf16.count
@@ -92,6 +93,7 @@ final class ComposerDraftStore {
   }
 
   private func resetEditors() {
+    editor.dismissMentions()
     quoteIDs = document.parts.filter { $0["type"]?.string == "feedback" }.map { _ in UUID() }
     textIDs = (0...quoteIDs.count).map { _ in UUID() }
     focusRequest = nil
@@ -124,6 +126,13 @@ final class ComposerDraftStore {
     else { return }
     var content = block.content
     content.replaceText(text)
+    editBlock(id, document: content)
+  }
+
+  func editBlock(_ id: UUID, document content: ChatDraftDocument) {
+    guard !closed, let block = editorBlocks.first(where: { $0.id == id }),
+      content != block.content, content.isSupported
+    else { return }
     if block.isFeedback, case .object(var part) = document.parts[block.indices.lowerBound] {
       part["note"] = .array(content.parts)
       document.parts[block.indices.lowerBound] = .object(part)
@@ -420,6 +429,8 @@ final class ComposerDraftStore {
   func close() {
     guard !closed else { return }
     persist()
+    editor.dismissKeyboard()
+    editor.mentionSource = nil
     closed = true
     debounceTask?.cancel()
     syncTask?.cancel()

@@ -79,6 +79,14 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
       }
   }
   public var hasFeedback: Bool { parts.contains { $0["type"]?.string == "feedback" } }
+  public var hasTextContent: Bool {
+    parts.contains { part in
+      if part["type"]?.string == "text" {
+        return !(part["text"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }
+      return ["agent", "chat_thread", "feedback"].contains(part["type"]?.string ?? "")
+    }
+  }
 
   public var contextLabels: [String] {
     parts.compactMap { part in

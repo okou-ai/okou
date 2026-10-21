@@ -1,3 +1,4 @@
+import ChatDomain
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -16,6 +17,7 @@ struct ChatComposerView: View {
   let refresh: (@MainActor () async -> Void)?
 
   var modelSelection: ChatModelSelectionStore? = nil
+  var mentionSource: ComposerMentionSource? = nil
 
   @State private var isFocused = false
   @State private var showsPhotos = false
@@ -37,10 +39,13 @@ struct ChatComposerView: View {
           Text("This draft contains content this app cannot edit. Open it on the web.")
             .font(.caption).foregroundStyle(.red)
         }
-        if !state.contextLabels.isEmpty {
-          Text(state.contextLabels.joined(separator: " · "))
+        let contextLabels = ChatDraftDocument(
+          parts: state.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
+        ).contextLabels
+        if !contextLabels.isEmpty {
+          Text(contextLabels.joined(separator: " · "))
             .font(.caption).foregroundStyle(.secondary).lineLimit(3)
-            .accessibilityLabel("Saved context: " + state.contextLabels.joined(separator: ", "))
+            .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
         }
         if let draftError = state.error {
           Text(draftError).font(.caption).foregroundStyle(.red)
@@ -93,6 +98,9 @@ struct ChatComposerView: View {
 
       let inputID = attachments.inputID
       let generation = draftState?.editorGeneration
+      if let editor = draftState?.editor, !editor.mentionSuggestions.isEmpty {
+        ComposerMentionMenu(editor: editor, suggestions: editor.mentionSuggestions)
+      }
       Group {
         if let state = draftState, state.document.hasFeedback {
           ChatFeedbackComposer(
@@ -109,10 +117,23 @@ struct ChatComposerView: View {
             },
             pasteImages: attachments.importPastedImages,
             editor: draftState?.editor,
-            searchableRanges: draftState == nil
-              ? nil : { draftState?.editorBlocks.first?.searchableRanges ?? [] }
+            document: draftState.map { state in
+              Binding(
+                get: { state.editorBlocks.first?.content ?? ChatDraftDocument() },
+                set: { content in
+                  if let block = state.editorBlocks.first {
+                    state.editBlock(block.id, document: content)
+                  }
+                })
+            },
+            searchableRanges: {
+              draftState?.editorBlocks.first?.searchableRanges ?? [
+                NSRange(location: 0, length: draft.utf16.count)
+              ]
+            }
           )
           .id(inputID)
+          .id(generation)
           .disabled(draftState?.document.isSupported == false)
           .onAppear {
             guard let state = draftState, let request = state.focusRequest else { return }
@@ -193,6 +214,9 @@ struct ChatComposerView: View {
     .padding(.horizontal, 16)
     .padding(.top, 8)
     .padding(.bottom, 8)
+    .onChange(of: mentionSource, initial: true) { _, source in
+      draftState?.editor.mentionSource = source
+    }
     .photosPicker(
       isPresented: $showsPhotos, selection: $selectedPhotos,
       matching: .any(of: [.images, .videos]), preferredItemEncoding: .current
