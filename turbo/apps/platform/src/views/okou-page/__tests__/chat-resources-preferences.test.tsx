@@ -1,12 +1,15 @@
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
 import {
   context,
+  recordPreferenceUpdates,
   resourceButton,
   resourceState,
   setupResources,
@@ -62,31 +65,12 @@ test("Keep the existing artifact entry when the rollout switch is off", async ()
   expect(all).toHaveAccessibleName("Artifacts");
 });
 
-test("Turn automatic resources off from Chat settings", async () => {
+test("Keep the resources preference on the header button, not in Chat settings", async () => {
   await setupPage({
     context,
     path: "/?settings=chat",
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  const toggle = await within(dialog).findByRole("switch", {
-    name: "Open resources automatically",
-  });
-  await waitFor(() => {
-    expect(toggle).toBeChecked();
-  });
-  click(toggle);
-  await waitFor(() => {
-    expect(
-      within(dialog).getByRole("switch", {
-        name: "Open resources automatically",
-      }),
-    ).not.toBeChecked();
-  });
-});
-
-test("Offer the automatic resources setting only with the rollout switch", async () => {
-  await setupPage({ context, path: "/?settings=chat" });
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   await within(dialog).findByRole("switch", { name: "Cloud browser" });
   expect(
@@ -94,4 +78,46 @@ test("Offer the automatic resources setting only with the rollout switch", async
       name: "Open resources automatically",
     }),
   ).not.toBeInTheDocument();
+});
+
+test("Apply a second press while the first save is still in flight", async () => {
+  const saving = createDeferredPromise<void>(context.signal);
+  const updates = recordPreferenceUpdates(false, saving.promise);
+  await setupResources();
+  await screen.findByTestId("chat-thread-header-title");
+  click(resourceButton());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  expect(updates).toContainEqual({ chatResourcesEnabledByDefault: true });
+  expect(resourceButton()).toBeEnabled();
+  click(resourceButton());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  saving.resolve();
+  await waitFor(() => {
+    expect(updates.at(-1)).toStrictEqual({
+      chatResourcesEnabledByDefault: false,
+    });
+  });
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
+});
+
+test("Roll back the panel and explain a failed preference save", async () => {
+  context.mocks.api(userPreferencesContract.update, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Preference update failed" },
+    });
+  });
+  await setupResources();
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  await userEvent.click(resourceButton());
+  await screen.findByText("Preference update failed");
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  expect(screen.getAllByText("Preference update failed")).toHaveLength(1);
 });

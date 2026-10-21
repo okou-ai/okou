@@ -180,7 +180,7 @@ async function setupRelations(
 }
 
 test.each(["children", "communications"] as const)(
-  "Keep the source visible while %s are still loading",
+  "Draw the source and related chats together once %s answer",
   async (pending) => {
     const requested = createDeferredPromise<void>(context.signal);
     const response = createDeferredPromise<void>(context.signal);
@@ -215,15 +215,9 @@ test.each(["children", "communications"] as const)(
     });
     await requested.promise;
     await screen.findByText("Plan the launch");
-    const sourcePanel = await screen.findByRole("region", {
-      name: "Resources",
-    });
+    // The source alone would draw a half-filled panel that then grows.
     expect(
-      within(sourcePanel).getByRole("region", { name: "From" }),
-    ).toHaveTextContent("Slack");
-    expect(within(sourcePanel).queryByRole("status")).not.toBeInTheDocument();
-    expect(
-      within(sourcePanel).queryByRole("region", { name: "Chats" }),
+      screen.queryByRole("region", { name: "Resources" }),
     ).not.toBeInTheDocument();
 
     response.resolve();
@@ -279,7 +273,7 @@ test("Keep loaded relationships visible while retrying a failed source", async (
   await within(panel).findByText("Updated child");
 });
 
-test("Keep the resources popup and trigger when the last resource disappears", async () => {
+test("Close an automatic panel but keep the trigger when the last resource disappears", async () => {
   let empty = false;
   await setupRelations({
     mock: () => {
@@ -304,17 +298,15 @@ test("Keep the resources popup and trigger when the last resource disappears", a
   await within(panel).findByText("Research child");
   empty = true;
   click(buttonNamed("Try again", panel));
-  await within(panel).findByText(
-    "Artifacts and related chats from this chat appear here.",
-  );
-  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("region", { name: "Resources" }),
-  ).toBeInTheDocument();
+  // An automatic opening has nothing left to show, so it steps away.
+  await waitFor(() => {
+    expect(panel).not.toBeInTheDocument();
+  });
   expect(buttonNamed("Resources")).toBeEnabled();
+  expect(buttonNamed("Resources")).toHaveAttribute("aria-expanded", "false");
 });
 
-test("Keep the next chat's popup available while its relationships load", async () => {
+test("Draw the next chat's panel only once its relationships answer", async () => {
   installRelationsGeometry();
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
@@ -356,16 +348,17 @@ test("Keep the next chat's popup available while its relationships load", async 
       "Next related chat",
     );
   });
+  // No placeholder and nothing from the previous chat while this one loads.
+  expect(
+    screen.queryByRole("region", { name: "Resources" }),
+  ).not.toBeInTheDocument();
+  expect(buttonNamed("Resources")).toBeEnabled();
+  response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
-  await expect(within(panel).findByRole("status")).resolves.toHaveTextContent(
-    "Loading",
-  );
+  await within(panel).findByText("Research child");
   expect(
     within(panel).queryByText("Next related chat"),
   ).not.toBeInTheDocument();
-  expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
-  response.resolve();
-  await within(panel).findByText("Research child");
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
 });
 
@@ -623,6 +616,34 @@ test("Open a chat that only sent messages here from its expanded history", async
   });
 });
 
+test("Add the Open chat link only once the history has loaded", async () => {
+  const history = createDeferredPromise<void>(context.signal);
+  await setupRelations({
+    mock: () => {
+      mockCommunications(0, { receivedCount: 1 });
+      context.mocks.api(chatRelationsContract.messages, async ({ respond }) => {
+        await history.promise;
+        return respond(200, {
+          items: [receivedMessage("The launch plan is ready")],
+        });
+      });
+    },
+  });
+  const { panel, row } = await openMessages("Existing planning chat");
+  await waitFor(() => {
+    expect(row).toHaveAttribute("aria-expanded", "true");
+  });
+  const openChatLinks = () => {
+    return queryAllByRoleFast("link", panel).filter((link) => {
+      return link.textContent.trim() === "Open chat";
+    });
+  };
+  expect(openChatLinks()).toHaveLength(0);
+  history.resolve();
+  await within(panel).findByText("The launch plan is ready");
+  expect(openChatLinks()).toHaveLength(1);
+});
+
 test("Keep received messages usable when the other chat is unavailable", async () => {
   await setupRelations({
     mock: () => {
@@ -807,6 +828,43 @@ test("Preview three unique chats and expand the complete list", async () => {
   expect(within(panel).getByRole("region", { name: "From" })).toHaveTextContent(
     "Slack",
   );
+});
+
+test("Close an open message history when the Chats section collapses", async () => {
+  await setupRelations({
+    mock: () => {
+      context.mocks.api(chatRelationsContract.children, ({ respond }) => {
+        return respond(200, {
+          items: Array.from({ length: 4 }, (_, index) => {
+            return {
+              ...createdChat(
+                `d0000000-0000-4000-a000-${String(200 + index).padStart(12, "0")}`,
+                `Child ${index + 1}`,
+              ),
+              id: `d0000000-0000-4000-a000-${String(300 + index).padStart(12, "0")}`,
+            };
+          }),
+        });
+      });
+      mockCommunications(1, {
+        threadId: "d0000000-0000-4000-a000-000000000200",
+        title: "Child 1",
+      });
+      mockMessages([message()]);
+    },
+  });
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  const chats = await within(panel).findByRole("region", { name: "Chats" });
+  click(buttonNamed("Show more", chats));
+  const { row } = await openMessages("Child 1");
+  await within(chats).findByText("Please check the launch plan");
+  click(buttonNamed("Collapse", chats));
+  await waitFor(() => {
+    expect(row).toHaveAttribute("aria-expanded", "false");
+  });
+  expect(
+    within(chats).queryByText("Please check the launch plan"),
+  ).not.toBeInTheDocument();
 });
 
 test("Show exactly three related chats without an expand control", async () => {

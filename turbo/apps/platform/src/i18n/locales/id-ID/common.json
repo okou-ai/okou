@@ -5022,10 +5022,6 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
-        "resources": {
-          "description": "Tampilkan artefak dan chat terkait di samping percakapan saat ada ruang.",
-          "title": "Buka sumber daya secara otomatis"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

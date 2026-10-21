@@ -5022,10 +5022,6 @@
           "title": "기본 모델"
         },
         "description": "새 채팅의 기본값과 메시지 전송 방식을 선택하세요.",
-        "resources": {
-          "description": "공간이 있으면 채팅의 결과물과 관련 채팅을 대화 옆에 표시합니다.",
-          "title": "리소스 자동으로 열기"
-        },
         "sectionTitle": "채팅"
       },
       "debug": {

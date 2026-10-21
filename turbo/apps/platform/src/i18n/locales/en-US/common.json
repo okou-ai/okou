@@ -5036,10 +5036,6 @@
           "title": "Default model"
         },
         "description": "Choose defaults for new chats and how messages are sent.",
-        "resources": {
-          "description": "Show a chat's artifacts and related chats beside the conversation when there is room.",
-          "title": "Open resources automatically"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

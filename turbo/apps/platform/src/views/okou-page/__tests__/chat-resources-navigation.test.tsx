@@ -26,6 +26,7 @@ import {
   context,
   installResourceGeometry,
   resourceButton,
+  recordPreferenceUpdates,
   resourcePanel,
   resourceState,
 } from "./chat-resources-test-helpers.ts";
@@ -81,7 +82,7 @@ async function setupResourceNavigation() {
 }
 
 test.each(["messages", "artifacts"])(
-  "Show no previous resources while the next chat's %s load",
+  "Show no previous resources and no placeholder while the next chat's %s load",
   async (pendingSource) => {
     installResourceGeometry(480);
     context.mocks.browser.matchMedia(true);
@@ -210,15 +211,10 @@ test.each(["messages", "artifacts"])(
       );
     });
     expect(resourceButton()).toBeEnabled();
-    const loadingPanel = await screen.findByRole("region", {
-      name: "Resources",
-    });
-    await expect(
-      within(loadingPanel).findByRole("status"),
-    ).resolves.toHaveTextContent("Loading");
-    expect(
-      within(loadingPanel).queryByText("first.pdf"),
-    ).not.toBeInTheDocument();
+    // The next chat's panel waits for its own resources instead of showing a
+    // placeholder or the previous chat's.
+    expect(resourcePanel()).not.toBeInTheDocument();
+    expect(screen.queryByText("first.pdf")).not.toBeInTheDocument();
     resourcesResponse.resolve();
     await waitFor(() => {
       expect(
@@ -231,25 +227,18 @@ test.each(["messages", "artifacts"])(
   },
 );
 
-test("Keep a manual close local to its chat and start each visit from the saved default", async () => {
-  installResourceGeometry(480);
-  context.mocks.browser.matchMedia(true);
-  const first = continuityThread(91, 1, "First resources");
-  const second = continuityThread(91, 2, "Second resources");
+function twoResourceChats(caseId: number) {
+  const first = continuityThread(caseId, 1, "First resources");
+  const second = continuityThread(caseId, 2, "Second resources");
   const workspace = installContinuityWorkspace(context, {
-    caseId: 91,
+    caseId,
     threads: [first, second],
     chatEventRows: [first, second].map((thread, index) => {
-      return continuityEventRow(91, index + 1, thread.id, "input.prompt", {
+      return continuityEventRow(caseId, index + 1, thread.id, "input.prompt", {
         payload: {
           userMessage: {
             version: 1,
-            parts: [
-              {
-                type: "text",
-                text: `[${thread.title ?? "Resources"}](https://example.test/${index})`,
-              },
-            ],
+            parts: [{ type: "text", text: `${thread.title ?? "Resources"}` }],
           },
         },
       });
@@ -263,50 +252,79 @@ test("Keep a manual close local to its chat and start each visit from the saved 
       nextCursor: null,
     });
   });
+  return { first, second, workspace };
+}
+
+async function openChat(id: string, title: string) {
+  const link = queryAllByRoleFast("link").find((candidate) => {
+    return candidate.getAttribute("href") === `/chats/${id}`;
+  });
+  if (!link) {
+    throw new Error(`${title} is missing`);
+  }
+  click(link);
+  await waitFor(() => {
+    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+      title,
+    );
+  });
+}
+
+test("Carry a press with room beside the transcript to every chat", async () => {
+  installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  const updates = recordPreferenceUpdates(false);
+  const { first, second, workspace } = twoResourceChats(91);
   await setupPage({
     context,
     ...workspace.pageOptions,
     path: `/chats/${first.id}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
+  await screen.findByTestId("chat-thread-header-title");
+  click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  await userEvent.click(resourceButton());
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  const next = queryAllByRoleFast("link").find((link) => {
-    return link.getAttribute("href") === `/chats/${second.id}`;
-  });
-  if (!next) {
-    throw new Error("Second chat is missing");
-  }
-  click(next);
-  await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-      "Second resources",
-    );
-  });
+  await openChat(second.id, "Second resources");
+  // The press was the preference, so the next chat opens on its own.
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  await userEvent.click(resourceButton());
+  click(resourceButton());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+    expect(updates.at(-1)).toStrictEqual({
+      chatResourcesEnabledByDefault: false,
+    });
+  });
+  await openChat(first.id, "First resources");
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
+});
+
+test("Peek without changing the preference when the gutter is too narrow", async () => {
+  const resize = installResourceGeometry(200);
+  context.mocks.browser.matchMedia(true);
+  recordPreferenceUpdates(true);
+  const { second, workspace, first } = twoResourceChats(93);
+  await setupPage({
+    context,
+    ...workspace.pageOptions,
+    path: `/chats/${first.id}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  await screen.findByTestId("chat-thread-header-title");
+  click(resourceButton());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  const previous = queryAllByRoleFast("link").find((link) => {
-    return link.getAttribute("href") === `/chats/${first.id}`;
-  });
-  if (!previous) {
-    throw new Error("First chat is missing");
-  }
-  click(previous);
-  await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-      "First resources",
-    );
-  });
+  resize(480);
+  await openChat(second.id, "Second resources");
+  // The narrow close only applied to the first chat; the preference is still on.
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });

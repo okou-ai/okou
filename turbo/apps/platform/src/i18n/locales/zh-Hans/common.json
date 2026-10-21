@@ -5022,10 +5022,6 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
-        "resources": {
-          "description": "有足够空间时，在对话旁显示该对话的成果和关联对话。",
-          "title": "自动打开资源面板"
-        },
         "sectionTitle": "聊天"
       },
       "debug": {

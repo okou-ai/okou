@@ -2029,7 +2029,7 @@
       "github": "GitHub",
       "lark": "Lark",
       "mcp": "MCP",
-      "openChat": "オープンチャット",
+      "openChat": "チャットを開く",
       "openChatIn": "{{integration}}でチャットを開く",
       "openDiscordMessage": "Discord で元のメッセージを開く",
       "openFeishuChat": "Feishu で元のチャットを開く",
@@ -5022,10 +5022,6 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
-        "resources": {
-          "description": "余白があるときは、チャットの成果物と関連チャットを会話の横に表示します。",
-          "title": "リソースを自動で開く"
-        },
         "sectionTitle": "チャット"
       },
       "debug": {

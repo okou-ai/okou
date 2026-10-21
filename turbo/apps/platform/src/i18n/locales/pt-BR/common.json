@@ -5100,10 +5100,6 @@
           "title": "Modelo padrão"
         },
         "description": "Escolha os padrões para novos chats e como as mensagens são enviadas.",
-        "resources": {
-          "description": "Mostra os artefatos e chats relacionados ao lado da conversa quando há espaço.",
-          "title": "Abrir recursos automaticamente"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

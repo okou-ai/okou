@@ -228,13 +228,33 @@ function MessageCard({
   );
 }
 
+// Received cards stay in this chat, so the other chat needs its own way in. It
+// joins the history once that has loaded, so it does not move under the pointer.
+function OpenChatLink({ peerId }: { readonly peerId: string }) {
+  const { t } = useTranslation();
+  return (
+    <Link
+      pathname={ROUTES.chat}
+      options={{ pathParams: { threadId: peerId } }}
+      className="mb-1 ml-7 flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      {t(($) => {
+        return $.chat.origins.openChat;
+      })}
+      <ArrowUpRight aria-hidden="true" size={12} />
+    </Link>
+  );
+}
+
 function MessageCards({
   id,
+  peerId,
   list,
   unavailable,
   retry,
 }: {
   readonly id: string;
+  readonly peerId: string;
   readonly list: ChatRelationList<ChatRelationMessage>;
   readonly unavailable: boolean;
   readonly retry: () => void;
@@ -244,38 +264,45 @@ function MessageCards({
   if (data.state === "loading") {
     return null;
   }
+  const openChat = unavailable ? null : <OpenChatLink peerId={peerId} />;
   if (data.state === "hasError") {
     return (
-      <div
-        role="alert"
-        className="mb-1 ml-7 flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
-      >
-        <p>
-          {t(($) => {
-            return $.chat.relations.loadFailed;
-          })}
-        </p>
-        <Button variant="quiet" size="xs" onClick={retry}>
-          {t(($) => {
-            return $.chat.resources.retry;
-          })}
-        </Button>
-      </div>
+      <>
+        <div
+          role="alert"
+          className="mb-1 ml-7 flex items-center justify-between gap-2 px-2 text-xs text-muted-foreground"
+        >
+          <p>
+            {t(($) => {
+              return $.chat.relations.loadFailed;
+            })}
+          </p>
+          <Button variant="quiet" size="xs" onClick={retry}>
+            {t(($) => {
+              return $.chat.resources.retry;
+            })}
+          </Button>
+        </div>
+        {openChat}
+      </>
     );
   }
   // Indented so the text starts on the chat titles' edge.
   return (
-    <ul id={id} className="m-0 mb-1 ml-7 mt-0.5 grid list-none gap-1 p-0">
-      {data.data.items.map((message) => {
-        return (
-          <MessageCard
-            key={message.id}
-            message={message}
-            unavailable={unavailable}
-          />
-        );
-      })}
-    </ul>
+    <>
+      <ul id={id} className="m-0 mb-1 ml-7 mt-0.5 grid list-none gap-1 p-0">
+        {data.data.items.map((message) => {
+          return (
+            <MessageCard
+              key={message.id}
+              message={message}
+              unavailable={unavailable}
+            />
+          );
+        })}
+      </ul>
+      {openChat}
+    </>
   );
 }
 
@@ -343,23 +370,11 @@ function ResourceChatRow({
         {expanded && messages && (
           <MessageCards
             id={messagesId}
+            peerId={chat.threadId}
             list={messages}
             unavailable={unavailable}
             retry={retry}
           />
-        )}
-        {expanded && !unavailable && (
-          // Received cards stay in this chat, so the chat itself needs a way in.
-          <Link
-            pathname={ROUTES.chat}
-            options={{ pathParams: { threadId: chat.threadId } }}
-            className="mb-1 ml-7 flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            {t(($) => {
-              return $.chat.origins.openChat;
-            })}
-            <ArrowUpRight aria-hidden="true" size={12} />
-          </Link>
         )}
       </li>
     );

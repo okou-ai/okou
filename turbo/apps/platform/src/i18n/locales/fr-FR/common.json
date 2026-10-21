@@ -5100,10 +5100,6 @@
           "title": "Modèle par défaut"
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
-        "resources": {
-          "description": "Affiche les artefacts et chats associés à côté de la conversation lorsqu’il y a de la place.",
-          "title": "Ouvrir les ressources automatiquement"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

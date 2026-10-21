@@ -5022,10 +5022,6 @@
           "title": "預設模型"
         },
         "description": "設定新聊天的預設項和訊息傳送方式。",
-        "resources": {
-          "description": "空間足夠時，在對話旁顯示該對話的成果和關聯對話。",
-          "title": "自動開啟資源面板"
-        },
         "sectionTitle": "聊天"
       },
       "debug": {
