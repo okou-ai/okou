@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   type PublicConnectorCatalogPermissionDetail,
   connectorCatalogContract,
@@ -19,18 +20,20 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   CAPABILITY_AGENT_ID,
-  context,
   completedConversation,
   type CapturedChatSend,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
   RUN_THREAD_ID,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import {
   permissionActionUrl,
   permissionMetadata,
 } from "./chat-capability-connector-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 function installActionConversation(args: {
   readonly lines: readonly string[];

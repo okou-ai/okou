@@ -8,6 +8,9 @@ import {
   hostedSiteVisibilitySchema,
   hostedSiteVisibilityStatusSchema,
   hostedSiteDownloadAuthorizationSchema,
+  hostedSiteAuthProofSchema,
+  hostedSiteAuthCodeSchema,
+  hostedSiteSessionSchema,
 } from "./hosted-site-access";
 
 const c = initContract();
@@ -382,6 +385,43 @@ export const hostContract = c.router({
       409: apiErrorSchema,
     },
     summary: "Change an owned published website's address",
+  },
+  authorizeSiteSession: {
+    method: "POST",
+    path: "/api/host/sites/:siteId/session-authorizations",
+    pathParams: z.object({ siteId: z.uuid() }),
+    headers: authHeadersSchema,
+    body: z.object({
+      origin: z.url(),
+      codeChallenge: hostedSiteAuthProofSchema,
+      state: hostedSiteAuthProofSchema,
+    }),
+    responses: {
+      200: z.object({ callbackUrl: z.url() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Authorize a site-bound browser session from the trusted App",
+  },
+  exchangeSiteSession: {
+    method: "POST",
+    path: "/api/host/sites/:siteId/sessions",
+    pathParams: z.object({ siteId: z.uuid() }),
+    headers: authHeadersSchema,
+    body: z.object({
+      origin: z.url(),
+      code: hostedSiteAuthCodeSchema,
+      codeVerifier: hostedSiteAuthProofSchema,
+    }),
+    responses: {
+      200: hostedSiteSessionSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Exchange a single-use code using the Worker-held proof",
   },
   siteVisibility: {
     method: "GET",

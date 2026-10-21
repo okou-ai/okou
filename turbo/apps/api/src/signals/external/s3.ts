@@ -1686,6 +1686,26 @@ export function readArtifactSharePolicyObject(
   });
 }
 
+/** Read a policy under the caller's cancellation without constructing a signal. */
+export const readArtifactSharePolicyObject$ = command(
+  async (
+    { get },
+    args: { readonly bucket: string; readonly key: string },
+    signal: AbortSignal,
+  ) => {
+    const response = await get(hostedSitesS3Client$).send(
+      new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
+      { abortSignal: signal },
+    );
+    signal.throwIfAborted();
+    const buffer = await readS3ObjectBody(response, args.key, {}, signal);
+    if (!response.ETag) {
+      throw new Error("Artifact sharing policy has no storage revision");
+    }
+    return { buffer, etag: response.ETag };
+  },
+);
+
 /** A delayed writer cannot overwrite a policy acknowledged by a newer writer. */
 export function writeArtifactSharePolicyObject(
   bucket: string,

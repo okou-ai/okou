@@ -12,14 +12,6 @@ import { Button, Skeleton, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import {
-  isChatRoute,
-  selectPinnedAgent$,
-  setSidebarExpanded$,
-} from "../../signals/okou-page/nav.ts";
-import { activeRoute$ } from "../../signals/active-route.ts";
-import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
-import { pathParams$ } from "../../signals/route.ts";
-import {
   agentCardCollapsed$,
   setAgentCardCollapsed$,
   openPinAgentDialog$,
@@ -30,25 +22,18 @@ import {
   completePinAgentDialogClose$,
   pinAgentControl$,
   pinAgentControlRef$,
-  draggingPinnedAgentId$,
-  pinnedAgentDropTargetId$,
-  startPinnedAgentDrag$,
-  setPinnedAgentDropTarget$,
   endPinnedAgentDrag$,
 } from "../../signals/okou-page/sidebar-state.ts";
-import { subagents$, defaultAgentId$ } from "../../signals/agent.ts";
+import { subagents$ } from "../../signals/agent.ts";
 import {
-  displayedPinnedAgents$,
-  setAgentPinned$,
-  movePinnedAgent$,
-  pinnedAgents$,
-} from "../../signals/okou-page/pinned-agents.ts";
-import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
-import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
+  sidebarPinnedAgentItems$,
+  sidebarDisplayedPinnedAgentItems$,
+  setSidebarAgentPinned$,
+  type SidebarPinnedAgentSignals,
+} from "../../signals/okou-page/sidebar-pinned-agent.ts";
 import { refreshSidebarChatThreadLayoutOnRef$ } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { equalSets } from "../../lib/equality.ts";
+import { equalArrays } from "../../lib/equality.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { Link } from "../router/link.tsx";
@@ -94,48 +79,34 @@ function PinnedAgentGridSkeletonCard() {
   );
 }
 
-interface PinnedAgentActionProps {
-  readonly agentId: string;
-  readonly isDefaultAgent: boolean;
-  readonly isPinned: boolean;
-  readonly hasUnread: boolean;
+interface PinnedAgentProps {
+  readonly signals: SidebarPinnedAgentSignals;
 }
 
-function usePinnedAgentMenuActions({
-  agentId,
-  isDefaultAgent,
-  isPinned,
-  hasUnread,
-}: PinnedAgentActionProps): AgentRowMenuAction[] {
+function usePinnedAgentMenuActions(
+  signals: SidebarPinnedAgentSignals,
+): AgentRowMenuAction[] {
   const { t } = useTranslation("agents");
-  const [pinLoadable, saveAgentPinned] = useLoadableSet(setAgentPinned$);
+  const isDefaultAgent = useLastResolved(signals.default$) ?? false;
+  const isPinned = useLastResolved(signals.pinned$) ?? false;
+  const hasUnread = useLastResolved(signals.unread$) ?? false;
+  const [pinLoadable, saveAgentPinned] = useLoadableSet(signals.setPinned$);
   const [markReadLoadable, markAgentThreadsRead] = useLoadableSet(
-    markAgentThreadsRead$,
+    signals.markRead$,
   );
   const savingPinned = pinLoadable.state === "loading";
   const markingRead = markReadLoadable.state === "loading";
-  const pageSignal = useGet(pageSignal$);
 
   function unpinAgent() {
-    detach(
-      saveAgentPinned({ agentId, pinned: false }, pageSignal),
-      Reason.DomCallback,
-    );
+    detach(saveAgentPinned(false), Reason.DomCallback);
   }
 
   function pinAgent() {
-    detach(
-      saveAgentPinned({ agentId, pinned: true }, pageSignal),
-      Reason.DomCallback,
-    );
+    detach(saveAgentPinned(true), Reason.DomCallback);
   }
 
   function markAllRead() {
-    detach(
-      markAgentThreadsRead(agentId, pageSignal),
-      Reason.DomCallback,
-      "markAgentThreadsRead",
-    );
+    detach(markAgentThreadsRead(), Reason.DomCallback, "markAgentThreadsRead");
   }
 
   return [
@@ -175,19 +146,21 @@ function usePinnedAgentMenuActions({
   ];
 }
 
-function PinnedAgentSideDecorator({
-  isPrimarySelected,
-  ...actionProps
-}: PinnedAgentActionProps & {
-  readonly isPrimarySelected: boolean;
-}) {
-  const actions = usePinnedAgentMenuActions(actionProps);
+function PinnedAgentSideDecorator({ signals }: PinnedAgentProps) {
+  const actions = usePinnedAgentMenuActions(signals);
+  const isPrimarySelected = useLastResolved(signals.selected$) ?? false;
+  const hasUnread = useLastResolved(signals.unread$) ?? false;
+  const hasSideActions = useLastResolved(signals.hasSideActions$) ?? false;
+
+  if (!hasSideActions) {
+    return null;
+  }
 
   return (
     <AgentRowSideActions
       variant="sidebar"
       isPrimarySelected={isPrimarySelected}
-      hasUnread={actionProps.hasUnread}
+      hasUnread={hasUnread}
       actions={actions}
     />
   );
@@ -195,11 +168,11 @@ function PinnedAgentSideDecorator({
 
 function PinnedAgentContextDecorator({
   children,
-  ...actionProps
-}: PinnedAgentActionProps & {
+  signals,
+}: PinnedAgentProps & {
   readonly children: ReactNode;
 }) {
-  const actions = usePinnedAgentMenuActions(actionProps);
+  const actions = usePinnedAgentMenuActions(signals);
   return (
     <AgentRowContextActions actions={actions}>
       {children}
@@ -207,57 +180,35 @@ function PinnedAgentContextDecorator({
   );
 }
 
-interface PinnedGridAgent {
-  readonly agentId: string;
-  readonly displayName?: string | null;
-}
-
-/** Which side of the hovered card the dragged agent lands on. */
-type PinnedDropSide = "before" | "after";
-
 /**
  * A grid tile is a quarter of the sidebar wide, so a long agent name still
  * runs past its label. The label fades where it is cut and, like the thread
  * titles below it, scrolls to its end while the tile is hovered or focused, so
  * the full name never needs a tooltip floating over its neighbours.
  */
-function PinnedAgentGridCard({
-  agent,
-  isPrimarySelected,
-  hasUnread,
-  isDefaultAgent,
-  isReorderable,
-  dropSide,
-}: {
-  readonly agent: PinnedGridAgent;
-  readonly isPrimarySelected: boolean;
-  readonly hasUnread: boolean;
-  readonly isDefaultAgent: boolean;
-  readonly isReorderable: boolean;
-  readonly dropSide: PinnedDropSide | null;
-}) {
-  const pageSignal = useGet(pageSignal$);
-  const selectPinnedAgent = useSet(selectPinnedAgent$);
-  const draggingAgentId = useGet(draggingPinnedAgentId$);
-  const dropTargetAgentId = useGet(pinnedAgentDropTargetId$);
-  const startDrag = useSet(startPinnedAgentDrag$);
-  const setDropTarget = useSet(setPinnedAgentDropTarget$);
+function PinnedAgentGridCard({ signals }: PinnedAgentProps) {
+  const { agentId } = signals;
+  const isPrimarySelected = useLastResolved(signals.selected$) ?? false;
+  const hasUnread = useLastResolved(signals.unread$) ?? false;
+  const isReorderable = useLastResolved(signals.reorderable$) ?? false;
+  const dropSide = useLastResolved(signals.dropSide$) ?? null;
+  const isDragging = useGet(signals.dragging$);
+  const hasDrag = useGet(signals.hasDrag$);
+  // Drag acceptance is synchronous: dragOver can immediately follow dragStart.
+  const acceptsDrop = isReorderable && hasDrag && !isDragging;
+  const selectPinnedAgent = useSet(signals.select$);
+  const startDrag = useSet(signals.startDrag$);
+  const setDropTarget = useSet(signals.dragOver$);
+  const leaveDropTarget = useSet(signals.dragLeave$);
   const endDrag = useSet(endPinnedAgentDrag$);
-  const [, moveAgent] = useLoadableSet(movePinnedAgent$);
+  const [, moveAgent] = useLoadableSet(signals.moveHere$);
   const refreshLayoutRef = useSet(refreshSidebarChatThreadLayoutOnRef$);
-  const displayName = agent.displayName ?? agent.agentId;
-
-  const isDragging = draggingAgentId === agent.agentId;
-  const acceptsDrop =
-    isReorderable &&
-    draggingAgentId !== null &&
-    draggingAgentId !== agent.agentId;
 
   return (
     <Link
       ref={refreshLayoutRef}
       pathname="/agents/:agentId/chat"
-      options={{ pathParams: { agentId: agent.agentId } }}
+      options={{ pathParams: { agentId } }}
       data-testid="pinned-agent-card"
       aria-current={isPrimarySelected ? "page" : undefined}
       draggable={isReorderable}
@@ -266,15 +217,12 @@ function PinnedAgentGridCard({
           return;
         }
         e.preventDefault();
-        selectPinnedAgent({ agentId: agent.agentId, hasUnread });
+        selectPinnedAgent(hasUnread);
       }}
       onDragStart={(e) => {
         e.dataTransfer.clearData();
         e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData(
-          "application/x-okou-pinned-agent",
-          agent.agentId,
-        );
+        e.dataTransfer.setData("application/x-okou-pinned-agent", agentId);
         const dragImage = e.currentTarget.querySelector<HTMLElement>(
           '[data-slot="pinned-agent-avatar"]',
         );
@@ -285,13 +233,13 @@ function PinnedAgentGridCard({
             dragImage.offsetHeight / 2,
           );
         }
-        startDrag(agent.agentId);
+        startDrag();
       }}
       onDragEnd={() => {
         endDrag();
       }}
       onDragOver={(e) => {
-        if (draggingAgentId === null) {
+        if (!hasDrag) {
           return;
         }
         e.preventDefault();
@@ -299,28 +247,18 @@ function PinnedAgentGridCard({
           return;
         }
         e.dataTransfer.dropEffect = "move";
-        setDropTarget(agent.agentId);
+        setDropTarget();
       }}
-      onDragLeave={() => {
-        if (dropTargetAgentId === agent.agentId) {
-          setDropTarget(null);
-        }
-      }}
+      onDragLeave={leaveDropTarget}
       onDrop={(e) => {
-        if (draggingAgentId === null) {
+        if (!hasDrag) {
           return;
         }
         e.preventDefault();
         if (!acceptsDrop) {
           return;
         }
-        detach(
-          moveAgent(
-            { agentId: draggingAgentId, targetAgentId: agent.agentId },
-            pageSignal,
-          ),
-          Reason.DomCallback,
-        );
+        detach(moveAgent(), Reason.DomCallback);
         endDrag();
       }}
       className={`group relative ${pinnedAgentGridCardFrameClassName} no-underline transition-colors duration-200 ${
@@ -350,76 +288,59 @@ function PinnedAgentGridCard({
           isDragging ? "opacity-0" : ""
         }`}
       >
-        <AgentAvatarImg
-          name={agent.agentId}
-          alt=""
-          preserveChinBaseline
-          className={`block h-full w-full object-cover object-top ${
-            isDefaultAgent ? "" : "rounded-full"
-          }`}
-        />
+        <PinnedAgentGridAvatar signals={signals} />
         {hasUnread && (
           <span className="absolute -right-0.5 -top-0.5 flex">
             <AgentUnreadIndicator />
           </span>
         )}
       </span>
-      <HoverScrollTitle
-        data-slot="pinned-agent-title"
-        title={displayName}
-        variant="tile"
-        className={cn(
-          "text-[11px] text-[color:var(--nav-copy,inherit)]",
-          pinnedAgentGridLabelFrameClassName,
-          isPrimarySelected && "font-medium",
-          isDragging && "opacity-0",
-        )}
-      />
+      <PinnedAgentGridTitle signals={signals} />
     </Link>
   );
 }
 
-/**
- * Which edge of `agentId` the insertion caret sits on. `movePinnedAgent$`
- * splices the dragged agent into the target's index, so a drag that travels
- * backwards lands before the target and a forwards drag lands after it.
- */
-function resolveDropSide({
-  agents,
-  draggingAgentId,
-  dropTargetAgentId,
-  agentId,
-}: {
-  readonly agents: readonly PinnedGridAgent[];
-  readonly draggingAgentId: string | null;
-  readonly dropTargetAgentId: string | null;
-  readonly agentId: string;
-}): PinnedDropSide | null {
-  if (draggingAgentId === null || dropTargetAgentId !== agentId) {
+function PinnedAgentGridAvatar({ signals }: PinnedAgentProps) {
+  const isDefaultAgent = useLastResolved(signals.default$) ?? false;
+  return (
+    <AgentAvatarImg
+      name={signals.agentId}
+      alt=""
+      preserveChinBaseline
+      className={`block h-full w-full object-cover object-top ${
+        isDefaultAgent ? "" : "rounded-full"
+      }`}
+    />
+  );
+}
+
+function PinnedAgentGridTitle({ signals }: PinnedAgentProps) {
+  const displayName = useLastResolved(signals.displayName$);
+  const isPrimarySelected = useLastResolved(signals.selected$) ?? false;
+  const isDragging = useGet(signals.dragging$);
+  if (displayName === undefined) {
     return null;
   }
-  const from = agents.findIndex((a) => {
-    return a.agentId === draggingAgentId;
-  });
-  const to = agents.findIndex((a) => {
-    return a.agentId === agentId;
-  });
-  if (from === -1 || to === -1 || from === to) {
-    return null;
-  }
-  return from > to ? "before" : "after";
+  return (
+    <HoverScrollTitle
+      data-slot="pinned-agent-title"
+      title={displayName}
+      variant="tile"
+      className={cn(
+        "text-[11px] text-[color:var(--nav-copy,inherit)]",
+        pinnedAgentGridLabelFrameClassName,
+        isPrimarySelected && "font-medium",
+        isDragging && "opacity-0",
+      )}
+    />
+  );
 }
 
 export function PinAgentDialogContainer() {
   const open = useGet(pinAgentDialogOpen$);
-  const onOpenChange = useSet(setPinAgentDialogOpen$);
-  const subagents = useLastResolved(subagents$) ?? [];
-  const pageSignal = useGet(pageSignal$);
-  const [pinLoadable, saveAgentPinned] = useLoadableSet(setAgentPinned$);
   const handingOff = useGet(pinAgentDialogHandoff$);
-  const handOffToCreateAgent = useSet(handOffPinAgentDialogToCreateAgent$);
-  const completeClose = useSet(completePinAgentDialogClose$);
-  const pinControl = useGet(pinAgentControl$);
+  // A dismissed popup does not end its page-owned preference mutation.
+  const [pinLoadable, saveAgentPinned] = useLoadableSet(setSidebarAgentPinned$);
 
   // A hand-off keeps the dialog mounted through its exit, without returning
   // focus, so the create dialog opens from onOpenChangeComplete and keeps its
@@ -429,14 +350,44 @@ export function PinAgentDialogContainer() {
   }
 
   return (
+    <PinAgentDialogSession
+      open={open}
+      handingOff={handingOff}
+      saving={pinLoadable.state === "loading"}
+      onSetAgentPinned={(agentId, pinned) => {
+        return saveAgentPinned({ agentId, pinned });
+      }}
+    />
+  );
+}
+
+function PinAgentDialogSession({
+  open,
+  handingOff,
+  saving,
+  onSetAgentPinned,
+}: {
+  readonly open: boolean;
+  readonly handingOff: boolean;
+  readonly saving: boolean;
+  readonly onSetAgentPinned: (
+    agentId: string,
+    pinned: boolean,
+  ) => Promise<void>;
+}) {
+  const onOpenChange = useSet(setPinAgentDialogOpen$);
+  const subagents = useLastResolved(subagents$) ?? [];
+  const handOffToCreateAgent = useSet(handOffPinAgentDialogToCreateAgent$);
+  const completeClose = useSet(completePinAgentDialogClose$);
+  const pinControl = useGet(pinAgentControl$);
+
+  return (
     <PinAgentDialog
       open={open}
       onOpenChange={onOpenChange}
       subagents={subagents}
-      saving={pinLoadable.state === "loading"}
-      onSetAgentPinned={(agentId, pinned) => {
-        return saveAgentPinned({ agentId, pinned }, pageSignal);
-      }}
+      saving={saving}
+      onSetAgentPinned={onSetAgentPinned}
       onCreateAgent={() => {
         handOffToCreateAgent();
       }}
@@ -456,146 +407,223 @@ export function PinnedAgentListSection({
 }: {
   layout?: "vertical" | "horizontal";
 }) {
-  const refreshLayoutRef = useSet(refreshSidebarChatThreadLayoutOnRef$);
-  const { t } = useTranslation("agents");
-  const activeRoute = useGet(activeRoute$);
-  const pathParams = useGet(pathParams$);
-  const routeAgentId =
-    typeof pathParams?.agentId === "string" ? pathParams.agentId : null;
-  const sidebarAgentId = useLastResolved(currentChatAgentId$) ?? null;
-  const pinnedAgentsLoadable = useLastLoadable(pinnedAgents$);
-  const displayedPinnedAgentsLoadable = useLastLoadable(displayedPinnedAgents$);
-  const unreadAgentIds = useLastResolved(unreadAgentIds$, {
-    equalityFn: equalSets,
-  });
+  return layout === "horizontal" ? (
+    <HorizontalPinnedAgentSection />
+  ) : (
+    <VerticalPinnedAgentSection />
+  );
+}
 
+/** Only order/presence and readiness cross the list boundary. */
+function usePinnedAgentItems() {
+  const pinned = useLastLoadable(sidebarPinnedAgentItems$, {
+    equalityFn: equalArrays,
+  });
+  const displayed = useLastLoadable(sidebarDisplayedPinnedAgentItems$, {
+    equalityFn: equalArrays,
+  });
+  return {
+    state: pinned.state,
+    items:
+      displayed.state === "hasData"
+        ? displayed.data
+        : pinned.state === "hasData"
+          ? pinned.data
+          : [],
+  };
+}
+
+function HorizontalPinnedAgentSection() {
+  const { t } = useTranslation("agents");
   const openPinAgentDialog = useSet(openPinAgentDialog$);
   const pinControlRef = useSet(pinAgentControlRef$);
-  const selectPinnedAgent = useSet(selectPinnedAgent$);
-  const setExpanded = useSet(setSidebarExpanded$);
+  const { state, items } = usePinnedAgentItems();
+  const horizontalPinnedAgents = state === "loading" ? null : items;
+  const pinnedAgentCards =
+    horizontalPinnedAgents === null
+      ? [<PinnedAgentGridSkeletonCard key="loading" />]
+      : horizontalPinnedAgents.map((signals) => {
+          return (
+            <PinnedAgentContextDecorator
+              key={signals.agentId}
+              signals={signals}
+            >
+              <PinnedAgentGridCard signals={signals} />
+            </PinnedAgentContextDecorator>
+          );
+        });
+
+  // The pin control keeps its tile while it shares the first row with the
+  // agents, and moves to the header once the agents fill that row.
+  const pinControlInGrid =
+    horizontalPinnedAgents !== null &&
+    horizontalPinnedAgents.length < PINNED_AGENT_GRID_COLUMNS;
+  const pinControlInHeader =
+    horizontalPinnedAgents !== null && !pinControlInGrid;
+  const pinAgentLabel = t(($) => {
+    return $.sidebar.pinAgent;
+  });
+
+  return (
+    <div className="shrink-0" data-testid="pinned-agents-horizontal">
+      <div className="flex h-8 items-center justify-between pl-2">
+        <span className="text-[13px] font-medium leading-4 text-nav-copy-muted">
+          {t(($) => {
+            return $.sidebar.pinnedAgents;
+          })}
+        </span>
+        {pinControlInHeader && (
+          <Button
+            ref={pinControlRef}
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            showTooltip
+            aria-label={pinAgentLabel}
+            onClick={() => {
+              openPinAgentDialog();
+            }}
+          >
+            <Plus />
+          </Button>
+        )}
+      </div>
+      <div
+        className="grid min-w-0 grid-cols-4 items-start gap-x-1 gap-y-2.5"
+        data-testid="pinned-agents-grid"
+      >
+        {pinnedAgentCards}
+        {pinControlInGrid && (
+          <button
+            ref={pinControlRef}
+            type="button"
+            onClick={() => {
+              openPinAgentDialog();
+            }}
+            aria-label={pinAgentLabel}
+            className="flex w-full min-w-0 flex-col items-center gap-1.5 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-[hsl(var(--gray-300))]">
+              <Plus size={18} />
+            </span>
+            <span
+              data-testid="pinned-agent-label-frame"
+              className={`text-[color:var(--nav-copy-muted,inherit)] ${pinnedAgentGridLabelFrameClassName} text-[11px]`}
+            >
+              {t(($) => {
+                return $.sidebar.addPin;
+              })}
+            </span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VerticalPinnedAgentContent() {
+  const refreshLayoutRef = useSet(refreshSidebarChatThreadLayoutOnRef$);
+  const { state, items } = usePinnedAgentItems();
+  return (
+    <div ref={refreshLayoutRef} className="flex flex-col gap-0.5 mt-1">
+      {state === "loading" && (
+        <>
+          <div
+            ref={refreshLayoutRef}
+            className="flex h-8 items-center gap-2 px-2"
+          >
+            <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
+            <div className="h-3 w-20 rounded bg-muted animate-pulse" />
+          </div>
+          <div className="flex h-8 items-center gap-2 px-2">
+            <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
+            <div className="h-3 w-16 rounded bg-muted animate-pulse" />
+          </div>
+        </>
+      )}
+      {state === "hasData" &&
+        items.map((signals) => {
+          return <PinnedAgentRow key={signals.agentId} signals={signals} />;
+        })}
+    </div>
+  );
+}
+
+function PinnedAgentRow({ signals }: PinnedAgentProps) {
+  const refreshLayoutRef = useSet(refreshSidebarChatThreadLayoutOnRef$);
+  return (
+    <div
+      ref={refreshLayoutRef}
+      className="group relative"
+      data-testid="pinned-agent-card"
+    >
+      <PinnedAgentRowLink signals={signals}>
+        <PinnedAgentRowLabel signals={signals} />
+      </PinnedAgentRowLink>
+      <PinnedAgentSideDecorator signals={signals} />
+    </div>
+  );
+}
+
+function PinnedAgentRowLink({
+  signals,
+  children,
+}: PinnedAgentProps & { readonly children: ReactNode }) {
+  const isPrimarySelected = useLastResolved(signals.selected$) ?? false;
+  const isFromChat = useLastResolved(signals.fromChat$) ?? false;
+  const hasSideActions = useLastResolved(signals.hasSideActions$) ?? false;
+  const hasUnread = useLastResolved(signals.unread$) ?? false;
+  const selectPinnedAgent = useSet(signals.select$);
+  return (
+    <Link
+      pathname="/agents/:agentId/chat"
+      options={{ pathParams: { agentId: signals.agentId } }}
+      aria-current={isPrimarySelected ? "page" : undefined}
+      onClick={(e) => {
+        if (!shouldHandleLinkClick(e)) {
+          return;
+        }
+        e.preventDefault();
+        selectPinnedAgent(hasUnread, true);
+      }}
+      className={`flex w-full h-8 shrink-0 items-center gap-2 rounded-lg text-left text-sm leading-5 no-underline transition-colors duration-200 ${
+        hasSideActions ? "pl-2 pr-8" : "px-2"
+      } ${
+        isPrimarySelected
+          ? "bg-state-selected text-sidebar-foreground font-medium"
+          : isFromChat
+            ? "border-l-2 border-[hsl(var(--gray-400))] bg-state-hover text-sidebar-foreground hover:bg-state-selected-hover"
+            : "text-sidebar-foreground hover:bg-state-hover"
+      }`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function PinnedAgentRowLabel({ signals }: PinnedAgentProps) {
+  const displayName = useLastResolved(signals.displayName$);
+  if (displayName === undefined) {
+    return null;
+  }
+  return (
+    <>
+      <AgentAvatarImg
+        name={signals.agentId}
+        alt={displayName}
+        className="h-5 w-5 shrink-0 rounded-md object-cover object-top"
+      />
+      <span className="text-[color:var(--nav-copy,inherit)] truncate">
+        {displayName}
+      </span>
+    </>
+  );
+}
+
+function VerticalPinnedAgentSection() {
+  const { t } = useTranslation("agents");
   const collapsed = useGet(agentCardCollapsed$);
   const setCollapsed = useSet(setAgentCardCollapsed$);
-  const draggingAgentId = useGet(draggingPinnedAgentId$);
-  const dropTargetAgentId = useGet(pinnedAgentDropTargetId$);
-  const defaultAgentId = useLastResolved(defaultAgentId$);
-  const pinnedAgents =
-    pinnedAgentsLoadable.state === "hasData" ? pinnedAgentsLoadable.data : [];
-  const pinnedAgentIds = new Set(
-    pinnedAgents.map((agent) => {
-      return agent.agentId;
-    }),
-  );
-  const displayedPinnedAgents =
-    displayedPinnedAgentsLoadable.state === "hasData"
-      ? displayedPinnedAgentsLoadable.data
-      : pinnedAgents;
-
-  const selectedAgentId = routeAgentId ?? sidebarAgentId;
-
-  if (layout === "horizontal") {
-    const horizontalPinnedAgents =
-      pinnedAgentsLoadable.state === "loading" ? null : displayedPinnedAgents;
-    const pinnedAgentCards =
-      horizontalPinnedAgents === null
-        ? [<PinnedAgentGridSkeletonCard key="loading" />]
-        : horizontalPinnedAgents.map((agent) => {
-            const isPrimarySelected =
-              isChatRoute(activeRoute) && selectedAgentId === agent.agentId;
-            const hasUnread = unreadAgentIds?.has(agent.agentId) ?? false;
-            const isPinned = pinnedAgentIds.has(agent.agentId);
-            const isDefaultAgent = agent.agentId === defaultAgentId;
-            return (
-              <PinnedAgentContextDecorator
-                key={agent.agentId}
-                agentId={agent.agentId}
-                isDefaultAgent={isDefaultAgent}
-                isPinned={isPinned}
-                hasUnread={hasUnread}
-              >
-                <PinnedAgentGridCard
-                  agent={agent}
-                  isPrimarySelected={isPrimarySelected}
-                  hasUnread={hasUnread}
-                  isDefaultAgent={isDefaultAgent}
-                  isReorderable={isPinned && !isDefaultAgent}
-                  dropSide={resolveDropSide({
-                    agents: horizontalPinnedAgents,
-                    draggingAgentId,
-                    dropTargetAgentId,
-                    agentId: agent.agentId,
-                  })}
-                />
-              </PinnedAgentContextDecorator>
-            );
-          });
-
-    // The pin control keeps its tile while it shares the first row with the
-    // agents, and moves to the header once the agents fill that row.
-    const pinControlInGrid =
-      horizontalPinnedAgents !== null &&
-      horizontalPinnedAgents.length < PINNED_AGENT_GRID_COLUMNS;
-    const pinControlInHeader =
-      horizontalPinnedAgents !== null && !pinControlInGrid;
-    const pinAgentLabel = t(($) => {
-      return $.sidebar.pinAgent;
-    });
-
-    return (
-      <div className="shrink-0" data-testid="pinned-agents-horizontal">
-        <div className="flex h-8 items-center justify-between pl-2">
-          <span className="text-[13px] font-medium leading-4 text-nav-copy-muted">
-            {t(($) => {
-              return $.sidebar.pinnedAgents;
-            })}
-          </span>
-          {pinControlInHeader && (
-            <Button
-              ref={pinControlRef}
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              showTooltip
-              aria-label={pinAgentLabel}
-              onClick={() => {
-                openPinAgentDialog();
-              }}
-            >
-              <Plus />
-            </Button>
-          )}
-        </div>
-        <div
-          className="grid min-w-0 grid-cols-4 items-start gap-x-1 gap-y-2.5"
-          data-testid="pinned-agents-grid"
-        >
-          {pinnedAgentCards}
-          {pinControlInGrid && (
-            <button
-              ref={pinControlRef}
-              type="button"
-              onClick={() => {
-                openPinAgentDialog();
-              }}
-              aria-label={pinAgentLabel}
-              className="flex w-full min-w-0 flex-col items-center gap-1.5 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-[hsl(var(--gray-300))]">
-                <Plus size={18} />
-              </span>
-              <span
-                data-testid="pinned-agent-label-frame"
-                className={`text-[color:var(--nav-copy-muted,inherit)] ${pinnedAgentGridLabelFrameClassName} text-[11px]`}
-              >
-                {t(($) => {
-                  return $.sidebar.addPin;
-                })}
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="shrink-0">
@@ -624,88 +652,7 @@ export function PinnedAgentListSection({
         </span>
       </Button>
       <div id={PINNED_AGENTS_CONTENT_ID} hidden={collapsed}>
-        {!collapsed && (
-          <div ref={refreshLayoutRef} className="flex flex-col gap-0.5 mt-1">
-            {pinnedAgentsLoadable.state === "loading" && (
-              <>
-                <div
-                  ref={refreshLayoutRef}
-                  className="flex h-8 items-center gap-2 px-2"
-                >
-                  <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
-                  <div className="h-3 w-20 rounded bg-muted animate-pulse" />
-                </div>
-                <div className="flex h-8 items-center gap-2 px-2">
-                  <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
-                  <div className="h-3 w-16 rounded bg-muted animate-pulse" />
-                </div>
-              </>
-            )}
-            {pinnedAgentsLoadable.state === "hasData" &&
-              displayedPinnedAgents.map((agent) => {
-                const isPrimarySelected =
-                  isChatRoute(activeRoute) && selectedAgentId === agent.agentId;
-                const isFromChat = sidebarAgentId === agent.agentId;
-                const isPinned = pinnedAgentIds.has(agent.agentId);
-                const hasUnread = unreadAgentIds?.has(agent.agentId) ?? false;
-                const isDefaultAgent = agent.agentId === defaultAgentId;
-                const hasSideActions =
-                  hasUnread || (!isDefaultAgent && isPinned);
-                return (
-                  <div
-                    key={agent.agentId}
-                    ref={refreshLayoutRef}
-                    className="group relative"
-                    data-testid="pinned-agent-card"
-                  >
-                    <Link
-                      pathname="/agents/:agentId/chat"
-                      options={{ pathParams: { agentId: agent.agentId } }}
-                      aria-current={isPrimarySelected ? "page" : undefined}
-                      onClick={(e) => {
-                        if (!shouldHandleLinkClick(e)) {
-                          return;
-                        }
-                        e.preventDefault();
-                        selectPinnedAgent({
-                          agentId: agent.agentId,
-                          hasUnread,
-                        });
-                        setExpanded(false);
-                      }}
-                      className={`flex w-full h-8 shrink-0 items-center gap-2 rounded-lg text-left text-sm leading-5 no-underline transition-colors duration-200 ${
-                        hasSideActions ? "pl-2 pr-8" : "px-2"
-                      } ${
-                        isPrimarySelected
-                          ? "bg-state-selected text-sidebar-foreground font-medium"
-                          : isFromChat
-                            ? "border-l-2 border-[hsl(var(--gray-400))] bg-state-hover text-sidebar-foreground hover:bg-state-selected-hover"
-                            : "text-sidebar-foreground hover:bg-state-hover"
-                      }`}
-                    >
-                      <AgentAvatarImg
-                        name={agent.agentId}
-                        alt={agent.displayName ?? agent.agentId}
-                        className="h-5 w-5 shrink-0 rounded-md object-cover object-top"
-                      />
-                      <span className="text-[color:var(--nav-copy,inherit)] truncate">
-                        {agent.displayName ?? agent.agentId}
-                      </span>
-                    </Link>
-                    {hasSideActions ? (
-                      <PinnedAgentSideDecorator
-                        agentId={agent.agentId}
-                        isDefaultAgent={isDefaultAgent}
-                        isPinned={isPinned}
-                        isPrimarySelected={isPrimarySelected}
-                        hasUnread={hasUnread}
-                      />
-                    ) : null}
-                  </div>
-                );
-              })}
-          </div>
-        )}
+        {!collapsed && <VerticalPinnedAgentContent />}
       </div>
     </div>
   );

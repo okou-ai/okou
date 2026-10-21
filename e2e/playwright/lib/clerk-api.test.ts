@@ -53,9 +53,7 @@ test("creates and parses generation-scoped test identities", () => {
         /^pr-123\+clerk_test\+31500000000-2\+playwright-[0-9a-f]{8}@vm0-e2e\.ai$/,
       );
       assert.deepEqual(runnerTestAccounts(), {
-        runner: "pr-123+clerk_test+31500000000-2+runner@vm0-e2e.ai",
         codex: "pr-123+clerk_test+31500000000-2+runner-real-codex@vm0-e2e.ai",
-        claude: "pr-123+clerk_test+31500000000-2+runner-real-claude@vm0-e2e.ai",
         mockClaude:
           "pr-123+clerk_test+31500000000-2+runner-mock-claude@vm0-e2e.ai",
         codexBuiltIn:

@@ -46,16 +46,15 @@ function teamsInstallUrl(tenantId?: string): string {
 }
 
 function teamsOauthConnectUrl(
-  fixture: {
+  _fixture: {
     readonly orgId: string;
     readonly userId: string;
   },
   origin = "https://api.okou.test",
-): string {
-  const url = new URL("/api/teams/oauth/connect", origin);
-  url.searchParams.set("orgId", fixture.orgId);
-  url.searchParams.set("userId", fixture.userId);
-  return url.toString();
+) {
+  return expect.stringContaining(
+    `${origin}/api/teams/oauth/connect?connectState=teams-start.`,
+  );
 }
 
 function connectBody(

@@ -28,7 +28,7 @@
         "src/signals/routes/__tests__/runners-competing-claims.native.ts"
       ],
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["@hono/node-server-v1", "clerk"],
+      "ignoreDependencies": ["clerk"],
       "ignoreBinaries": ["openssl"]
     },
     "apps/platform": {

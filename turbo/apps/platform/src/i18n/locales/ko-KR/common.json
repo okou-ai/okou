@@ -512,8 +512,7 @@
         "websiteAria": "웹사이트 아티팩트 표시"
       },
       "kindIcon": "{{kind}} 아티팩트",
-      "loading": "아티팩트 로딩 중",
-      "retry": "다시 시도"
+      "loading": "아티팩트 로딩 중"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -610,6 +609,7 @@
     },
     "sharing": {
       "accessLabel": "액세스 권한",
+      "copied": "복사됨",
       "copyLink": "링크 복사",
       "loadFailed": "권한을 불러올 수 없습니다",
       "loadingPermissions": "권한을 불러오는 중",

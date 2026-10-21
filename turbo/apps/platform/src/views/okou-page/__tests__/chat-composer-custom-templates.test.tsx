@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   userTemplatesContract,
@@ -19,10 +20,12 @@ import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   THREAD_ID,
-  context,
-  mockTemplateChat,
   openTemplatePicker,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 /** What the Custom entry asks for, whatever the file turns out to be. */
 const PROMPT = "Analyse this file and save it as a reusable template.";

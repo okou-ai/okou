@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -7,13 +8,14 @@ import {
   AGENT_ID,
   THREAD_ID,
   composerWorkflow,
-  context,
   findComposerEditor,
-  mockAgent,
-  mockBillingCapabilities,
-  mockPersonalModelRoutes,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+  createChatComposerHelpers(context);
 
 const HINT = " Search workflows or choose a template…";
 

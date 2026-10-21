@@ -1,3 +1,4 @@
+import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   catalogFixture,
   connectorFixtureAccount,
@@ -50,9 +51,8 @@ import {
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import {
-  context,
-  installMessageExperienceChat,
   MESSAGE_EXPERIENCE_AGENT_ID,
+  createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
 
 export const SCOUT_AGENT_ID = MESSAGE_EXPERIENCE_AGENT_ID;
@@ -153,7 +153,11 @@ interface ComposerConnectorFixture {
       enabled: boolean;
     }[];
   }[];
-  readonly lifecycle: ReturnType<typeof installMessageExperienceChat>;
+  readonly lifecycle: ReturnType<
+    ReturnType<
+      typeof createMessageExperienceHelpers
+    >["installMessageExperienceChat"]
+  >;
 }
 
 function copyAuthorizationRecord<T>(
@@ -271,538 +275,6 @@ function savedConnectorAccounts(
     }
   }
   return [...byTarget.values()].flat();
-}
-
-export function installComposerConnectorFixture(
-  options: ConnectorFixtureOptions = {},
-): ComposerConnectorFixture {
-  const fixtureThreadId = options.threadId ?? SCOUT_THREAD_ID;
-  let catalog = [...(options.catalog ?? [])];
-  const customConnectors = [...(options.customConnectors ?? [])];
-  const builtinAuthorizations = copyAuthorizationRecord(
-    options.builtinAuthorizations,
-  );
-  const customAuthorizations = copyAuthorizationRecord(
-    options.customAuthorizations,
-  );
-  const threadSelections = copyAuthorizationRecord(options.threadSelections);
-  const accounts = [
-    ...(options.accounts ?? savedConnectorAccounts(catalog, customConnectors)),
-  ];
-  const completeAccount = (
-    target: ConnectorAccountTarget,
-    id: string,
-    authMethod: ConnectorAuthMethodId,
-    configuredFieldKeys: readonly string[] = [],
-  ) => {
-    const index = accounts.findIndex((account) => {
-      return account.id === id;
-    });
-    const previous = accounts[index];
-    const account = {
-      ...connectorAccount({
-        id,
-        target,
-        displayName: "",
-        isDefault: !accounts.some((candidate) => {
-          return targetMatches(candidate.target, target);
-        }),
-      }),
-      ...previous,
-      displayName: previous?.displayName ?? null,
-      authMethod,
-      connectionStatus: "connected",
-      reconnectReason: null,
-      setupStatus: "complete",
-      missingRequiredFields: [],
-      configuredFieldKeys: [
-        ...new Set([
-          ...(previous?.configuredFieldKeys ?? []),
-          ...configuredFieldKeys,
-        ]),
-      ],
-    } satisfies ConnectorAccountConnection;
-    if (index === -1) {
-      accounts.push(account);
-    } else {
-      accounts[index] = account;
-    }
-    return account;
-  };
-  const builtinAuthorizationUpdates: BuiltinAuthorizationUpdate[] = [];
-  const customAuthorizationUpdates: CustomAuthorizationUpdate[] = [];
-  const customValueRequests: {
-    connectorId: string;
-    account: ConnectorAccountMutationIntent;
-    values: readonly CustomConnectorValueInput[];
-  }[] = [];
-  const manualConnectionRequests: BuiltinConnectionRequest[] = [];
-  const noAuthConnectionRequests: BuiltinConnectionRequest[] = [];
-  const oauthConnectionRequests: OAuthConnectionRequest[] = [];
-  const completedAttempts = mockOAuthCompletions(context);
-  let oauthAttemptId = crypto.randomUUID();
-  const threadSelectionUpdates: ThreadSelectionUpdate[] = [];
-  const clearedThreadSelections: {
-    threadId: string;
-    target: ConnectorAccountTarget;
-  }[] = [];
-  const createdThreadRequests: {
-    threadId: string | undefined;
-    connectorSelections: ConnectorAccountSelection[];
-    initialRemoteAccessOverrides?: readonly {
-      protocol: "ssh" | "vnc";
-      connectionId: string;
-      enabled: boolean;
-    }[];
-  }[] = [];
-  const lifecycle = installMessageExperienceChat({
-    threadId: fixtureThreadId,
-    onThreadCreate: ({
-      clientThreadId,
-      connectorSelections,
-      initialRemoteAccessOverrides,
-    }) => {
-      createdThreadRequests.push({
-        threadId: clientThreadId,
-        connectorSelections: [...(connectorSelections ?? [])],
-        ...(initialRemoteAccessOverrides === undefined
-          ? {}
-          : { initialRemoteAccessOverrides }),
-      });
-    },
-  });
-  context.mocks.data.agents([
-    { agentId: SCOUT_AGENT_ID, displayName: "Scout" },
-    { agentId: OTHER_AGENT_ID, displayName: "Other Agent" },
-  ]);
-  const threads =
-    options.threads ??
-    (options.threadId
-      ? [
-          {
-            id: fixtureThreadId,
-            title: "Scout chat",
-            agentId: SCOUT_AGENT_ID,
-          },
-        ]
-      : undefined);
-  if (threads) {
-    lifecycle.setThreadList(
-      threads.map((thread, index) => {
-        return {
-          id: thread.id,
-          title: thread.title,
-          agent: { id: thread.agentId, avatarUrl: null },
-          createdAt: CREATED_AT,
-          updatedAt: new Date(
-            Date.parse(CREATED_AT) + (threads.length - index) * 1000,
-          ).toISOString(),
-          selectedModel: thread.selectedModel ?? null,
-          serviceTier: thread.serviceTier ?? null,
-        };
-      }),
-    );
-  }
-
-  context.mocks.api(
-    connectorCatalogContract.discovery,
-    ({ query, respond }) => {
-      const keyword = query.keyword?.trim().toLowerCase();
-      const featured = options.featuredConnectorSlugs
-        ? catalog.filter((connector) => {
-            return options.featuredConnectorSlugs?.includes(connector.slug);
-          })
-        : catalog;
-      // Production answers a named category with the whole category, and a
-      // keyword-free browse with a slice of
-      // each category. The fixture does the same, or a category view is
-      // tested against a response the API never returns.
-      const browsed = query.category
-        ? featured.filter((connector) => {
-            return connector.category === query.category;
-          })
-        : browseSlice(featured);
-      const connectors = keyword
-        ? catalog.filter((connector) => {
-            return [connector.slug, connector.label, ...connector.tags].some(
-              (value) => {
-                return value.toLowerCase().includes(keyword);
-              },
-            );
-          })
-        : browsed;
-      return respond(200, {
-        connectors,
-        totalConnectorCount: catalog.length,
-        ...(options.categoryConnectorCounts === undefined
-          ? {}
-          : { categoryConnectorCounts: options.categoryConnectorCounts }),
-      });
-    },
-  );
-  context.mocks.api(
-    connectorCatalogContract.permissions,
-    ({ params, respond }) => {
-      const permissions = options.permissionDetails?.get(params.connectorSlug);
-      return permissions
-        ? respond(200, { permissions })
-        : respond(404, {
-            error: { code: "NOT_FOUND", message: "Permissions not found" },
-          });
-    },
-  );
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: customConnectors });
-  });
-  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
-    const savedTargets = new Set(
-      accounts.map((account) => {
-        return connectorAccountTargetKey(account.target);
-      }),
-    );
-    return respond(200, {
-      builtinConnectors: catalog
-        .filter((connector) => {
-          return savedTargets.has(`builtin:${connector.slug}`);
-        })
-        .map((connector) => {
-          return {
-            slug: connector.slug,
-            label: connector.label,
-            icon: connector.icon,
-            hasPermissions: connector.permissionSummary.hasPermissions,
-          };
-        }),
-      customConnectors: customConnectors
-        .filter((connector) => {
-          return (
-            (isIntegrationManagedCustomConnector(connector) &&
-              connector.connected) ||
-            savedTargets.has(`custom:${connector.id}`)
-          );
-        })
-        .map((connector) => {
-          return {
-            id: connector.id,
-            slug: connector.slug,
-            displayName: connector.displayName,
-            permissionBundleRef: connector.permissionBundleRef ?? null,
-            integrationManaged: isIntegrationManagedCustomConnector(connector),
-          };
-        }),
-    });
-  });
-  context.mocks.api(
-    agentConnectorAccessContract.agent,
-    async ({ params, respond }) => {
-      await options.authorizationGates?.[params.id];
-      return respond(200, {
-        enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
-        customConnectorIds: (customAuthorizations.get(params.id) ?? []).map(
-          (grant) => {
-            return grant.customConnectorId;
-          },
-        ),
-      });
-    },
-  );
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    async ({ params, respond }) => {
-      await options.authorizationGates?.[params.id];
-      return respond(200, {
-        enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
-      });
-    },
-  );
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    ({ body, params, respond }) => {
-      const connectorSlugs = [...body.enabledConnectorSlugs];
-      builtinAuthorizationUpdates.push({
-        agentId: params.id,
-        connectorSlugs,
-        operation: body.operation,
-      });
-      const next = updateList(
-        builtinAuthorizations.get(params.id) ?? [],
-        connectorSlugs,
-        body.operation,
-        (connectorSlug) => {
-          return connectorSlug;
-        },
-      );
-      builtinAuthorizations.set(params.id, next);
-      return respond(200, { enabledConnectorSlugs: next });
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.get,
-    async ({ params, respond }) => {
-      await options.authorizationGates?.[params.id];
-      return respond(200, {
-        grants: customAuthorizations.get(params.id) ?? [],
-      });
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, params, respond }) => {
-      const grants = body.grants.map((grant) => {
-        return { ...grant, permissionNames: [...grant.permissionNames] };
-      });
-      customAuthorizationUpdates.push({
-        agentId: params.id,
-        grants,
-        operation: body.operation,
-      });
-      const next = updateList(
-        customAuthorizations.get(params.id) ?? [],
-        grants,
-        body.operation,
-        (grant) => {
-          return grant.customConnectorId;
-        },
-      );
-      customAuthorizations.set(params.id, next);
-      return respond(200, { grants: next });
-    },
-  );
-  context.mocks.api(
-    connectorAccountsContract.connection,
-    ({ params, query, respond }) => {
-      const account = accounts.find((candidate) => {
-        return (
-          candidate.id === params.connectionId &&
-          targetMatches(candidate.target, query)
-        );
-      });
-      return account
-        ? respond(200, account)
-        : respond(404, {
-            error: { code: "NOT_FOUND", message: "Account not found" },
-          });
-    },
-  );
-  context.mocks.api(
-    connectorAccountsContract.connections,
-    ({ query, respond }) => {
-      const normalizedSearch = query.search?.toLowerCase();
-      const connections = accounts.filter((connection) => {
-        if (!targetMatches(connection.target, query)) {
-          return false;
-        }
-        if (!normalizedSearch) {
-          return true;
-        }
-        return [
-          connection.displayName,
-          connection.externalEmail,
-          connection.externalUsername,
-          connection.externalId,
-        ].some((value) => {
-          return value?.toLowerCase().includes(normalizedSearch);
-        });
-      });
-      return respond(200, {
-        connections,
-        defaultConnection:
-          accounts.find((connection) => {
-            return (
-              targetMatches(connection.target, query) && connection.isDefault
-            );
-          }) ?? null,
-        nextCursor: null,
-      });
-    },
-  );
-  context.mocks.api(
-    chatThreadConnectorSelectionContract.get,
-    ({ params, respond }) => {
-      const selections = threadSelections.get(params.id) ?? [];
-      const selectedConnections = selections.flatMap((selection) => {
-        const connection = accounts.find((candidate) => {
-          return candidate.id === selection.connectionId;
-        });
-        return connection ? [connection] : [];
-      });
-      return respond(200, { selections, selectedConnections });
-    },
-  );
-  context.mocks.api(
-    chatThreadConnectorSelectionContract.update,
-    ({ body, params, respond }) => {
-      const selection = { ...body };
-      threadSelectionUpdates.push({ threadId: params.id, selection });
-      const current = threadSelections.get(params.id) ?? [];
-      threadSelections.set(params.id, [
-        ...current.filter((candidate) => {
-          return !targetMatches(candidate.target, selection.target);
-        }),
-        selection,
-      ]);
-      return respond(200, selection);
-    },
-  );
-  context.mocks.api(
-    chatThreadConnectorSelectionContract.clear,
-    ({ body, params, respond }) => {
-      clearedThreadSelections.push({ threadId: params.id, target: body });
-      const current = threadSelections.get(params.id) ?? [];
-      threadSelections.set(
-        params.id,
-        current.filter((selection) => {
-          return !targetMatches(selection.target, body);
-        }),
-      );
-      return respond(204);
-    },
-  );
-  context.mocks.api(
-    customConnectorValuesContract.set,
-    ({ body, params, respond }) => {
-      customValueRequests.push({
-        connectorId: params.id,
-        account: body.account,
-        values: body.values.map((value) => {
-          return { ...value };
-        }),
-      });
-      const current = customConnectors.find((connector) => {
-        return connector.id === params.id;
-      });
-      if (!current) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Connector not found" },
-        });
-      }
-      const account = completeAccount(
-        { kind: "custom", customConnectorId: params.id },
-        body.account.intent === "reconnect"
-          ? body.account.connectionId
-          : crypto.randomUUID(),
-        current.authMode === "none" ? "none" : "manual",
-        body.values.map((value) => {
-          return value.key;
-        }),
-      );
-      return respond(200, { ...current, connectionId: account.id });
-    },
-  );
-
-  const installBuiltinConnection = (
-    request: BuiltinConnectionRequest,
-    connectionId: string,
-    configuredFieldKeys: readonly string[] = [],
-  ) => {
-    const account = completeAccount(
-      { kind: "builtin", connectorSlug: request.connectorSlug },
-      connectionId,
-      request.authMethod,
-      configuredFieldKeys,
-    );
-    catalog = catalog.map((connector) => {
-      return connector.slug === request.connectorSlug && account.isDefault
-        ? connectedCatalogItem(connector, connectionId, request.authMethod)
-        : connector;
-    });
-    if (request.agentId && request.authorizeAgent) {
-      const current = builtinAuthorizations.get(request.agentId) ?? [];
-      builtinAuthorizations.set(request.agentId, [
-        ...new Set([...current, request.connectorSlug]),
-      ]);
-    }
-    return {
-      ...connectorResponse(
-        request.connectorSlug,
-        connectionId,
-        request.authMethod,
-      ),
-      connectionId,
-    };
-  };
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    ({ body, params, respond }) => {
-      const request = {
-        agentId: body.agentId,
-        authorizeAgent: body.authorizeAgent,
-        authMethod: body.authMethod,
-        connectorSlug: params.connectorSlug,
-      };
-      manualConnectionRequests.push(request);
-      return respond(200, {
-        connectionId: installBuiltinConnection(
-          request,
-          body.account.intent === "reconnect"
-            ? body.account.connectionId
-            : crypto.randomUUID(),
-          Object.keys(body.values),
-        ).id,
-      });
-    },
-  );
-  context.mocks.api(
-    builtinConnectorNoAuthGrantContract.connect,
-    ({ body, params, respond }) => {
-      const request = {
-        agentId: body.agentId,
-        authorizeAgent: body.authorizeAgent,
-        authMethod: body.authMethod,
-        connectorSlug: params.connectorSlug,
-      };
-      noAuthConnectionRequests.push(request);
-      return respond(200, {
-        connectionId: installBuiltinConnection(
-          request,
-          body.account.intent === "reconnect"
-            ? body.account.connectionId
-            : crypto.randomUUID(),
-        ).id,
-      });
-    },
-  );
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    ({ body, params, respond }) => {
-      oauthAttemptId = crypto.randomUUID();
-      oauthConnectionRequests.push({
-        agentId: body.agentId,
-        authorizeAgent: body.authorizeAgent,
-        authMethod: body.authMethod,
-        callbackTarget: body.callbackTarget,
-        connectorSlug: params.connectorSlug,
-      });
-      return respond(200, {
-        authorizationUrl: `https://accounts.example.test/${params.connectorSlug}`,
-        oauthAttemptId,
-        ...(body.account.intent === "reconnect"
-          ? { connectionId: body.account.connectionId }
-          : {}),
-      });
-    },
-  );
-
-  return {
-    builtinAuthorizationUpdates,
-    customAuthorizationUpdates,
-    customValueRequests,
-    manualConnectionRequests,
-    noAuthConnectionRequests,
-    oauthConnectionRequests,
-    completeOAuth: (connectionId: string) => {
-      const request = oauthConnectionRequests.at(-1);
-      if (!request) {
-        throw new Error("No pending connector OAuth authorization");
-      }
-      installBuiltinConnection(request, connectionId);
-      completedAttempts.set(oauthAttemptId, connectionId);
-    },
-    threadSelectionUpdates,
-    clearedThreadSelections,
-    createdThreadRequests,
-    lifecycle,
-  };
 }
 
 export function oauthAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
@@ -1057,4 +529,546 @@ export function connectorAccount(args: {
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
   };
+}
+
+export function createComposerConnectorHelpers(context: TestContext) {
+  const { installMessageExperienceChat } =
+    createMessageExperienceHelpers(context);
+  function installComposerConnectorFixture(
+    options: ConnectorFixtureOptions = {},
+  ): ComposerConnectorFixture {
+    const fixtureThreadId = options.threadId ?? SCOUT_THREAD_ID;
+    let catalog = [...(options.catalog ?? [])];
+    const customConnectors = [...(options.customConnectors ?? [])];
+    const builtinAuthorizations = copyAuthorizationRecord(
+      options.builtinAuthorizations,
+    );
+    const customAuthorizations = copyAuthorizationRecord(
+      options.customAuthorizations,
+    );
+    const threadSelections = copyAuthorizationRecord(options.threadSelections);
+    const accounts = [
+      ...(options.accounts ??
+        savedConnectorAccounts(catalog, customConnectors)),
+    ];
+    const completeAccount = (
+      target: ConnectorAccountTarget,
+      id: string,
+      authMethod: ConnectorAuthMethodId,
+      configuredFieldKeys: readonly string[] = [],
+    ) => {
+      const index = accounts.findIndex((account) => {
+        return account.id === id;
+      });
+      const previous = accounts[index];
+      const account = {
+        ...connectorAccount({
+          id,
+          target,
+          displayName: "",
+          isDefault: !accounts.some((candidate) => {
+            return targetMatches(candidate.target, target);
+          }),
+        }),
+        ...previous,
+        displayName: previous?.displayName ?? null,
+        authMethod,
+        connectionStatus: "connected",
+        reconnectReason: null,
+        setupStatus: "complete",
+        missingRequiredFields: [],
+        configuredFieldKeys: [
+          ...new Set([
+            ...(previous?.configuredFieldKeys ?? []),
+            ...configuredFieldKeys,
+          ]),
+        ],
+      } satisfies ConnectorAccountConnection;
+      if (index === -1) {
+        accounts.push(account);
+      } else {
+        accounts[index] = account;
+      }
+      return account;
+    };
+    const builtinAuthorizationUpdates: BuiltinAuthorizationUpdate[] = [];
+    const customAuthorizationUpdates: CustomAuthorizationUpdate[] = [];
+    const customValueRequests: {
+      connectorId: string;
+      account: ConnectorAccountMutationIntent;
+      values: readonly CustomConnectorValueInput[];
+    }[] = [];
+    const manualConnectionRequests: BuiltinConnectionRequest[] = [];
+    const noAuthConnectionRequests: BuiltinConnectionRequest[] = [];
+    const oauthConnectionRequests: OAuthConnectionRequest[] = [];
+    const completedAttempts = mockOAuthCompletions(context);
+    let oauthAttemptId = crypto.randomUUID();
+    const threadSelectionUpdates: ThreadSelectionUpdate[] = [];
+    const clearedThreadSelections: {
+      threadId: string;
+      target: ConnectorAccountTarget;
+    }[] = [];
+    const createdThreadRequests: {
+      threadId: string | undefined;
+      connectorSelections: ConnectorAccountSelection[];
+      initialRemoteAccessOverrides?: readonly {
+        protocol: "ssh" | "vnc";
+        connectionId: string;
+        enabled: boolean;
+      }[];
+    }[] = [];
+    const lifecycle = installMessageExperienceChat({
+      threadId: fixtureThreadId,
+      onThreadCreate: ({
+        clientThreadId,
+        connectorSelections,
+        initialRemoteAccessOverrides,
+      }) => {
+        createdThreadRequests.push({
+          threadId: clientThreadId,
+          connectorSelections: [...(connectorSelections ?? [])],
+          ...(initialRemoteAccessOverrides === undefined
+            ? {}
+            : { initialRemoteAccessOverrides }),
+        });
+      },
+    });
+    context.mocks.data.agents([
+      { agentId: SCOUT_AGENT_ID, displayName: "Scout" },
+      { agentId: OTHER_AGENT_ID, displayName: "Other Agent" },
+    ]);
+    const threads =
+      options.threads ??
+      (options.threadId
+        ? [
+            {
+              id: fixtureThreadId,
+              title: "Scout chat",
+              agentId: SCOUT_AGENT_ID,
+            },
+          ]
+        : undefined);
+    if (threads) {
+      lifecycle.setThreadList(
+        threads.map((thread, index) => {
+          return {
+            id: thread.id,
+            title: thread.title,
+            agent: { id: thread.agentId, avatarUrl: null },
+            createdAt: CREATED_AT,
+            updatedAt: new Date(
+              Date.parse(CREATED_AT) + (threads.length - index) * 1000,
+            ).toISOString(),
+            selectedModel: thread.selectedModel ?? null,
+            serviceTier: thread.serviceTier ?? null,
+          };
+        }),
+      );
+    }
+
+    context.mocks.api(
+      connectorCatalogContract.discovery,
+      ({ query, respond }) => {
+        const keyword = query.keyword?.trim().toLowerCase();
+        const featured = options.featuredConnectorSlugs
+          ? catalog.filter((connector) => {
+              return options.featuredConnectorSlugs?.includes(connector.slug);
+            })
+          : catalog;
+        // Production answers a named category with the whole category, and a
+        // keyword-free browse with a slice of
+        // each category. The fixture does the same, or a category view is
+        // tested against a response the API never returns.
+        const browsed = query.category
+          ? featured.filter((connector) => {
+              return connector.category === query.category;
+            })
+          : browseSlice(featured);
+        const connectors = keyword
+          ? catalog.filter((connector) => {
+              return [connector.slug, connector.label, ...connector.tags].some(
+                (value) => {
+                  return value.toLowerCase().includes(keyword);
+                },
+              );
+            })
+          : browsed;
+        return respond(200, {
+          connectors,
+          totalConnectorCount: catalog.length,
+          ...(options.categoryConnectorCounts === undefined
+            ? {}
+            : { categoryConnectorCounts: options.categoryConnectorCounts }),
+        });
+      },
+    );
+    context.mocks.api(
+      connectorCatalogContract.permissions,
+      ({ params, respond }) => {
+        const permissions = options.permissionDetails?.get(
+          params.connectorSlug,
+        );
+        return permissions
+          ? respond(200, { permissions })
+          : respond(404, {
+              error: { code: "NOT_FOUND", message: "Permissions not found" },
+            });
+      },
+    );
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+      return respond(200, { connectors: customConnectors });
+    });
+    context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+      const savedTargets = new Set(
+        accounts.map((account) => {
+          return connectorAccountTargetKey(account.target);
+        }),
+      );
+      return respond(200, {
+        builtinConnectors: catalog
+          .filter((connector) => {
+            return savedTargets.has(`builtin:${connector.slug}`);
+          })
+          .map((connector) => {
+            return {
+              slug: connector.slug,
+              label: connector.label,
+              icon: connector.icon,
+              hasPermissions: connector.permissionSummary.hasPermissions,
+            };
+          }),
+        customConnectors: customConnectors
+          .filter((connector) => {
+            return (
+              (isIntegrationManagedCustomConnector(connector) &&
+                connector.connected) ||
+              savedTargets.has(`custom:${connector.id}`)
+            );
+          })
+          .map((connector) => {
+            return {
+              id: connector.id,
+              slug: connector.slug,
+              displayName: connector.displayName,
+              permissionBundleRef: connector.permissionBundleRef ?? null,
+              integrationManaged:
+                isIntegrationManagedCustomConnector(connector),
+            };
+          }),
+      });
+    });
+    context.mocks.api(
+      agentConnectorAccessContract.agent,
+      async ({ params, respond }) => {
+        await options.authorizationGates?.[params.id];
+        return respond(200, {
+          enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
+          customConnectorIds: (customAuthorizations.get(params.id) ?? []).map(
+            (grant) => {
+              return grant.customConnectorId;
+            },
+          ),
+        });
+      },
+    );
+    context.mocks.api(
+      userBuiltinConnectorsContract.get,
+      async ({ params, respond }) => {
+        await options.authorizationGates?.[params.id];
+        return respond(200, {
+          enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
+        });
+      },
+    );
+    context.mocks.api(
+      userBuiltinConnectorsContract.update,
+      ({ body, params, respond }) => {
+        const connectorSlugs = [...body.enabledConnectorSlugs];
+        builtinAuthorizationUpdates.push({
+          agentId: params.id,
+          connectorSlugs,
+          operation: body.operation,
+        });
+        const next = updateList(
+          builtinAuthorizations.get(params.id) ?? [],
+          connectorSlugs,
+          body.operation,
+          (connectorSlug) => {
+            return connectorSlug;
+          },
+        );
+        builtinAuthorizations.set(params.id, next);
+        return respond(200, { enabledConnectorSlugs: next });
+      },
+    );
+    context.mocks.api(
+      agentCustomConnectorsContract.get,
+      async ({ params, respond }) => {
+        await options.authorizationGates?.[params.id];
+        return respond(200, {
+          grants: customAuthorizations.get(params.id) ?? [],
+        });
+      },
+    );
+    context.mocks.api(
+      agentCustomConnectorsContract.update,
+      ({ body, params, respond }) => {
+        const grants = body.grants.map((grant) => {
+          return { ...grant, permissionNames: [...grant.permissionNames] };
+        });
+        customAuthorizationUpdates.push({
+          agentId: params.id,
+          grants,
+          operation: body.operation,
+        });
+        const next = updateList(
+          customAuthorizations.get(params.id) ?? [],
+          grants,
+          body.operation,
+          (grant) => {
+            return grant.customConnectorId;
+          },
+        );
+        customAuthorizations.set(params.id, next);
+        return respond(200, { grants: next });
+      },
+    );
+    context.mocks.api(
+      connectorAccountsContract.connection,
+      ({ params, query, respond }) => {
+        const account = accounts.find((candidate) => {
+          return (
+            candidate.id === params.connectionId &&
+            targetMatches(candidate.target, query)
+          );
+        });
+        return account
+          ? respond(200, account)
+          : respond(404, {
+              error: { code: "NOT_FOUND", message: "Account not found" },
+            });
+      },
+    );
+    context.mocks.api(
+      connectorAccountsContract.connections,
+      ({ query, respond }) => {
+        const normalizedSearch = query.search?.toLowerCase();
+        const connections = accounts.filter((connection) => {
+          if (!targetMatches(connection.target, query)) {
+            return false;
+          }
+          if (!normalizedSearch) {
+            return true;
+          }
+          return [
+            connection.displayName,
+            connection.externalEmail,
+            connection.externalUsername,
+            connection.externalId,
+          ].some((value) => {
+            return value?.toLowerCase().includes(normalizedSearch);
+          });
+        });
+        return respond(200, {
+          connections,
+          defaultConnection:
+            accounts.find((connection) => {
+              return (
+                targetMatches(connection.target, query) && connection.isDefault
+              );
+            }) ?? null,
+          nextCursor: null,
+        });
+      },
+    );
+    context.mocks.api(
+      chatThreadConnectorSelectionContract.get,
+      ({ params, respond }) => {
+        const selections = threadSelections.get(params.id) ?? [];
+        const selectedConnections = selections.flatMap((selection) => {
+          const connection = accounts.find((candidate) => {
+            return candidate.id === selection.connectionId;
+          });
+          return connection ? [connection] : [];
+        });
+        return respond(200, { selections, selectedConnections });
+      },
+    );
+    context.mocks.api(
+      chatThreadConnectorSelectionContract.update,
+      ({ body, params, respond }) => {
+        const selection = { ...body };
+        threadSelectionUpdates.push({ threadId: params.id, selection });
+        const current = threadSelections.get(params.id) ?? [];
+        threadSelections.set(params.id, [
+          ...current.filter((candidate) => {
+            return !targetMatches(candidate.target, selection.target);
+          }),
+          selection,
+        ]);
+        return respond(200, selection);
+      },
+    );
+    context.mocks.api(
+      chatThreadConnectorSelectionContract.clear,
+      ({ body, params, respond }) => {
+        clearedThreadSelections.push({ threadId: params.id, target: body });
+        const current = threadSelections.get(params.id) ?? [];
+        threadSelections.set(
+          params.id,
+          current.filter((selection) => {
+            return !targetMatches(selection.target, body);
+          }),
+        );
+        return respond(204);
+      },
+    );
+    context.mocks.api(
+      customConnectorValuesContract.set,
+      ({ body, params, respond }) => {
+        customValueRequests.push({
+          connectorId: params.id,
+          account: body.account,
+          values: body.values.map((value) => {
+            return { ...value };
+          }),
+        });
+        const current = customConnectors.find((connector) => {
+          return connector.id === params.id;
+        });
+        if (!current) {
+          return respond(404, {
+            error: { code: "NOT_FOUND", message: "Connector not found" },
+          });
+        }
+        const account = completeAccount(
+          { kind: "custom", customConnectorId: params.id },
+          body.account.intent === "reconnect"
+            ? body.account.connectionId
+            : crypto.randomUUID(),
+          current.authMode === "none" ? "none" : "manual",
+          body.values.map((value) => {
+            return value.key;
+          }),
+        );
+        return respond(200, { ...current, connectionId: account.id });
+      },
+    );
+
+    const installBuiltinConnection = (
+      request: BuiltinConnectionRequest,
+      connectionId: string,
+      configuredFieldKeys: readonly string[] = [],
+    ) => {
+      const account = completeAccount(
+        { kind: "builtin", connectorSlug: request.connectorSlug },
+        connectionId,
+        request.authMethod,
+        configuredFieldKeys,
+      );
+      catalog = catalog.map((connector) => {
+        return connector.slug === request.connectorSlug && account.isDefault
+          ? connectedCatalogItem(connector, connectionId, request.authMethod)
+          : connector;
+      });
+      if (request.agentId && request.authorizeAgent) {
+        const current = builtinAuthorizations.get(request.agentId) ?? [];
+        builtinAuthorizations.set(request.agentId, [
+          ...new Set([...current, request.connectorSlug]),
+        ]);
+      }
+      return {
+        ...connectorResponse(
+          request.connectorSlug,
+          connectionId,
+          request.authMethod,
+        ),
+        connectionId,
+      };
+    };
+    context.mocks.api(
+      builtinConnectorManualGrantContract.connect,
+      ({ body, params, respond }) => {
+        const request = {
+          agentId: body.agentId,
+          authorizeAgent: body.authorizeAgent,
+          authMethod: body.authMethod,
+          connectorSlug: params.connectorSlug,
+        };
+        manualConnectionRequests.push(request);
+        return respond(200, {
+          connectionId: installBuiltinConnection(
+            request,
+            body.account.intent === "reconnect"
+              ? body.account.connectionId
+              : crypto.randomUUID(),
+            Object.keys(body.values),
+          ).id,
+        });
+      },
+    );
+    context.mocks.api(
+      builtinConnectorNoAuthGrantContract.connect,
+      ({ body, params, respond }) => {
+        const request = {
+          agentId: body.agentId,
+          authorizeAgent: body.authorizeAgent,
+          authMethod: body.authMethod,
+          connectorSlug: params.connectorSlug,
+        };
+        noAuthConnectionRequests.push(request);
+        return respond(200, {
+          connectionId: installBuiltinConnection(
+            request,
+            body.account.intent === "reconnect"
+              ? body.account.connectionId
+              : crypto.randomUUID(),
+          ).id,
+        });
+      },
+    );
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ body, params, respond }) => {
+        oauthAttemptId = crypto.randomUUID();
+        oauthConnectionRequests.push({
+          agentId: body.agentId,
+          authorizeAgent: body.authorizeAgent,
+          authMethod: body.authMethod,
+          callbackTarget: body.callbackTarget,
+          connectorSlug: params.connectorSlug,
+        });
+        return respond(200, {
+          authorizationUrl: `https://accounts.example.test/${params.connectorSlug}`,
+          oauthAttemptId,
+          ...(body.account.intent === "reconnect"
+            ? { connectionId: body.account.connectionId }
+            : {}),
+        });
+      },
+    );
+
+    return {
+      builtinAuthorizationUpdates,
+      customAuthorizationUpdates,
+      customValueRequests,
+      manualConnectionRequests,
+      noAuthConnectionRequests,
+      oauthConnectionRequests,
+      completeOAuth: (connectionId: string) => {
+        const request = oauthConnectionRequests.at(-1);
+        if (!request) {
+          throw new Error("No pending connector OAuth authorization");
+        }
+        installBuiltinConnection(request, connectionId);
+        completedAttempts.set(oauthAttemptId, connectionId);
+      },
+      threadSelectionUpdates,
+      clearedThreadSelections,
+      createdThreadRequests,
+      lifecycle,
+    };
+  }
+
+  return { installComposerConnectorFixture };
 }

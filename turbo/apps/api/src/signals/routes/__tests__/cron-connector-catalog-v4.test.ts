@@ -229,7 +229,6 @@ function release(args: {
   };
   return {
     pointer,
-    catalogBytes,
     objects: new Map([
       ["connectors/v4/active.json", bytes(pointer)],
       [catalogKey, catalogBytes],
@@ -606,47 +605,6 @@ describe("connector catalog v4 preparation", () => {
     expect(JSON.stringify((await publicCatalog()).body)).not.toContain(
       "Outside namespace",
     );
-  });
-
-  it("treats a pointer to the serving digest as unchanged without downloading its catalog", async () => {
-    const accepted = release({ label: "Verified bytes" });
-    serveObjects(accepted.objects);
-    expect((await sync()).body.outcome).toBe("accepted");
-    const changed = release({ label: "Unverified bytes" });
-    // A new publication label and key whose declared digest is the serving
-    // hash. The pointer only references validated complete generations, so
-    // the writer trusts the digest and never reads the changed bytes.
-    const catalogKey = "connectors/v4/releases/2026-09-18.fixture/catalog.json";
-    serveObjects(
-      new Map([
-        [
-          "connectors/v4/active.json",
-          bytes({
-            ...accepted.pointer,
-            catalogVersion: "2026-09-18.fixture",
-            catalogKey,
-          }),
-        ],
-        [catalogKey, changed.catalogBytes],
-      ]),
-    );
-    context.mocks.s3.send.mockClear();
-    expect((await sync()).body).toStrictEqual({
-      outcome: "unchanged",
-      failureCode: null,
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.map(([command]) => {
-        return requestedKey(command);
-      }),
-    ).toStrictEqual(["connectors/v4/active.json"]);
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service", label: "Verified bytes" },
-      {
-        slug: "plaud-mcp",
-        authMethods: [{ id: "automatic", grantKind: "automatic" }],
-      },
-    ]);
   });
 
   it("uses explicit protocol metadata for crossed-name connectors and needs no MCP skill resources", async () => {

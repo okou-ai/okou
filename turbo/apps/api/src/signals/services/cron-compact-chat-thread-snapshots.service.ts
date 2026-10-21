@@ -333,6 +333,7 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
   let after: { readonly lastMessageAt: Date; readonly id: string } | null =
     null;
   for (;;) {
+    // Match the index's NULLS LAST order; both cursor columns are non-null.
     const page = await db
       .select({
         id: chatThreads.id,
@@ -360,16 +361,16 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
           eq(chatThreads.userId, scope.userId),
           after === null
             ? undefined
-            : or(
-                lt(chatThreads.lastMessageAt, after.lastMessageAt),
-                and(
-                  eq(chatThreads.lastMessageAt, after.lastMessageAt),
-                  lt(chatThreads.id, after.id),
-                ),
+            : lt(
+                sql`(${chatThreads.lastMessageAt}, ${chatThreads.id})`,
+                sql`(${sql.param(after.lastMessageAt, chatThreads.lastMessageAt)}, ${sql.param(after.id, chatThreads.id)})`,
               ),
         ),
       )
-      .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
+      .orderBy(
+        sql`${desc(chatThreads.lastMessageAt)} nulls last`,
+        sql`${desc(chatThreads.id)} nulls last`,
+      )
       .limit(SCAN_PAGE_SIZE);
     for (const thread of page) {
       if (thread.agentId === null || !agentIds.has(thread.agentId)) {

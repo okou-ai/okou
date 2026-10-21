@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -10,11 +11,9 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   completedConversation,
-  context,
   feedbackItems,
   feedbackNotes,
   findButton,
-  installCapabilityChat,
   quoteSelectedPassage,
   readyChat,
   RUN_PATH,
@@ -22,9 +21,13 @@ import {
   selectPassage,
   waitForSend,
   type CapturedChatSend,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import { findEnabledButton } from "./chat-run-test-fixtures.ts";
 import { buttonByLabel } from "./chat-lifecycle-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const FIRST_PASSAGE = "The launch plan has three careful stages.";
 const SECOND_PASSAGE = "The unrelated answer covers a separate decision.";

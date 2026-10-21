@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -13,18 +14,22 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
-  context,
   createUploadedTemplate,
   expectInlineTemplate,
-  mockPresentationHtml,
-  mockPresentationTemplateLibrary,
-  mockTemplateChat,
   openTemplatePicker,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   openSavedPresentationPicker,
   savedPresentationDraft,
 } from "./presentation-draft-test-helpers.ts";
+
+const context = testContext();
+const {
+  mockPresentationHtml,
+  mockPresentationTemplateLibrary,
+  mockTemplateChat,
+} = createTemplateGalleryHelpers(context);
 
 const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
 

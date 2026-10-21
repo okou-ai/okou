@@ -12,7 +12,11 @@ import {
   updateHostedSiteVisibility$,
 } from "../services/hosted-site-access.service";
 import { authorizeHostedSiteDownload$ } from "../services/hosted-site-download.service";
-import { hostedSiteViewer$ } from "../services/hosted-site-viewer.service";
+import {
+  authorizeHostedSiteSession$,
+  exchangeHostedSiteSession$,
+  hostedSiteSessionViewer$,
+} from "../services/hosted-site-sessions.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
@@ -21,6 +25,15 @@ import { env } from "../../lib/env";
 const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
   if (env("HOSTED_SITE_ACCESS_ENABLED") !== "true") {
+    return resourceUnavailable(
+      "Website visibility management is not available",
+    );
+  }
+  if (
+    !env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(
+      get(pathParamsOf(hostContract.siteVisibility)).siteId,
+    )
+  ) {
     return resourceUnavailable(
       "Website visibility management is not available",
     );
@@ -89,10 +102,11 @@ const access$ = command(async ({ get, set }, signal: AbortSignal) => {
   let body = await set(checkHostedSiteAccess$, { siteId }, signal);
   if (body.decision === "authenticate") {
     const userId = await set(
-      hostedSiteViewer$,
-      get(queryOf(hostContract.siteAccess)).origin,
+      hostedSiteSessionViewer$,
+      { siteId, origin: get(queryOf(hostContract.siteAccess)).origin },
       signal,
     );
+    signal.throwIfAborted();
     if (userId) {
       body = await set(checkHostedSiteAccess$, { siteId, userId }, signal);
     }
@@ -118,7 +132,62 @@ const ownerAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
+
+function sessionUnauthorized() {
+  return {
+    status: 401 as const,
+    body: {
+      error: { code: "UNAUTHORIZED", message: "Website sign-in is required" },
+    },
+  };
+}
+
+const authorizeSession$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  set(setResHeader$, "Referrer-Policy", "no-referrer");
+  const input = await get(bodyResultOf(hostContract.authorizeSiteSession));
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const result = await set(
+    authorizeHostedSiteSession$,
+    {
+      ...get(pathParamsOf(hostContract.authorizeSiteSession)),
+      ...input.data,
+    },
+    signal,
+  );
+  if (result.status === "unauthenticated") {
+    return sessionUnauthorized();
+  }
+  if (result.status === "denied") {
+    return resourceUnavailable("Website access is unavailable");
+  }
+  return { status: 200 as const, body: { callbackUrl: result.callbackUrl } };
+});
+
+const exchangeSession$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  const input = await get(bodyResultOf(hostContract.exchangeSiteSession));
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const body = await set(
+    exchangeHostedSiteSession$,
+    {
+      ...get(pathParamsOf(hostContract.exchangeSiteSession)),
+      ...input.data,
+    },
+    signal,
+  );
+  return body ? { status: 200 as const, body } : sessionUnauthorized();
+});
+
 export const hostedSiteAccessRoutes: readonly RouteEntry[] = [
+  { route: hostContract.authorizeSiteSession, handler: authorizeSession$ },
+  { route: hostContract.exchangeSiteSession, handler: exchangeSession$ },
   { route: hostContract.siteVisibility, handler: authRoute(ownerAuth, read$) },
   {
     route: hostContract.updateSiteVisibility,

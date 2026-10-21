@@ -8,7 +8,7 @@ import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
-import { bestEffort, onDomEventFn, setLoop, settle } from "../utils.ts";
+import { onDomEventFn, setLoop, settle } from "../utils.ts";
 import { refreshDiscordOrg$ } from "./discord.ts";
 import { discordConnectParams } from "./discord-connect-params.ts";
 import {
@@ -105,15 +105,12 @@ const showDiscordApprovalResult$ = command(
     // be in flight, and must not overwrite the result or offer an obsolete retry.
     set(approvalProof$, null);
     set(approvalRequest$, null);
-    set(approvalSucceeded$, status === "connected");
-    if (status === "connected") {
-      // Keep the checking card visible until the authenticated status is ready.
-      // The connection view owns a failed read; the message is not status data.
-      await bestEffort(set(refreshDiscordOrg$, signal), signal);
-      signal.throwIfAborted();
-    }
     set(approvalSucceeded$, false);
     set(replaceSearchParams$, new URLSearchParams({ status }));
+    if (status === "connected") {
+      await set(refreshDiscordOrg$, signal);
+      signal.throwIfAborted();
+    }
   },
 );
 

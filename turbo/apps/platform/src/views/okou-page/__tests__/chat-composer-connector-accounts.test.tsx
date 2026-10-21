@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -9,18 +10,21 @@ import {
   builtinConnector,
   connectorAccount,
   DEEPWIKI_CONNECTOR_ID,
-  installComposerConnectorFixture,
   mcpConnector,
   OTHER_AGENT_ID,
   OTHER_THREAD_ID,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
-  context,
   findComposer,
   findFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
 const SLACK_SLUG = "slack" as ConnectorSlug;

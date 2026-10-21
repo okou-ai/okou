@@ -417,6 +417,7 @@ function createIdbEventRowStores(getChatIdb: GetDb) {
     }
 
     // IDB open is a cache fast path; rejection disables it for this tab.
+    // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: disable the unavailable IndexedDB cache for this tab.
     return await onRejection(getChatIdb(), disableForSession);
   }
 

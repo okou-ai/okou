@@ -2525,8 +2525,15 @@
     {
       "idx": 1438,
       "version": "7",
-      "when": 1792576500378,
-      "tag": "1438_skill_import_session_attribution",
+      "when": 1792549455905,
+      "tag": "1438_hosted_site_browser_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1439,
+      "version": "7",
+      "when": 1792587995676,
+      "tag": "1439_skill_import_session_attribution",
       "breakpoints": true
     }
   ]

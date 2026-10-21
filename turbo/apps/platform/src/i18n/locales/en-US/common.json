@@ -513,8 +513,7 @@
         "websiteAria": "Show website artifacts"
       },
       "kindIcon": "{{kind}} artifact",
-      "loading": "Loading artifacts",
-      "retry": "Try again"
+      "loading": "Loading artifacts"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -611,6 +610,7 @@
     },
     "sharing": {
       "accessLabel": "Who can access",
+      "copied": "Copied",
       "copyLink": "Copy link",
       "loadFailed": "Unable to load permissions",
       "loadingPermissions": "Loading permissions",

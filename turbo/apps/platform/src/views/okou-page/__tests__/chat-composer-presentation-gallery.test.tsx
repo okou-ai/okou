@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -14,18 +15,18 @@ import {
 } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   AGENT_ID,
-  context,
   expectInlineTemplate,
-  mockPresentationHtml,
-  mockTemplateChat,
   openTemplatePicker,
   sendComposerMessage,
   templatePart,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
-import {
-  buildRunModel,
-  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-} from "./chat-composer-test-helpers.ts";
+import { CLAUDE_SUBSCRIPTION_PROVIDER_ID } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
+
+const context = testContext();
+const { mockPresentationHtml, mockTemplateChat } =
+  createTemplateGalleryHelpers(context);
 
 function builtInTemplate(index = 0) {
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[index];

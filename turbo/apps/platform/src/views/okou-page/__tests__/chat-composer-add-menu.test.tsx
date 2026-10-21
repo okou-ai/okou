@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -10,12 +11,11 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
-import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
-import {
-  THREAD_ID,
-  context,
-  findComposerEditor,
-} from "./chat-composer-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
+import { THREAD_ID, findComposerEditor } from "./chat-composer-test-helpers.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 const UPLOAD_URL = "https://uploads.test.okou.ai/composer-add-menu";
 

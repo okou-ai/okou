@@ -125,8 +125,8 @@ interface EffectiveConnector<
   readonly authMethods: readonly ConnectorCatalogAuthMethod[];
 }
 
-interface ExternalCatalogReadArgs {
-  readonly db: ReadonlyDb;
+interface ExternalCatalogSnapshotArgs {
+  readonly catalog: AcceptedDisplayCatalogSnapshot;
   readonly featureStates: ConnectorFeatureStates;
 }
 
@@ -145,15 +145,15 @@ interface ExternalCatalogConnectorReadArgs<
   readonly connectorSlug: string;
 }
 
-interface ExternalCatalogSearchArgs extends ExternalCatalogReadArgs {
+interface CatalogSearchSnapshotArgs extends ExternalCatalogSnapshotArgs {
   readonly keyword: string | undefined;
 }
 
-interface ExternalCatalogStatusArgs extends ExternalCatalogReadArgs {
+interface CatalogStatusSnapshotArgs extends ExternalCatalogSnapshotArgs {
   readonly referenceConnectorSlugs: readonly string[];
 }
 
-interface ExternalCatalogDiscoveryArgs extends ExternalCatalogStatusArgs {
+interface CatalogDiscoverySnapshotArgs extends CatalogStatusSnapshotArgs {
   readonly savedConnectorSlugs: readonly string[];
   readonly keyword: string | undefined;
   readonly category: string | undefined;
@@ -725,14 +725,10 @@ function connectorCatalogConnectHints(
   };
 }
 
-export async function listExternalPublicConnectorCatalog(
-  args: ExternalCatalogReadArgs,
-): Promise<PublicConnectorCatalogListResponse> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(
-    args.db,
-    undefined,
-    "display",
-  );
+export function connectorCatalogListFromSnapshot(
+  args: ExternalCatalogSnapshotArgs,
+): PublicConnectorCatalogListResponse {
+  const catalog = args.catalog;
   const connectors = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -849,7 +845,7 @@ function categoryConnectorCounts(
 function discoveryEffectiveConnectors(
   effective: readonly EffectiveConnector[],
   args: Pick<
-    ExternalCatalogDiscoveryArgs,
+    CatalogDiscoverySnapshotArgs,
     "keyword" | "category" | "savedConnectorSlugs"
   >,
 ): EffectiveConnector[] {
@@ -877,14 +873,10 @@ function discoveryEffectiveConnectors(
   ];
 }
 
-export async function searchExternalConnectorCatalog(
-  args: ExternalCatalogSearchArgs,
-): Promise<BuiltinConnectorSearchItem[]> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(
-    args.db,
-    undefined,
-    "display",
-  );
+export function connectorCatalogSearchFromSnapshot(
+  args: CatalogSearchSnapshotArgs,
+): BuiltinConnectorSearchItem[] {
+  const catalog = args.catalog;
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -966,14 +958,10 @@ export function connectorBriefsFromSource(
   });
 }
 
-export async function listExternalPublicConnectorCatalogStatus(
-  args: ExternalCatalogStatusArgs,
-): Promise<ConnectorCatalogStatusRead> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(
-    args.db,
-    undefined,
-    "display",
-  );
+export function connectorCatalogStatusFromSnapshot(
+  args: CatalogStatusSnapshotArgs,
+): ConnectorCatalogStatusRead {
+  const catalog = args.catalog;
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -985,14 +973,10 @@ export async function listExternalPublicConnectorCatalogStatus(
   });
 }
 
-export async function discoverExternalPublicConnectorCatalogStatus(
-  args: ExternalCatalogDiscoveryArgs,
-): Promise<ConnectorCatalogDiscoveryRead> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(
-    args.db,
-    undefined,
-    "display",
-  );
+export function connectorCatalogDiscoveryFromSnapshot(
+  args: CatalogDiscoverySnapshotArgs,
+): ConnectorCatalogDiscoveryRead {
+  const catalog = args.catalog;
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,

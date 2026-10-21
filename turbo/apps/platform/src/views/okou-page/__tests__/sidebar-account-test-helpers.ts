@@ -10,9 +10,30 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
-export const context = testContext();
+export function createSidebarAccountHelpers(context: TestContext) {
+  return {
+    prepareDefaultAgent: (targetContext = context) => {
+      return prepareDefaultAgent(targetContext);
+    },
+    setupAddAccountPage: () => {
+      return setupAddAccountPage(context);
+    },
+    mockAdminBillingStatus: (
+      credits: number,
+      options?: MockAdminBillingStatusOptions,
+    ) => {
+      return mockAdminBillingStatus(context, credits, options);
+    },
+    mockAdminAccountSidebar: () => {
+      return mockAdminAccountSidebar(context);
+    },
+    mockMemberAccountSidebar: () => {
+      return mockMemberAccountSidebar(context);
+    },
+  };
+}
 
 export const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 export function connectedPersonalCodexProvider(
@@ -83,7 +104,7 @@ export function connectedPersonalClaudeCodeProvider(
   };
 }
 
-export function prepareDefaultAgent(targetContext = context): void {
+export function prepareDefaultAgent(targetContext: TestContext): void {
   targetContext.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -190,8 +211,8 @@ export async function openAccountMenu(): Promise<HTMLElement> {
   return screen.findByRole("menu");
 }
 
-export function setupAddAccountPage(): Promise<void> {
-  prepareDefaultAgent();
+export function setupAddAccountPage(context: TestContext): Promise<void> {
+  prepareDefaultAgent(context);
   return setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
@@ -214,6 +235,7 @@ interface MockAdminBillingStatusOptions {
 }
 
 export function mockAdminBillingStatus(
+  context: TestContext,
   credits: number,
   options: MockAdminBillingStatusOptions = {},
 ): void {
@@ -271,18 +293,18 @@ export function mockAdminBillingStatus(
   );
 }
 
-export function mockAdminAccountSidebar(): void {
-  prepareDefaultAgent();
+export function mockAdminAccountSidebar(context: TestContext): void {
+  prepareDefaultAgent(context);
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
     role: "admin",
   });
-  mockAdminBillingStatus(12_500);
+  mockAdminBillingStatus(context, 12_500);
 }
 
-export function mockMemberAccountSidebar(): void {
-  prepareDefaultAgent();
+export function mockMemberAccountSidebar(context: TestContext): void {
+  prepareDefaultAgent(context);
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",

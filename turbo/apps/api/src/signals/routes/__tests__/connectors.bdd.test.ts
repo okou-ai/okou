@@ -63,7 +63,6 @@ import {
   mockDatadogConnectorOAuth,
   mockDeferredTestOAuthTokenEndpoint,
   mockGitHubConnectorOAuth,
-  mockGithubAppInstallProvider,
   mockSlackConnectorOAuth,
   mockSlockOAuthProvider,
   mockStripeCliDashboardAuth,
@@ -8534,8 +8533,6 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
   it("links the org GitHub installation when the GitHub connector completes OAuth", async () => {
     mockGitHubConnectorOAuth();
     const installationId = String(randomInt(100_000_000, 999_999_999));
-    const targetId = String(randomInt(100_000_000, 999_999_999));
-    mockGithubAppInstallProvider({ installationId, targetId });
 
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
@@ -8547,6 +8544,8 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
         "GITHUB_APP_SLUG",
         "GITHUB_APP_ID",
         "GITHUB_APP_PRIVATE_KEY",
+        "GITHUB_APP_CLIENT_ID",
+        "GITHUB_APP_CLIENT_SECRET",
       ],
       beforeWorkspaceCleanup: async (): Promise<void> => {
         if (createdAgentId) {
@@ -8585,6 +8584,7 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
       expect(beforeLink.isConnected).toBeFalsy();
       expect(beforeLink.connectedGithubUserId).toBeNull();
 
+      mockGitHubConnectorOAuth();
       const start = await own(() => {
         return connectorsApi.startOauth(admin, "github", "oauth");
       });

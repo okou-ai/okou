@@ -4,14 +4,16 @@ import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
   buttonByText,
-  context,
-  mockMobileLayout,
-  prepareDefaultAgent,
+  createSidebarHelpers,
   setupSidebarPage,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { mockMobileLayout, prepareDefaultAgent } = createSidebarHelpers(context);
 
 async function setupMobileSidebar() {
   mockMobileLayout();

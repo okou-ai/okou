@@ -14,6 +14,7 @@ import { env } from "../../lib/env";
 import {
   isS3NotFoundError,
   readArtifactSharePolicyObject,
+  readArtifactSharePolicyObject$,
   writeArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
@@ -57,6 +58,52 @@ export function artifactDeliveryRecord(
     return record;
   });
 }
+
+/** Resolve a registry alias with the requesting command's cancellation. */
+export const readArtifactDeliveryRecord$ = command(
+  async (
+    { set },
+    args: {
+      readonly layout: LinkLayout;
+      readonly kind: "file" | "html";
+      readonly alias: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
+    if (!bucket) {
+      throw new Error("Artifact delivery registry storage is not configured");
+    }
+    const result = await settle(
+      set(
+        readArtifactSharePolicyObject$,
+        {
+          bucket,
+          key: artifactDeliveryKey(
+            linkLayoutSegment(args.layout),
+            args.kind,
+            args.alias,
+          ),
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      if (isS3NotFoundError(result.error)) {
+        return null;
+      }
+      throw result.error;
+    }
+    const record = artifactDeliveryRecordSchema.parse(
+      JSON.parse(result.value.buffer.toString("utf8")),
+    );
+    if (record.publicBrand !== linkLayoutSegment(args.layout)) {
+      throw new Error("Artifact delivery alias has an inconsistent layout");
+    }
+    return record;
+  },
+);
 
 /** Immutable alias ownership survives revocation; only the share policy changes. */
 export const registerArtifactDelivery$ = command(

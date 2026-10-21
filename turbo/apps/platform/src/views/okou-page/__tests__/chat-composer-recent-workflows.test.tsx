@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   chatEventsContract,
   workflowsCollectionContract,
@@ -15,13 +16,14 @@ import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
   composerWorkflow,
-  context,
   findComposerEditor,
-  mockAgent,
-  mockBillingCapabilities,
-  mockPersonalModelRoutes,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+  createChatComposerHelpers(context);
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000920";
 

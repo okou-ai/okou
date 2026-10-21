@@ -26,7 +26,7 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { bestEffort, onDomEventFn, resetSignal } from "./utils.ts";
+import { onDomEventFn, resetSignal } from "./utils.ts";
 import { setupVisualViewportKeyboardState } from "../lib/visual-viewport-keyboard.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
@@ -84,6 +84,7 @@ import {
   setupSignUpV1Page$,
 } from "./auth-v1-page-setup.ts";
 import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
+import { setupHostedSiteAuthorizationPage$ } from "./hosted-site-authorization-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
@@ -214,6 +215,11 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.oauthConsent,
     setup: setupPageWrapper(setupOAuthConsentPage$),
+  },
+  {
+    path: ROUTES.hostedSiteAuthorize,
+    setup: setupAuthPageWrapper(setupHostedSiteAuthorizationPage$),
+    analytics: false,
   },
 
   // --- New routes ---
@@ -644,11 +650,7 @@ export const bootstrap$ = command(
     set(setupAuthenticatedRealtime$, signal);
     const ready = set(completeBootstrap$, render, signal);
 
-    await Promise.all([
-      bestEffort(clerkIdentitySetup, signal),
-      bestEffort(sharedDatabaseSetup, signal),
-      ready,
-    ]);
+    await Promise.all([clerkIdentitySetup, sharedDatabaseSetup, ready]);
     signal.throwIfAborted();
   },
 );

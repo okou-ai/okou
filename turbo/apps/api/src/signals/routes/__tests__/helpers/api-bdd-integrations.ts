@@ -606,6 +606,7 @@ export function createBddIntegrationApi(context: TestContext) {
     async requestGithubOauthInstall(
       query: GithubOauthInstallQuery,
       statuses: readonly (307 | 503)[],
+      actor: ApiTestUser | null = null,
     ) {
       const client = setupApp({
         baseUrl: "https://api.okou.ai",
@@ -614,6 +615,7 @@ export function createBddIntegrationApi(context: TestContext) {
       })(githubOauthContract);
       return await accept(
         client.install({
+          extraHeaders: extraHeaders(authenticate(context, routeMocks, actor)),
           query,
         }),
         statuses,
@@ -814,11 +816,18 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly prompt?: string;
       },
       statuses: readonly (307 | 503)[],
+      actor: ApiTestUser | null = null,
     ) {
       const client = setupApp({ context, routes: slackOauthRoutes })(
         slackOauthContract,
       );
-      return await accept(client.install({ query }), statuses);
+      return await accept(
+        client.install({
+          query,
+          extraHeaders: extraHeaders(authenticate(context, routeMocks, actor)),
+        }),
+        statuses,
+      );
     },
 
     configureSlackOauthProvider(): void {
@@ -1032,6 +1041,7 @@ export function createBddIntegrationApi(context: TestContext) {
       const started = await run(() => {
         return accept(
           client.install({
+            extraHeaders: extraHeaders(authHeaders(actor)),
             query: actor?.orgId
               ? { orgId: actor.orgId, userId: actor.userId }
               : {},
@@ -1345,11 +1355,18 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly prompt?: string;
       },
       statuses: readonly (307 | 400 | 404 | 503)[],
+      actor: ApiTestUser | null = null,
     ) {
       const client = setupApp({ context, routes: slackOauthRoutes })(
         slackOauthContract,
       );
-      return await accept(client.connect({ query }), statuses);
+      return await accept(
+        client.connect({
+          query,
+          extraHeaders: extraHeaders(authenticate(context, routeMocks, actor)),
+        }),
+        statuses,
+      );
     },
 
     async requestSlackOauthCallback(

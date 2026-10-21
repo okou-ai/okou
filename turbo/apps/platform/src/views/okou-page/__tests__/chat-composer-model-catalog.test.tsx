@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
@@ -9,21 +10,21 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  buildRunModel,
-  composerModelTrigger,
-} from "./chat-composer-test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import {
   findModelOption,
   openModelPanel,
 } from "./chat-model-panel-test-helpers.ts";
 import {
-  context,
-  installRunChat,
   NEW_CHAT_PATH,
   readyChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const FIXTURE_DATE = "2026-09-30T09:00:00.000Z";
 

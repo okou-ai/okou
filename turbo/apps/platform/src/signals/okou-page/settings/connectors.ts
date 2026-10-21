@@ -76,7 +76,7 @@ import type {
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
 import {
-  readConnectorAccountCount,
+  hasSavedConnectorAccounts,
   readConnectorAccountPage,
   readConnectorOAuthCompletion,
   readConnectorAccountCompletion,
@@ -142,12 +142,13 @@ const resolveConnectorPostConnectOptions$ = command(
     }
     const authorizeVisibleAgents =
       account.intent === "add" &&
-      (page?.connections.length ??
-        (await readConnectorAccountCount(
-          get(apiClient$),
-          { kind: "builtin", connectorSlug },
-          signal,
-        ))) === 0;
+      !(page
+        ? page.connections.length > 0
+        : await hasSavedConnectorAccounts(
+            get(apiClient$),
+            { kind: "builtin", connectorSlug },
+            signal,
+          ));
     return { ...options, account, authorizeVisibleAgents };
   },
 );

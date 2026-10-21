@@ -2,6 +2,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -16,41 +17,30 @@ import {
 import { ChevronDown, Plus, Mail } from "lucide-react";
 import { clerk$, currentOrgInfo$ } from "../../signals/auth.ts";
 import { createdOrganizationsCount$ } from "../../signals/org.ts";
-import {
-  bestEffort,
-  withCleanup,
-  detach,
-  onDomEventFn,
-  Reason,
-} from "../../signals/utils.ts";
+import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { userInvitations$ } from "../../signals/user-invitations.ts";
 import {
   createWorkspace$,
-  joinWorkspace$,
-  type WorkspaceInvitation,
+  workspaceCreation$,
+  workspaceInvitations$,
+  type WorkspaceInvitationActions,
 } from "../../signals/select-org/workspace-actions.ts";
-import {
-  creatingOrg$,
-  setCreatingOrg$,
-  acceptingInvitationId$,
-  setAcceptingInvitationId$,
-} from "../../signals/select-org/org-switcher-ui.ts";
 import { ThumbnailPlaceholder, WorkspaceLogo } from "../components/avatar.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 
-function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
-  const acceptingId = useGet(acceptingInvitationId$);
-  const setAcceptingId = useSet(setAcceptingInvitationId$);
-  const joinWorkspace = useSet(joinWorkspace$);
+function InvitationRow({ actions }: { actions: WorkspaceInvitationActions }) {
+  const { invitation } = actions;
+  const acceptance = useLoadable(actions.request$);
+  const joinWorkspace = useSet(actions.join$);
   const signal = useGet(pageSignal$);
-  const isAccepting = acceptingId === invitation.id;
+  const isAccepting = acceptance.state === "loading";
   const { t } = useTranslation();
 
   const handleAccept = onDomEventFn(async () => {
-    setAcceptingId(invitation.id);
-    await withCleanup(bestEffort(joinWorkspace(invitation, signal)), () => {
-      setAcceptingId(null);
-    });
+    if (isAccepting) {
+      return;
+    }
+    await joinWorkspace(signal);
   });
 
   return (
@@ -84,17 +74,17 @@ function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
 }
 
 function CreateWorkspaceMenuItem() {
-  const creatingOrg = useGet(creatingOrg$);
-  const setCreating = useSet(setCreatingOrg$);
+  const creation = useLoadable(workspaceCreation$);
+  const creatingOrg = creation.state === "loading";
   const createWorkspace = useSet(createWorkspace$);
   const signal = useGet(pageSignal$);
   const { t } = useTranslation();
 
   const handleCreateOrg = onDomEventFn(async () => {
-    setCreating(true);
-    await withCleanup(bestEffort(createWorkspace(signal)), () => {
-      setCreating(false);
-    });
+    if (creatingOrg) {
+      return;
+    }
+    await createWorkspace(signal);
   });
 
   return (
@@ -193,8 +183,19 @@ function OtherMembershipsList() {
 }
 
 function OrgDropdownContent() {
+  return (
+    <DropdownMenuContent
+      align="start"
+      className="flex max-h-[min(420px,var(--available-height))] w-72 flex-col overflow-hidden"
+    >
+      <OrgDropdownBody />
+    </DropdownMenuContent>
+  );
+}
+
+function OrgDropdownBody() {
   const clerkLoadable = useLastLoadable(clerk$);
-  const pendingInvitations = useLastResolved(userInvitations$);
+  const pendingInvitations = useLastResolved(workspaceInvitations$);
   const currentOrg = useLastResolved(currentOrgInfo$);
   const { t } = useTranslation();
 
@@ -217,10 +218,7 @@ function OrgDropdownContent() {
   const hasOrgOptions = hasOtherMemberships || hasPendingInvitations;
 
   return (
-    <DropdownMenuContent
-      align="start"
-      className="flex max-h-[min(420px,var(--available-height))] w-72 flex-col overflow-hidden"
-    >
+    <>
       <div className="flex min-w-0 shrink-0 items-center gap-3 px-2 py-1.5">
         <WorkspaceLogo
           name={orgName}
@@ -245,9 +243,12 @@ function OrgDropdownContent() {
           {hasPendingInvitations && (
             <>
               <DropdownMenuSeparator />
-              {pendingInvitations.map((invitation) => {
+              {pendingInvitations.map((actions) => {
                 return (
-                  <InvitationRow key={invitation.id} invitation={invitation} />
+                  <InvitationRow
+                    key={actions.invitation.id}
+                    actions={actions}
+                  />
                 );
               })}
             </>
@@ -256,7 +257,7 @@ function OrgDropdownContent() {
       )}
 
       <CreateWorkspaceItem />
-    </DropdownMenuContent>
+    </>
   );
 }
 

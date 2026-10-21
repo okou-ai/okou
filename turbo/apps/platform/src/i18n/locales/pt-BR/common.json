@@ -528,8 +528,7 @@
         "websiteAria": "Mostrar artefatos de site"
       },
       "kindIcon": "Artefato do tipo {{kind}}",
-      "loading": "Carregando artefatos",
-      "retry": "Tentar novamente"
+      "loading": "Carregando artefatos"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -629,6 +628,7 @@
     },
     "sharing": {
       "accessLabel": "Quem pode acessar",
+      "copied": "Copiado",
       "copyLink": "Copiar link",
       "loadFailed": "Não foi possível carregar as permissões",
       "loadingPermissions": "Carregando permissões",

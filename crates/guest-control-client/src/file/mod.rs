@@ -57,13 +57,7 @@ impl FileWritePathLocks {
         &self,
         paths: impl IntoIterator<Item = &'a str>,
     ) -> Vec<FileWritePathGuard<'_>> {
-        let reservations = paths
-            .into_iter()
-            .map(PathBuf::from)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .map(|path| self.reserve(path))
-            .collect::<Vec<_>>();
+        let reservations = self.reserve_many(paths);
         let mut guards = Vec::with_capacity(reservations.len());
         for reservation in reservations {
             let guard = Arc::clone(&reservation.lock).read_owned().await;
@@ -85,13 +79,7 @@ impl FileWritePathLocks {
         &'a self,
         paths: impl IntoIterator<Item = &'a str>,
     ) -> Vec<FileWritePathGuard<'a>> {
-        let reservations = paths
-            .into_iter()
-            .map(PathBuf::from)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .map(|path| self.reserve(path))
-            .collect::<Vec<_>>();
+        let reservations = self.reserve_many(paths);
         let mut guards = Vec::with_capacity(reservations.len());
         for reservation in reservations {
             let guard = Arc::clone(&reservation.lock).write_owned().await;
@@ -101,6 +89,20 @@ impl FileWritePathLocks {
             ));
         }
         guards
+    }
+
+    fn reserve_many<'a>(
+        &self,
+        paths: impl IntoIterator<Item = &'a str>,
+    ) -> Vec<FileWritePathLockReservation<'_>> {
+        // Reserve every unique path in one order before any lock await.
+        paths
+            .into_iter()
+            .map(PathBuf::from)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|path| self.reserve(path))
+            .collect()
     }
 
     fn reserve(&self, path: PathBuf) -> FileWritePathLockReservation<'_> {

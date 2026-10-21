@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   customConnectorCompletionFixture,
   connectorFixtureAccount,
@@ -47,12 +48,11 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   CAPABILITY_AGENT_ID,
-  context,
   completedConversation,
   type CapturedChatSend,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import {
   bankingActionUrl,
@@ -65,6 +65,9 @@ import {
   CUSTOM_CONNECTOR_ID,
   noAuthMethod,
 } from "./chat-capability-connector-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const BANK_ACCOUNT_ID = "e0000000-0000-4000-a000-000000000911";
 const BANK_CONNECTION_ID = "e0000000-0000-4000-a000-000000000912";

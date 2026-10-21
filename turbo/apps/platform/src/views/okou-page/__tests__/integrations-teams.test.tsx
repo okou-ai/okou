@@ -103,9 +103,15 @@ test("Returning to Works retries a failed Teams read without hiding the other in
     }
     return respond(200, status());
   });
-  await setupPage({ context, path: "/works" });
+  await expect(setupPage({ context, path: "/works" })).rejects.toThrow(
+    "Failed to fetch",
+  );
+  await waitFor(() => {
+    expect(getIntegrationCard("Microsoft Teams")).toHaveTextContent(
+      "Unable to check your Teams connection.",
+    );
+  });
   const card = getIntegrationCard("Microsoft Teams");
-  expect(card).toHaveTextContent("Unable to check your Teams connection.");
   expect(getIntegrationCard("Slack")).toBeInTheDocument();
   failed = false;
   act(() => {

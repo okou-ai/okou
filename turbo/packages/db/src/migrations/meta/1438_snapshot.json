@@ -1,5 +1,5 @@
 {
-  "id": "19ca4301-cdd2-4407-b219-c457187c6599",
+  "id": "a8c6e848-bee7-4a0d-a025-c4cd5ccb1bf4",
   "prevId": "27061c17-8508-4ca2-befa-5991ecd5aef4",
   "version": "7",
   "dialect": "postgresql",
@@ -16891,6 +16891,124 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hosted_site_browser_sessions": {
+      "name": "hosted_site_browser_sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "site_id": {
+          "name": "site_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "clerk_session_id": {
+          "name": "clerk_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_hash": {
+          "name": "code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_challenge": {
+          "name": "code_challenge",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_hosted_site_browser_sessions_expiry": {
+          "name": "idx_hosted_site_browser_sessions_expiry",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hosted_site_browser_sessions_site_id_hosted_sites_id_fk": {
+          "name": "hosted_site_browser_sessions_site_id_hosted_sites_id_fk",
+          "tableFrom": "hosted_site_browser_sessions",
+          "tableTo": "hosted_sites",
+          "columnsFrom": [
+            "site_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "hosted_site_browser_sessions_code_hash_unique": {
+          "name": "hosted_site_browser_sessions_code_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code_hash"
+          ]
+        },
+        "hosted_site_browser_sessions_token_hash_unique": {
+          "name": "hosted_site_browser_sessions_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "hosted_site_browser_sessions_credential": {
+          "name": "hosted_site_browser_sessions_credential",
+          "value": "(\"hosted_site_browser_sessions\".\"code_hash\" IS NOT NULL AND \"hosted_site_browser_sessions\".\"code_challenge\" IS NOT NULL AND \"hosted_site_browser_sessions\".\"token_hash\" IS NULL) OR (\"hosted_site_browser_sessions\".\"code_hash\" IS NULL AND \"hosted_site_browser_sessions\".\"code_challenge\" IS NULL AND \"hosted_site_browser_sessions\".\"token_hash\" IS NOT NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.hosted_site_visibility": {
@@ -36880,12 +36998,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "import_session_id": {
-          "name": "import_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -36925,21 +37037,6 @@
             },
             {
               "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workflows_import_session": {
-          "name": "idx_workflows_import_session",
-          "columns": [
-            {
-              "expression": "import_session_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

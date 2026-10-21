@@ -513,8 +513,7 @@
         "websiteAria": "Website-Artefakte anzeigen"
       },
       "kindIcon": "{{kind}} Artefakt",
-      "loading": "Artefakte werden geladen",
-      "retry": "Erneut versuchen"
+      "loading": "Artefakte werden geladen"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -611,6 +610,7 @@
     },
     "sharing": {
       "accessLabel": "Wer hat Zugriff",
+      "copied": "Kopiert",
       "copyLink": "Link kopieren",
       "loadFailed": "Berechtigungen konnten nicht geladen werden",
       "loadingPermissions": "Berechtigungen werden geladen",

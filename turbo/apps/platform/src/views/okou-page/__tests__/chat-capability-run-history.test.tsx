@@ -1,20 +1,20 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import {
-  context,
-  readyChat,
-  RUN_PATH,
-} from "./chat-capability-test-helpers.ts";
+import { readyChat, RUN_PATH } from "./chat-capability-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   completedEvent,
-  installRunChat,
   publishRunUpdate,
   queryWorkHistoryToggles,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const WORKFLOW_RUN_IDS = [
   "d0000000-0000-4000-a000-000000000871",

@@ -41,14 +41,16 @@ export default defineConfig({
     build({
       emptyOutDir: true,
       entry: "./src/index.ts",
-      // @hono/vite-build still emits the Vercel adapter removed in
-      // @hono/node-server v2. Keep that build-only adapter on v1 while the
-      // long-lived server runtime uses v2.
+      // Keep the prebuilt Vercel function's Node req/res entry on the same
+      // adapter as the standalone server; v2 removed the /vercel export.
       entryContentAfterHooks: [
         () => {
-          return "import { handle } from '@hono/node-server-v1/vercel'";
+          return "import { getRequestListener } from '@hono/node-server'";
         },
       ],
+      entryContentDefaultExportHook: (appName) => {
+        return `export default getRequestListener(${appName}.fetch)`;
+      },
       vercel: {
         // Hono currently builds one function for all routes. Its independent
         // Morning Brief waitUntil invocations need a platform deadline beyond

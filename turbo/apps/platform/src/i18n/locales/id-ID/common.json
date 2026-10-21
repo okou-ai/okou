@@ -512,8 +512,7 @@
         "websiteAria": "Tampilkan artefak situs web"
       },
       "kindIcon": "Artefak {{kind}}",
-      "loading": "Memuat artefak",
-      "retry": "Coba lagi"
+      "loading": "Memuat artefak"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -610,6 +609,7 @@
     },
     "sharing": {
       "accessLabel": "Siapa yang dapat mengakses",
+      "copied": "Tersalin",
       "copyLink": "Salin tautan",
       "loadFailed": "Gagal memuat izin",
       "loadingPermissions": "Memuat izin",

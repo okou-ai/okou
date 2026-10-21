@@ -25,7 +25,7 @@ import {
   hostedSites,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
-import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, sql, type SQL } from "drizzle-orm";
 
 function hostedSiteCondition(args: PrepareDeploymentArgs, publicSlug?: string) {
   return and(
@@ -62,24 +62,35 @@ function hostedAssetConflictQuery(
   siteId: string,
   assets: Readonly<Record<string, string>>,
 ) {
+  const publishedHash = sql`f.files->requested.key->>'sha256'`;
   return sql`
-              select requested.key as path
-              from (
-                select ${hostedDeployments.manifest} as manifest
-                from ${hostedDeployments}
-                where ${eq(hostedDeployments.siteId, siteId)}
-                union all
-                select ${privateHostedDeployments.manifest} as manifest
-                from ${privateHostedDeployments}
-                where ${eq(privateHostedDeployments.siteId, siteId)}
-              ) published
-              cross join lateral jsonb_each_text(
-                ${sql.param(JSON.stringify(assets))}::jsonb
-              ) as requested
-              where published.manifest->'files'->requested.key->>'sha256' is distinct from null
-                and published.manifest->'files'->requested.key->>'sha256' <> requested.value
-              limit 1
-            `;
+    with requested as materialized (
+      select key, value
+      from jsonb_each_text(${sql.param(JSON.stringify(assets))}::jsonb)
+    )
+    select hit.path
+    from (
+      select ${hostedDeployments.manifest} as manifest
+      from ${hostedDeployments}
+      where ${eq(hostedDeployments.siteId, siteId)}
+      union all
+      select ${privateHostedDeployments.manifest} as manifest
+      from ${privateHostedDeployments}
+      where ${eq(privateHostedDeployments.siteId, siteId)}
+    ) published
+    cross join lateral (
+      -- Reuse each manifest's file map without materializing all retained history.
+      with file_map as materialized (
+        select published.manifest->'files' as files
+      )
+      select requested.key as path
+      from file_map f cross join requested
+      where ${isNotNull(publishedHash)}
+        and ${ne(publishedHash, sql`requested.value`)}
+      limit 1
+    ) hit
+    limit 1
+  `;
 }
 
 type HostedSiteRow = typeof hostedSites.$inferSelect;

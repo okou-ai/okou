@@ -1,4 +1,8 @@
 import { command } from "ccstate";
+import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { eq, and } from "drizzle-orm";
+import { z } from "zod";
 import {
   githubOauthContract,
   type GithubAppSetupCallbackQuery,
@@ -11,12 +15,13 @@ import {
 } from "@okouai/connectors/auth-providers/connectors/github/oauth";
 
 import { requiredAuthContext$ } from "../auth/auth-context";
+import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
 import { queryOf } from "../context/request";
 import { request$ } from "../context/hono";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
+import { claimBuiltinConnectorOAuthState$ } from "../services/connector-oauth-state.service";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
-import { logger } from "../../lib/log";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
   connectorActionResolver,
@@ -25,7 +30,7 @@ import {
 } from "../services/connector-action-resolver.service";
 import { isConnectorCatalogUnavailableError } from "../services/connector-catalog-reader.service";
 import {
-  buildGithubAppInstallUrl,
+  buildGithubAppInstallUrl$,
   startGithubUserOAuth$,
   createOrActivateGithubInstallation$,
   findGithubInstallationByInstallationId$,
@@ -39,18 +44,16 @@ import {
   parseGithubOauthState,
   resolveGithubOauthOrgId$,
   tryLinkGithubFromLocalRecord$,
-  tryLinkGithubFromRemoteInstallations$,
   verifyGithubConnectSignature,
 } from "../services/github-oauth.service";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import { upsertBuiltinConnectorTokenConnection$ } from "../services/connector-data.service";
-import { settle } from "../utils";
+import { safeJsonParse, settle } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 
 const REDIRECT_STATUS = 307;
 const GITHUB_CONNECTOR_SLUG = "github";
-const L = logger("GithubOAuthRoute");
 
 function redirectResponse(url: string): Response {
   return new Response(null, {
@@ -278,31 +281,21 @@ function githubSetupUserConnectionError(
   return { ok: false, response: worksErrorRedirect(message) };
 }
 
+type GithubSetupUserIdentity = {
+  readonly accessToken: string;
+  readonly scopes: string[];
+  readonly userInfo: Awaited<ReturnType<typeof fetchGitHubUserInfo>>;
+  readonly method: ResolvedConnectorActionMethod;
+  readonly installInfo: Awaited<ReturnType<typeof getGithubInstallationInfo>>;
+  readonly oauthRequestedScopes: readonly string[];
+};
+
 type GithubSetupUserConnectionArgs = {
   readonly orgId: string;
   readonly installRecordId: string;
-  readonly ghInstallationId: string | null;
   readonly state: ParsedGithubOauthState;
-  readonly code: string | undefined;
-  readonly knownGithubUserId: string | null;
+  readonly identity: GithubSetupUserIdentity;
 };
-
-function githubSetupCodeExchangeLogContext(
-  args: GithubSetupUserConnectionArgs,
-  userId: string,
-): {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly ghInstallationId: string | null;
-  readonly installRecordId: string;
-} {
-  return {
-    orgId: args.orgId,
-    userId,
-    ghInstallationId: args.ghInstallationId,
-    installRecordId: args.installRecordId,
-  };
-}
 
 const isGithubInstallOrgAdmin$ = command(
   async (
@@ -459,160 +452,202 @@ const resolveGithubCallbackAccess$ = command(
   },
 );
 
-const linkGithubUserWithoutSetupCode$ = command(
-  async (
-    { set },
-    args: GithubSetupUserConnectionArgs,
-    userId: string,
-    signal: AbortSignal,
-  ): Promise<GithubSetupUserConnectionResolution> => {
-    const githubUserId = await set(
-      linkGithubUser$,
+async function githubInstallationAdmin(
+  args: {
+    readonly accessToken: string;
+    readonly githubUserId: string;
+    readonly installation: Awaited<
+      ReturnType<typeof getGithubInstallationInfo>
+    >;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (args.installation.targetType === "User") {
+    return args.installation.targetId === args.githubUserId;
+  }
+  if (args.installation.targetType !== "Organization") {
+    return false;
+  }
+  // The list endpoint supports GitHub App user tokens without extra permissions.
+  // Repository access alone does not authorize attaching an organization's install.
+  for (let page = 1; page <= 10; page++) {
+    const response = await fetch(
+      `https://api.github.com/user/memberships/orgs?state=active&per_page=100&page=${page}`,
       {
-        installRecordId: args.installRecordId,
-        userId,
-        knownGithubUserId: args.knownGithubUserId,
+        headers: {
+          Authorization: `Bearer ${args.accessToken}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        signal,
       },
-      signal,
+    );
+    if (!response.ok) {
+      await response.body?.cancel();
+      signal.throwIfAborted();
+      throw new Error(
+        `GitHub organization verification failed (${response.status}). Please try again.`,
+      );
+    }
+    const memberships = z
+      .array(
+        z.object({
+          state: z.string(),
+          role: z.string(),
+          organization: z.object({ id: z.number() }),
+        }),
+      )
+      .parse(await response.json());
+    signal.throwIfAborted();
+    const membership = memberships.find((entry) => {
+      return String(entry.organization.id) === args.installation.targetId;
+    });
+    if (membership) {
+      return membership.state === "active" && membership.role === "admin";
+    }
+    if (memberships.length < 100) {
+      return false;
+    }
+  }
+  throw new Error(
+    "GitHub organization verification exceeded its page limit. Please contact support.",
+  );
+}
+
+const prepareGithubSetupUserIdentity$ = command(
+  async (
+    { get },
+    args: {
+      readonly code: string;
+      readonly installationId: string;
+      readonly appId: string;
+      readonly privateKey: string;
+      readonly state: ParsedGithubOauthState;
+    },
+    signal: AbortSignal,
+  ) => {
+    const credentials = githubAppUserOauthCredentials();
+    if (!credentials) {
+      return {
+        ok: false as const,
+        response: worksErrorRedirect("GitHub App OAuth is not configured"),
+      };
+    }
+    const resolver = await get(
+      connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
     );
     signal.throwIfAborted();
-    if (githubUserId) {
-      await publishUserSignal([userId], "github:changed");
-      signal.throwIfAborted();
+    const method = await resolveGithubOauthMethod(resolver);
+    signal.throwIfAborted();
+    if (!method || method.method.grant.kind !== "auth-code") {
+      return {
+        ok: false as const,
+        response: worksErrorRedirect("GitHub OAuth is not available"),
+      };
     }
-    return { ok: true, connected: githubUserId !== null };
+    const oauthRequestedScopes =
+      args.state.oauthRequestedScopes ??
+      connectorGrantScopes(method.method.grant);
+    const grant = { ...method.method.grant, scopes: [...oauthRequestedScopes] };
+    const exchanged = await settle(
+      (async () => {
+        const { accessToken, scopes } = await exchangeGitHubCode(
+          grant,
+          credentials.clientId,
+          credentials.clientSecret,
+          args.code,
+        );
+        signal.throwIfAborted();
+        const userInfo = await fetchGitHubUserInfo(accessToken);
+        signal.throwIfAborted();
+        const installInfo = await getGithubInstallationInfo(
+          {
+            appId: args.appId,
+            privateKey: args.privateKey,
+            installationId: args.installationId,
+          },
+          signal,
+        );
+        const authorized = await githubInstallationAdmin(
+          { accessToken, githubUserId: userInfo.id, installation: installInfo },
+          signal,
+        );
+        if (!authorized) {
+          throw new Error(
+            "Only the GitHub account owner or an active organization administrator can connect this installation.",
+          );
+        }
+        return {
+          accessToken,
+          scopes,
+          userInfo,
+          method,
+          installInfo,
+          oauthRequestedScopes,
+        } satisfies GithubSetupUserIdentity;
+      })(),
+      signal,
+    );
+    return exchanged.ok
+      ? { ok: true as const, identity: exchanged.value }
+      : {
+          ok: false as const,
+          response: worksErrorRedirect(
+            errorMessageFromUnknown(exchanged.error),
+          ),
+        };
   },
 );
 
 const connectGithubUserAfterSetup$ = command(
   async (
-    { get, set },
+    { set },
     args: GithubSetupUserConnectionArgs,
     signal: AbortSignal,
   ): Promise<GithubSetupUserConnectionResolution> => {
     const userId = args.state.userId;
     if (!userId) {
-      return { ok: true, connected: false };
+      return githubSetupUserConnectionError(
+        "Invalid GitHub installation identity",
+      );
     }
-
-    const code = args.code;
-    if (code) {
-      const codeExchangeLogContext = githubSetupCodeExchangeLogContext(
-        args,
+    const identity = args.identity;
+    const connected = await set(
+      writeGithubConnectorConnection$,
+      {
+        orgId: args.orgId,
         userId,
+        method: identity.method,
+        outputs: { accessToken: identity.accessToken },
+        userInfo: identity.userInfo,
+        oauthRequestedScopes: identity.oauthRequestedScopes,
+        oauthGrantedScopes: identity.scopes,
+        account: { intent: "add" },
+      },
+      signal,
+    );
+    if (!connected) {
+      return githubSetupUserConnectionError(
+        "Connector account could not be selected",
       );
-      const credentials = githubAppUserOauthCredentials();
-      if (!credentials) {
-        L.warn(
-          "GitHub setup code exchange skipped: App OAuth is not configured",
-          {
-            ...codeExchangeLogContext,
-          },
-        );
-        return githubSetupUserConnectionError(
-          "GitHub App OAuth is not configured",
-        );
-      }
-
-      L.warn("Starting GitHub setup code exchange", {
-        ...codeExchangeLogContext,
-        client: "github_app",
-        sendsRedirectUri: false,
-      });
-
-      const resolver = await get(
-        connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
-      );
-      signal.throwIfAborted();
-      const resolvedMethod = await resolveGithubOauthMethod(resolver);
-      signal.throwIfAborted();
-      if (!resolvedMethod || resolvedMethod.method.grant.kind !== "auth-code") {
-        return githubSetupUserConnectionError("GitHub OAuth is not available");
-      }
-      const oauthRequestedScopes =
-        args.state.oauthRequestedScopes ??
-        connectorGrantScopes(resolvedMethod.method.grant);
-      const authCodeGrant = {
-        ...resolvedMethod.method.grant,
-        scopes: [...oauthRequestedScopes],
-      };
-      const tokenResult = await settle(
-        (async () => {
-          const { accessToken, scopes } = await exchangeGitHubCode(
-            authCodeGrant,
-            credentials.clientId,
-            credentials.clientSecret,
-            code,
-          );
-          signal.throwIfAborted();
-          const userInfo = await fetchGitHubUserInfo(accessToken);
-          signal.throwIfAborted();
-          return { accessToken, scopes, userInfo };
-        })(),
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!tokenResult.ok) {
-        L.warn("GitHub setup code exchange failed", {
-          ...codeExchangeLogContext,
-          error: errorMessageFromUnknown(tokenResult.error),
-        });
-        return githubSetupUserConnectionError(
-          errorMessageFromUnknown(tokenResult.error),
-        );
-      }
-      const { accessToken, scopes, userInfo } = tokenResult.value;
-      L.warn("GitHub setup code exchange succeeded", {
-        ...codeExchangeLogContext,
-        githubUserId: userInfo.id,
-        githubUsername: userInfo.username,
-        scopes,
-      });
-
-      const connectorConnected = await set(
-        writeGithubConnectorConnection$,
-        {
-          orgId: args.orgId,
-          userId,
-          method: resolvedMethod,
-          outputs: { accessToken },
-          userInfo,
-          oauthRequestedScopes,
-          oauthGrantedScopes: scopes,
-          account: { intent: "add" },
-        },
-        signal,
-      );
-      if (!connectorConnected) {
-        return githubSetupUserConnectionError(
-          "Connector account could not be selected",
-        );
-      }
-
-      const githubUserId = await set(
-        linkGithubUser$,
-        {
-          installRecordId: args.installRecordId,
-          userId,
-          knownGithubUserId: userInfo.id,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-
-      if (!githubUserId) {
-        return githubSetupUserConnectionError(
-          "This GitHub account is already linked to the installation",
-        );
-      }
-
-      await publishUserSignal([userId], "github:changed");
-      signal.throwIfAborted();
-
-      return { ok: true, connected: true };
     }
-
-    return await set(linkGithubUserWithoutSetupCode$, args, userId, signal);
+    const linked = await set(
+      linkGithubUser$,
+      {
+        installRecordId: args.installRecordId,
+        userId,
+        knownGithubUserId: identity.userInfo.id,
+      },
+      signal,
+    );
+    if (!linked) {
+      return githubSetupUserConnectionError(
+        "This GitHub account is already linked to the installation",
+      );
+    }
+    await publishUserSignal([userId], "github:changed");
+    signal.throwIfAborted();
+    return { ok: true, connected: true };
   },
 );
 
@@ -630,7 +665,8 @@ const connectExistingGithubInstallation$ = command(
       readonly orgId: string;
       readonly installationId: string;
       readonly state: ParsedGithubOauthState;
-      readonly code: string | undefined;
+      readonly identity: GithubSetupUserIdentity;
+      readonly connectUser: boolean;
     },
     signal: AbortSignal,
   ): Promise<Response | null> => {
@@ -645,15 +681,16 @@ const connectExistingGithubInstallation$ = command(
     if (!existing) {
       return null;
     }
+    if (!args.connectUser) {
+      return githubSetupCompleteRedirect(false);
+    }
     const connection = await set(
       connectGithubUserAfterSetup$,
       {
         orgId: args.orgId,
         installRecordId: existing.id,
-        ghInstallationId: args.installationId,
         state: args.state,
-        code: args.code,
-        knownGithubUserId: null,
+        identity: args.identity,
       },
       signal,
     );
@@ -662,39 +699,6 @@ const connectExistingGithubInstallation$ = command(
       : connection.response;
   },
 );
-
-async function prepareGithubInstallationFromCallback(
-  args: {
-    readonly appId: string;
-    readonly privateKey: string;
-    readonly installationId: string;
-  },
-  signal: AbortSignal,
-) {
-  const installInfo = await getGithubInstallationInfo(
-    {
-      appId: args.appId,
-      privateKey: args.privateKey,
-      installationId: args.installationId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  const { token } = await getGithubInstallationAccessToken(
-    {
-      appId: args.appId,
-      privateKey: args.privateKey,
-      installationId: args.installationId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  const adminGithubUserId =
-    installInfo.targetType === "User" ? installInfo.targetId : null;
-  return { installInfo, token, adminGithubUserId };
-}
 
 const installGithubOauth$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -707,57 +711,59 @@ const installGithubOauth$ = command(
     }
 
     const query = get(queryOf(githubOauthContract.install));
-    const userId = query.userId;
-    const appId = optionalEnv("GITHUB_APP_ID");
-    const privateKey = optionalEnv("GITHUB_APP_PRIVATE_KEY");
-
-    if (
-      query.orgId &&
-      userId &&
-      !(await set(
-        isGithubInstallOrgAdmin$,
-        { orgId: query.orgId, userId },
-        signal,
-      ))
-    ) {
+    const auth = await set(
+      requiredAuthContext$,
+      { requireOrganization: true },
+      signal,
+    );
+    if ("status" in auth) {
+      return auth.status === 401
+        ? signInRedirect(request.url)
+        : worksErrorRedirect(auth.body.error.message);
+    }
+    if (!auth.orgId || auth.orgRole !== "admin") {
       return worksErrorRedirect(GITHUB_INSTALL_ADMIN_REQUIRED);
     }
-
-    if (appId && privateKey && userId) {
-      set(writeDb$);
-      const linkedFromLocal = query.orgId
-        ? await set(
-            tryLinkGithubFromLocalRecord$,
-            {
-              orgId: query.orgId,
-              userId,
-            },
-            signal,
-          )
-        : false;
-      signal.throwIfAborted();
-
-      if (linkedFromLocal) {
-        return redirectResponse(appUrl("/workflows"));
-      }
-
-      const linkedFromRemote = await set(
-        tryLinkGithubFromRemoteInstallations$,
-        {
-          appId,
-          appSlug,
-          privateKey,
-          orgId: query.orgId ?? null,
-          userId,
-          composeId: query.composeId ?? null,
-        },
-        signal,
+    if (
+      (query.userId && query.userId !== auth.userId) ||
+      (query.orgId && query.orgId !== auth.orgId)
+    ) {
+      return worksErrorRedirect(
+        "The installation link belongs to a different account or organization. Please reconnect from settings.",
       );
-      signal.throwIfAborted();
-
-      if (linkedFromRemote) {
-        return redirectResponse(appUrl("/workflows"));
-      }
+    }
+    const userId = auth.userId;
+    const db = get(db$);
+    const [metadata] = await db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, auth.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    const composeId = query.composeId ?? metadata?.defaultAgentId;
+    if (!composeId) {
+      return worksErrorRedirect(
+        "Please select a default agent before connecting GitHub.",
+      );
+    }
+    const [agent] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, composeId), eq(agents.orgId, auth.orgId)))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!agent) {
+      return worksErrorRedirect(
+        "The selected agent does not belong to your organization.",
+      );
+    }
+    const linkedFromLocal = await set(
+      tryLinkGithubFromLocalRecord$,
+      { orgId: auth.orgId, userId },
+      signal,
+    );
+    if (linkedFromLocal) {
+      return redirectResponse(appUrl("/workflows"));
     }
 
     const oauthRequestedScopes =
@@ -768,17 +774,20 @@ const installGithubOauth$ = command(
           )
         : undefined;
     signal.throwIfAborted();
-    const installUrl = await buildGithubAppInstallUrl({
-      appSlug,
-      userId,
-      orgId: query.orgId,
-      composeId: query.composeId,
-      callbackOrigin,
-      providerCallbackOrigin,
-      oauthRequestedScopes,
-      secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
-    });
-    signal.throwIfAborted();
+    const installUrl = await set(
+      buildGithubAppInstallUrl$,
+      {
+        appSlug,
+        userId,
+        orgId: auth.orgId,
+        composeId,
+        callbackOrigin,
+        providerCallbackOrigin,
+        oauthRequestedScopes,
+        secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
+      },
+      signal,
+    );
 
     return noStoreRedirect(installUrl);
   },
@@ -793,7 +802,7 @@ function invalidGithubConnectLinkRedirect(): Response {
 function signInRedirect(requestUrl: string): Response {
   const signInUrl = new URL("/sign-in", env("APP_URL"));
   signInUrl.searchParams.set("redirect_url", requestUrl);
-  return redirectResponse(signInUrl.toString());
+  return noStoreRedirect(signInUrl.toString());
 }
 
 const connectGithubUserOauth$ = command(
@@ -908,6 +917,52 @@ const connectGithubUserOauth$ = command(
   },
 );
 
+const requestGithubInstallationUserAuthorization$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: ParsedGithubOauthState;
+      readonly orgId: string;
+      readonly composeId: string;
+      readonly installationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const credentials = githubAppUserOauthCredentials();
+    const appSlug = optionalEnv("GITHUB_APP_SLUG");
+    if (
+      !credentials ||
+      !appSlug ||
+      !args.state.userId ||
+      !args.state.callbackRedirectUri
+    ) {
+      return worksErrorRedirect(
+        "Please authorize your GitHub account and reconnect this installation from settings.",
+      );
+    }
+    const origin = new URL(args.state.callbackRedirectUri).origin;
+    const authorizationUrl = await set(
+      buildGithubAppInstallUrl$,
+      {
+        appSlug,
+        userId: args.state.userId,
+        orgId: args.orgId,
+        composeId: args.composeId,
+        callbackOrigin: origin,
+        providerCallbackOrigin: origin,
+        secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
+        oauthRequestedScopes: args.state.oauthRequestedScopes ?? undefined,
+        userAuthorization: {
+          clientId: credentials.clientId,
+          installationId: args.installationId,
+        },
+      },
+      signal,
+    );
+    return noStoreRedirect(authorizationUrl);
+  },
+);
+
 const completeGithubAppInstallationCallback$ = command(
   async (
     { set },
@@ -917,6 +972,7 @@ const completeGithubAppInstallationCallback$ = command(
       readonly query: GithubAppSetupCallbackQuery;
       readonly state: ParsedGithubOauthState;
       readonly composeId: string;
+      readonly connectUser: boolean;
     },
     signal: AbortSignal,
   ): Promise<Response> => {
@@ -949,13 +1005,36 @@ const completeGithubAppInstallationCallback$ = command(
       return worksErrorRedirect("Missing installation ID from GitHub");
     }
 
+    if (!args.query.code) {
+      return await set(
+        requestGithubInstallationUserAuthorization$,
+        { state: args.state, orgId, composeId: args.composeId, installationId },
+        signal,
+      );
+    }
+    const prepared = await set(
+      prepareGithubSetupUserIdentity$,
+      {
+        code: args.query.code,
+        installationId,
+        state: args.state,
+        appId: args.appId,
+        privateKey: args.privateKey,
+      },
+      signal,
+    );
+    if (!prepared.ok) {
+      return prepared.response;
+    }
+
     const existingResponse = await set(
       connectExistingGithubInstallation$,
       {
         installationId,
         orgId,
         state: args.state,
-        code: args.query.code,
+        identity: prepared.identity,
+        connectUser: args.connectUser,
       },
       signal,
     );
@@ -967,11 +1046,13 @@ const completeGithubAppInstallationCallback$ = command(
       return worksErrorRedirect(GITHUB_SINGLE_INSTALLATION_REQUIRED);
     }
 
-    const { installInfo, token, adminGithubUserId } =
-      await prepareGithubInstallationFromCallback(
-        { appId: args.appId, privateKey: args.privateKey, installationId },
-        signal,
-      );
+    const installInfo = prepared.identity.installInfo;
+    const { token } = await getGithubInstallationAccessToken(
+      { appId: args.appId, privateKey: args.privateKey, installationId },
+      signal,
+    );
+    const adminGithubUserId =
+      installInfo.targetType === "User" ? installInfo.targetId : null;
     const featureSwitchContext = await set(
       loadComposeFeatureSwitchContext$,
       { composeId: args.composeId, userId: args.state.userId },
@@ -994,21 +1075,115 @@ const completeGithubAppInstallationCallback$ = command(
     );
     signal.throwIfAborted();
 
+    if (!args.connectUser) {
+      return githubSetupCompleteRedirect(false);
+    }
     const connection = await set(
       connectGithubUserAfterSetup$,
       {
         orgId,
         installRecordId,
-        ghInstallationId: installationId,
         state: args.state,
-        code: args.query.code,
-        knownGithubUserId: adminGithubUserId,
+        identity: prepared.identity,
       },
       signal,
     );
     return connection.ok
       ? githubSetupCompleteRedirect(connection.connected)
       : connection.response;
+  },
+);
+
+const claimGithubInstallationCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly query: GithubAppSetupCallbackQuery;
+      readonly state: ParsedGithubOauthState;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (!args.query.state) {
+      return {
+        ok: false as const,
+        response: worksErrorRedirect(
+          "Please reconnect GitHub from settings to authorize this installation.",
+        ),
+      };
+    }
+    const claimed = await set(
+      claimBuiltinConnectorOAuthState$,
+      { state: args.query.state!, connectorSlug: "github" },
+      signal,
+    );
+    if (
+      claimed.kind !== "usable" ||
+      claimed.state.authMethod !== "github-app-install" ||
+      claimed.state.userId !== args.state.userId ||
+      claimed.state.orgId !== args.state.orgId ||
+      claimed.state.agentId !== args.state.composeId ||
+      claimed.state.redirectUri !== args.state.callbackRedirectUri
+    ) {
+      return {
+        ok: false as const,
+        response: worksErrorRedirect(
+          "This installation authorization has expired or was already used. Please reconnect GitHub from settings.",
+        ),
+      };
+    }
+    const composeId = args.state.composeId;
+    const actorError = await set(
+      checkOAuthCallbackActor$,
+      { userId: claimed.state.userId, orgId: claimed.state.orgId },
+      signal,
+    );
+    if (actorError) {
+      return { ok: false as const, response: worksErrorRedirect(actorError) };
+    }
+    if (!composeId) {
+      return {
+        ok: false as const,
+        response: worksErrorRedirect(
+          "Missing default agent. Please select an agent before connecting GitHub.",
+        ),
+      };
+    }
+    const continuation =
+      claimed.state.oauthContext === null
+        ? null
+        : z
+            .object({ installationId: z.string().regex(/^\d+$/) })
+            .parse(safeJsonParse(claimed.state.oauthContext));
+    if (
+      continuation &&
+      args.query.installation_id &&
+      args.query.installation_id !== continuation.installationId
+    ) {
+      return {
+        ok: false as const,
+        response: worksErrorRedirect(
+          "The GitHub installation does not match this authorization.",
+        ),
+      };
+    }
+    if (continuation && !args.query.code) {
+      return {
+        ok: false as const,
+        response: worksErrorRedirect(
+          "GitHub authorization was not completed. Please reconnect from settings.",
+        ),
+      };
+    }
+    return {
+      ok: true as const,
+      composeId,
+      query: {
+        ...args.query,
+        installation_id:
+          continuation?.installationId ?? args.query.installation_id,
+      },
+      connectUser: continuation === null,
+    };
   },
 );
 
@@ -1038,12 +1213,13 @@ const callbackGithubOauth$ = command(
       return worksErrorRedirect("GitHub App integration is not configured");
     }
 
-    if (query.error) {
-      return worksErrorRedirect(
-        query.error_description || query.error || "GitHub authorization failed",
-      );
+    if (query.error && (!query.state || !stateResolution.ok)) {
+      return worksErrorRedirect(query.error_description || query.error);
     }
-    if (query.setup_action === "update") {
+    if (
+      query.setup_action === "update" &&
+      (!query.state || !stateResolution.ok)
+    ) {
       set(writeDb$);
       return await set(
         githubAppUpdateCallbackResponse$,
@@ -1060,16 +1236,29 @@ const callbackGithubOauth$ = command(
     if (!stateResolution.ok) {
       return stateResolution.response;
     }
-    const { state } = stateResolution;
-    const composeId = state.composeId;
-    if (!composeId) {
+    const claimed = await set(
+      claimGithubInstallationCallback$,
+      { query, state: stateResolution.state },
+      signal,
+    );
+    if (!claimed.ok) {
+      return claimed.response;
+    }
+    if (query.error) {
       return worksErrorRedirect(
-        "Missing default agent. Please select an agent before connecting GitHub.",
+        query.error_description || query.error || "GitHub authorization failed",
       );
     }
     return await set(
       completeGithubAppInstallationCallback$,
-      { appId, privateKey, query, state, composeId },
+      {
+        appId,
+        privateKey,
+        query: claimed.query,
+        state: stateResolution.state,
+        composeId: claimed.composeId,
+        connectUser: claimed.connectUser,
+      },
       signal,
     );
   },

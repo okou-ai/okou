@@ -27,7 +27,7 @@ import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
+import { onRef, resetSignal, settle, withCleanup } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -118,8 +118,8 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
   readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
   readonly removeFileDraft$: Command<void, [string]>;
-  readonly callbackFailed$: Computed<boolean>;
-  readonly busy$: Computed<boolean>;
+  readonly operation$: Computed<Promise<void> | undefined>;
+  readonly callbackOperation$: Computed<Promise<void> | undefined>;
   readonly entryState$: Computed<
     "idle" | "checking" | "ready" | "unavailable" | "invalid"
   >;
@@ -773,7 +773,6 @@ function callbackArgs(
 interface BrowserUserActionMutationContext {
   readonly descriptor: BrowserUserActionDescriptor;
   readonly request$: BrowserUserActionSignals["request$"];
-  readonly busy$: BrowserUserActionSignals["busy$"];
   readonly write$: ReturnType<typeof createBrowserMutationSignal>;
   readonly draft$: BrowserUserActionSignals["draft$"];
   readonly choiceDraft$: BrowserUserActionSignals["choiceDraft$"];
@@ -786,7 +785,6 @@ interface BrowserUserActionMutationContext {
   readonly entryState$: BrowserUserActionSignals["entryState$"];
   readonly invalidateEntry$: BrowserUserActionSignals["invalidateEntry$"];
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
-  readonly activeMutation$: State<boolean>;
   readonly deliverCallback$: Command<
     Promise<void>,
     [string, ChatActionCallbackIds, AbortSignal]
@@ -1322,13 +1320,10 @@ function browserInputSubmissionError(error: unknown): Error {
     : new Error("Browser file could not be read or uploaded");
 }
 
-function createBrowserMutationSignal(
-  descriptor: BrowserUserActionDescriptor,
-  activeMutation$: State<boolean>,
-) {
+function createBrowserMutationSignal(descriptor: BrowserUserActionDescriptor) {
   return command(
     async (
-      { get, set },
+      { get },
       mutation:
         | {
             readonly kind: "apply";
@@ -1346,11 +1341,7 @@ function createBrowserMutationSignal(
         mutation.kind === "apply"
           ? client.apply({ ...options, body: { values: mutation.values } })
           : client.cancel({ ...options, body: {} });
-      return await accept(request, [200, 403, 404, 409, 410], signal).finally(
-        () => {
-          set(activeMutation$, false);
-        },
-      );
+      return await accept(request, [200, 403, 404, 409, 410], signal);
     },
   );
 }
@@ -1358,7 +1349,6 @@ function createBrowserMutationSignal(
 function createSubmitSignal({
   descriptor,
   request$,
-  busy$,
   write$,
   draft$,
   choiceDraft$,
@@ -1371,18 +1361,11 @@ function createSubmitSignal({
   entryState$,
   invalidateEntry$,
   clearDraft$,
-  activeMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["submit$"] {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(busy$)) {
-      return;
-    }
     const request = await get(request$);
     signal.throwIfAborted();
-    if (get(busy$)) {
-      return;
-    }
     if (
       request.kind !== "action" ||
       request.action.kind !== "input" ||
@@ -1402,14 +1385,6 @@ function createSubmitSignal({
     if (!action || action.state !== "pending") {
       return;
     }
-    set(activeMutation$, true);
-    signal.addEventListener(
-      "abort",
-      () => {
-        set(activeMutation$, false);
-      },
-      { once: true },
-    );
     const prepared = await settle(
       browserInputSubmissionValues(
         action,
@@ -1427,11 +1402,9 @@ function createSubmitSignal({
     );
     signal.throwIfAborted();
     if (!prepared.ok) {
-      set(activeMutation$, false);
       throw browserInputSubmissionError(prepared.error);
     }
     if (!prepared.value) {
-      set(activeMutation$, false);
       return;
     }
     const result = await set(
@@ -1460,15 +1433,12 @@ function createSubmitSignal({
       set(clearDraft$);
     }
     if (result.body.state === "succeeded") {
-      set(activeMutation$, true);
       await set(
         deliverCallback$,
         descriptor.callbackPrompt,
         result.body.callbackIds.success,
         signal,
-      ).finally(() => {
-        set(activeMutation$, false);
-      });
+      );
       signal.throwIfAborted();
     }
   });
@@ -1477,25 +1447,16 @@ function createSubmitSignal({
 function createCancelSignal({
   descriptor,
   request$,
-  busy$,
   write$,
   clearDraft$,
-  activeMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["cancel$"] {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(busy$)) {
-      return;
-    }
     const request = await get(request$);
     signal.throwIfAborted();
-    if (get(busy$)) {
-      return;
-    }
     if (request.kind !== "action" || request.action.state !== "pending") {
       return;
     }
-    set(activeMutation$, true);
     const result = await set(write$, { kind: "cancel" }, signal);
     signal.throwIfAborted();
     const status: number = result.status;
@@ -1506,15 +1467,12 @@ function createCancelSignal({
       result.body.kind === request.action.kind &&
       result.body.state === "cancelled"
     ) {
-      set(activeMutation$, true);
       await set(
         deliverCallback$,
         BROWSER_INPUT_CANCELLATION_PROMPT,
         result.body.callbackIds.cancellation,
         signal,
-      ).finally(() => {
-        set(activeMutation$, false);
-      });
+      );
       signal.throwIfAborted();
     }
   });
@@ -1523,19 +1481,11 @@ function createCancelSignal({
 function createContinueSignal({
   descriptor,
   request$,
-  busy$,
-  activeMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["continue$"] {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(busy$)) {
-      return;
-    }
     const request = await get(request$);
     signal.throwIfAborted();
-    if (get(busy$)) {
-      return;
-    }
     if (request.kind !== "action") {
       return;
     }
@@ -1554,12 +1504,7 @@ function createContinueSignal({
     if (!callback) {
       return;
     }
-    set(activeMutation$, true);
-    await set(deliverCallback$, callback.prompt, callback.ids, signal).finally(
-      () => {
-        set(activeMutation$, false);
-      },
-    );
+    await set(deliverCallback$, callback.prompt, callback.ids, signal);
   });
 }
 
@@ -1594,39 +1539,33 @@ function createMutationSignals({
   | "invalidateEntry$"
 >): Pick<
   BrowserUserActionSignals,
-  "callbackFailed$" | "busy$" | "submit$" | "cancel$" | "continue$"
+  "operation$" | "callbackOperation$" | "submit$" | "cancel$" | "continue$"
 > {
-  const callbackFailedState$ = state(false);
-  const activeMutation$ = state(false);
-  const busy$ = computed((get) => {
-    return get(activeMutation$);
-  });
-  const write$ = createBrowserMutationSignal(descriptor, activeMutation$);
+  const internalOperation$ = state<Promise<void> | undefined>(undefined);
+  const internalCallbackOperation$ = state<Promise<void> | undefined>(
+    undefined,
+  );
+  const running$ = state<Promise<void> | null>(null);
+  const write$ = createBrowserMutationSignal(descriptor);
   const deliverCallback$ = command(
-    async (
+    (
       { set },
       callbackPrompt: string,
       callbackIds: ChatActionCallbackIds,
       signal: AbortSignal,
     ): Promise<void> => {
-      set(callbackFailedState$, false);
-      await onRejection(
-        set(
-          runChatActionCallback$,
-          callbackArgs(descriptor, callbackPrompt, callbackIds),
-          signal,
-        ),
-        () => {
-          set(callbackFailedState$, true);
-        },
+      const operation = set(
+        runChatActionCallback$,
+        callbackArgs(descriptor, callbackPrompt, callbackIds),
+        signal,
       );
-      signal.throwIfAborted();
+      set(internalCallbackOperation$, operation);
+      return operation;
     },
   );
   const context: BrowserUserActionMutationContext = {
     descriptor,
     request$,
-    busy$,
     write$,
     draft$,
     choiceDraft$,
@@ -1639,18 +1578,35 @@ function createMutationSignals({
     entryState$,
     invalidateEntry$,
     clearDraft$,
-    activeMutation$,
     deliverCallback$,
   };
 
+  const trackOperation = (action$: Command<Promise<void>, [AbortSignal]>) => {
+    return command(({ get, set }, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      const running = get(running$);
+      if (running) {
+        return running;
+      }
+      const operation = withCleanup(set(action$, signal), () => {
+        set(running$, null);
+      });
+      set(running$, operation);
+      set(internalOperation$, operation);
+      return operation;
+    });
+  };
+
   return {
-    callbackFailed$: computed((get) => {
-      return get(callbackFailedState$);
+    operation$: computed((get) => {
+      return get(internalOperation$);
     }),
-    busy$,
-    submit$: createSubmitSignal(context),
-    cancel$: createCancelSignal(context),
-    continue$: createContinueSignal(context),
+    callbackOperation$: computed((get) => {
+      return get(internalCallbackOperation$);
+    }),
+    submit$: trackOperation(createSubmitSignal(context)),
+    cancel$: trackOperation(createCancelSignal(context)),
+    continue$: trackOperation(createContinueSignal(context)),
   };
 }
 

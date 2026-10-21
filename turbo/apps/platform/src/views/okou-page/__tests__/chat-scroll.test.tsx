@@ -10,7 +10,10 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockChatEventRows,
   normalizeMockChatEvents,
@@ -19,10 +22,13 @@ import {
 import {
   chatScrollContainer,
   chatComposerTextarea,
-  context,
-  mockChatLifecycleWithoutBrowserSession,
   setupPage,
+  createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
+
+const context = testContext();
+const { mockChatLifecycleWithoutBrowserSession } =
+  createChatLifecycleHelpers(context);
 
 const ROW_HEIGHT_PX = 100;
 const ROW_CONTENT_HEIGHT_PX = 80;

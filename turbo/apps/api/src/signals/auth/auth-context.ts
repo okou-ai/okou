@@ -25,7 +25,6 @@ import { AgentAuthContext, AuthContext, CliAuth } from "../../types/auth";
 import {
   cliTokenRecord,
   getMemberRoleAndUpdateCache$,
-  MemberRoleRefreshUnavailableError,
   updateCliTokenLastUsedAt$,
 } from "../services/auth.service";
 import {
@@ -378,16 +377,6 @@ export const requiredAuthContext$ = command(
         set(setResHeader$, "Cache-Control", "no-store");
         return providerUnavailable(
           "OAuth verification is temporarily unavailable",
-        );
-      }
-      if (resolved.error instanceof MemberRoleRefreshUnavailableError) {
-        L.error("Membership refresh unavailable during authentication", {
-          type: "membership_refresh_unavailable",
-          reason: resolved.error.reason,
-        });
-        set(setResHeader$, "Cache-Control", "no-store");
-        return providerUnavailable(
-          "Authentication refresh is temporarily unavailable",
         );
       }
       // Among Clerk failures, only an exhausted read is mapped here. The
