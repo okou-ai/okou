@@ -578,28 +578,13 @@ async function insertConnectorConnection(
   return { kind: "written", row: sibling };
 }
 
-function writtenRowOrThrow(
+export function connectorConnectionWrittenRow(
   outcome: ConnectorConnectionWriteOutcome,
 ): StoredConnectorConnectionRow {
   if (outcome.kind !== "written") {
     throw new ConnectorConnectionWriteLostError(outcome.kind);
   }
   return outcome.row;
-}
-
-/**
- * Row-returning form of {@link writeConnectorConnectionMetadataOutcome}; a
- * concurrently lost resolution throws {@link ConnectorConnectionWriteLostError}.
- */
-export async function writeConnectorConnectionMetadata(
-  db: Tx,
-  args: ConnectorConnectionMetadataArgs & {
-    readonly resolution: ReadyConnectorConnectionMutation;
-  },
-): Promise<StoredConnectorConnectionRow> {
-  return writtenRowOrThrow(
-    await writeConnectorConnectionMetadataOutcome(db, args),
-  );
 }
 
 export async function replaceConnectorConnectionOutcome(
@@ -635,18 +620,4 @@ export async function replaceConnectorConnectionOutcome(
   signal.throwIfAborted();
 
   return outcome;
-}
-
-/**
- * Row-returning form of {@link replaceConnectorConnectionOutcome}; a
- * concurrently lost resolution throws {@link ConnectorConnectionWriteLostError}.
- */
-export async function replaceConnectorConnection(
-  db: Tx,
-  args: ReplaceConnectorConnectionArgs,
-  signal: AbortSignal,
-): Promise<StoredConnectorConnectionRow> {
-  return writtenRowOrThrow(
-    await replaceConnectorConnectionOutcome(db, args, signal),
-  );
 }
