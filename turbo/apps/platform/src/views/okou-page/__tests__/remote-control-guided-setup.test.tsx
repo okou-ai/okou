@@ -1451,8 +1451,8 @@ test("SSH login methods are explicit keyboard choices that show only the matchin
   const username = await directForm();
   await fill(username, "operator");
   const methods = screen.getByRole("radiogroup", { name: "Login method" });
-  const password = within(methods).getByLabelText("Use an account password");
-  const key = within(methods).getByLabelText("Use an SSH key");
+  const password = getAction("radio", "Account password", methods);
+  const key = getAction("radio", "SSH key", methods);
   expect(password).toHaveAttribute("aria-checked", "true");
   expect(key).toHaveAttribute("aria-checked", "false");
   expect(screen.getByLabelText("Password")).toBeRequired();
@@ -1463,6 +1463,9 @@ test("SSH login methods are explicit keyboard choices that show only the matchin
   expect(key).toHaveAttribute("aria-checked", "true");
   expect(key).toHaveFocus();
   expect(screen.getByLabelText("Private key")).toBeRequired();
+  expect(screen.getByLabelText("Private key")).toHaveAccessibleDescription(
+    "Paste or import the complete SSH private key, not the .pub public-key file.",
+  );
   expect(screen.getByLabelText("Choose private key file")).toBeEnabled();
   expect(screen.getByLabelText("Passphrase (optional)")).not.toBeRequired();
   expect(screen.queryByLabelText("Password")).toBeNull();
@@ -1487,7 +1490,7 @@ test("Selecting SSH key login submits the private key rather than the previous p
   await fill(screen.getByLabelText("Device address"), "ssh.example.com");
   await fill(username, "operator");
   await fill(screen.getByLabelText("Password"), "unused-password");
-  click(screen.getByLabelText("Use an SSH key"));
+  click(getAction("radio", "SSH key"));
   await fill(screen.getByLabelText("Private key"), " test-private-key\n");
   await fill(screen.getByLabelText("Passphrase (optional)"), "test-passphrase");
   await fill(screen.getByLabelText(/Connection name/u), "Key login device");
@@ -1714,11 +1717,11 @@ test("An idempotent retry keeps the connection name from the locked draft", asyn
   click(getAction("button", "Save"));
   await screen.findByText("Save failed.");
   expect(name).toBeDisabled();
-  expect(screen.getByLabelText("Use an account password")).toHaveAttribute(
+  expect(getAction("radio", "Account password")).toHaveAttribute(
     "aria-disabled",
     "true",
   );
-  expect(screen.getByLabelText("Use an SSH key")).toHaveAttribute(
+  expect(getAction("radio", "SSH key")).toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -1953,7 +1956,7 @@ test("SSH login reuse is optional, shows the selected account, and can return to
   ).toBeInTheDocument();
   expect(screen.getByText("operator · Password")).toBeInTheDocument();
   expect(screen.queryByLabelText("Password")).toBeNull();
-  expect(screen.queryByLabelText("Use an SSH key")).toBeNull();
+  expect(queryAction("radio", "SSH key")).toBeNull();
   click(getAction("button", "Enter details manually"));
   await expect(screen.findByLabelText("SSH username")).resolves.toHaveValue("");
   expect(screen.getByLabelText("Password")).toHaveValue("");

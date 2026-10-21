@@ -59,8 +59,6 @@ import {
   Input,
   Textarea,
   Checkbox,
-  Radio,
-  RadioGroup,
   SegmentControl,
   SegmentControlItem,
   surfaceVariants,
@@ -390,13 +388,6 @@ function PrivateKeyFields({
   const signal = useGet(pageSignal$);
   return (
     <>
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return guided
-            ? $.remoteControlSetup.sshPrivateKeyHelp
-            : $.ssh.credentialsHelp;
-        })}
-      </p>
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-2">
           <label htmlFor="ssh-private-key">
@@ -431,6 +422,7 @@ function PrivateKeyFields({
         </div>
         <Textarea
           id="ssh-private-key"
+          aria-describedby="ssh-private-key-help"
           ref={mountPrivateKey}
           name="privateKey"
           placeholder={t(($) => {
@@ -444,6 +436,13 @@ function PrivateKeyFields({
             cancelRead();
           }}
         />
+        <p id="ssh-private-key-help" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return guided
+              ? $.remoteControlSetup.sshPrivateKeyHelp
+              : $.ssh.credentialsHelp;
+          })}
+        </p>
         {result.state === "loading" && (
           <p role="status" className="text-sm text-muted-foreground">
             {t(($) => {
@@ -491,73 +490,29 @@ function GuidedSshAuthenticationMethod({
   const { t } = useTranslation();
   const editor = useGet(sshCredentialEditor$);
   const chooseMethod = useSet(chooseSshAuthMethod$);
-  const options = [
-    {
-      value: "password",
-      label: t(($) => {
-        return $.remoteControlSetup.usePassword;
-      }),
-      description: t(($) => {
-        return $.remoteControlSetup.sshPasswordDescription;
-      }),
-      icon: <LockKeyhole size={20} aria-hidden />,
-    },
-    {
-      value: "private_key",
-      label: t(($) => {
-        return $.remoteControlSetup.useSshKey;
-      }),
-      description: t(($) => {
-        return $.remoteControlSetup.sshKeyDescription;
-      }),
-      icon: <KeyRound size={20} aria-hidden />,
-    },
-  ];
   return (
-    <div className="grid gap-3">
-      <span id="guided-ssh-auth-method-label" className="font-medium">
+    <SegmentControl
+      aria-label={t(($) => {
+        return $.remoteControlSetup.sshLoginMethod;
+      })}
+      value={editor.method}
+      onValueChange={chooseMethod}
+      disabled={disabled}
+      className="max-w-full justify-self-start"
+    >
+      <SegmentControlItem value="password">
+        <LockKeyhole aria-hidden />
         {t(($) => {
-          return $.remoteControlSetup.sshLoginMethod;
+          return $.remoteControlSetup.usePassword;
         })}
-      </span>
-      <RadioGroup
-        aria-labelledby="guided-ssh-auth-method-label"
-        value={editor.method}
-        onValueChange={chooseMethod}
-        disabled={disabled}
-        className="grid gap-3 sm:grid-cols-2"
-      >
-        {options.map((option) => {
-          return (
-            <label
-              key={option.value}
-              className="flex cursor-pointer items-center gap-3 rounded-lg border border-divider p-4 hover:bg-gray-50 has-data-checked:border-foreground has-data-checked:bg-gray-50 has-data-disabled:cursor-not-allowed has-data-disabled:opacity-50 has-focus-visible:ring-2 has-focus-visible:ring-ring"
-            >
-              <span className="shrink-0 text-muted-foreground">
-                {option.icon}
-              </span>
-              <span className="grid min-w-0 flex-1 gap-1">
-                <span id={`ssh-${option.value}-label`} className="font-medium">
-                  {option.label}
-                </span>
-                <span
-                  id={`ssh-${option.value}-description`}
-                  className="text-sm leading-5 text-muted-foreground"
-                >
-                  {option.description}
-                </span>
-              </span>
-              <Radio
-                value={option.value}
-                aria-labelledby={`ssh-${option.value}-label`}
-                aria-describedby={`ssh-${option.value}-description`}
-                className="data-checked:border-foreground data-checked:bg-foreground"
-              />
-            </label>
-          );
+      </SegmentControlItem>
+      <SegmentControlItem value="private_key">
+        <KeyRound aria-hidden />
+        {t(($) => {
+          return $.remoteControlSetup.useSshKey;
         })}
-      </RadioGroup>
-    </div>
+      </SegmentControlItem>
+    </SegmentControl>
   );
 }
 
@@ -890,7 +845,7 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">
             {t(($) => {
-              return $.remoteControlSetup.loginHeading;
+              return $.remoteControlSetup.sshLoginMethod;
             })}
           </h3>
           <SshSavedLoginPicker disabled={disabled} />
@@ -1601,11 +1556,13 @@ function SshHostFields({
               {tailscale && <TailscaleSelection disabled={fieldsDisabled} />}
             </div>
           </details>
-          <h2 className="text-base font-medium">
-            {t(($) => {
-              return $.remoteControlSetup.loginHeading;
-            })}
-          </h2>
+          {connectionEditor.mode === "tailscale_ssh" && (
+            <h2 className="text-base font-medium">
+              {t(($) => {
+                return $.remoteControlSetup.loginHeading;
+              })}
+            </h2>
+          )}
         </>
       ) : (
         <>
