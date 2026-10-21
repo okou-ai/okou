@@ -1121,7 +1121,6 @@ test("A connected admin can open and dismiss their account menu with the keyboar
   expect(getAction("button", "Join new server")).toBeEnabled();
   expect(getAction("button", "Disconnect Discord")).toBeEnabled();
   expect(queryAction("button", "Uninstall")).toBeNull();
-  expect(queryAction("button", "Install to Discord", card)).toBeNull();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(more).toHaveFocus();

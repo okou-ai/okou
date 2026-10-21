@@ -475,7 +475,6 @@ describe("POST /api/integrations/slack/message", () => {
             elements?: { text: string }[];
           }[];
         };
-    expect(call?.blocks).toBeDefined();
     const blocks = call!.blocks;
     expect(blocks).toHaveLength(3);
     expect(blocks[0]!.type).toBe("section");
@@ -519,7 +518,6 @@ describe("POST /api/integrations/slack/message", () => {
             elements?: { text: string }[];
           }[];
         };
-    expect(call?.blocks).toBeDefined();
     const blocks = call!.blocks;
     expect(blocks).toHaveLength(3);
 

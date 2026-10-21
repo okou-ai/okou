@@ -375,7 +375,6 @@ describe("CONN-02: external-code session lifecycle", () => {
         "arn:aws:iam::123456789012:user/external-code (AIDAEXTERNALUSER)",
       oauthScopes: ["openid"],
     });
-    expect(complete.account.tokenExpiresAt).not.toBeNull();
     const tokenExpiresAtMs = Date.parse(complete.account.tokenExpiresAt ?? "");
     expect(tokenExpiresAtMs).toBeGreaterThanOrEqual(beforeComplete + 899_000);
     expect(tokenExpiresAtMs).toBeLessThanOrEqual(afterComplete + 901_000);

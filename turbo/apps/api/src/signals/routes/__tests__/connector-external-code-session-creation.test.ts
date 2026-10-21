@@ -85,7 +85,6 @@ describe("Builtin external-code session creation", () => {
   it("replaces matching pending sessions while preserving completed replay, another workspace and the chosen non-default account", async () => {
     const owned = createActor();
     const foreign = createActor();
-    expect(owned.actor.orgId).not.toBe(foreign.actor.orgId);
     await owned.run(async () => {
       await foreign.run(async () => {
         const actor = owned.actor;

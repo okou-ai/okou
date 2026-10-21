@@ -198,7 +198,6 @@ test("stages only the requesting owner's OAuth export content without capabiliti
   const ownState = new URL(ownAttempt.body.authorizationUrl).searchParams.get(
     "state",
   );
-  expect(ownState).not.toBeNull();
   for (const hidden of [
     peer.userId,
     peerBinding.discordUserId,

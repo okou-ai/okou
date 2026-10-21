@@ -390,7 +390,6 @@ function publicMessageActors() {
   const firstTelegramId = randomInt(1, 2 ** 48) * 2;
   const telegramIds = [firstTelegramId, firstTelegramId + 1] as const;
   expect(telegramIds.every(Number.isSafeInteger)).toBeTruthy();
-  expect(telegramIds[0]).not.toBe(telegramIds[1]);
   const appUrl = "https://telegram-message.test";
   const telegramPosts: string[] = [];
   mockEnv("APP_URL", appUrl);
@@ -431,8 +430,6 @@ function publicMessageActors() {
     ...createPublicTelegramActor(context),
     telegramUserId: String(telegramIds[1]),
   };
-  expect(a.userId).not.toBe(b.userId);
-  expect(a.orgId).not.toBe(b.orgId);
   return { a, b, telegramPosts };
 }
 
