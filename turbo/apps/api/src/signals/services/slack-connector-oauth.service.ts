@@ -3,6 +3,7 @@ import { connectSlackWorkspace$ } from "./slack-workspace-write.service";
 import { randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
+import { checkOAuthCallbackActor$ } from "./oauth-callback-actor";
 import { and, eq } from "drizzle-orm";
 import { persistSlackInstallation$ } from "./slack-installation-write.service";
 import {
@@ -262,6 +263,10 @@ const resolveSlackConnectorCallback$ = command(
       return failed("Invalid Slack authorization context.");
     }
     const context = parsed.data;
+    const actorError = await set(checkOAuthCallbackActor$, context, signal);
+    if (actorError) {
+      return failed(actorError, context);
+    }
     if (args.error || !args.code) {
       return failed(
         "Slack authorization was not completed. Please try again.",

@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 import {
   billingStatusContract,
@@ -19,27 +20,27 @@ import { mockNow } from "../../../lib/time.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import { SharedDatabaseMessagePortServer } from "../../../shared-database/message-port-server.ts";
 import { sharedDatabaseWorkerMessageSchema } from "../../../shared-database/protocol.ts";
-import {
-  buildRunModel,
-  composerModelTrigger,
-} from "./chat-composer-test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
-  context,
   findButton,
   findEnabledButton,
-  installRunChat,
   NEW_CHAT_PATH,
   promptEvent,
   queryButton,
   readyChat,
   RUN_PATH,
   sendText,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const RUN_A = "a0000000-0000-4000-a000-000000000301";
 const RUN_B = "a0000000-0000-4000-a000-000000000302";

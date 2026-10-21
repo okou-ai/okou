@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   userTemplatesContract,
   type UserTemplateCatalogEntry,
@@ -16,18 +17,20 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  buildRunModel,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   findComposerEditor,
   tabByText,
 } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import {
   AGENT_ID,
-  context,
   createUploadedTemplate,
-  mockPresentationTemplateLibrary,
-  mockTemplateChat,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockPresentationTemplateLibrary, mockTemplateChat } =
+  createTemplateGalleryHelpers(context);
 
 function template(kind: UserTemplateKind): UserTemplateCatalogEntry {
   const id = {

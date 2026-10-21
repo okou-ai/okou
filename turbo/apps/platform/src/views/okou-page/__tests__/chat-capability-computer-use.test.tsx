@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   computerUseHostsContract,
   type ComputerUseHost,
@@ -13,20 +14,23 @@ import { expect, test } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
   computerUsePermissions,
-  mockMacUserAgentData,
   setupPage,
+  createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   NEW_CHAT_PATH,
   promptEvent,
   queryButton,
   readyChat,
   RUN_PATH,
   sendText,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { mockMacUserAgentData } = createChatLifecycleHelpers(context);
+const { installRunChat } = createChatRunFixtures(context);
 
 const PRIMARY_HOST_ID = "e0000000-0000-4000-a000-000000001001";
 const SECONDARY_HOST_ID = "e0000000-0000-4000-a000-000000001002";

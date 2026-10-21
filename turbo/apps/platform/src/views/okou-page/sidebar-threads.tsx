@@ -739,8 +739,27 @@ export function ChatThreadItem({
 }
 
 function ChatThreadRenameDialog() {
-  const { t } = useTranslation();
   const renameDialogOpen = useGet(renameDialogOpen$);
+  const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
+
+  return (
+    <Dialog
+      open={renameDialogOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          closeRenameChatThreadDialog();
+        }
+      }}
+    >
+      <DialogContent finalFocus={false}>
+        <ChatThreadRenameDialogBody />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ChatThreadRenameDialogBody() {
+  const { t } = useTranslation();
   const renameDialogThreadId = useGet(renameDialogThreadId$);
   const renameDialogAgentId = useGet(renameDialogAgentId$);
   const renameDialogInput = useGet(renameDialogInput$);
@@ -772,68 +791,59 @@ function ChatThreadRenameDialog() {
   }
 
   return (
-    <Dialog
-      open={renameDialogOpen}
-      onOpenChange={(open) => {
-        if (!open) {
-          closeRenameDialog();
-        }
-      }}
-    >
-      <DialogContent finalFocus={false}>
-        <DialogHeader>
-          <DialogTitle>
-            {t(($) => {
-              return $.chat.sidebar.rename;
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          {t(($) => {
+            return $.chat.sidebar.rename;
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          {t(($) => {
+            return $.chat.sidebar.renameDescription;
+          })}
+        </DialogDescription>
+      </DialogHeader>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleRename();
+        }}
+      >
+        <div className="py-2">
+          <Input
+            type="text"
+            autoFocus
+            value={renameDialogInput}
+            onChange={(e) => {
+              return setRenameDialogInput(e.target.value);
+            }}
+            placeholder={t(($) => {
+              return $.chat.sidebar.titlePlaceholder;
             })}
-          </DialogTitle>
-          <DialogDescription>
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              closeRenameDialog();
+            }}
+          >
             {t(($) => {
-              return $.chat.sidebar.renameDescription;
+              return $.chat.actions.cancel;
             })}
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            handleRename();
-          }}
-        >
-          <div className="py-2">
-            <Input
-              type="text"
-              autoFocus
-              value={renameDialogInput}
-              onChange={(e) => {
-                return setRenameDialogInput(e.target.value);
-              }}
-              placeholder={t(($) => {
-                return $.chat.sidebar.titlePlaceholder;
-              })}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                closeRenameDialog();
-              }}
-            >
-              {t(($) => {
-                return $.chat.actions.cancel;
-              })}
-            </Button>
-            <Button type="submit" disabled={!renameDialogInput.trim()}>
-              {t(($) => {
-                return $.chat.actions.rename;
-              })}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          </Button>
+          <Button type="submit" disabled={!renameDialogInput.trim()}>
+            {t(($) => {
+              return $.chat.actions.rename;
+            })}
+          </Button>
+        </DialogFooter>
+      </form>
+    </>
   );
 }
 
@@ -846,7 +856,7 @@ function DeleteChatThreadDialogContent({
 }) {
   const { t } = useTranslation();
   return (
-    <DialogContent>
+    <>
       <DialogHeader>
         <DialogTitle>
           {t(($) => {
@@ -871,11 +881,31 @@ function DeleteChatThreadDialogContent({
           })}
         </Button>
       </DialogFooter>
-    </DialogContent>
+    </>
   );
 }
 
 function DeleteChatThreadDialog() {
+  const pendingDeleteThreadId = useGet(pendingDeleteThreadId$);
+  const setPendingDeleteThreadId = useSet(setPendingDeleteThreadId$);
+
+  return (
+    <Dialog
+      open={pendingDeleteThreadId !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          setPendingDeleteThreadId(null);
+        }
+      }}
+    >
+      <DialogContent>
+        <DeleteChatThreadDialogBody />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteChatThreadDialogBody() {
   const pendingDeleteThreadId = useGet(pendingDeleteThreadId$);
   const setPendingDeleteThreadId = useSet(setPendingDeleteThreadId$);
   const deleteChatThread = useSet(deleteChatThread$);
@@ -895,19 +925,10 @@ function DeleteChatThreadDialog() {
   }
 
   return (
-    <Dialog
-      open={pendingDeleteThreadId !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          setPendingDeleteThreadId(null);
-        }
-      }}
-    >
-      <DeleteChatThreadDialogContent
-        onCancel={cancelDelete}
-        onConfirm={confirmDelete}
-      />
-    </Dialog>
+    <DeleteChatThreadDialogContent
+      onCancel={cancelDelete}
+      onConfirm={confirmDelete}
+    />
   );
 }
 

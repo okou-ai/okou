@@ -16,7 +16,7 @@ import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import {
-  buildGithubAppInstallUrl,
+  buildGithubAppInstallUrl$,
   startGithubUserOAuth$,
   findGithubInstallationByInstallationId$,
   getGithubOAuthAuthMethod,
@@ -35,7 +35,7 @@ function githubConnectStartUrl(origin: string): string {
 
 const githubInstallUrl$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -58,15 +58,19 @@ const githubInstallUrl$ = command(
     signal.throwIfAborted();
     const composeId = orgRow?.defaultAgentId ?? null;
 
-    return await buildGithubAppInstallUrl({
-      appSlug,
-      userId: args.userId,
-      orgId: args.orgId,
-      composeId: composeId ?? undefined,
-      callbackOrigin: args.callbackOrigin,
-      providerCallbackOrigin: args.providerCallbackOrigin,
-      secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
-    });
+    return await set(
+      buildGithubAppInstallUrl$,
+      {
+        appSlug,
+        userId: args.userId,
+        orgId: args.orgId,
+        composeId: composeId ?? undefined,
+        callbackOrigin: args.callbackOrigin,
+        providerCallbackOrigin: args.providerCallbackOrigin,
+        secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
+      },
+      signal,
+    );
   },
 );
 

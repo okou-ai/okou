@@ -3,7 +3,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { clerk$, currentUserInfo$ } from "../auth.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { refreshThirdPartySubscriptionsIfStale$ } from "../external/third-party-subscriptions.ts";
-import { bestEffort } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import {
   accountMenuSubscriptionUsageRows,
@@ -38,10 +37,7 @@ export const initializePwaMePage$ = command(
     await Promise.all([
       set(reloadAccountMenuCreditBalances$, signal),
       subscriptionsEnabled
-        ? bestEffort(
-            set(reloadAccountMenuSubscriptionUsageRows$, cacheKey, signal),
-            signal,
-          )
+        ? set(reloadAccountMenuSubscriptionUsageRows$, cacheKey, signal)
         : Promise.resolve(),
     ]);
   },

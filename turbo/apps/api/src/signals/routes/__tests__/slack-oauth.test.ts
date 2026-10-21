@@ -70,6 +70,27 @@ async function appRequest(
   });
 }
 
+/** Start a legitimate authorization as its explicitly named test caller. */
+async function oauthStart(
+  path: string,
+  options: {
+    readonly origin?: string;
+    readonly headers?: RequestInit["headers"];
+  } = {},
+) {
+  const query = new URL(path, API_ORIGIN).searchParams;
+  const orgId = query.get("orgId");
+  const userId = query.get("userId");
+  if (orgId && userId) {
+    createRouteMocks(context).clerk.session(userId, orgId, "org:admin");
+    return await appRequest(path, {
+      ...options,
+      headers: { authorization: "Bearer clerk-session", ...options.headers },
+    });
+  }
+  return await appRequest(path, options);
+}
+
 function mockSlackEnv(): void {
   mockEnv("SLACK_OAUTH_CLIENT_ID", "test-slack-client-id");
   mockOptionalEnv("SLACK_OAUTH_CLIENT_SECRET", "test-slack-client-secret");
@@ -96,7 +117,7 @@ function signedOAuthState(authorizationUrl: URL): {
 }
 
 async function signedStateFromStart(path: string): Promise<string> {
-  const start = await appRequest(path, { origin: API_ORIGIN });
+  const start = await oauthStart(path, { origin: API_ORIGIN });
   const location = start.headers.get("location");
   if (start.status !== 307 || !location) {
     throw new Error(
@@ -192,6 +213,77 @@ describe("Slack OAuth API routes", () => {
     applyOAuthTestEnv();
   });
 
+  it.each(["install", "connect"])(
+    "requires authentication before signing a named identity for %s",
+    async (flow) => {
+      const response = await appRequest(
+        `/api/slack/oauth/${flow}?orgId=org_victim&userId=user_victim`,
+      );
+      const target = new URL(response.headers.get("location")!);
+      expect(target.pathname).toBe("/settings/slack");
+      expect(target.searchParams.get("error")).toContain("sign in");
+    },
+  );
+
+  it.each(["install", "connect"])(
+    "rejects an authenticated caller naming another user for %s",
+    async (flow) => {
+      const victim = unseededIdentity();
+      createRouteMocks(context).clerk.session(
+        `attacker_${victim.userId}`,
+        victim.orgId,
+        "org:admin",
+      );
+      const response = await appRequest(
+        `/api/slack/oauth/${flow}?${new URLSearchParams({ orgId: victim.orgId, userId: victim.userId })}`,
+        { headers: { authorization: "Bearer clerk-session" } },
+      );
+      expect(
+        new URL(response.headers.get("location")!).searchParams.get("error"),
+      ).toContain("different account or organization");
+    },
+  );
+
+  it("checks the authenticated administrator role before starting an installation", async () => {
+    const actor = unseededIdentity();
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      "org:member",
+    );
+    const response = await appRequest(
+      `/api/slack/oauth/install?${new URLSearchParams({ orgId: actor.orgId, userId: actor.userId })}`,
+      { headers: { authorization: "Bearer clerk-session" } },
+    );
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toContain("Only org admins");
+  });
+
+  it("rejects a callback after the authenticated Okou actor switches", async () => {
+    const fixture = unseededIdentity();
+    await seedMembership(fixture.orgId, fixture.userId);
+    const state = await installStateFor({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+    });
+    createRouteMocks(context).clerk.session(
+      `other_${fixture.userId}`,
+      fixture.orgId,
+      "org:admin",
+    );
+    const response = await appRequest(
+      `/api/integrations/slack/oauth/callback?${new URLSearchParams({ state, code: "switched-actor" })}`,
+      { headers: { authorization: "Bearer clerk-session" } },
+    );
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toContain("active account or organization changed");
+    await expect(
+      readIntegrationStatus(fixture.orgId, fixture.userId),
+    ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
+  });
+
   /**
    * Installs the workspace for an org through the production OAuth install
    * flow, then restores this file's OAuth environment and drains the
@@ -281,8 +373,14 @@ describe("Slack OAuth API routes", () => {
   }
 
   async function startPublicCallback(installation: PublicSlackOrgFixture) {
+    createRouteMocks(context).clerk.session(
+      installation.userId,
+      installation.orgId,
+      "org:admin",
+    );
     const response = await accept(
       callbackClient().connect({
+        extraHeaders: { authorization: "Bearer clerk-session" },
         query: { orgId: installation.orgId, userId: installation.userId },
       }),
       [307],
@@ -443,28 +541,21 @@ describe("Slack OAuth API routes", () => {
           linkStatus: { kind: "connect" },
         });
         mockCallbackDirectory(foreignActor);
+        createRouteMocks(context).clerk.session(
+          foreignActor.userId,
+          foreignActor.orgId,
+          "org:admin",
+        );
         const started = await accept(
           callbackClient().connect({
+            extraHeaders: { authorization: "Bearer clerk-session" },
             query: { orgId: installation.orgId, userId: foreignActor.userId },
           }),
           [307],
         );
-        const location = started.headers.get("location");
-        if (!location) {
-          throw new Error("Expected the public Slack authorization URL");
-        }
-        const state = signedOAuthState(new URL(location)).encoded;
-        mockOAuthSuccess({
-          teamId: installation.slackWorkspaceId,
-          authedUserId: slackUserId,
-        });
-        await expect(
-          callbackClient().callback({
-            query: { code: `connect-${randomUUID()}`, state },
-          }),
-        ).rejects.toThrow(
-          "Unknown response status 500 for GET /api/integrations/slack/oauth/callback",
-        );
+        expect(
+          new URL(started.headers.get("location")!).searchParams.get("error"),
+        ).toContain("different account or organization");
         mockCallbackDirectory(installation.actor);
         const after = await readCallbackLink(installation, slackUserId);
         expect(after.body).toStrictEqual(before.body);
@@ -474,7 +565,7 @@ describe("Slack OAuth API routes", () => {
 
   describe("GET /api/slack/oauth/install", () => {
     it("redirects to Slack OAuth with bot scopes and callback URI", async () => {
-      const response = await appRequest("/api/slack/oauth/install");
+      const response = await oauthStart("/api/slack/oauth/install");
 
       expect(response.status).toBe(307);
       const location = response.headers.get("location");
@@ -511,7 +602,7 @@ describe("Slack OAuth API routes", () => {
 
     it("includes platform state and truncates prompt by codepoint", async () => {
       const prompt = "\u{1F600}".repeat(600);
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/install?orgId=org_1&userId=user_1&reinstall=1&prompt=${encodeURIComponent(prompt)}`,
       );
 
@@ -530,7 +621,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("includes the pending prompt in install state when provided", async () => {
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/install?orgId=org_1&userId=user_1&prompt=${encodeURIComponent("summarize my inbox")}`,
       );
 
@@ -548,7 +639,7 @@ describe("Slack OAuth API routes", () => {
     it("truncates long install prompts to protect OAuth state length", async () => {
       const prompt = "x".repeat(1200);
 
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/install?prompt=${encodeURIComponent(prompt)}`,
       );
 
@@ -559,7 +650,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("omits prompt from install state when absent", async () => {
-      const response = await appRequest(
+      const response = await oauthStart(
         "/api/slack/oauth/install?orgId=org_1&userId=user_1",
       );
 
@@ -570,7 +661,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("uses the configured API origin with production web baselines", async () => {
-      const response = await appRequest("/api/slack/oauth/install", {
+      const response = await oauthStart("/api/slack/oauth/install", {
         origin: API_ORIGIN,
         headers: { "x-okou-web-origin": WEB_ORIGIN },
       });
@@ -583,7 +674,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("accepts the exact okou.ai web origin for a shared Okou start", async () => {
-      const response = await appRequest("/api/slack/oauth/install", {
+      const response = await oauthStart("/api/slack/oauth/install", {
         origin: API_ORIGIN,
         headers: { "x-okou-web-origin": "https://okou.ai" },
       });
@@ -597,7 +688,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("trusts okou.ai subdomains for shared Okou starts", async () => {
-      const response = await appRequest("/api/slack/oauth/install", {
+      const response = await oauthStart("/api/slack/oauth/install", {
         origin: API_ORIGIN,
         headers: { "x-okou-web-origin": "https://console.okou.ai" },
       });
@@ -611,7 +702,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("does not accept a callback host from untrusted request headers", async () => {
-      const response = await appRequest("/api/slack/oauth/install", {
+      const response = await oauthStart("/api/slack/oauth/install", {
         origin: API_ORIGIN,
         headers: { "x-okou-web-origin": "https://evil.example" },
       });
@@ -625,7 +716,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("does not trust lookalike okou.ai web origins", async () => {
-      const response = await appRequest("/api/slack/oauth/install", {
+      const response = await oauthStart("/api/slack/oauth/install", {
         origin: API_ORIGIN,
         headers: {
           "x-okou-web-origin": "https://okou.ai.evil.example",
@@ -674,9 +765,15 @@ describe("Slack OAuth API routes", () => {
           { identity: missing, installed: false },
           { identity: first, installed: true },
         ]) {
+          createRouteMocks(context).clerk.session(
+            identity.userId,
+            identity.orgId,
+            "org:admin",
+          );
           const response = await owner.run(() => {
             return accept(
               client.connect({
+                extraHeaders: { authorization: "Bearer clerk-session" },
                 query: {
                   orgId: identity.orgId,
                   userId: identity.userId,
@@ -728,12 +825,13 @@ describe("Slack OAuth API routes", () => {
             reinstall: false,
             prompt: "connect this workspace",
             issuedAt: 1_700_000_000,
+            nonce: expect.stringMatching(/^[a-f0-9]{64}$/),
             redirectUri:
               "https://api.okou.ai/api/integrations/slack/oauth/callback",
           });
           expect(signature).toBe(
             createHmac("sha256", OAUTH_STATE_SIGNING_KEY)
-              .update(`slack-oauth-state-v1:${payload}`)
+              .update(`slack-oauth-state-v2:${payload}`)
               .digest("base64url"),
           );
         }
@@ -743,7 +841,7 @@ describe("Slack OAuth API routes", () => {
     it("redirects to Slack OAuth with team and connect state", async () => {
       const fixture = await installPublicOrg();
 
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
       );
 
@@ -767,7 +865,7 @@ describe("Slack OAuth API routes", () => {
     it("uses the API origin for connect callback URLs", async () => {
       const fixture = await installPublicOrg();
 
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
         {
           origin: API_ORIGIN,
@@ -785,7 +883,7 @@ describe("Slack OAuth API routes", () => {
     it("includes the pending prompt in connect state when provided", async () => {
       const fixture = await installPublicOrg();
 
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}&prompt=${encodeURIComponent("summarize my inbox")}`,
       );
 
@@ -805,7 +903,7 @@ describe("Slack OAuth API routes", () => {
       const fixture = await installPublicOrg();
       const prompt = "x".repeat(1200);
 
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}&prompt=${encodeURIComponent(prompt)}`,
       );
 
@@ -819,7 +917,7 @@ describe("Slack OAuth API routes", () => {
       const fixture = await installPublicOrg();
       const prompt = "\u{1F600}".repeat(600);
 
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}&prompt=${encodeURIComponent(prompt)}`,
       );
 
@@ -838,7 +936,7 @@ describe("Slack OAuth API routes", () => {
     it("omits prompt from connect state when absent", async () => {
       const fixture = await installPublicOrg();
 
-      const response = await appRequest(
+      const response = await oauthStart(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
       );
 
@@ -851,7 +949,7 @@ describe("Slack OAuth API routes", () => {
     it("returns 503 when Slack client ID is not configured", async () => {
       mockEnv("SLACK_OAUTH_CLIENT_ID", "");
 
-      const response = await appRequest(
+      const response = await oauthStart(
         "/api/slack/oauth/connect?orgId=org_1&userId=user_1",
       );
 
@@ -872,7 +970,7 @@ describe("Slack OAuth API routes", () => {
         authedUserId: fixture.slackUserId,
         scope: "chat:write,channels:read",
       });
-      const start = await appRequest(
+      const start = await oauthStart(
         `/api/slack/oauth/install?orgId=${fixture.orgId}&userId=${fixture.userId}`,
         { origin: API_ORIGIN },
       );
@@ -919,7 +1017,7 @@ describe("Slack OAuth API routes", () => {
         teamId: fixture.slackWorkspaceId,
         authedUserId: fixture.slackUserId,
       });
-      const start = await appRequest(
+      const start = await oauthStart(
         `/api/slack/oauth/install?orgId=${fixture.orgId}&userId=${fixture.userId}`,
         { origin: API_ORIGIN },
       );
@@ -952,7 +1050,7 @@ describe("Slack OAuth API routes", () => {
     });
 
     it("rejects a tampered signed redirect URI", async () => {
-      const start = await appRequest("/api/slack/oauth/install", {
+      const start = await oauthStart("/api/slack/oauth/install", {
         origin: API_ORIGIN,
       });
       const { encoded } = signedOAuthState(
@@ -987,7 +1085,7 @@ describe("Slack OAuth API routes", () => {
       const startedAt = Date.parse("2026-09-02T00:00:00.000Z");
 
       await withMockNowForTest(startedAt, async () => {
-        const start = await appRequest("/api/slack/oauth/install", {
+        const start = await oauthStart("/api/slack/oauth/install", {
           origin: API_ORIGIN,
         });
         const state = signedOAuthState(
@@ -1046,7 +1144,7 @@ describe("Slack OAuth API routes", () => {
       mockEnv("OKOU_API_BACKEND_URL", previewApiOrigin);
       mockEnv("APP_URL", previewAppOrigin);
 
-      const start = await appRequest("/api/slack/oauth/install", {
+      const start = await oauthStart("/api/slack/oauth/install", {
         origin: previewApiOrigin,
       });
       expect(start.status).toBe(307);
@@ -1335,6 +1433,9 @@ describe("Slack OAuth API routes", () => {
       );
 
       expect(response.status).toBe(307);
+      expect(
+        new URL(response.headers.get("location")!).searchParams.get("error"),
+      ).toContain("expired or was already used");
       await expect(
         readIntegrationStatus(fixture.orgId, fixture.userId),
       ).resolves.toMatchObject({ isInstalled: true, isConnected: true });
@@ -1440,7 +1541,7 @@ describe("Slack OAuth API routes", () => {
     it("replays the signed Okou redirect URI in the connect token exchange", async () => {
       const fixture = await installPublicOrg();
       await seedMembership(fixture.orgId, fixture.userId, "member");
-      const start = await appRequest(
+      const start = await oauthStart(
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
         { origin: API_ORIGIN },
       );

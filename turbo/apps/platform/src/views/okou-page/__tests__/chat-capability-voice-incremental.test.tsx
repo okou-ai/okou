@@ -1,14 +1,17 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { initSentry } from "../../../lib/sentry.ts";
 import {
-  context,
   findEnabledButton,
-  installRunChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const endpoint = "*/api/voice-io/transcribe/segment";
 

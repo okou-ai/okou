@@ -1,3 +1,9 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  parseChatClipboardPayload,
+  readClipboardItemText,
+  readSingleRichClipboardWrite,
+} from "./chat-clipboard-test-helpers.ts";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
@@ -9,23 +15,25 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  parseChatClipboardPayload,
-  readClipboardItemText,
-  readSingleRichClipboardWrite,
-} from "./chat-lifecycle-test-helpers.ts";
+
 import { mockPrivateUrlSequence } from "./chat-attachment-test-helpers.ts";
 import {
   CAPABILITY_AGENT_ID,
   completedConversation,
-  context,
   FIRST_CAPABILITY_RUN_ID,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
   SECOND_CAPABILITY_RUN_ID,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
-import { installRunChat, promptEvent } from "./chat-run-test-fixtures.ts";
+import {
+  promptEvent,
+  createChatRunFixtures,
+} from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const RESPONSE_TEXT = "The completed response contains reusable guidance.";
 const STRUCTURED_FILE_ID = "structured-reference-file";

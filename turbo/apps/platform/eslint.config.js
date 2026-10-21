@@ -211,6 +211,13 @@ export default [
     },
   },
   {
+    files: ["src/**/__tests__/**/*helper*.{ts,tsx}"],
+    ignores: ["src/signals/__tests__/test-helpers.ts"],
+    rules: {
+      "ccstate/test-context-in-hooks": ["error", { allowRegistration: false }],
+    },
+  },
+  {
     files: [
       "src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx",
     ],

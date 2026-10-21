@@ -164,9 +164,6 @@ function ThreadArtifactsPanel({
   const close = useSet(sidebar.close$);
   const openCatalogArtifact = useSet(sidebar.openCatalogArtifact$);
   const [paging, loadMore] = useLoadableSet(sidebar.artifactCatalog.loadMore$);
-  const [retryLoadable, retryCatalog] = useLoadableSet(
-    sidebar.artifactCatalog.retry$,
-  );
   const pageSignal = useGet(pageSignal$);
 
   // useLastLoadable keeps the previously resolved pages rendered while the
@@ -199,16 +196,7 @@ function ThreadArtifactsPanel({
   const artifactsContent =
     artifacts === null ? (
       catalogLoadable.state === "hasError" ? (
-        <ArtifactCatalogError
-          pending={retryLoadable.state === "loading"}
-          onRetry={() => {
-            detach(
-              retryCatalog(pageSignal),
-              Reason.DomCallback,
-              "thread artifacts sidebar retry",
-            );
-          }}
-        />
+        <ArtifactCatalogError />
       ) : (
         <ArtifactCatalogSkeleton appearance={appearance} />
       )

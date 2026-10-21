@@ -18,16 +18,19 @@ import {
 
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
+  createChatResourcesHelpers,
   RESOURCE_ARTIFACT_ID,
   installResourceGeometry,
   resourceButton,
   resourcePanel,
   resourceState,
-  setupOverflowResources,
-  setupResources,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
+const { setupOverflowResources, setupResources } =
+  createChatResourcesHelpers(context);
 
 test("Keep an empty chat closed through presses while it loads, then show its hint when pressed", async () => {
   installResourceGeometry(480);

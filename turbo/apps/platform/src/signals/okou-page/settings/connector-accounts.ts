@@ -24,13 +24,16 @@ export async function readConnectorAccountPage(
   createClient: ApiClientFactory,
   target: ConnectorAccountTarget,
   signal: AbortSignal,
-  options: { readonly includeBuiltinScopeMismatch?: boolean } = {},
+  options: {
+    readonly includeBuiltinScopeMismatch?: boolean;
+    readonly limit?: number;
+  } = {},
 ) {
   const result = await accept(
     createClient(connectorAccountsContract).connections({
       query: {
         ...target,
-        limit: 50,
+        limit: options.limit ?? 50,
         ...(target.kind === "builtin" && options.includeBuiltinScopeMismatch
           ? { includeScopeMismatch: "true" as const }
           : {}),
@@ -43,13 +46,15 @@ export async function readConnectorAccountPage(
   return result.body;
 }
 
-export async function readConnectorAccountCount(
+export async function hasSavedConnectorAccounts(
   createClient: ApiClientFactory,
   target: ConnectorAccountTarget,
   signal: AbortSignal,
-): Promise<number> {
-  const page = await readConnectorAccountPage(createClient, target, signal);
-  return page.connections.length;
+): Promise<boolean> {
+  const page = await readConnectorAccountPage(createClient, target, signal, {
+    limit: 1,
+  });
+  return page.connections.length > 0;
 }
 
 /** Check the current default when the user explicitly grants account access. */

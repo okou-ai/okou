@@ -114,11 +114,21 @@ Name runner BATS files `run-tNN-<behavior>.bats`, using the next unused `NN`.
 The number is a stable file identifier, not an execution order. Test titles
 should describe behavior without repeating the file identifier.
 
-The workflow uses five isolated identities.
+The workflow uses three fresh user/organization identities:
+
+- Mock native (`runner-mock-claude`) hosts the behavioral cases and personal
+  Claude regressions.
+- Ordinary real Auto (`runner-real-codex`) hosts steering, product-default smoke,
+  and continuation. Each case owns its agents, threads, and runs.
+- Real Auto billing (`runner-real-codex-built-in`) hosts only billing. Usage
+  settlement processes pending events across an organization, so other cases
+  must not share this identity.
+
 Platform identities use `runner-auto-bootstrap.bash`, verify the read-only
 `/api/run-models` response (Auto is the first entry, with `model: "auto"`) and
 select Auto by saving a `null` model preference. Their real/mock runtime flags
-remain isolated. The mock-Claude identity also hosts a personal Codex
+remain isolated. The mock identity verifies these fresh defaults before
+installing personal subscriptions. It also hosts a personal Codex
 subscription: shell-driven BATS select it with
 `runner_e2e_use_mock_codex_profile`, while personal Claude coverage uses that
 identity's Claude subscription. Mock-only helpers reject a missing profile
@@ -127,9 +137,12 @@ are provisioned only after the preview runtime has been pinned to mock mode.
 The Auto smoke, steering, billing and continuation cases exercise the fixed
 OpenRouter preset; personal native-harness cases keep their subscription choices.
 The shared mock-runner identity starts with `UTC` as its timezone.
-Runner BATS must not mutate shared account-level preferences from parallel
-shards. Coverage that needs mutable account-level state requires a dedicated
-identity or a serialized lane.
+Runner BATS must not write conflicting shared account-level preferences from
+parallel shards. Explicit chat model selection also persists the member default;
+the ordinary real cases all select or inherit Auto. Coverage that requires a
+different default or other conflicting account-level state needs a dedicated
+identity or a serialized lane. Historical Runner role markers remain recognized
+by cleanup so retained attempts can still be removed.
 
 Real platform model calls in `e2e/tests` must use Auto, which the API receives as
 `model: null` (pass `auto` as the `runner_chat_send` model argument);
@@ -139,10 +152,9 @@ account preparation. Run it locally with
 the Playwright fixture suite. Personal subscription choices remain available in
 the isolated mocked native-harness profiles.
 
-The default runner and feature-test accounts use limited-free onboarding. The
-remaining dedicated real and mock identities use Pro to preserve billing and
-personal-subscription test prerequisites.
-Runner preparation completes onboarding through
+Every retained Runner identity uses Pro to preserve billing and
+personal-subscription test prerequisites. Runner preparation creates fresh Clerk
+users and admin organizations, signs in, completes onboarding through
 the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.
 Platform Vitest covers the video onboarding UI and checkout return flow.

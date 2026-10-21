@@ -76,28 +76,22 @@ test("prepares and cleans one generation of runner accounts", async () => {
 
     await runRunnerAccount("prepare", environment);
 
-    // Baseline: five user POSTs, five organization POSTs and five role PATCHes.
-    assert.equal(fixture.state.requests.length, 11);
+    // Read creator settings once, then create three user/organization pairs.
+    assert.equal(fixture.state.requests.length, 7);
     await assertPreparedAdminMemberships(fixture.apiUrl, githubOutput);
     assert.deepEqual(fixture.state.organizationRequests, [
-      organizationRequest("user_1", "e2e-runner-pr-123", "runner"),
       organizationRequest(
-        "user_2",
+        "user_1",
         "e2e-runner-real-codex-pr-123",
         "runner-real-codex",
       ),
       organizationRequest(
-        "user_3",
-        "e2e-runner-real-claude-pr-123",
-        "runner-real-claude",
-      ),
-      organizationRequest(
-        "user_4",
+        "user_2",
         "e2e-runner-mock-claude-pr-123",
         "runner-mock-claude",
       ),
       organizationRequest(
-        "user_5",
+        "user_3",
         "e2e-runner-real-codex-built-in-pr-123",
         "runner-real-codex-built-in",
       ),
@@ -105,14 +99,10 @@ test("prepares and cleans one generation of runner accounts", async () => {
     assert.equal(
       await readFile(githubOutput, "utf8"),
       [
-        "runner-organization-id=org_1",
-        "codex-organization-id=org_2",
-        "claude-organization-id=org_3",
-        "mock-claude-organization-id=org_4",
-        "codex-built-in-organization-id=org_5",
-        "runner-email=pr-123+clerk_test+9001-3+runner@vm0-e2e.ai",
+        "codex-organization-id=org_1",
+        "mock-claude-organization-id=org_2",
+        "codex-built-in-organization-id=org_3",
         "codex-email=pr-123+clerk_test+9001-3+runner-real-codex@vm0-e2e.ai",
-        "claude-email=pr-123+clerk_test+9001-3+runner-real-claude@vm0-e2e.ai",
         "mock-claude-email=pr-123+clerk_test+9001-3+runner-mock-claude@vm0-e2e.ai",
         "codex-built-in-email=pr-123+clerk_test+9001-3+runner-real-codex-built-in@vm0-e2e.ai",
         "",
@@ -147,13 +137,9 @@ test("prepares and cleans one generation of runner accounts", async () => {
       "organization:org_1",
       "organization:org_2",
       "organization:org_3",
-      "organization:org_4",
-      "organization:org_5",
       "user:user_1",
       "user:user_2",
       "user:user_3",
-      "user:user_4",
-      "user:user_5",
     ]);
     assert.deepEqual(fixture.state.users, [
       {
@@ -181,7 +167,7 @@ test("prepares admin identities when Clerk uses a non-default creator role", asy
   });
   try {
     await runRunnerAccount("prepare", environment);
-    assert.equal(fixture.state.requests.length, 16);
+    assert.equal(fixture.state.requests.length, 10);
     await assertPreparedAdminMemberships(fixture.apiUrl, githubOutput);
     await runRunnerAccount("cleanup-recorded-generation", environment);
     assert.deepEqual(fixture.state.users, []);
@@ -285,14 +271,14 @@ test("runner resource records survive preparation and a later cleanup attempt", 
       E2E_CLERK_RESOURCE_DIR: join(directory, "resources"),
     });
     await runRunnerAccount("prepare", environment);
-    assert.equal(fixture.state.organizations.length, 5);
+    assert.equal(fixture.state.organizations.length, 3);
     await runRunnerAccount("cleanup-recorded-run", {
       ...environment,
       GITHUB_RUN_ATTEMPT: "4",
     });
     assert.deepEqual(fixture.state.organizations, []);
     assert.deepEqual(fixture.state.users, []);
-    assert.equal(fixture.state.deletionEvents.length, 10);
+    assert.equal(fixture.state.deletionEvents.length, 6);
   } finally {
     await rm(directory, { recursive: true, force: true });
     await closeServer(fixture.server);
@@ -319,6 +305,24 @@ test("run cleanup removes every runner generation for the exact workflow run", a
         GITHUB_RUN_ATTEMPT: "2",
       }),
     );
+
+    // Earlier attempts may have provisioned roles retired from active creation.
+    for (const role of ["runner", "runner-real-claude"]) {
+      fixture.state.users.push({
+        id: `user_${role}`,
+        email: `pr-123+clerk_test+9001-1+${role}@vm0-e2e.ai`,
+      });
+      fixture.state.organizations.push({
+        id: `org_${role}`,
+        request: {
+          created_by: `user_${role}`,
+          name: role,
+          private_metadata: {
+            vm0CiTest: { jobRef: "pr-123", generation: "9001-1", role },
+          },
+        },
+      });
+    }
 
     const retainedResources = [
       {
@@ -373,20 +377,16 @@ test("run cleanup removes every runner generation for the exact workflow run", a
       "organization:org_4",
       "organization:org_5",
       "organization:org_6",
-      "organization:org_7",
-      "organization:org_8",
-      "organization:org_9",
-      "organization:org_10",
+      "organization:org_runner",
+      "organization:org_runner-real-claude",
       "user:user_1",
       "user:user_2",
       "user:user_3",
       "user:user_4",
       "user:user_5",
       "user:user_6",
-      "user:user_7",
-      "user:user_8",
-      "user:user_9",
-      "user:user_10",
+      "user:user_runner",
+      "user:user_runner-real-claude",
     ]);
     assert.deepEqual(
       fixture.state.users.map((user) => user.id),
@@ -699,8 +699,8 @@ async function assertPreparedAdminMemberships(
     .split("\n")
     .filter((line) => line.includes("-organization-id="))
     .map((line) => line.split("=")[1]);
-  assert.equal(organizationIds.length, 5);
-  assert.equal(new Set(organizationIds).size, 5);
+  assert.equal(organizationIds.length, 3);
+  assert.equal(new Set(organizationIds).size, 3);
   for (const [index, id] of organizationIds.entries()) {
     const response = await fetch(`${apiUrl}/organizations/${id}/memberships`);
     assert.equal(response.status, 200);

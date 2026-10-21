@@ -201,13 +201,6 @@ function teamsInstallUrl(): string {
   return url.toString();
 }
 
-function teamsOauthConnectUrl(fixture: TeamsConnectFixture): string {
-  const url = new URL("https://api.okou.test/api/teams/oauth/connect");
-  url.searchParams.set("orgId", fixture.orgId);
-  url.searchParams.set("userId", fixture.userId);
-  return url.toString();
-}
-
 function botFrameworkHandlers(): string[] {
   const requests: string[] = [];
   server.use(
@@ -3816,7 +3809,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       pendingInstallation: false,
       isAdmin: true,
       installUrl: teamsInstallUrl(),
-      connectUrl: teamsOauthConnectUrl(fixture),
+      connectUrl: expect.stringContaining(
+        "https://api.okou.test/api/teams/oauth/connect?connectState=teams-start.",
+      ),
     });
   });
 

@@ -512,8 +512,7 @@
         "websiteAria": "显示网站成果"
       },
       "kindIcon": "{{kind}}成果",
-      "loading": "正在加载成果",
-      "retry": "重试"
+      "loading": "正在加载成果"
     },
     "fileBadges": {
       "artwork": "美术",

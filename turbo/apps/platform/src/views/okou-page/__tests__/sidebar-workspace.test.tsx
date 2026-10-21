@@ -4,18 +4,14 @@ import {
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
-  context,
+  createSidebarHelpers,
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
   mobileSidebar,
-  mockMobileLayout,
-  mockSidebarThreadStory,
-  mockUnreadAgents,
   openChatListMenu,
   pinnedAgentLink,
-  prepareAgents,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
@@ -38,6 +34,15 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { emptySearchImg } from "../platform-assets.ts";
 import { pathname } from "../../../signals/location.ts";
 import { changeChatThreadReadCursor } from "../../../mocks/mock-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+
+const context = testContext();
+const {
+  mockMobileLayout,
+  mockSidebarThreadStory,
+  mockUnreadAgents,
+  prepareAgents,
+} = createSidebarHelpers(context);
 
 async function setupWorkspaceSearch() {
   prepareAgents();

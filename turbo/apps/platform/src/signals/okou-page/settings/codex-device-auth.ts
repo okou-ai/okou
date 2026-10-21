@@ -13,12 +13,7 @@ import { ApiError } from "../../../lib/api-error.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { brandName$, type BrandName } from "../../branding.ts";
-import {
-  bestEffort,
-  resetSignal,
-  waitLoopUntil,
-  withCleanup,
-} from "../../utils.ts";
+import { resetSignal, waitLoopUntil, withCleanup } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type CodexDeviceAuthDialogMode = "connect" | "reconnect";
@@ -396,12 +391,9 @@ function createCodexClose$(ctx: CodexDeviceAuthSignalContext) {
       return;
     }
 
-    await withCleanup(
-      bestEffort(set(cancelCodexDeviceAuth$, sessionToken, signal), signal),
-      () => {
-        set(ctx.reloadProviders$);
-      },
-    );
+    await withCleanup(set(cancelCodexDeviceAuth$, sessionToken, signal), () => {
+      set(ctx.reloadProviders$);
+    });
     signal.throwIfAborted();
   });
 }

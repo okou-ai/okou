@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -11,16 +12,18 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
-  context,
-  mockTemplateChat,
   openTemplatePicker,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
-  buildRunModel,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   findComposerEditor,
   tabByText,
 } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 function button(name: string, root: ParentNode = document.body) {
   const element = queryAllByRoleFast("button", root).find((candidate) => {

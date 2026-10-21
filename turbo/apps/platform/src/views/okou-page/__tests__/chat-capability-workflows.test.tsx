@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   workflowAutomationsContract,
@@ -17,15 +18,17 @@ import {
 import { completedEvent, assistantEvent } from "./chat-run-test-fixtures.ts";
 import {
   completedConversation,
-  context,
   FIRST_CAPABILITY_RUN_ID,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
   RUN_THREAD_ID,
   SECOND_CAPABILITY_RUN_ID,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const WORKFLOW_ID = "e0000000-0000-4000-a000-000000000861";
 const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000862";

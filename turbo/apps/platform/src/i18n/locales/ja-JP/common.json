@@ -512,8 +512,7 @@
         "websiteAria": "Web サイトのアーティファクトを表示する"
       },
       "kindIcon": "{{kind}} アーティファクト",
-      "loading": "アーティファクトをロードしています",
-      "retry": "再試行"
+      "loading": "アーティファクトをロードしています"
     },
     "fileBadges": {
       "artwork": "アート",

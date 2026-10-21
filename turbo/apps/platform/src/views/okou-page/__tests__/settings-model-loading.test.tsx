@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   billingStatusContract,
   type BillingStatusResponse,
@@ -9,11 +10,13 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import {
-  context,
   findEnabledButton,
-  installRunChat,
   NEW_CHAT_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 function billingResponse(credits: number): BillingStatusResponse {
   return {

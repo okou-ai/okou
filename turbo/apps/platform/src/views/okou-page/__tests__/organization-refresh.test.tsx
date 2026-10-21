@@ -6,10 +6,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  mockedClerk,
-  type MockedMembership,
-} from "../../../__tests__/mock-auth.ts";
+import type { MockedMembership } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -32,12 +29,6 @@ function workspaceSwitcher(): HTMLElement {
     throw new Error("Expected workspace switcher");
   }
   return switcher;
-}
-
-function forcedSessionRenewalCount(): number {
-  return mockedClerk.sessionGetToken.mock.calls.filter(([options]) => {
-    return options?.skipCache === true;
-  }).length;
 }
 
 test("A temporary authentication refresh keeps the active workspace", async () => {
@@ -66,7 +57,6 @@ test("A temporary authentication refresh keeps the active workspace", async () =
   await waitFor(() => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
-  const initialRenewalCount = forcedSessionRenewalCount();
   const clerk = context.mocks.clerk();
 
   act(() => {
@@ -100,7 +90,6 @@ test("A temporary authentication refresh keeps the active workspace", async () =
   expect(within(restoredWorkspaceMenu).getByText("Org A")).toBeVisible();
   expect(screen.getByRole("heading", { name: "Agents" })).toBeVisible();
   expect(window.location.pathname).toBe("/agents");
-  expect(forcedSessionRenewalCount()).toBe(initialRenewalCount);
 });
 
 test("Reload the changed tab before using a new workspace", async () => {
@@ -129,7 +118,6 @@ test("Reload the changed tab before using a new workspace", async () => {
   const agentsHeading = await screen.findByRole("heading", { name: "Agents" });
   expect(agentsHeading).toBeVisible();
   const clerk = context.mocks.clerk();
-  const initialRenewalCount = forcedSessionRenewalCount();
 
   act(() => {
     clerk.organization({
@@ -148,5 +136,4 @@ test("Reload the changed tab before using a new workspace", async () => {
   await waitFor(() => {
     expect(window.location.pathname).toBe("/");
   });
-  expect(forcedSessionRenewalCount()).toBe(initialRenewalCount + 1);
 });

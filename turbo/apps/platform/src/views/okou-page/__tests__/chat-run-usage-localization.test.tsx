@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -7,16 +8,18 @@ import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
-  context,
   creditUsage,
   findButton,
   findLink,
-  installRunChat,
   promptEvent,
   queryButton,
   RUN_PATH,
   usageEvent,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const RUN_A = "a0000000-0000-4000-a000-000000000401";
 const RUN_B = "a0000000-0000-4000-a000-000000000402";

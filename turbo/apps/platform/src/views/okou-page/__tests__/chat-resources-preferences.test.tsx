@@ -6,13 +6,16 @@ import { click } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
-  recordPreferenceUpdates,
+  createChatResourcesHelpers,
   resourceButton,
   resourceState,
-  setupResources,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
+const { setupResources, recordPreferenceUpdates } =
+  createChatResourcesHelpers(context);
 
 test("Keep a manual close while the available gutter narrows and widens again", async () => {
   const resize = await setupResources();

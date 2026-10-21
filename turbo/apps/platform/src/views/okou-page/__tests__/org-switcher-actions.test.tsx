@@ -201,6 +201,7 @@ test("Leaving the page during invitation acceptance removes the committed invita
   await navigateToConnectors();
   click(workspaceSwitcher());
   await screen.findByText("Invited Org");
+  await expect(screen.findByText("Joining…")).resolves.toBeDisabled();
 
   acceptance.resolve();
 

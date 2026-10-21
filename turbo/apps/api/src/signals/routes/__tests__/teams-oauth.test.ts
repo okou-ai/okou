@@ -5,7 +5,7 @@ import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -21,6 +21,7 @@ import {
 } from "./helpers/teams-connect";
 import { teamsConnectRoutes } from "../teams-connect";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { mockNow, now } from "../../../lib/time";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -68,16 +69,35 @@ function idToken(payload: Readonly<Record<string, unknown>>): string {
   return `${encodeJwtPart({ alg: "none" })}.${encodeJwtPart(payload)}.sig`;
 }
 
-function callbackPath(args: {
+async function callbackPath(args: {
   readonly code?: string;
   readonly state: Readonly<Record<string, unknown>>;
-}): string {
-  const params = new URLSearchParams();
-  if (args.code) {
-    params.set("code", args.code);
+}): Promise<string> {
+  const { orgId, userId, redirectUri } = args.state;
+  if (
+    typeof orgId !== "string" ||
+    typeof userId !== "string" ||
+    typeof redirectUri !== "string"
+  ) {
+    throw new Error("Expected an authenticated Teams OAuth actor");
   }
-  params.set("state", JSON.stringify(args.state));
-  return `/api/integrations/teams/oauth/callback?${params.toString()}`;
+  mocks.clerk.session(userId, orgId, "org:admin");
+  const previousOrigin = optionalEnv("OKOU_API_BACKEND_URL");
+  mockEnv("OKOU_API_BACKEND_URL", new URL(redirectUri).origin);
+  const started = await appRequest(
+    `/api/teams/oauth/connect?${new URLSearchParams({ orgId, userId })}`,
+    {
+      headers: { authorization: "Bearer clerk-session" },
+    },
+  );
+  mockEnv("OKOU_API_BACKEND_URL", previousOrigin);
+  const state = new URL(started.headers.get("location")!).searchParams.get(
+    "state",
+  );
+  if (!state) {
+    throw new Error("Expected the authenticated Teams authorization state");
+  }
+  return `/api/integrations/teams/oauth/callback?${new URLSearchParams({ state, ...(args.code ? { code: args.code } : {}) })}`;
 }
 
 function mockMicrosoftOAuth(args: {
@@ -149,41 +169,175 @@ describe("Teams OAuth API routes", () => {
     mockEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "test-microsoft-client-secret");
   });
 
-  it("redirects to Microsoft OAuth with connect state without a browser session", async () => {
+  it("requires sign-in before accepting a legacy caller-supplied identity", async () => {
     const response = await appRequest(
       "/api/teams/oauth/connect?orgId=org_1&userId=user_1",
     );
-
     expect(response.status).toBe(307);
-    const redirectUrl = new URL(response.headers.get("location")!);
-    expect(redirectUrl.origin + redirectUrl.pathname).toBe(
-      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    expect(new URL(response.headers.get("location")!).pathname).toBe(
+      "/sign-in",
     );
-    expect(redirectUrl.searchParams.get("client_id")).toBe(
-      "test-microsoft-client-id",
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("rejects a different authenticated actor naming an existing member", async () => {
+    const fixture = teamsConnectFixture();
+    await seedMembership(fixture.orgId, fixture.userId);
+    mocks.clerk.session(`other_${fixture.userId}`, fixture.orgId, "org:admin");
+    const response = await appRequest(
+      `/api/teams/oauth/connect?${new URLSearchParams({ orgId: fixture.orgId, userId: fixture.userId })}`,
+      { headers: { authorization: "Bearer clerk-session" } },
     );
-    expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
-      `${API_ORIGIN}/api/integrations/teams/oauth/callback`,
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toContain("different account or organization");
+  });
+
+  it("rejects caller-authored callback state without creating a binding", async () => {
+    const fixture = teamsConnectFixture();
+    await seedMembership(fixture.orgId, fixture.userId);
+    mockMicrosoftOAuth({
+      tenantId: fixture.teamsTenantId,
+      aadObjectId: fixture.teamsAadObjectId,
+      userPrincipalName: fixture.teamsUserPrincipalName,
+    });
+    const state = JSON.stringify({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      redirectUri: CALLBACK_REDIRECT_URI,
+    });
+    const response = await appRequest(
+      `/api/integrations/teams/oauth/callback?${new URLSearchParams({ code: "valid-code", state })}`,
     );
-    expect(redirectUrl.searchParams.get("scope")).toBe(
-      "openid profile email User.Read",
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toBe("Invalid connect state.");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const status = await accept(
+      setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
     );
-    const state = JSON.parse(redirectUrl.searchParams.get("state")!) as {
-      readonly orgId: string;
-      readonly redirectUri: string;
-      readonly userId: string;
-    };
-    expect(state).toStrictEqual({
-      orgId: "org_1",
-      redirectUri: `${API_ORIGIN}/api/integrations/teams/oauth/callback`,
-      userId: "user_1",
+    expect(status.body).toMatchObject({
+      pendingInstallation: false,
+      linkedAccounts: [],
+    });
+  });
+
+  it("uses an authenticated settings link without browser credentials and consumes each callback once", async () => {
+    const fixture = await track(Promise.resolve(teamsConnectFixture()));
+    await seedMembership(fixture.orgId, fixture.userId);
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    const status = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    const entryUrl = new URL(status.body.connectUrl!);
+    const entry = await appRequest(`${entryUrl.pathname}${entryUrl.search}`);
+    const authorization = new URL(entry.headers.get("location")!);
+    expect(authorization.origin).toBe("https://login.microsoftonline.com");
+    const state = authorization.searchParams.get("state")!;
+    mockMicrosoftOAuth({
+      tenantId: fixture.teamsTenantId,
+      aadObjectId: fixture.teamsAadObjectId,
+      userPrincipalName: fixture.teamsUserPrincipalName,
+    });
+    const path = `/api/integrations/teams/oauth/callback?${new URLSearchParams({ state, code: "valid-code" })}`;
+    const connected = await appRequest(path);
+    expect(
+      new URL(connected.headers.get("location")!).searchParams.get("status"),
+    ).toBe("pending");
+    const replay = await appRequest(path);
+    expect(
+      new URL(replay.headers.get("location")!).searchParams.get("error"),
+    ).toBe("Invalid connect state.");
+    const replayedEntry = await appRequest(
+      `${entryUrl.pathname}${entryUrl.search}`,
+    );
+    expect(
+      new URL(replayedEntry.headers.get("location")!).searchParams.get("error"),
+    ).toContain("already used");
+    const after = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(after.body.linkedAccounts).toHaveLength(1);
+  });
+
+  it("expires an abandoned callback without binding the provider identity", async () => {
+    const fixture = teamsConnectFixture();
+    await seedMembership(fixture.orgId, fixture.userId);
+    const instant = now();
+    mockNow(instant);
+    const path = await callbackPath({
+      code: "late-code",
+      state: {
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        redirectUri: CALLBACK_REDIRECT_URI,
+      },
+    });
+    mockNow(instant + 15 * 60 * 1000);
+    const response = await appRequest(path);
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toBe("Invalid connect state.");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const after = await accept(
+      setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(after.body).toMatchObject({
+      pendingInstallation: false,
+      linkedAccounts: [],
+    });
+  });
+
+  it("rejects a callback after the authenticated Okou actor switches", async () => {
+    const fixture = teamsConnectFixture();
+    await seedMembership(fixture.orgId, fixture.userId);
+    const path = await callbackPath({
+      code: "switched-actor",
+      state: {
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        redirectUri: CALLBACK_REDIRECT_URI,
+      },
+    });
+    mocks.clerk.session(`other_${fixture.userId}`, fixture.orgId, "org:admin");
+    const response = await appRequest(path, {
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toContain("active account or organization changed");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const after = await accept(
+      setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(after.body).toMatchObject({
+      pendingInstallation: false,
+      linkedAccounts: [],
     });
   });
 
   it("keeps API-host connect requests on the API callback origin", async () => {
+    mocks.clerk.session("user_1", "org_1", "org:admin");
     const response = await appRequest(
       "/api/teams/oauth/connect?orgId=org_1&userId=user_1",
-      { origin: API_ORIGIN },
+      {
+        origin: API_ORIGIN,
+        headers: { authorization: "Bearer clerk-session" },
+      },
     );
 
     expect(response.status).toBe(307);
@@ -240,7 +394,7 @@ describe("Teams OAuth API routes", () => {
     });
 
     const response = await appRequest(
-      callbackPath({
+      await callbackPath({
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
@@ -314,6 +468,7 @@ describe("Teams OAuth API routes", () => {
     })(teamsOauthContract);
     const started = await accept(
       oauthClient.connect({
+        extraHeaders: { authorization: "Bearer clerk-session" },
         query: {
           orgId: fixture.orgId,
           userId: fixture.userId,
@@ -375,7 +530,7 @@ describe("Teams OAuth API routes", () => {
     });
     expect(
       Object.fromEntries(new URL(prepared.body.connectUrl!).searchParams),
-    ).toStrictEqual({ orgId: fixture.orgId, userId: fixture.userId });
+    ).toMatchObject({ connectState: expect.stringMatching(/^teams-start\./) });
 
     mocks.clerk.session(
       `pending_other_${fixture.userId}`,
@@ -432,7 +587,7 @@ describe("Teams OAuth API routes", () => {
     });
     expect(
       Object.fromEntries(new URL(otherMember.body.connectUrl!).searchParams),
-    ).toStrictEqual({ orgId: fixture.orgId, userId: otherUserId });
+    ).toMatchObject({ connectState: expect.stringMatching(/^teams-start\./) });
   });
 
   it("exchanges the code with the redirect URI recorded in the connect state", async () => {
@@ -449,7 +604,7 @@ describe("Teams OAuth API routes", () => {
     });
 
     const response = await appRequest(
-      callbackPath({
+      await callbackPath({
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
@@ -495,7 +650,7 @@ describe("Teams OAuth API routes", () => {
     });
 
     const response = await appRequest(
-      callbackPath({
+      await callbackPath({
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
@@ -521,7 +676,7 @@ describe("Teams OAuth API routes", () => {
     });
 
     const response = await appRequest(
-      callbackPath({
+      await callbackPath({
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
@@ -550,7 +705,7 @@ describe("Teams OAuth API routes", () => {
     );
 
     const response = await appRequest(
-      callbackPath({
+      await callbackPath({
         code: "valid-code",
         state: {
           orgId: fixture.orgId,
@@ -584,7 +739,7 @@ describe("Teams OAuth API routes", () => {
         userPrincipalName: fixture.teamsUserPrincipalName,
       });
       const first = await appRequest(
-        callbackPath({
+        await callbackPath({
           code: "valid-code",
           state: {
             orgId: fixture.orgId,
@@ -614,7 +769,7 @@ describe("Teams OAuth API routes", () => {
         displayName: "Rejected name",
       });
       const second = await appRequest(
-        callbackPath({
+        await callbackPath({
           code: "other-code",
           state: {
             orgId: fixture.orgId,
@@ -627,13 +782,17 @@ describe("Teams OAuth API routes", () => {
       expect(
         new URL(second.headers.get("location")!).searchParams.get("error"),
       ).toContain("already connected");
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
       const after = await accept(
         client.getStatus({
           headers: { authorization: "Bearer clerk-session" },
         }),
         [200],
       );
-      expect(after.body).toStrictEqual(before.body);
+      expect(after.body).toMatchObject({
+        ...before.body,
+        connectUrl: before.body.connectUrl ? expect.any(String) : null,
+      });
       mocks.clerk.session(otherUser, fixture.orgId, "org:admin");
       const other = await accept(
         client.getStatus({
@@ -666,18 +825,18 @@ describe("Teams OAuth API routes", () => {
         { orgId: fixture.orgId, userId: fixture.userId },
         { orgId: otherOrg, userId: otherUser },
       ];
+      const paths: string[] = [];
+      for (const identity of identities) {
+        paths.push(
+          await callbackPath({
+            code: "valid-code",
+            state: { ...identity, redirectUri: CALLBACK_REDIRECT_URI },
+          }),
+        );
+      }
       const responses = await Promise.all(
-        identities.map((identity) => {
-          return appRequest(
-            callbackPath({
-              code: "valid-code",
-              state: {
-                ...identity,
-                redirectUri: CALLBACK_REDIRECT_URI,
-                completion: "settings",
-              },
-            }),
-          );
+        paths.map((path) => {
+          return appRequest(path);
         }),
       );
       const outcomes = responses.map((response) => {

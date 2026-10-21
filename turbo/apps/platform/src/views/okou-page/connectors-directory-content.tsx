@@ -13,6 +13,7 @@ import {
 import {
   connectorsCategoryFilter$,
   connectorsSearch$,
+  filteredConnectorCatalogItems$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import {
   openCustomConnectorCreateDialog$,
@@ -174,29 +175,54 @@ function DirectoryEmpty({
 
 export function ConnectorsDirectoryContent({
   builtin,
-  builtinState,
-  builtinCount,
 }: {
   readonly builtin: ReactNode;
-  readonly builtinState: SourceState;
-  readonly builtinCount: number;
+}) {
+  const customOnly = useGet(connectorDirectoryCustomScope$);
+  return customOnly ? (
+    <CustomOnlyDirectoryContent />
+  ) : (
+    <DiscoverDirectoryContent builtin={builtin} />
+  );
+}
+
+function CustomOnlyDirectoryContent() {
+  const search = useGet(connectorsSearch$).trim();
+  const custom = useLoadable(filteredDirectoryCustomConnectors$);
+  const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
+  return (
+    <DirectoryCustomSection
+      connectors={custom.state === "hasData" ? custom.data : []}
+      sourceState={custom.state}
+      isAdmin={isAdmin}
+      customOnly
+      searching={Boolean(search)}
+    />
+  );
+}
+
+function DiscoverDirectoryContent({
+  builtin,
+}: {
+  readonly builtin: ReactNode;
 }) {
   const { t } = useTranslation();
   const search = useGet(connectorsSearch$).trim().toLowerCase();
   const category = useGet(connectorsCategoryFilter$);
-  const customOnly = useGet(connectorDirectoryCustomScope$);
   const custom = useLoadable(filteredDirectoryCustomConnectors$);
   const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
   const retryCatalog = useSet(reloadBuiltinConnectors$);
+  const catalog = useLoadable(filteredConnectorCatalogItems$);
+  const builtinState = catalog.state;
+  const builtinCount = catalog.state === "hasData" ? catalog.data.length : 0;
   const connectors = custom.state === "hasData" ? custom.data : [];
   // Custom is its own scope, so browsing the catalog does not list custom
   // connectors. Browsing is scoped; searching is not, so a keyword reaches
   // across and reports its custom matches in their own section.
-  const showCustom = customOnly || (Boolean(search) && category === null);
-  const showBuiltin = !customOnly;
+  const showCustom = Boolean(search) && category === null;
   const sources = [
     { visible: showCustom, state: custom.state, count: connectors.length },
-    { visible: showBuiltin, state: builtinState, count: builtinCount },
+    { visible: true, state: builtinState, count: builtinCount },
   ];
   const empty = sources.every((source) => {
     return (
@@ -205,41 +231,40 @@ export function ConnectorsDirectoryContent({
   });
   return (
     <>
-      {showBuiltin &&
-        (builtinState === "hasError" ? (
-          <DirectoryLoadError
-            message={t(($) => {
-              return $.connectors.catalog.directory.builtinLoadFailed;
-            })}
-            retry={retryCatalog}
-          />
-        ) : search && category === null && builtinCount > 0 ? (
-          <section
-            aria-label={t(($) => {
+      {builtinState === "hasError" ? (
+        <DirectoryLoadError
+          message={t(($) => {
+            return $.connectors.catalog.directory.builtinLoadFailed;
+          })}
+          retry={retryCatalog}
+        />
+      ) : search && category === null && builtinCount > 0 ? (
+        <section
+          aria-label={t(($) => {
+            return $.connectors.catalog.directory.builtin;
+          })}
+          className="flex flex-col gap-3"
+        >
+          <h2 className="text-sm font-medium text-muted-foreground">
+            {t(($) => {
               return $.connectors.catalog.directory.builtin;
             })}
-            className="flex flex-col gap-3"
-          >
-            <h2 className="text-sm font-medium text-muted-foreground">
-              {t(($) => {
-                return $.connectors.catalog.directory.builtin;
-              })}
-            </h2>
-            {builtin}
-          </section>
-        ) : (
-          builtin
-        ))}
+          </h2>
+          {builtin}
+        </section>
+      ) : (
+        builtin
+      )}
       {showCustom && (
         <DirectoryCustomSection
           connectors={connectors}
           sourceState={custom.state}
           isAdmin={isAdmin}
-          customOnly={customOnly}
+          customOnly={false}
           searching={Boolean(search)}
         />
       )}
-      {empty && !customOnly && (Boolean(search) || category !== null) && (
+      {empty && (Boolean(search) || category !== null) && (
         <DirectoryEmpty scoped={category !== null} isAdmin={isAdmin} />
       )}
     </>

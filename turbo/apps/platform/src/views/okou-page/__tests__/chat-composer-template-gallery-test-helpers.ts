@@ -1,3 +1,4 @@
+import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import type {
   GenerationTemplateRequest,
   UserMessageDocument,
@@ -17,17 +18,14 @@ import { expect } from "vitest";
 import {
   AGENT_ID,
   THREAD_ID,
-  context,
-  mockAgent,
-  mockBillingCapabilities,
-  mockPersonalModelRoutes,
   tabByText,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import { click } from "../../../__tests__/page-helper.ts";
 
-export { AGENT_ID, THREAD_ID, context };
+export { AGENT_ID, THREAD_ID };
 
 interface TemplateChatCapture {
   readonly sentMessages: UserMessageDocument[];
@@ -36,61 +34,6 @@ interface TemplateChatCapture {
   readonly runClientThreadIds: (string | undefined)[];
   readonly threadCreates: string[];
   readonly lifecycle: ReturnType<typeof mockChatLifecycle>;
-}
-
-export function mockTemplateChat(options?: {
-  readonly threadId?: string;
-  readonly tier?: string;
-}): TemplateChatCapture {
-  const sentMessages: UserMessageDocument[] = [];
-  const selectedTemplates: GenerationTemplateRequest[] = [];
-  const runPrompts: string[] = [];
-  const runClientThreadIds: (string | undefined)[] = [];
-  const threadCreates: string[] = [];
-
-  mockAgent();
-  mockPersonalModelRoutes();
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
-      },
-    });
-  });
-  mockBillingCapabilities(
-    { restrictedBuiltInModels: false },
-    options?.tier ?? "pro",
-  );
-  const lifecycle = mockChatLifecycle(context, {
-    threadId: options?.threadId ?? THREAD_ID,
-    selectedModel: "claude-sonnet-5",
-    onThreadCreate(body) {
-      threadCreates.push(body.clientThreadId ?? "server-selected");
-    },
-    onRunCreate(body) {
-      runPrompts.push(body.prompt ?? "");
-      runClientThreadIds.push(body.clientThreadId);
-      if (body.userMessage) {
-        sentMessages.push(body.userMessage);
-        selectedTemplates.push(
-          ...body.userMessage.parts.flatMap((part) => {
-            return part.type === "template" ? [part.template] : [];
-          }),
-        );
-      }
-    },
-  });
-  mockPresentationTemplateLibrary([]);
-
-  return {
-    sentMessages,
-    selectedTemplates,
-    runPrompts,
-    runClientThreadIds,
-    threadCreates,
-    lifecycle,
-  };
 }
 
 export async function openTemplatePicker(
@@ -116,17 +59,6 @@ function presentationHtml(slideTitles: readonly string[]): string {
       return `<section data-okou-slide data-slide-id="slide-${index + 1}"><h1 data-okou-editable="text">${title}</h1></section>`;
     })
     .join("")}</body></html>`;
-}
-
-export function mockPresentationHtml(
-  embedUrl: string,
-  slideTitles: readonly string[],
-): void {
-  context.mocks.http.get(embedUrl, () => {
-    return new HttpResponse(presentationHtml(slideTitles), {
-      headers: { "Content-Type": "text/html" },
-    });
-  });
 }
 
 export function templatePart(
@@ -212,104 +144,6 @@ interface PresentationLibraryControl {
   replace(templates: readonly PresentationTemplateCatalogEntry[]): void;
 }
 
-export function mockPresentationTemplateLibrary(
-  initialTemplates: readonly PresentationTemplateCatalogEntry[],
-): PresentationLibraryControl {
-  let templates = [...initialTemplates];
-  let listCount = 0;
-  const updates: PresentationLibraryControl["requests"]["updates"] = [];
-  const deletes: string[] = [];
-
-  context.mocks.api(presentationTemplatesContract.list, ({ respond }) => {
-    listCount += 1;
-    return respond(200, templates);
-  });
-  context.mocks.api(
-    presentationTemplatesContract.resolvePreviewUrls,
-    ({ body, respond }) => {
-      const requestedIds = new Set(body.previewAssetIds);
-      return respond(200, {
-        assets: templates.flatMap((template) => {
-          return template.previewAssets.filter((asset) => {
-            return requestedIds.has(asset.previewAssetId);
-          });
-        }),
-      });
-    },
-  );
-  context.mocks.api(
-    presentationTemplatesContract.get,
-    ({ params, respond }) => {
-      const template = templates.find((candidate) => {
-        return candidate.id === params.templateId;
-      });
-      if (!template) {
-        return respond(404, {
-          error: {
-            code: "NOT_FOUND",
-            message: "Presentation template not found",
-          },
-        });
-      }
-      return respond(200, {
-        ...template,
-        pageUrls: template.previewAssets.map((asset) => {
-          return asset.url;
-        }),
-      });
-    },
-  );
-  context.mocks.api(
-    presentationTemplatesContract.update,
-    ({ params, body, respond }) => {
-      updates.push({ templateId: params.templateId, body });
-      const previous = templates.find((candidate) => {
-        return candidate.id === params.templateId;
-      });
-      if (!previous) {
-        return respond(404, {
-          error: {
-            code: "NOT_FOUND",
-            message: "Presentation template not found",
-          },
-        });
-      }
-      const updated = {
-        ...previous,
-        ...body,
-        updatedAt: "2026-08-01T00:01:00.000Z",
-      };
-      templates = templates.map((candidate) => {
-        return candidate.id === updated.id ? updated : candidate;
-      });
-      return respond(200, summaryOf(updated));
-    },
-  );
-  context.mocks.api(
-    presentationTemplatesContract.delete,
-    ({ params, respond }) => {
-      deletes.push(params.templateId);
-      templates = templates.filter((candidate) => {
-        return candidate.id !== params.templateId;
-      });
-      return respond(204);
-    },
-  );
-
-  return {
-    requests: {
-      get listCount() {
-        return listCount;
-      },
-      updates,
-      deletes,
-    },
-    replace(nextTemplates) {
-      templates = [...nextTemplates];
-    },
-  };
-}
-
 export async function expectInlineTemplate(
   title: string,
 ): Promise<HTMLElement> {
@@ -325,4 +159,178 @@ export async function expectInlineTemplate(
     }
     return node;
   });
+}
+
+export function createTemplateGalleryHelpers(context: TestContext) {
+  const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+    createChatComposerHelpers(context);
+  function mockTemplateChat(options?: {
+    readonly threadId?: string;
+    readonly tier?: string;
+  }): TemplateChatCapture {
+    const sentMessages: UserMessageDocument[] = [];
+    const selectedTemplates: GenerationTemplateRequest[] = [];
+    const runPrompts: string[] = [];
+    const runClientThreadIds: (string | undefined)[] = [];
+    const threadCreates: string[] = [];
+
+    mockAgent();
+    mockPersonalModelRoutes();
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(404, {
+        error: {
+          code: "BROWSER_NOT_FOUND",
+          message: "Managed browser not found",
+        },
+      });
+    });
+    mockBillingCapabilities(
+      { restrictedBuiltInModels: false },
+      options?.tier ?? "pro",
+    );
+    const lifecycle = mockChatLifecycle(context, {
+      threadId: options?.threadId ?? THREAD_ID,
+      selectedModel: "claude-sonnet-5",
+      onThreadCreate(body) {
+        threadCreates.push(body.clientThreadId ?? "server-selected");
+      },
+      onRunCreate(body) {
+        runPrompts.push(body.prompt ?? "");
+        runClientThreadIds.push(body.clientThreadId);
+        if (body.userMessage) {
+          sentMessages.push(body.userMessage);
+          selectedTemplates.push(
+            ...body.userMessage.parts.flatMap((part) => {
+              return part.type === "template" ? [part.template] : [];
+            }),
+          );
+        }
+      },
+    });
+    mockPresentationTemplateLibrary([]);
+
+    return {
+      sentMessages,
+      selectedTemplates,
+      runPrompts,
+      runClientThreadIds,
+      threadCreates,
+      lifecycle,
+    };
+  }
+
+  function mockPresentationHtml(
+    embedUrl: string,
+    slideTitles: readonly string[],
+  ): void {
+    context.mocks.http.get(embedUrl, () => {
+      return new HttpResponse(presentationHtml(slideTitles), {
+        headers: { "Content-Type": "text/html" },
+      });
+    });
+  }
+
+  function mockPresentationTemplateLibrary(
+    initialTemplates: readonly PresentationTemplateCatalogEntry[],
+  ): PresentationLibraryControl {
+    let templates = [...initialTemplates];
+    let listCount = 0;
+    const updates: PresentationLibraryControl["requests"]["updates"] = [];
+    const deletes: string[] = [];
+
+    context.mocks.api(presentationTemplatesContract.list, ({ respond }) => {
+      listCount += 1;
+      return respond(200, templates);
+    });
+    context.mocks.api(
+      presentationTemplatesContract.resolvePreviewUrls,
+      ({ body, respond }) => {
+        const requestedIds = new Set(body.previewAssetIds);
+        return respond(200, {
+          assets: templates.flatMap((template) => {
+            return template.previewAssets.filter((asset) => {
+              return requestedIds.has(asset.previewAssetId);
+            });
+          }),
+        });
+      },
+    );
+    context.mocks.api(
+      presentationTemplatesContract.get,
+      ({ params, respond }) => {
+        const template = templates.find((candidate) => {
+          return candidate.id === params.templateId;
+        });
+        if (!template) {
+          return respond(404, {
+            error: {
+              code: "NOT_FOUND",
+              message: "Presentation template not found",
+            },
+          });
+        }
+        return respond(200, {
+          ...template,
+          pageUrls: template.previewAssets.map((asset) => {
+            return asset.url;
+          }),
+        });
+      },
+    );
+    context.mocks.api(
+      presentationTemplatesContract.update,
+      ({ params, body, respond }) => {
+        updates.push({ templateId: params.templateId, body });
+        const previous = templates.find((candidate) => {
+          return candidate.id === params.templateId;
+        });
+        if (!previous) {
+          return respond(404, {
+            error: {
+              code: "NOT_FOUND",
+              message: "Presentation template not found",
+            },
+          });
+        }
+        const updated = {
+          ...previous,
+          ...body,
+          updatedAt: "2026-08-01T00:01:00.000Z",
+        };
+        templates = templates.map((candidate) => {
+          return candidate.id === updated.id ? updated : candidate;
+        });
+        return respond(200, summaryOf(updated));
+      },
+    );
+    context.mocks.api(
+      presentationTemplatesContract.delete,
+      ({ params, respond }) => {
+        deletes.push(params.templateId);
+        templates = templates.filter((candidate) => {
+          return candidate.id !== params.templateId;
+        });
+        return respond(204);
+      },
+    );
+
+    return {
+      requests: {
+        get listCount() {
+          return listCount;
+        },
+        updates,
+        deletes,
+      },
+      replace(nextTemplates) {
+        templates = [...nextTemplates];
+      },
+    };
+  }
+
+  return {
+    mockTemplateChat,
+    mockPresentationHtml,
+    mockPresentationTemplateLibrary,
+  };
 }

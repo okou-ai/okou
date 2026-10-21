@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -6,11 +7,12 @@ import { fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   THREAD_ID,
   composerWorkflow,
-  context,
   findComposerEditor,
-  mockAgent,
-  mockThread,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
+
+const context = testContext();
+const { mockAgent, mockThread } = createChatComposerHelpers(context);
 
 async function openComposer(): Promise<HTMLElement> {
   mockAgent();

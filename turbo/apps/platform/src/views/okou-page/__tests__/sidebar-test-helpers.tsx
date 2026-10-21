@@ -25,10 +25,71 @@ import {
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
 import {
   mockChatThreadSnapshotResponse,
-  testContext,
+  type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 
-export const context = testContext();
+export function createSidebarHelpers(context: TestContext) {
+  return {
+    prepareDefaultAgent: (
+      targetContext = context,
+      avatarUrl: string | null = null,
+    ) => {
+      return prepareDefaultAgent(targetContext, avatarUrl);
+    },
+    prepareAgents: (targetContext = context) => {
+      return prepareAgents(targetContext);
+    },
+    prepareOverflowingPinnedAgents: (
+      targetContext = context,
+      supportAvatarUrl: string | null = null,
+    ) => {
+      return prepareOverflowingPinnedAgents(targetContext, supportAvatarUrl);
+    },
+    mockChatThreadSnapshot: (
+      threads: () => readonly SidebarThread[],
+      activeThreadIds?: () => readonly string[],
+      targetContext = context,
+      remoteGate?: Promise<void>,
+    ) => {
+      return mockChatThreadSnapshot(
+        targetContext,
+        threads,
+        activeThreadIds,
+        remoteGate,
+      );
+    },
+    mockUnreadAgents: (
+      unreadAgentIds: () => readonly string[],
+      onRequest?: () => void,
+    ) => {
+      return mockUnreadAgents(context, unreadAgentIds, onRequest);
+    },
+    mockMobileLayout: () => {
+      return mockMobileLayout(context);
+    },
+    stubSidebarTitleLayout: () => {
+      return stubSidebarTitleLayout(context);
+    },
+    mockSidebarThreadStory: (
+      firstPageThreads: SidebarThread[],
+      extraThreads?: SidebarThread[],
+      activeThreadIds?: readonly string[],
+      targetContext = context,
+      remoteGate?: Promise<void>,
+    ) => {
+      return mockSidebarThreadStory(
+        targetContext,
+        firstPageThreads,
+        extraThreads,
+        activeThreadIds,
+        remoteGate,
+      );
+    },
+    mockLongSidebarHistory: (remoteGate?: Promise<void>) => {
+      return mockLongSidebarHistory(context, remoteGate);
+    },
+  };
+}
 
 export const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 export const RESEARCH_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
@@ -54,7 +115,7 @@ export interface SidebarThread {
 }
 
 export function prepareDefaultAgent(
-  targetContext = context,
+  targetContext: TestContext,
   avatarUrl: string | null = null,
 ): void {
   targetContext.mocks.data.agents([
@@ -70,7 +131,7 @@ export function prepareDefaultAgent(
   ]);
 }
 
-export function prepareAgents(targetContext = context): AgentResponse[] {
+export function prepareAgents(targetContext: TestContext): AgentResponse[] {
   const agents: AgentResponse[] = [
     {
       isDefaultAgent: false,
@@ -144,7 +205,7 @@ const OVERFLOW_PINNED_AGENTS = [
  * five-column row and puts cards on both sides of the Pin button.
  */
 export function prepareOverflowingPinnedAgents(
-  targetContext = context,
+  targetContext: TestContext,
   supportAvatarUrl: string | null = null,
 ): string[] {
   const agents = prepareAgents(targetContext);
@@ -224,11 +285,11 @@ function sidebarThreadSnapshot(
 }
 
 export function mockChatThreadSnapshot(
+  targetContext: TestContext,
   threads: () => readonly SidebarThread[],
   activeThreadIds: () => readonly string[] = () => {
     return [];
   },
-  targetContext = context,
   remoteGate?: Promise<void>,
 ): void {
   targetContext.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
@@ -269,6 +330,7 @@ export function mockChatThreadSnapshot(
 }
 
 export function mockUnreadAgents(
+  context: TestContext,
   unreadAgentIds: () => readonly string[],
   onRequest: () => void = () => {},
 ): void {
@@ -343,7 +405,7 @@ export function mobileSidebar(): HTMLElement {
   return drawer;
 }
 
-export function mockMobileLayout() {
+export function mockMobileLayout(context: TestContext) {
   return context.mocks.browser.matchMedia(false);
 }
 
@@ -530,7 +592,7 @@ function isSidebarTitleBox(element: HTMLElement): boolean {
  * Gives the title box a fixed width and its text a width per character, so one
  * title overflows the box and the other fits inside it.
  */
-export function stubSidebarTitleLayout(): void {
+export function stubSidebarTitleLayout(context: TestContext): void {
   const clientWidth = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
     "clientWidth",
@@ -658,22 +720,22 @@ export function mockSidebarViewport(
 }
 
 export function mockSidebarThreadStory(
+  targetContext: TestContext,
   firstPageThreads: SidebarThread[],
   extraThreads: SidebarThread[] = [],
   activeThreadIds: readonly string[] = [],
-  targetContext = context,
   remoteGate?: Promise<void>,
 ): ChatThreadEventQueryResult {
   let threads = [...firstPageThreads];
 
   mockChatThreadSnapshot(
+    targetContext,
     () => {
       return [...threads, ...extraThreads];
     },
     () => {
       return activeThreadIds;
     },
-    targetContext,
     remoteGate,
   );
 
@@ -770,9 +832,10 @@ export function mockSidebarThreadStory(
 }
 
 export function mockLongSidebarHistory(
+  context: TestContext,
   remoteGate?: Promise<void>,
 ): ChatThreadEventQueryResult {
-  prepareDefaultAgent();
+  prepareDefaultAgent(context);
   const overflowThreads = Array.from({ length: 23 }, (_, index) => {
     return createThread(
       `b3000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
@@ -780,6 +843,7 @@ export function mockLongSidebarHistory(
     );
   });
   return mockSidebarThreadStory(
+    context,
     [
       createThread(EXISTING_THREAD_ID, "Release plan"),
       createThread(AUTOMATION_THREAD_ID, "Scheduled launch"),
@@ -788,7 +852,6 @@ export function mockLongSidebarHistory(
     ],
     [],
     [],
-    context,
     remoteGate,
   );
 }

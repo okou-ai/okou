@@ -9,15 +9,13 @@ import { expect } from "vitest";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
-  context,
-  mockChatLifecycleWithoutBrowserSession,
+  createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
-
-export { context };
 
 export const RUN_THREAD_ID = "b0000000-0000-4000-a000-000000000801";
 export const RUN_PATH = `/chats/${RUN_THREAD_ID}`;
@@ -25,44 +23,10 @@ export const NEW_CHAT_PATH = `/agents/${AGENT_ID}/chat`;
 
 const DEFAULT_MODEL = "claude-sonnet-5";
 
+type LifecycleHelpers = ReturnType<typeof createChatLifecycleHelpers>;
 type LifecycleOptions = NonNullable<
-  Parameters<typeof mockChatLifecycleWithoutBrowserSession>[0]
+  Parameters<LifecycleHelpers["mockChatLifecycleWithoutBrowserSession"]>[0]
 >;
-
-export function installRunChat(
-  options: LifecycleOptions = {},
-): ReturnType<typeof mockChatLifecycleWithoutBrowserSession> {
-  // Null is Auto.
-  const requestedModel =
-    options.selectedModel === undefined ? DEFAULT_MODEL : options.selectedModel;
-  const selectedModel =
-    requestedModel === null || mockCatalogHasModel(requestedModel)
-      ? requestedModel
-      : DEFAULT_MODEL;
-  context.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      displayName: "Run Agent",
-      description: "Handles visible chat work",
-    },
-  ]);
-  if (options.selectedModel !== undefined) {
-    context.mocks.data.userModelPreference({
-      selectedModel,
-      serviceTier:
-        options.codexServiceTier === "fast" ? ("priority" as const) : null,
-      modelSettings: options.modelSettings ?? {},
-      selectedImageModel: null,
-      updatedAt: null,
-    });
-  }
-  return mockChatLifecycleWithoutBrowserSession({
-    threadId: RUN_THREAD_ID,
-    threadTitle: "Run conversation",
-    selectedModel: DEFAULT_MODEL,
-    ...options,
-  });
-}
 
 export function publishRunUpdate(threadId = RUN_THREAD_ID): void {
   createChatEvent(threadId);
@@ -345,4 +309,48 @@ export function expectTextOrder(...texts: readonly string[]): void {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   }
+}
+
+export function createChatRunFixtures(context: TestContext) {
+  const { mockChatLifecycleWithoutBrowserSession } =
+    createChatLifecycleHelpers(context);
+
+  function installRunChat(
+    options: LifecycleOptions = {},
+  ): ReturnType<typeof mockChatLifecycleWithoutBrowserSession> {
+    // Null is Auto.
+    const requestedModel =
+      options.selectedModel === undefined
+        ? DEFAULT_MODEL
+        : options.selectedModel;
+    const selectedModel =
+      requestedModel === null || mockCatalogHasModel(requestedModel)
+        ? requestedModel
+        : DEFAULT_MODEL;
+    context.mocks.data.agents([
+      {
+        agentId: AGENT_ID,
+        displayName: "Run Agent",
+        description: "Handles visible chat work",
+      },
+    ]);
+    if (options.selectedModel !== undefined) {
+      context.mocks.data.userModelPreference({
+        selectedModel,
+        serviceTier:
+          options.codexServiceTier === "fast" ? ("priority" as const) : null,
+        modelSettings: options.modelSettings ?? {},
+        selectedImageModel: null,
+        updatedAt: null,
+      });
+    }
+    return mockChatLifecycleWithoutBrowserSession({
+      threadId: RUN_THREAD_ID,
+      threadTitle: "Run conversation",
+      selectedModel: DEFAULT_MODEL,
+      ...options,
+    });
+  }
+
+  return { installRunChat };
 }

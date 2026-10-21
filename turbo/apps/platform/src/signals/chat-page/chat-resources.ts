@@ -331,6 +331,7 @@ export function createChatResourceSignals(
   });
   // Resources load only once the panel is wanted, and the panel draws only
   // once every source has answered, so it never opens empty or grows in steps.
+  // Keep readiness primitive so catalogue paging does not redraw ready rows.
   const settled$ = computed(async (get) => {
     if (!(await get(panel.wanted$))) {
       return null;
@@ -343,15 +344,14 @@ export function createChatResourceSignals(
     if (page.status === "fulfilled" && page.value === null) {
       return null;
     }
-    return {
-      hasContent:
-        page.status === "rejected" ||
-        Boolean(page.value?.artifacts.length) ||
-        origin?.kind === "source" ||
-        chats.status === "rejected" ||
-        chats.value.items.length > 0 ||
-        chats.value.failed,
-    };
+    return (
+      page.status === "rejected" ||
+      Boolean(page.value?.artifacts.length) ||
+      origin?.kind === "source" ||
+      chats.status === "rejected" ||
+      chats.value.items.length > 0 ||
+      chats.value.failed
+    );
   });
   const expandedSections$ = state({
     chats: false,

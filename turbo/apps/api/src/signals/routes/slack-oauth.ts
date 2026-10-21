@@ -1,7 +1,7 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { connectSlackWorkspace$ } from "../services/slack-workspace-write.service";
 import { persistSlackInstallation$ } from "../services/slack-installation-write.service";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { command, computed } from "ccstate";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
@@ -35,6 +35,13 @@ import {
   startSlackConnectorOAuth$,
 } from "../services/slack-connector-oauth.service";
 import { SLACK_CONNECTOR_OAUTH_STATE_PREFIX } from "../services/slack-connector-oauth-state";
+import { requiredAuthContext$ } from "../auth/auth-context";
+import { checkOAuthCallbackActor$ } from "../services/oauth-callback-actor";
+import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
+import {
+  claimBuiltinConnectorOAuthState$,
+  insertConnectorOAuthState$,
+} from "../services/connector-oauth-state.service";
 
 const L = logger("SlackOAuth");
 const SLACK_OAUTH_URL = "https://slack.com/oauth/v2/authorize";
@@ -125,7 +132,7 @@ function parseOAuthStateValue(parsed: unknown): OAuthState | null {
 
 function signOAuthState(encodedPayload: string): string {
   return createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
-    .update(`slack-oauth-state-v1:${encodedPayload}`)
+    .update(`slack-oauth-state-v2:${encodedPayload}`)
     .digest("base64url");
 }
 
@@ -156,9 +163,9 @@ function createOAuthState(state: OAuthState, redirectUri: string): string {
     issuedAt: Math.floor(now() / 1000),
     redirectUri,
   };
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
-    "base64url",
-  );
+  const encodedPayload = Buffer.from(
+    JSON.stringify({ ...payload, nonce: randomBytes(32).toString("hex") }),
+  ).toString("base64url");
   return `${encodedPayload}.${signOAuthState(encodedPayload)}`;
 }
 
@@ -228,6 +235,74 @@ function slackCredentials(): {
   return { clientId, clientSecret };
 }
 
+const legacySlackOAuthIdentity$ = command(
+  async (
+    { set },
+    query: { readonly orgId?: string; readonly userId?: string },
+    signal: AbortSignal,
+  ) => {
+    const auth = await set(
+      requiredAuthContext$,
+      { requireOrganization: true },
+      signal,
+    );
+    if ("status" in auth) {
+      return {
+        kind: "error" as const,
+        response: failedRedirect(
+          "Please sign in and reconnect Slack from settings.",
+        ),
+      };
+    }
+    if (
+      !auth.orgId ||
+      (query.orgId && query.orgId !== auth.orgId) ||
+      (query.userId && query.userId !== auth.userId)
+    ) {
+      return {
+        kind: "error" as const,
+        response: failedRedirect(
+          "The connection link belongs to a different account or organization. Please reconnect Slack from settings.",
+        ),
+      };
+    }
+    return {
+      kind: "identity" as const,
+      userId: auth.userId,
+      orgId: auth.orgId,
+      orgRole: auth.orgRole,
+    };
+  },
+);
+
+const persistLegacySlackOAuthState$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly redirectUri: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    await set(
+      insertConnectorOAuthState$,
+      {
+        state: args.state,
+        connectorSlug: "slack",
+        authMethod: "slack-integration",
+        userId: args.userId,
+        orgId: args.orgId,
+        redirectUri: args.redirectUri,
+        accountMutation: { intent: "add" },
+        expiresAt: connectorOAuthStateExpiresAt(),
+      },
+      signal,
+    );
+  },
+);
+
 const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$).raw;
   const origin = getOAuthApiOrigin(request);
@@ -248,11 +323,23 @@ const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  const userId = query.userId;
+  const identity =
+    query.orgId || query.userId
+      ? await set(legacySlackOAuthIdentity$, query, signal)
+      : null;
+  if (identity?.kind === "error") {
+    return identity.response;
+  }
+  if (identity && identity.orgRole !== "admin") {
+    return failedRedirect(
+      "Only org admins can install Slack for an organization.",
+    );
+  }
+  const userId = identity?.userId;
   const redirectUri = callbackRedirectUri(origin);
   const state = createOAuthState(
     {
-      orgId: query.orgId ?? null,
+      orgId: identity?.orgId ?? null,
       userId: userId ?? null,
       flow: "install",
       reinstall: query.reinstall === "1",
@@ -260,6 +347,14 @@ const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     },
     redirectUri,
   );
+
+  if (identity) {
+    await set(
+      persistLegacySlackOAuthState$,
+      { state, userId: identity.userId, orgId: identity.orgId, redirectUri },
+      signal,
+    );
+  }
 
   const authUrl = new URL(SLACK_OAUTH_URL);
   authUrl.searchParams.set("client_id", clientId);
@@ -304,10 +399,11 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  const userId = query.userId;
-  if (!query.orgId || !userId) {
-    return jsonErrorResponse("Missing orgId or userId", 400);
+  const identity = await set(legacySlackOAuthIdentity$, query, signal);
+  if (identity.kind === "error") {
+    return identity.response;
   }
+  const userId = identity.userId;
 
   const installation = await get(connectInstallation$);
   signal.throwIfAborted();
@@ -322,13 +418,18 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   const redirectUri = callbackRedirectUri(origin);
   const state = createOAuthState(
     {
-      orgId: query.orgId,
+      orgId: identity.orgId,
       userId,
       flow: "connect",
       reinstall: false,
       prompt: query.prompt ? truncatePrompt(query.prompt) : null,
     },
     redirectUri,
+  );
+  await set(
+    persistLegacySlackOAuthState$,
+    { state, userId, orgId: identity.orgId, redirectUri },
+    signal,
   );
 
   const authUrl = new URL(SLACK_OAUTH_URL);
@@ -737,6 +838,32 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const parsedState = parseOAuthState(query.state);
 
+  if (parsedState && (parsedState.state.orgId || parsedState.state.userId)) {
+    const claimed = await set(
+      claimBuiltinConnectorOAuthState$,
+      { state: query.state!, connectorSlug: "slack" },
+      signal,
+    );
+    if (
+      claimed.kind !== "usable" ||
+      claimed.state.authMethod !== "slack-integration" ||
+      claimed.state.orgId !== parsedState.state.orgId ||
+      claimed.state.userId !== parsedState.state.userId ||
+      claimed.state.redirectUri !== parsedState.redirectUri
+    ) {
+      return failedRedirect(
+        "This authorization has expired or was already used. Please reconnect Slack from settings.",
+      );
+    }
+    const actorError = await set(
+      checkOAuthCallbackActor$,
+      { userId: claimed.state.userId, orgId: claimed.state.orgId },
+      signal,
+    );
+    if (actorError) {
+      return failedRedirect(actorError);
+    }
+  }
   if (query.error) {
     return failedRedirect(query.error);
   }

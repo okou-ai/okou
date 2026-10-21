@@ -59,7 +59,10 @@ export const createHostedSiteDownloadGrant$ = command(
     // reader and closes the old API rollback window. An explicit policy keeps
     // controlled delivery active even after the management flag is disabled.
     if (policy.revision === null) {
-      if (env("HOSTED_SITE_ACCESS_ENABLED") !== "true") {
+      if (
+        env("HOSTED_SITE_ACCESS_ENABLED") !== "true" ||
+        !env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(args.manifest.siteId)
+      ) {
         return null;
       }
       const features = await set(

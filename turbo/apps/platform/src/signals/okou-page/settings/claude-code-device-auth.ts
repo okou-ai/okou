@@ -10,7 +10,7 @@ import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { bestEffort, resetSignal, withCleanup } from "../../utils.ts";
+import { resetSignal, withCleanup } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type ClaudeCodeDeviceAuthDialogMode = "connect" | "reconnect";
@@ -334,10 +334,7 @@ function createClaudeCodeClose$(ctx: ClaudeCodeDeviceAuthSignalContext) {
     }
 
     await withCleanup(
-      bestEffort(
-        set(cancelClaudeCodeDeviceAuth$, sessionToken, signal),
-        signal,
-      ),
+      set(cancelClaudeCodeDeviceAuth$, sessionToken, signal),
       () => {
         set(ctx.reloadProviders$);
       },

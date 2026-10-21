@@ -528,8 +528,7 @@
         "websiteAria": "Mostrar artefactos de sitios web"
       },
       "kindIcon": "{{kind}} artefacto",
-      "loading": "Cargando artefactos",
-      "retry": "Reintentar"
+      "loading": "Cargando artefactos"
     },
     "fileBadges": {
       "artwork": "ARTE",

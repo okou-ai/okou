@@ -6,6 +6,7 @@ import { toggleAgentConnector$ } from "./job-detail/connectors.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { pageVersion$ } from "../page-signal.ts";
+import { agentName$ } from "./job-detail/agent-name.ts";
 
 // ---------------------------------------------------------------------------
 // JobPermissionsTab UI state
@@ -52,21 +53,27 @@ export const setPermSearchActive$ = command(({ set }, active: boolean) => {
   set(internalPermSearchActive$, active);
 });
 
-function createConnectorAuthorizationSignals() {
-  const running$ = state<Promise<void> | null>(null);
-  const operation$ = state<Promise<void> | undefined>(undefined);
+function createPermissionToggleActions() {
+  // Keep the last outcome separately from the synchronous single-flight guard.
+  const internalRequest$ = state<Promise<void> | null>(null);
+  const internalInFlight$ = state<Promise<void> | null>(null);
+  const request$ = computed((get) => {
+    return get(internalRequest$);
+  });
+  const canToggle$ = command(({ get }) => {
+    return get(internalInFlight$) === null;
+  });
   const toggle$ = command(
     (
       { get, set },
       connectorSlug: ConnectorSlug,
       enabled: boolean,
       signal: AbortSignal,
-    ) => {
-      const existing = get(running$);
-      if (existing) {
-        return existing;
+    ): Promise<void> | undefined => {
+      if (get(internalInFlight$)) {
+        return;
       }
-      const operation = withCleanup(
+      const request = withCleanup(
         (async () => {
           await set(toggleAgentConnector$, connectorSlug, enabled, signal);
           signal.throwIfAborted();
@@ -80,38 +87,25 @@ function createConnectorAuthorizationSignals() {
           );
         })(),
         () => {
-          set(running$, null);
+          set(internalInFlight$, null);
         },
       );
-      set(running$, operation);
-      set(operation$, operation);
-      return operation;
+      set(internalInFlight$, request);
+      set(internalRequest$, request);
+      return request;
     },
   );
-  return { operation$, toggle$ };
+  return { request$, canToggle$, toggle$ };
 }
 
+export type PermissionToggleActions = ReturnType<
+  typeof createPermissionToggleActions
+>;
+
 // Filtering may unmount a row, but its result still belongs to this page.
-// A new route gets a new operation owner rather than the previous agent's error.
-const connectorAuthorizationSignals$ = computed((get) => {
+// Replace the graph when either the domain agent or page setup changes.
+export const permissionToggleActions$ = computed((get) => {
+  get(agentName$);
   get(pageVersion$);
-  return createConnectorAuthorizationSignals();
+  return createPermissionToggleActions();
 });
-export const jobPermissionConnectorOperation$ = computed((get) => {
-  return get(get(connectorAuthorizationSignals$).operation$);
-});
-export const toggleJobPermissionConnector$ = command(
-  (
-    { get, set },
-    connectorSlug: ConnectorSlug,
-    enabled: boolean,
-    signal: AbortSignal,
-  ) => {
-    return set(
-      get(connectorAuthorizationSignals$).toggle$,
-      connectorSlug,
-      enabled,
-      signal,
-    );
-  },
-);

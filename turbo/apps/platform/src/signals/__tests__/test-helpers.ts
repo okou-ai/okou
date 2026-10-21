@@ -102,6 +102,88 @@ export interface TestContext {
   readonly workerStore: Store;
 }
 
+export interface TestRuntime extends TestContext {
+  dispose(reason?: unknown): void;
+}
+
+/**
+ * An explicit additional app/worker domain under one case owner. Creating the
+ * handle registers no hooks and installs no document lifecycle or mocks.
+ * Its lazy state rotates only when the parent's case lifetime changes.
+ */
+export function createTestRuntime(parent: TestContext): TestRuntime {
+  let runtime: {
+    readonly parentSignal: AbortSignal;
+    readonly controller: AbortController;
+    readonly resourceId: string;
+    store: Store | null;
+    workerStore: Store | null;
+  } | null = null;
+
+  function currentRuntime() {
+    const parentSignal = parent.signal;
+    if (!runtime || runtime.parentSignal !== parentSignal) {
+      const controller = new AbortController();
+      const current = {
+        parentSignal,
+        controller,
+        resourceId: crypto.randomUUID(),
+        store: null as Store | null,
+        workerStore: null as Store | null,
+      };
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          current.store?.set(resetLocalStorageForTest$);
+          current.store = null;
+          current.workerStore = null;
+        },
+        { once: true },
+      );
+      if (parentSignal.aborted) {
+        controller.abort(parentSignal.reason);
+      } else {
+        parentSignal.addEventListener(
+          "abort",
+          () => {
+            controller.abort(parentSignal.reason);
+          },
+          { once: true },
+        );
+      }
+      runtime = current;
+    }
+    return runtime;
+  }
+
+  return {
+    get mocks() {
+      return parent.mocks;
+    },
+    get resourceId() {
+      return currentRuntime().resourceId;
+    },
+    get signal() {
+      return currentRuntime().controller.signal;
+    },
+    get store() {
+      const current = currentRuntime();
+      current.controller.signal.throwIfAborted();
+      current.store ??= createStore();
+      return current.store;
+    },
+    get workerStore() {
+      const current = currentRuntime();
+      current.controller.signal.throwIfAborted();
+      current.workerStore ??= createStore();
+      return current.workerStore;
+    },
+    dispose(reason?: unknown) {
+      currentRuntime().controller.abort(reason);
+    },
+  };
+}
+
 export function testContext(): TestContext {
   let store: Store | null = null;
   let workerStore: Store | null = null;
@@ -138,8 +220,6 @@ export function testContext(): TestContext {
         store = createStore();
         context.signal.addEventListener("abort", () => {
           store?.set(resetLocalStorageForTest$);
-          resetLoggerForTest();
-
           store = null;
         });
       }
@@ -171,6 +251,7 @@ export function testContext(): TestContext {
     const error = new Error("Aborted due to finished test");
     error.name = "AbortError";
     controller.abort(error);
+    resetLoggerForTest();
     mocks = null;
     resourceId = null;
     controller = new AbortController();

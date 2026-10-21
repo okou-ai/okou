@@ -73,7 +73,10 @@ import {
 } from "./connector-account-resolution.service";
 import { reconcileConnectorAccountState } from "./connector-account-state.service";
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
-import { searchExternalConnectorCatalog } from "./connector-catalog-external-reader.service";
+import {
+  connectorCatalogSearchFromSnapshot,
+  loadAcceptedConnectorCatalogSnapshot,
+} from "./connector-catalog-external-reader.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import {
   getConnectorRuntimeConnector,
@@ -2936,11 +2939,18 @@ export function builtinConnectorSearch(args: {
     const catalogSearchDb = get(db$);
     const catalogSearchKeyword = args.keyword;
     return (async () => {
-      return await searchExternalConnectorCatalog({
-        db: catalogSearchDb,
-        keyword: catalogSearchKeyword,
-        featureStates,
-      });
+      return await (async () => {
+        const viewArgs = { keyword: catalogSearchKeyword, featureStates };
+        const snapshot = await loadAcceptedConnectorCatalogSnapshot(
+          catalogSearchDb,
+          undefined,
+          "display",
+        );
+        return connectorCatalogSearchFromSnapshot({
+          ...viewArgs,
+          catalog: snapshot,
+        });
+      })();
     })();
   });
 }

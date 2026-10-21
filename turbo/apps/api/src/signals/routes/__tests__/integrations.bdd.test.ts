@@ -1478,6 +1478,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
         prompt: "x".repeat(700),
       },
       [307],
+      admin,
     );
     const installLocation = slackInstall.headers.get("location") ?? "";
     const installUrl = new URL(installLocation);
@@ -1492,6 +1493,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     const missingConnectInstall = await integrations.requestSlackOauthConnect(
       { orgId: admin.orgId ?? "org_bdd_slack", userId: admin.userId },
       [404],
+      admin,
     );
     expect(missingConnectInstall.body).toStrictEqual({
       error: "No Slack workspace installed for this organization",
@@ -1540,6 +1542,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
         prompt: "install prompt",
       },
       [307],
+      admin,
     );
     const initialInstallUrl = new URL(
       initialInstall.headers.get("location") ?? "",
@@ -1561,6 +1564,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     const installStart = await integrations.requestSlackOauthInstall(
       { orgId, userId: admin.userId, prompt: "install prompt" },
       [307],
+      admin,
     );
     context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(
       slackBotOauthResponse({
@@ -1630,6 +1634,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
         prompt: "p".repeat(700),
       },
       [307],
+      member,
     );
     const connectStartUrl = new URL(connectStart.headers.get("location") ?? "");
     expect(connectStartUrl.hostname).toBe("slack.com");
@@ -1687,6 +1692,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     const wrongTeamStart = await integrations.requestSlackOauthConnect(
       { orgId, userId: disconnectedMember.userId },
       [307],
+      disconnectedMember,
     );
     context.mocks.slack.oauth.v2.access.mockResolvedValueOnce(
       slackUserOauthResponse({
@@ -5495,12 +5501,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     integrations.configureGithubAppInstallProvider();
     const install = await integrations.requestGithubOauthInstall({}, [307]);
     const installLocation = install.headers.get("location") ?? "";
-    expect(installLocation).toContain(
-      "https://github.com/apps/bdd-github-app/installations/new",
-    );
-    expect(new URL(installLocation).searchParams.get("redirect_uri")).toBe(
-      "https://api.okou.ai/api/github/app/setup/callback",
-    );
+    expect(new URL(installLocation).pathname).toBe("/sign-in");
     expect(install.headers.get("Cache-Control")).toBe("no-store");
 
     const admin = integrations.user();
@@ -5519,6 +5520,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
         userId: member.userId,
       },
       [307],
+      member,
     );
     expect(nonAdminInstall.headers.get("location") ?? "").toContain(
       "Only%20organization%20admins%20can%20install%20GitHub",
@@ -5681,13 +5683,19 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     integrations.clearGithubAppProvider();
     integrations.configureGithubAppInstallProvider();
 
+    const actor = integrations.user();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Signed GitHub callback",
+    });
     const installQuery = {
-      userId: `user_${randomUUID()}`,
-      composeId: `agent_${randomUUID()}`,
+      userId: actor.userId,
+      orgId: actor.orgId ?? undefined,
+      composeId: agent.agentId,
     };
     const okouInstall = await integrations.requestGithubOauthInstall(
       installQuery,
       [307],
+      actor,
     );
     const okouStateString =
       new URL(okouInstall.headers.get("location") ?? "").searchParams.get(
@@ -5795,6 +5803,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
         composeId: agent.agentId,
       },
       [307],
+      admin,
     );
     const signedState =
       new URL(installWithState.headers.get("location") ?? "").searchParams.get(
@@ -5822,30 +5831,20 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       "Invalid%20state%20signature",
     );
 
+    const noDefaultAgent = integrations.user();
     const installWithoutAgent = await integrations.requestGithubOauthInstall(
       {
-        orgId,
-        userId: admin.userId,
+        orgId: noDefaultAgent.orgId ?? undefined,
+        userId: noDefaultAgent.userId,
       },
       [307],
+      noDefaultAgent,
     );
-    const stateWithoutAgent =
-      new URL(
-        installWithoutAgent.headers.get("location") ?? "",
-      ).searchParams.get("state") ?? "";
-    expect(stateWithoutAgent).not.toBe("");
-    const setupMissingAgent = await integrations.requestGithubAppSetupCallback(
-      {
-        installation_id: "12345",
-        setup_action: "install",
-        state: stateWithoutAgent,
-      },
-      [307],
-    );
-    expect(setupMissingAgent.headers.get("location") ?? "").toContain(
-      "Missing%20default%20agent",
-    );
+    expect(
+      decodeURIComponent(installWithoutAgent.headers.get("location") ?? ""),
+    ).toContain("Please select a default agent");
 
+    await integrations.readGithubInstallation(admin);
     const requestSetup = await integrations.requestGithubAppSetupCallback(
       {
         setup_action: "request",
@@ -5857,11 +5856,19 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       "permission%20to%20install%20this%20GitHub%20App",
     );
 
+    const missingIdStart = await integrations.requestGithubOauthInstall(
+      { orgId, userId: admin.userId, composeId: agent.agentId },
+      [307],
+      admin,
+    );
+    const missingIdState = new URL(
+      missingIdStart.headers.get("location")!,
+    ).searchParams.get("state")!;
     const missingInstallation =
       await integrations.requestGithubAppSetupCallback(
         {
           setup_action: "install",
-          state: signedState,
+          state: missingIdState,
         },
         [307],
       );

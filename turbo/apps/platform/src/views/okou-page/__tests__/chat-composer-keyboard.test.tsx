@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -8,13 +9,16 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  context,
   findComposer,
   findFastControl,
-  installMessageExperienceChat,
   MESSAGE_EXPERIENCE_AGENT_ID,
   queryFastControl,
+  createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
 
 const COMPOSER_PLACEHOLDER = "Ask me to automate workflows, manage tasks...";
 const TOUCH_CHAT_THREAD_ID = "c0000000-0000-4000-a000-000000000054";

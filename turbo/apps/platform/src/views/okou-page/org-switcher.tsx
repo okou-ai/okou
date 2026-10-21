@@ -20,26 +20,26 @@ import { createdOrganizationsCount$ } from "../../signals/org.ts";
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { userInvitations$ } from "../../signals/user-invitations.ts";
 import {
+  createWorkspace$,
   workspaceCreation$,
-  createSwitcherWorkspace$,
-  switcherInvitations$,
+  workspaceInvitations$,
   workspaceAcceptance$,
-  type SwitcherInvitation,
-} from "../../signals/select-org/org-switcher-ui.ts";
+  type WorkspaceInvitationActions,
+} from "../../signals/select-org/workspace-actions.ts";
 import { ThumbnailPlaceholder, WorkspaceLogo } from "../components/avatar.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 
-function InvitationRow({ action }: { action: SwitcherInvitation }) {
-  const { invitation } = action;
-  const acceptance = useLoadable(action.acceptance$);
+function InvitationRow({ actions }: { actions: WorkspaceInvitationActions }) {
+  const { invitation } = actions;
+  const acceptance = useLoadable(actions.request$);
   const sharedAcceptance = useLoadable(workspaceAcceptance$);
-  const accept = useSet(action.accept$);
+  const joinWorkspace = useSet(actions.join$);
   const signal = useGet(pageSignal$);
   const isAccepting = acceptance.state === "loading";
   const { t } = useTranslation();
 
   const handleAccept = onDomEventFn(async () => {
-    await accept(signal);
+    await joinWorkspace(signal);
   });
 
   return (
@@ -75,7 +75,7 @@ function InvitationRow({ action }: { action: SwitcherInvitation }) {
 function CreateWorkspaceMenuItem() {
   const creation = useLoadable(workspaceCreation$);
   const creatingOrg = creation.state === "loading";
-  const createWorkspace = useSet(createSwitcherWorkspace$);
+  const createWorkspace = useSet(createWorkspace$);
   const signal = useGet(pageSignal$);
   const { t } = useTranslation();
 
@@ -179,8 +179,19 @@ function OtherMembershipsList() {
 }
 
 function OrgDropdownContent() {
+  return (
+    <DropdownMenuContent
+      align="start"
+      className="flex max-h-[min(420px,var(--available-height))] w-72 flex-col overflow-hidden"
+    >
+      <OrgDropdownBody />
+    </DropdownMenuContent>
+  );
+}
+
+function OrgDropdownBody() {
   const clerkLoadable = useLastLoadable(clerk$);
-  const pendingInvitations = useLastResolved(switcherInvitations$);
+  const pendingInvitations = useLastResolved(workspaceInvitations$);
   const currentOrg = useLastResolved(currentOrgInfo$);
   const { t } = useTranslation();
 
@@ -203,10 +214,7 @@ function OrgDropdownContent() {
   const hasOrgOptions = hasOtherMemberships || hasPendingInvitations;
 
   return (
-    <DropdownMenuContent
-      align="start"
-      className="flex max-h-[min(420px,var(--available-height))] w-72 flex-col overflow-hidden"
-    >
+    <>
       <div className="flex min-w-0 shrink-0 items-center gap-3 px-2 py-1.5">
         <WorkspaceLogo
           name={orgName}
@@ -231,9 +239,12 @@ function OrgDropdownContent() {
           {hasPendingInvitations && (
             <>
               <DropdownMenuSeparator />
-              {pendingInvitations.map((action) => {
+              {pendingInvitations.map((actions) => {
                 return (
-                  <InvitationRow key={action.invitation.id} action={action} />
+                  <InvitationRow
+                    key={actions.invitation.id}
+                    actions={actions}
+                  />
                 );
               })}
             </>
@@ -242,7 +253,7 @@ function OrgDropdownContent() {
       )}
 
       <CreateWorkspaceItem />
-    </DropdownMenuContent>
+    </>
   );
 }
 

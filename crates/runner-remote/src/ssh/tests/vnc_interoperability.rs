@@ -1,7 +1,10 @@
 //! Explicit independent OpenSSH plus TigerVNC acceptance.
 //! See `crates/runner/tests/VNC_SSH_INTEROPERABILITY.md`.
 
-use runner_rpc_proto::stream::{Frame, Reader};
+use runner_rpc_proto::{
+    Response, read_request,
+    stream::{Frame, Reader, Writer},
+};
 use serde_json::{Value, json};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -12,12 +15,12 @@ use std::{
 };
 use tempfile::TempDir;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream},
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 
 use super::{
-    harness::{CONNECTION, Harness, Reply, TOKEN},
+    harness::{CONNECTION, Harness, Reply, TOKEN, send_request},
     terminal,
 };
 use crate::{
@@ -180,8 +183,7 @@ fn ssh_credential(password: bool) -> Value {
     value
 }
 
-async fn capture(harness: &Harness, session: &str) -> (Value, Vec<u8>) {
-    let mut guest = harness.open().await;
+async fn capture(mut guest: DuplexStream, session: &str) -> (Value, Vec<u8>) {
     let request = json!({
         "version": 1,
         "method": "vnc.capture",
@@ -189,12 +191,7 @@ async fn capture(harness: &Harness, session: &str) -> (Value, Vec<u8>) {
         "params": {"sessionId": session}
     })
     .to_string();
-    guest
-        .write_u32(request.len().try_into().unwrap())
-        .await
-        .unwrap();
-    guest.write_all(request.as_bytes()).await.unwrap();
-    guest.shutdown().await.unwrap();
+    send_request(&mut guest, &request).await;
     tokio::time::timeout(Duration::from_secs(60), async {
         let mut reader = Reader::responses(guest);
         let mut controls = Vec::new();
@@ -212,6 +209,47 @@ async fn capture(harness: &Harness, session: &str) -> (Value, Vec<u8>) {
     })
     .await
     .expect("VNC capture deadline")
+}
+
+#[tokio::test]
+async fn capture_helper_sends_input_end_and_reads_capture_stream() {
+    let (guest, mut host) = tokio::io::duplex(1024);
+    let bytes = b"capture\0bytes\xff";
+    let result = json!({"outcome":"captured","bytes":bytes.len()});
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let peer = async {
+            let request = read_request(&mut host).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(request).unwrap(),
+                json!({
+                    "version":1,
+                    "method":"vnc.capture",
+                    "remaining_ms":60_000,
+                    "params":{"sessionId":"test-session"}
+                })
+            );
+            assert!(matches!(
+                Reader::input(&mut host).next().await.unwrap(),
+                Some(Frame::End)
+            ));
+            let mut writer = Writer::responses(host);
+            for chunk in bytes.chunks(4) {
+                writer.send(&Frame::Data(chunk.to_vec())).await.unwrap();
+            }
+            writer.send(&Frame::End).await.unwrap();
+            writer
+                .send(&Frame::Control(Response::Result {
+                    data: serde_json::value::to_raw_value(&result).unwrap(),
+                }))
+                .await
+                .unwrap();
+        };
+        let ((captured, data), ()) = tokio::join!(capture(guest, "test-session"), peer);
+        assert_eq!(captured, result);
+        assert_eq!(data, bytes);
+    })
+    .await
+    .expect("capture helper exchange deadline");
 }
 
 #[tokio::test]
@@ -359,7 +397,7 @@ async fn run_case(password: bool, security: Security) {
         )
         .await;
     assert_eq!(terminal(&status)["outcome"], "status");
-    let (captured, png) = capture(&harness, &session).await;
+    let (captured, png) = capture(harness.open().await, &session).await;
     assert_eq!(captured["outcome"], "captured");
     assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     let closed = harness

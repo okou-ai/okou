@@ -7,6 +7,7 @@ const c = initContract();
 const jsonErrorSchema = z.object({ error: z.string() });
 
 export const teamsOauthConnectQuerySchema = z.object({
+  connectState: z.string().optional(),
   orgId: z.string().optional(),
   userId: z.string().optional(),
   prompt: z.string().optional(),

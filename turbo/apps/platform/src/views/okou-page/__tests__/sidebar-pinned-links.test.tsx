@@ -4,22 +4,24 @@ import { expect, test } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { click } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
-  context,
+  createSidebarHelpers,
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   mobileSidebar,
-  mockMobileLayout,
-  mockSidebarThreadStory,
   pinnedAgentLink,
-  prepareAgents,
   RESEARCH_AGENT_ID,
   setupSidebarPage,
   sidebar,
   threadLinkByTitle,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { mockMobileLayout, mockSidebarThreadStory, prepareAgents } =
+  createSidebarHelpers(context);
 
 async function preparePinnedNavigation(layout: "horizontal" | "vertical") {
   const user = userEvent.setup({ delay: null });
@@ -154,6 +156,34 @@ test.each(["horizontal", "vertical"] as const)(
     await waitFor(() => {
       expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
     });
+  },
+);
+
+test.each(["horizontal", "vertical"] as const)(
+  "%s pinned links label an available unnamed agent with its ID",
+  async (layout) => {
+    if (layout === "vertical") {
+      mockMobileLayout();
+    }
+    const agents = prepareAgents().map((agent) => {
+      return agent.agentId === RESEARCH_AGENT_ID
+        ? { ...agent, displayName: null }
+        : agent;
+    });
+    context.mocks.data.agents(agents);
+    context.mocks.data.userPreferences({ pinnedAgentIds: [RESEARCH_AGENT_ID] });
+    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    if (layout === "vertical") {
+      click(screen.getByLabelText("Open menu"));
+    }
+    const pinned =
+      layout === "horizontal"
+        ? screen.getByTestId("pinned-agents-grid")
+        : mobileSidebar();
+    const link = await waitFor(() => {
+      return pinnedAgentLink(pinned, RESEARCH_AGENT_ID);
+    });
+    expect(link).toHaveAttribute("href", `/agents/${RESEARCH_AGENT_ID}/chat`);
   },
 );
 

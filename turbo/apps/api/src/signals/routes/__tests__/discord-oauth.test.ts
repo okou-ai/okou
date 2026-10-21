@@ -305,6 +305,26 @@ function fixture() {
   };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+function synchronizeCompletions(f: Fixture) {
+  const ready = createDeferredPromise<void>(context.signal);
+  const guilds = new Set<string>();
+  server.use(
+    http.get(
+      `${API}/guilds/:guildId/members/${f.discordUserId}`,
+      async ({ params }) => {
+        guilds.add(String(params.guildId));
+        if (guilds.size === 2 && !ready.settled()) {
+          ready.resolve();
+        }
+        await ready.promise;
+        return HttpResponse.json({
+          user: { id: f.discordUserId, username: "member" },
+          roles: [],
+        });
+      },
+    ),
+  );
+}
 function actorHeaders(actor: Actor) {
   return {
     authorization: `Bearer oauth-test.${Buffer.from(JSON.stringify(actor)).toString("base64url")}`,
@@ -1078,24 +1098,7 @@ describe("Discord product OAuth", () => {
     expect((await approve(first, firstLanding)).status).toBe(200);
     expect((await approve(second, secondLanding)).status).toBe(200);
 
-    const ready = createDeferredPromise<void>(context.signal);
-    const guilds = new Set<string>();
-    server.use(
-      http.get(
-        `${API}/guilds/:guildId/members/${f.discordUserId}`,
-        async ({ params }) => {
-          guilds.add(String(params.guildId));
-          if (guilds.size === 2 && !ready.settled()) {
-            ready.resolve();
-          }
-          await ready.promise;
-          return HttpResponse.json({
-            user: { id: f.discordUserId, username: "member" },
-            roles: [],
-          });
-        },
-      ),
-    );
+    synchronizeCompletions(f);
     const results = await Promise.all([complete(first), complete(second)]);
     const knownErrors = new Set([
       "cancelled",
@@ -1192,32 +1195,54 @@ describe("Discord product OAuth", () => {
     );
     await expect(status(owner)).resolves.toStrictEqual(before);
   });
-  it("allows only one account to win concurrent Discord identity claims across guilds", async () => {
-    const f = await fixture();
-    const firstOwner = await f.actor();
-    const secondOwner = await f.actor();
-    const secondGuild = snowflake();
-    const first = await start(firstOwner, "install", f.guildId);
-    const second = await start(secondOwner, "install", secondGuild);
-    const results = await Promise.all([
-      finish(f, first),
-      finish(f, second, { guildId: secondGuild }),
-    ]);
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual(["connected", "error"]);
-    const statuses = [await status(firstOwner), await status(secondOwner)];
-    expect(
-      statuses.filter((result) => {
-        return result.isConnected;
-      }),
-    ).toHaveLength(1);
-    expect(f.messages).toHaveLength(1);
-  });
+  it.each(["same workspace", "different workspaces"])(
+    "allows only one account to win concurrent Discord identity claims across guilds in %s",
+    async (workspace) => {
+      const f = fixture();
+      const firstOwner = await f.actor();
+      const secondOwner = await f.actor(
+        workspace === "same workspace" ? firstOwner.orgId : undefined,
+      );
+      const secondGuild = snowflake();
+      const first = await start(firstOwner, "install", f.guildId);
+      const second = await start(secondOwner, "install", secondGuild);
+      const firstLanding = await verified(f, first);
+      const secondLanding = await verified(f, second, { guildId: secondGuild });
+      expect((await approve(first, firstLanding)).status).toBe(200);
+      expect((await approve(second, secondLanding)).status).toBe(200);
+      synchronizeCompletions(f);
+
+      const results = await Promise.all([complete(first), complete(second)]);
+      expect(
+        results
+          .map((result) => {
+            return result.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 409]);
+      expect(results).toContainEqual(
+        expect.objectContaining({
+          status: 409,
+          body: expect.objectContaining({
+            error: expect.objectContaining({ code: "CONFLICT" }),
+          }),
+        }),
+      );
+      const statuses = [await status(firstOwner), await status(secondOwner)];
+      expect(
+        statuses.map((result) => {
+          return result.isConnected;
+        }),
+      ).toStrictEqual(
+        results.map((result) => {
+          return result.status === 200;
+        }),
+      );
+      expect(f.messages).toHaveLength(1);
+      expect((await complete(first)).status).toBe(400);
+      expect((await complete(second)).status).toBe(400);
+    },
+  );
   it("does not reserve the losing identity when two verified senders race for one workspace member", async () => {
     const f = await fixture();
     const admin = await f.actor();

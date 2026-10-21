@@ -185,6 +185,15 @@ export function CodexResetCreditsMenuItem({
   );
 }
 
+interface CodexResetUsageDialogProps {
+  open: boolean;
+  resetCredits: number | null;
+  resetting: boolean;
+  error?: string | null;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}
+
 export function CodexResetUsageDialog({
   open,
   resetCredits,
@@ -192,16 +201,8 @@ export function CodexResetUsageDialog({
   error,
   onOpenChange,
   onConfirm,
-}: {
-  open: boolean;
-  resetCredits: number | null;
-  resetting: boolean;
-  error?: string | null;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-}) {
+}: CodexResetUsageDialogProps) {
   const { t } = useTranslation();
-  const remaining = formatCodexResetCredits(resetCredits);
 
   return (
     <Dialog
@@ -217,56 +218,79 @@ export function CodexResetUsageDialog({
           return $.settings.shared.close;
         })}
       >
-        <DialogHeader>
-          <DialogTitle>
-            {t(($) => {
-              return $.settings.models.reset.title;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {t(
-              ($) => {
-                return $.settings.models.reset.confirmDescription;
-              },
-              {
-                remaining,
-              },
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={resetting}
-            onClick={() => {
-              onOpenChange(false);
-            }}
-          >
-            {t(($) => {
-              return $.settings.shared.cancel;
-            })}
-          </Button>
-          <Button
-            type="button"
-            disabled={resetting || resetCredits === 0}
-            onClick={onConfirm}
-          >
-            {resetting
-              ? t(($) => {
-                  return $.settings.models.reset.progress;
-                })
-              : t(($) => {
-                  return $.settings.models.actions.resetUsage;
-                })}
-          </Button>
-        </DialogFooter>
+        <CodexResetUsageDialogBody
+          resetCredits={resetCredits}
+          resetting={resetting}
+          error={error}
+          onOpenChange={onOpenChange}
+          onConfirm={onConfirm}
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CodexResetUsageDialogBody({
+  resetCredits,
+  resetting,
+  error,
+  onOpenChange,
+  onConfirm,
+}: Omit<CodexResetUsageDialogProps, "open">) {
+  const { t } = useTranslation();
+  const remaining = formatCodexResetCredits(resetCredits);
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          {t(($) => {
+            return $.settings.models.reset.title;
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          {t(
+            ($) => {
+              return $.settings.models.reset.confirmDescription;
+            },
+            {
+              remaining,
+            },
+          )}
+        </DialogDescription>
+      </DialogHeader>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={resetting}
+          onClick={() => {
+            onOpenChange(false);
+          }}
+        >
+          {t(($) => {
+            return $.settings.shared.cancel;
+          })}
+        </Button>
+        <Button
+          type="button"
+          disabled={resetting || resetCredits === 0}
+          onClick={onConfirm}
+        >
+          {resetting
+            ? t(($) => {
+                return $.settings.models.reset.progress;
+              })
+            : t(($) => {
+                return $.settings.models.actions.resetUsage;
+              })}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }

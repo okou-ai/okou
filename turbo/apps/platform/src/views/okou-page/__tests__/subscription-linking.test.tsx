@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -12,16 +13,18 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  buildRunModel,
   composerModelTrigger,
   findComposerEditor,
 } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
 import {
   AGENT_ID,
-  context,
-  mockTemplateChat,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 type ActionRole = "button" | "menuitem" | "menuitemradio";
 

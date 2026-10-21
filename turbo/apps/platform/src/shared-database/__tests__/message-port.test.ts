@@ -9,6 +9,7 @@ import type { Store } from "ccstate";
 
 import {
   chatEventRowsResponse,
+  createTestRuntime,
   testContext,
 } from "../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../signals/utils.ts";
@@ -1792,17 +1793,30 @@ test("Deliver an attach failure to every subscriber and permit reacquisition", a
 });
 
 test("Keep identical subscription keys in separate worker Stores independent", async () => {
+  const firstWorker = createTestRuntime(context);
+  const secondWorker = createTestRuntime(context);
   const resetWorker$ = resetSignal();
-  const firstSignal = context.workerStore.set(resetWorker$, context.signal);
-  const secondSignal = context.store.set(resetWorker$, context.signal);
-  initializeWorker(firstSignal, context.workerStore);
-  initializeWorker(secondSignal, context.store);
-  const first = connectProtocolTransport(firstSignal);
+  const firstSignal = firstWorker.workerStore.set(
+    resetWorker$,
+    firstWorker.signal,
+  );
+  const secondSignal = secondWorker.workerStore.set(
+    resetWorker$,
+    secondWorker.signal,
+  );
+  initializeWorker(firstSignal, firstWorker.workerStore);
+  initializeWorker(secondSignal, secondWorker.workerStore);
+  const first = connectProtocolTransport(
+    firstSignal,
+    undefined,
+    undefined,
+    firstWorker.workerStore,
+  );
   const second = connectProtocolTransport(
     secondSignal,
     undefined,
     undefined,
-    context.store,
+    secondWorker.workerStore,
   );
   await first.bridge.registerTab(firstSignal);
   await second.bridge.registerTab(secondSignal);
@@ -1826,7 +1840,7 @@ test("Keep identical subscription keys in separate worker Stores independent", a
     () => {},
   );
 
-  context.workerStore.set(resetWorker$);
+  firstWorker.workerStore.set(resetWorker$);
   expect(firstSignal.aborted).toBeTruthy();
   expect(secondSignal.aborted).toBeFalsy();
   await vi.waitFor(() => {

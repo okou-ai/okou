@@ -10,14 +10,18 @@ import { expect, test } from "vitest";
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   composer,
+  createChatResourcesHelpers,
   resourceButton,
   resourcePanel,
   resourceState,
-  setupResources,
-  setupOverflowResources,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
+const { setupResources, setupOverflowResources } =
+  createChatResourcesHelpers(context);
 
 test("Recompute at 408px from the actual gutter on native viewport resize", async () => {
   const resize = await setupResources({ gutter: 408 });

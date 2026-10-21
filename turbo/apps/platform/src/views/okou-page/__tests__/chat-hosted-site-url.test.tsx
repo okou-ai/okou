@@ -17,11 +17,13 @@ import {
   NAVIGATION_ARTIFACT_RUN_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
   installResourceGeometry,
   resourceButton,
 } from "./chat-resources-test-helpers.ts";
+
+const context = testContext();
 
 const deploymentId = "00000000-0000-4000-8000-000000000041";
 const siteId = "00000000-0000-4000-8000-000000000042";

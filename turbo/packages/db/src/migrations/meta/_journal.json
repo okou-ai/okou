@@ -2521,6 +2521,13 @@
       "when": 1792493713596,
       "tag": "1437_finalize_agent_instructions",
       "breakpoints": true
+    },
+    {
+      "idx": 1438,
+      "version": "7",
+      "when": 1792549455905,
+      "tag": "1438_hosted_site_browser_sessions",
+      "breakpoints": true
     }
   ]
 }

@@ -67,6 +67,7 @@ type PermissionConnectorCardProps = {
   readonly connector: PermissionConnectorCardItem;
   readonly enabled: boolean;
   readonly loading: boolean;
+  readonly disabled?: boolean;
   readonly showManage: boolean;
   readonly isLast: boolean;
   readonly onManage: () => void;
@@ -480,6 +481,7 @@ function PermissionConnectorCard({
   connector,
   enabled,
   loading,
+  disabled,
   showManage,
   isLast,
   onManage,
@@ -498,6 +500,7 @@ function PermissionConnectorCard({
       }
       enabled={enabled}
       loading={loading}
+      disabled={disabled}
       showManage={showManage}
       isLast={isLast}
       onManage={onManage}

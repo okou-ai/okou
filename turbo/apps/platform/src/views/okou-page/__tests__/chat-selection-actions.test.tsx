@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
@@ -12,14 +13,16 @@ import {
 import {
   clearPassageSelection,
   completedConversation,
-  context,
   feedbackItems,
   findButton,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
   selectPassage,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const PASSAGE = "The launch plan has three careful stages.";
 const NEXT_PASSAGE = "Review a different decision.";

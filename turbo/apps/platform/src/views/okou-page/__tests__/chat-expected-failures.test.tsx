@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -5,11 +6,13 @@ import { expect, test, vi } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { initSentry } from "../../../lib/sentry.ts";
 import {
-  context,
   findEnabledButton,
-  installRunChat,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 test.each(["direct", "message-port"] as const)(
   "show the upgrade dialog for headerless event-row 426 using %s transport",
