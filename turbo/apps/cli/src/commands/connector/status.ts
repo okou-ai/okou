@@ -314,8 +314,8 @@ Scope:
   and shows the current member's connection plus optional --agent authorization.
   Qualify a selector with builtin: or custom: within the supported connector types.
   For org custom definition/member status, use connector custom status <selector>.
-  Current-member JSON accountSummary/memberStatus describe target-specific account facts;
-  connected retains catalog metadata semantics and authorization is separate.
+  Current-member JSON accountSummary/memberStatus describe target-specific account facts.
+  Agent authorization is reported separately.
   To choose another account, run connector account list <selector> --json and
   use only an exact returned connectionId. Never invent or reuse an ID from a
   different connector. A switch applies to future runs in this chat; it cannot

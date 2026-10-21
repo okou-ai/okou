@@ -11,14 +11,15 @@ public enum ConnectorHTTPFixtures {
     {"id":"\(threadID)","agentId":"\(agentID)","cloudBrowserEnabled":false,"computerUseHostId":null}
     """
   public static func account(
-    id: String = accountID, custom: Bool = false, connected: Bool = true, setup: Bool = true
+    id: String = accountID, custom: Bool = false, connected: Bool = true, setup: Bool = true,
+    isDefault: Bool = true
   ) -> String {
     let target =
       custom
       ? "{\"kind\":\"custom\",\"customConnectorId\":\"\(customID)\"}"
       : "{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}"
     return """
-      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"Work account","externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":null\(setup ? ",\"setupStatus\":\"complete\"" : "")}
+      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"Work account","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":null,"tokenExpiresAt":null,"missingRequiredFields":[],"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"\(setup ? ",\"setupStatus\":\"complete\"" : "")}
       """
   }
   public static func catalog(grantKind: String = "none") -> String {
@@ -46,12 +47,20 @@ public enum ConnectorHTTPFixtures {
     if path == "/api/custom-connectors/\(customID)" {
       return ChatHTTPResponse(body: custom(mode: customMode))
     }
-    if path == "/api/connector-accounts" {
-      let builtinDefault = connected ? account() : "null"
-      let customDefault = connected ? account(custom: true) : "null"
+    if path == "/api/connector-accounts/connections" {
+      let query = request.url.flatMap {
+        URLComponents(url: $0, resolvingAgainstBaseURL: false)
+      }?.queryItems ?? []
+      let kind = query.first { $0.name == "kind" }?.value
+      guard kind == "builtin" || kind == "custom" else { return nil }
+      let custom = kind == "custom"
+      let key = custom ? "customConnectorId" : "connectorSlug"
+      guard query.first(where: { $0.name == key })?.value == (custom ? customID : "slack")
+      else { return nil }
+      let defaultAccount = connected ? account(custom: custom) : "null"
       return ChatHTTPResponse(
         body: """
-          {"summaries":[{"target":{"kind":"builtin","connectorSlug":"slack"},"defaultConnection":\(builtinDefault)},{"target":{"kind":"custom","customConnectorId":"\(customID)"},"defaultConnection":\(customDefault)}]}
+          {"connections":\(connected ? "[\(defaultAccount)]" : "[]"),"nextCursor":null,"defaultConnection":\(defaultAccount)}
           """)
     }
     if path == "/api/connector-accounts/\(accountID)" {
