@@ -294,6 +294,13 @@ final class MessageArtifactStore {
   }
 
   static func message(for error: Error) -> String {
+    if let transport = error as? APIClientError, case .downloadFailed(let status) = transport {
+      switch status {
+      case 403: return "Access to this result was denied. Retry to refresh its download address."
+      case 404, 410: return "This result was deleted or is no longer available."
+      default: break
+      }
+    }
     switch (error as? APIClientError)?.statusCode {
     case 403: return "You do not have permission to view this result."
     case 404, 410: return "This result was deleted or is no longer available."

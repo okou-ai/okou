@@ -269,6 +269,13 @@ final class GeneratedResultTests: XCTestCase {
     defer { unmount(window) }
     try await screenshot(window, "Native-result-access-denied")
     fixture.state.denied.withLock { $0 = false }
+    for status in [403, 404] {
+      fixture.state.storageStatus.withLock { $0 = status }
+      viewer.retry()
+      try await eventually { viewer.preview?.error != nil }
+      XCTAssertTrue(viewer.preview?.error?.contains(status == 403 ? "denied" : "deleted") == true)
+    }
+    fixture.state.storageStatus.withLock { $0 = nil }
     viewer.retry()
     try await eventually { viewer.preview?.file != nil }
     let url = try XCTUnwrap(viewer.preview?.file?.url)
@@ -492,6 +499,7 @@ private final class GeneratedResultFixture: Sendable {
     let state = GeneratedResultState()
     let server = try ChatFileHTTPServer { request in
       state.storageRequests.withLock { $0.append(request) }
+      if let status = state.storageStatus.withLock({ $0 }) { return .init(status: status) }
       if request.url?.lastPathComponent == "html000001.html",
         state.expiredHTML.withLock({ value in
           let expired = value
@@ -621,6 +629,7 @@ private final class GeneratedResultFixture: Sendable {
 }
 
 private final class GeneratedResultState: Sendable {
+  let storageStatus = Mutex<Int?>(nil)
   let omitVideoPoster = Mutex(false)
   let expiredHTML = Mutex(false)
   let denied = Mutex(false)
