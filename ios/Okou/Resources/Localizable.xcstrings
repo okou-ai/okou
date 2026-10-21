@@ -9,12 +9,6 @@
             "state": "translated",
             "value": "Okou home"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Okou 首页"
-          }
         }
       }
     },
@@ -25,12 +19,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use your existing Okou account. Manage your account on the web."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用已有的 Okou 账号登录。账号设置可在网页版管理。"
           }
         }
       }
@@ -43,12 +31,6 @@
             "state": "translated",
             "value": "Restoring your session…"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在恢复登录状态…"
-          }
         }
       }
     },
@@ -59,12 +41,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unable to sign in"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂时无法登录"
           }
         }
       }
@@ -77,12 +53,6 @@
             "state": "translated",
             "value": "Sign-in could not be loaded. Please try again."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录页面加载失败，请重试。"
-          }
         }
       }
     },
@@ -93,12 +63,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Try again"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重试"
           }
         }
       }
@@ -111,12 +75,6 @@
             "state": "translated",
             "value": "Open Okou on the web"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开网页版 Okou"
-          }
         }
       }
     },
@@ -127,12 +85,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Choose a workspace"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择工作区"
           }
         }
       }
@@ -145,12 +97,6 @@
             "state": "translated",
             "value": "Continue with one of your workspaces."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择一个工作区，继续使用 Okou。"
-          }
         }
       }
     },
@@ -161,12 +107,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Loading workspaces…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载工作区…"
           }
         }
       }
@@ -179,12 +119,6 @@
             "state": "translated",
             "value": "Finish setting up your workspace on the web, then return here."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请先在网页版完成工作区设置，然后返回这里。"
-          }
         }
       }
     },
@@ -195,12 +129,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Refresh workspaces"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刷新工作区"
           }
         }
       }
@@ -213,12 +141,6 @@
             "state": "translated",
             "value": "Sign out"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "退出登录"
-          }
         }
       }
     },
@@ -229,12 +151,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sign-in is not configured for this build."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此版本尚未配置登录服务。"
           }
         }
       }
@@ -247,12 +163,6 @@
             "state": "translated",
             "value": "Your session has expired. Please sign in again."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录状态已过期，请重新登录。"
-          }
         }
       }
     },
@@ -263,12 +173,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Your account or workspace changed. Please try again in the current workspace."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "账号或工作区已变更，请在当前工作区重试。"
           }
         }
       }
@@ -281,12 +185,6 @@
             "state": "translated",
             "value": "This workspace is no longer available. Choose another workspace or manage access on the web."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此工作区已不可用。请选择其他工作区，或前往网页版管理访问权限。"
-          }
         }
       }
     },
@@ -297,12 +195,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Subscriptions"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "订阅"
           }
         }
       }
@@ -315,12 +207,6 @@
             "state": "translated",
             "value": "Chat models"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "聊天模型"
-          }
         }
       }
     },
@@ -331,12 +217,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Thinking effort"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "思考强度"
           }
         }
       }
@@ -349,12 +229,6 @@
             "state": "translated",
             "value": "Fast mode"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fast 模式"
-          }
         }
       }
     },
@@ -365,12 +239,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Okou credits"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Okou 点数"
           }
         }
       }
@@ -383,12 +251,6 @@
             "state": "translated",
             "value": "Week"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "周"
-          }
         }
       }
     },
@@ -399,12 +261,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "5 hours"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "5 小时"
           }
         }
       }
@@ -417,12 +273,6 @@
             "state": "translated",
             "value": "Connect %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接 %@"
-          }
         }
       }
     },
@@ -433,12 +283,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Manage subscriptions"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理订阅"
           }
         }
       }
@@ -451,12 +295,6 @@
             "state": "translated",
             "value": "Changes apply to this chat."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更改仅用于当前聊天。"
-          }
         }
       }
     },
@@ -467,12 +305,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use for future chats too"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "以后聊天也用这个"
           }
         }
       }
@@ -485,12 +317,6 @@
             "state": "translated",
             "value": "Default saved"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已保存默认设置"
-          }
         }
       }
     },
@@ -501,12 +327,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Faster · lower usage"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更快 · 消耗更低"
           }
         }
       }
@@ -519,12 +339,6 @@
             "state": "translated",
             "value": "Smarter · higher usage"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更聪明 · 消耗更高"
-          }
         }
       }
     },
@@ -535,12 +349,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Uses %g× your ChatGPT subscription allowance."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "消耗 ChatGPT 订阅额度的 %g 倍。"
           }
         }
       }
@@ -553,12 +361,6 @@
             "state": "translated",
             "value": "Uses more of your subscription allowance."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会消耗更多订阅额度。"
-          }
         }
       }
     },
@@ -569,12 +371,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reconnect your subscription to use this model."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请重新连接订阅以使用此模型。"
           }
         }
       }
@@ -587,12 +383,6 @@
             "state": "translated",
             "value": "This model is restricted by your plan."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前套餐限制使用此模型。"
-          }
         }
       }
     },
@@ -603,12 +393,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Manage plan"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理套餐"
           }
         }
       }
@@ -621,12 +405,6 @@
             "state": "translated",
             "value": "This model is unavailable. Choose an available model before sending."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此模型不可用。请先选择可用模型再发送。"
-          }
         }
       }
     },
@@ -637,12 +415,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Plan restricted"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "套餐限制"
           }
         }
       }
@@ -655,12 +427,6 @@
             "state": "translated",
             "value": "Reconnect required"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要重新连接"
-          }
         }
       }
     },
@@ -671,12 +437,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connected"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已连接"
           }
         }
       }
@@ -689,12 +449,6 @@
             "state": "translated",
             "value": "Loading models…"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载模型…"
-          }
         }
       }
     },
@@ -705,12 +459,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Refresh model settings"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刷新模型设置"
           }
         }
       }
@@ -723,12 +471,6 @@
             "state": "translated",
             "value": "Retry model settings"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重试模型设置"
-          }
         }
       }
     },
@@ -739,12 +481,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Choose a model, thinking effort, or Fast mode for this chat"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "为当前聊天选择模型、思考强度或 Fast 模式"
           }
         }
       }
@@ -757,12 +493,6 @@
             "state": "translated",
             "value": "Done"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成"
-          }
         }
       }
     },
@@ -773,12 +503,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Close"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭"
           }
         }
       }
@@ -791,12 +515,6 @@
             "state": "translated",
             "value": "Reconnect"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新连接"
-          }
         }
       }
     },
@@ -807,12 +525,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use account"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用此账户"
           }
         }
       }
@@ -825,12 +537,6 @@
             "state": "translated",
             "value": "Account actions"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "账户操作"
-          }
         }
       }
     },
@@ -841,12 +547,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Active account"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前账户"
           }
         }
       }
@@ -859,12 +559,6 @@
             "state": "translated",
             "value": "Disconnect"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "断开连接"
-          }
         }
       }
     },
@@ -875,12 +569,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect account"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接账户"
           }
         }
       }
@@ -893,12 +581,6 @@
             "state": "translated",
             "value": "No connected accounts"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚未连接账户"
-          }
         }
       }
     },
@@ -909,12 +591,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Loading accounts…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载账户…"
           }
         }
       }
@@ -927,12 +603,6 @@
             "state": "translated",
             "value": "Refresh accounts and usage"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刷新账户和额度"
-          }
         }
       }
     },
@@ -943,12 +613,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Disconnect account?"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "断开此账户？"
           }
         }
       }
@@ -961,12 +625,6 @@
             "state": "translated",
             "value": "Future runs will use another active account. Runs already started keep their captured account."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "后续运行会使用其他当前账户。已经启动的运行继续使用其已捕获的账户。"
-          }
         }
       }
     },
@@ -977,12 +635,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reset subscription usage?"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重置订阅额度？"
           }
         }
       }
@@ -995,12 +647,6 @@
             "state": "translated",
             "value": "Use one reset credit"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用 1 次重置额度"
-          }
         }
       }
     },
@@ -1011,12 +657,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "This uses one subscription reset credit. It cannot be undone."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这会消耗 1 次订阅重置额度，此操作无法撤销。"
           }
         }
       }
@@ -1029,12 +669,6 @@
             "state": "translated",
             "value": "Credits expire %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重置额度于 %@ 到期"
-          }
         }
       }
     },
@@ -1045,12 +679,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reset usage (%lld credits)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重置用量（剩余 %lld 次）"
           }
         }
       }
@@ -1063,12 +691,6 @@
             "state": "translated",
             "value": "Usage unavailable"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "额度暂不可用"
-          }
         }
       }
     },
@@ -1079,12 +701,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Resets %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "于 %@ 重置"
           }
         }
       }
@@ -1097,12 +713,6 @@
             "state": "translated",
             "value": "5-hour window"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "5 小时时间窗口"
-          }
         }
       }
     },
@@ -1113,12 +723,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Weekly window"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每周时间窗口"
           }
         }
       }
@@ -1131,12 +735,6 @@
             "state": "translated",
             "value": "%.0f%% remaining"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "剩余 %.0f%%"
-          }
         }
       }
     },
@@ -1147,12 +745,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Starting authorization…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在开始授权…"
           }
         }
       }
@@ -1165,12 +757,6 @@
             "state": "translated",
             "value": "Subscription connected"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "订阅已连接"
-          }
         }
       }
     },
@@ -1181,12 +767,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Authorization expired. Start again to connect."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权已过期，请重新开始连接。"
           }
         }
       }
@@ -1199,12 +779,6 @@
             "state": "translated",
             "value": "Unable to authorize your subscription."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法授权订阅。"
-          }
         }
       }
     },
@@ -1215,12 +789,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Start again"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新开始"
           }
         }
       }
@@ -1233,12 +801,6 @@
             "state": "translated",
             "value": "1. Open the authorization page in your browser and sign in."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1. 在系统浏览器中打开授权页面并登录。"
-          }
         }
       }
     },
@@ -1249,12 +811,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "2. Paste the authorization code shown after signing in."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "2. 粘贴登录后显示的授权码。"
           }
         }
       }
@@ -1267,12 +823,6 @@
             "state": "translated",
             "value": "2. Enter this verification code in your browser."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "2. 在浏览器中输入此验证码。"
-          }
         }
       }
     },
@@ -1283,12 +833,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Waiting for authorization…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等待授权…"
           }
         }
       }
@@ -1301,12 +845,6 @@
             "state": "translated",
             "value": "Authorization expires %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权于 %@ 过期"
-          }
         }
       }
     },
@@ -1317,12 +855,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open authorization page"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开授权页面"
           }
         }
       }
@@ -1335,12 +867,6 @@
             "state": "translated",
             "value": "Authorization code"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权码"
-          }
         }
       }
     },
@@ -1351,12 +877,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Complete connection"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成连接"
           }
         }
       }
@@ -1369,12 +889,6 @@
             "state": "translated",
             "value": "Verification code: %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "验证码：%@"
-          }
         }
       }
     },
@@ -1385,12 +899,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copy verification code"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制验证码"
           }
         }
       }
@@ -1403,12 +911,6 @@
             "state": "translated",
             "value": "Connect subscription"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接订阅"
-          }
         }
       }
     },
@@ -1419,12 +921,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Usage reset."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "用量已重置。"
           }
         }
       }
@@ -1437,12 +933,6 @@
             "state": "translated",
             "value": "No usage needs resetting."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目前无需重置用量。"
-          }
         }
       }
     },
@@ -1453,12 +943,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "No reset credits available."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有可用的重置额度。"
           }
         }
       }
@@ -1471,12 +955,6 @@
             "state": "translated",
             "value": "Refresh subscriptions and select an account to reconnect."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请刷新订阅并选择需要重新连接的账户。"
-          }
         }
       }
     },
@@ -1487,12 +965,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Model settings"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型设置"
           }
         }
       }
@@ -1505,12 +977,6 @@
             "state": "translated",
             "value": "Loading model settings"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载模型设置"
-          }
         }
       }
     },
@@ -1521,12 +987,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Model settings unavailable"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型设置暂不可用"
           }
         }
       }
@@ -1539,12 +999,6 @@
             "state": "translated",
             "value": "Model settings need attention"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型设置需要处理"
-          }
         }
       }
     },
@@ -1555,12 +1009,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Credit usage"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "积分消耗"
           }
         }
       }
@@ -1573,12 +1021,6 @@
             "state": "translated",
             "value": "Total credits"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "总积分"
-          }
         }
       }
     },
@@ -1589,12 +1031,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Loading credit usage"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载积分消耗"
           }
         }
       }
@@ -1607,12 +1043,6 @@
             "state": "translated",
             "value": "Settled usage is not available for this run."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本轮的结算用量暂不可用。"
-          }
         }
       }
     },
@@ -1623,12 +1053,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Models"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型"
           }
         }
       }
@@ -1641,12 +1065,6 @@
             "state": "translated",
             "value": "Avatar"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "数字人"
-          }
         }
       }
     },
@@ -1657,12 +1075,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Image Recognition"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "图像识别"
           }
         }
       }
@@ -1675,12 +1087,6 @@
             "state": "translated",
             "value": "Maps"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "地图"
-          }
         }
       }
     },
@@ -1691,12 +1097,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Web Fetch"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "网页抓取"
           }
         }
       }
@@ -1709,12 +1109,6 @@
             "state": "translated",
             "value": "Web Search"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "网页搜索"
-          }
         }
       }
     },
@@ -1726,12 +1120,6 @@
             "state": "translated",
             "value": "People Search"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "人物搜索"
-          }
         }
       }
     },
@@ -1739,12 +1127,6 @@
       "extractionState": "manual",
       "localizations": {
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SEO"
-          }
-        },
-        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "SEO"
@@ -1760,12 +1142,6 @@
             "state": "translated",
             "value": "Social Search"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "社交搜索"
-          }
         }
       }
     },
@@ -1776,12 +1152,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Finance"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "金融"
           }
         }
       }
@@ -1794,12 +1164,6 @@
             "state": "translated",
             "value": "Weather"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "天气"
-          }
         }
       }
     },
@@ -1810,12 +1174,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Translation"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "翻译"
           }
         }
       }
@@ -1828,12 +1186,6 @@
             "state": "translated",
             "value": "Usage"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "用量"
-          }
         }
       }
     },
@@ -1844,12 +1196,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Loading connector…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载连接器…"
           }
         }
       }
@@ -1862,12 +1208,6 @@
             "state": "translated",
             "value": "Action unavailable"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "操作不可用"
-          }
         }
       }
     },
@@ -1878,12 +1218,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "This action no longer matches an available connector in this conversation."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此操作已无法用于当前对话中的连接器。"
           }
         }
       }
@@ -1896,12 +1230,6 @@
             "state": "translated",
             "value": "Could not load connector"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法加载连接器"
-          }
         }
       }
     },
@@ -1912,12 +1240,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect an account for this Agent"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "为此 Agent 连接账号"
           }
         }
       }
@@ -1930,12 +1252,6 @@
             "state": "translated",
             "value": "Use this account"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用此账号"
-          }
         }
       }
     },
@@ -1946,12 +1262,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Authorize Agent"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权给 Agent"
           }
         }
       }
@@ -1964,12 +1274,6 @@
             "state": "translated",
             "value": "Connect"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接"
-          }
         }
       }
     },
@@ -1980,12 +1284,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Confirm this account for the conversation and continue."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确认在此对话中使用此账号，然后继续。"
           }
         }
       }
@@ -1998,12 +1296,6 @@
             "state": "translated",
             "value": "Sign in again to continue with this exact account."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新登录以继续使用此指定账号。"
-          }
         }
       }
     },
@@ -2014,12 +1306,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connected and authorized for this Agent."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已连接并授权给此 Agent。"
           }
         }
       }
@@ -2032,12 +1318,6 @@
             "state": "translated",
             "value": "Allow this Agent to use the connected account."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "允许此 Agent 使用已连接的账号。"
-          }
         }
       }
     },
@@ -2048,12 +1328,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect this service to continue the conversation."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接此服务以继续对话。"
           }
         }
       }
@@ -2066,12 +1340,6 @@
             "state": "translated",
             "value": "Your service authorization expired or was revoked. Sign in again."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "服务授权已过期或被撤销，请重新登录。"
-          }
         }
       }
     },
@@ -2082,12 +1350,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Account"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "账号"
           }
         }
       }
@@ -2100,12 +1362,6 @@
             "state": "translated",
             "value": "Authorization applies to the Agent in this conversation."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此授权适用于当前对话中的 Agent。"
-          }
         }
       }
     },
@@ -2116,12 +1372,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connection method"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接方式"
           }
         }
       }
@@ -2134,12 +1384,6 @@
             "state": "translated",
             "value": "Method"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "方式"
-          }
         }
       }
     },
@@ -2150,12 +1394,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Google may show a security warning for this connection. Review the requested access before continuing."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Google 可能显示安全警告。请确认请求的访问权限后再继续。"
           }
         }
       }
@@ -2168,12 +1406,6 @@
             "state": "translated",
             "value": "Connection details"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接详情"
-          }
         }
       }
     },
@@ -2184,12 +1416,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Finish authorization"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成授权"
           }
         }
       }
@@ -2202,12 +1428,6 @@
             "state": "translated",
             "value": "Verification code"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "验证码"
-          }
         }
       }
     },
@@ -2218,12 +1438,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Retry continuation"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重试继续对话"
           }
         }
       }
@@ -2236,12 +1450,6 @@
             "state": "translated",
             "value": "Submit code"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "提交授权码"
-          }
         }
       }
     },
@@ -2252,12 +1460,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Confirm and continue"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确认并继续"
           }
         }
       }
@@ -2270,12 +1472,6 @@
             "state": "translated",
             "value": "Connect service"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接服务"
-          }
         }
       }
     },
@@ -2286,12 +1482,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connected. Conversation continued."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已连接，对话已继续。"
           }
         }
       }
@@ -2304,12 +1494,6 @@
             "state": "translated",
             "value": "Authorization canceled. You can try again."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权已取消，可以重试。"
-          }
         }
       }
     },
@@ -2320,12 +1504,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Authorization canceled."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权已取消。"
           }
         }
       }
@@ -2338,12 +1516,6 @@
             "state": "translated",
             "value": "Service account"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "服务账号"
-          }
         }
       }
     },
@@ -2354,12 +1526,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Other endpoints"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "其他接口"
           }
         }
       }
@@ -2372,12 +1538,6 @@
             "state": "translated",
             "value": "Saving permission…"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在保存权限…"
-          }
         }
       }
     },
@@ -2388,12 +1548,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Checking permission…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在检查权限…"
           }
         }
       }
@@ -2406,12 +1560,6 @@
             "state": "translated",
             "value": "Unable to complete. Open details to retry."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未能完成。请打开详情重试。"
-          }
         }
       }
     },
@@ -2422,12 +1570,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Permission unavailable"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限不可用"
           }
         }
       }
@@ -2440,12 +1582,6 @@
             "state": "translated",
             "value": "Permission saved. Continue the conversation."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限已保存，请继续对话。"
-          }
         }
       }
     },
@@ -2456,12 +1592,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Expires %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有效期至 %@"
           }
         }
       }
@@ -2474,12 +1604,6 @@
             "state": "translated",
             "value": "Allowed · No expiration"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已允许 · 永久有效"
-          }
         }
       }
     },
@@ -2490,12 +1614,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Denied"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已拒绝"
           }
         }
       }
@@ -2508,12 +1626,6 @@
             "state": "translated",
             "value": "Allowed"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已允许"
-          }
         }
       }
     },
@@ -2524,12 +1636,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Previous permission expired"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "之前的授权已过期"
           }
         }
       }
@@ -2542,12 +1648,6 @@
             "state": "translated",
             "value": "Waiting for your confirmation"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等待你的确认"
-          }
         }
       }
     },
@@ -2558,12 +1658,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Allow %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "允许 %@"
           }
         }
       }
@@ -2576,12 +1670,6 @@
             "state": "translated",
             "value": "Deny %@"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拒绝 %@"
-          }
         }
       }
     },
@@ -2592,12 +1680,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Your permissions for %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你为 %@ 设置的权限"
           }
         }
       }
@@ -2610,12 +1692,6 @@
             "state": "translated",
             "value": "this Agent"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此 Agent"
-          }
         }
       }
     },
@@ -2626,12 +1702,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Review permission"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看权限申请"
           }
         }
       }
@@ -2644,12 +1714,6 @@
             "state": "translated",
             "value": "Connector"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接器"
-          }
         }
       }
     },
@@ -2657,12 +1721,6 @@
       "extractionState": "manual",
       "localizations": {
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent"
-          }
-        },
-        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Agent"
@@ -2678,12 +1736,6 @@
             "state": "translated",
             "value": "These permissions apply to your account for this Agent."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这些权限适用于你为此 Agent 使用的账号。"
-          }
         }
       }
     },
@@ -2694,12 +1746,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Permission"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限"
           }
         }
       }
@@ -2712,12 +1758,6 @@
             "state": "translated",
             "value": "Retry loading"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新加载"
-          }
         }
       }
     },
@@ -2728,12 +1768,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "This permission is no longer available."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此权限已不可用。"
           }
         }
       }
@@ -2746,12 +1780,6 @@
             "state": "translated",
             "value": "No expiration"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "永久有效"
-          }
         }
       }
     },
@@ -2762,12 +1790,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Duration"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授权期限"
           }
         }
       }
@@ -2780,12 +1802,6 @@
             "state": "translated",
             "value": "1 hour"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 小时"
-          }
         }
       }
     },
@@ -2796,12 +1812,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "24 hours"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "24 小时"
           }
         }
       }
@@ -2814,12 +1824,6 @@
             "state": "translated",
             "value": "7 days"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "7 天"
-          }
         }
       }
     },
@@ -2830,12 +1834,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Always"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "永久"
           }
         }
       }
@@ -2848,12 +1846,6 @@
             "state": "translated",
             "value": "The conversation will continue after confirmation."
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确认后将继续此对话。"
-          }
         }
       }
     },
@@ -2864,12 +1856,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Continue conversation"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "继续对话"
           }
         }
       }
@@ -2882,12 +1868,6 @@
             "state": "translated",
             "value": "Allow permission"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "允许此权限"
-          }
         }
       }
     },
@@ -2898,12 +1878,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Deny permission"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拒绝此权限"
           }
         }
       }
@@ -2916,12 +1890,6 @@
             "state": "translated",
             "value": "Permission request"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限申请"
-          }
         }
       }
     },
@@ -2932,12 +1900,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Permission request unavailable"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此权限申请不可用"
           }
         }
       }
@@ -2950,12 +1912,6 @@
             "state": "translated",
             "value": "Recent"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近"
-          }
         }
       }
     },
@@ -2966,12 +1922,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unread"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未读"
           }
         }
       }
@@ -2984,12 +1934,6 @@
             "state": "translated",
             "value": "Archived"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已归档"
-          }
         }
       }
     },
@@ -3000,12 +1944,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chats"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "聊天"
           }
         }
       }
@@ -3018,12 +1956,6 @@
             "state": "translated",
             "value": "Chat list"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "聊天列表"
-          }
         }
       }
     },
@@ -3035,12 +1967,6 @@
             "state": "translated",
             "value": "Mark all chats for %@ as read"
           }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "将 %@ 的聊天全部标为已读"
-          }
         }
       }
     },
@@ -3051,12 +1977,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mark all as read for this agent"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "将当前智能体的聊天全部标为已读"
           }
         }
       }
