@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, gt } from "drizzle-orm";
 import { hostedSiteBrowserSessions } from "@okouai/db/schema/hosted-site-browser-session";
 import {
@@ -21,7 +21,7 @@ import {
   checkHostedSiteAccess$,
   readHostedSitePolicy$,
 } from "./hosted-site-access.service";
-import { hostedSiteSessionOrigin } from "./hosted-site-session-origin.service";
+import { hostedSiteSessionOrigin$ } from "./hosted-site-session-origin.service";
 
 const CODE_LIFETIME_MS = 2 * 60 * 1000;
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
@@ -45,11 +45,12 @@ function supportedOrigin(origin: string) {
   );
 }
 
-function liveSession(
-  identity: { readonly userId: string; readonly clerkSessionId: string },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+const liveSession$ = command(
+  async (
+    { get },
+    identity: { readonly userId: string; readonly clerkSessionId: string },
+    signal: AbortSignal,
+  ) => {
     const read = await settle(
       get(clerk$).sessions.getSession(
         identity.clerkSessionId,
@@ -70,8 +71,8 @@ function liveSession(
       read.value.status === "active" &&
       read.value.expireAt > nowDate().getTime()
     );
-  });
-}
+  },
+);
 
 export const authorizeHostedSiteSession$ = command(
   async (
@@ -101,15 +102,14 @@ export const authorizeHostedSiteSession$ = command(
       4,
     );
     if (
-      !(await get(
-        hostedSiteSessionOrigin(
-          {
-            siteId: args.siteId,
-            publicSlug: policy.site.publicSlug,
-            label: new URL(args.origin).hostname.slice(0, -suffix.length),
-          },
-          signal,
-        ),
+      !(await set(
+        hostedSiteSessionOrigin$,
+        {
+          siteId: args.siteId,
+          publicSlug: policy.site.publicSlug,
+          label: new URL(args.origin).hostname.slice(0, -suffix.length),
+        },
+        signal,
       ))
     ) {
       return { status: "denied" as const };
@@ -131,11 +131,10 @@ export const authorizeHostedSiteSession$ = command(
       return { status: "unauthenticated" as const };
     }
     if (
-      !(await get(
-        liveSession(
-          { userId: identity.userId, clerkSessionId: identity.sessionId },
-          signal,
-        ),
+      !(await set(
+        liveSession$,
+        { userId: identity.userId, clerkSessionId: identity.sessionId },
+        signal,
       ))
     ) {
       return { status: "unauthenticated" as const };
@@ -195,7 +194,7 @@ export const exchangeHostedSiteSession$ = command(
       .where(condition)
       .limit(1);
     signal.throwIfAborted();
-    if (!pending || !(await get(liveSession(pending, signal)))) {
+    if (!pending || !(await set(liveSession$, pending, signal))) {
       return null;
     }
     const sessionToken = `okou_site_${randomBytes(32).toString("hex")}`;
@@ -218,11 +217,12 @@ export const exchangeHostedSiteSession$ = command(
   },
 );
 
-export function hostedSiteSessionViewer(
-  args: { readonly siteId: string; readonly origin: string },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+export const hostedSiteSessionViewer$ = command(
+  async (
+    { get, set },
+    args: { readonly siteId: string; readonly origin: string },
+    signal: AbortSignal,
+  ) => {
     const authorization = get(request$).header("Authorization");
     const token = hostedSiteSessionTokenSchema.safeParse(
       authorization?.startsWith("Bearer ") ? authorization.slice(7) : null,
@@ -244,9 +244,9 @@ export function hostedSiteSessionViewer(
       .limit(1);
     signal.throwIfAborted();
     return session &&
-      (await get(liveSession(session, signal))) &&
+      (await set(liveSession$, session, signal)) &&
       session.expiresAt.getTime() > nowDate().getTime()
       ? session.userId
       : undefined;
-  });
-}
+  },
+);

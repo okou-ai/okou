@@ -1,4 +1,4 @@
-import { computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -16,19 +16,19 @@ import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import {
   isS3NotFoundError,
-  readArtifactSharePolicyObject,
+  readArtifactSharePolicyObject$,
 } from "../external/s3";
 import { settle } from "../utils";
-import { artifactDeliveryRecord } from "./artifact-delivery.service";
+import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
 
-function readObject(key: string, signal: AbortSignal) {
-  return computed(async (get): Promise<unknown> => {
+const readObject$ = command(
+  async ({ set }, key: string, signal: AbortSignal): Promise<unknown> => {
     const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
     if (!bucket) {
       throw new Error("Hosted site storage is not configured");
     }
     const result = await settle(
-      get(readArtifactSharePolicyObject(bucket, key, signal)),
+      set(readArtifactSharePolicyObject$, { bucket, key }, signal),
       signal,
     );
     if (!result.ok) {
@@ -39,8 +39,8 @@ function readObject(key: string, signal: AbortSignal) {
     }
     const object: unknown = JSON.parse(result.value.buffer.toString("utf8"));
     return object;
-  });
-}
+  },
+);
 
 const previewSchema = z.object({
   version: z.literal(1),
@@ -56,12 +56,13 @@ const manifestIdentitySchema = z.object({
   access: z.literal("owner-private-v1"),
 });
 
-function deploymentOrigin(
-  siteId: string,
-  deploymentId: string,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+const deploymentOrigin$ = command(
+  async (
+    { get },
+    siteId: string,
+    deploymentId: string,
+    signal: AbortSignal,
+  ) => {
     const [deployment] = await get(db$)
       .select({ id: hostedDeployments.id })
       .from(hostedDeployments)
@@ -86,23 +87,23 @@ function deploymentOrigin(
       );
     signal.throwIfAborted();
     return !!deployment;
-  });
-}
-
-function previewOrigin(
-  args: {
-    readonly siteId: string;
-    readonly token: string;
-    readonly shared: boolean;
   },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
-    const object = await get(
-      readObject(
-        `${args.shared ? "shared-previews" : "private-previews"}/okou/${args.token}.json`,
-        signal,
-      ),
+);
+
+const previewOrigin$ = command(
+  async (
+    { set },
+    args: {
+      readonly siteId: string;
+      readonly token: string;
+      readonly shared: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    const object = await set(
+      readObject$,
+      `${args.shared ? "shared-previews" : "private-previews"}/okou/${args.token}.json`,
+      signal,
     );
     if (!object) {
       return false;
@@ -117,7 +118,7 @@ function previewOrigin(
     const prefix = args.shared
       ? `shared-artifacts/okou/${grant.snapshotId}/${grant.deploymentId}`
       : `private-sites/okou/${grant.deploymentId}`;
-    const manifest = await get(readObject(`${prefix}/manifest.json`, signal));
+    const manifest = await set(readObject$, `${prefix}/manifest.json`, signal);
     if (!manifest) {
       return false;
     }
@@ -126,23 +127,26 @@ function previewOrigin(
       identity.siteId === args.siteId &&
       identity.deploymentId === grant.deploymentId
     );
-  });
-}
+  },
+);
 
-function threadResourceOrigin(
-  siteId: string,
-  record: Extract<ArtifactDeliveryRecord, { readonly kind: "thread-resource" }>,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+const threadResourceOrigin$ = command(
+  async (
+    { set },
+    siteId: string,
+    record: Extract<
+      ArtifactDeliveryRecord,
+      { readonly kind: "thread-resource" }
+    >,
+    signal: AbortSignal,
+  ) => {
     if (record.targetKind !== "html") {
       return false;
     }
-    const object = await get(
-      readObject(
-        sharedThreadArtifactPolicyKey("okou", record.threadId),
-        signal,
-      ),
+    const object = await set(
+      readObject$,
+      sharedThreadArtifactPolicyKey("okou", record.threadId),
+      signal,
     );
     if (!object) {
       return false;
@@ -157,20 +161,23 @@ function threadResourceOrigin(
       target.siteId === siteId &&
       (record.targetId === undefined || record.targetId === target.id)
     );
-  });
-}
-
-function publicationOrigin(
-  args: {
-    readonly siteId: string;
-    readonly shareId: string;
-    readonly token: string;
   },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
-    const object = await get(
-      readObject(`artifact-shares/okou/${args.shareId}.json`, signal),
+);
+
+const publicationOrigin$ = command(
+  async (
+    { set },
+    args: {
+      readonly siteId: string;
+      readonly shareId: string;
+      readonly token: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const object = await set(
+      readObject$,
+      `artifact-shares/okou/${args.shareId}.json`,
+      signal,
     );
     if (!object) {
       return false;
@@ -184,19 +191,20 @@ function publicationOrigin(
       policy.target.kind === "html" &&
       policy.target.siteId === args.siteId
     );
-  });
-}
+  },
+);
 
 /** A Site cannot delegate even its scoped credential to another publisher's host. */
-export function hostedSiteSessionOrigin(
-  args: {
-    readonly siteId: string;
-    readonly publicSlug: string;
-    readonly label: string;
-  },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+export const hostedSiteSessionOrigin$ = command(
+  async (
+    { set },
+    args: {
+      readonly siteId: string;
+      readonly publicSlug: string;
+      readonly label: string;
+    },
+    signal: AbortSignal,
+  ) => {
     if (args.label === args.publicSlug) {
       return true;
     }
@@ -204,40 +212,40 @@ export function hostedSiteSessionOrigin(
       .uuid()
       .safeParse(args.label.startsWith("dpl-") ? args.label.slice(4) : null);
     if (deploymentId.success) {
-      return get(deploymentOrigin(args.siteId, deploymentId.data, signal));
+      return set(deploymentOrigin$, args.siteId, deploymentId.data, signal);
     }
     const preview = /^(pv|ps)-([a-f0-9]{48})$/u.exec(args.label);
     if (preview) {
-      return get(
-        previewOrigin(
-          {
-            siteId: args.siteId,
-            shared: preview[1] === "ps",
-            token: preview[2]!,
-          },
-          signal,
-        ),
+      return set(
+        previewOrigin$,
+        {
+          siteId: args.siteId,
+          shared: preview[1] === "ps",
+          token: preview[2]!,
+        },
+        signal,
       );
     }
-    const record = await get(
-      artifactDeliveryRecord("current", "html", args.label, signal),
+    const record = await set(
+      readArtifactDeliveryRecord$,
+      { layout: "current", kind: "html", alias: args.label },
+      signal,
     );
     signal.throwIfAborted();
     if (record?.kind === "thread-resource") {
-      return get(threadResourceOrigin(args.siteId, record, signal));
+      return set(threadResourceOrigin$, args.siteId, record, signal);
     }
     if (record?.kind === "publication") {
       return (
         record.targetKind === "html" &&
-        get(
-          publicationOrigin(
-            {
-              siteId: args.siteId,
-              shareId: record.shareId,
-              token: record.publicToken,
-            },
-            signal,
-          ),
+        set(
+          publicationOrigin$,
+          {
+            siteId: args.siteId,
+            shareId: record.shareId,
+            token: record.publicToken,
+          },
+          signal,
         )
       );
     }
@@ -250,8 +258,10 @@ export function hostedSiteSessionOrigin(
     if (!shareId || !token) {
       return false;
     }
-    return get(
-      publicationOrigin({ siteId: args.siteId, shareId, token }, signal),
+    return set(
+      publicationOrigin$,
+      { siteId: args.siteId, shareId, token },
+      signal,
     );
-  });
-}
+  },
+);

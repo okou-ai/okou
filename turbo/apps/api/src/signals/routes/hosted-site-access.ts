@@ -15,7 +15,7 @@ import { authorizeHostedSiteDownload$ } from "../services/hosted-site-download.s
 import {
   authorizeHostedSiteSession$,
   exchangeHostedSiteSession$,
-  hostedSiteSessionViewer,
+  hostedSiteSessionViewer$,
 } from "../services/hosted-site-sessions.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
@@ -101,11 +101,10 @@ const access$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { siteId } = get(pathParamsOf(hostContract.siteAccess));
   let body = await set(checkHostedSiteAccess$, { siteId }, signal);
   if (body.decision === "authenticate") {
-    const userId = await get(
-      hostedSiteSessionViewer(
-        { siteId, origin: get(queryOf(hostContract.siteAccess)).origin },
-        signal,
-      ),
+    const userId = await set(
+      hostedSiteSessionViewer$,
+      { siteId, origin: get(queryOf(hostContract.siteAccess)).origin },
+      signal,
     );
     signal.throwIfAborted();
     if (userId) {
