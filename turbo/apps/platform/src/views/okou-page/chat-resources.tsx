@@ -86,12 +86,14 @@ function ChatResourcesButtonInner({
   const explicit = useGet(resources.chosen$) !== null;
   const requested = useLastResolved(resources.requested$) ?? false;
   const settled = useLastResolved(resources.settled$) ?? null;
+  // Nothing draws before the resources have answered. Until then the button
+  // breathes and takes no presses, however long the answer takes.
+  const loading = requested && settled === null;
   // An automatic opening waits for something to show; a press shows the panel
-  // even when it is empty. Neither draws before the resources have answered.
+  // even when it is empty.
   const shown =
-    requested && settled !== null && (settled.hasContent || explicit);
-  const pending = requested && explicit && settled === null;
-  const pressed = shown || pending;
+    settled !== null && requested && (settled.hasContent || explicit);
+  const pressed = shown || (loading && explicit);
   const wide = useGet(resources.wide$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
@@ -117,9 +119,10 @@ function ChatResourcesButtonInner({
       modal={false}
       onOpenChange={(nextOpen, details) => {
         if (details.reason === "trigger-press") {
-          // The panel can be pending without being open, so the button's own
-          // state decides what a press means. The preference outlives the page.
-          detach(press(!pressed, rootSignal), Reason.DomCallback);
+          // The preference outlives the page.
+          if (!loading) {
+            detach(press(!shown, rootSignal), Reason.DomCallback);
+          }
           return;
         }
         const outside =
@@ -140,7 +143,8 @@ function ChatResourcesButtonInner({
       <ChatResourcesTrigger
         thread={thread}
         pressed={pressed}
-        pending={pending}
+        open={shown}
+        loading={loading}
         largeTarget={largeTarget}
       />
       <PopoverContent
@@ -184,12 +188,14 @@ function ChatResourcesButtonInner({
 function ChatResourcesTrigger({
   thread,
   pressed,
-  pending,
+  open,
+  loading,
   largeTarget,
 }: {
   readonly thread: ChatPanelSignals;
   readonly pressed: boolean;
-  readonly pending: boolean;
+  readonly open: boolean;
+  readonly loading: boolean;
   readonly largeTarget: boolean;
 }) {
   const { t } = useTranslation();
@@ -201,7 +207,7 @@ function ChatResourcesTrigger({
   return (
     <TooltipProvider delay={300}>
       {/* The open panel sits below the button, where the tooltip would cover it. */}
-      <Tooltip disabled={pressed}>
+      <Tooltip disabled={open}>
         <TooltipTrigger
           render={
             <PopoverTrigger
@@ -222,24 +228,35 @@ function ChatResourcesTrigger({
                     largeTarget && "size-11",
                     pressed &&
                       "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
+                    // A loading button does not answer the pointer either.
+                    loading &&
+                      (pressed
+                        ? "cursor-default hover:bg-primary/10 active:bg-primary/10"
+                        : "cursor-default hover:bg-transparent hover:text-muted-foreground active:bg-transparent"),
                   )}
                   aria-label={label}
-                  aria-busy={pending}
+                  aria-busy={loading}
+                  aria-disabled={loading || undefined}
                 />
               }
             />
           }
         >
-          {/* Still pressable while it loads: a second press cancels. A quick
-              load finishes before the delayed pulse ever starts. */}
+          {/* A quick load finishes before the delayed pulse ever starts. */}
           <Package
             size={18}
             className={cn(
-              pending && "motion-safe:animate-pulse [animation-delay:250ms]",
+              loading && "motion-safe:animate-pulse [animation-delay:250ms]",
             )}
           />
         </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
+        <TooltipContent side="bottom">
+          {loading
+            ? t(($) => {
+                return $.chat.resources.loading;
+              })
+            : label}
+        </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

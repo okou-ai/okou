@@ -39,17 +39,15 @@ test("Keep an empty chat's panel closed until the trigger is pressed", async () 
     },
     chatEvents: [],
   });
-  const answered = { catalog: false, children: false, communications: false };
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    answered.catalog = true;
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
+    await response.promise;
     return respond(200, { artifacts: [], nextCursor: null });
   });
   context.mocks.api(chatRelationsContract.children, ({ respond }) => {
-    answered.children = true;
     return respond(200, { items: [] });
   });
   context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
-    answered.communications = true;
     return respond(200, { items: [] });
   });
   await setupPage({
@@ -58,15 +56,16 @@ test("Keep an empty chat's panel closed until the trigger is pressed", async () 
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   await screen.findByTestId("chat-thread-header-title");
-  // The saved default asks for the panel, so every source answers first.
+  // The saved default asks for the panel; the button breathes until it answers.
   await waitFor(() => {
-    expect(answered).toStrictEqual({
-      catalog: true,
-      children: true,
-      communications: true,
-    });
+    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
-  expect(resourceButton()).toBeEnabled();
+  expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
+  response.resolve();
+  await waitFor(() => {
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  });
+  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
   expect(resourceState()).toStrictEqual({ open: false, visible: false });
   click(resourceButton());
   const panel = await screen.findByRole("region", { name: "Resources" });
@@ -134,7 +133,7 @@ test("Draw a pressed panel only once its artifacts and related chats have answer
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
-  expect(resourceButton()).toBeEnabled();
+  expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
   expect(resourcePanel()).not.toBeInTheDocument();
   response.resolve();
   const panel = await screen.findByRole("region", { name: "Resources" });
@@ -142,9 +141,10 @@ test("Draw a pressed panel only once its artifacts and related chats have answer
   expect(within(panel).getByText("Research child")).toBeInTheDocument();
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
   expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
 });
 
-test("Cancel a pending panel with a second press", async () => {
+test("Ignore presses while the resources load", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -167,11 +167,12 @@ test("Cancel a pending panel with a second press", async () => {
   await waitFor(() => {
     expect(resourceButton()).toHaveAttribute("aria-busy", "true");
   });
+  // A loading button takes no presses, so this one cannot cancel the first.
   click(resourceButton());
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  });
-  expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  response.resolve();
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  expect(within(panel).getByText("report.pdf")).toBeInTheDocument();
+  expect(resourceState()).toStrictEqual({ open: true, visible: true });
 });
 
 test("Retry a resource loading error without showing an empty state", async () => {
