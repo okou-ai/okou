@@ -15,7 +15,7 @@ import { describe, expect, it, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow } from "../../../lib/time";
+import { mockNow, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { cronCompactChatThreadSnapshotsRoutes } from "../cron-compact-chat-thread-snapshots";
 import { createBddApi } from "./helpers/api-bdd";
@@ -151,7 +151,7 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
           .map((Key) => {
             return {
               Key,
-              LastModified: new Date(),
+              LastModified: nowDate(),
               Size: objects.get(Key)?.length,
             };
           }),
