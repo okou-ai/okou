@@ -224,17 +224,24 @@ final class GeneratedResultTests: XCTestCase {
       rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
     let window = try await mountResultHost(host)
     defer { unmount(window) }
-    // Signature renewal cold-starts two isolated WebKit sessions before the page can finish.
+    // The rejected page and the renewed page own separate cold WebKit loads.
+    // Observe the authority handoff before waiting for the replacement page.
+    try await eventually(
+      timeout: .seconds(10), message: "The rejected HTML address did not renew"
+    ) {
+      viewer.preview?.renewedHTMLSignature == true && viewer.preview?.contentURL != nil
+    }
+    let renewedPreviewID = try XCTUnwrap(viewer.preview?.id)
+    let renewedURL = try XCTUnwrap(viewer.preview?.contentURL)
     try await eventually(
       timeout: .seconds(10),
-      message: "HTML signature renewed: \(viewer.preview?.renewedHTMLSignature == true); "
-        + "loading: \(String(describing: findWebView(host.view)?.isLoading)); "
+      message: "Renewed HTML loading: \(String(describing: findWebView(host.view)?.isLoading)); "
         + "storage requests: \(fixture.state.storageRequests.withLock { $0.count })"
     ) {
-      guard viewer.preview?.renewedHTMLSignature == true,
-        let url = viewer.preview?.contentURL, let web = findWebView(host.view)
-      else { return false }
-      return web.url == url && !web.isLoading
+      guard viewer.preview?.id == renewedPreviewID, let web = findWebView(host.view) else {
+        return false
+      }
+      return web.url == renewedURL && !web.isLoading
     }
     let web = try XCTUnwrap(findWebView(host.view))
     XCTAssertFalse(web.configuration.websiteDataStore.isPersistent)
