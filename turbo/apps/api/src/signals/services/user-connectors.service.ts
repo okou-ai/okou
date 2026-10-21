@@ -144,7 +144,7 @@ interface CustomConnectorDefinitions {
   readonly permissionBundleRefs: ReadonlyMap<string, string | null>;
 }
 
-function customConnectorDefinitionSelection() {
+export function customConnectorDefinitionSelection() {
   return {
     id: orgCustomConnectors.id,
     slug: orgCustomConnectors.slug,
@@ -155,14 +155,14 @@ function customConnectorDefinitionSelection() {
   };
 }
 
-function customConnectorDefinitionJoin() {
+export function customConnectorDefinitionJoin() {
   return and(
     eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
     eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
   );
 }
 
-function customConnectorDefinitionWhere(args: {
+export function customConnectorDefinitionWhere(args: {
   readonly orgId: string;
   readonly connectorIds: readonly string[];
 }) {
@@ -173,7 +173,7 @@ function customConnectorDefinitionWhere(args: {
   );
 }
 
-function customConnectorDefinitions(
+export function customConnectorDefinitions(
   rows: readonly CustomConnectorDefinitionRow[],
   connectorIds: readonly string[],
 ): CustomConnectorDefinitions {

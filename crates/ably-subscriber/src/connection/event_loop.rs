@@ -79,6 +79,7 @@ pub(crate) struct EventLoopState {
     pub channel_params: Option<HashMap<String, String>>,
     pub realtime_host: String,
     pub rest_host: String,
+    pub heartbeat_interval: Option<Duration>,
     pub http: reqwest::Client,
     pub get_token: Box<dyn Fn() -> TokenFuture + Send + Sync>,
     pub pending_token_renewal: Option<PendingTokenRenewal>,
@@ -1178,7 +1179,12 @@ async fn attempt_reconnect(
             None
         };
 
-        let ws_url = build_ws_url(&p.realtime_host, &active_token, resume.as_deref())?;
+        let ws_url = build_ws_url(
+            &p.realtime_host,
+            &active_token,
+            resume.as_deref(),
+            p.heartbeat_interval,
+        )?;
         let mut transport = connect_pending(
             &ws_url,
             p.timing.close_timeout,
@@ -1383,6 +1389,7 @@ mod tests {
             channel_params: None,
             realtime_host: "realtime.example.com".to_string(),
             rest_host: "rest.example.com".to_string(),
+            heartbeat_interval: None,
             http: reqwest::Client::new(),
             get_token: Box::new(|| -> TokenFuture {
                 Box::pin(async {

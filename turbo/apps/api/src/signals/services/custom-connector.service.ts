@@ -2973,7 +2973,6 @@ type CustomConnectorValueWriteResult =
   | {
       readonly connector: CustomConnectorRow;
       readonly runtimeRecovered: boolean;
-      readonly connectedConnection: boolean;
       readonly connectedAccountId: string;
     }
   | BadRequestResponse
@@ -3096,7 +3095,6 @@ async function persistCustomConnectorValues(
   return {
     connector: state.connector,
     runtimeRecovered: state.runtimeRecovered,
-    connectedConnection: true,
     connectedAccountId,
   };
 }

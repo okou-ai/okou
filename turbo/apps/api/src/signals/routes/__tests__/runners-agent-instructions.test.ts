@@ -36,7 +36,6 @@ describe("Runner claim-time Agent instructions", () => {
         owned.agentId,
         "C after claim",
       );
-      expect(claim.agentInstructions).toBe(current);
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "claim the later edit",

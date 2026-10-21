@@ -18,9 +18,9 @@ import {
   parseFeishuSentMessage,
   readFeishuResponseJson,
   resolveFeishuRequestCredentials,
-  replyWithFeishuMessage,
+  replyWithFeishuMessage$,
 } from "../external/feishu-client";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { tapError } from "../utils";
 import {
   feishuInstallationAvailabilityReadPlan,
@@ -37,7 +37,7 @@ import type {
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { getRunOutputText$ } from "./run-output.service";
 import { saveRunSummary$ } from "./run-summary.service";
-import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
+import { resolveIntegrationAgentResponsePresentation$ } from "./integration-agent-response-presentation.service";
 import { removeFeishuThinkingReaction$ } from "./internal-feishu-chat-run-callback.service";
 
 const L = logger("InternalCallbacksFeishuOrg");
@@ -50,22 +50,25 @@ interface RunContext {
   readonly chatThreadId: string | null;
 }
 
-async function loadRun(db: Db, runId: string): Promise<RunContext | undefined> {
-  const [run] = await db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      prompt: agentRuns.prompt,
-      agentId: agents.id,
-      chatThreadId: agentRuns.chatThreadId,
-    })
-    .from(agentRuns)
+const loadRun$ = command(
+  async ({ get }, runId: string): Promise<RunContext | undefined> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({
+        userId: agentRuns.userId,
+        orgId: agentRuns.orgId,
+        prompt: agentRuns.prompt,
+        agentId: agents.id,
+        chatThreadId: agentRuns.chatThreadId,
+      })
+      .from(agentRuns)
 
-    .innerJoin(agents, eq(agents.id, agentRuns.agentId))
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  return run;
-}
+      .innerJoin(agents, eq(agents.id, agentRuns.agentId))
+      .where(eq(agentRuns.id, runId))
+      .limit(1);
+    return run;
+  },
+);
 
 const clearThinkingReaction$ = command(
   async (
@@ -96,121 +99,125 @@ const clearThinkingReaction$ = command(
   },
 );
 
-async function sendFeishuCallbackResponse(
-  args: {
-    readonly db: Db;
-    readonly payload: FeishuOrgCallbackPayload;
-    readonly runId: string;
-    readonly message: ReturnType<typeof buildFeishuAgentResponseMessage>;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.payload.replyInThread) {
-    await replyWithFeishuMessage(
-      {
-        db: args.db,
+const sendFeishuCallbackResponse$ = command(
+  async (
+    { set },
+    args: {
+      readonly payload: FeishuOrgCallbackPayload;
+      readonly runId: string;
+      readonly message: ReturnType<typeof buildFeishuAgentResponseMessage>;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (args.payload.replyInThread) {
+      await set(
+        replyWithFeishuMessage$,
+        {
+          installationId: args.payload.installationId,
+          messageId: args.payload.messageId,
+          message: args.message,
+          replyInThread: true,
+        },
+        signal,
+      );
+    } else {
+      const sendArgs = {
         installationId: args.payload.installationId,
-        messageId: args.payload.messageId,
+        receiveIdType: "chat_id",
+        receiveId: args.payload.chatId,
         message: args.message,
-        replyInThread: true,
-      },
-      signal,
-    );
-  } else {
-    const sendArgs = {
-      db: args.db,
-      installationId: args.payload.installationId,
-      receiveIdType: "chat_id",
-      receiveId: args.payload.chatId,
-      message: args.message,
-      idempotencyKey: args.runId,
-    };
-    const sendSignal = signal;
-    await (async () => {
-      const sendContextArgs = sendArgs;
-      const { token, apiOrigin, providerName } = await (async () => {
-        const [installation] = await sendContextArgs.db
-          .select()
-          .from(feishuOrgInstallations)
-          .where(eq(feishuOrgInstallations.id, sendContextArgs.installationId))
-          .limit(1);
-        sendSignal.throwIfAborted();
-        if (!installation) {
-          throw new Error("Bot installation not found");
-        }
-        if (
-          !(await (async () => {
-            const plan = feishuInstallationAvailabilityReadPlan(installation);
-            if (plan.kind === "resolved") {
-              return plan.enabled;
-            }
-            const rows = await sendContextArgs.db
-              .select(plan.columns)
-              .from(userFeatureSwitches)
-              .where(plan.condition);
-            return feishuInstallationEnabledFromRows(plan.scope, rows);
-          })())
-        ) {
-          throw new FeishuApiError("Lark integration is not enabled", 403);
-        }
-        const credentials = await resolveFeishuRequestCredentials(
-          installation,
-          sendSignal,
-        );
-        if (credentials.refreshedToken) {
-          await sendContextArgs.db
-            .update(feishuOrgInstallations)
-            .set(feishuTokenUpdateValues(credentials.refreshedToken))
+        idempotencyKey: args.runId,
+      };
+      const sendSignal = signal;
+      await (async () => {
+        const sendContextArgs = sendArgs;
+        const { token, apiOrigin, providerName } = await (async () => {
+          const [installation] = await db
+            .select()
+            .from(feishuOrgInstallations)
             .where(
               eq(feishuOrgInstallations.id, sendContextArgs.installationId),
-            );
+            )
+            .limit(1);
           sendSignal.throwIfAborted();
-        }
-        return credentials.context;
-      })();
-      const url = feishuMessageSendUrl(apiOrigin);
-      url.searchParams.set("receive_id_type", sendArgs.receiveIdType);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${token}`,
-          "content-type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify(
-          feishuMessageSendBody(
-            sendArgs.receiveId,
-            feishuMessagePayload(sendArgs.message),
-            sendArgs.idempotencyKey,
+          if (!installation) {
+            throw new Error("Bot installation not found");
+          }
+          if (
+            !(await (async () => {
+              const plan = feishuInstallationAvailabilityReadPlan(installation);
+              if (plan.kind === "resolved") {
+                return plan.enabled;
+              }
+              const rows = await db
+                .select(plan.columns)
+                .from(userFeatureSwitches)
+                .where(plan.condition);
+              return feishuInstallationEnabledFromRows(plan.scope, rows);
+            })())
+          ) {
+            throw new FeishuApiError("Lark integration is not enabled", 403);
+          }
+          const credentials = await resolveFeishuRequestCredentials(
+            installation,
+            sendSignal,
+          );
+          if (credentials.refreshedToken) {
+            await db
+              .update(feishuOrgInstallations)
+              .set(feishuTokenUpdateValues(credentials.refreshedToken))
+              .where(
+                eq(feishuOrgInstallations.id, sendContextArgs.installationId),
+              );
+            sendSignal.throwIfAborted();
+          }
+          return credentials.context;
+        })();
+        const url = feishuMessageSendUrl(apiOrigin);
+        url.searchParams.set("receive_id_type", sendArgs.receiveIdType);
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify(
+            feishuMessageSendBody(
+              sendArgs.receiveId,
+              feishuMessagePayload(sendArgs.message),
+              sendArgs.idempotencyKey,
+            ),
           ),
-        ),
-        signal: sendSignal,
-      });
-      return parseFeishuSentMessage(
-        await readFeishuResponseJson(response, providerName),
-        `${providerName} message send failed`,
-        providerName,
-      );
-    })();
-  }
-  signal.throwIfAborted();
-}
+          signal: sendSignal,
+        });
+        return parseFeishuSentMessage(
+          await readFeishuResponseJson(response, providerName),
+          `${providerName} message send failed`,
+          providerName,
+        );
+      })();
+    }
+    signal.throwIfAborted();
+  },
+);
 
-async function loadFeishuCallbackConnection(
-  db: Db,
-  payload: FeishuOrgCallbackPayload,
-) {
-  const [connection] = await db
-    .select({ id: feishuOrgConnections.id })
-    .from(feishuOrgConnections)
-    .where(
-      and(
-        eq(feishuOrgConnections.id, payload.connectionId),
-        eq(feishuOrgConnections.installationId, payload.installationId),
-      ),
-    )
-    .limit(1);
-  return connection;
-}
+const loadFeishuCallbackConnection$ = command(
+  async ({ get }, payload: FeishuOrgCallbackPayload) => {
+    const db = get(db$);
+    const [connection] = await db
+      .select({ id: feishuOrgConnections.id })
+      .from(feishuOrgConnections)
+      .where(
+        and(
+          eq(feishuOrgConnections.id, payload.connectionId),
+          eq(feishuOrgConnections.installationId, payload.installationId),
+        ),
+      )
+      .limit(1);
+    return connection;
+  },
+);
 
 export const handleFeishuOrgInternalCallback$ = command(
   async (
@@ -230,7 +237,7 @@ export const handleFeishuOrgInternalCallback$ = command(
     if (payload.canonicalChatDelivery) {
       return { success: true, skipped: true };
     }
-    const run = await loadRun(db, callback.runId);
+    const run = await set(loadRun$, callback.runId);
     signal.throwIfAborted();
     if (!run) {
       await set(clearThinkingReaction$, payload, signal);
@@ -257,7 +264,7 @@ export const handleFeishuOrgInternalCallback$ = command(
     if (!installation) {
       return { success: false, error: "Feishu installation not found" };
     }
-    const connection = await loadFeishuCallbackConnection(db, payload);
+    const connection = await set(loadFeishuCallbackConnection$, payload);
     signal.throwIfAborted();
     if (!connection) {
       await set(clearThinkingReaction$, payload, signal);
@@ -281,9 +288,9 @@ export const handleFeishuOrgInternalCallback$ = command(
           )
         : undefined;
     signal.throwIfAborted();
-    const presentation = await resolveIntegrationAgentResponsePresentation(
+    const presentation = await set(
+      resolveIntegrationAgentResponsePresentation$,
       {
-        db: db,
         orgId: run.orgId,
         runId: callback.runId,
         agentId: payload.agentId ?? run.agentId,
@@ -300,9 +307,9 @@ export const handleFeishuOrgInternalCallback$ = command(
       text: responseText,
       footerText: presentation.footerText,
     });
-    await sendFeishuCallbackResponse(
+    await set(
+      sendFeishuCallbackResponse$,
       {
-        db: db,
         payload,
         runId: callback.runId,
         message: responseMessage,

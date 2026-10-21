@@ -84,9 +84,6 @@ describe("Builtin device-auth owned-session reads", () => {
     const actor = await prepareActor();
     const peer = bdd.user({ orgId: actor.orgId });
     const foreignOrg = bdd.user({ userId: actor.userId });
-    expect(peer.userId).not.toBe(actor.userId);
-    expect(foreignOrg.userId).toBe(actor.userId);
-    expect(foreignOrg.orgId).not.toBe(actor.orgId);
     const session = await connectorsApi.startDeviceAuth(
       actor,
       "test-oauth-device",

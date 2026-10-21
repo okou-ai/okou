@@ -130,8 +130,8 @@ import {
 } from "./internal-discord-chat-run-callback.service";
 import {
   clearCanonicalFeishuThinkingReaction$,
-  deliverFeishuChatAdmissionFailure,
-  dispatchFeishuChatDeliveryOnce,
+  deliverFeishuChatAdmissionFailure$,
+  dispatchFeishuChatDeliveryOnce$,
 } from "./internal-feishu-chat-run-callback.service";
 import type { InternalRunCallbackEnvelope } from "./internal-run-callback";
 import {
@@ -937,24 +937,15 @@ async function insertSlackChatDeliveryCallback(args: {
   });
 }
 
-async function insertFeishuChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: FeishuDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "feishu:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function feishuChatDeliveryFields(
+  target: FeishuDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "feishu:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 function teamsChatDeliveryFields(
@@ -1127,12 +1118,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const feishuDeliveryCallbackId = input.feishuDelivery
-    ? await insertFeishuChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.feishuDelivery,
-        chatEventId: event.id,
+        ...feishuChatDeliveryFields(input.feishuDelivery, event.id),
       })
     : undefined;
   const teamsDeliveryCallbackId = input.teamsDelivery
@@ -1421,12 +1411,11 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const feishuDeliveryCallbackId =
     deliveryEvent && input.feishuDelivery
-      ? await insertFeishuChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.feishuDelivery,
-          chatEventId: deliveryEvent.id,
+          ...feishuChatDeliveryFields(input.feishuDelivery, deliveryEvent.id),
         })
       : undefined;
   const teamsDeliveryCallbackId =
@@ -2497,8 +2486,15 @@ const sendQueuedAdmissionFailure$ = command(
         return;
       }
       case "Feishu": {
-        await deliverFeishuChatAdmissionFailure(
-          { ...base, target: channel.target },
+        await set(
+          deliverFeishuChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            orgId: channel.orgId,
+            userId: channel.userId,
+            chatEventId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -3080,8 +3076,8 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
           signal,
         );
       } else if (channel.name === "Feishu") {
-        deliveryPromise = dispatchFeishuChatDeliveryOnce(
-          args.db,
+        deliveryPromise = set(
+          dispatchFeishuChatDeliveryOnce$,
           callbackId,
           signal,
         );

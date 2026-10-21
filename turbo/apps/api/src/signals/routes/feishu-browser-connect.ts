@@ -21,7 +21,7 @@ import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { startCustomConnectorOAuth2$ } from "../services/custom-connector-oauth2.service";
 import {
-  ensureFeishuCustomConnector$,
+  ensureManagedFeishuConnector$,
   feishuOAuthMemberReadPlan,
   feishuOAuthMemberFromRows,
   feishuOAuthInstallationReadPlan,
@@ -130,7 +130,7 @@ const startFeishuAccountOAuth$ = command(
     }
 
     const connectorId = await set(
-      ensureFeishuCustomConnector$,
+      ensureManagedFeishuConnector$,
       {
         orgId: args.orgId,
         userId: args.userId,

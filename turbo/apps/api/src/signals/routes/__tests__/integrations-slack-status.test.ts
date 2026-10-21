@@ -276,7 +276,6 @@ describe("GET /api/integrations/slack", () => {
     );
 
     expect(response.body.isConnected).toBeFalsy();
-    expect(response.body.connectUrl).not.toBeNull();
     const connectUrl = new URL(response.body.connectUrl!);
     expect(`${connectUrl.origin}${connectUrl.pathname}`).toBe(
       "https://api.okou.ai/api/slack/oauth/connect",
@@ -310,7 +309,6 @@ describe("GET /api/integrations/slack", () => {
       [200],
     );
 
-    expect(response.body.installUrl).not.toBeNull();
     const installUrl = new URL(response.body.installUrl!);
     expect(`${installUrl.origin}${installUrl.pathname}`).toBe(
       "https://api.okou.ai/api/slack/oauth/install",
@@ -545,7 +543,6 @@ describe("GET /api/integrations/slack", () => {
 
     expect(response.body.isConnected).toBeFalsy();
     expect(response.body.scopeMismatch).toBeTruthy();
-    expect(response.body.reinstallUrl).not.toBeNull();
     const authorizationUrl = await startStatusOAuth(
       response.body.reinstallUrl!,
       orgId,

@@ -230,11 +230,11 @@ interface CustomConnectorConnectDialogProps {
   readonly agentId?: string;
   readonly onClose?: () => void;
   readonly onConnected?: (
-    connectionId: string | null,
+    connectionId: string,
     signal: AbortSignal,
   ) => void | Promise<void>;
   readonly onSuccess?: (
-    connectionId: string | null,
+    connectionId: string,
     signal: AbortSignal,
   ) => void | Promise<void>;
   readonly accountOptions: CustomConnectorAccountMutationOptions;

@@ -35,7 +35,6 @@ export default [
   {
     name: "database-trigger-sql",
     files: ["**/*.sql"],
-    ignores: ["scripts/fixtures/**"],
     languageOptions: { parser: sqlSourceParser },
     plugins: { api: apiLintPlugin },
     rules: { "api/no-database-trigger": "error" },

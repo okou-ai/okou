@@ -432,7 +432,7 @@ export function CustomConnectorGrid({
   const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   const finishExplicitAccountAdd = async (
     connector: CustomConnectorResponse,
-    connectionId: string | null,
+    connectionId: string,
     attemptSignal: AbortSignal,
   ): Promise<void> => {
     await finishAccountConnection(

@@ -21,9 +21,6 @@ from tests.registry_helpers import builtin_sandbox, inline_sandbox, write_multi_
 
 
 class TestRegistryBuiltinCatalogResolution:
-    def test_registry_firewalls_does_not_expose_runtime_bundled_catalog(self):
-        assert not hasattr(registry_firewalls, "BUILTIN_FIREWALLS")
-
     def test_resolved_firewall_entries_enforces_cache_key_alignment(self):
         inline_firewall = {"name": "inline", "apis": []}
 

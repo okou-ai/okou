@@ -195,13 +195,12 @@ async function persistVoiceDraftSamples(
 ): Promise<void> {
   const reader = samples.getReader();
   let sequence = 0;
-  while (true) {
-    const next = await reader.read();
-    signal.throwIfAborted();
-    if (next.done) {
-      return;
-    }
+  let next = await reader.read();
+  signal.throwIfAborted();
+  while (!next.done) {
     await persistence.append(next.value, sequence++);
+    next = await reader.read();
+    signal.throwIfAborted();
   }
 }
 
