@@ -55,6 +55,22 @@ its fingerprint; claimed JSON hashes alone are insufficient. Missing test eviden
 selects full tests; corrupt evidence, permission errors, or unverifiable
 provenance stop the pipeline rather than masquerading as a cache miss.
 
+## Native build cache
+
+The independent `iOS Build Cache` workflow can be dispatched on `main` to seed
+SwiftPM sources and Xcode's official compilation cache for Xcode 27.1. Dependency
+preparation and compilation have separate 15-minute jobs on the standard image.
+Cache warming does not publish archives, run acceptance tests, or produce test
+evidence. No required gate or release job waits for this workflow.
+
+SwiftPM caches require an exact toolchain/destination and lockfile match. Compiler
+caches are isolated by the actual Xcode/SDK builds, architecture, and destination;
+Xcode validates individual compilation inputs when restoring a prior source
+revision's cache. Only the native CAS directory is cached, not built applications,
+test results, signing credentials, or the rest of DerivedData. Consumers still
+perform their required builds and tests. Main-owned caches are readable by PR and
+merge-group workflows; PR-scoped caches are not the shared baseline.
+
 ## Immutable shared artifact storage
 
 Unsigned applications, dSYMs, evidence, and release mappings use the same static

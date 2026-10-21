@@ -118,6 +118,13 @@ before_helper=$(git rev-parse HEAD)
 echo '# Shared base detection changed.' >> .github/scripts/checks/changed-base-ref.sh
 commit shared-helper
 expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_helper"
+for path in .github/workflows/ios-build-cache.yml .github/actions/setup-ios-build-cache/action.yml; do
+  before_cache=$(git rev-parse HEAD)
+  mkdir -p "$(dirname "$path")"
+  echo cache > "$path"
+  commit cache-configuration
+  expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_cache"
+done
 expect false EVENT_NAME=push PUSH_BEFORE_SHA="$(git rev-parse HEAD)"
 reject EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA=missing-ref
 reject EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$pr_head"

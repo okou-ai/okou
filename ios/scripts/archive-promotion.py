@@ -17,6 +17,8 @@ import tomllib
 INPUT_PATHS = (
     "ios",
     ".github/workflows/ios.yml",
+    ".github/workflows/ios-build-cache.yml",
+    ".github/actions/setup-ios-build-cache",
     ".github/workflows/ios-archive-proof.yml",
     ".github/workflows/release-please.yml",
     ".github/scripts/checks/changed-base-ref.sh",

@@ -365,6 +365,11 @@ class PromotionTest(unittest.TestCase):
             ("ios/Config/Release.xcconfig", "SWIFT_OPTIMIZATION_LEVEL = -Osize\n"),
             ("ios/Package.resolved", '{"pins": ["new dependency"]}\n'),
             (".github/workflows/ios.yml", "changed native workflow\n"),
+            (".github/workflows/ios-build-cache.yml", "changed cache workflow\n"),
+            (
+                ".github/actions/setup-ios-build-cache/action.yml",
+                "changed cache setup\n",
+            ),
             (".github/scripts/checks/changed-base-ref.sh", "changed base selection\n"),
             ("ios/scripts/build.sh", "changed compiler arguments\n"),
         ]:

@@ -29,6 +29,8 @@ xcode_args=(
   -onlyUsePackageVersionsFromResolvedFile
   -disableAutomaticPackageResolution
   -skipPackageUpdates
+  COMPILATION_CACHE_ENABLE_CACHING=YES
+  COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
   CODE_SIGN_IDENTITY=-
   CODE_SIGNING_ALLOWED=YES
   DEVELOPMENT_TEAM=
@@ -43,18 +45,23 @@ if [[ "$ios_test_phase" == all ]]; then
 fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
+  ios_phase_started=$SECONDS
   cp "$resolved" "$build_root/Package.resolved.before"
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
+  echo "iOS dependency preparation: $((SECONDS - ios_phase_started)) seconds"
 fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
+  ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
-  xcodebuild "${xcode_args[@]}" build-for-testing
+  xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
   cmp "$resolved" "$build_root/Package.resolved.before"
+  echo "iOS build-for-testing: $((SECONDS - ios_phase_started)) seconds"
 fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
+  ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
   xcodebuild "${xcode_args[@]}" \
     -parallel-testing-enabled NO \
@@ -62,4 +69,5 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     -resultBundlePath "$build_root/Tests.xcresult" \
     test-without-building
   cmp "$resolved" "$build_root/Package.resolved.before"
+  echo "iOS test-without-building: $((SECONDS - ios_phase_started)) seconds"
 fi
