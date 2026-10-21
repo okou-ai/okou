@@ -8,7 +8,6 @@ import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
-import { sql } from "drizzle-orm";
 import { Parser } from "tar";
 import { z } from "zod";
 import { API_DATABASE_SEED_FILES } from "./database-seeds";
@@ -191,7 +190,7 @@ const snapshots = singleton(() => {
 });
 
 // PGlite exposes a precompiled-module option. Compile its immutable program
-// during worker setup; each case still instantiates its own memory and database.
+// on first isolated use; each case instantiates its own memory and database.
 const postgresModule = singleton(async () => {
   const entry = createRequire(import.meta.url).resolve("@electric-sql/pglite");
   const bytes = await readFile(join(dirname(entry), "pglite.wasm"));
@@ -264,23 +263,6 @@ function snapshotFiles(path: string): Promise<SnapshotFiles> {
     images.set(path, files);
   }
   return files;
-}
-
-/** Prepare one private baseline during worker setup, before case deadlines. */
-export async function preloadPgliteSnapshot(
-  path: string,
-): Promise<PgliteTestDatabase> {
-  await Promise.all([snapshotFiles(path), postgresModule()]);
-  // The first isolated case takes ownership of this untouched baseline. Later
-  // cases receive new engines; worker teardown closes an unused baseline.
-  const baseline = await createPgliteDatabase(path);
-  const ready = await settleIncludingAbort(() => {
-    return baseline.database.execute(sql`SELECT 1`);
-  });
-  if (!ready.ok) {
-    return await releaseAfter(Promise.reject(ready.error), baseline.close);
-  }
-  return baseline;
 }
 
 class SnapshotMemoryFS extends MemoryFS {
