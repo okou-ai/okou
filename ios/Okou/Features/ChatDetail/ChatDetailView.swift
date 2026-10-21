@@ -6,6 +6,7 @@ struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let topContentInset: CGFloat
   let sidebar: SidebarInteraction?
+  let mentionSource: ComposerMentionSource?
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,11 +23,12 @@ struct ChatDetailView: View {
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0,
-    sidebar: SidebarInteraction? = nil
+    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil
   ) {
     self.conversation = conversation
     self.topContentInset = topContentInset
     self.sidebar = sidebar
+    self.mentionSource = mentionSource
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -186,7 +188,8 @@ struct ChatDetailView: View {
           } else {
             await conversation.send()
           }
-        }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection
+        }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
+        mentionSource: mentionSource
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height

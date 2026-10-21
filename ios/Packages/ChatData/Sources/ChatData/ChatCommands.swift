@@ -110,7 +110,9 @@ public actor ChatCommands {
     let body = SendBody(
       agentId: metadata.agentId, threadId: thread.id,
       prompt: prompt.isEmpty
-        ? (document?.hasFeedback == true ? "(see quoted passages)" : "(see attached files)")
+        ? (document?.hasFeedback == true
+          ? "(see quoted passages)"
+          : (document?.hasTextContent == true ? "(see references)" : "(see attached files)"))
         : prompt,
       clientEventId: clientEventID, chatThreadSortEventId: chatThreadSortEventID,
       userMessage: document
@@ -123,7 +125,7 @@ public actor ChatCommands {
                 "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
               ])
             }),
-      hasTextContent: !prompt.isEmpty || document?.hasFeedback == true,
+      hasTextContent: !prompt.isEmpty || document?.hasTextContent == true,
       modelSelection: modelSelection,
       reasoningEffort: reasoningEffort)
     do {

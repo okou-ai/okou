@@ -136,7 +136,10 @@ private struct WorkspaceRootView: View {
         Group {
           if let conversation = store.selectedConversation {
             ChatDetailView(
-              conversation: conversation, topContentInset: headerHeight, sidebar: sidebar
+              conversation: conversation, topContentInset: headerHeight, sidebar: sidebar,
+              mentionSource: ComposerMentionSource(
+                agentID: conversation.thread.agentID, agents: store.list.agents,
+                threads: store.list.threads)
             )
             .id(conversation.thread.id)
           } else {
@@ -151,7 +154,10 @@ private struct WorkspaceRootView: View {
                   attachments: composer.attachments,
                   draftState: composer,
                   submit: { await store.sendNewChat() }, refresh: nil,
-                  modelSelection: store.newModelSelection)
+                  modelSelection: store.newModelSelection,
+                  mentionSource: ComposerMentionSource(
+                    agentID: store.selectedAgentID, agents: store.list.agents,
+                    threads: store.list.threads))
               }
           }
         }
