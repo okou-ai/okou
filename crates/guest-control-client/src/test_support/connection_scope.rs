@@ -52,8 +52,10 @@ impl ConnectionScope {
     }
 
     /// Install routing for this future; cancellation restores the previous scope.
-    pub async fn scope<F: Future>(&self, future: F) -> F::Output {
-        CONNECTION_SCOPE.scope(self.clone(), future).await
+    /// Heap-own the caller's future so large Executor work does not expand each
+    /// task-local wrapper's stack frame in unoptimized native tests.
+    pub fn scope<F: Future>(&self, future: F) -> impl Future<Output = F::Output> {
+        CONNECTION_SCOPE.scope(self.clone(), Box::pin(future))
     }
 
     pub(crate) fn adapt(stream: UnixStream, sandbox_id: Option<&str>) -> io::Result<UnixStream> {
