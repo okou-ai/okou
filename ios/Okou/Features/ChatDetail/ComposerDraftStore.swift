@@ -94,6 +94,7 @@ final class ComposerDraftStore {
 
   private func resetEditors() {
     editor.dismissMentions()
+    editor.workflows.dismiss()
     quoteIDs = document.parts.filter { $0["type"]?.string == "feedback" }.map { _ in UUID() }
     textIDs = (0...quoteIDs.count).map { _ in UUID() }
     focusRequest = nil

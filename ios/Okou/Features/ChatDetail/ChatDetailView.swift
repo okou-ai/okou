@@ -189,7 +189,8 @@ struct ChatDetailView: View {
             await conversation.send()
           }
         }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
-        mentionSource: mentionSource
+        mentionSource: mentionSource,
+        workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height

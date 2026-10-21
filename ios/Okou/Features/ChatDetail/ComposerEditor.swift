@@ -5,6 +5,7 @@ import UIKit
 /// Commands use mounted native editors; UIKit owns selection, undo and marked text.
 @MainActor @Observable
 final class ComposerEditor {
+  let workflows = ComposerWorkflowSuggestions()
   private struct Input {
     weak var view: ComposerTextView?
     let order: Int
@@ -144,6 +145,7 @@ final class ComposerEditor {
 
   func dismissKeyboard() {
     dismissMentions()
+    workflows.dismiss()
     for input in inputs.values where input.isCurrent() {
       input.view?.setFocused(false)
     }

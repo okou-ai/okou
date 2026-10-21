@@ -18,6 +18,8 @@ struct ChatComposerView: View {
 
   var modelSelection: ChatModelSelectionStore? = nil
   var mentionSource: ComposerMentionSource? = nil
+  var workflowSource: ComposerWorkflowSource? = nil
+  var agentID: String? = nil
 
   @State private var isFocused = false
   @State private var showsPhotos = false
@@ -149,6 +151,12 @@ struct ChatComposerView: View {
       .padding(.bottom, expandsInput ? 62 : 15)
       .frame(minHeight: expandsInput ? 116 : 54, alignment: expandsInput ? .topLeading : .leading)
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: expandsInput ? 28 : 30))
+      .overlay(alignment: .top) {
+        if let workflows = draftState?.editor.workflows, workflows.query != nil {
+          ComposerWorkflowMenu(suggestions: workflows)
+            .disabled(isBusy || needsUpgrade)
+        }
+      }
       .overlay(alignment: expandsInput ? .bottomLeading : .leading) {
         Menu {
           Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
@@ -217,6 +225,11 @@ struct ChatComposerView: View {
     .onChange(of: mentionSource, initial: true) { _, source in
       draftState?.editor.mentionSource = source
     }
+    .onChange(of: "\(workflowSource?.id.uuidString ?? "")/\(agentID ?? "")", initial: true) {
+      _, _ in
+      draftState?.editor.workflows.configure(source: workflowSource, agentID: agentID)
+    }
+    .onDisappear { draftState?.editor.workflows.dismiss() }
     .photosPicker(
       isPresented: $showsPhotos, selection: $selectedPhotos,
       matching: .any(of: [.images, .videos]), preferredItemEncoding: .current
