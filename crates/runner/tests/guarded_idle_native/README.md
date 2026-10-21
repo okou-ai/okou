@@ -622,6 +622,11 @@ file extents across replacement, unlink and growth, with strict original-file
 qualification/replay. Its point observations retain the separate full native
 residency, cold-input and interval-coverage gates.
 
+The [complete original-file range command](file_residency_scan.md) streams a
+stable original's full byte range under supplied byte/time budgets. It preserves
+completed-prefix records on failure and verifies complete-original replay;
+sequential points do not establish a simultaneous total or interval maximum.
+
 The separate [owned charged-memory window tool](charged_windows.md) qualifies
 isolated kernel counters with a bounded disposable workload and strict original
 file replay. Its charge scope and false native/full-residency claims do not

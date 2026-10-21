@@ -412,6 +412,9 @@ jobs:
           python3 -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_residency_test.py'
           sudo python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_residency_test.py' -k calling_native_task
 
+      - name: Test complete original-file range evidence
+        run: python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_residency_scan_test.py'
+
       - name: Run actionlint
         run: ./actionlint
 
