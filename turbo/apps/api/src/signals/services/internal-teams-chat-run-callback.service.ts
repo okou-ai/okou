@@ -9,7 +9,9 @@ import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation"
 import { agents } from "@okouai/db/schema/agent";
 import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { db$, writeDb$ } from "../external/db";
+import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   deleteTeamsReaction,
@@ -17,7 +19,12 @@ import {
 } from "../external/teams-bot-client";
 import { now, nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
-import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
+import { integrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
+import {
+  runModelSelectionColumns,
+  runModelSelectionCondition,
+  runModelSelectionFromRow,
+} from "./run-model-selection.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import {
@@ -49,90 +56,93 @@ interface ClaimedTeamsChatDelivery {
   readonly payload: unknown;
 }
 
-async function loadTeamsChatDeliveryContext(
-  args: {
-    readonly db: Db;
-    readonly callback: ClaimedTeamsChatDelivery;
+const loadTeamsChatDeliveryContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly callback: ClaimedTeamsChatDelivery;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = get(db$);
+    const payload = teamsChatCallbackPayloadSchema.parse(args.callback.payload);
+    const [run] = await db
+      .select({
+        orgId: agentRuns.orgId,
+        userId: agentRuns.userId,
+        chatThreadId: agentRuns.chatThreadId,
+        agentId: agents.id,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(agentRuns.id, args.callback.runId),
+          eq(agentRuns.triggerSource, "teams"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run?.chatThreadId) {
+      throw new Error("Teams chat delivery run context is unavailable");
+    }
+
+    const [event] = await db
+      .select({ content: canonicalChatEventContent() })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.id, payload.chatEventId),
+          eq(chatEvents.runId, args.callback.runId),
+          eq(chatEvents.chatThreadId, run.chatThreadId),
+          chatEventTypeIn([
+            "output.message",
+            "output.error",
+            "run.failed",
+            "run.cancelled",
+          ]),
+          isNotNull(canonicalChatEventContent()),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!event?.content) {
+      throw new Error("Teams chat delivery message is unavailable");
+    }
+
+    const [binding] = await db
+      .select({
+        serviceUrl: teamsOrgInstallations.serviceUrl,
+      })
+      .from(teamsChatThreadRoutes)
+      .innerJoin(
+        teamsOrgConnections,
+        eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
+      )
+      .innerJoin(
+        teamsOrgInstallations,
+        eq(
+          teamsOrgInstallations.teamsTenantId,
+          teamsOrgConnections.teamsTenantId,
+        ),
+      )
+      .where(
+        and(
+          eq(teamsChatThreadRoutes.conversationId, payload.conversationId),
+          eq(teamsChatThreadRoutes.threadId, payload.threadId),
+          eq(teamsChatThreadRoutes.userId, run.userId),
+          eq(teamsChatThreadRoutes.connectionId, payload.connectionId),
+          eq(teamsOrgConnections.userId, run.userId),
+          eq(teamsOrgConnections.teamsTenantId, payload.tenantId),
+          eq(teamsOrgInstallations.orgId, run.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return { payload, run, messageContent: event.content, binding };
   },
-  signal: AbortSignal,
-) {
-  const payload = teamsChatCallbackPayloadSchema.parse(args.callback.payload);
-  const [run] = await args.db
-    .select({
-      orgId: agentRuns.orgId,
-      userId: agentRuns.userId,
-      chatThreadId: agentRuns.chatThreadId,
-      agentId: agents.id,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(agentRuns.id, args.callback.runId),
-        eq(agentRuns.triggerSource, "teams"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run?.chatThreadId) {
-    throw new Error("Teams chat delivery run context is unavailable");
-  }
-
-  const [event] = await args.db
-    .select({ content: canonicalChatEventContent() })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, payload.chatEventId),
-        eq(chatEvents.runId, args.callback.runId),
-        eq(chatEvents.chatThreadId, run.chatThreadId),
-        chatEventTypeIn([
-          "output.message",
-          "output.error",
-          "run.failed",
-          "run.cancelled",
-        ]),
-        isNotNull(canonicalChatEventContent()),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!event?.content) {
-    throw new Error("Teams chat delivery message is unavailable");
-  }
-
-  const [binding] = await args.db
-    .select({
-      serviceUrl: teamsOrgInstallations.serviceUrl,
-    })
-    .from(teamsChatThreadRoutes)
-    .innerJoin(
-      teamsOrgConnections,
-      eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
-    )
-    .innerJoin(
-      teamsOrgInstallations,
-      eq(
-        teamsOrgInstallations.teamsTenantId,
-        teamsOrgConnections.teamsTenantId,
-      ),
-    )
-    .where(
-      and(
-        eq(teamsChatThreadRoutes.conversationId, payload.conversationId),
-        eq(teamsChatThreadRoutes.threadId, payload.threadId),
-        eq(teamsChatThreadRoutes.userId, run.userId),
-        eq(teamsChatThreadRoutes.connectionId, payload.connectionId),
-        eq(teamsOrgConnections.userId, run.userId),
-        eq(teamsOrgConnections.teamsTenantId, payload.tenantId),
-        eq(teamsOrgInstallations.orgId, run.orgId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return { payload, run, messageContent: event.content, binding };
-}
+);
 
 function buildTeamsResponseText(args: {
   readonly mainText: string;
@@ -189,254 +199,83 @@ async function clearTeamsThinkingReaction(
   }
 }
 
-async function deliverClaimedTeamsChatCallback(
-  args: {
-    readonly db: Db;
-    readonly callback: ClaimedTeamsChatDelivery;
+const readTeamsResponsePresentation$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly runId: string;
+      readonly agentId: string;
+      readonly replyToMention?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = get(db$);
+    const [agentLabel, runModel] = await Promise.all([
+      (async () => {
+        const [org] = await db
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, args.orgId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (args.agentId === org?.defaultAgentId) {
+          return undefined;
+        }
+        const [agent] = await db
+          .select({ displayName: agents.displayName, name: agents.name })
+          .from(agents)
+          .where(eq(agents.id, args.agentId))
+          .limit(1);
+        signal.throwIfAborted();
+        return agent?.displayName ?? agent?.name;
+      })(),
+      (async () => {
+        const [row] = await db
+          .select(runModelSelectionColumns())
+          .from(agentRuns)
+          .where(runModelSelectionCondition(args.runId))
+          .limit(1);
+        signal.throwIfAborted();
+        return runModelSelectionFromRow(row);
+      })(),
+    ]);
+    signal.throwIfAborted();
+    return integrationAgentResponsePresentation({
+      agentLabel,
+      modelLabel: runModel?.selectedModel
+        ? getRunModelDisplayName(
+            runModel.selectedModel,
+            runModel.codexServiceTier,
+          )
+        : undefined,
+      replyToMention: args.replyToMention,
+    });
   },
-  signal: AbortSignal,
-): Promise<"delivered" | "skipped_revoked"> {
-  const { payload, run, messageContent, binding } =
-    await loadTeamsChatDeliveryContext(args, signal);
-  if (!binding) {
-    return "skipped_revoked";
-  }
+);
 
-  const mentionerCount = await (async () => {
-    const db = args.db;
-    const tenantId = payload.tenantId;
-    const conversationId = payload.conversationId;
-    const threadId = payload.threadId;
-    const [row] = await db
-      .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
-      .from(teamsChatThreadRoutes)
-      .innerJoin(
-        teamsOrgConnections,
-        eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
-      )
-      .where(
-        and(
-          eq(teamsOrgConnections.teamsTenantId, tenantId),
-          eq(teamsChatThreadRoutes.conversationId, conversationId),
-          eq(teamsChatThreadRoutes.threadId, threadId),
-        ),
-      );
-    return row?.count ?? 0;
-  })();
-  signal.throwIfAborted();
-  const replyTo =
-    payload.teamsUserDisplayName ??
-    payload.teamsUserPrincipalName ??
-    payload.teamsUserId;
-  const presentation = await resolveIntegrationAgentResponsePresentation(
-    {
-      db: args.db,
-      orgId: run.orgId,
-      runId: args.callback.runId,
-      agentId: run.agentId,
-      replyToMention:
-        payload.conversationType !== "personal" && mentionerCount > 1
-          ? replyTo
-          : undefined,
+const deliverClaimedTeamsChatCallback$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly callback: ClaimedTeamsChatDelivery;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  const serviceUrl = payload.serviceUrl.trim() || binding.serviceUrl || "";
-  if (!serviceUrl) {
-    throw new Error("Microsoft Teams serviceUrl is missing");
-  }
-  const result = await sendTeamsMessageReply(
-    {
-      serviceUrl,
-      conversationId: payload.conversationId,
-      activityId: payload.activityId ?? undefined,
-      tenantId: payload.tenantId,
-      text: buildTeamsResponseText({
-        mainText: messageContent,
-        footerText: presentation.footerText,
-      }),
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  await clearTeamsThinkingReaction(
-    {
-      payload,
-      serviceUrl,
-    },
-    signal,
-  );
-  if (result.kind === "teams-error") {
-    throw new Error(`Microsoft Teams API error: ${result.error}`);
-  }
-  return "delivered";
-}
-
-export async function dispatchTeamsChatDeliveryOnce(
-  db: Db,
-  callbackId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const startedAt = now();
-  signal.throwIfAborted();
-  const [callback] = await db
-    .update(agentRunCallbacks)
-    .set({ attempts: 1, lastAttemptAt: nowDate() })
-    .where(
-      and(
-        eq(agentRunCallbacks.id, callbackId),
-        eq(agentRunCallbacks.internalKind, "teams:chat"),
-        eq(agentRunCallbacks.status, "pending"),
-        eq(agentRunCallbacks.attempts, 0),
-      ),
-    )
-    .returning({
-      runId: agentRunCallbacks.runId,
-      payload: agentRunCallbacks.payload,
-    });
-  if (!callback) {
-    return;
-  }
-
-  const delivery = await settleIncludingAbort(
-    deliverClaimedTeamsChatCallback(
-      {
-        db,
-        callback,
-      },
+    signal: AbortSignal,
+  ): Promise<"delivered" | "skipped_revoked"> => {
+    const db = get(db$);
+    const { payload, run, messageContent, binding } = await set(
+      loadTeamsChatDeliveryContext$,
+      args,
       signal,
-    ),
-  );
-  if (!delivery.ok) {
-    const message =
-      delivery.error instanceof Error
-        ? delivery.error.message
-        : "Unknown error";
-    await db
-      .update(agentRunCallbacks)
-      .set({ status: "failed", lastError: message.slice(0, 4000) })
-      .where(eq(agentRunCallbacks.id, callbackId));
-    recordDelivery({
-      runId: callback.runId,
-      startedAt,
-      success: false,
-      outcome: "failed",
-    });
-    L.warn("Canonical Teams delivery failed", {
-      callbackId,
-      runId: callback.runId,
-      error: delivery.error,
-    });
-    return;
-  }
+    );
+    if (!binding) {
+      return "skipped_revoked";
+    }
 
-  await db
-    .update(agentRunCallbacks)
-    .set({ status: "delivered", deliveredAt: nowDate() })
-    .where(eq(agentRunCallbacks.id, callbackId));
-  recordDelivery({
-    runId: callback.runId,
-    startedAt,
-    success: true,
-    outcome: delivery.value,
-  });
-  if (delivery.value === "skipped_revoked") {
-    L.debug("Skipped canonical Teams delivery after binding revocation", {
-      callbackId,
-      runId: callback.runId,
-    });
-  }
-}
-
-interface TeamsChatAdmissionFailureArgs {
-  readonly db: Db;
-  readonly chatThreadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string;
-  readonly target: TeamsDeliveryTarget;
-  readonly chatEventId: string;
-}
-
-interface TeamsAdmissionFailureContext {
-  readonly messageContent: string;
-  readonly installationServiceUrl: string | null;
-}
-
-async function loadTeamsAdmissionFailureContext(
-  args: TeamsChatAdmissionFailureArgs,
-  signal: AbortSignal,
-): Promise<TeamsAdmissionFailureContext | undefined> {
-  const [eventRows, bindingRows] = await Promise.all([
-    args.db
-      .select({ content: canonicalChatEventContent() })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, args.chatEventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          chatEventTypeIn(["output.error"]),
-          isNotNull(canonicalChatEventContent()),
-        ),
-      )
-      .limit(1),
-    args.db
-      .select({
-        serviceUrl: teamsOrgInstallations.serviceUrl,
-      })
-      .from(teamsChatThreadRoutes)
-      .innerJoin(
-        teamsOrgConnections,
-        eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
-      )
-      .innerJoin(
-        teamsOrgInstallations,
-        eq(
-          teamsOrgInstallations.teamsTenantId,
-          teamsOrgConnections.teamsTenantId,
-        ),
-      )
-      .where(
-        and(
-          eq(teamsChatThreadRoutes.connectionId, args.target.connectionId),
-          eq(teamsChatThreadRoutes.conversationId, args.target.conversationId),
-          eq(teamsChatThreadRoutes.threadId, args.target.threadId),
-          eq(teamsChatThreadRoutes.userId, args.userId),
-          eq(teamsOrgConnections.userId, args.userId),
-          eq(teamsOrgConnections.teamsTenantId, args.target.tenantId),
-          eq(teamsOrgInstallations.orgId, args.orgId),
-        ),
-      )
-      .limit(1),
-  ]);
-  signal.throwIfAborted();
-  const event = eventRows[0];
-  const binding = bindingRows[0];
-  if (!event?.content || !binding) {
-    return undefined;
-  }
-  return {
-    messageContent: event.content,
-    installationServiceUrl: binding.serviceUrl,
-  };
-}
-
-interface TeamsAdmissionFailurePresentation {
-  readonly footerText: string | undefined;
-}
-
-async function resolveTeamsAdmissionFailurePresentation(
-  args: TeamsChatAdmissionFailureArgs,
-  signal: AbortSignal,
-): Promise<TeamsAdmissionFailurePresentation> {
-  const [mentionerCount, orgRows, agentRows] = await Promise.all([
-    (async () => {
-      const db = args.db;
-      const tenantId = args.target.tenantId;
-      const conversationId = args.target.conversationId;
-      const threadId = args.target.threadId;
+    const mentionerCount = await (async () => {
+      const tenantId = payload.tenantId;
+      const conversationId = payload.conversationId;
+      const threadId = payload.threadId;
       const [row] = await db
         .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
         .from(teamsChatThreadRoutes)
@@ -452,38 +291,307 @@ async function resolveTeamsAdmissionFailurePresentation(
           ),
         );
       return row?.count ?? 0;
-    })(),
-    args.db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1),
-    args.db
-      .select({ displayName: agents.displayName, name: agents.name })
-      .from(agents)
-      .where(eq(agents.id, args.agentId))
-      .limit(1),
-  ]);
-  signal.throwIfAborted();
-
-  const footerParts: string[] = [];
-  const agentLabel = agentRows[0]?.displayName ?? agentRows[0]?.name;
-  if (agentLabel && args.agentId !== orgRows[0]?.defaultAgentId) {
-    footerParts.push(`Sent via ${agentLabel}`);
-  }
-  if (args.target.conversationType !== "personal" && mentionerCount > 1) {
-    footerParts.push(
-      `Reply to ${
-        args.target.teamsUserDisplayName ??
-        args.target.teamsUserPrincipalName ??
-        args.target.teamsUserId
-      }`,
+    })();
+    signal.throwIfAborted();
+    const replyTo =
+      payload.teamsUserDisplayName ??
+      payload.teamsUserPrincipalName ??
+      payload.teamsUserId;
+    const presentation = await set(
+      readTeamsResponsePresentation$,
+      {
+        orgId: run.orgId,
+        runId: args.callback.runId,
+        agentId: run.agentId,
+        replyToMention:
+          payload.conversationType !== "personal" && mentionerCount > 1
+            ? replyTo
+            : undefined,
+      },
+      signal,
     );
-  }
-  return {
-    footerText: footerParts.length > 0 ? footerParts.join(" · ") : undefined,
-  };
+    signal.throwIfAborted();
+
+    const serviceUrl = payload.serviceUrl.trim() || binding.serviceUrl || "";
+    if (!serviceUrl) {
+      throw new Error("Microsoft Teams serviceUrl is missing");
+    }
+    const result = await sendTeamsMessageReply(
+      {
+        serviceUrl,
+        conversationId: payload.conversationId,
+        activityId: payload.activityId ?? undefined,
+        tenantId: payload.tenantId,
+        text: buildTeamsResponseText({
+          mainText: messageContent,
+          footerText: presentation.footerText,
+        }),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await clearTeamsThinkingReaction(
+      {
+        payload,
+        serviceUrl,
+      },
+      signal,
+    );
+    if (result.kind === "teams-error") {
+      throw new Error(`Microsoft Teams API error: ${result.error}`);
+    }
+    return "delivered";
+  },
+);
+
+/** Return the claimed outcome so cancellation cannot strand an attempted delivery. */
+const claimTeamsChatDelivery$ = command(
+  async (
+    { set },
+    callbackId: string,
+    signal: AbortSignal,
+  ): Promise<readonly ClaimedTeamsChatDelivery[]> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    return await db
+      .update(agentRunCallbacks)
+      .set({ attempts: 1, lastAttemptAt: nowDate() })
+      .where(
+        and(
+          eq(agentRunCallbacks.id, callbackId),
+          eq(agentRunCallbacks.internalKind, "teams:chat"),
+          eq(agentRunCallbacks.status, "pending"),
+          eq(agentRunCallbacks.attempts, 0),
+        ),
+      )
+      .returning({
+        runId: agentRunCallbacks.runId,
+        payload: agentRunCallbacks.payload,
+      });
+  },
+);
+
+const tryTeamsChatDelivery$ = command(
+  ({ set }, callback: ClaimedTeamsChatDelivery, signal: AbortSignal) => {
+    return settleIncludingAbort(
+      set(deliverClaimedTeamsChatCallback$, { callback }, signal),
+    );
+  },
+);
+
+/** Finalization remains awaited even when the provider delivery was aborted. */
+const completeTeamsChatDelivery$ = command(
+  async (
+    { set },
+    args: {
+      readonly callbackId: string;
+      readonly runId: string;
+      readonly startedAt: number;
+    },
+    delivery: Awaited<ReturnType<typeof tryTeamsChatDelivery$.write>>,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (!delivery.ok) {
+      const message =
+        delivery.error instanceof Error
+          ? delivery.error.message
+          : "Unknown error";
+      await db
+        .update(agentRunCallbacks)
+        .set({ status: "failed", lastError: message.slice(0, 4000) })
+        .where(eq(agentRunCallbacks.id, args.callbackId));
+      recordDelivery({
+        runId: args.runId,
+        startedAt: args.startedAt,
+        success: false,
+        outcome: "failed",
+      });
+      L.warn("Canonical Teams delivery failed", {
+        callbackId: args.callbackId,
+        runId: args.runId,
+        error: delivery.error,
+      });
+      return;
+    }
+
+    await db
+      .update(agentRunCallbacks)
+      .set({ status: "delivered", deliveredAt: nowDate() })
+      .where(eq(agentRunCallbacks.id, args.callbackId));
+    recordDelivery({
+      runId: args.runId,
+      startedAt: args.startedAt,
+      success: true,
+      outcome: delivery.value,
+    });
+    if (delivery.value === "skipped_revoked") {
+      L.debug("Skipped canonical Teams delivery after binding revocation", {
+        callbackId: args.callbackId,
+        runId: args.runId,
+      });
+    }
+  },
+);
+
+export const dispatchTeamsChatDeliveryOnce$ = command(
+  async ({ set }, callbackId: string, signal: AbortSignal): Promise<void> => {
+    const startedAt = now();
+    const [callback] = await set(claimTeamsChatDelivery$, callbackId, signal);
+    if (!callback) {
+      return;
+    }
+    const delivery = await set(tryTeamsChatDelivery$, callback, signal);
+    return await set(
+      completeTeamsChatDelivery$,
+      { callbackId, runId: callback.runId, startedAt },
+      delivery,
+    );
+  },
+);
+
+interface TeamsChatAdmissionFailureArgs {
+  readonly chatThreadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly target: TeamsDeliveryTarget;
+  readonly chatEventId: string;
 }
+
+interface TeamsAdmissionFailureContext {
+  readonly messageContent: string;
+  readonly installationServiceUrl: string | null;
+}
+
+const loadTeamsAdmissionFailureContext$ = command(
+  async (
+    { get },
+    args: TeamsChatAdmissionFailureArgs,
+    signal: AbortSignal,
+  ): Promise<TeamsAdmissionFailureContext | undefined> => {
+    const db = get(db$);
+    const [eventRows, bindingRows] = await Promise.all([
+      db
+        .select({ content: canonicalChatEventContent() })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.id, args.chatEventId),
+            eq(chatEvents.chatThreadId, args.chatThreadId),
+            chatEventTypeIn(["output.error"]),
+            isNotNull(canonicalChatEventContent()),
+          ),
+        )
+        .limit(1),
+      db
+        .select({
+          serviceUrl: teamsOrgInstallations.serviceUrl,
+        })
+        .from(teamsChatThreadRoutes)
+        .innerJoin(
+          teamsOrgConnections,
+          eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
+        )
+        .innerJoin(
+          teamsOrgInstallations,
+          eq(
+            teamsOrgInstallations.teamsTenantId,
+            teamsOrgConnections.teamsTenantId,
+          ),
+        )
+        .where(
+          and(
+            eq(teamsChatThreadRoutes.connectionId, args.target.connectionId),
+            eq(
+              teamsChatThreadRoutes.conversationId,
+              args.target.conversationId,
+            ),
+            eq(teamsChatThreadRoutes.threadId, args.target.threadId),
+            eq(teamsChatThreadRoutes.userId, args.userId),
+            eq(teamsOrgConnections.userId, args.userId),
+            eq(teamsOrgConnections.teamsTenantId, args.target.tenantId),
+            eq(teamsOrgInstallations.orgId, args.orgId),
+          ),
+        )
+        .limit(1),
+    ]);
+    signal.throwIfAborted();
+    const event = eventRows[0];
+    const binding = bindingRows[0];
+    if (!event?.content || !binding) {
+      return undefined;
+    }
+    return {
+      messageContent: event.content,
+      installationServiceUrl: binding.serviceUrl,
+    };
+  },
+);
+
+interface TeamsAdmissionFailurePresentation {
+  readonly footerText: string | undefined;
+}
+
+const resolveTeamsAdmissionFailurePresentation$ = command(
+  async (
+    { get },
+    args: TeamsChatAdmissionFailureArgs,
+    signal: AbortSignal,
+  ): Promise<TeamsAdmissionFailurePresentation> => {
+    const db = get(db$);
+    const [mentionerCount, orgRows, agentRows] = await Promise.all([
+      (async () => {
+        const tenantId = args.target.tenantId;
+        const conversationId = args.target.conversationId;
+        const threadId = args.target.threadId;
+        const [row] = await db
+          .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
+          .from(teamsChatThreadRoutes)
+          .innerJoin(
+            teamsOrgConnections,
+            eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
+          )
+          .where(
+            and(
+              eq(teamsOrgConnections.teamsTenantId, tenantId),
+              eq(teamsChatThreadRoutes.conversationId, conversationId),
+              eq(teamsChatThreadRoutes.threadId, threadId),
+            ),
+          );
+        return row?.count ?? 0;
+      })(),
+      db
+        .select({ defaultAgentId: orgMetadata.defaultAgentId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, args.orgId))
+        .limit(1),
+      db
+        .select({ displayName: agents.displayName, name: agents.name })
+        .from(agents)
+        .where(eq(agents.id, args.agentId))
+        .limit(1),
+    ]);
+    signal.throwIfAborted();
+
+    const footerParts: string[] = [];
+    const agentLabel = agentRows[0]?.displayName ?? agentRows[0]?.name;
+    if (agentLabel && args.agentId !== orgRows[0]?.defaultAgentId) {
+      footerParts.push(`Sent via ${agentLabel}`);
+    }
+    if (args.target.conversationType !== "personal" && mentionerCount > 1) {
+      footerParts.push(
+        `Reply to ${
+          args.target.teamsUserDisplayName ??
+          args.target.teamsUserPrincipalName ??
+          args.target.teamsUserId
+        }`,
+      );
+    }
+    return {
+      footerText: footerParts.length > 0 ? footerParts.join(" · ") : undefined,
+    };
+  },
+);
 
 async function clearTeamsAdmissionThinkingReaction(
   args: {
@@ -515,45 +623,49 @@ async function clearTeamsAdmissionThinkingReaction(
   }
 }
 
-export async function deliverTeamsChatAdmissionFailure(
-  args: TeamsChatAdmissionFailureArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const context = await loadTeamsAdmissionFailureContext(args, signal);
-  if (!context) {
-    return;
-  }
-  const presentation = await resolveTeamsAdmissionFailurePresentation(
-    args,
-    signal,
-  );
-  const serviceUrl =
-    args.target.serviceUrl.trim() || context.installationServiceUrl || "";
-  if (!serviceUrl) {
-    throw new Error("Microsoft Teams serviceUrl is missing");
-  }
-  const result = await sendTeamsMessageReply(
-    {
-      serviceUrl,
-      conversationId: args.target.conversationId,
-      activityId: args.target.activityId ?? undefined,
-      tenantId: args.target.tenantId,
-      text: buildTeamsResponseText({
-        mainText: context.messageContent,
-        footerText: presentation.footerText,
-      }),
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  await clearTeamsAdmissionThinkingReaction(
-    {
-      target: args.target,
-      serviceUrl,
-    },
-    signal,
-  );
-  if (result.kind === "teams-error") {
-    throw new Error(`Microsoft Teams API error: ${result.error}`);
-  }
-}
+export const deliverTeamsChatAdmissionFailure$ = command(
+  async (
+    { set },
+    args: TeamsChatAdmissionFailureArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const context = await set(loadTeamsAdmissionFailureContext$, args, signal);
+    if (!context) {
+      return;
+    }
+    const presentation = await set(
+      resolveTeamsAdmissionFailurePresentation$,
+      args,
+      signal,
+    );
+    const serviceUrl =
+      args.target.serviceUrl.trim() || context.installationServiceUrl || "";
+    if (!serviceUrl) {
+      throw new Error("Microsoft Teams serviceUrl is missing");
+    }
+    const result = await sendTeamsMessageReply(
+      {
+        serviceUrl,
+        conversationId: args.target.conversationId,
+        activityId: args.target.activityId ?? undefined,
+        tenantId: args.target.tenantId,
+        text: buildTeamsResponseText({
+          mainText: context.messageContent,
+          footerText: presentation.footerText,
+        }),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await clearTeamsAdmissionThinkingReaction(
+      {
+        target: args.target,
+        serviceUrl,
+      },
+      signal,
+    );
+    if (result.kind === "teams-error") {
+      throw new Error(`Microsoft Teams API error: ${result.error}`);
+    }
+  },
+);

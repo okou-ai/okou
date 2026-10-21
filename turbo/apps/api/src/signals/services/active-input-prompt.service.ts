@@ -37,7 +37,7 @@ import {
   DiscordQueuedLaunchUnavailableError,
   loadDiscordQueuedLaunchMaterial$,
 } from "./discord-queued-launch-context.service";
-import { loadTeamsQueuedLaunchMaterial } from "./teams-queued-launch-context.service";
+import { loadTeamsQueuedLaunchMaterial$ } from "./teams-queued-launch-context.service";
 import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 import {
   projectUserMessage,
@@ -279,7 +279,7 @@ const loadIntegrationPromptMaterial$ = command(
         return await set(loadDiscordQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "teams": {
-        return await loadTeamsQueuedLaunchMaterial(db, loaderArgs);
+        return await set(loadTeamsQueuedLaunchMaterial$, loaderArgs, signal);
       }
       case "telegram": {
         return await set(loadTelegramQueuedLaunchMaterial$, loaderArgs);
