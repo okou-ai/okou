@@ -1,0 +1,74 @@
+name: Setup iOS build cache
+description: Restore main-owned SwiftPM sources and Xcode's native compilation cache
+
+inputs:
+  restore-compilation:
+    description: Restore the compiler cache as well as SwiftPM sources
+    default: "true"
+
+outputs:
+  dependencies-key:
+    description: Exact SwiftPM source cache identity
+    value: ${{ steps.identity.outputs.dependencies-key }}
+  compilation-key:
+    description: Native compiler cache identity for this source tree
+    value: ${{ steps.identity.outputs.compilation-key }}
+  dependencies-hit:
+    description: Whether the locked SwiftPM source cache matched exactly
+    value: ${{ steps.dependencies.outputs.cache-hit }}
+  compilation-hit:
+    description: Whether the compiler cache matched this source tree exactly
+    value: ${{ steps.compilation.outputs.cache-hit }}
+  toolchain-file:
+    description: Captured Xcode and SDK identity for promotion input checks
+    value: ${{ steps.identity.outputs.toolchain-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Identify native cache inputs
+      id: identity
+      shell: bash
+      run: |
+        toolchain_file="$RUNNER_TEMP/ios-cache-toolchain.json"
+        python3 ios/scripts/archive-promotion.py toolchain "$toolchain_file"
+        toolchain=$(shasum -a 256 "$toolchain_file" | cut -d ' ' -f 1)
+        lock=$(shasum -a 256 ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved | cut -d ' ' -f 1)
+        sources=$(git rev-parse HEAD:ios)
+        {
+          echo "dependencies-key=ios-swiftpm-v1-$toolchain-$lock"
+          echo "compilation-prefix=ios-compilation-v1-$toolchain-"
+          echo "compilation-key=ios-compilation-v1-$toolchain-$lock-$sources"
+          echo "toolchain-file=$toolchain_file"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore locked SwiftPM sources
+      id: dependencies
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/okou-ios-ci/SourcePackages
+        key: ${{ steps.identity.outputs.dependencies-key }}
+
+    - name: Restore native Xcode compilation cache
+      id: compilation
+      if: inputs.restore-compilation == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/okou-ios-ci/DerivedData/CompilationCache.noindex
+        key: ${{ steps.identity.outputs.compilation-key }}
+        # Xcode validates each cached compilation's inputs, including changed files.
+        restore-keys: ${{ steps.identity.outputs.compilation-prefix }}
+
+    - name: Report native cache selection
+      shell: bash
+      env:
+        DEPENDENCIES_HIT: ${{ steps.dependencies.outputs.cache-hit }}
+        COMPILATION_HIT: ${{ steps.compilation.outputs.cache-hit }}
+        COMPILATION_MATCH: ${{ steps.compilation.outputs.cache-matched-key }}
+      run: |
+        {
+          echo "### iOS build cache"
+          echo "- SwiftPM exact hit: ${DEPENDENCIES_HIT:-false}"
+          echo "- Compilation exact hit: ${COMPILATION_HIT:-false}"
+          echo "- Compilation restored key: ${COMPILATION_MATCH:-none}"
+        } >> "$GITHUB_STEP_SUMMARY"

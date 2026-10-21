@@ -518,7 +518,7 @@ function useGoogleDriveMenuAction(
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
           onSuccess: (connectionId, signal) => {
-            return run(connectionId ?? syncTarget.connectionId, false, signal);
+            return run(connectionId, false, signal);
           },
           options: {
             account: action.account,

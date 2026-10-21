@@ -96,11 +96,11 @@ type BrowserAuthPostConnectOptions = PostConnectOptions & {
 };
 
 export interface BuiltinConnectorConnectionResult {
-  readonly connectionId: string | null;
+  readonly connectionId: string;
 }
 
 export type ConnectorConnectSuccess = (
-  connectionId: string | null,
+  connectionId: string,
   signal: AbortSignal,
 ) => void | Promise<void>;
 
@@ -1380,7 +1380,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
   async (
     { get, set },
     onSuccess: ConnectorConnectSuccess,
-    connectionId: string | null,
+    connectionId: string,
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {

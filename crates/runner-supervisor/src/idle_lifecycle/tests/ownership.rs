@@ -96,7 +96,7 @@ async fn rollback_accepts_cleanup_before_a_blocked_status_write() {
     let gate = MockLifecycleGate::new();
     overrides.set_destroy_lifecycle_gate(gate.clone());
     let (pool, budget) = owned_pool(overrides).await;
-    let reservation = reserve_reusable_idle_for_spawn(&pool, "owned", "vm0/default", &None, None)
+    let reservation = reserve_reusable_idle_for_spawn(&pool, "owned", "vm0/default", &None)
         .await
         .unwrap();
     pool.lock().await.parking_gate().close();

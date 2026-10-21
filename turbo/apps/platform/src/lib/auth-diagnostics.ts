@@ -276,6 +276,7 @@ export async function observeAuthTokenRead(
     ...request,
     outcome: "started",
   });
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: temporary 401 token-read diagnostics.
   const token = await onRejection(execute, (error) => {
     recordAuthDiagnostic({
       stage: "token_read_finished",
@@ -316,6 +317,7 @@ export async function observeAuthHttpRequest<
     ...request,
     outcome: "started",
   });
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: temporary 401 HTTP diagnostics.
   const response = await onRejection(execute, (error) => {
     recordAuthDiagnostic({
       stage: "http_finished",
@@ -352,6 +354,7 @@ export async function observeClerkToken(
     skipCache,
     outcome: "started",
   });
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: temporary 401 Clerk SDK diagnostics.
   const token = await onRejection(execute, (error) => {
     recordAuthDiagnostic({
       stage: "clerk_sdk_finished",

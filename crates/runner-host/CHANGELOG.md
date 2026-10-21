@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.24](https://github.com/okou-ai/okou/compare/runner-host-v0.9.23...runner-host-v0.9.24) (2026-10-21)
+
+
+### Refactoring
+
+* **runner:** retire scheduling history generation identity ([#41998](https://github.com/okou-ai/okou/issues/41998)) ([39dbd2a](https://github.com/okou-ai/okou/commit/39dbd2a10242e3e1d9241d8b81c034258f10f842))
+
 ## [0.9.23](https://github.com/okou-ai/okou/compare/runner-host-v0.9.22...runner-host-v0.9.23) (2026-10-21)
 
 ## [0.9.22](https://github.com/okou-ai/okou/compare/runner-host-v0.9.21...runner-host-v0.9.22) (2026-10-21)

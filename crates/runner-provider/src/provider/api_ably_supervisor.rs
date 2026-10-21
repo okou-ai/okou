@@ -39,6 +39,10 @@ use runner_types::ids::RunId;
 use runner_types::types::ConnectorRuntimeTarget;
 
 const ABLY_BACKOFF_INITIAL: Duration = Duration::from_secs(5);
+// Request Ably's supported minimum. With its negotiated five-second idle
+// interval and the standard ten-second margin, silent-loss detection takes
+// about fifteen seconds rather than the default twenty-five.
+const ABLY_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const ABLY_BACKOFF_MAX: Duration = Duration::from_secs(60);
 const ABLY_DISCONNECT_ERROR_AFTER: Duration = Duration::from_secs(60);
 const DEFERRED_POLL_MAX: Duration = Duration::from_secs(10);
@@ -99,6 +103,8 @@ impl PollRecord {
 ///
 /// - Ably connection state selects the ordinary polling cadence: slow while
 ///   connected, fast while disconnected.
+/// - Advertised reusable inventory also arms an absolute safety deadline. It
+///   does not depend on Ably noticing a silent receive-side interruption.
 /// - Immediate wakeups request a prompt HTTP poll for startup, incomplete Ably
 ///   job notifications, direct queue fallback, and backlog draining after a job
 ///   is found.
@@ -137,6 +143,10 @@ impl DeferredPollWindow {
 struct PollWakeupsInner {
     /// Selects slow versus fast ordinary polling cadence.
     ably_connected: bool,
+    /// Last local inventory projection; an older heartbeat cannot re-enable
+    /// reconciliation after a newer snapshot withdrew reusable resources.
+    reuse_snapshot_order: Option<(u64, u64)>,
+    reuse_poll: Option<ReusePoll>,
     /// Immediate poll request. Re-armed after `JobFound` to drain backlog.
     poll_now: bool,
     /// A capped deferred window blocks immediate and retry polls until due.
@@ -149,6 +159,16 @@ struct PollWakeupsInner {
 }
 
 impl PollWakeupsInner {
+    fn consume_poll(&mut self, reason: PollReason, now: tokio::time::Instant) -> PollDue {
+        if let Some(reuse) = &mut self.reuse_poll {
+            reuse.at = now + reuse.interval;
+        }
+        PollDue {
+            reason,
+            generation: self.generation,
+        }
+    }
+
     fn bump_generation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
     }
@@ -172,6 +192,13 @@ impl PollWakeupsInner {
 struct ScheduledPoll {
     at: tokio::time::Instant,
     reason: PollReason,
+    reuse: bool,
+}
+
+#[derive(Debug)]
+struct ReusePoll {
+    interval: Duration,
+    at: tokio::time::Instant,
 }
 
 impl PollWakeups {
@@ -179,6 +206,8 @@ impl PollWakeups {
         Self {
             inner: StdMutex::new(PollWakeupsInner {
                 ably_connected,
+                reuse_snapshot_order: None,
+                reuse_poll: None,
                 poll_now: true,
                 deferred_poll: None,
                 wakeup_retry_at: None,
@@ -200,6 +229,37 @@ impl PollWakeups {
     pub(super) fn mark_ably_disconnected(&self) {
         self.lock_inner().ably_connected = false;
         self.notify.notify_waiters();
+    }
+
+    pub(super) fn update_reuse_polling(&self, order: (u64, u64), interval: Option<Duration>) {
+        let mut inner = self.lock_inner();
+        if inner
+            .reuse_snapshot_order
+            .is_some_and(|previous| previous >= order)
+        {
+            return;
+        }
+        inner.reuse_snapshot_order = Some(order);
+        let changed = match (&mut inner.reuse_poll, interval) {
+            (None, Some(interval)) => {
+                inner.reuse_poll = Some(ReusePoll {
+                    interval,
+                    at: tokio::time::Instant::now() + interval,
+                });
+                true
+            }
+            (Some(_), None) => {
+                inner.reuse_poll = None;
+                true
+            }
+            // New observations must not postpone an already armed deadline,
+            // including an error backoff or a wait cancelled by direct delivery.
+            _ => false,
+        };
+        drop(inner);
+        if changed {
+            self.notify.notify_waiters();
+        }
     }
 
     pub(super) fn request_immediate_poll(&self) {
@@ -252,6 +312,14 @@ impl PollWakeups {
     ) -> PollRecord {
         let mut should_notify = false;
         let mut inner = self.lock_inner();
+        if let Some(reuse) = &mut inner.reuse_poll {
+            let delay = if outcome == PollOutcome::Failure {
+                reuse.interval.max(wakeup_retry_delay)
+            } else {
+                reuse.interval
+            };
+            reuse.at = tokio::time::Instant::now() + delay;
+        }
         let has_new_wakeup = inner.generation != due.generation;
         // A deferred wakeup that arrives while an HTTP poll is in flight
         // must be honored before returning a newly found job to this runner.
@@ -301,10 +369,7 @@ impl PollWakeups {
                 let mut inner = self.lock_inner();
                 let now = tokio::time::Instant::now();
                 if inner.consume_deferred_if_due(now) {
-                    return Some(PollDue {
-                        reason: PollReason::Deferred,
-                        generation: inner.generation,
-                    });
+                    return Some(inner.consume_poll(PollReason::Deferred, now));
                 }
                 if inner.deferred_poll.is_some() {
                     // Deferred fairness deliberately holds immediate polls
@@ -312,16 +377,10 @@ impl PollWakeups {
                     Self::next_scheduled(&inner, now, slow_interval, fast_interval)
                 } else if inner.poll_now {
                     inner.poll_now = false;
-                    return Some(PollDue {
-                        reason: PollReason::Immediate,
-                        generation: inner.generation,
-                    });
+                    return Some(inner.consume_poll(PollReason::Immediate, now));
                 } else if inner.wakeup_retry_at.is_some_and(|at| at <= now) {
                     inner.wakeup_retry_at = None;
-                    return Some(PollDue {
-                        reason: PollReason::WakeupRetry,
-                        generation: inner.generation,
-                    });
+                    return Some(inner.consume_poll(PollReason::WakeupRetry, now));
                 } else {
                     Self::next_scheduled(&inner, now, slow_interval, fast_interval)
                 }
@@ -353,18 +412,32 @@ impl PollWakeups {
             ScheduledPoll {
                 at: window.at,
                 reason: PollReason::Deferred,
+                reuse: false,
             }
         } else if inner.ably_connected {
             ScheduledPoll {
                 at: now + slow_interval,
                 reason: PollReason::Slow,
+                reuse: false,
             }
         } else {
             ScheduledPoll {
                 at: now + fast_interval,
                 reason: PollReason::Fast,
+                reuse: false,
             }
         };
+
+        if inner.deferred_poll.is_none()
+            && let Some(reuse) = &inner.reuse_poll
+            && reuse.at < scheduled.at
+        {
+            scheduled = ScheduledPoll {
+                at: reuse.at,
+                reason: PollReason::Fast,
+                reuse: true,
+            };
+        }
 
         if inner.deferred_poll.is_none()
             && let Some(at) = inner.wakeup_retry_at
@@ -373,6 +446,7 @@ impl PollWakeups {
             scheduled = ScheduledPoll {
                 at,
                 reason: PollReason::WakeupRetry,
+                reuse: false,
             };
         }
         scheduled
@@ -403,15 +477,19 @@ impl PollWakeups {
             }
             PollReason::Fast => {
                 inner.deferred_poll.is_none()
-                    && !inner.ably_connected
+                    && if scheduled.reuse {
+                        inner
+                            .reuse_poll
+                            .as_ref()
+                            .is_some_and(|reuse| reuse.at <= now)
+                    } else {
+                        !inner.ably_connected
+                    }
                     && !inner.poll_now
                     && !Self::has_due_wakeup(&inner, now)
             }
         };
-        is_due.then_some(PollDue {
-            reason: scheduled.reason,
-            generation: inner.generation,
-        })
+        is_due.then(|| inner.consume_poll(scheduled.reason, now))
     }
 
     fn has_due_wakeup(inner: &PollWakeupsInner, now: tokio::time::Instant) -> bool {
@@ -479,6 +557,13 @@ struct SupervisorTaskConfig {
 
 impl AblySupervisor {
     pub(super) fn spawn(config: AblySupervisorConfig) -> Self {
+        Self::spawn_with_subscription(config, None)
+    }
+
+    fn spawn_with_subscription(
+        config: AblySupervisorConfig,
+        subscription: Option<ably_subscriber::Subscription>,
+    ) -> Self {
         let shutdown = CancellationToken::new();
         let task_shutdown = shutdown.clone();
         let task_config = SupervisorTaskConfig {
@@ -495,7 +580,7 @@ impl AblySupervisor {
             shutdown: task_shutdown,
         };
         let task = tokio::spawn(async move {
-            run_supervisor(task_config).await;
+            run_supervisor(task_config, subscription).await;
         });
         Self {
             shutdown,
@@ -511,6 +596,14 @@ impl AblySupervisor {
         {
             warn!(error = %e, "ably supervisor task failed during shutdown");
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn connected_for_test(
+        config: AblySupervisorConfig,
+        subscription: ably_subscriber::Subscription,
+    ) -> Self {
+        Self::spawn_with_subscription(config, Some(subscription))
     }
 
     #[cfg(test)]
@@ -548,12 +641,15 @@ impl Drop for AblySupervisor {
     }
 }
 
-async fn run_supervisor(config: SupervisorTaskConfig) {
-    let mut ably: Option<ably_subscriber::Subscription> = None;
+async fn run_supervisor(
+    config: SupervisorTaskConfig,
+    mut ably: Option<ably_subscriber::Subscription>,
+) {
     let mut cancel_deliveries = FuturesUnordered::<CancelDelivery>::new();
     let mut ably_retry: RetryState<AblyConnectHandle> =
         RetryState::new(ABLY_BACKOFF_INITIAL, ABLY_BACKOFF_MAX);
-    ably_retry.restart_at = Some(StdInstant::now());
+    // A supplied live subscription must not retain an already-due retry timer.
+    ably_retry.restart_at = ably.is_none().then(StdInstant::now);
     let mut disconnect = AblyDisconnectState::disconnected("connecting".to_string());
 
     loop {
@@ -769,8 +865,7 @@ async fn handle_ably_message_with_connector_runtime_sync(
                         notification_received_at,
                         notif.reuse_key.map(str::to_owned),
                         notif.runner_preference_context,
-                    )
-                    .with_history_generation_run_id(notif.history_generation_run_id),
+                    ),
                 ))
             } else {
                 info!(
@@ -810,7 +905,6 @@ struct JobNotification<'a> {
     run_id: RunId,
     profile: Option<&'a str>,
     reuse_key: Option<&'a str>,
-    history_generation_run_id: Option<RunId>,
     runner_preference_context: Option<RunnerPreferenceContext>,
 }
 
@@ -1035,11 +1129,6 @@ fn parse_job_notification(msg: &ably_subscriber::Message) -> Option<JobNotificat
         .get("reuseKey")
         .and_then(|v| v.as_str())
         .filter(|value| !value.is_empty());
-    let history_generation_run_id = msg
-        .data
-        .get("historyGenerationRunId")
-        .and_then(|v| v.as_str())
-        .and_then(|value| value.parse().ok());
     let runner_preference_context =
         match parse_runner_preference(msg.data.get("runnerPreference").cloned()) {
             Ok(context) => context,
@@ -1056,7 +1145,6 @@ fn parse_job_notification(msg: &ably_subscriber::Message) -> Option<JobNotificat
         run_id,
         profile,
         reuse_key,
-        history_generation_run_id,
         runner_preference_context,
     })
 }
@@ -1077,7 +1165,7 @@ async fn sleep_until_optional(deadline: Option<tokio::time::Instant>) {
     }
 }
 
-fn make_ably_config(api: &ApiClient, group: &str) -> ably_subscriber::SubscribeConfig {
+pub(super) fn make_ably_config(api: &ApiClient, group: &str) -> ably_subscriber::SubscribeConfig {
     let api = api.clone();
     let channel = format!("runner-group:{group}");
     let group = group.to_owned();
@@ -1091,7 +1179,9 @@ fn make_ably_config(api: &ApiClient, group: &str) -> ably_subscriber::SubscribeC
                     .map_err(|e| Box::new(e) as ably_subscriber::BoxError)
             })
         });
-    ably_subscriber::SubscribeConfig::new(get_token, channel)
+    let mut config = ably_subscriber::SubscribeConfig::new(get_token, channel);
+    config.heartbeat_interval = Some(ABLY_HEARTBEAT_INTERVAL);
+    config
 }
 
 fn maybe_spawn_ably_connect(
@@ -1212,6 +1302,7 @@ mod tests {
     use tracing_test_support::CapturedEvents;
 
     mod finalizing_source;
+    mod reuse_polling;
 
     fn make_message(name: Option<&str>, data: serde_json::Value) -> ably_subscriber::Message {
         ably_subscriber::Message {
@@ -2182,7 +2273,6 @@ mod tests {
                 "runId": "00000000-0000-0000-0000-000000000001",
                 "profile": "vm0/default",
                 "reuseKey": "thread:chat-thread",
-                "historyGenerationRunId": "00000000-0000-0000-0000-000000000098",
                 "runnerPreference": {
                     "kind": "preference",
                     "runnerIdentity": {
@@ -2206,10 +2296,6 @@ mod tests {
         assert_eq!(candidate.profile_name(), "vm0/default");
         let candidate = candidate.into_job_candidate();
         assert_eq!(candidate.reuse_key(), Some("thread:chat-thread"));
-        assert_eq!(
-            candidate.history_generation_run_id(),
-            Some("00000000-0000-0000-0000-000000000098".parse().unwrap())
-        );
         let preference = candidate
             .runner_preference()
             .expect("canonical preference should be parsed");

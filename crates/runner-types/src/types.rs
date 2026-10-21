@@ -40,8 +40,6 @@ pub struct Job {
     #[serde(default)]
     pub reuse_key: Option<String>,
     #[serde(default)]
-    pub history_generation_run_id: Option<RunId>,
-    #[serde(default)]
     pub runner_preference: Option<serde_json::Value>,
 }
 
@@ -1721,8 +1719,6 @@ pub struct ReusableSandboxState {
     pub profile: String,
     /// Run that produced this resource, independent of native history.
     pub source_run_id: RunId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub history_generation_run_id: Option<RunId>,
 }
 
 /// Reusable sandbox state keyed by the runner-owned reuse identity.
@@ -2669,9 +2665,6 @@ mod tests {
                 reusable_sandbox: ReusableSandboxState {
                     source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: "vm0/default".into(),
-                    history_generation_run_id: Some(
-                        "11111111-1111-4111-8111-111111111111".parse().unwrap(),
-                    ),
                 },
             }],
             held_home_states: vec![HeldHomeState {
@@ -2711,8 +2704,7 @@ mod tests {
                     "lastCompletedAt": "2026-05-28T00:00:00.000Z",
                     "reusableSandbox": {
                         "sourceRunId": "33333333-3333-4333-8333-333333333333",
-                        "profile": "vm0/default",
-                        "historyGenerationRunId": "11111111-1111-4111-8111-111111111111"
+                        "profile": "vm0/default"
                     }
                 }],
                 "heldHomeStates": [{
@@ -2731,26 +2723,6 @@ mod tests {
                 }],
                 "mode": "running"
             })
-        );
-    }
-
-    #[test]
-    fn held_sandbox_state_serializes_required_sandbox_without_optional_history_generation() {
-        let state = HeldSandboxState {
-            reuse_key: "thread:thread-current".into(),
-            last_completed_at: "2026-05-28T00:00:00.000Z".into(),
-            reusable_sandbox: ReusableSandboxState {
-                source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
-                profile: "vm0/default".into(),
-                history_generation_run_id: None,
-            },
-        };
-        let serialized = serde_json::to_value(state).unwrap();
-        assert_eq!(serialized["reusableSandbox"]["profile"], "vm0/default");
-        assert!(
-            serialized["reusableSandbox"]
-                .get("historyGenerationRunId")
-                .is_none()
         );
     }
 

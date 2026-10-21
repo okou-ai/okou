@@ -102,6 +102,7 @@ export default [
       "ccstate/no-direct-session-storage": "error",
       "ccstate/no-direct-fetch": "error",
       "ccstate/no-empty-promise-catch": "error",
+      "ccstate/no-tap-error": "error",
       "ccstate/no-void-statement": "error",
       "ccstate/no-abort-swallower": "error",
       "ccstate/no-react-class-component": "error",
@@ -111,6 +112,7 @@ export default [
       "ccstate/require-client-signal": "error",
       "ccstate/command-async-signal": "error",
       "ccstate/no-command-in-command": "error",
+      "ccstate/no-on-rejection": "error",
       "ccstate/no-computed-signal": "error",
       "ccstate/no-getter-setter-params": "error",
       "ccstate/no-accessor-escape": "error",
@@ -307,9 +309,10 @@ export default [
   // Ban try statements and raw .then()/.catch() in production source code.
   // - try/catch: use accept() for API errors, useLoadableSet for loading states.
   // - .then/.catch: production code must await and surface state via ccstate
-  //   loadables; the centralized helpers in signals/utils.ts (bestEffort,
-  //   tapError, onRejection, settle, toVoid, detach) wrap the legitimate
-  //   Promise primitive usage — see issue #13535.
+  //   loadables; centralized helpers wrap legitimate Promise primitive usage.
+  //   Do not swallow failures with tapError (see docs/app/signals/tapError.md).
+  //   onRejection requires explicit review via ccstate/no-on-rejection; see
+  //   docs/app/signals/onRejection.md and issue #13535 for the primitive boundary.
   {
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
@@ -337,12 +340,12 @@ export default [
         {
           selector: "CallExpression[callee.property.name='then']",
           message:
-            "Promise.then is not allowed. Use await, or one of the helpers in signals/utils.ts (bestEffort, tapError, onRejection, settle, toVoid).",
+            "Promise.then is not allowed. Use await and derive UI from loadables; see docs/app/platform-ccstate.md.",
         },
         {
           selector: "CallExpression[callee.property.name='catch']",
           message:
-            "Promise.catch is not allowed. Use the helpers in signals/utils.ts (bestEffort, tapError, onRejection, settle).",
+            "Promise.catch is not allowed. Let accept errors propagate and derive UI from loadables. See docs/app/signals/onRejection.md for infrastructure exceptions and docs/app/signals/tapError.md for swallowing misuses.",
         },
         {
           selector: "NewExpression[callee.name='Date'][arguments.length=0]",

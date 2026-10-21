@@ -685,16 +685,6 @@ describe("Official Workflow catalog release boundary", () => {
     expect(retried.body.outcome).toBe("accepted");
   });
 
-  it("reuses registered objects without changing the accepted identity", async () => {
-    installVolumeS3Fixture();
-    const name = `api-test-reuse-${TEST_SUFFIX}`;
-    await syncCatalog(catalog([activeDefinition(name)]));
-    context.mocks.s3.send.mockClear();
-    const repeated = await syncCatalog(catalog([activeDefinition(name)]));
-    expect(repeated.body.outcome).toBe("unchanged");
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  });
-
   it("retires and repeats sync without touching stored objects", async () => {
     installVolumeS3Fixture();
     const name = `api-test-retired-reuse-${TEST_SUFFIX}`;

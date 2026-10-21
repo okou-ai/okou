@@ -407,6 +407,11 @@ jobs:
       - name: Test owned charged-memory window evidence
         run: python3 -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'charged_windows_test.py'
 
+      - name: Test original-file residency evidence
+        run: |
+          python3 -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_residency_test.py'
+          sudo python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'file_residency_test.py' -k calling_native_task
+
       - name: Run actionlint
         run: ./actionlint
 

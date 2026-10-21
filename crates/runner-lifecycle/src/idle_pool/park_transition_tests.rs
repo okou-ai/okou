@@ -45,7 +45,7 @@ fn request_running_handoff(request: &mut IdleParkRequest, overrides: &MockSandbo
     let signal = sandbox::SandboxFinalExecParkHandoff::new();
     assert!(signal.request());
     request.parts.handoff = Some(signal);
-    request.parts.history_generation_run_id = Some(request.parts.run_id);
+    request.parts.native_generation_run_id = Some(request.parts.run_id);
     overrides.push_final_exec_park_handoff_point(
         sandbox::SandboxFinalExecParkHandoffPoint::DuringDeflation,
     );
@@ -94,7 +94,7 @@ async fn make_idle_park_request_with_sandbox_id(
         source_ip: "10.0.0.1".into(),
         storage_fingerprints: StorageFingerprints::default(),
         restored_session_identity: None,
-        history_generation_run_id: None,
+        native_generation_run_id: None,
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes: 0,
         home_promotion: None,
@@ -332,7 +332,7 @@ async fn speculative_repark_preserves_expected_capacity_rejection() {
         make_budget_lease(2, 2048),
     )
     .await;
-    request.parts.history_generation_run_id = Some(request.parts.run_id);
+    request.parts.native_generation_run_id = Some(request.parts.run_id);
     let candidate = match request.park_for_idle().await {
         Ok(outcome) => outcome.expect_reusable(),
         Err(_) => panic!("initial park should succeed"),
@@ -445,7 +445,7 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
     let reuse_key = "thread:metadata";
     let profile_name = "vm0/large";
     let source_ip = "10.99.0.42";
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let budget_lease = make_budget_lease(2, 2048);
     add_healthy_reuse_preparation_matcher(&overrides);
     let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(
@@ -488,7 +488,7 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
         source_ip: source_ip.into(),
         storage_fingerprints,
         restored_session_identity: Some(restored_session_identity.clone()),
-        history_generation_run_id: Some(history_generation_run_id),
+        native_generation_run_id: Some(native_generation_run_id),
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes: 0,
         home_promotion: None,
@@ -505,8 +505,8 @@ async fn idle_park_request_success_preserves_reuse_metadata() {
     assert_eq!(candidate.sandbox_id(), sandbox_id);
     assert_eq!(candidate.metadata.profile_name, profile_name);
     assert_eq!(
-        candidate.metadata.history_generation_run_id,
-        Some(history_generation_run_id)
+        candidate.metadata.native_generation_run_id,
+        Some(native_generation_run_id)
     );
 
     let mut pool = IdlePool::new(pool_config(0));
@@ -566,7 +566,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
             tx_bytes_per_sec: 25 * 1024 * 1024,
         },
     };
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let mut request = make_idle_park_request(
         Arc::clone(&overrides),
         reuse_key,
@@ -575,7 +575,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     .await;
     request.parts.profile_name = profile_name.into();
     request.parts.device_rate_limits = Some(device_rate_limits.clone());
-    request.parts.history_generation_run_id = Some(history_generation_run_id);
+    request.parts.native_generation_run_id = Some(native_generation_run_id);
     let source_run_id = request.parts.run_id;
     request.parts.guest_timezone_intent =
         crate::guest_timezone::GuestTimezoneIntent::Configured("Asia/Shanghai".into());
@@ -615,8 +615,8 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     assert_eq!(entry.budget_memory_mb(), 2048);
     assert_eq!(entry.metadata.source_run_id, Some(source_run_id));
     assert_eq!(
-        entry.metadata.history_generation_run_id,
-        Some(history_generation_run_id)
+        entry.metadata.native_generation_run_id,
+        Some(native_generation_run_id)
     );
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(overrides.park_call_count(), 2);
@@ -676,7 +676,7 @@ async fn speculative_repark_without_native_history_preserves_producer() {
         .into_restore_entry()
         .unwrap_or_else(|_| panic!("parked entry"));
     assert_eq!(entry.metadata.source_run_id, Some(source_run_id));
-    assert_eq!(entry.metadata.history_generation_run_id, None);
+    assert_eq!(entry.metadata.native_generation_run_id, None);
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(overrides.park_call_count(), 2);
     assert_eq!(overrides.destroy_call_count(), 0);

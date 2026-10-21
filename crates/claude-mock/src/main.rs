@@ -27,7 +27,7 @@
 //!                               can terminate it
 //!   @stuck-tool-closed-stdout-deaf
 //!                             - Same, but closes stdout before hanging
-//!   @orphan-pipe              - Emit events, spawn child holding stdout, then exit
+//!   @orphan-pipe              - Start child holding stdout, emit events, then exit
 //!   @hang-after-result        - Emit result event, then hang the process
 //!                               (SIGTERM kills it -> exits with 143; tests
 //!                               the SigtermPending->Done reap path)

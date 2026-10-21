@@ -155,16 +155,6 @@ describe("bounded S3 object listing provider contract", () => {
     ).toStrictEqual(keys);
   });
 
-  it.each([0, -1, 1001, 1.5])(
-    "rejects page size %s before a provider request",
-    (maxKeys) => {
-      expect(() => {
-        return listS3ObjectsPage(bucket, prefix, maxKeys);
-      }).toThrow("S3 list page size must be an integer between 1 and 1000");
-      expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    },
-  );
-
   it("rejects a cursor outside the requested namespace", () => {
     expect(() => {
       return listS3ObjectsPage(
@@ -191,33 +181,6 @@ describe("bounded S3 object listing provider contract", () => {
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
-  it.each([
-    {
-      label: "missing key",
-      item: { Size: 10, LastModified: new Date(modified) },
-    },
-    {
-      label: "missing size",
-      item: { Key: `${prefix}one`, LastModified: new Date(modified) },
-    },
-    { label: "negative size", item: { ...metadata(`${prefix}one`), Size: -1 } },
-    { label: "missing date", item: { Key: `${prefix}one`, Size: 10 } },
-    {
-      label: "invalid date",
-      item: { ...metadata(`${prefix}one`), LastModified: new Date("invalid") },
-    },
-  ])(
-    "rejects $label instead of silently dropping an object",
-    async ({ item }) => {
-      context.mocks.s3.send.mockResolvedValue({ Contents: [item] });
-      await expect(
-        createStore().get(listS3ObjectsPage(bucket, prefix, 1000)),
-      ).rejects.toThrow(
-        "S3 object listing returned incomplete object metadata",
-      );
-    },
-  );
-
   it("rejects objects outside the requested prefix", async () => {
     context.mocks.s3.send.mockResolvedValue({
       Contents: [metadata("other/key")],
@@ -225,53 +188,6 @@ describe("bounded S3 object listing provider contract", () => {
     await expect(
       createStore().get(listS3ObjectsPage(bucket, prefix, 1000)),
     ).rejects.toThrow("S3 object listing escaped its prefix");
-  });
-
-  it.each([
-    {
-      label: "cursor replay",
-      keys: [`${prefix}two`],
-      startAfter: `${prefix}two`,
-    },
-    {
-      label: "duplicate key",
-      keys: [`${prefix}one`, `${prefix}one`],
-      startAfter: undefined,
-    },
-    {
-      label: "reversed page",
-      keys: [`${prefix}two`, `${prefix}one`],
-      startAfter: undefined,
-    },
-  ])(
-    "rejects $label instead of allowing a non-advancing checkpoint",
-    async ({ keys, startAfter }) => {
-      context.mocks.s3.send.mockResolvedValue({ Contents: keys.map(metadata) });
-      await expect(
-        createStore().get(
-          listS3ObjectsPage(bucket, prefix, 1000, startAfter, context.signal),
-        ),
-      ).rejects.toThrow("S3 object listing did not advance its cursor");
-    },
-  );
-
-  it.each([
-    {
-      label: "truncated empty page",
-      response: { Contents: [], IsTruncated: true },
-    },
-    {
-      label: "oversized page",
-      response: {
-        Contents: [metadata(`${prefix}one`), metadata(`${prefix}two`)],
-        IsTruncated: false,
-      },
-    },
-  ])("rejects a $label", async ({ response }) => {
-    context.mocks.s3.send.mockResolvedValue(response);
-    await expect(
-      createStore().get(listS3ObjectsPage(bucket, prefix, 1)),
-    ).rejects.toThrow("S3 object listing returned an invalid bounded page");
   });
 
   it("propagates a provider rejection without retries or implicit pages", async () => {

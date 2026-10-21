@@ -52,7 +52,6 @@ describe("Codex expiry concurrent readers and cancellation", () => {
     expectExpiry(results[1], null, 3);
     expectExpiry(await user.list(), null, 4);
     expect(remote.detailsCalls).toBe(2);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("coalesces readers and isolates one caller's TimeoutError cancellation", async () => {

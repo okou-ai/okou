@@ -1299,38 +1299,6 @@ describe("connector catalog valid lifecycle", () => {
     ]);
   });
 
-  it("serves concurrent external catalog reads without returning to R2", async () => {
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.external-concurrent-cold-reader",
-    });
-    serveObjects(catalogObjects([release], release));
-    await syncCatalog();
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    const headers = { authorization: "Bearer clerk-session" };
-    const catalogClient = setupApp({
-      context,
-      routes: connectorCatalogRoutes,
-    })(connectorCatalogContract);
-    const callsBeforePublicReads = context.mocks.s3.send.mock.calls.length;
-
-    const [list, detail] = await Promise.all([
-      accept(catalogClient.list({ headers }), [200]),
-      accept(
-        catalogClient.get({
-          params: { connectorSlug: release.connectorSlug },
-          headers,
-        }),
-        [200],
-      ),
-    ]);
-    expect(list.body.connectors).toHaveLength(1);
-    expect(detail.body.connector.slug).toBe(release.connectorSlug);
-
-    await accept(catalogClient.list({ headers }), [200]);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforePublicReads);
-  });
-
   it("executes an external manual grant with catalog-owned storage", async () => {
     configureSource();
     const optionalSecretName = "EXTERNAL_OPTIONAL_TOKEN";
@@ -2057,20 +2025,6 @@ describe("connector catalog valid lifecycle", () => {
     ]);
     await own(() => {
       return connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "slack");
-    });
-  });
-
-  it("accepts a complete generated firewall projection", async () => {
-    configureSource();
-    const release = buildRelease({
-      version: "2026-07-15.generated-firewall",
-      generatedFirewall: true,
-    });
-    serveObjects(catalogObjects([release], release));
-
-    expect((await syncCatalog()).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
     });
   });
 

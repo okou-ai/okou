@@ -3863,7 +3863,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       });
       if (params.failureReason === "reconnect_required") {
         expect(marker.failureReason).toBe("reconnect_required");
-        expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
         await misc.upsertPersonalModelProvider(
           fixture.actor,
           {

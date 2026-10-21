@@ -603,6 +603,7 @@
     },
     "sharing": {
       "accessLabel": "アクセスできるユーザー",
+      "copied": "コピーしました",
       "copyLink": "リンクをコピー",
       "loadFailed": "権限を読み込めませんでした",
       "loadingPermissions": "権限を読み込み中",
@@ -2022,7 +2023,7 @@
       "github": "GitHub",
       "lark": "Lark",
       "mcp": "MCP",
-      "openChat": "オープンチャット",
+      "openChat": "チャットを開く",
       "openChatIn": "{{integration}}でチャットを開く",
       "openDiscordMessage": "Discord で元のメッセージを開く",
       "openFeishuChat": "Feishu で元のチャットを開く",
@@ -2088,6 +2089,7 @@
       "received": "受信",
       "running": "実行中",
       "sent": "送信",
+      "toggleMessages": "{{title}} とのメッセージ",
       "unavailable": "アクセス不可",
       "untitled": "無題"
     },
@@ -5014,10 +5016,6 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
-        "resources": {
-          "description": "余白があるときは、チャットの成果物と関連チャットを会話の横に表示します。",
-          "title": "リソースを自動で開く"
-        },
         "sectionTitle": "チャット"
       },
       "debug": {

@@ -2,7 +2,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { and, eq, sql } from "drizzle-orm";
 
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -50,153 +50,165 @@ function routeWhere(key: TelegramChatThreadRouteKey) {
   );
 }
 
-export async function persistTelegramReplyChainRoute(args: {
-  readonly db: Db;
-  readonly ownerLink: TelegramOwnerLink;
-  readonly chatId: string;
-  readonly previousRootMessageId: string | null;
-  readonly isDirectMessage: boolean;
-  readonly botReplyMessageId: string;
-  readonly chatThreadId: string;
-  readonly runStatus: "completed" | "failed";
-  readonly currentTime: Date;
-}): Promise<void> {
-  if (
-    args.previousRootMessageId === "dm" ||
-    (args.previousRootMessageId !== null &&
-      isIntegrationDmSessionKey(args.previousRootMessageId))
-  ) {
-    return;
-  }
+export const persistTelegramReplyChainRoute$ = command(
+  async (
+    { set },
+    args: {
+      readonly ownerLink: TelegramOwnerLink;
+      readonly chatId: string;
+      readonly previousRootMessageId: string | null;
+      readonly isDirectMessage: boolean;
+      readonly botReplyMessageId: string;
+      readonly chatThreadId: string;
+      readonly runStatus: "completed" | "failed";
+      readonly currentTime: Date;
+    },
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (
+      args.previousRootMessageId === "dm" ||
+      (args.previousRootMessageId !== null &&
+        isIntegrationDmSessionKey(args.previousRootMessageId))
+    ) {
+      return;
+    }
 
-  if (args.previousRootMessageId === null || args.isDirectMessage) {
-    await bindTelegramReplyMessageRoute(args.db, {
+    if (args.previousRootMessageId === null || args.isDirectMessage) {
+      await set(bindTelegramReplyMessageRoute$, {
+        ownerLink: args.ownerLink,
+        chatId: args.chatId,
+        rootMessageId: args.botReplyMessageId,
+        chatThreadId: args.chatThreadId,
+        currentTime: args.currentTime,
+      });
+      return;
+    }
+
+    if (args.runStatus !== "completed") {
+      return;
+    }
+    const [updated] = await db
+      .update(telegramChatThreadRoutes)
+      .set({ rootMessageId: args.botReplyMessageId })
+      .where(
+        and(
+          routeWhere({
+            ownerLink: args.ownerLink,
+            chatId: args.chatId,
+            rootMessageId: args.previousRootMessageId,
+          }),
+          eq(telegramChatThreadRoutes.chatThreadId, args.chatThreadId),
+        ),
+      )
+      .returning({ id: telegramChatThreadRoutes.id });
+    if (updated) {
+      return;
+    }
+    const key = {
       ownerLink: args.ownerLink,
       chatId: args.chatId,
       rootMessageId: args.botReplyMessageId,
-      chatThreadId: args.chatThreadId,
-      currentTime: args.currentTime,
-    });
-    return;
-  }
-
-  if (args.runStatus !== "completed") {
-    return;
-  }
-  const [updated] = await args.db
-    .update(telegramChatThreadRoutes)
-    .set({ rootMessageId: args.botReplyMessageId })
-    .where(
-      and(
-        routeWhere({
-          ownerLink: args.ownerLink,
-          chatId: args.chatId,
-          rootMessageId: args.previousRootMessageId,
-        }),
-        eq(telegramChatThreadRoutes.chatThreadId, args.chatThreadId),
-      ),
-    )
-    .returning({ id: telegramChatThreadRoutes.id });
-  if (updated) {
-    return;
-  }
-  const key = {
-    ownerLink: args.ownerLink,
-    chatId: args.chatId,
-    rootMessageId: args.botReplyMessageId,
-  };
-  let [existing] = await args.db
-    .select({
-      id: telegramChatThreadRoutes.id,
-      chatId: telegramChatThreadRoutes.chatId,
-      chatThreadId: telegramChatThreadRoutes.chatThreadId,
-    })
-    .from(telegramChatThreadRoutes)
-    .innerJoin(
-      chatThreads,
-      eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
-    )
-    .where(routeWhere(key))
-    .limit(1);
-  // No row lock: the DM destination move is one conditional update pinned
-  // to the route id.
-  if (
-    existing &&
-    key.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
-    existing.chatId !== key.chatId
-  ) {
-    const [updatedDestination] = await args.db
-      .update(telegramChatThreadRoutes)
-      .set({ chatId: key.chatId })
-      .where(and(eq(telegramChatThreadRoutes.id, existing.id), routeWhere(key)))
-      .returning({ chatId: telegramChatThreadRoutes.chatId });
-    if (!updatedDestination) {
-      throw new Error("Failed to update Telegram DM route destination");
-    }
-    existing = { ...existing, ...updatedDestination };
-  }
-  if (existing?.chatThreadId !== args.chatThreadId) {
-    throw new Error("Failed to advance Telegram reply-chain route");
-  }
-}
-
-export async function bindTelegramReplyMessageRoute(
-  db: Pick<Db, "insert" | "select" | "update">,
-  args: TelegramChatThreadRouteKey & {
-    readonly chatThreadId: string;
-    readonly currentTime: Date;
-  },
-): Promise<void> {
-  const [inserted] = await db
-    .insert(telegramChatThreadRoutes)
-    .values({
-      telegramOfficialUserLinkId: args.ownerLink.id,
-      chatId: args.chatId,
-      rootMessageId: args.rootMessageId,
-      chatThreadId: args.chatThreadId,
-      createdAt: args.currentTime,
-    })
-    .onConflictDoNothing()
-    .returning({ id: telegramChatThreadRoutes.id });
-  if (inserted) {
-    return;
-  }
-  let [existing] = await db
-    .select({
-      id: telegramChatThreadRoutes.id,
-      chatId: telegramChatThreadRoutes.chatId,
-      chatThreadId: telegramChatThreadRoutes.chatThreadId,
-    })
-    .from(telegramChatThreadRoutes)
-    .innerJoin(
-      chatThreads,
-      eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
-    )
-    .where(routeWhere(args))
-    .limit(1);
-  // No row lock: the DM destination move is one conditional update pinned
-  // to the route id.
-  if (
-    existing &&
-    args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
-    existing.chatId !== args.chatId
-  ) {
-    const [updated] = await db
-      .update(telegramChatThreadRoutes)
-      .set({ chatId: args.chatId })
-      .where(
-        and(eq(telegramChatThreadRoutes.id, existing.id), routeWhere(args)),
+    };
+    let [existing] = await db
+      .select({
+        id: telegramChatThreadRoutes.id,
+        chatId: telegramChatThreadRoutes.chatId,
+        chatThreadId: telegramChatThreadRoutes.chatThreadId,
+      })
+      .from(telegramChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
       )
-      .returning({ chatId: telegramChatThreadRoutes.chatId });
-    if (!updated) {
-      throw new Error("Failed to update Telegram DM route destination");
+      .where(routeWhere(key))
+      .limit(1);
+    // No row lock: the DM destination move is one conditional update pinned
+    // to the route id.
+    if (
+      existing &&
+      key.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
+      existing.chatId !== key.chatId
+    ) {
+      const [updatedDestination] = await db
+        .update(telegramChatThreadRoutes)
+        .set({ chatId: key.chatId })
+        .where(
+          and(eq(telegramChatThreadRoutes.id, existing.id), routeWhere(key)),
+        )
+        .returning({ chatId: telegramChatThreadRoutes.chatId });
+      if (!updatedDestination) {
+        throw new Error("Failed to update Telegram DM route destination");
+      }
+      existing = { ...existing, ...updatedDestination };
     }
-    existing = { ...existing, ...updated };
-  }
-  if (existing?.chatThreadId !== args.chatThreadId) {
-    throw new Error("Telegram reply-chain route conflicts with another thread");
-  }
-}
+    if (existing?.chatThreadId !== args.chatThreadId) {
+      throw new Error("Failed to advance Telegram reply-chain route");
+    }
+  },
+);
+
+export const bindTelegramReplyMessageRoute$ = command(
+  async (
+    { set },
+    args: TelegramChatThreadRouteKey & {
+      readonly chatThreadId: string;
+      readonly currentTime: Date;
+    },
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const [inserted] = await db
+      .insert(telegramChatThreadRoutes)
+      .values({
+        telegramOfficialUserLinkId: args.ownerLink.id,
+        chatId: args.chatId,
+        rootMessageId: args.rootMessageId,
+        chatThreadId: args.chatThreadId,
+        createdAt: args.currentTime,
+      })
+      .onConflictDoNothing()
+      .returning({ id: telegramChatThreadRoutes.id });
+    if (inserted) {
+      return;
+    }
+    let [existing] = await db
+      .select({
+        id: telegramChatThreadRoutes.id,
+        chatId: telegramChatThreadRoutes.chatId,
+        chatThreadId: telegramChatThreadRoutes.chatThreadId,
+      })
+      .from(telegramChatThreadRoutes)
+      .innerJoin(
+        chatThreads,
+        eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
+      )
+      .where(routeWhere(args))
+      .limit(1);
+    // No row lock: the DM destination move is one conditional update pinned
+    // to the route id.
+    if (
+      existing &&
+      args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
+      existing.chatId !== args.chatId
+    ) {
+      const [updated] = await db
+        .update(telegramChatThreadRoutes)
+        .set({ chatId: args.chatId })
+        .where(
+          and(eq(telegramChatThreadRoutes.id, existing.id), routeWhere(args)),
+        )
+        .returning({ chatId: telegramChatThreadRoutes.chatId });
+      if (!updated) {
+        throw new Error("Failed to update Telegram DM route destination");
+      }
+      existing = { ...existing, ...updated };
+    }
+    if (existing?.chatThreadId !== args.chatThreadId) {
+      throw new Error(
+        "Telegram reply-chain route conflicts with another thread",
+      );
+    }
+  },
+);
 
 const ROUTE_COLUMNS = {
   id: telegramChatThreadRoutes.id,

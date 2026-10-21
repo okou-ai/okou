@@ -276,6 +276,7 @@ export const setupSharedDatabaseBridge$ = command(
     signal.throwIfAborted();
     const connected = createDeferredPromise<void>(signal);
     set(setBridgeConnected$, connected.promise);
+    // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: reject the bridge-readiness deferred when connection fails.
     await onRejection(
       set(connectSharedDatabaseBridge$, connected, signal),
       (error) => {

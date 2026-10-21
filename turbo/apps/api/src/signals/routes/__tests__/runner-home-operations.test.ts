@@ -223,7 +223,6 @@ describe("Runner sandbox operations without a Run", () => {
               runner_id: runnerId,
               runner_heartbeat_generation: 7,
               run_id: randomUUID(),
-              history_generation_run_id: randomUUID(),
               profile_name: "vm0/default",
               reuse_key: "thread:known",
             },

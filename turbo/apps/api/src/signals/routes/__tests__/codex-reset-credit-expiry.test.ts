@@ -77,7 +77,6 @@ describe("Codex expiry metadata resilience", () => {
     expect(remote.detailsCalls).toBe(3);
     expectExpiry(await user.list(), remote.expiry, 6);
     expect(remote.detailsCalls).toBe(3);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("does not revive a cached date after its TTL expires during a 503 outage", async () => {

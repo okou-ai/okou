@@ -604,6 +604,7 @@
     },
     "sharing": {
       "accessLabel": "Wer hat Zugriff",
+      "copied": "Kopiert",
       "copyLink": "Link kopieren",
       "loadFailed": "Berechtigungen konnten nicht geladen werden",
       "loadingPermissions": "Berechtigungen werden geladen",
@@ -2094,6 +2095,7 @@
       "received": "Empfangen",
       "running": "Läuft",
       "sent": "Gesendet",
+      "toggleMessages": "Nachrichten mit {{title}}",
       "unavailable": "Nicht verfügbar",
       "untitled": "Unbenannt"
     },
@@ -5030,10 +5032,6 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
-        "resources": {
-          "description": "Zeigt Artefakte und verwandte Chats neben dem Gespräch an, wenn Platz ist.",
-          "title": "Ressourcen automatisch öffnen"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

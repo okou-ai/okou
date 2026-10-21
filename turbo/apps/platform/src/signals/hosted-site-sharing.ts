@@ -8,7 +8,6 @@ import {
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
-import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
 import { debounceCommand, throttleCommand } from "./command-scheduling.ts";
 import { pageSignal$ } from "./page-signal.ts";
@@ -17,6 +16,7 @@ import {
   hostedSiteUrlChanges$,
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
+import { createShareLinkCopy } from "./share-link-copy.ts";
 import { onRef, resetSignal } from "./utils.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
@@ -185,11 +185,13 @@ function createHostedSiteShareSession(sourceUrl: string) {
   });
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
+  const linkCopy = createShareLinkCopy();
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
       set(editor.cancel$);
       set(editor.returnFocus$, false);
+      set(linkCopy.clear$);
     }
   });
   const refresh$ = command(({ set }) => {
@@ -197,10 +199,10 @@ function createHostedSiteShareSession(sourceUrl: string) {
       return value + 1;
     });
   });
-  const copy$ = command(async ({ get }, signal: AbortSignal) => {
+  const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const url = await get(copyUrl$);
     signal.throwIfAborted();
-    await copyAttachmentLinkToClipboard(url, undefined, signal);
+    await set(linkCopy.copy$, url, signal);
   });
   return {
     signal$,
@@ -212,6 +214,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     setOpen$,
     refresh$,
     copy$,
+    copiedUrl$: linkCopy.copiedUrl$,
   };
 }
 

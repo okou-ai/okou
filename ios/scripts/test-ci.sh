@@ -118,6 +118,13 @@ before_helper=$(git rev-parse HEAD)
 echo '# Shared base detection changed.' >> .github/scripts/checks/changed-base-ref.sh
 commit shared-helper
 expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_helper"
+for path in .github/workflows/ios-build-cache.yml .github/actions/setup-ios-build-cache/action.yml; do
+  before_cache=$(git rev-parse HEAD)
+  mkdir -p "$(dirname "$path")"
+  echo cache > "$path"
+  commit cache-configuration
+  expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_cache"
+done
 expect false EVENT_NAME=push PUSH_BEFORE_SHA="$(git rev-parse HEAD)"
 reject EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA=missing-ref
 reject EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$pr_head"
@@ -127,7 +134,7 @@ reject EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr
 reject EVENT_NAME=unexpected
 
 gate() {
-  EVENT_NAME=pull_request DETECT_RESULT=$1 IOS_NEEDED=$2 BUILD_RESULT=$3 PACKAGES_RESULT=${4-$3} ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+  EVENT_NAME=pull_request DETECT_RESULT=$1 SCRIPT_CHECKS_RESULT=${5-success} IOS_NEEDED=$2 BUILD_RESULT=$3 PACKAGES_RESULT=${4-$3} ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 }
 gate success true success
 gate success false skipped
@@ -149,22 +156,28 @@ for detect_result in failure cancelled skipped; do
     exit 1
   fi
 done
+for script_result in failure cancelled skipped ''; do
+  if gate success false skipped skipped "$script_result" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted failed/missing script checks $script_result" >&2
+    exit 1
+  fi
+done
 if gate success "" skipped > "$test_root/rejected.log" 2>&1; then
   echo "Gate accepted a missing change decision" >&2
   exit 1
 fi
-EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
-EVENT_NAME=push DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=skipped BUILD_RESULT=skipped ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
+EVENT_NAME=push DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=skipped BUILD_RESULT=skipped ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 for result in failure cancelled skipped; do
-  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=$result bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+  if EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=$result bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted failed/missing archive publication $result" >&2
     exit 1
   fi
-  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=$result PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+  if EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=$result PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted failed/missing native archive build $result" >&2
     exit 1
   fi
-  if EVENT_NAME=merge_group DETECT_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=$result BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+  if EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=$result BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted failed/missing package tests $result" >&2
     exit 1
   fi

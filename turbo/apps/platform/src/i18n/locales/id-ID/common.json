@@ -603,6 +603,7 @@
     },
     "sharing": {
       "accessLabel": "Siapa yang dapat mengakses",
+      "copied": "Tersalin",
       "copyLink": "Salin tautan",
       "loadFailed": "Gagal memuat izin",
       "loadingPermissions": "Memuat izin",
@@ -2088,6 +2089,7 @@
       "received": "Diterima",
       "running": "Berjalan",
       "sent": "Dikirim",
+      "toggleMessages": "Pesan dengan {{title}}",
       "unavailable": "Tidak tersedia",
       "untitled": "Tanpa judul"
     },
@@ -5014,10 +5016,6 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
-        "resources": {
-          "description": "Tampilkan artefak dan chat terkait di samping percakapan saat ada ruang.",
-          "title": "Buka sumber daya secara otomatis"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

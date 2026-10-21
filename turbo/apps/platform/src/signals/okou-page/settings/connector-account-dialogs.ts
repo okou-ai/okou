@@ -65,12 +65,10 @@ export function defaultBuiltinConnectorAccountOptions(
           useDefaultConnectorProjection: true,
         };
   }
-  return connection.id
-    ? {
-        account: { intent: "reconnect", connectionId: connection.id },
-        useDefaultConnectorProjection: true,
-      }
-    : null;
+  return {
+    account: { intent: "reconnect", connectionId: connection.id },
+    useDefaultConnectorProjection: true,
+  };
 }
 
 export function defaultCustomConnectorAccountOptions(
@@ -248,14 +246,14 @@ const finishConnectorAccountConnectionCommand$ = command(
     { set },
     args: {
       readonly target: ConnectorAccountTarget;
-      readonly connectionId: string | null;
+      readonly connectionId: string;
       readonly connectorLabel: string;
       readonly mode: ConnectorAccountConnectMode;
     },
     signal: AbortSignal,
   ): Promise<void> => {
     set(settingsConnectorAccounts.reload$, signal);
-    if (args.mode.kind !== "add" || !args.connectionId) {
+    if (args.mode.kind !== "add") {
       return;
     }
     const account = await set(

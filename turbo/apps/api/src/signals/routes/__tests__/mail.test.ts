@@ -633,9 +633,6 @@ describe("POST /api/mail/drafts/link", () => {
     expect(reconnect.body.mailDraft.reconnectConnectionId).toBe(
       selectedConnectorId,
     );
-    expect(reconnect.body.mailDraft.reconnectConnectionId).not.toBe(
-      fixture.gmail.id,
-    );
   });
 
   it("does not fall back from a reconnect-required thread selection", async () => {

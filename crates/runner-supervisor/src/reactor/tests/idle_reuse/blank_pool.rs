@@ -102,7 +102,7 @@ async fn full_capacity_claims_compatible_blank_before_pressure_eviction() {
                 profile_name: "vm0/default",
                 vcpu: 2,
                 memory_mb: 4096,
-                history_generation_run_id: None,
+                native_generation_run_id: None,
                 parked_at,
             },
         )
@@ -157,7 +157,7 @@ async fn exact_idle_that_parks_during_claim_takes_priority_over_reserved_blank()
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: None,
+            native_generation_run_id: None,
             parked_at: std::time::Instant::now(),
         },
     )
@@ -207,7 +207,7 @@ async fn full_exact_pool_yields_oldest_aged_capacity_to_one_blank() {
                 profile_name: "vm0/default",
                 vcpu: 2,
                 memory_mb: 4096,
-                history_generation_run_id: None,
+                native_generation_run_id: None,
                 parked_at: now - idle_for,
             },
         )

@@ -81,6 +81,7 @@ assert ios['jobs']['ci-gate-ios']['if'] == 'always()'
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
     for needed in ['true', 'false']:
         for name, expected in [
+            ('prepare-package-sources', needed == 'true' and event != 'push'),
             ('test-packages', needed == 'true' and event != 'push'),
             ('build-test', needed == 'true' and event != 'push'),
             ('build-archive', needed == 'true' and event == 'merge_group'),
@@ -90,7 +91,7 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
             expression = (condition.replace('needs.detect.outputs.needed', repr(needed))
                 .replace('github.event_name', repr(event)).replace('&&', 'and'))
             assert eval(expression, {'__builtins__': {}}, {}) is expected
-for name in ['test-packages', 'build-test', 'build-archive', 'publish-archive']:
+for name in ['prepare-package-sources', 'test-packages', 'build-test', 'build-archive', 'publish-archive']:
     assert 'environment' not in ios['jobs'][name]
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
     assert 'APP_STORE_CONNECT_API' not in json.dumps(ios['jobs'][name])
@@ -104,12 +105,24 @@ assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']
 package_job = ios['jobs']['test-packages']
-assert test_job['needs'] == archive_job['needs'] == package_job['needs'] == 'detect'
-assert test_job['env'] == archive_job['env'] == package_job['env']
-assert ios['jobs']['publish-archive']['needs'] == ['detect', 'test-packages', 'build-test', 'build-archive']
+assert test_job['needs'] == ['detect', 'prepare-package-sources']
+assert ios['jobs']['prepare-package-sources']['needs'] == 'detect'
+assert archive_job['needs'] == package_job['needs'] == 'detect'
+source_upload = next(step for step in ios['jobs']['prepare-package-sources']['steps'] if step.get('uses', '').startswith('actions/upload-artifact'))['with']
+source_download = next(step for step in native if step.get('uses', '').startswith('actions/download-artifact'))['with']
+for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
+    uploaded = source_upload['name'].replace('${{ github.run_attempt }}', str(upload_attempt))
+    downloaded = source_download['name'].replace('${{ github.run_attempt }}', str(download_attempt))
+    assert uploaded == downloaded
+assert source_upload['overwrite'] is True
+assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
+assert {key: value for key, value in test_job['env'].items() if key != 'IOS_BUILD_CACHE_ENABLED'} == archive_job['env'] == package_job['env']
+assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
+assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']
 gate = ios['jobs']['ci-gate-ios']['steps'][-1]
 assert gate['env']['PACKAGES_RESULT'] == '${{ needs.test-packages.result }}'
+assert gate['env']['SCRIPT_CHECKS_RESULT'] == '${{ needs.script-checks.result }}'
 assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
 archive = next(step for step in archive_job['steps'] if 'build-archive.sh' in step.get('run', ''))
 assert 'build-archive.sh' in archive['run']

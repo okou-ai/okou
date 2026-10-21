@@ -47,7 +47,7 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
             Arc::clone(&overrides),
         )))
         .with_sandbox_id(id)
-        .with_history_generation_run_id(generation)
+        .with_source_run_id(generation)
         .with_guest_timezone_intent(GuestTimezoneIntent::Default)
         .build();
         assert!(matches!(
@@ -57,19 +57,13 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
     }
     let initial_snapshot = pool.lock().await.status_snapshot();
     status.set_idle_snapshot(initial_snapshot).await.unwrap();
-    let first =
-        reserve_reusable_idle_for_spawn(&pool, "first", "vm0/default", &None, Some(history))
+    let first = reserve_source_idle_for_spawn(&pool, "first", "vm0/default", &None, history)
+        .await
+        .unwrap();
+    let second =
+        reserve_source_idle_for_spawn(&pool, "second", "vm0/default", &None, second_history)
             .await
             .unwrap();
-    let second = reserve_reusable_idle_for_spawn(
-        &pool,
-        "second",
-        "vm0/default",
-        &None,
-        Some(second_history),
-    )
-    .await
-    .unwrap();
     let newer_snapshot = pool.lock().await.status_snapshot();
     let publishing = Arc::clone(&status);
     let write = tokio::spawn(async move { publishing.set_idle_snapshot(newer_snapshot).await });
@@ -106,9 +100,7 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
         blank_pool_diagnostics: &diagnostics,
     };
     let PreferencePreparation::Ready(prepared) = exact_speculative_preparation(
-        JobCandidate::new(run_id, "vm0/default".into())
-            .with_reuse_key(Some("first".into()))
-            .with_history_generation_run_id(Some(history)),
+        JobCandidate::new(run_id, "vm0/default".into()).with_reuse_key(Some("first".into())),
         first,
     ) else {
         panic!("exclusive exact reservation must be ready");

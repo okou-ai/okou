@@ -113,7 +113,7 @@ test("rejects an asset whose name does not carry its content hash", async () => 
   });
 });
 
-test("rejects republishing a published asset path with different bytes", async () => {
+test("preserves asset hashes across retained deployments even when a later deployment omits the asset", async () => {
   const { actor } = await fixture();
   const site = `republished-${randomUUID().slice(0, 8)}`;
   const asset = "/assets/app-4f3a9c12.css";
@@ -128,7 +128,28 @@ test("rejects republishing a published asset path with different bytes", async (
   });
   await api.completeHostedSite(actor, first.deploymentId);
 
-  // The same name must keep its bytes; only documents may change.
+  // New assets and HTML updates can replace the latest deployment's file set.
+  const nextAsset = hostedTextFile(
+    "/assets/app-8b6e1d42.css",
+    "h1{color:blue}",
+    "text/css",
+  );
+  const second = await api.prepareHostedSite(actor, {
+    site,
+    artifactKind: "hosted-site",
+    spaFallback: false,
+    files: [
+      hostedTextFile("/index.html", "<main>New report</main>"),
+      nextAsset,
+    ],
+  });
+  await api.completeHostedSite(actor, second.deploymentId);
+  expect(second).toMatchObject({
+    siteId: first.siteId,
+    deploymentVersion: 2,
+  });
+
+  // The old name remains immutable even though it is absent from the latest deployment.
   const response = await api.requestPrepareHostedSite(
     actor,
     {
@@ -150,7 +171,7 @@ test("rejects republishing a published asset path with different bytes", async (
     },
   });
 
-  // Unchanged bytes under the same name still redeploy.
+  // Unchanged assets from either deployment can be reused with updated HTML.
   const redeployed = await api.prepareHostedSite(actor, {
     site,
     artifactKind: "hosted-site",
@@ -158,11 +179,12 @@ test("rejects republishing a published asset path with different bytes", async (
     files: [
       hostedTextFile("/index.html", "<main>Updated</main>"),
       hostedTextFile(asset, "h1{color:green}", "text/css"),
+      nextAsset,
     ],
   });
   expect(redeployed).toMatchObject({
     siteId: first.siteId,
     publicSlug: first.publicSlug,
-    deploymentVersion: 2,
+    deploymentVersion: 3,
   });
 });

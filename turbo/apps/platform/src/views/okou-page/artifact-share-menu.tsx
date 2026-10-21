@@ -1,6 +1,5 @@
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 // The shared `Radio` is the 16px circle meant to sit beside a label. Here the
 // whole row is the control and the trailing check marks it, the way
 // `DropdownMenu` and `Select` mark theirs, so the row composes `Radio.Root`
@@ -9,7 +8,6 @@ import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import {
   Check,
   Globe,
-  Link2,
   Loader2,
   LockKeyhole,
   Share2,
@@ -35,18 +33,6 @@ import type {
   AttachmentPreviewSignals,
 } from "../../signals/attachment-resource-url.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { publicAttachmentUrl } from "./attachment-url.ts";
-
-/**
- * What Copy link actually puts on the clipboard, minus the scheme. Showing it
- * is the only way the menu answers "which link am I about to hand out?", so it
- * goes through the same `publicAttachmentUrl` the copy command uses rather than
- * rendering `copyUrl` and hoping the two agree.
- */
-function shareLinkLabel(copyUrl: string): string {
-  const url = new URL(publicAttachmentUrl(copyUrl), location.origin);
-  return `${url.host}${url.pathname}${url.search}${url.hash}`;
-}
 
 function PermissionChoices({
   selected,
@@ -150,37 +136,48 @@ function PermissionChoices({
   );
 }
 
-export function ShareLinkRow({
-  copying,
-  link,
+/**
+ * The menu's one action. A successful copy is confirmed on this button rather
+ * than in a toast; `min-w-24` holds the button's width while its label swaps
+ * between the two, and the status line carries the confirmation to screen
+ * readers, which a changed button label does not reach.
+ */
+export function ShareCopyButton({
+  copied,
+  disabled,
+  className,
   onCopy,
 }: {
-  readonly copying: boolean;
-  readonly link: string | null;
+  readonly copied: boolean;
+  readonly disabled: boolean;
+  readonly className?: string;
   readonly onCopy: () => void;
 }) {
   const { t } = useTranslation();
+  const copiedLabel = t(($) => {
+    return $.artifacts.sharing.copied;
+  });
   return (
-    <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1">
-      <Link2 size={14} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-        {link}
-      </span>
+    <>
       <Button
-        variant="quiet"
         size="sm"
-        className="shrink-0"
-        disabled={copying || link === null}
+        className={cn("min-w-24", className)}
+        disabled={disabled}
         onClick={() => {
           return onCopy();
         }}
       >
-        {copying && <Loader2 size={14} className="animate-spin" />}
-        {t(($) => {
-          return $.artifacts.sharing.copyLink;
-        })}
+        {copied && <Check size={16} />}
+        {copied
+          ? copiedLabel
+          : t(($) => {
+              return $.artifacts.sharing.copyLink;
+            })}
       </Button>
-    </div>
+      <span role="status" className="sr-only">
+        {copied ? copiedLabel : ""}
+      </span>
+    </>
   );
 }
 
@@ -231,10 +228,8 @@ function ShareSkeleton() {
           </div>
         );
       })}
-      <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1">
-        <Skeleton className="size-3.5 rounded" />
-        <Skeleton className="h-3 flex-1 rounded" />
-        <Skeleton className="h-8 w-20 rounded-lg" />
+      <div className="mt-1.5 flex justify-end">
+        <Skeleton className="h-8 w-24 rounded-lg" />
       </div>
     </div>
   );
@@ -286,7 +281,8 @@ function ShareSessionMenu({
   const close = useSet(session.close$);
   const change = useSet(session.change$);
   const refresh = useSet(session.refresh$);
-  const [copying, copy] = useLoadableSet(session.copy$);
+  const copy = useSet(session.copy$);
+  const copiedUrl = useGet(session.copiedUrl$);
   const title = t(($) => {
     return $.artifacts.actions.share;
   });
@@ -367,13 +363,18 @@ function ShareSessionMenu({
                 }}
               />
             ) : (
-              <ShareLinkRow
-                copying={copying.state === "loading"}
-                link={details?.status ? shareLinkLabel(details.copyUrl) : null}
-                onCopy={() => {
-                  return detach(copy(signal), Reason.DomCallback);
-                }}
-              />
+              /* Only the owner's stable app link is copied here, and its
+                 artifact id tells the reader nothing, so the menu offers the
+                 action without spelling the address out. */
+              <div className="mt-1.5 flex justify-end">
+                <ShareCopyButton
+                  copied={!!details?.status && copiedUrl === details.copyUrl}
+                  disabled={!details?.status}
+                  onCopy={() => {
+                    detach(copy(signal), Reason.DomCallback);
+                  }}
+                />
+              </div>
             )}
           </>
         )}

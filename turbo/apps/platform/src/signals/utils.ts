@@ -142,10 +142,10 @@ export async function bestEffort(
 }
 
 /**
- * Await `p` and return undefined on non-abort rejection. If supplied,
- * `onError` runs before resolving. Abort propagates. Use as a `.catch(handler)`
- * replacement when the caller needs an optional value and may surface a side
- * effect (toast, log) on failure.
+ * Legacy-only helper: await `p` and return undefined on non-abort rejection.
+ * If supplied, `onError` runs before resolving. Abort propagates.
+ * Do not introduce new usage; propagate failures and derive UI from loadables.
+ * See docs/app/signals/tapError.md.
  */
 export async function tapError<T>(
   p: Promise<T>,
@@ -163,11 +163,11 @@ export async function tapError<T>(
 
 /**
  * Await a promise or invoke a factory and call `fn` on any rejection (including
- * synchronous throws and abort), then re-throw. Use as a `.catch(handler)`
- * replacement when the caller needs to run a side effect before the rejection
- * propagates. `fn` runs on abort by design so cleanup still happens when the
- * page is cancelled, which is why `ccstate/no-catch-abort` cannot apply to this
- * file.
+ * synchronous throws and abort), then re-throw. Reserved for explicitly reviewed
+ * infrastructure boundaries; see docs/app/signals/onRejection.md. Application
+ * request state belongs to the operation's loadable, not a failure callback.
+ * If `fn` rejects, its error replaces the original rejection. `fn` runs on abort
+ * by design, so `ccstate/no-catch-abort` cannot apply to this implementation.
  */
 export async function onRejection<T>(
   operation: Promise<T> | (() => Promise<T> | T),

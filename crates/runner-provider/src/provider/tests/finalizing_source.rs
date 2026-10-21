@@ -20,7 +20,6 @@ fn finalizing_source_survives_context_and_claim_telemetry_without_native_history
     let context = parse_runner_preference(Some(wire.clone())).unwrap();
     let candidate = JobCandidate::new(RunId::new_v4(), "vm0/default".into())
         .with_parsed_runner_preference_context(context);
-    assert_eq!(candidate.history_generation_run_id(), None);
     assert_eq!(
         candidate.runner_preference().unwrap().target(),
         RunnerPreferenceTarget::FinalizingPredecessor(source)
@@ -47,7 +46,6 @@ fn ready_source_preferences_preserve_producer_without_native_history() {
         let active = candidate.runner_preference().unwrap();
         assert_eq!(active.tier(), expected);
         assert_eq!(active.target().source_run_id(), Some(source));
-        assert_eq!(candidate.history_generation_run_id(), None);
         assert_eq!(
             serde_json::to_value(
                 candidate

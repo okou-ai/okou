@@ -95,15 +95,12 @@ async fn assert_cleanup_reuses_sandbox(
     env.provider.set_claim_result(successor, Some(context));
     env.handle
         .discover_tx
-        .send(
-            generic_finalizing_candidate(
-                successor,
-                reuse_key,
-                predecessor,
-                std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
-            )
-            .with_history_generation_run_id(native_generation),
-        )
+        .send(generic_finalizing_candidate(
+            successor,
+            reuse_key,
+            predecessor,
+            std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME,
+        ))
         .unwrap();
     wait_cancel_handle(&env.cancel_tokens, successor, Duration::from_secs(5)).await;
     assert!(

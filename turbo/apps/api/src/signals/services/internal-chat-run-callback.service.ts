@@ -130,8 +130,8 @@ import {
 } from "./internal-discord-chat-run-callback.service";
 import {
   clearCanonicalFeishuThinkingReaction$,
-  deliverFeishuChatAdmissionFailure,
-  dispatchFeishuChatDeliveryOnce,
+  deliverFeishuChatAdmissionFailure$,
+  dispatchFeishuChatDeliveryOnce$,
 } from "./internal-feishu-chat-run-callback.service";
 import type { InternalRunCallbackEnvelope } from "./internal-run-callback";
 import {
@@ -143,8 +143,8 @@ import {
   dispatchTeamsChatDeliveryOnce$,
 } from "./internal-teams-chat-run-callback.service";
 import {
-  deliverTelegramChatAdmissionFailure,
-  dispatchTelegramChatDeliveryOnce,
+  deliverTelegramChatAdmissionFailure$,
+  dispatchTelegramChatDeliveryOnce$,
 } from "./internal-telegram-chat-run-callback.service";
 import {
   modelProviderWriteTypeForLaunch,
@@ -937,24 +937,15 @@ async function insertSlackChatDeliveryCallback(args: {
   });
 }
 
-async function insertFeishuChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: FeishuDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "feishu:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function feishuChatDeliveryFields(
+  target: FeishuDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "feishu:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 function teamsChatDeliveryFields(
@@ -1002,24 +993,15 @@ function discordReplyRequest(args: {
   };
 }
 
-async function insertTelegramChatDeliveryCallback(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
-  readonly sourceCallbackId: string;
-  readonly target: TelegramDeliveryTarget;
-  readonly chatEventId: string;
-}): Promise<string> {
-  return await insertChatDeliveryCallback({
-    db: args.db,
-    runId: args.runId,
-    sourceCallbackId: args.sourceCallbackId,
-    internalKind: "telegram:chat",
-    chatEventId: args.chatEventId,
-    payload: {
-      ...args.target,
-      chatEventId: args.chatEventId,
-    },
-  });
+function telegramChatDeliveryFields(
+  target: TelegramDeliveryTarget,
+  chatEventId: string,
+) {
+  return {
+    internalKind: "telegram:chat" as const,
+    chatEventId,
+    payload: { ...target, chatEventId },
+  };
 }
 
 async function insertAgentPhoneChatDeliveryCallback(args: {
@@ -1136,12 +1118,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const feishuDeliveryCallbackId = input.feishuDelivery
-    ? await insertFeishuChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.feishuDelivery,
-        chatEventId: event.id,
+        ...feishuChatDeliveryFields(input.feishuDelivery, event.id),
       })
     : undefined;
   const teamsDeliveryCallbackId = input.teamsDelivery
@@ -1185,12 +1166,11 @@ async function insertAssistantErrorEventTransaction(
       })
     : undefined;
   const telegramDeliveryCallbackId = input.telegramDelivery
-    ? await insertTelegramChatDeliveryCallback({
+    ? await insertChatDeliveryCallback({
         db: tx,
         runId: input.runId,
         sourceCallbackId: input.sourceCallbackId,
-        target: input.telegramDelivery,
-        chatEventId: event.id,
+        ...telegramChatDeliveryFields(input.telegramDelivery, event.id),
       })
     : undefined;
   const agentphoneDeliveryCallbackId = input.agentphoneDelivery
@@ -1431,12 +1411,11 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const feishuDeliveryCallbackId =
     deliveryEvent && input.feishuDelivery
-      ? await insertFeishuChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.feishuDelivery,
-          chatEventId: deliveryEvent.id,
+          ...feishuChatDeliveryFields(input.feishuDelivery, deliveryEvent.id),
         })
       : undefined;
   const teamsDeliveryCallbackId =
@@ -1483,12 +1462,14 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const telegramDeliveryCallbackId =
     deliveryEvent && input.telegramDelivery
-      ? await insertTelegramChatDeliveryCallback({
+      ? await insertChatDeliveryCallback({
           db: tx,
           runId: input.runId,
           sourceCallbackId: input.sourceCallbackId,
-          target: input.telegramDelivery,
-          chatEventId: deliveryEvent.id,
+          ...telegramChatDeliveryFields(
+            input.telegramDelivery,
+            deliveryEvent.id,
+          ),
         })
       : undefined;
   const agentphoneDeliveryCallbackId =
@@ -2505,8 +2486,15 @@ const sendQueuedAdmissionFailure$ = command(
         return;
       }
       case "Feishu": {
-        await deliverFeishuChatAdmissionFailure(
-          { ...base, target: channel.target },
+        await set(
+          deliverFeishuChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            orgId: channel.orgId,
+            userId: channel.userId,
+            chatEventId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -2549,8 +2537,15 @@ const sendQueuedAdmissionFailure$ = command(
         return;
       }
       case "Telegram": {
-        await deliverTelegramChatAdmissionFailure(
-          { ...base, target: channel.target },
+        await set(
+          deliverTelegramChatAdmissionFailure$,
+          {
+            chatThreadId: channel.chatThreadId,
+            userId: channel.userId,
+            orgId: channel.orgId,
+            chatEventId,
+            target: channel.target,
+          },
           signal,
         );
         return;
@@ -3081,14 +3076,14 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
           signal,
         );
       } else if (channel.name === "Feishu") {
-        deliveryPromise = dispatchFeishuChatDeliveryOnce(
-          args.db,
+        deliveryPromise = set(
+          dispatchFeishuChatDeliveryOnce$,
           callbackId,
           signal,
         );
       } else {
-        deliveryPromise = dispatchTelegramChatDeliveryOnce(
-          args.db,
+        deliveryPromise = set(
+          dispatchTelegramChatDeliveryOnce$,
           callbackId,
           args.status,
           signal,

@@ -18,11 +18,11 @@
 //!
 //! 1. **Prepare the candidate.** Resolve the profile, factory, resource requirements, and runner
 //!    preference. Preference preparation may select a compatible idle sandbox, an exact
-//!    history-generation sandbox, a home-cache opportunity, or a finalizing predecessor. If
+//!    source-matching sandbox, a home-cache opportunity, or a finalizing predecessor. If
 //!    a required preference resource is not available, the candidate is deferred or retained for a
 //!    later poll rather than claimed.
 //! 2. **Reserve local admission.** Before ordinary claim, hold either a budget lease or a reserved
-//!    exact or blank idle entry. Exact speculation holds a generation-matching reservation while it
+//!    exact or blank idle entry. Exact speculation holds a source-matching reservation while it
 //!    prepares the sandbox in parallel with claim. A finalizing successor is the deliberate
 //!    exception: a proof of its predecessor's reuse identity allows claim before the predecessor
 //!    publishes an exact sandbox, so no fresh capacity is reserved for this admission.
@@ -79,14 +79,15 @@
 //!   identity and configuration, persists `preparing`, and then unparks. A status or unpark failure
 //!   completes the claim without a sandbox and either restores or destroys the entry before any
 //!   fresh fallback; the reservation is not silently dropped.
-//! - **`ExactSpeculative(ExactSpeculationReservation)`:** a generation-matching reservation owns
+//! - **`ExactSpeculative(ExactSpeculationReservation)`:** a source-matching reservation owns
 //!   the idle entry while unpark and guest-state preparation run alongside claim. The idle status
 //!   snapshot remains the visible pool state until the prepared sandbox is committed. A lost claim
 //!   reparks or destroys the prepared sandbox, while a successful claim checks cancellation under
 //!   the transfer guard before committing it. Preparation or identity failure destroys the
 //!   speculative sandbox before fresh fallback.
 //! - **`Finalizing(FinalizingAdmission)`:** the admission owns an active-run reuse proof, deadline,
-//!   reuse key, and history-generation identity rather than a local capacity lease. The
+//!   reuse key, and producing source Run rather than a local capacity lease. The claimed native
+//!   continuation independently establishes whether a native handoff is eligible. The
 //!   finalizing-successor task owns the next decision: receive a direct handoff, reserve the exact
 //!   published generation, or wait for fallback capacity. Cancellation, preparation failure, and
 //!   activation failure complete the claimed job without a sandbox while returning or destroying

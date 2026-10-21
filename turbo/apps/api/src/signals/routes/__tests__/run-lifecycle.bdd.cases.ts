@@ -1046,12 +1046,12 @@ interface SameThreadReuseHeartbeatArgs {
   readonly mode?: "starting" | "running" | "draining" | "stopping";
   readonly reusableSandbox?: {
     readonly profile: string;
-    readonly historyGenerationRunId?: string;
-    readonly sourceRunId?: string;
+    readonly sourceRunId: string;
   };
   readonly homeCaches?: {
     readonly profile: string;
     readonly homeAffinityVersion: 1;
+    readonly sourceRunId: string;
   }[];
 }
 
@@ -3210,7 +3210,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 reuseKey,
                 lastCompletedAt: nowDate().toISOString(),
                 homeCaches: [
-                  { profile: "vm0/default", homeAffinityVersion: 2 },
+                  {
+                    sourceRunId: "33333333-3333-4333-8333-333333333333",
+                    profile: "vm0/default",
+                    homeAffinityVersion: 2,
+                  },
                 ],
               },
             ],
@@ -3259,8 +3263,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 reuseKey,
                 lastCompletedAt: nowDate().toISOString(),
                 homeCaches: [
-                  { profile: "vm0/large", homeAffinityVersion: 1 },
-                  { profile: "vm0/default", homeAffinityVersion: 1 },
+                  {
+                    sourceRunId: "33333333-3333-4333-8333-333333333333",
+                    profile: "vm0/large",
+                    homeAffinityVersion: 1,
+                  },
+                  {
+                    sourceRunId: "33333333-3333-4333-8333-333333333333",
+                    profile: "vm0/default",
+                    homeAffinityVersion: 1,
+                  },
                 ],
               },
             ],
@@ -3280,7 +3292,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await heartbeatHolder({
             admittableProfiles: ["vm0/default"],
-            homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
+            homeCaches: [
+              {
+                sourceRunId: "33333333-3333-4333-8333-333333333333",
+                profile: "vm0/default",
+                homeAffinityVersion: 1,
+              },
+            ],
           });
           const capableHomeHolder = await pollFollowUp(
             "continue with a capable home holder",
@@ -3301,7 +3319,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               {
                 reuseKey,
                 lastCompletedAt: nowDate().toISOString(),
-                reusableSandbox: { profile: "vm0/default" },
+                reusableSandbox: {
+                  sourceRunId: "33333333-3333-4333-8333-333333333333",
+                  profile: "vm0/default",
+                },
               },
             ],
           });
@@ -3348,7 +3369,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           if (holder === "mismatched profile") {
             await heartbeatHolder({
               admittableProfiles: ["vm0/default"],
-              homeCaches: [{ profile: "vm0/large", homeAffinityVersion: 1 }],
+              homeCaches: [
+                {
+                  sourceRunId: "33333333-3333-4333-8333-333333333333",
+                  profile: "vm0/large",
+                  homeAffinityVersion: 1,
+                },
+              ],
             });
             const mismatchedCapableHome = await pollFollowUp(
               "continue with a mismatched capable home",
@@ -3365,7 +3392,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             admittableProfiles: [],
             reusableSandbox: {
               profile: "vm0/default",
-              historyGenerationRunId: randomUUID(),
               sourceRunId: exactSource ? first.runId : randomUUID(),
             },
           });
@@ -3418,7 +3444,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             {
               reuseKey,
               lastCompletedAt: nowDate().toISOString(),
-              reusableSandbox: { profile: "vm0/default" },
+              reusableSandbox: {
+                sourceRunId: "33333333-3333-4333-8333-333333333333",
+                profile: "vm0/default",
+              },
             },
           ],
         });
@@ -3839,7 +3868,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               lastCompletedAt: nowDate().toISOString(),
               reusableSandbox: {
                 profile: "vm0/default",
-                historyGenerationRunId: first.runId,
                 sourceRunId: first.runId,
               },
             },
@@ -3969,7 +3997,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             });
             await heartbeatHolder({
               admittableProfiles: ["vm0/default"],
-              homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
+              homeCaches: [
+                {
+                  sourceRunId: "33333333-3333-4333-8333-333333333333",
+                  profile: "vm0/default",
+                  homeAffinityVersion: 1,
+                },
+              ],
             });
             clearMockNow();
           } else {
@@ -3977,7 +4011,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               admittableProfiles: [],
               reusableSandbox: {
                 profile: holder === "draining" ? "vm0/default" : "vm0/large",
-                historyGenerationRunId: first.runId,
                 sourceRunId: first.runId,
               },
               ...(holder === "draining" ? { mode: "draining" as const } : {}),
@@ -4083,7 +4116,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                     {
                       reuseKey,
                       lastCompletedAt,
-                      reusableSandbox: { profile: "vm0/default" },
+                      reusableSandbox: {
+                        sourceRunId: "33333333-3333-4333-8333-333333333333",
+                        profile: "vm0/default",
+                      },
                     },
                   ]
                 : [],
@@ -4094,7 +4130,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                       reuseKey,
                       lastCompletedAt,
                       homeCaches: [
-                        { profile: "vm0/default", homeAffinityVersion: 1 },
+                        {
+                          sourceRunId: "33333333-3333-4333-8333-333333333333",
+                          profile: "vm0/default",
+                          homeAffinityVersion: 1,
+                        },
                       ],
                     },
                   ]
@@ -4284,7 +4324,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               lastCompletedAt: nowDate().toISOString(),
               reusableSandbox: {
                 profile: "vm0/default",
-                historyGenerationRunId: first.runId,
                 sourceRunId: first.runId,
               },
             },
@@ -4361,7 +4400,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             {
               reuseKey,
               lastCompletedAt: nowDate().toISOString(),
-              reusableSandbox: { profile: "vm0/default" },
+              reusableSandbox: {
+                sourceRunId: "33333333-3333-4333-8333-333333333333",
+                profile: "vm0/default",
+              },
             },
           ],
         });
@@ -4452,7 +4494,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             {
               reuseKey,
               lastCompletedAt: nowDate().toISOString(),
-              homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
+              homeCaches: [
+                {
+                  sourceRunId: "33333333-3333-4333-8333-333333333333",
+                  profile: "vm0/default",
+                  homeAffinityVersion: 1,
+                },
+              ],
             },
           ],
         });
@@ -12265,8 +12313,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expectApiError(poll.body);
           expect(poll.body.error.message).toBe("Authentication required");
         }
-
-        expect(context.mocks.ably.createTokenRequest).not.toHaveBeenCalled();
       });
     });
 

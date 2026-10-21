@@ -1977,7 +1977,7 @@ async fn reusable_idle_sandbox_with_home_promotion(
         source_ip,
         storage_fingerprints: StorageFingerprints::default(),
         restored_session_identity: None,
-        history_generation_run_id: None,
+        native_generation_run_id: None,
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
         home_promotion: Some(promotion),

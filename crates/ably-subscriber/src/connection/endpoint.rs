@@ -68,7 +68,12 @@ pub(crate) fn rest_host(realtime_host: &str) -> String {
     }
 }
 
-pub(super) fn build_ws_url(host: &str, token: &str, resume: Option<&str>) -> Result<String, Error> {
+pub(super) fn build_ws_url(
+    host: &str,
+    token: &str,
+    resume: Option<&str>,
+    heartbeat_interval: Option<std::time::Duration>,
+) -> Result<String, Error> {
     let mut u = build_endpoint_base_url(host, "ws", "wss")?;
     {
         let mut q = u.query_pairs_mut();
@@ -79,6 +84,9 @@ pub(super) fn build_ws_url(host: &str, token: &str, resume: Option<&str>) -> Res
         // Native WebSockets answer control Ping automatically, as in ably-js.
         q.append_pair("heartbeats", "false");
         q.append_pair("echo", "false");
+        if let Some(interval) = heartbeat_interval {
+            q.append_pair("heartbeatInterval", &interval.as_millis().to_string());
+        }
         if let Some(key) = resume {
             q.append_pair("resume", key);
         }
@@ -106,7 +114,7 @@ mod tests {
 
     #[test]
     fn build_ws_url_basic() {
-        let url = build_ws_url("realtime.ably.io", "my-token", None);
+        let url = build_ws_url("realtime.ably.io", "my-token", None, None);
         let url = url.unwrap();
         let parsed = url::Url::parse(&url).unwrap();
         assert!(url.starts_with("wss://realtime.ably.io/"));
@@ -120,12 +128,13 @@ mod tests {
         );
         assert_query_values(&parsed, "heartbeats", &["false"]);
         assert_query_values(&parsed, "echo", &["false"]);
+        assert_query_values(&parsed, "heartbeatInterval", &[]);
         assert_query_values(&parsed, "resume", &[]);
     }
 
     #[test]
     fn build_ws_url_with_resume() {
-        let url = build_ws_url("realtime.ably.io", "my-token", Some("conn-key!abc"));
+        let url = build_ws_url("realtime.ably.io", "my-token", Some("conn-key!abc"), None);
         let url = url.unwrap();
         let parsed = url::Url::parse(&url).unwrap();
         assert_query_values(&parsed, "resume", &["conn-key!abc"]);
@@ -134,14 +143,14 @@ mod tests {
 
     #[test]
     fn build_ws_url_custom_host() {
-        let url = build_ws_url("sandbox-realtime.ably.io", "tok", None);
+        let url = build_ws_url("sandbox-realtime.ably.io", "tok", None, None);
         let url = url.unwrap();
         assert!(url.starts_with("wss://sandbox-realtime.ably.io/"));
     }
 
     #[test]
     fn build_ws_url_preserves_explicit_remote_port() {
-        let url = build_ws_url("sandbox-realtime.ably.io:80", "tok", None).unwrap();
+        let url = build_ws_url("sandbox-realtime.ably.io:80", "tok", None, None).unwrap();
 
         assert_websocket_endpoint(
             &url,
@@ -279,7 +288,7 @@ mod tests {
 
     #[test]
     fn build_ws_url_localhost_uses_ws() {
-        let url = build_ws_url("127.0.0.1:9000", "tok", None).unwrap();
+        let url = build_ws_url("127.0.0.1:9000", "tok", None, None).unwrap();
         assert_websocket_endpoint(
             &url,
             "ws",
@@ -287,13 +296,13 @@ mod tests {
             Some(9000),
         );
 
-        let url = build_ws_url("localhost:9000", "tok", None).unwrap();
+        let url = build_ws_url("localhost:9000", "tok", None, None).unwrap();
         assert_websocket_endpoint(&url, "ws", url::Host::Domain("localhost"), Some(9000));
 
-        let url = build_ws_url("LOCALHOST:9000", "tok", None).unwrap();
+        let url = build_ws_url("LOCALHOST:9000", "tok", None, None).unwrap();
         assert_websocket_endpoint(&url, "ws", url::Host::Domain("localhost"), Some(9000));
 
-        let url = build_ws_url("[::1]:9000", "tok", None).unwrap();
+        let url = build_ws_url("[::1]:9000", "tok", None, None).unwrap();
         assert_websocket_endpoint(
             &url,
             "ws",
@@ -320,7 +329,7 @@ mod tests {
         ];
 
         for (host, expected_host) in cases {
-            let url = build_ws_url(host, "tok", None).unwrap();
+            let url = build_ws_url(host, "tok", None, None).unwrap();
             assert_websocket_endpoint(&url, "wss", expected_host, None);
         }
     }
@@ -348,7 +357,7 @@ mod tests {
 
         for host in cases {
             assert!(matches!(
-                build_ws_url(host, "tok", None),
+                build_ws_url(host, "tok", None, None),
                 Err(Error::Url(_))
             ));
             assert!(matches!(
@@ -360,7 +369,7 @@ mod tests {
 
     #[test]
     fn invalid_endpoint_host_url_error_does_not_include_raw_host() {
-        let err = build_ws_url("user:secret@example.com", "tok", None).unwrap_err();
+        let err = build_ws_url("user:secret@example.com", "tok", None, None).unwrap_err();
         let message = err.to_string();
 
         assert_eq!(message, "URL parse error: invalid domain character");

@@ -63,8 +63,12 @@ impl Producer {
         assert_eq!(candidate.reuse_key(), self.candidate.reuse_key());
         assert_eq!(candidate.profile_name(), self.candidate.profile_name());
         assert_eq!(
-            candidate.history_generation_run_id(),
-            self.candidate.history_generation_run_id()
+            candidate
+                .runner_preference()
+                .and_then(|p| p.target().source_run_id()),
+            self.candidate
+                .runner_preference()
+                .and_then(|p| p.target().source_run_id())
         );
         {
             let mut receipt = self
@@ -76,7 +80,11 @@ impl Producer {
                 ("run_id".into(), json!(candidate.run_id())),
                 (
                     "history_run_id".into(),
-                    json!(candidate.history_generation_run_id()),
+                    json!(
+                        candidate
+                            .runner_preference()
+                            .and_then(|p| p.target().source_run_id())
+                    ),
                 ),
                 ("reuse_key".into(), json!(candidate.reuse_key())),
                 ("profile".into(), json!(candidate.profile_name())),
@@ -187,9 +195,7 @@ async fn observe(
     run: RunId,
 ) -> TestResult<()> {
     let context = &request.context;
-    let candidate = JobCandidate::new(run, fixture::PROFILE.into())
-        .with_reuse_key(Some(context.reuse_key.clone()))
-        .with_history_generation_run_id(Some(request.history));
+    let candidate = source_candidate(run, &context.reuse_key, request.history)?;
     let mut preparation =
         Box::pin(admission.prepare_and_claim(provider.clone(), candidate, &context.tracker));
     let mut completed = None;
@@ -297,9 +303,7 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
     )
     .await?;
     let run = RunId::new_v4();
-    let candidate = JobCandidate::new(run, fixture::PROFILE.into())
-        .with_reuse_key(Some(context.reuse_key.clone()))
-        .with_history_generation_run_id(Some(request.history));
+    let candidate = source_candidate(run, &context.reuse_key, request.history)?;
     let producer = Producer::new(candidate);
     request.proof.retain(producer.clone());
     let mut admission = None;

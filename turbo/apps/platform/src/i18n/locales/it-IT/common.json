@@ -620,6 +620,7 @@
     },
     "sharing": {
       "accessLabel": "Chi può accedere",
+      "copied": "Copiato",
       "copyLink": "Copia link",
       "loadFailed": "Impossibile caricare le autorizzazioni",
       "loadingPermissions": "Caricamento delle autorizzazioni",
@@ -2131,6 +2132,7 @@
       "received": "Ricevuto",
       "running": "In esecuzione",
       "sent": "Inviato",
+      "toggleMessages": "Messaggi con {{title}}",
       "unavailable": "Non disponibile",
       "untitled": "Senza titolo"
     },
@@ -5090,10 +5092,6 @@
           "title": "Modello predefinito"
         },
         "description": "Scegli le impostazioni predefinite per le nuove chat e come inviare i messaggi.",
-        "resources": {
-          "description": "Mostra artefatti e chat correlate accanto alla conversazione quando c’è spazio.",
-          "title": "Apri risorse automaticamente"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

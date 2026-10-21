@@ -138,6 +138,13 @@ async function setupHostedSite(
   );
 }
 
+// The published address is the share menu's title link.
+function siteAddress(container: HTMLElement, address: string) {
+  return queryAllByRoleFast("link", container).find((link) => {
+    return link.textContent?.trim() === address;
+  });
+}
+
 async function copyFromResources() {
   click(resourceButton());
   const resources = await screen.findByRole("region", { name: "Resources" });
@@ -176,7 +183,9 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
   await within(shareMenu).findByText("Available");
   expect(buttonNamed("Save", shareMenu)).toBeEnabled();
   click(buttonNamed("Save", shareMenu));
-  await within(shareMenu).findByText(`${slug}.okou.app`);
+  await waitFor(() => {
+    expect(siteAddress(shareMenu, `${slug}.okou.app`)).toBeInTheDocument();
+  });
   expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
 }
 
@@ -276,7 +285,11 @@ test.each([false, true])(
     });
     click(buttonNamed(shareLabel, preview));
     const shareMenu = await screen.findByRole("dialog", { name: shareLabel });
-    await within(shareMenu).findByText("legacy-site.sites.vm0.io");
+    await waitFor(() => {
+      expect(
+        siteAddress(shareMenu, "legacy-site.sites.vm0.io"),
+      ).toBeInTheDocument();
+    });
     expect(
       queryAllByRoleFast("button", shareMenu).find((button) => {
         return button.textContent?.trim() === "Customize URL";

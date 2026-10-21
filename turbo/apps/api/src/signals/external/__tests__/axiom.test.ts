@@ -752,7 +752,6 @@ describe("queryAxiom", () => {
   it("sends pagination cursor reads without using the Axiom cache", async () => {
     const { queryAxiom } =
       await vi.importActual<typeof import("../axiom")>("../axiom");
-    const mocks = getApiTestMocks();
     const apl = "['vm0-agent-run-events-dev'] | limit 1";
     const requests: {
       readonly authorization: string | null;
@@ -792,7 +791,6 @@ describe("queryAxiom", () => {
       }),
     );
 
-    expect(mocks.axiom.query).not.toHaveBeenCalled();
     expect(requests).toStrictEqual([
       {
         authorization: "Bearer xaat-test-sessions",

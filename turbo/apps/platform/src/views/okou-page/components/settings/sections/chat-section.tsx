@@ -3,18 +3,14 @@ import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLastResolved, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { Cpu, Globe, Keyboard, Package } from "lucide-react";
+import { Cpu, Globe, Keyboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { chatResourcesEnabledByDefault$ } from "../../../../../signals/chat-page/chat-resources.ts";
 import { cloudBrowserEnabledByDefault$ } from "../../../../../signals/cloud-browser-preference.ts";
-import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../../../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../../../../signals/external/run-models.ts";
 import { userModelPreference$ } from "../../../../../signals/external/user-model-preference.ts";
 import { resolveModelFirstStoredUserSelection } from "../../../../../signals/okou-page/model-default-selection.ts";
-import { updateChatResourcesEnabledByDefault$ } from "../../../../../signals/okou-page/settings/chat-resources-preference.ts";
 import { updateCloudBrowserEnabledByDefault$ } from "../../../../../signals/okou-page/settings/cloud-browser-preference.ts";
 import { updateDefaultModelPreference$ } from "../../../../../signals/okou-page/settings/default-model-preference.ts";
 import { updateSendMode$ } from "../../../../../signals/okou-page/settings/send-mode-preference.ts";
@@ -108,41 +104,6 @@ function CloudBrowserDefaultPreference() {
   );
 }
 
-function ChatResourcesDefaultPreference() {
-  const { t } = useTranslation();
-  const preferenceLoadable = useLoadable(chatResourcesEnabledByDefault$);
-  const current =
-    preferenceLoadable.state === "hasData" ? preferenceLoadable.data : true;
-  const [updateLoadable, updatePreference] = useLoadableSet(
-    updateChatResourcesEnabledByDefault$,
-  );
-  const pageSignal = useGet(pageSignal$);
-  const mutating = updateLoadable.state === "loading";
-
-  return (
-    <PreferenceCardRow
-      icon={Package}
-      title={t(($) => {
-        return $.settings.preferences.chat.resources.title;
-      })}
-      description={t(($) => {
-        return $.settings.preferences.chat.resources.description;
-      })}
-    >
-      <Switch
-        aria-label={t(($) => {
-          return $.settings.preferences.chat.resources.title;
-        })}
-        checked={current}
-        onCheckedChange={(checked) => {
-          detach(updatePreference(checked, pageSignal), Reason.DomCallback);
-        }}
-        disabled={preferenceLoadable.state !== "hasData" || mutating}
-      />
-    </PreferenceCardRow>
-  );
-}
-
 function SendModePreference() {
   const { t } = useTranslation();
   const prefsLoadable = useLoadable(sendMode$);
@@ -203,13 +164,10 @@ function SendModePreference() {
 }
 
 export function ChatSection() {
-  const resourcesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   return (
     <section className="flex flex-col gap-3">
       <DefaultModelPreference />
       <CloudBrowserDefaultPreference />
-      {resourcesEnabled && <ChatResourcesDefaultPreference />}
       <SendModePreference />
     </section>
   );

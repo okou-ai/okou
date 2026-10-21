@@ -28,39 +28,42 @@ function canonicalHeartbeat() {
 const home = {
   reuseKey: "thread:thread-a",
   lastCompletedAt: "2026-10-09T08:00:00+08:00",
-  homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
+  homeCaches: [
+    {
+      sourceRunId: "33333333-3333-4333-8333-333333333333",
+      profile: "vm0/default",
+      homeAffinityVersion: 1,
+    },
+  ],
 };
 
 describe("canonical home affinity contracts", () => {
-  it.each([undefined, "33333333-3333-4333-8333-333333333333"])(
-    "preserves reachable heartbeat resource producers %s",
-    (sourceRunId) => {
-      const source = sourceRunId === undefined ? {} : { sourceRunId };
-      const heldSandboxStates = [
-        {
-          reuseKey: home.reuseKey,
-          lastCompletedAt: home.lastCompletedAt,
-          reusableSandbox: { profile: "vm0/default", ...source },
-        },
-      ];
-      const heldHomeStates = [
-        {
-          ...home,
-          homeCaches: [
-            { profile: "vm0/default", homeAffinityVersion: 1, ...source },
-            { profile: "vm0/large", homeAffinityVersion: 1, ...source },
-          ],
-        },
-      ];
-      const parsed = heartbeatBodySchema.parse({
-        ...canonicalHeartbeat(),
-        heldSandboxStates,
-        heldHomeStates,
-      });
-      expect(parsed.heldSandboxStates).toEqual(heldSandboxStates);
-      expect(parsed.heldHomeStates).toEqual(heldHomeStates);
-    },
-  );
+  it("preserves heartbeat resource producers", () => {
+    const source = { sourceRunId: "33333333-3333-4333-8333-333333333333" };
+    const heldSandboxStates = [
+      {
+        reuseKey: home.reuseKey,
+        lastCompletedAt: home.lastCompletedAt,
+        reusableSandbox: { profile: "vm0/default", ...source },
+      },
+    ];
+    const heldHomeStates = [
+      {
+        ...home,
+        homeCaches: [
+          { profile: "vm0/default", homeAffinityVersion: 1, ...source },
+          { profile: "vm0/large", homeAffinityVersion: 1, ...source },
+        ],
+      },
+    ];
+    const parsed = heartbeatBodySchema.parse({
+      ...canonicalHeartbeat(),
+      heldSandboxStates,
+      heldHomeStates,
+    });
+    expect(parsed.heldSandboxStates).toEqual(heldSandboxStates);
+    expect(parsed.heldHomeStates).toEqual(heldHomeStates);
+  });
 
   it.each(["exactSandbox", "sourceHomeCache"])(
     "preserves the previous Run on %s",
@@ -108,7 +111,13 @@ describe("canonical home affinity contracts", () => {
     expect(
       heldHomeStateSchema.safeParse({
         ...home,
-        homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 2 }],
+        homeCaches: [
+          {
+            sourceRunId: "33333333-3333-4333-8333-333333333333",
+            profile: "vm0/default",
+            homeAffinityVersion: 2,
+          },
+        ],
       }).success,
     ).toBe(false);
     expect(
@@ -120,6 +129,7 @@ describe("canonical home affinity contracts", () => {
         ...home,
         homeCaches: Array.from({ length: 8 }, () => {
           return {
+            sourceRunId: "33333333-3333-4333-8333-333333333333",
             profile: "vm0/default",
             homeAffinityVersion: 1,
           };
@@ -152,7 +162,13 @@ describe("canonical home affinity contracts", () => {
         heldHomeStates: [
           {
             ...home,
-            homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 2 }],
+            homeCaches: [
+              {
+                sourceRunId: "33333333-3333-4333-8333-333333333333",
+                profile: "vm0/default",
+                homeAffinityVersion: 2,
+              },
+            ],
           },
         ],
       }).success,

@@ -59,7 +59,6 @@ struct Fixture {
     source: Arc<Source>,
     operations: HostMemoryOperations,
     admission: Option<GuardedSpeculativeAdmission>,
-    history: RunId,
     producer: RunId,
 }
 
@@ -117,7 +116,7 @@ impl Fixture {
             .with_sandbox_id(home.sandbox_id)
             .with_sandbox(Box::new(sandbox))
             .with_factory(factory)
-            .with_history_generation_run_id(history)
+            .with_native_generation_run_id(history)
             .with_guest_timezone_intent(timezone)
             .with_home_promotion(promotion)
             .build();
@@ -166,15 +165,26 @@ impl Fixture {
             source,
             operations,
             admission: Some(admission),
-            history,
             producer,
         }
     }
 
     fn candidate(&self, run: RunId) -> JobCandidate {
+        self.candidate_for_source(run, self.producer)
+    }
+
+    fn candidate_for_source(&self, run: RunId, source: RunId) -> JobCandidate {
         JobCandidate::new(run, "vm0/default".into())
             .with_reuse_key(Some(self.home.reuse_key.clone()))
-            .with_history_generation_run_id(Some(self.history))
+            .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                runner_host::runner_process_identity::RunnerProcessIdentity::new(
+                    uuid::Uuid::from_u128(1),
+                    7,
+                )
+                .unwrap(),
+                runner_provider::RunnerPreferenceTarget::SourceSandbox(source),
+                std::time::Instant::now() + Duration::from_secs(30),
+            ))
     }
 
     async fn rollback(
@@ -272,7 +282,6 @@ async fn rejected_claim_reparks_and_returns_the_original_exact_owner() {
     let (provider, _) = MockJobProvider::new(CancellationToken::new());
     let mut admission = fixture.admission.take().unwrap();
     let candidate = fixture.candidate(RunId::new_v4())
-        .with_history_generation_run_id(None)
         .with_parsed_runner_preference_context(runner_provider::parse_runner_preference(Some(serde_json::json!({
             "kind": "preference", "tier": "exactSandbox",
             "runnerIdentity": { "runnerId": "11111111-1111-4111-8111-111111111111", "heartbeatGeneration": 7 },
@@ -566,9 +575,7 @@ async fn missing_backing_or_mismatched_candidate_prevents_claim_and_keeps_full_o
         let candidate = if missing {
             fixture.candidate(RunId::new_v4())
         } else {
-            fixture
-                .candidate(RunId::new_v4())
-                .with_history_generation_run_id(Some(RunId::new_v4()))
+            fixture.candidate_for_source(RunId::new_v4(), RunId::new_v4())
         };
         assert!(
             admission

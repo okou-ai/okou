@@ -344,6 +344,10 @@ impl Case {
         self.write_event("NATIVE_FINAL_EXEC_WITNESS ", phase, evidence)
     }
 
+    pub fn quiesce_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_QUIESCE_WITNESS ", phase, evidence)
+    }
+
     pub fn require_original_lease_released(&self) -> io::Result<()> {
         let state = self
             .state

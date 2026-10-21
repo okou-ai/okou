@@ -214,6 +214,13 @@ struct PollApiResult {
 const POLL_SLOW: Duration = Duration::from_secs(30);
 /// Poll interval when Ably is disconnected or unavailable (primary mechanism).
 const POLL_FAST: Duration = Duration::from_secs(5);
+/// Reconcile advertised reuse while Ably may still report Connected, at a
+/// load-limited ten-second cadence. This deliberately exceeds the API's one-
+/// and two-second preference windows; a competitor can claim after expiry.
+/// Connection heartbeats shorten silent-loss detection independently. HTTP
+/// latency, capacity and explicit deferrals can further delay discovery.
+const POLL_REUSE: Duration = Duration::from_secs(10);
+const POLL_REUSE_STAGGER_MS: u64 = 100;
 /// Retry delay after a job-notification wakeup reaches poll but poll fails.
 const POLL_WAKEUP_RETRY: Duration = POLL_FAST;
 const DIRECT_CANDIDATE_INBOX_CAPACITY: usize = 128;
@@ -786,7 +793,6 @@ impl JobProvider for ApiProvider {
                     }
                     let run_id = job.run_id;
                     let reuse_key = job.reuse_key().map(str::to_owned);
-                    let history_generation_run_id = job.history_generation_run_id;
                     let runner_preference_context =
                         match parse_runner_preference(job.runner_preference) {
                             Ok(context) => context,
@@ -803,7 +809,6 @@ impl JobProvider for ApiProvider {
                     info!(run_id = %run_id, %profile, poll_reason = ?reason, "poll: job found");
                     let mut candidate = JobCandidate::new(run_id, profile)
                         .with_reuse_key(reuse_key)
-                        .with_history_generation_run_id(history_generation_run_id)
                         .with_parsed_runner_preference_context(runner_preference_context)
                         .with_discovery_source(JobDiscoverySource::Poll)
                         .with_poll_reason(poll_reason_value(reason))
@@ -954,6 +959,25 @@ impl JobProvider for ApiProvider {
     }
 
     async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {
+        let has_admittable_reuse = state.mode == "running"
+            && (state.held_sandbox_states.iter().any(|held| {
+                state
+                    .admittable_profiles
+                    .contains(&held.reusable_sandbox.profile)
+            }) || state.held_home_states.iter().any(|held| {
+                held.home_caches
+                    .iter()
+                    .any(|cache| state.admittable_profiles.contains(&cache.profile))
+            }));
+        // Keep this local projection independent of HTTP delivery. A stalled
+        // heartbeat must not delay discovery of work for an available resource.
+        let stagger = Duration::from_millis(
+            u64::from(self.runner_identity.runner_id().as_bytes()[0]) % (POLL_REUSE_STAGGER_MS + 1),
+        );
+        self.poll_wakeups.update_reuse_polling(
+            (state.snapshot_generation, state.snapshot_sequence),
+            has_admittable_reuse.then_some(POLL_REUSE + stagger),
+        );
         let result = self.api.heartbeat(state).await;
         match &result {
             Ok(()) => {
@@ -2307,6 +2331,7 @@ mod tests {
     mod claim_observation;
     mod finalizing_source;
     mod parallel_claim;
+    mod silent_connection;
 
     fn api_client_for_url(api_url: String) -> ApiClient {
         ApiClient::new(
@@ -2862,7 +2887,6 @@ mod tests {
                 reusable_sandbox: runner_types::types::ReusableSandboxState {
                     source_run_id: "33333333-3333-4333-8333-333333333333".parse().unwrap(),
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
-                    history_generation_run_id: None,
                 },
             }],
             held_home_states: vec![runner_types::types::HeldHomeState {
@@ -4238,7 +4262,7 @@ mod tests {
 
         let expired_preference = ActiveRunnerPreference::new(
             test_runner_identity(),
-            crate::provider::RunnerPreferenceTarget::ExactSandbox,
+            crate::provider::RunnerPreferenceTarget::SourceSandbox(RunId::new_v4()),
             Instant::now() - Duration::from_secs(1),
         );
         let expired = JobCandidate::new(
@@ -4494,8 +4518,6 @@ mod tests {
     async fn discover_returns_http_poll_job_after_wakeup() {
         let server = MockServer::start_async().await;
         let run_id: RunId = "00000000-0000-0000-0000-000000000003".parse().unwrap();
-        let history_generation_run_id: RunId =
-            "00000000-0000-0000-0000-000000000004".parse().unwrap();
         let mock = server
             .mock_async(|when, then| {
                 when.method(POST).path(routes::runners::poll::POLL.path);
@@ -4504,7 +4526,6 @@ mod tests {
                         "runId": run_id,
                         "experimentalProfile": "vm0/large",
                         "cliAgentSessionId": "sess-poll",
-                        "historyGenerationRunId": history_generation_run_id,
                         "runnerPreference": {
                             "kind": "preference",
                             "runnerIdentity": {
@@ -4533,10 +4554,6 @@ mod tests {
 
         assert_eq!(discovered.run_id(), run_id);
         assert_eq!(discovered.profile_name(), "vm0/large");
-        assert_eq!(
-            discovered.history_generation_run_id(),
-            Some(history_generation_run_id)
-        );
         let preference = discovered
             .runner_preference()
             .expect("canonical preference should be parsed");

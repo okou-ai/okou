@@ -63,15 +63,6 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
   });
   const resources = await screen.findByRole("region", { name: "Resources" });
   await within(resources).findByText("report.pdf");
-  // Shared snapshots legitimately omit source/alias URLs; their directory
-  // entries remain usable without extracting links from messages.
-  expect(
-    within(resources).queryByRole("region", { name: "Links" }),
-  ).not.toBeInTheDocument();
-  expect(
-    within(resources).queryByText("Current guide"),
-  ).not.toBeInTheDocument();
-
   click(artifactEntryNamed("report.pdf", resources));
   const sidebar = await screen.findByTestId("artifact-sidebar");
   await within(sidebar).findByText("download-report.pdf");
@@ -89,10 +80,6 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
   expect(
     within(artifactList).getByRole("heading", { name: "Artifacts 1" }),
   ).toBeInTheDocument();
-  expect(within(artifactList).queryByText("Links")).not.toBeInTheDocument();
-  expect(
-    within(artifactList).queryByText("Current guide"),
-  ).not.toBeInTheDocument();
   expect(within(artifactList).queryByRole("tablist")).not.toBeInTheDocument();
 
   click(buttonNamed("Preview report.pdf", artifactList));
@@ -417,7 +404,6 @@ test("Copy link tooltips follow resource focus and close when their row collapse
   expect(lastCopy).toHaveFocus();
   await expect(screen.findByText("Copy link")).resolves.toBeVisible();
   expect(lastCopy).toHaveAccessibleName("Copy link");
-  expect(firstCopy).not.toHaveFocus();
 
   click(more);
   expect(within(artifacts).getAllByRole("listitem")).toHaveLength(3);

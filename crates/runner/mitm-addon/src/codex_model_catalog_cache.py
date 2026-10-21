@@ -47,6 +47,9 @@ Response modes and authenticated ETags
 Content-Encoding acquisition uses the shared raw field and folded-value budgets.
 Exhaustion declines storage and releases followers at response headers before capture
 or validation, leaving the ordinary response pipeline to handle the upstream bytes.
+Cache-Control and Pragma share an aggregate raw-value budget checked before decoding;
+cache-policy inspection also bounds field traversal and stops at the first unsafe token.
+Policy exhaustion follows the same storage-bypass lifecycle without rewriting the response.
 Ordinary owners require identity responses. Prefetch owners request Brotli; for an eligible
 Brotli response, the compressed stream passes downstream unchanged while validation decodes
 the bounded capture. A successful response to an authenticated Codex Responses request can
@@ -112,6 +115,8 @@ _RAW_ACCEPT_ENCODING = b"accept-encoding"
 # Match the normalizer's inclusive 64 KiB aggregate raw-value budget. Oversized
 # requests bypass this optional cache without decoding or rewriting their values.
 _MAX_ACCEPT_ENCODING_VALUE_BYTES = 64 * 1024
+_MAX_RESPONSE_CACHE_POLICY_FIELDS = 8 * 1024
+_MAX_RESPONSE_CACHE_POLICY_VALUE_BYTES = 8 * 1024
 _MAX_ETAG_BYTES = 512
 _MAX_CONTENT_TYPE_BYTES = 256
 _MAX_JSON_NESTING = 128
@@ -137,10 +142,17 @@ _REQUEST_CONDITIONAL_HEADERS = (
     "If-Unmodified-Since",
     "Range",
 )
-_REVALIDATION_CACHE_CONTROL = frozenset(
-    ("must-revalidate", "no-cache", "no-store", "proxy-revalidate")
+_UNSAFE_RESPONSE_CACHE_CONTROL = frozenset(
+    (
+        "must-revalidate",
+        "no-cache",
+        "no-store",
+        "proxy-revalidate",
+        "max-age",
+        "s-maxage",
+        "no-transform",
+    )
 )
-_NO_TRANSFORM_CACHE_CONTROL = "no-transform"
 
 _ResponseStream = Callable[[bytes], bytes | Iterable[bytes]]
 
@@ -462,30 +474,44 @@ def _request_accepts_encoded_response(headers: http.Headers) -> bool:
     return not has_identity
 
 
-def _cache_control_directive_names(headers: http.Headers) -> set[str]:
-    return {
-        token.partition("=")[0].strip().lower()
-        for value in headers.get_all("Cache-Control")
-        for token in value.split(",")
-        if token.strip()
-    }
-
-
 def _response_cache_control_is_unsafe(headers: http.Headers) -> bool:
-    if headers.get_all("Expires"):
+    """Decline optional storage before decoding any policy values on exhaustion."""
+    fields = headers.fields
+    if len(fields) > _MAX_RESPONSE_CACHE_POLICY_FIELDS:
         return True
-    directive_names = _cache_control_directive_names(headers)
-    if (
-        directive_names.intersection(_REVALIDATION_CACHE_CONTROL)
-        or directive_names.intersection(("max-age", "s-maxage"))
-        or _NO_TRANSFORM_CACHE_CONTROL in directive_names
-    ):
-        return True
-    return any(
-        token.strip().lower() == "no-cache"
-        for value in headers.get_all("Pragma")
-        for token in value.split(",")
-    )
+
+    policy_fields: list[tuple[bytes, bytes]] = []
+    remaining_bytes = _MAX_RESPONSE_CACHE_POLICY_VALUE_BYTES
+    for raw_name, raw_value in fields:
+        if len(raw_name) not in (len(b"cache-control"), len(b"pragma"), len(b"expires")):
+            continue
+        name = raw_name.lower()
+        if name == b"expires":
+            return True
+        if name not in (b"cache-control", b"pragma"):
+            continue
+        if len(raw_value) > remaining_bytes:
+            return True
+        remaining_bytes -= len(raw_value)
+        policy_fields.append((name, raw_value))
+
+    # Values stay separate: only their raw bytes consume the aggregate budget.
+    # Preserve mitmproxy's decoding and the existing string whitespace rules.
+    for name, raw_value in policy_fields:
+        value = raw_value.decode("utf-8", "surrogateescape")
+        start = 0
+        while start < len(value):
+            end = value.find(",", start)
+            if end == -1:
+                end = len(value)
+            token = value[start:end]
+            if name == b"cache-control":
+                if token.partition("=")[0].strip().lower() in _UNSAFE_RESPONSE_CACHE_CONTROL:
+                    return True
+            elif token.strip().lower() == "no-cache":
+                return True
+            start = end + 1
+    return False
 
 
 def _content_type_is_json(content_type: str) -> bool:

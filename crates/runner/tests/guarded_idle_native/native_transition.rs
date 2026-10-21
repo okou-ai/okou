@@ -376,7 +376,7 @@ pub(super) async fn inject(
         drop(preparation);
     }
     if owner.state() != SpeculativeActivationState::Uncertain
-        || !owner.matches_claim(Some(&context.reuse_key), Some(history), fixture::PROFILE)
+        || !owner.matches_source_claim(Some(&context.reuse_key), history, fixture::PROFILE)
     {
         return Err(io::Error::other("native unpark lost original uncertain capsule").into());
     }

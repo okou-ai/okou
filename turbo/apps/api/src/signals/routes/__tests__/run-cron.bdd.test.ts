@@ -93,7 +93,10 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
       {
         reuseKey: "thread:cron-bdd-held",
         lastCompletedAt: new Date(now()).toISOString(),
-        reusableSandbox: { profile: "vm0/default" },
+        reusableSandbox: {
+          sourceRunId: "33333333-3333-4333-8333-333333333333",
+          profile: "vm0/default",
+        },
       },
     ];
 
