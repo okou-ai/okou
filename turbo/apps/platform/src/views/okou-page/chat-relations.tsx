@@ -204,8 +204,10 @@ function MessageCard({
       </span>
     </>
   );
+  // A grid item never shrinks below its longest word, so without min-w-0 one
+  // long URL widens every card past the panel and the panel scrolls sideways.
   return (
-    <li>
+    <li className="min-w-0">
       {linked ? (
         <Link
           pathname={ROUTES.chat}
