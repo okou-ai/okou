@@ -9,6 +9,7 @@ import {
   chatThreadDraftContract,
   chatThreadByIdContract,
   chatEventsContract,
+  type ChatThreadDraft,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -25,6 +26,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
+import { apiClient$ } from "../../../signals/api-client.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
@@ -458,55 +460,142 @@ test("A conflicting consumption does not send or change the home draft", async (
   expect(composer()).toHaveTextContent("Keep this draft");
   expect(screen.queryByText("Restore draft")).not.toBeInTheDocument();
 });
-test.each([
-  { name: "existing-chat", target: threadId },
-  { name: "new-chat", target: null },
-])(
-  "A failed $name suggestion offers draft recovery without automatically sending again",
-  async ({ target }) => {
-    mockPool([{ ...makeSuggestion(), threadId: target }]);
-    mockChatLifecycle(context, { threadId });
-    context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-      return respond(200, {
-        draftUserMessage: {
-          version: 1,
-          parts: [{ type: "text", text: "Existing target draft" }],
-        },
-        draftAttachments: null,
-      });
+test("A failed suggestion's retained recovery cannot overwrite a newer edit in its mounted target", async () => {
+  mockPool([{ ...makeSuggestion(), threadId }]);
+  mockChatLifecycle(context, { threadId, threadTitle: "Recovery target" });
+  let persisted: ChatThreadDraft = {
+    draftUserMessage: {
+      version: 1,
+      parts: [{ type: "text", text: "Existing target draft" }],
+    },
+    draftAttachments: null,
+  };
+  const recoveryStarted = createDeferredPromise<void>(context.signal);
+  const releaseRecovery = createDeferredPromise<void>(context.signal);
+  const recoveryFinished = createDeferredPromise<void>(context.signal);
+  const newerCommitted = createDeferredPromise<void>(context.signal);
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, persisted);
+  });
+  let heldRecovery = false;
+  context.mocks.api(
+    chatThreadByIdContract.patch,
+    async ({ body, request, respond }) => {
+      if (body.draftUserMessage === undefined) {
+        return respond(204);
+      }
+      const recovery =
+        !heldRecovery && JSON.stringify(body).includes("Referenced decision");
+      if (recovery) {
+        heldRecovery = true;
+        recoveryStarted.resolve();
+        // Gate the write BEFORE its simulated commit, not just its response.
+        await releaseRecovery.promise;
+      }
+      if (!request.signal.aborted) {
+        persisted = {
+          draftUserMessage: body.draftUserMessage,
+          draftAttachments: body.draftAttachments ?? null,
+        };
+        if (JSON.stringify(body).includes("Newest ordinary draft")) {
+          newerCommitted.resolve();
+        }
+      }
+      if (recovery) {
+        recoveryFinished.resolve();
+      }
+      return respond(204);
+    },
+  );
+  let attempts = 0;
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    attempts += 1;
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Send failed" },
     });
-    let attempts = 0;
-    context.mocks.api(chatEventsContract.send, ({ respond }) => {
-      attempts += 1;
-      return respond(500, {
-        error: { code: "INTERNAL_SERVER_ERROR", message: "Send failed" },
-      });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(makeSuggestion().title);
+  await fill(composer(), "Keep this draft");
+  click(button(makeSuggestion().title));
+  await waitFor(() => {
+    return button("Restore draft");
+  });
+  // The root-owned recovery action survives navigation to the ordinary panel.
+  click(await screen.findByText("Recovery target"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${threadId}`);
+    expect(composer()).toHaveTextContent("Existing target draft");
+  });
+  click(button("Restore draft"));
+  await recoveryStarted.promise;
+  expect(composer()).toHaveTextContent("Referenced decision");
+  expect(composer()).toHaveTextContent("Existing target draft");
+  await fill(composer(), "Newest ordinary draft");
+  await newerCommitted.promise;
+  releaseRecovery.resolve();
+  await recoveryFinished.promise;
+  click(button("New chat"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${agentId}/chat`);
+    expect(composer()).toHaveTextContent("Keep this draft");
+  });
+  // Read the public persisted draft, not the still-cached local editor state.
+  const client = context.store.get(apiClient$)(chatThreadDraftContract);
+  const response = await client.get({ params: { id: threadId } });
+  expect(response.status).toBe(200);
+  expect(response.body).toStrictEqual({
+    draftUserMessage: {
+      version: 1,
+      parts: [{ type: "text", text: "Newest ordinary draft" }],
+    },
+    draftAttachments: null,
+  });
+  expect(attempts).toBe(1);
+});
+test("A failed new-chat suggestion offers draft recovery without automatically sending again", async () => {
+  mockPool([{ ...makeSuggestion(), threadId: null }]);
+  mockChatLifecycle(context, { threadId });
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Existing target draft" }],
+      },
+      draftAttachments: null,
     });
-    await setupPage({
-      context,
-      path: `/agents/${agentId}/chat`,
-      featureSwitches: features,
+  });
+  let attempts = 0;
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    attempts += 1;
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Send failed" },
     });
-    await screen.findByText(makeSuggestion().title);
-    await fill(composer(), "Keep this draft");
-    click(button(makeSuggestion().title));
-    click(
-      await waitFor(() => {
-        return button("Restore draft");
-      }),
-    );
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText(makeSuggestion().title);
+  await fill(composer(), "Keep this draft");
+  click(button(makeSuggestion().title));
+  click(
     await waitFor(() => {
-      expect(pathname()).toBe(
-        target === null ? `/agents/${agentId}/chat` : `/chats/${target}`,
-      );
-      expect(composer()).toHaveTextContent("Referenced decision");
-    });
-    expect(composer()).toHaveTextContent(
-      target === null ? "Keep this draft" : "Existing target draft",
-    );
-    expect(attempts).toBe(1);
-  },
-);
+      return button("Restore draft");
+    }),
+  );
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${agentId}/chat`);
+    expect(composer()).toHaveTextContent("Referenced decision");
+  });
+  expect(composer()).toHaveTextContent("Keep this draft");
+  expect(attempts).toBe(1);
+});
 test("Realtime removal hides Suggestions without changing another selected category", async () => {
   const pool = mockPool();
   await setupPage({

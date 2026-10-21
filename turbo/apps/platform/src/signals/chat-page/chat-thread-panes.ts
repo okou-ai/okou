@@ -5,9 +5,12 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { logger } from "../log.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import type { DraftSignals } from "../okou-page/chat-draft.ts";
 import { adoptComposerTaskHandoff$ } from "../okou-page/composer-task-handoff.ts";
-import { createChatPanelSignals, ensureDraft$ } from "./create-chat-thread.ts";
+import {
+  createChatPanelSignals,
+  ensureThreadDraft$,
+  type ThreadDraftOwner,
+} from "./create-chat-thread.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
 import {
@@ -37,7 +40,7 @@ const L = logger("ChatPanes");
 interface ChatThreadTarget {
   readonly threadId: string;
   readonly agentId: string;
-  readonly draft: DraftSignals;
+  readonly draftOwner: ThreadDraftOwner;
 }
 
 interface ChatThreadPaneSignals {
@@ -65,7 +68,12 @@ function createChatThreadPaneSignals(
   const panel$ = computed((get): ChatPanelSignals | null => {
     const target = get(internalThread$);
     return target
-      ? createChatPanelSignals(target.threadId, target.agentId, target.draft)
+      ? createChatPanelSignals(
+          target.threadId,
+          target.agentId,
+          target.draftOwner.draft,
+          get(target.draftOwner.persistence$),
+        )
       : null;
   });
   const loadThread$ = command(
@@ -202,7 +210,7 @@ const setupPaneThread$ = command(
     const thread = set(pane.loadThread$, {
       threadId,
       agentId: meta.agentId,
-      draft: set(ensureDraft$, threadId),
+      draftOwner: set(ensureThreadDraft$, threadId),
     });
     // A send from the start page ends here, in a composer that has never been
     // told what it is making. The selection it sent with follows it in.

@@ -2430,20 +2430,59 @@ function createChatThreadMessagePipeline({
 // Draft cache
 // ---------------------------------------------------------------------------
 
-const draftCache$ = state(new Map<string, DraftSignals>());
+type ThreadDraftPersistence = ReturnType<typeof createThreadDraftPersistence>;
+
+export interface ThreadDraftOwner {
+  readonly draft: DraftSignals;
+  readonly persistence$: Computed<ThreadDraftPersistence>;
+}
+
+function createThreadDraftPersistence(
+  threadId: string,
+  draft: DraftSignals,
+  threadDraft$: Computed<Promise<ChatThreadDraft | null>>,
+) {
+  const sync = createDraftSync(threadId, draft);
+  return {
+    ...sync,
+    loadDraft$: createThreadDraftLoad(
+      threadDraft$,
+      draft,
+      sync.queueDraftSync$,
+    ),
+  };
+}
+
+function createThreadDraftOwner(threadId: string): ThreadDraftOwner {
+  const draft = createDraftSignals();
+  const persistence$ = computed(() => {
+    return createThreadDraftPersistence(
+      threadId,
+      draft,
+      createRemoteChatThreadDraft(threadId),
+    );
+  });
+  return { draft, persistence$ };
+}
+
+const draftCache$ = state(new Map<string, ThreadDraftOwner>());
+
+export const ensureThreadDraft$ = command(({ get, set }, threadId: string) => {
+  const cache = get(draftCache$);
+  const existing = cache.get(threadId);
+  if (existing) {
+    return existing;
+  }
+  const entry = createThreadDraftOwner(threadId);
+  const next = new Map(cache);
+  next.set(threadId, entry);
+  set(draftCache$, next);
+  return entry;
+});
 
 export const ensureDraft$ = command(
-  ({ get, set }, threadId: string): DraftSignals => {
-    const cache = get(draftCache$);
-    const existing = cache.get(threadId);
-    if (existing) {
-      return existing;
-    }
-    const draft = createDraftSignals();
-    const next = new Map(cache);
-    next.set(threadId, draft);
-    set(draftCache$, next);
-    return draft;
+  ({ set }, threadId: string): DraftSignals => {
+    return set(ensureThreadDraft$, threadId).draft;
   },
 );
 
@@ -3507,7 +3546,6 @@ interface CreateChatThreadComposerSignalsOptions {
 
 interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
-  readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
   readonly preserveThreadDraft?: boolean;
   readonly agentId: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
@@ -3645,19 +3683,14 @@ function createChatThreadComposerSignals(
 // of that marker is not proof that the installed handoff reached storage.
 export const resumeThreadDraftHandoff$ = command(
   async ({ get, set }, threadId: string, signal: AbortSignal) => {
-    const draft = set(ensureDraft$, threadId);
-    const sync = createDraftSync(threadId, draft);
+    const { draft, persistence$ } = set(ensureThreadDraft$, threadId);
+    const persistence = get(persistence$);
     const handoff = get(draft.composerDraftHandoff$);
     if (handoff) {
-      const load$ = createThreadDraftLoad(
-        createRemoteChatThreadDraft(threadId),
-        draft,
-        sync.queueDraftSync$,
-      );
-      await set(load$, signal);
+      await set(persistence.loadDraft$, signal);
     } else {
       await set(draft.reconcileComposerDraft$, signal);
-      await set(sync.queueDraftSync$, signal);
+      await set(persistence.queueDraftSync$, signal);
     }
   },
 );
@@ -3667,6 +3700,7 @@ function createThreadComposerSignalsWithContext(
   chatEvents: ChatEventSignals,
   context: ChatThreadComposerContext,
   draft: DraftSignals,
+  persistence: ThreadDraftPersistence,
 ): ComposerSignals {
   const connector = createComposerConnectorSignals(context.agentId, threadId);
   const modelSelection = createModelSelection(threadId, context.threadMeta$);
@@ -3675,7 +3709,7 @@ function createThreadComposerSignalsWithContext(
     threadId,
     context.threadMeta$,
   );
-  const { queueDraftSync$, cancelDraftSync$, flushDraftClear$ } =
+  const { queueDraftSync$, cancelDraftSync$, flushDraftClear$, loadDraft$ } =
     context.preserveThreadDraft
       ? {
           queueDraftSync$: noOpComposerDraftAction$,
@@ -3683,11 +3717,9 @@ function createThreadComposerSignalsWithContext(
             return undefined;
           }),
           flushDraftClear$: noOpComposerDraftAction$,
+          loadDraft$: noOpComposerDraftAction$,
         }
-      : createDraftSync(threadId, draft);
-  const loadDraft$ = context.preserveThreadDraft
-    ? noOpComposerDraftAction$
-    : createThreadDraftLoad(context.threadDraft$, draft, queueDraftSync$);
+      : persistence;
   const messageActions = createThreadMessageActions({
     threadId,
     agentId: context.agentId,
@@ -3732,19 +3764,21 @@ export function createThreadComposerSignals(
 ): ComposerSignals {
   const threadMeta$ = createThreadMeta(threadId);
   const cancellationRecovery = createCancellationRecoverySignals(threadId);
+  const draft = createDraftSignals();
+  const threadDraft$ = createRemoteChatThreadDraft(threadId);
   return createThreadComposerSignalsWithContext(
     threadId,
     chatEvents,
     {
       threadMeta$,
-      threadDraft$: createRemoteChatThreadDraft(threadId),
       agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
       preserveThreadDraft: options.preserveThreadDraft,
     },
-    createDraftSignals(),
+    draft,
+    createThreadDraftPersistence(threadId, draft, threadDraft$),
   );
 }
 
@@ -3756,6 +3790,7 @@ export function createChatPanelSignals(
   threadId: string,
   agentId: string,
   draft: DraftSignals,
+  persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {
   const chatEvents = createChatEventSignals(threadId);
   const artifact = createArtifacts(threadId);
@@ -3781,11 +3816,11 @@ export function createChatPanelSignals(
     chatEvents,
     {
       threadMeta$,
-      threadDraft$,
       agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
     },
     draft,
+    persistence,
   );
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },

@@ -1197,7 +1197,7 @@ export const submitBuiltinManualGrant$ = command(
       signal.throwIfAborted();
       return { connectionId };
     })();
-    set(internalConnectResult$, operation);
+    set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
@@ -1315,7 +1315,7 @@ export const connectBuiltinConnectorNoAuth$ = command(
       signal.throwIfAborted();
       return { connectionId };
     })();
-    set(internalConnectResult$, operation);
+    set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
@@ -1353,7 +1353,11 @@ const internalBrowserAuthOperation$ =
 // Active execution is the command mutex; the latest actual result remains
 // observable after release so shared loadables retain completion or rejection.
 const internalConnectOperation$ = state<Promise<unknown> | null>(null);
-const internalConnectResult$ = state<Promise<unknown> | null>(null);
+type ConnectorConnectExecution = {
+  readonly connectorSlug: ConnectorSlug | null;
+  readonly operation: Promise<unknown>;
+};
+const internalConnectResult$ = state<ConnectorConnectExecution | null>(null);
 
 export const builtinConnectorBrowserAuthOperation$ = computed((get) => {
   return get(internalBrowserAuthOperation$)?.operation ?? null;
@@ -1364,8 +1368,12 @@ export const builtinPollingOAuthDeviceAuthSlug$ = computed((get) => {
   return current.status === "pending" ? current.connectorSlug : null;
 });
 
-export const builtinConnectOperation$ = computed((get) => {
+export const builtinConnectExecution$ = computed((get) => {
   return get(internalConnectResult$);
+});
+
+export const builtinConnectOperation$ = computed((get) => {
+  return get(builtinConnectExecution$)?.operation ?? null;
 });
 
 export const runBuiltinConnectorConnectSuccess$ = command(
@@ -1386,7 +1394,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
       signal.throwIfAborted();
       return;
     }
-    set(internalConnectResult$, operation);
+    set(internalConnectResult$, { connectorSlug: null, operation });
     set(internalConnectOperation$, operation);
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
@@ -1884,7 +1892,7 @@ const connectConnectorOAuthDeviceAuth$ = command(
         flowSignal,
       );
     })();
-    set(internalConnectResult$, operation);
+    set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
@@ -2124,7 +2132,7 @@ const connectConnectorExternalCodeCommand$ = command(
       requestId,
       operation,
     });
-    set(internalConnectResult$, operation);
+    set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
@@ -2919,7 +2927,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
       return result;
     })();
     set(internalBrowserAuthOperation$, { flowId, operation });
-    set(internalConnectResult$, operation);
+    set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
     return await withCleanup(operation, () => {
       signal.removeEventListener("abort", release);
