@@ -29,6 +29,7 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { secrets } from "@okouai/db/schema/secret";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { variables } from "@okouai/db/schema/variable";
 import {
   orgCustomConnectorOauthConfigs,
@@ -65,7 +66,12 @@ import {
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
 import {
-  commitConnectorRuntimeMutation,
+  connectorRuntimeWakeupRunColumns,
+  connectorRuntimeWakeupCondition,
+  publishConnectorRuntimeWakeupRows,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+  uniqueConnectorRuntimeTargets,
+  type ConnectorRuntimeWakeupBusinessArgs,
   publishConnectorRuntimeSyncWakeups$,
 } from "./connector-runtime-wakeup.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -2508,6 +2514,23 @@ export const updateCustomConnectorDefinition$ = command(
   },
 );
 
+function customConnectorMutationOAuthJoin() {
+  return and(
+    eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
+    eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+  );
+}
+
+function customConnectorMutationDefinitionScope(
+  connectorId: string,
+  orgId: string,
+) {
+  return and(
+    eq(orgCustomConnectors.id, connectorId),
+    eq(orgCustomConnectors.orgId, orgId),
+  );
+}
+
 export const deleteCustomConnector$ = command(
   async (
     { set },
@@ -2525,20 +2548,9 @@ export const deleteCustomConnector$ = command(
         .from(orgCustomConnectors)
         .leftJoin(
           orgCustomConnectorOauthConfigs,
-          and(
-            eq(
-              orgCustomConnectorOauthConfigs.connectorId,
-              orgCustomConnectors.id,
-            ),
-            eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-          ),
+          customConnectorMutationOAuthJoin(),
         )
-        .where(
-          and(
-            eq(orgCustomConnectors.id, args.id),
-            eq(orgCustomConnectors.orgId, args.orgId),
-          ),
-        )
+        .where(customConnectorMutationDefinitionScope(args.id, args.orgId))
         .limit(1);
       if (!existing) {
         return false;
@@ -2571,15 +2583,47 @@ export const deleteCustomConnector$ = command(
       return true;
     });
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
-    const deleted = await commitConnectorRuntimeMutation(deletion, (result) => {
-      return result === true
-        ? {
-            db: writeDb,
-            scope: { orgId: args.orgId },
-            targets: [{ kind: "custom", customConnectorId: args.id }],
+    const deleted = await (async () => {
+      const result = await deletion;
+      const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =
+        result === true
+          ? {
+              scope: { orgId: args.orgId },
+              targets: [{ kind: "custom", customConnectorId: args.id }],
+            }
+          : undefined;
+      if (wakeup) {
+        await (async () => {
+          const result = await settle(
+            (async () => {
+              const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+              if (targets.length === 0) {
+                return;
+              }
+              const rows = await writeDb
+                .select(connectorRuntimeWakeupRunColumns())
+                .from(agentRuns)
+                .where(connectorRuntimeWakeupCondition(wakeup.scope));
+              await publishConnectorRuntimeWakeupRows({
+                scope: wakeup.scope,
+                targets,
+                rows,
+              });
+            })(),
+          );
+          if (!result.ok) {
+            reportConnectorRuntimeWakeupDiscoveryFailure({
+              orgId: wakeup.scope.orgId,
+              scopedToUser: wakeup.scope.userId !== undefined,
+              scopedToAgent: wakeup.scope.agentId !== undefined,
+              targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+              error: result.error,
+            });
           }
-        : undefined;
-    });
+        })();
+      }
+      return result;
+    })();
     if (signal.aborted) {
       postCommitAbort = { reason: signal.reason };
     }
@@ -2860,6 +2904,25 @@ interface SetCustomConnectorValuesArgs {
   readonly account: ConnectorAccountMutationIntent;
 }
 
+interface DeleteCustomConnectorAccountArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly memberConnectorId: string;
+}
+
+function customConnectorUserMutationWakeup(
+  args: Pick<
+    DeleteCustomConnectorAccountArgs,
+    "orgId" | "userId" | "connectorId"
+  >,
+): ConnectorRuntimeWakeupBusinessArgs {
+  return {
+    scope: { orgId: args.orgId, userId: args.userId },
+    targets: [{ kind: "custom", customConnectorId: args.connectorId }],
+  };
+}
+
 interface CustomConnectorValueWriteState {
   readonly connector: CustomConnectorRow;
   readonly preservesStoredValues: boolean;
@@ -3099,26 +3162,19 @@ async function persistCustomConnectorValues(
   };
 }
 
+type SetCustomConnectorValuesResponse =
+  | (CustomConnectorResponse & { readonly connectionId: string })
+  | BadRequestResponse
+  | NotFoundResponse
+  | ForbiddenResponse
+  | ConflictResponse;
+
 export const setCustomConnectorValues$ = command(
   async (
     { get, set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly values: readonly CustomConnectorValueInput[];
-      readonly account: ConnectorAccountMutationIntent;
-    },
+    args: SetCustomConnectorValuesArgs,
     signal: AbortSignal,
-  ): Promise<
-    | (CustomConnectorResponse & {
-        readonly connectionId: string;
-      })
-    | BadRequestResponse
-    | NotFoundResponse
-    | ForbiddenResponse
-    | ConflictResponse
-  > => {
+  ): Promise<SetCustomConnectorValuesResponse> => {
     const connector = await get(
       getCustomConnectorById({
         orgId: args.orgId,
@@ -3165,20 +3221,44 @@ export const setCustomConnectorValues$ = command(
       );
     });
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
-    const writeResult = await commitConnectorRuntimeMutation(
-      valueWrite,
-      (result) => {
-        return !("status" in result) && result.runtimeRecovered
-          ? {
-              db: writeDb,
-              scope: { orgId: args.orgId, userId: args.userId },
-              targets: [
-                { kind: "custom", customConnectorId: args.connectorId },
-              ],
-            }
+    const writeResult = await (async () => {
+      const result = await valueWrite;
+      const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =
+        !("status" in result) && result.runtimeRecovered
+          ? customConnectorUserMutationWakeup(args)
           : undefined;
-      },
-    );
+      if (wakeup) {
+        await (async () => {
+          const result = await settle(
+            (async () => {
+              const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+              if (targets.length === 0) {
+                return;
+              }
+              const rows = await writeDb
+                .select(connectorRuntimeWakeupRunColumns())
+                .from(agentRuns)
+                .where(connectorRuntimeWakeupCondition(wakeup.scope));
+              await publishConnectorRuntimeWakeupRows({
+                scope: wakeup.scope,
+                targets,
+                rows,
+              });
+            })(),
+          );
+          if (!result.ok) {
+            reportConnectorRuntimeWakeupDiscoveryFailure({
+              orgId: wakeup.scope.orgId,
+              scopedToUser: wakeup.scope.userId !== undefined,
+              scopedToAgent: wakeup.scope.agentId !== undefined,
+              targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+              error: result.error,
+            });
+          }
+        })();
+      }
+      return result;
+    })();
     if (signal.aborted) {
       postCommitAbort = { reason: signal.reason };
     }
@@ -3203,12 +3283,7 @@ export const setCustomConnectorValues$ = command(
 export const deleteCustomConnectorAccount$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly memberConnectorId: string;
-    },
+    args: DeleteCustomConnectorAccountArgs,
     signal: AbortSignal,
   ) => {
     const writeDb = set(writeDb$);
@@ -3224,21 +3299,12 @@ export const deleteCustomConnectorAccount$ = command(
           .from(orgCustomConnectors)
           .leftJoin(
             orgCustomConnectorOauthConfigs,
-            and(
-              eq(
-                orgCustomConnectorOauthConfigs.connectorId,
-                orgCustomConnectors.id,
-              ),
-              eq(
-                orgCustomConnectorOauthConfigs.orgId,
-                orgCustomConnectors.orgId,
-              ),
-            ),
+            customConnectorMutationOAuthJoin(),
           )
           .where(
-            and(
-              eq(orgCustomConnectors.id, args.connectorId),
-              eq(orgCustomConnectors.orgId, args.orgId),
+            customConnectorMutationDefinitionScope(
+              args.connectorId,
+              args.orgId,
             ),
           )
           .for("update", { of: orgCustomConnectors })
@@ -3291,17 +3357,44 @@ export const deleteCustomConnectorAccount$ = command(
       },
       { isolationLevel: "read committed" },
     );
-    const result = await commitConnectorRuntimeMutation(deletion, (value) => {
-      return value.kind === "deleted"
-        ? {
-            db: writeDb,
-            scope: { orgId: args.orgId, userId: args.userId },
-            targets: [
-              { kind: "custom" as const, customConnectorId: args.connectorId },
-            ],
+    const result = await (async () => {
+      const result = await deletion;
+      const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =
+        result.kind === "deleted"
+          ? customConnectorUserMutationWakeup(args)
+          : undefined;
+      if (wakeup) {
+        await (async () => {
+          const result = await settle(
+            (async () => {
+              const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+              if (targets.length === 0) {
+                return;
+              }
+              const rows = await writeDb
+                .select(connectorRuntimeWakeupRunColumns())
+                .from(agentRuns)
+                .where(connectorRuntimeWakeupCondition(wakeup.scope));
+              await publishConnectorRuntimeWakeupRows({
+                scope: wakeup.scope,
+                targets,
+                rows,
+              });
+            })(),
+          );
+          if (!result.ok) {
+            reportConnectorRuntimeWakeupDiscoveryFailure({
+              orgId: wakeup.scope.orgId,
+              scopedToUser: wakeup.scope.userId !== undefined,
+              scopedToAgent: wakeup.scope.agentId !== undefined,
+              targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+              error: result.error,
+            });
           }
-        : undefined;
-    });
+        })();
+      }
+      return result;
+    })();
     if (signal.aborted) {
       postCommitAbort = { reason: signal.reason };
     }

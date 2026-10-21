@@ -3,6 +3,7 @@ import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contr
 import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import { badRequestMessage } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -36,13 +37,20 @@ import {
 } from "../services/mcp-automatic-oauth.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { addUserCustomConnector } from "../services/user-connectors.service";
-import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
+import {
+  connectorRuntimeWakeupRunColumns,
+  connectorRuntimeWakeupCondition,
+  publishConnectorRuntimeWakeupRows,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+  uniqueConnectorRuntimeTargets,
+  type ConnectorRuntimeWakeupBusinessArgs,
+} from "../services/connector-runtime-wakeup.service";
 import {
   getCustomConnectorById,
   type CustomConnectorOAuthConfigRow,
   type CustomConnectorRow,
 } from "../services/custom-connector.service";
-import { safeSync, tapError } from "../utils";
+import { safeSync, settle, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import {
   connectorOAuthRedirectResponse,
@@ -283,13 +291,43 @@ async function persistCustomConnectorOAuth2Connection(
   signal: AbortSignal,
 ): Promise<CustomOAuthPersistenceResult> {
   const connectionStorage = storeCustomConnectorOAuth2Connection(args, signal);
-  const result = await commitConnectorRuntimeMutation(connectionStorage, () => {
-    return {
-      db: args.db,
+  const result = await (async () => {
+    const result = await connectionStorage;
+    const wakeupDb = args.db;
+    const wakeup: ConnectorRuntimeWakeupBusinessArgs = {
       scope: { orgId: args.orgId, userId: args.userId },
       targets: [{ kind: "custom", customConnectorId: args.connectorId }],
     };
-  });
+    await (async () => {
+      const result = await settle(
+        (async () => {
+          const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+          if (targets.length === 0) {
+            return;
+          }
+          const rows = await wakeupDb
+            .select(connectorRuntimeWakeupRunColumns())
+            .from(agentRuns)
+            .where(connectorRuntimeWakeupCondition(wakeup.scope));
+          await publishConnectorRuntimeWakeupRows({
+            scope: wakeup.scope,
+            targets,
+            rows,
+          });
+        })(),
+      );
+      if (!result.ok) {
+        reportConnectorRuntimeWakeupDiscoveryFailure({
+          orgId: wakeup.scope.orgId,
+          scopedToUser: wakeup.scope.userId !== undefined,
+          scopedToAgent: wakeup.scope.agentId !== undefined,
+          targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+          error: result.error,
+        });
+      }
+    })();
+    return result;
+  })();
   if (result.kind !== "stored") {
     const status =
       result.kind === "missing"
