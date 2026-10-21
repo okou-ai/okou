@@ -19,6 +19,7 @@ mod critical_progress;
 mod dual_history;
 mod evidence;
 mod fences;
+mod final_exec;
 mod finalizing;
 mod fixed_restore;
 mod fixture;
@@ -27,6 +28,7 @@ mod foreground_growth;
 mod foreground_io;
 mod foreground_probe;
 mod guarded_readers;
+mod guest_preparation;
 mod incoming_progress;
 mod incoming_work;
 mod later_parking;
@@ -110,7 +112,7 @@ enum Corpus {
     SpeculativeFault(bool),
     NativeUnpark(native_unpark::Fault),
     NativePause(native_pause::Fault),
-    FixedRestore(fixed_restore::Selection),
+    GuestPreparation(guest_preparation::Selection),
     DualHistory(bool),
     ClaimUnavailable(claim_peer::Outcome),
     ClaimProducerLost { cancelled: bool, restored: bool },
@@ -1217,7 +1219,7 @@ async fn exercise_selected_factories(
 ) -> TestResult<()> {
     for &scope in scopes {
         for restored in [false, true] {
-            if let Corpus::FixedRestore(selected) = corpus
+            if let Corpus::GuestPreparation(selected) = corpus
                 && selected.restored != restored
             {
                 continue;
@@ -1291,7 +1293,7 @@ async fn exercise_selected_factories(
                                 fault.name().into()
                             } else if let Corpus::NativePause(fault) = corpus {
                                 fault.pause_name().into()
-                            } else if let Corpus::FixedRestore(selected) = corpus {
+                            } else if let Corpus::GuestPreparation(selected) = corpus {
                                 selected.label()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
@@ -1451,10 +1453,10 @@ async fn exercise_retirement(
         .map(|input| input.original_run_id)
         .unwrap_or_else(RunId::new_v4);
     let sandbox_id = SandboxId::new_v4();
-    let fixed_probe = matches!(corpus, Corpus::FixedRestore(_))
-        .then(|| fixed_restore::Probe::new(sandbox_id.to_string()))
+    let guest_probe = matches!(corpus, Corpus::GuestPreparation(_))
+        .then(|| guest_preparation::Probe::new(sandbox_id.to_string()))
         .transpose()?;
-    let full_session = corpus == Corpus::Continuation || fixed_probe.is_some();
+    let full_session = corpus == Corpus::Continuation || guest_probe.is_some();
     let reuse_key = real_claim
         .as_ref()
         .map(|input| input.reuse_key.clone())
@@ -1541,7 +1543,7 @@ async fn exercise_retirement(
             original: run_id,
             continued: false,
         });
-        let result = match &fixed_probe {
+        let result = match &guest_probe {
             Some(probe) => probe.scope.scope(execution).await,
             None => execution.await,
         };
@@ -1563,13 +1565,13 @@ async fn exercise_retirement(
             .ok_or_else(|| io::Error::other("native original backing unavailable"))?;
         proof.bind(sandbox_id.to_string(), backing, budget.clone())?;
         continuation.record_original(run_id, &prepared)?;
-        if fixed_probe.is_some() {
-            proof.fixed_restore_witness("original_session", serde_json::json!({
+        if let Corpus::GuestPreparation(selected) = corpus {
+            selected.witness(proof, "original_session", serde_json::json!({
                 "history_run_id":run_id,"thread_id":continuation.session()?.0,
                 "history_hex":hex::encode(&prepared.history),
                 "history_sha256":continuation::digest(&prepared.history),
                 "history_bytes":prepared.history.len(),"final_identity_verified":prepared.identity.is_some(),
-                "physical_history":fixed_restore::session_file(&*prepared.sandbox,&continuation.session()?.0).await?,
+                "physical_history":guest_preparation::session_file(&*prepared.sandbox,&continuation.session()?.0).await?,
                 "executor_completed":true,"exit_code":prepared.exit_code,
             }))?;
         }
@@ -1634,7 +1636,7 @@ async fn exercise_retirement(
     let parked: TestResult<_> = async {
         if matches!(
             corpus,
-            Corpus::ClaimProducerLost { .. } | Corpus::FixedRestore(_)
+            Corpus::ClaimProducerLost { .. } | Corpus::GuestPreparation(_)
         ) {
             let digest = fixture::verify_speculative_guest(&*sandbox, run_id).await?;
             fixture::exec(&*sandbox, "sync").await?;
@@ -1644,8 +1646,8 @@ async fn exercise_retirement(
                 "payload_bytes": fixture::PAYLOAD_BYTES, "original_private_and_home_verified": true,
                 "guest_sync_completed": true,
             });
-            if fixed_probe.is_some() {
-                proof.fixed_restore_witness("original_data_durable", value)?;
+            if let Corpus::GuestPreparation(selected) = corpus {
+                selected.witness(proof, "original_data_durable", value)?;
             } else {
                 proof.claim_producer_witness("original_data_durable", value)?;
             }
@@ -2076,17 +2078,17 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
-                if let Corpus::FixedRestore(selected) = corpus {
+                if let Corpus::GuestPreparation(selected) = corpus {
                     let proof = proof.ok_or_else(|| io::Error::other("fixed restore proof absent"))?;
                     proof.retain(continuation_fixture.take());
-                    return fixed_restore::exercise(fixed_restore::Request {
+                    return guest_preparation::exercise(guest_preparation::Request {
                         context: transitions::Context {
                             factory:factory.clone(),pool:pool.clone(),status:status.clone(),
                             operations:operations.clone(),budget:budget.clone(),tracker:tracker.clone(),
                             rootfs_hash:rootfs_hash.clone(),reuse_key:reuse_key.clone(),
                         }, inputs, proof, directory:paths.base_dir(), backing:backing.clone(),
-                        history:run_id, selection:selected, cache:&cache,
-                        probe:fixed_probe.as_ref().ok_or_else(||io::Error::other("fixed connection missing"))?,
+                        history:run_id, sandbox_id, selection:selected, cache:&cache,
+                        probe:guest_probe.as_ref().ok_or_else(||io::Error::other("genuine Guest connection missing"))?,
                     }).await.map(|()| None);
                 }
                 let speculative_injection = match corpus {

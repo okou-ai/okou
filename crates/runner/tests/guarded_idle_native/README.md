@@ -1,5 +1,52 @@
 # Guarded idle terminal fixture
 
+## Final preparation exec cancellation and retained uncertainty
+
+`final_exec::native_final_exec_loss_retains_original_uncertainty` exercises the
+real speculative `repark` and its `IdleReusePreparation` fenced capture exec.
+It completes genuine unpark/fixed restore before arming Exec on the original
+startup connection. The production command, OneShot/Workload lifecycle, finite
+timeout, label, sudo, capture limits and exact original current/retained runtime
+stdin are checked. The actual original successful terminal must also pass the
+owner's preparation report/capacity validation. Guest quiesce and physical pause
+are later authorities; no callback after either substitutes for final-exec loss.
+
+Select each combination separately with `OKOU_TEST_FINAL_EXEC_BOUNDARY=capture|terminal`,
+`OKOU_TEST_FINAL_EXEC_FAULT=drop|observer-unwind|producer-unwind` and
+`OKOU_TEST_FINAL_EXEC_MODE=fresh|snapshot`. One-shot capture never sends
+`exec_started`. Capture is pre-dispatch and a held terminal proves completed
+exec/containment/stdin/stdout/stderr, never an unfinished running-helper window.
+Producer unwind remains a transport fault only after real terminal delivery.
+
+Shared Guest-preparation custody keeps the original complete Executor session,
+physical history, protected private runtime, ordinary home,64KiB payload,
+promotion, backing and full lease outside cancelled observers. Uncertain
+commit/repark/incoming refusal and the actual client's NotParkable policy remain
+sticky through late delivery. Independent observation/acknowledged heartbeat
+progress under actual pool/status contention and no-headroom. Covered cleanup
+must preserve its actual refusal, full original owner and both uncertain growth
+allowances, with no saving, exit, lease release or memory credit.
+
+Preserve original failed driver101/collector1, all original files, raw
+`native_final_exec_policy_json`, artifact/snapshot bindings and complete original
+retained image. The strict reader uses `native-final-exec-custody-v1`; it checks
+exact command/stdin/result bytes, complete original data and evidence limits.
+Existing fixed-restore format/entries remain separate and compatible.
+
+```sh
+<native-test-binary> final_exec::native_final_exec_loss_retains_original_uncertainty \
+  --ignored --exact --nocapture --test-threads=1
+python3 crates/runner/tests/guarded_idle_native/final_exec_report.py <p1-directory>
+```
+
+Require newly committed Host/all current canonical Guests, installed RootFS
+readback and a new matching snapshot with unchanged supplied policy/P1/guards,
+then independently replay original source/artifacts/evidence. Original image
+copying follows positively confirmed collector containment, never claimed saving.
+Preterminal Guest acceptance, unfinished canonical running-exec cancellation and
+original cleanup IO progress remain unproven. These probes establish no complete
+shutdown, D/E/P4, production memory/OOM or ancestor acceptance.
+
 ## Fixed Guest restore cancellation and retained uncertainty
 
 `fixed_restore::native_fixed_restore_loss_retains_original_uncertainty` attaches
