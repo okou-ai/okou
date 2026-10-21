@@ -2217,6 +2217,7 @@ describe("RUN-04: agent run telemetry families", () => {
             runId,
             cliAgentType: "claude-code",
             sessionId: "bdd-session-1",
+            storageMounts: null,
             environment: { LEGACY_IGNORED: "legacy-map" },
             environmentEntries: [
               { name: "NODE_ENV", value: "production" },
@@ -2933,6 +2934,39 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         status: "failed",
         error: "bdd failure",
       });
+    });
+  });
+
+  it("reads run-log detail when an older Axiom snapshot has null Storage mounts", async () => {
+    const actor = await entitledActor();
+    const agent = await createThreadAgent(actor, "bdd-retained-log");
+    const run = await api.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "read a retained run snapshot",
+    });
+    onTestFinished(async () => {
+      await api.requestCancelRun(actor, run.runId, [200]);
+    });
+    dispatchAxiomQueries({
+      [run.runId]: {
+        runContext: [
+          {
+            runId: run.runId,
+            cliAgentType: "claude-code",
+            storageMounts: null,
+            volumes: [],
+            artifact: null,
+          },
+        ],
+      },
+    });
+
+    const detail = await reads.requestReadLogById(actor, run.runId, [200]);
+    expect(detail.body).toMatchObject({
+      id: run.runId,
+      framework: "claude-code",
+      status: "pending",
+      prompt: "read a retained run snapshot",
     });
   });
 
