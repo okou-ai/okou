@@ -2359,18 +2359,6 @@ async function markRefreshFailure(
     );
 }
 
-async function markRefreshTokenMissing(
-  args: RefreshAccessTokenArgs,
-  context: RefreshTokenContext,
-): Promise<RefreshAccessTokenResult> {
-  await markRefreshFailure(args, context, {
-    errorCode: null,
-    failureReason: "reconnect_required",
-    connectorReconnectReason: null,
-  });
-  return refreshTokenMissingResult();
-}
-
 // Refresh-failure diagnostics follow one rule: a `reconnect_required` outcome
 // is already visible as persisted reconnect state, so it writes no log. An
 // `upstream_provider` outcome is logged only after bounded recovery finishes,
@@ -2669,7 +2657,16 @@ async function refreshStoredAccessToken(args: {
   }
 
   if (missingRefreshInputNames(state).length > 0) {
-    return markRefreshTokenMissing(args.refreshArgs, args.prepared.context);
+    const missingRefreshArgs = args.refreshArgs;
+    const missingRefreshContext = args.prepared.context;
+    return (async (): Promise<RefreshAccessTokenResult> => {
+      await markRefreshFailure(missingRefreshArgs, missingRefreshContext, {
+        errorCode: null,
+        failureReason: "reconnect_required",
+        connectorReconnectReason: null,
+      });
+      return refreshTokenMissingResult();
+    })();
   }
 
   return refreshPreparedStoredAccessToken({
