@@ -377,7 +377,7 @@ async fn run_case(password: bool, security: Security) {
 
     ssh_resolve.assert_calls_async(1).await;
     vnc_resolve.assert_calls_async(1).await;
-    assert!(vnc_check.calls_async().await >= 3);
+    vnc_check.assert_calls_async(1).await;
     harness.shutdown().await;
     fixture.selected_subtype(security).await;
     fixture.stop().await;
