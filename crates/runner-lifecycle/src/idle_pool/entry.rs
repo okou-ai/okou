@@ -150,7 +150,7 @@ pub struct ParkedIdleCandidate {
 }
 
 /// Quiesced, fenced, still-running sandbox that may only be handed to its
-/// waiting exact successor or destroyed. It is never generic idle inventory.
+/// waiting source-bound successor or destroyed. It is never generic idle inventory.
 #[must_use = "immediate handoff candidates must be bound to a claimant or explicitly destroyed"]
 pub struct ImmediateHandoffCandidate {
     pub(super) resources: IdleSandboxResources,
@@ -160,7 +160,7 @@ pub struct ImmediateHandoffCandidate {
     pub(super) retirement_backing: Option<CapturedBacking>,
 }
 
-/// Sandbox bound to one claimed exact successor without entering the
+/// Sandbox bound to one claimed source-bound successor without entering the
 /// generic idle pool.
 #[must_use = "finalizing handoff candidates must be activated or explicitly destroyed"]
 pub struct FinalizingHandoffCandidate {
@@ -268,10 +268,6 @@ impl ParkedIdleCandidate {
         predecessor_run_id: RunId,
     ) -> FinalizingHandoffCandidate {
         debug_assert_eq!(self.metadata.source_run_id, Some(predecessor_run_id));
-        debug_assert_eq!(
-            self.metadata.history_generation_run_id,
-            Some(predecessor_run_id)
-        );
         FinalizingHandoffCandidate {
             candidate: IdleParkCandidate::Ordinary(self),
             successor_run_id,
@@ -321,10 +317,6 @@ impl ImmediateHandoffCandidate {
         predecessor_run_id: RunId,
     ) -> FinalizingHandoffCandidate {
         debug_assert_eq!(self.metadata.source_run_id, Some(predecessor_run_id));
-        debug_assert_eq!(
-            self.metadata.history_generation_run_id,
-            Some(predecessor_run_id)
-        );
         FinalizingHandoffCandidate {
             candidate: IdleParkCandidate::Immediate(self),
             successor_run_id,

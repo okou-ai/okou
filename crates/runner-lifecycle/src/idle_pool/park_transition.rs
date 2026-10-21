@@ -401,8 +401,8 @@ impl IdleParkRequest {
 /// or running handoff. Failures retain [`IdleParkFailureParts::Active`],
 /// [`IdleParkFailureParts::Parked`], or [`IdleParkFailureParts::RunningHandoff`]
 /// ownership according to the completed boundary. The handoff argument is
-/// supplied by the finalization caller for an exact
-/// predecessor; this function does not infer that relationship from the
+/// supplied by the finalization caller for a physically reusable
+/// predecessor; this function does not infer native-history authority from the
 /// metadata.
 async fn park_idle_transition(
     input: IdleParkTransitionInput,

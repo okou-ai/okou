@@ -3,12 +3,13 @@
 //! The Runner composition root owns the provider claim, activation, and executor task.
 //! This module owns the selection policy before activation and returns its owned resource.
 //!
-//! A one-shot direct handoff races predecessor publication and cancellation. The preference
-//! deadline bounds pre-finalization waiting; acceptance grace starts once finalization and
-//! successor waiting have both begun. Accepted delivery wins a deadline race, while cancellation
-//! recovers delivered candidates. Fallback checks the exact generation before and after pressure
-//! selection and waits on both idle-pool revisions and budget availability without spending a
-//! retiring lease twice. The caller retains the panic-boundary rollback of `reserved_exact`.
+//! A one-shot physical handoff races predecessor publication and cancellation. Generic sources
+//! keep their API preference deadline. Native-matching sources use that deadline before
+//! finalization, then acceptance grace once finalization and successor waiting have both begun.
+//! Accepted delivery wins a deadline race, while cancellation recovers delivered candidates.
+//! Fallback rechecks source-bound and compatible idle resources around pressure selection and
+//! waits on idle-pool revisions and budget availability without spending a retiring lease twice.
+//! The caller retains the panic-boundary rollback of `reserved_exact`.
 
 mod guarded;
 pub use guarded::{
@@ -294,12 +295,13 @@ async fn select_finalizing_resource_inner(
     }
 }
 
-/// Wait for a direct predecessor handoff, a published exact reservation, or the fallback point.
+/// Wait for a physical predecessor handoff, a published exact reservation, or fallback.
 ///
 /// The handoff request is one-shot and is created before observing the predecessor state so a
-/// successor that was claimed early can race publication safely. The API preference deadline
-/// bounds pre-finalization waiting. Acceptance grace starts when both finalization and this
-/// successor's wait have begun, so a late request cannot arrive already expired. Only an
+/// successor that was claimed early can race publication safely. Generic sources retain their
+/// original API preference deadline, including during finalization. A native-matching source
+/// uses that deadline before finalization, then a separate acceptance grace starting when both
+/// finalization and this successor's wait have begun. A late request cannot arrive expired. Only an
 /// unaccepted request expires at either boundary, while an accepted handoff is still received.
 /// A cancellation can recover a candidate already sent over the
 /// request, and the caller owns destroying that candidate or rolling back an exact reservation
@@ -308,9 +310,6 @@ async fn wait_for_finalizing_resource(
     request: FinalizingWait<'_>,
     reserved_exact: &mut Option<ReservedIdleActivation>,
 ) -> FinalizingWaitOutcome {
-    let Some(history_generation_run_id) = request.admission.history_generation_run_id else {
-        return wait_for_generic_finalizing_resource(request).await;
-    };
     let FinalizingWait {
         run_id,
         cancellation,
@@ -334,7 +333,7 @@ async fn wait_for_finalizing_resource(
                 return receive_finalizing_handoff(
                     request,
                     run_id,
-                    history_generation_run_id,
+                    admission.source_run_id,
                     cancellation,
                 )
                 .await;
@@ -361,6 +360,11 @@ async fn wait_for_finalizing_resource(
             ActiveRunReuseState::Pending | ActiveRunReuseState::Finalizing { .. } => None,
         };
         if let Some(missing_exact_reason) = missing_exact_reason {
+            let Some(history_generation_run_id) = admission.history_generation_run_id else {
+                // A ready physical source is selected by the existing generic
+                // fallback, without granting exact native-history authority.
+                return FinalizingWaitOutcome::no_exact(missing_exact_reason);
+            };
             let exact_lookup = reserve_exact_idle_for_spawn(
                 ctx.idle_pool,
                 &admission.reuse_key,
@@ -405,12 +409,22 @@ async fn wait_for_finalizing_resource(
             };
         }
 
-        let deadline = match state {
-            ActiveRunReuseState::Pending => tokio::time::Instant::from_std(admission.deadline),
-            ActiveRunReuseState::Finalizing { started_at } => {
-                tokio::time::Instant::from_std(started_at).max(wait_started_at)
-                    + FINALIZING_HANDOFF_ACCEPTANCE_GRACE
+        let (deadline, timeout_reason, timeout_outcome) = match state {
+            ActiveRunReuseState::Finalizing { started_at }
+                if admission.history_generation_run_id.is_some() =>
+            {
+                (
+                    tokio::time::Instant::from_std(started_at).max(wait_started_at)
+                        + FINALIZING_HANDOFF_ACCEPTANCE_GRACE,
+                    FinalizingHandoffReason::HandoffAcceptanceDeadline,
+                    FinalizingHandoffOutcome::NotAcceptedBeforeDeadline,
+                )
             }
+            ActiveRunReuseState::Pending | ActiveRunReuseState::Finalizing { .. } => (
+                tokio::time::Instant::from_std(admission.deadline),
+                FinalizingHandoffReason::PreFinalizationDeadline,
+                FinalizingHandoffOutcome::PreFinalizationDeadline,
+            ),
             ActiveRunReuseState::ExactSandboxPublished
             | ActiveRunReuseState::ExactSandboxHandedOff
             | ActiveRunReuseState::NoExactSandbox
@@ -427,7 +441,7 @@ async fn wait_for_finalizing_resource(
                         return receive_finalizing_handoff(
                             request,
                             run_id,
-                            history_generation_run_id,
+                            admission.source_run_id,
                             cancellation,
                         )
                         .await;
@@ -446,27 +460,15 @@ async fn wait_for_finalizing_resource(
                         return receive_finalizing_handoff(
                             request,
                             run_id,
-                            history_generation_run_id,
+                            admission.source_run_id,
                             cancellation,
                         )
                         .await;
                     }
-                    return match state {
-                        ActiveRunReuseState::Pending => FinalizingWaitOutcome::Fallback {
-                            reason: FinalizingHandoffReason::PreFinalizationDeadline,
-                            exact_lookup_miss: None,
-                            handoff_outcome:
-                                FinalizingHandoffOutcome::PreFinalizationDeadline,
-                        },
-                        ActiveRunReuseState::Finalizing { .. } => FinalizingWaitOutcome::Fallback {
-                            reason: FinalizingHandoffReason::HandoffAcceptanceDeadline,
-                            exact_lookup_miss: None,
-                            handoff_outcome: FinalizingHandoffOutcome::NotAcceptedBeforeDeadline,
-                        },
-                        ActiveRunReuseState::ExactSandboxPublished
-                        | ActiveRunReuseState::ExactSandboxHandedOff
-                        | ActiveRunReuseState::NoExactSandbox
-                        | ActiveRunReuseState::Released => continue,
+                    return FinalizingWaitOutcome::Fallback {
+                        reason: timeout_reason,
+                        exact_lookup_miss: None,
+                        handoff_outcome: timeout_outcome,
                     };
                 }
             }
@@ -481,72 +483,19 @@ async fn wait_for_finalizing_resource(
                     if admission.predecessor.state() != state {
                         continue;
                     }
-                    return match state {
-                        ActiveRunReuseState::Pending => FinalizingWaitOutcome::Fallback {
-                            reason: FinalizingHandoffReason::PreFinalizationDeadline,
-                            exact_lookup_miss: None,
-                            handoff_outcome:
-                                FinalizingHandoffOutcome::PreFinalizationDeadline,
-                        },
-                        ActiveRunReuseState::Finalizing { .. } => {
-                            FinalizingWaitOutcome::no_exact(
-                                FinalizingHandoffReason::HandoffRequestUnavailable,
-                            )
-                        }
-                        ActiveRunReuseState::ExactSandboxPublished
-                        | ActiveRunReuseState::ExactSandboxHandedOff
-                        | ActiveRunReuseState::NoExactSandbox
-                        | ActiveRunReuseState::Released => continue,
+                    if matches!(state, ActiveRunReuseState::Finalizing { .. })
+                        && admission.history_generation_run_id.is_some()
+                    {
+                        return FinalizingWaitOutcome::no_exact(
+                            FinalizingHandoffReason::HandoffRequestUnavailable,
+                        );
+                    }
+                    return FinalizingWaitOutcome::Fallback {
+                        reason: timeout_reason,
+                        exact_lookup_miss: None,
+                        handoff_outcome: timeout_outcome,
                     };
                 }
-            }
-        }
-    }
-}
-
-/// Generic resources do not authorize native handoff or renew discovery expiry.
-async fn wait_for_generic_finalizing_resource(
-    request: FinalizingWait<'_>,
-) -> FinalizingWaitOutcome {
-    let cancellation = request.cancellation.token();
-    let admission = request.admission;
-    let deadline = tokio::time::Instant::from_std(admission.deadline);
-    loop {
-        if cancellation.is_cancelled() {
-            return FinalizingWaitOutcome::cancelled(None);
-        }
-        let state = admission.predecessor.state();
-        let reason = match state {
-            ActiveRunReuseState::Pending | ActiveRunReuseState::Finalizing { .. } => None,
-            ActiveRunReuseState::ExactSandboxPublished => {
-                Some(FinalizingHandoffReason::PublishedExactUnavailable)
-            }
-            ActiveRunReuseState::ExactSandboxHandedOff => {
-                Some(FinalizingHandoffReason::ExactHandoffUnavailable)
-            }
-            ActiveRunReuseState::NoExactSandbox => {
-                Some(FinalizingHandoffReason::PredecessorNoExact)
-            }
-            ActiveRunReuseState::Released => {
-                Some(FinalizingHandoffReason::PredecessorReleasedWithoutExact)
-            }
-        };
-        if let Some(reason) = reason {
-            return FinalizingWaitOutcome::no_exact(reason);
-        }
-        tokio::select! {
-            biased;
-            () = cancellation.cancelled() => return FinalizingWaitOutcome::cancelled(None),
-            _ = admission.predecessor.changed() => {}
-            _ = tokio::time::sleep_until(deadline) => {
-                if admission.predecessor.state() != state {
-                    continue;
-                }
-                return FinalizingWaitOutcome::Fallback {
-                    reason: FinalizingHandoffReason::PreFinalizationDeadline,
-                    exact_lookup_miss: None,
-                    handoff_outcome: FinalizingHandoffOutcome::PreFinalizationDeadline,
-                };
             }
         }
     }
@@ -1369,7 +1318,6 @@ mod tests {
             .with_source_run_id(predecessor_run_id)
             .with_sandbox(sandbox)
             .with_factory(factory)
-            .with_history_generation_run_id(predecessor_run_id)
             .build();
         assert!(matches!(
             publisher.deliver_exact_handoff(
