@@ -3,6 +3,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -55,16 +56,31 @@ class PackageSourceTests(unittest.TestCase):
             check=False,
         )
 
+    def receive(self, sources):
+        target = self.root / "receiver"
+        target.mkdir()
+        result = subprocess.run(
+            ["python3", str(SCRIPT), str(self.resolved), str(target), str(sources)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return target, result
+
     def test_system_git_clones_exact_locked_sources_without_the_upstream(self):
         before = json.dumps({"pins": self.pins})
         result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        received = self.root / "downloaded-sources"
+        shutil.move(result.stdout.strip(), received)
+        target, result = self.receive(received)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.resolved.read_text(), before)
         self.origin.rename(self.root / "offline")
         env = os.environ | {
             "GIT_CONFIG_COUNT": "1",
             "GIT_CONFIG_KEY_0": "include.path",
-            "GIT_CONFIG_VALUE_0": str(self.build / "package-sources.gitconfig"),
+            "GIT_CONFIG_VALUE_0": str(target / "package-sources.gitconfig"),
         }
         for index, url in enumerate((self.origin.as_uri(), self.origin.as_uri()[:-4])):
             with self.subTest(url=url):
@@ -81,6 +97,18 @@ class PackageSourceTests(unittest.TestCase):
                 self.assertEqual(
                     self.git("-C", str(clone), "show", "1.0.0:source").strip(), "locked"
                 )
+
+    def test_received_sources_must_match_every_locked_revision(self):
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.pins[0]["state"]["revision"] = self.git(
+            "-C", str(self.origin), "rev-parse", "HEAD"
+        ).strip()
+        self.resolved.write_text(json.dumps({"pins": self.pins}))
+        target, result = self.receive(Path(result.stdout.strip()))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Prepared source revision differs", result.stderr)
+        self.assertFalse((target / "package-sources.gitconfig").exists())
 
     def test_failed_fetch_does_not_publish_a_partial_source_configuration(self):
         self.pins[0]["state"]["revision"] = "0" * 40

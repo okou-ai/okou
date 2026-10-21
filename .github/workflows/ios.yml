@@ -97,8 +97,30 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  build-test:
+  prepare-package-sources:
     needs: detect
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch locked package revisions
+        id: sources
+        run: |
+          mkdir "$RUNNER_TEMP/package-inputs"
+          sources=$(python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/package-inputs")
+          echo "path=$sources" >> "$GITHUB_OUTPUT"
+      - name: Transfer locked source repositories
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-package-sources-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ steps.sources.outputs.path }}
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  build-test:
+    needs: [detect, prepare-package-sources]
     # Main pushes consume previously built archives in release-please; never rebuild/test.
     if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
     runs-on: xcode-27
@@ -114,6 +136,16 @@ jobs:
       - name: Configure archive workspace
         run: |
           echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+          echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
+      - name: Receive locked source repositories
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-package-sources-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
+      - name: Configure locked package sources
+        run: |
+          mkdir "$RUNNER_TEMP/okou-ios-ci"
+          python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
           # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
           git config --global --add include.path "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig"
       - name: Capture promotion inputs

@@ -48,7 +48,11 @@ fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
   cp "$resolved" "$build_root/Package.resolved.before"
-  python3 ios/scripts/prepare-package-sources.py "$resolved" "$build_root"
+  prepared_sources=()
+  if [[ -n "${IOS_PACKAGE_SOURCES_DIR:-}" ]]; then
+    prepared_sources=("$IOS_PACKAGE_SOURCES_DIR")
+  fi
+  python3 ios/scripts/prepare-package-sources.py "$resolved" "$build_root" "${prepared_sources[@]}"
 fi
 
 # Keep the caller's Git configuration and add only this job's locked sources.

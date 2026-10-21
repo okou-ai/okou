@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Fetch locked Git revisions into job-owned shallow sources for system Git.
 
-Usage: prepare-package-sources.py Package.resolved BUILD_ROOT
+Usage: prepare-package-sources.py Package.resolved BUILD_ROOT [PREPARED_SOURCES]
 Writes BUILD_ROOT/package-sources.gitconfig only after every fetch succeeds.
 The caller includes that file in Git's runtime configuration for SwiftPM.
+Prints the source directory for transfer to another job. Prepared sources are
+checked against every locked revision before publishing a relocated config.
 """
 
 import concurrent.futures
@@ -15,9 +17,11 @@ import tempfile
 from pathlib import Path
 
 
-def prepare(resolved, build_root):
+def prepare(resolved, build_root, prepared_sources=None):
     pins = json.loads(resolved.read_text())["pins"]
-    sources = Path(tempfile.mkdtemp(prefix="package-sources-", dir=build_root))
+    sources = prepared_sources or Path(
+        tempfile.mkdtemp(prefix="package-sources-", dir=build_root)
+    )
 
     def fetch(indexed_pin):
         index, pin = indexed_pin
@@ -58,8 +62,19 @@ def prepare(resolved, build_root):
             )
         return pin["location"], repo.as_uri()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        mirrors = list(pool.map(fetch, enumerate(pins)))
+    if prepared_sources is None:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            mirrors = list(pool.map(fetch, enumerate(pins)))
+    else:
+        mirrors = []
+        for index, pin in enumerate(pins):
+            repo = sources / str(index)
+            revision = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "refs/heads/pinned"], text=True
+            ).strip()
+            if revision != pin["state"]["revision"]:
+                raise ValueError(f"Prepared source revision differs: {pin['identity']}")
+            mirrors.append((pin["location"], repo.as_uri()))
     config = sources / "gitconfig"
     config.touch()
     for original, mirror in mirrors:
@@ -79,7 +94,14 @@ def prepare(resolved, build_root):
                 check=True,
             )
     os.replace(config, build_root / "package-sources.gitconfig")
+    return sources
 
 
 if __name__ == "__main__":
-    prepare(Path(sys.argv[1]), Path(sys.argv[2]).resolve())
+    print(
+        prepare(
+            Path(sys.argv[1]),
+            Path(sys.argv[2]).resolve(),
+            Path(sys.argv[3]).resolve() if len(sys.argv) == 4 else None,
+        )
+    )
