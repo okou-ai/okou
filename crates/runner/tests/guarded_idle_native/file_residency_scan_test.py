@@ -172,6 +172,59 @@ class ScanTests(unittest.TestCase):
                 owner.scan(SIZE, 1, events.append)
             self.assertEqual(events, [])
 
+    def test_pre_epoch_file_timestamp_survives_real_cli_and_replay(self):
+        os.utime(self.fd, ns=(-1, -1))
+        self.assertEqual(os.fstat(self.fd).st_mtime_ns, -1)
+        root = self.root / "pre-epoch-capture"
+        invocation = str(uuid.uuid4())
+        source = source_bundle()[2]
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(OWNER / "file_residency_scan.py"),
+                str(root),
+                "--fd",
+                str(self.fd),
+                "--device",
+                str(self.identity[0]),
+                "--inode",
+                str(self.identity[1]),
+                "--invocation",
+                invocation,
+                "--source-sha256",
+                source,
+                "--original-sha256",
+                self.payload_hash,
+                "--maximum-bytes",
+                str(SIZE),
+                "--maximum-duration-ns",
+                str(MAX_SCAN_DURATION_NS),
+            ],
+            pass_fds=(self.fd,),
+            capture_output=True,
+            text=True,
+            timeout=40,
+        )
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        receipt = json.loads(result.stdout)
+        capture = json.loads((root / "capture.json").read_bytes())
+        self.assertEqual(capture["summary"]["before"]["mtime_ns"], -1)
+        self.assertEqual(capture["summary"]["after"]["mtime_ns"], -1)
+        shutil.copyfile(self.path, root / "original.bin")
+        self.assertEqual(
+            replay(
+                root,
+                invocation,
+                source,
+                receipt["capture_sha256"],
+                self.identity,
+                SIZE,
+                MAX_SCAN_DURATION_NS,
+            )["covered_bytes"],
+            SIZE,
+        )
+
     def test_empty_original_has_zero_ranges_without_broader_claims(self):
         os.ftruncate(self.fd, 0)
         events = []

@@ -73,8 +73,16 @@ def original_hash(root, size):
 
 def metadata(value, expected_identity, uid):
     fields(value, "device inode uid size links mtime_ns ctime_ns")
-    for item in value.values():
-        integer(item)
+    for name in ("device", "inode", "uid", "size", "links"):
+        integer(value[name])
+    for name in ("mtime_ns", "ctime_ns"):
+        # A regular file can have a pre-epoch mtime. File timestamps are
+        # normalized signed 64-bit time_t seconds plus nanoseconds, not counters.
+        require(
+            type(value[name]) is int
+            and -(2**63) * 10**9 <= value[name] < 2**63 * 10**9,
+            "invalid original file timestamp",
+        )
     require(
         (value["device"], value["inode"]) == expected_identity and value["uid"] == uid,
         "foreign original metadata",

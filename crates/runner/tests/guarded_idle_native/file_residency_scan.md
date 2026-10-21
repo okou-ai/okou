@@ -12,6 +12,8 @@ within hard ceilings of 32 GiB and 30 seconds. The pass freezes original
 device/inode/UID/length/link count/mtime/ctime and checks that metadata and
 authority across acquisitions. An empty file has zero extents, without a
 physical-memory claim. No original payload is read or faulted by the observer.
+File mtime/ctime are signed Unix timestamps; pre-epoch values stay valid and
+remain separate from nonnegative monotonic clocks, durations and byte counts.
 
 The synchronous `emit(point)` sink must retain each completed point before
 returning. Sink IO, metadata checks, queries and mapping release contribute to
