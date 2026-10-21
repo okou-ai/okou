@@ -267,7 +267,7 @@ describe("okou mcp command", () => {
     await rm(inputDirectory, { recursive: true, force: true });
   });
 
-  it("preserves future account facts without replacing the admitted MCP identity", async () => {
+  it("preserves admitted account facts when runtime availability differs from management state", async () => {
     const setup = {
       setupStatus: "invalid" as const,
       missingRequiredFields: [],
@@ -281,8 +281,8 @@ describe("okou mcp command", () => {
         expect.objectContaining({
           ...setup,
           runtimeAvailable: true,
-          connected: true,
           connectionId: "77777777-7777-4777-8777-777777777777",
+          target: { kind: "custom", customConnectorId: CONNECTOR_ID },
         }),
       ],
     });
@@ -316,7 +316,6 @@ describe("okou mcp command", () => {
             transport: "streamable-http",
             endpoint: "https://alpha-mcp.example.test/server",
             runtimeAvailable: false,
-            connected: false,
             connectionStatus: "connected",
             setupStatus: "complete",
             missingRequiredFields: [],
@@ -330,7 +329,6 @@ describe("okou mcp command", () => {
             transport: "streamable-http",
             endpoint: MCP_ENDPOINT,
             runtimeAvailable: true,
-            connected: true,
             connectionStatus: "connected",
             setupStatus: "complete",
             missingRequiredFields: [],
@@ -345,83 +343,15 @@ describe("okou mcp command", () => {
   });
 
   it.each([
-    {
-      label: "canonical unavailability despite connected management facts",
-      runtimeAvailable: false,
-      connected: true,
-      connectionStatus: "connected" as const,
-      setupStatus: "complete" as const,
-    },
-    {
-      label: "canonical availability despite invalid management setup",
-      runtimeAvailable: true,
-      connected: false,
-      connectionStatus: "reconnect-required" as const,
-      setupStatus: "invalid" as const,
-    },
-    {
-      label: "canonical availability without the legacy runtime field",
-      runtimeAvailable: true,
-      connected: undefined,
-      connectionStatus: "reconnect-required" as const,
-      setupStatus: "invalid" as const,
-    },
-  ])("reports $label for the exact admitted account", async (facts) => {
-    const metadata = Object.fromEntries(
-      Object.entries(runMcpConnector()).filter(([key]) => {
-        return key !== "connected" && key !== "runtimeAvailable";
-      }),
-    );
+    { runtimeAvailable: undefined },
+    { runtimeAvailable: "private-invalid-value" },
+    { runtimeAvailable: null },
+  ])("rejects missing or malformed runtime facts: %j", async (facts) => {
     server.use(
       http.get("http://localhost:3000/api/mcp-connectors", () => {
         return HttpResponse.json({
-          connectors: [
-            {
-              ...metadata,
-              runtimeAvailable: facts.runtimeAvailable,
-              ...(facts.connected === undefined
-                ? {}
-                : { connected: facts.connected }),
-              connectionStatus: facts.connectionStatus,
-              setupStatus: facts.setupStatus,
-              missingRequiredFields: [],
-              configuredFieldKeys: [],
-            },
-          ],
+          connectors: [{ ...runMcpConnector(), ...facts }],
         });
-      }),
-    );
-
-    await mcpCommand.parseAsync(["node", "okou", "list", "--json"]);
-
-    const json: unknown = JSON.parse(outputText(consoleLog));
-    expect(json).toMatchObject({
-      connectors: [
-        {
-          connectionId: "77777777-7777-4777-8777-777777777777",
-          target: { kind: "custom", customConnectorId: CONNECTOR_ID },
-          runtimeAvailable: facts.runtimeAvailable,
-          connected: facts.runtimeAvailable,
-          connectionStatus: facts.connectionStatus,
-          setupStatus: facts.setupStatus,
-        },
-      ],
-    });
-  });
-
-  it.each([
-    {},
-    { runtimeAvailable: "private-invalid-value", connected: true },
-    { runtimeAvailable: null, connected: true },
-  ])("rejects unavailable or malformed runtime facts: %j", async (facts) => {
-    const metadata = Object.fromEntries(
-      Object.entries(runMcpConnector()).filter(([key]) => {
-        return key !== "connected" && key !== "runtimeAvailable";
-      }),
-    );
-    server.use(
-      http.get("http://localhost:3000/api/mcp-connectors", () => {
-        return HttpResponse.json({ connectors: [{ ...metadata, ...facts }] });
       }),
     );
     await expect(
