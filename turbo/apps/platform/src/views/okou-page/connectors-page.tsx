@@ -16,8 +16,12 @@ import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/cu
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import {
+  connectorDirectoryPageSignals,
+  directoryCatalogItems$,
+  type DirectoryCardSignals,
+  type DirectoryCatalogItem,
+} from "../../signals/okou-page/settings/connector-directory-page.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { agents$ } from "../../signals/agent.ts";
@@ -35,23 +39,18 @@ import {
   connectorsScope$,
   setConnectorsScope$,
   showCreatedDirectoryConnector$,
-  type ConnectorsScope,
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   connectBuiltinConnectorNoAuthAndSettle$,
-  builtinConnectFlowSlug$,
   runBuiltinConnectorConnectSuccess$,
   connectorsSearch$,
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
-  filteredConnectorCatalogItems$,
   setConnectorsCategoryFilter$,
   setConnectorsConnectionFilter$,
   setConnectorsSearch$,
-  builtinPollingOAuthAuthCodeSlug$,
-  builtinPollingOAuthDeviceAuthSlug$,
   relatedCatalogItems$,
   builtinConnectorScopeReviewSelection$,
   setBuiltinConnectorScopeReviewSelection$,
@@ -80,7 +79,6 @@ import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import {
   ConnectorCard,
   connectorInventoryStatus,
-  type ConnectorInventoryStatus,
 } from "./components/settings/connector-card.tsx";
 import {
   ConnectorShelfChips,
@@ -100,7 +98,6 @@ import {
   closeConnectorAccessManagement$,
   connectorAuthorizedAgentsBySlug$,
   managedConnectorAccessSlug$,
-  setManagedConnectorAccessSlug$,
 } from "../../signals/okou-page/settings/connector-access-management.ts";
 import { noConnectorImg } from "./platform-assets.ts";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
@@ -118,10 +115,7 @@ import {
   SegmentControlItem,
 } from "@okouai/ui";
 import { i18n } from "../../i18n/index.ts";
-import {
-  connectedConnectorsBadge$,
-  connectedConnectorTargetKeys$,
-} from "../../signals/okou-page/connector-accounts.ts";
+import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountManagerDialog } from "./components/settings/connector-account-manager-dialog.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
@@ -131,7 +125,6 @@ import {
   closeBuiltinAccountManager$,
   finishConnectorAccountConnection$,
   openBuiltinAccountConnectDialog$,
-  openBuiltinAccountManager$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
 import { vncSummary$ } from "../../signals/vnc.ts";
@@ -172,13 +165,6 @@ function ConnectorFilterOption({
   );
 }
 
-interface ConnectorsScopeBadge {
-  readonly connected: number;
-  readonly custom: number;
-  readonly remoteControl: number;
-  readonly privateNetwork: number;
-}
-
 /** Configured resources determine whether a remote-access service is connected. */
 function configuredRemoteAccessResources(
   summary: Loadable<{ configuredCount: number } | null>,
@@ -206,25 +192,40 @@ function directoryCustomConnectors(
   };
 }
 
-/**
- * Before connector membership loads the segment says nothing rather than a zero it
- * would have to take back.
- */
-function connectorsScopeBadge(
-  loadable: Loadable<{
-    readonly count: number;
-  }>,
-  custom: number,
-  remoteControl: number,
-  privateNetwork: number,
-): ConnectorsScopeBadge {
-  const connected = loadable.state === "hasData" ? loadable.data : { count: 0 };
-  return {
-    connected: connected.count,
-    custom,
-    remoteControl,
-    privateNetwork,
-  };
+function ConnectedScopeCount() {
+  const count = useLastLoadable(connectorDirectoryPageSignals.connectedCount$);
+  return (
+    <ConnectorsScopeCount value={count.state === "hasData" ? count.data : 0} />
+  );
+}
+
+function CustomScopeCount() {
+  const count = useLastLoadable(connectorDirectoryPageSignals.customCount$);
+  return (
+    <ConnectorsScopeCount value={count.state === "hasData" ? count.data : 0} />
+  );
+}
+
+function RemoteControlScopeCount() {
+  const vncEnabled = useGet(connectorDirectoryPageSignals.vncEnabled$);
+  const ssh = useLoadable(sshSummary$);
+  // Keep the existing summary dependency even when VNC is not included in the count.
+  const vnc = useLoadable(vncSummary$);
+  return (
+    <ConnectorsScopeCount
+      value={
+        configuredRemoteAccessResources(ssh) +
+        (vncEnabled ? configuredRemoteAccessResources(vnc) : 0)
+      }
+    />
+  );
+}
+
+function PrivateNetworkScopeCount() {
+  const summary = useLoadable(cloudflareAccessSummary$);
+  return (
+    <ConnectorsScopeCount value={configuredRemoteAccessResources(summary)} />
+  );
 }
 
 /**
@@ -250,16 +251,10 @@ function ConnectorsScopeCount({ value }: { readonly value: number }) {
  * does not have to show that list to say it is there, and a warning dot when
  * one of those connections stopped working -- the one thing a count cannot say.
  */
-function ConnectorsScopeSegment({
-  scope,
-  setScope,
-  badge,
-}: {
-  readonly scope: ConnectorsScope;
-  readonly setScope: (value: ConnectorsScope) => void;
-  readonly badge: ConnectorsScopeBadge;
-}) {
+function ConnectorsScopeSegment() {
   const { t } = useTranslation();
+  const scope = useGet(connectorsScope$);
+  const setScope = useSet(setConnectorsScope$);
   return (
     <SegmentControl
       aria-label={t(($) => {
@@ -283,7 +278,7 @@ function ConnectorsScopeSegment({
         {t(($) => {
           return $.connectors.catalog.scope.connected;
         })}
-        <ConnectorsScopeCount value={badge.connected} />
+        <ConnectedScopeCount />
       </SegmentControlItem>
       <SegmentControlItem
         value="remote-control"
@@ -292,7 +287,7 @@ function ConnectorsScopeSegment({
         {t(($) => {
           return $.connectors.catalog.scope.remoteControl;
         })}
-        <ConnectorsScopeCount value={badge.remoteControl} />
+        <RemoteControlScopeCount />
       </SegmentControlItem>
       <SegmentControlItem
         value="private-network"
@@ -301,13 +296,13 @@ function ConnectorsScopeSegment({
         {t(($) => {
           return $.connectors.catalog.scope.privateNetwork;
         })}
-        <ConnectorsScopeCount value={badge.privateNetwork} />
+        <PrivateNetworkScopeCount />
       </SegmentControlItem>
       <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
         {t(($) => {
           return $.connectors.catalog.scope.custom;
         })}
-        <ConnectorsScopeCount value={badge.custom} />
+        <CustomScopeCount />
       </SegmentControlItem>
     </SegmentControl>
   );
@@ -367,16 +362,12 @@ function ConnectorFilterMenu({
  * them. Connection status is not offered because this scope is the connected
  * ones -- the question left to ask is which agent can reach them.
  */
-function ConnectorAgentFilterMenu({
-  agents,
-  value,
-  onChange,
-}: {
-  readonly agents: readonly AgentResponse[];
-  readonly value: ConnectorsConnectionFilter;
-  readonly onChange: (value: ConnectorsConnectionFilter) => void;
-}) {
+function ConnectorAgentFilterMenu() {
   const { t } = useTranslation();
+  const agentsLoadable = useLastLoadable(agents$);
+  const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
+  const value = useGet(connectorsConnectionFilter$);
+  const onChange = useSet(setConnectorsConnectionFilter$);
   const activeAgent =
     value.kind === "agent"
       ? agents.find((agent) => {
@@ -475,43 +466,7 @@ function ConnectorAgentFilterMenu({
  * filter slot holds one control and changes contents with the segment rather
  * than putting two dropdowns side by side.
  */
-function ConnectorsDirectoryToolbar({
-  scope,
-  setScope,
-  badge,
-  isAdmin,
-  agents,
-  connectionFilter,
-  setConnectionFilter,
-  search,
-  setSearch,
-  categories,
-  categoryCounts,
-  categoryFilter,
-  setCategoryFilter,
-}: {
-  readonly scope: ConnectorsScope;
-  readonly setScope: (value: ConnectorsScope) => void;
-  readonly badge: ConnectorsScopeBadge;
-  readonly isAdmin: boolean;
-  readonly agents: readonly AgentResponse[];
-  readonly connectionFilter: ConnectorsConnectionFilter;
-  readonly setConnectionFilter: (value: ConnectorsConnectionFilter) => void;
-  readonly search: string;
-  readonly setSearch: (value: string) => void;
-  readonly categories: readonly ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[];
-  readonly categoryCounts: Readonly<Record<string, number>> | undefined;
-  readonly categoryFilter: string | null;
-  readonly setCategoryFilter: (category: string | null) => void;
-}) {
-  const { t } = useTranslation();
-  const customScope = useGet(connectorDirectoryCustomScope$);
-  const active = categories.find((section) => {
-    return section.category === categoryFilter;
-  });
-  // Custom is a scope, and the segment above already names the open one. Only a
-  // category needs a trail, because a category is a place inside the catalog.
-  const breadcrumb = customScope ? undefined : active?.label;
+function ConnectorsDirectoryToolbar() {
   return (
     // The controls outlive the header: the title scrolls away and the scope and
     // the search stay reachable. The negative margins hand back the page's own
@@ -533,146 +488,173 @@ function ConnectorsDirectoryToolbar({
       <div className="relative isolate flex flex-col gap-3 pt-6">
         <WorkspaceCanvasBackdrop />
         <div className="flex items-center overflow-x-auto">
-          <ConnectorsScopeSegment
-            scope={scope}
-            setScope={setScope}
-            badge={badge}
-          />
+          <ConnectorsScopeSegment />
         </div>
-        {breadcrumb &&
-          scope !== "remote-control" &&
-          scope !== "private-network" && (
-            <ConnectorsBreadcrumb
-              label={breadcrumb}
-              onBack={() => {
-                setCategoryFilter(null);
-              }}
-            />
-          )}
-        {scope !== "remote-control" && scope !== "private-network" && (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative min-w-0 sm:flex-1">
-              <Search
-                size={15}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
-                aria-hidden="true"
-              />
-              <Input
-                type="text"
-                placeholder={t(($) => {
-                  return scope === "connected"
-                    ? $.connectors.catalog.scope.searchConnected
-                    : scope === "custom"
-                      ? $.connectors.catalog.scope.searchCustom
-                      : $.connectors.catalog.search;
-                })}
-                value={search}
-                onChange={(event) => {
-                  return setSearch(event.target.value);
-                }}
-                className="pl-9 pr-3"
-              />
-            </div>
-            {scope === "connected" ? (
-              <ConnectorAgentFilterMenu
-                agents={agents}
-                value={connectionFilter}
-                onChange={setConnectionFilter}
-              />
-            ) : scope === "custom" ? (
-              isAdmin && <NewCustomConnectorButton />
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-9 shrink-0 self-end gap-1.5"
-                      aria-label={t(($) => {
-                        return $.connectors.catalog.filters.aria;
-                      })}
-                    />
-                  }
-                >
-                  <Filter size={14} aria-hidden="true" />
-                  <span className="max-w-[160px] truncate">
-                    {t(
-                      ($) => {
-                        return $.connectors.catalog.filterWith;
-                      },
-                      {
-                        category:
-                          (customScope
-                            ? t(($) => {
-                                return $.connectors.catalog.directory.custom;
-                              })
-                            : active?.menuLabel) ??
-                          t(($) => {
-                            return $.connectors.catalog.filters.all;
-                          }),
-                      },
-                    )}
-                  </span>
-                  <ChevronDown size={14} aria-hidden="true" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
-                >
-                  <ConnectorFilterSectionLabel>
-                    {t(($) => {
-                      return $.connectors.catalog.directory.browse;
-                    })}
-                  </ConnectorFilterSectionLabel>
-                  <ConnectorFilterOption
-                    active={!customScope && categoryFilter === null}
-                    onSelect={() => {
-                      setCategoryFilter(null);
-                    }}
-                  >
-                    {t(($) => {
-                      return $.connectors.catalog.filters.all;
-                    })}
-                  </ConnectorFilterOption>
-                  <DropdownMenuSeparator />
-                  <ConnectorFilterSectionLabel>
-                    {t(($) => {
-                      return $.connectors.catalog.filterCategory;
-                    })}
-                  </ConnectorFilterSectionLabel>
-                  {categories.map((section) => {
-                    const total = categoryCounts?.[section.category];
-                    return (
-                      <ConnectorFilterOption
-                        key={section.category}
-                        active={categoryFilter === section.category}
-                        onSelect={() => {
-                          setCategoryFilter(section.category);
-                        }}
-                      >
-                        <span className="min-w-0 truncate">
-                          {section.menuLabel}
-                        </span>
-                        {total !== undefined && (
-                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
-                            {total}
-                          </span>
-                        )}
-                      </ConnectorFilterOption>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        )}
+        <DirectoryControlsPresence />
       </div>
       <div aria-hidden="true" className="relative isolate h-6">
         <WorkspaceCanvasBackdrop className="[-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)] [mask-image:linear-gradient(to_bottom,#000,transparent)]" />
       </div>
     </div>
   );
+}
+
+function DirectoryControlsPresence() {
+  const scope = useGet(connectorsScope$);
+  return scope === "remote-control" || scope === "private-network" ? null : (
+    <DirectoryControls />
+  );
+}
+
+function DirectoryControls() {
+  const { t } = useTranslation();
+  const scope = useGet(connectorsScope$);
+  const customScope = useGet(connectorDirectoryCustomScope$);
+  const search = useGet(connectorsSearch$);
+  const setSearch = useSet(setConnectorsSearch$);
+  const categoryFilter = useGet(connectorsCategoryFilter$);
+  const setCategoryFilter = useSet(setConnectorsCategoryFilter$);
+  const catalog = useLastLoadable(connectorCatalogDiscovery$);
+  const categoryCounts = discoveryCategoryCounts(catalog);
+  const categories = categoryFilterSections(
+    connectorCategoryLabels(Object.keys(categoryCounts ?? {})),
+    categoryCounts,
+  );
+  const active = categories.find((section) => {
+    return section.category === categoryFilter;
+  });
+  const breadcrumb = customScope ? undefined : active?.label;
+  return (
+    <>
+      {breadcrumb && (
+        <ConnectorsBreadcrumb
+          label={breadcrumb}
+          onBack={() => {
+            setCategoryFilter(null);
+          }}
+        />
+      )}
+      {scope !== "remote-control" && scope !== "private-network" && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 sm:flex-1">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
+              aria-hidden="true"
+            />
+            <Input
+              type="text"
+              placeholder={t(($) => {
+                return scope === "connected"
+                  ? $.connectors.catalog.scope.searchConnected
+                  : scope === "custom"
+                    ? $.connectors.catalog.scope.searchCustom
+                    : $.connectors.catalog.search;
+              })}
+              value={search}
+              onChange={(event) => {
+                return setSearch(event.target.value);
+              }}
+              className="pl-9 pr-3"
+            />
+          </div>
+          {scope === "connected" ? (
+            <ConnectorAgentFilterMenu />
+          ) : scope === "custom" ? (
+            <AdminNewCustomConnectorButton />
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 self-end gap-1.5"
+                    aria-label={t(($) => {
+                      return $.connectors.catalog.filters.aria;
+                    })}
+                  />
+                }
+              >
+                <Filter size={14} aria-hidden="true" />
+                <span className="max-w-[160px] truncate">
+                  {t(
+                    ($) => {
+                      return $.connectors.catalog.filterWith;
+                    },
+                    {
+                      category:
+                        (customScope
+                          ? t(($) => {
+                              return $.connectors.catalog.directory.custom;
+                            })
+                          : active?.menuLabel) ??
+                        t(($) => {
+                          return $.connectors.catalog.filters.all;
+                        }),
+                    },
+                  )}
+                </span>
+                <ChevronDown size={14} aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
+              >
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.directory.browse;
+                  })}
+                </ConnectorFilterSectionLabel>
+                <ConnectorFilterOption
+                  active={!customScope && categoryFilter === null}
+                  onSelect={() => {
+                    setCategoryFilter(null);
+                  }}
+                >
+                  {t(($) => {
+                    return $.connectors.catalog.filters.all;
+                  })}
+                </ConnectorFilterOption>
+                <DropdownMenuSeparator />
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.filterCategory;
+                  })}
+                </ConnectorFilterSectionLabel>
+                {categories.map((section) => {
+                  const total = categoryCounts?.[section.category];
+                  return (
+                    <ConnectorFilterOption
+                      key={section.category}
+                      active={categoryFilter === section.category}
+                      onSelect={() => {
+                        setCategoryFilter(section.category);
+                      }}
+                    >
+                      <span className="min-w-0 truncate">
+                        {section.menuLabel}
+                      </span>
+                      {total !== undefined && (
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
+                          {total}
+                        </span>
+                      )}
+                    </ConnectorFilterOption>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function AdminNewCustomConnectorButton() {
+  const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
+  return isAdmin ? <NewCustomConnectorButton /> : null;
 }
 
 /**
@@ -712,8 +694,8 @@ function ConnectorCategoryGroupSection({
   group,
   renderCard,
 }: {
-  group: ConnectorCategoryGroup<PlatformConnectorCatalogStatusItem>;
-  renderCard: (connector: PlatformConnectorCatalogStatusItem) => ReactNode;
+  group: ConnectorCategoryGroup<DirectoryCatalogItem>;
+  renderCard: (connector: DirectoryCatalogItem) => ReactNode;
 }) {
   if (group.kind === "group") {
     return (
@@ -781,10 +763,8 @@ function ConnectorCategoryGrid({
   connectors,
   renderCard,
 }: {
-  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
-  readonly renderCard: (
-    connector: PlatformConnectorCatalogStatusItem,
-  ) => ReactNode;
+  readonly connectors: readonly DirectoryCatalogItem[];
+  readonly renderCard: (connector: DirectoryCatalogItem) => ReactNode;
 }) {
   const bindGrid = useSet(bindConnectorCategoryGrid$);
   const metrics = useGet(connectorCategoryGridMetrics$);
@@ -827,10 +807,8 @@ function ConnectorShelfBrowse({
   layout,
   renderCard,
 }: {
-  readonly layout: ConnectorShelfLayout<PlatformConnectorCatalogStatusItem>;
-  readonly renderCard: (
-    connector: PlatformConnectorCatalogStatusItem,
-  ) => ReactNode;
+  readonly layout: ConnectorShelfLayout<DirectoryCatalogItem>;
+  readonly renderCard: (connector: DirectoryCatalogItem) => ReactNode;
 }) {
   const onOpenCategory = useSet(setConnectorsCategoryFilter$);
   return (
@@ -898,12 +876,8 @@ interface ConnectorsBrowseModel {
    * the cards alone rather than repeating the name in a group and a section
    * heading above them.
    */
-  readonly categoryConnectors:
-    readonly PlatformConnectorCatalogStatusItem[] | null;
-  readonly layout: ConnectorShelfLayout<PlatformConnectorCatalogStatusItem>;
-  readonly connected: readonly PlatformConnectorCatalogStatusItem[];
-  readonly chipSections: readonly ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[];
-  readonly categoryCounts: Readonly<Record<string, number>> | undefined;
+  readonly categoryConnectors: readonly DirectoryCatalogItem[] | null;
+  readonly layout: ConnectorShelfLayout<DirectoryCatalogItem>;
 }
 
 /**
@@ -914,7 +888,6 @@ interface ConnectorsBrowseModel {
  */
 function buildConnectorsBrowseModel({
   catalogItems,
-  connectedTargets,
   categoryMetadata,
   categoryCounts,
   otherCategoryLabel,
@@ -923,8 +896,7 @@ function buildConnectorsBrowseModel({
   categoryFilter,
   ready,
 }: {
-  readonly catalogItems: readonly PlatformConnectorCatalogStatusItem[];
-  readonly connectedTargets: ReadonlySet<string> | undefined;
+  readonly catalogItems: readonly DirectoryCatalogItem[];
   readonly categoryMetadata: ConnectorCategoryLabels;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly otherCategoryLabel: string;
@@ -935,8 +907,8 @@ function buildConnectorsBrowseModel({
 }): ConnectorsBrowseModel {
   const filtered = search.trim().length > 0 || categoryFilter !== null;
   const sectionsOf = (
-    items: readonly PlatformConnectorCatalogStatusItem[],
-  ): ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[] => {
+    items: readonly DirectoryCatalogItem[],
+  ): ConnectorCategorySection<DirectoryCatalogItem>[] => {
     return groupConnectorsByCategory(
       items,
       categoryMetadata,
@@ -949,22 +921,19 @@ function buildConnectorsBrowseModel({
   // result away. Inside a category that discarded pass groups and shelves the
   // whole category -- the largest holds over a thousand connectors -- on every
   // render of the page.
-  const layout = filtered
-    ? emptyConnectorShelfLayout<PlatformConnectorCatalogStatusItem>()
-    : buildConnectorShelves({
-        // Shelves cover the whole catalog, connected included: a connector this
-        // workspace already has is still the answer to "what talks to Slack",
-        // and its card says so by showing the account instead of an add button.
-        sections: sectionsOf(catalogItems),
-        categoryCounts,
-        headLabel,
-        // The page's card grid is three wide, so six is two whole rows.
-        previewSize: 6,
-      });
-  // The filter lists the catalog's categories, not the ones the current
-  // response happens to contain: inside a category the response holds only
-  // that category, and a filter that offers nothing else is a dead end.
-  const chipSections = categoryFilterSections(categoryMetadata, categoryCounts);
+  const layout =
+    !ready || filtered
+      ? emptyConnectorShelfLayout<DirectoryCatalogItem>()
+      : buildConnectorShelves({
+          // Shelves cover the whole catalog, connected included: a connector this
+          // workspace already has is still the answer to "what talks to Slack",
+          // and its card says so by showing the account instead of an add button.
+          sections: sectionsOf(catalogItems),
+          categoryCounts,
+          headLabel,
+          // The page's card grid is three wide, so six is two whole rows.
+          previewSize: 6,
+        });
   return {
     ready,
     // Shelves need something to shelve: a catalog too small for any category to
@@ -975,13 +944,6 @@ function buildConnectorsBrowseModel({
         ? catalogItems
         : null,
     layout,
-    connected: catalogItems.filter((connector) => {
-      return connectedTargets?.has(`builtin:${connector.slug}`) === true;
-    }),
-    // Chips come from the whole catalog, not the filtered view: a chip row
-    // that empties itself when you pick a chip cannot be used to pick another.
-    chipSections,
-    categoryCounts,
   };
 }
 
@@ -995,9 +957,7 @@ function ConnectorsBuiltinPanel({
   fallback,
 }: {
   readonly browse: ConnectorsBrowseModel;
-  readonly renderCard: (
-    connector: PlatformConnectorCatalogStatusItem,
-  ) => ReactNode;
+  readonly renderCard: (connector: DirectoryCatalogItem) => ReactNode;
   readonly fallback: ReactNode;
 }) {
   if (browse.showShelves) {
@@ -1064,8 +1024,8 @@ function renderBuiltinList({
   renderCard,
 }: {
   loadingState: "loading" | "hasData" | "hasError";
-  grouped: ConnectorCategoryGroup<PlatformConnectorCatalogStatusItem>[];
-  renderCard: (connector: PlatformConnectorCatalogStatusItem) => ReactNode;
+  grouped: ConnectorCategoryGroup<DirectoryCatalogItem>[];
+  renderCard: (connector: DirectoryCatalogItem) => ReactNode;
 }): ReactNode {
   if (loadingState !== "hasData") {
     return <ConnectorCardSkeletons />;
@@ -1079,35 +1039,6 @@ function renderBuiltinList({
       />
     );
   });
-}
-
-/**
- * Remote control and Private network have their own panels; Connected lists
- * what this workspace already has; Discover and Custom are the directory.
- */
-function ConnectorsPagePanels({
-  scope,
-  connectedPanel,
-  directoryPanel,
-  remoteControlPanel,
-  privateNetworkPanel,
-}: {
-  readonly scope: ConnectorsScope;
-  readonly connectedPanel: ReactNode;
-  readonly directoryPanel: ReactNode;
-  readonly remoteControlPanel: ReactNode;
-  readonly privateNetworkPanel: ReactNode;
-}) {
-  if (scope === "remote-control") {
-    return remoteControlPanel;
-  }
-  if (scope === "private-network") {
-    return privateNetworkPanel;
-  }
-  if (scope === "connected") {
-    return connectedPanel;
-  }
-  return directoryPanel;
 }
 
 /** The card grid before the catalog answers. */
@@ -1167,12 +1098,10 @@ function ConnectorsConnectedPanel({
   extraCount,
   accountsUnavailable = false,
 }: {
-  readonly connected: readonly PlatformConnectorCatalogStatusItem[];
+  readonly connected: readonly DirectoryCatalogItem[];
   readonly ready: boolean;
   readonly connectionFilter: ConnectorsConnectionFilter;
-  readonly renderCard: (
-    connector: PlatformConnectorCatalogStatusItem,
-  ) => ReactNode;
+  readonly renderCard: (connector: DirectoryCatalogItem) => ReactNode;
   readonly extras: ReactNode;
   readonly extraCount: number;
   readonly accountsUnavailable?: boolean;
@@ -1232,28 +1161,20 @@ function connectorLabelForSlug(
 }
 
 interface SettingsConnectorCardProps {
-  readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly hasAccounts: boolean;
-  readonly inventoryStatus: ConnectorInventoryStatus;
-  readonly busy: boolean;
-  readonly connect: ConnectorConnectHandlers;
-  readonly onManageAccounts: () => void;
-  readonly onManageAccess: () => void;
+  readonly signals: DirectoryCardSignals;
 }
 
-interface ConnectorCatalogHeaderProps {
-  readonly connectorCatalogCount: number | null;
-}
-
-function ConnectorCatalogHeader(props: ConnectorCatalogHeaderProps) {
+function ConnectorCatalogHeader() {
   const { t } = useTranslation();
+  const count = useLastLoadable(connectorDirectoryPageSignals.catalogCount$);
+  const connectorCatalogCount = count.state === "hasData" ? count.data : null;
   const description =
-    props.connectorCatalogCount !== null
+    connectorCatalogCount !== null
       ? t(
           ($) => {
             return $.connectors.catalog.descriptionWithCount;
           },
-          { value: formatLocalizedNumber(props.connectorCatalogCount) },
+          { value: formatLocalizedNumber(connectorCatalogCount) },
         )
       : t(($) => {
           return $.connectors.catalog.description;
@@ -1274,39 +1195,57 @@ function ConnectorCatalogHeader(props: ConnectorCatalogHeaderProps) {
   );
 }
 
-function SettingsConnectorCard(props: SettingsConnectorCardProps) {
-  const manageAccess = (
+function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
+  const connector = signals.connector;
+  const targets = useLastLoadable(signals.targets$);
+  const hasAccounts =
+    targets.state === "hasData" &&
+    targets.data.has(`builtin:${connector.slug}`);
+  const inventoryStatus = connectorInventoryStatus(targets.state);
+  const busy = useGet(signals.busy$);
+  const accountConnectHandlers = useBuiltinConnectorConnectHandlers();
+  const openAccountManager = useSet(signals.openAccountManager$);
+  const manageAccess = useSet(signals.manageAccess$);
+  const accessButton = (
     <ConnectorAccessButton
-      connectorSlug={props.connector.slug}
-      connectorLabel={props.connector.label}
-      allowAccessIncrease={
-        props.inventoryStatus === "ready" && props.hasAccounts
-      }
-      onClick={props.onManageAccess}
+      connectorSlug={connector.slug}
+      connectorLabel={connector.label}
+      allowAccessIncrease={inventoryStatus === "ready" && hasAccounts}
+      onClick={manageAccess}
     />
   );
   return (
     <ConnectorCard
       variant="accounts"
-      connector={props.connector}
-      hasAccounts={props.hasAccounts}
-      inventoryStatus={props.inventoryStatus}
-      busy={props.busy}
-      connect={props.connect}
-      onManage={props.onManageAccounts}
-      manageAccess={manageAccess}
+      connector={connector}
+      hasAccounts={hasAccounts}
+      inventoryStatus={inventoryStatus}
+      busy={busy}
+      connect={accountConnectHandlers(connector)}
+      onManage={openAccountManager}
+      manageAccess={accessButton}
     />
   );
 }
 
 function ManagedConnectorAccessDialog() {
   const connectorSlug = useGet(managedConnectorAccessSlug$);
+  return connectorSlug ? (
+    <ManagedConnectorAccessDialogBody connectorSlug={connectorSlug} />
+  ) : null;
+}
+
+function ManagedConnectorAccessDialogBody({
+  connectorSlug,
+}: {
+  readonly connectorSlug: ConnectorSlug;
+}) {
   const close = useSet(closeConnectorAccessManagement$);
   const catalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
   const connectedTargetsLoadable = useLastLoadable(
     connectedConnectorTargetKeys$,
   );
-  if (!connectorSlug || catalogItemsLoadable.state !== "hasData") {
+  if (catalogItemsLoadable.state !== "hasData") {
     return null;
   }
   const connectorLabel = connectorLabelForSlug(
@@ -1330,92 +1269,16 @@ function ManagedConnectorAccessDialog() {
   );
 }
 
-export function ConnectorsPage() {
-  const { t } = useTranslation();
-  const vncEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.VncAccess] === true;
-  const relatedCatalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
-  const filteredCatalogItemsLoadable = useLoadable(
-    filteredConnectorCatalogItems$,
-  );
-  const sshSummary = useLoadable(sshSummary$);
-  const vncSummary = useLoadable(vncSummary$);
-  const cloudflareAccessSummary = useLoadable(cloudflareAccessSummary$);
-  const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
-  const connectedTargetsLoadable = useLastLoadable(
-    connectedConnectorTargetKeys$,
-  );
-  const inventoryStatus = connectorInventoryStatus(
-    connectedTargetsLoadable.state,
-  );
+function useBuiltinConnectorConnectHandlers() {
   const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
-  const managedAccountConnector = useGet(builtinAccountManager$);
-  const accountConnect = useGet(builtinAccountConnectDialog$);
-  const openAccountManager = useSet(openBuiltinAccountManager$);
-  const closeAccountManager = useSet(closeBuiltinAccountManager$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
-  const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
-  const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuthAndSettle$);
   const signal = useGet(pageSignal$);
-  const scopeReviewSelection = useGet(builtinConnectorScopeReviewSelection$);
-  const setScopeReviewSelection = useSet(
-    setBuiltinConnectorScopeReviewSelection$,
-  );
-  const setManagedConnectorSlug = useSet(setManagedConnectorAccessSlug$);
-  const scope = useGet(connectorsScope$);
-  const setScope = useSet(setConnectorsScope$);
-  const showCreated = useSet(showCreatedDirectoryConnector$);
-  const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
-
-  const search = useGet(connectorsSearch$);
-  const setSearch = useSet(setConnectorsSearch$);
-  const connectionFilter = useGet(connectorsConnectionFilter$);
-  const setConnectionFilter = useSet(setConnectorsConnectionFilter$);
-  const categoryFilter = useGet(connectorsCategoryFilter$);
-  const setCategoryFilter = useSet(setConnectorsCategoryFilter$);
-  const connectedBadge = useLastLoadable(connectedConnectorsBadge$);
-  const custom = directoryCustomConnectors(
-    useLastLoadable(filteredDirectoryCustomConnectors$),
-    connectedTargetsLoadable,
-  );
-  const scopeBadge = connectorsScopeBadge(
-    connectedBadge,
-    custom.all.length,
-    configuredRemoteAccessResources(sshSummary) +
-      (vncEnabled ? configuredRemoteAccessResources(vncSummary) : 0),
-    configuredRemoteAccessResources(cloudflareAccessSummary),
-  );
-  const agentsLoadable = useLastLoadable(agents$);
-  const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
-
-  const filteredConnectors =
-    filteredCatalogItemsLoadable.state === "hasData"
-      ? filteredCatalogItemsLoadable.data
-      : [];
-  const connectorCatalogCount =
-    catalogStatusLoadable.state === "hasData"
-      ? catalogStatusLoadable.data.totalConnectorCount
-      : null;
-  // Category ids come from the whole catalog's counts and the connectors on
-  // screen; the catalog carries no category names.
-  const categoryMetadata = connectorCategoryLabels([
-    ...Object.keys(discoveryCategoryCounts(catalogStatusLoadable) ?? {}),
-    ...filteredConnectors.map((connector) => {
-      return connector.category;
-    }),
-  ]);
-  const allConnectors =
-    relatedCatalogItemsLoadable.state === "hasData"
-      ? relatedCatalogItemsLoadable.data
-      : [];
   const finishExplicitAccountAdd = async (
     connector: PlatformConnectorCatalogStatusItem,
-    connectionId: string | null,
+    connectionId: string,
     attemptSignal: AbortSignal,
   ): Promise<void> => {
     await runConnectSuccess(
@@ -1489,42 +1352,40 @@ export function ConnectorsPage() {
     };
   };
 
-  const renderCard = (c: PlatformConnectorCatalogStatusItem) => {
-    const isPolling =
-      pollingAuthCodeSlug === c.slug ||
-      pollingDeviceAuthSlug === c.slug ||
-      connectFlowSlug === c.slug;
-    const hasAccount =
-      connectedTargetsLoadable.state === "hasData"
-        ? connectedTargetsLoadable.data.has(`builtin:${c.slug}`)
-        : undefined;
-    return (
-      <SettingsConnectorCard
-        key={c.slug}
-        connector={c}
-        hasAccounts={hasAccount === true}
-        inventoryStatus={inventoryStatus}
-        busy={isPolling}
-        connect={accountConnectHandlers(c)}
-        onManageAccounts={() => {
-          return openAccountManager(c, signal);
-        }}
-        onManageAccess={() => {
-          return setManagedConnectorSlug(c.slug);
-        }}
-      />
-    );
-  };
+  return accountConnectHandlers;
+}
 
+function renderDirectoryCard(connector: DirectoryCatalogItem) {
+  return (
+    <SettingsConnectorCard
+      key={connector.slug}
+      signals={connector.directorySignals}
+    />
+  );
+}
+
+/** Only the discovery content builds shelves and category groups. */
+function BuiltinDirectoryPanel() {
+  const { t } = useTranslation();
+  const filteredCatalogItemsLoadable = useLoadable(directoryCatalogItems$);
+  const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
+  const search = useGet(connectorsSearch$);
+  const categoryFilter = useGet(connectorsCategoryFilter$);
+  const filteredConnectors =
+    filteredCatalogItemsLoadable.state === "hasData"
+      ? filteredCatalogItemsLoadable.data
+      : [];
+  const categoryMetadata = connectorCategoryLabels([
+    ...Object.keys(discoveryCategoryCounts(catalogStatusLoadable) ?? {}),
+    ...filteredConnectors.map((connector) => {
+      return connector.category;
+    }),
+  ]);
   const otherCategoryLabel = t(($) => {
     return $.connectors.catalog.otherCategory;
   });
   const browse = buildConnectorsBrowseModel({
     catalogItems: filteredConnectors,
-    connectedTargets:
-      connectedTargetsLoadable.state === "hasData"
-        ? connectedTargetsLoadable.data
-        : undefined,
     categoryMetadata,
     categoryCounts: discoveryCategoryCounts(catalogStatusLoadable),
     otherCategoryLabel,
@@ -1536,28 +1397,102 @@ export function ConnectorsPage() {
     ready: filteredCatalogItemsLoadable.state === "hasData",
   });
 
-  const builtinList = renderBuiltinList({
-    loadingState: filteredCatalogItemsLoadable.state,
-    grouped: groupConnectorsByCategory(
-      filteredConnectors,
-      categoryMetadata,
-      otherCategoryLabel,
-    ),
-    renderCard,
-  });
-  const builtinPanel = (
+  return (
     <ConnectorsBuiltinPanel
       browse={browse}
-      renderCard={renderCard}
-      fallback={builtinList}
+      renderCard={renderDirectoryCard}
+      fallback={<BuiltinDirectoryFallback />}
     />
   );
+}
+
+function BuiltinDirectoryFallback() {
+  const { t } = useTranslation();
+  const catalog = useLoadable(directoryCatalogItems$);
+  const discovery = useLastLoadable(connectorCatalogDiscovery$);
+  if (catalog.state !== "hasData") {
+    return <ConnectorCardSkeletons />;
+  }
+  const metadata = connectorCategoryLabels([
+    ...Object.keys(discoveryCategoryCounts(discovery) ?? {}),
+    ...catalog.data.map((connector) => {
+      return connector.category;
+    }),
+  ]);
+  return renderBuiltinList({
+    loadingState: catalog.state,
+    grouped: groupConnectorsByCategory(
+      catalog.data,
+      metadata,
+      t(($) => {
+        return $.connectors.catalog.otherCategory;
+      }),
+    ),
+    renderCard: renderDirectoryCard,
+  });
+}
+
+function ConnectedDirectoryPanel() {
+  const catalog = useLoadable(directoryCatalogItems$);
+  const targets = useLastLoadable(connectedConnectorTargetKeys$);
+  const inventoryStatus = connectorInventoryStatus(targets.state);
+  const connectionFilter = useGet(connectorsConnectionFilter$);
+  const custom = directoryCustomConnectors(
+    useLastLoadable(filteredDirectoryCustomConnectors$),
+    targets,
+  );
+  const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
+  const connected =
+    catalog.state === "hasData"
+      ? catalog.data.filter((connector) => {
+          return (
+            targets.state === "hasData" &&
+            targets.data.has(`builtin:${connector.slug}`)
+          );
+        })
+      : [];
+  return (
+    <ConnectorsConnectedPanel
+      connected={connected}
+      ready={catalog.state === "hasData" && inventoryStatus !== "loading"}
+      accountsUnavailable={inventoryStatus === "unavailable"}
+      connectionFilter={connectionFilter}
+      renderCard={renderDirectoryCard}
+      extraCount={custom.connected.length}
+      extras={
+        custom.connected.length > 0 ? (
+          <CustomConnectorGrid
+            connectors={custom.connected}
+            isAdmin={isAdmin}
+            className="contents"
+          />
+        ) : null
+      }
+    />
+  );
+}
+
+function ConnectorsCurrentScopeContent() {
+  const scope = useGet(connectorsScope$);
+  if (scope === "remote-control") {
+    return <RemoteControlPanel />;
+  }
+  if (scope === "private-network") {
+    return <PrivateNetworkPanel />;
+  }
+  if (scope === "connected") {
+    return <ConnectedDirectoryPanel />;
+  }
+  return <ConnectorsDirectoryContent builtin={<BuiltinDirectoryPanel />} />;
+}
+
+export function ConnectorsPage() {
   return (
     <div
       data-testid="connectors-scroll-viewport"
       className="flex flex-1 flex-col min-h-0 overflow-auto [scrollbar-gutter:stable]"
     >
-      <ConnectorCatalogHeader connectorCatalogCount={connectorCatalogCount} />
+      <ConnectorCatalogHeader />
 
       <main
         data-testid="connectors-scroll-content"
@@ -1565,158 +1500,159 @@ export function ConnectorsPage() {
       >
         <div className="relative mx-auto w-full max-w-[900px]">
           <div className="min-w-0 flex w-full max-w-[900px] flex-col gap-6">
-            <ConnectorsDirectoryToolbar
-              scope={scope}
-              setScope={setScope}
-              badge={scopeBadge}
-              isAdmin={isAdmin}
-              agents={agents}
-              connectionFilter={connectionFilter}
-              setConnectionFilter={setConnectionFilter}
-              search={search}
-              setSearch={setSearch}
-              categories={browse.chipSections}
-              categoryCounts={browse.categoryCounts}
-              categoryFilter={categoryFilter}
-              setCategoryFilter={setCategoryFilter}
-            />
-
-            <ConnectorsPagePanels
-              scope={scope}
-              connectedPanel={
-                <ConnectorsConnectedPanel
-                  connected={browse.connected}
-                  ready={browse.ready && inventoryStatus !== "loading"}
-                  accountsUnavailable={inventoryStatus === "unavailable"}
-                  connectionFilter={connectionFilter}
-                  renderCard={renderCard}
-                  extraCount={custom.connected.length}
-                  extras={
-                    custom.connected.length > 0 ? (
-                      <CustomConnectorGrid
-                        connectors={custom.connected}
-                        isAdmin={isAdmin}
-                        className="contents"
-                      />
-                    ) : null
-                  }
-                />
-              }
-              remoteControlPanel={
-                <RemoteControlPanel vncEnabled={vncEnabled} />
-              }
-              privateNetworkPanel={<PrivateNetworkPanel />}
-              directoryPanel={
-                <ConnectorsDirectoryContent
-                  builtin={builtinPanel}
-                  builtinState={filteredCatalogItemsLoadable.state}
-                  builtinCount={filteredConnectors.length}
-                />
-              }
-            />
+            <ConnectorsDirectoryToolbar />
+            <ConnectorsCurrentScopeContent />
           </div>
         </div>
       </main>
 
-      {accountConnect && (
-        <ConnectModal
-          item={accountConnect.connector}
-          authorizeVisibleAgentsOnConnect
-          accountMode={accountConnect.mode}
-          accountOptions={{
-            account:
-              accountConnect.mode.kind === "add"
-                ? { intent: "add" }
-                : {
-                    intent: "reconnect",
-                    connectionId: accountConnect.mode.connectionId,
-                  },
-          }}
-          onClose={() => {
-            closeAccountConnect();
-          }}
-          onSuccess={async (connectionId, attemptSignal) => {
-            await finishAccountConnection(
-              {
-                target: {
-                  kind: "builtin",
-                  connectorSlug: accountConnect.connector.slug,
-                },
-                connectionId,
-                connectorLabel: accountConnect.connector.label,
-                mode: accountConnect.mode,
-              },
-              attemptSignal,
-            );
-          }}
-        />
-      )}
-
-      {managedAccountConnector && (
-        <ConnectorAccountManagerDialog
-          target={{
-            kind: "builtin",
-            connectorSlug: managedAccountConnector.slug,
-          }}
-          connectorLabel={managedAccountConnector.label}
-          icon={<ConnectorIcon icon={managedAccountConnector.icon} size={20} />}
-          onClose={() => {
-            closeAccountManager();
-          }}
-          onAdd={() => {
-            closeAccountManager();
-            launchConnectorConnect({
-              connector: managedAccountConnector,
-              ...accountConnectHandlers(managedAccountConnector),
-            });
-          }}
-          onReconnect={(account) => {
-            openAccountConnect(managedAccountConnector, {
-              kind: "reconnect",
-              connectionId: account.id,
-              authMethod: account.authMethod,
-            });
-          }}
-          onReviewScopes={(account) => {
-            closeAccountManager();
-            setScopeReviewSelection({
-              connectorSlug: managedAccountConnector.slug,
-              connectionId: account.id,
-              authMethod: account.authMethod,
-            });
-          }}
-        />
-      )}
-
-      {scopeReviewSelection && (
-        <ScopeReviewModal
-          selection={scopeReviewSelection}
-          onClose={() => {
-            return setScopeReviewSelection(null);
-          }}
-          onReconnect={(selection) => {
-            setScopeReviewSelection(null);
-            const connector = allConnectors.find((connector) => {
-              return connector.slug === selection.connectorSlug;
-            });
-            if (connector) {
-              openAccountConnect(connector, {
-                kind: "reconnect",
-                connectionId: selection.connectionId,
-                authMethod: selection.authMethod,
-              });
-            }
-          }}
-        />
-      )}
-      <CustomConnectorDirectoryDialogs
-        onCreated={(connector) => {
-          showCreated(connector.id);
-        }}
-      />
+      <BuiltinAccountConnectDialog />
+      <BuiltinAccountManagerDialog />
+      <BuiltinScopeReviewDialog />
+      <DirectoryCustomDialogs />
       <ConnectorAccountNameDialog />
-
       <ManagedConnectorAccessDialog />
     </div>
+  );
+}
+
+function BuiltinAccountConnectDialog() {
+  const accountConnect = useGet(builtinAccountConnectDialog$);
+  const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
+  const finishAccountConnection = useSet(finishConnectorAccountConnection$);
+  return accountConnect ? (
+    <ConnectModal
+      item={accountConnect.connector}
+      authorizeVisibleAgentsOnConnect
+      accountMode={accountConnect.mode}
+      accountOptions={{
+        account:
+          accountConnect.mode.kind === "add"
+            ? { intent: "add" }
+            : {
+                intent: "reconnect",
+                connectionId: accountConnect.mode.connectionId,
+              },
+      }}
+      onClose={() => {
+        closeAccountConnect();
+      }}
+      onSuccess={async (connectionId, attemptSignal) => {
+        await finishAccountConnection(
+          {
+            target: {
+              kind: "builtin",
+              connectorSlug: accountConnect.connector.slug,
+            },
+            connectionId,
+            connectorLabel: accountConnect.connector.label,
+            mode: accountConnect.mode,
+          },
+          attemptSignal,
+        );
+      }}
+    />
+  ) : null;
+}
+
+function BuiltinAccountManagerDialog() {
+  const managedAccountConnector = useGet(builtinAccountManager$);
+  return managedAccountConnector ? (
+    <BuiltinAccountManagerBody connector={managedAccountConnector} />
+  ) : null;
+}
+
+function BuiltinAccountManagerBody({
+  connector: managedAccountConnector,
+}: {
+  readonly connector: PlatformConnectorCatalogStatusItem;
+}) {
+  const closeAccountManager = useSet(closeBuiltinAccountManager$);
+  const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
+  const setScopeReviewSelection = useSet(
+    setBuiltinConnectorScopeReviewSelection$,
+  );
+  const accountConnectHandlers = useBuiltinConnectorConnectHandlers();
+  return (
+    <ConnectorAccountManagerDialog
+      target={{
+        kind: "builtin",
+        connectorSlug: managedAccountConnector.slug,
+      }}
+      connectorLabel={managedAccountConnector.label}
+      icon={<ConnectorIcon icon={managedAccountConnector.icon} size={20} />}
+      onClose={() => {
+        closeAccountManager();
+      }}
+      onAdd={() => {
+        closeAccountManager();
+        launchConnectorConnect({
+          connector: managedAccountConnector,
+          ...accountConnectHandlers(managedAccountConnector),
+        });
+      }}
+      onReconnect={(account) => {
+        openAccountConnect(managedAccountConnector, {
+          kind: "reconnect",
+          connectionId: account.id,
+          authMethod: account.authMethod,
+        });
+      }}
+      onReviewScopes={(account) => {
+        closeAccountManager();
+        setScopeReviewSelection({
+          connectorSlug: managedAccountConnector.slug,
+          connectionId: account.id,
+          authMethod: account.authMethod,
+        });
+      }}
+    />
+  );
+}
+
+function BuiltinScopeReviewDialog() {
+  const selection = useGet(builtinConnectorScopeReviewSelection$);
+  return selection ? <BuiltinScopeReviewBody /> : null;
+}
+
+function BuiltinScopeReviewBody() {
+  const scopeReviewSelection = useGet(builtinConnectorScopeReviewSelection$);
+  const setScopeReviewSelection = useSet(
+    setBuiltinConnectorScopeReviewSelection$,
+  );
+  const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
+  const catalog = useLastLoadable(relatedCatalogItems$);
+  const allConnectors = catalog.state === "hasData" ? catalog.data : [];
+  return scopeReviewSelection ? (
+    <ScopeReviewModal
+      selection={scopeReviewSelection}
+      onClose={() => {
+        return setScopeReviewSelection(null);
+      }}
+      onReconnect={(selection) => {
+        setScopeReviewSelection(null);
+        const connector = allConnectors.find((connector) => {
+          return connector.slug === selection.connectorSlug;
+        });
+        if (connector) {
+          openAccountConnect(connector, {
+            kind: "reconnect",
+            connectionId: selection.connectionId,
+            authMethod: selection.authMethod,
+          });
+        }
+      }}
+    />
+  ) : null;
+}
+
+function DirectoryCustomDialogs() {
+  const showCreated = useSet(showCreatedDirectoryConnector$);
+  return (
+    <CustomConnectorDirectoryDialogs
+      onCreated={(connector) => {
+        showCreated(connector.id);
+      }}
+    />
   );
 }

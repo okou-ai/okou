@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
@@ -12,15 +13,16 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { nowDate } from "../../../lib/time.ts";
 import {
   builtinConnector,
-  installComposerConnectorFixture,
   OTHER_AGENT_ID,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
-import {
-  context,
-  findFastControl,
-} from "./chat-message-experience-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
 const SLACK_SLUG = "slack" as ConnectorSlug;

@@ -1,0 +1,68 @@
+name: iOS Build Cache
+
+# Seed shared native caches from a trusted main dispatch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-cache-main
+  cancel-in-progress: true
+
+env:
+  npm_config_audit: "false"
+  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+  IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+  IOS_BUILD_CACHE_ENABLED: "true"
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: http.version
+  GIT_CONFIG_VALUE_0: HTTP/1.1
+
+jobs:
+  dependencies:
+    if: github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore native cache
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          restore-compilation: "false"
+      - name: Prepare locked dependencies
+        if: steps.cache.outputs.dependencies-hit != 'true'
+        run: bash ios/scripts/ci-test.sh prepare
+      - name: Save main SwiftPM cache
+        if: steps.cache.outputs.dependencies-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/okou-ios-ci/SourcePackages
+          key: ${{ steps.cache.outputs.dependencies-key }}
+
+  compilation:
+    needs: dependencies
+    if: github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore native cache
+        id: cache
+        uses: ./.github/actions/setup-ios-build-cache
+      - name: Prepare simulator and compiler cache
+        if: steps.cache.outputs.compilation-hit != 'true'
+        run: |
+          sysctl hw.ncpu hw.memsize
+          vm_stat
+          python3 ios/scripts/preboot-simulator.py
+          bash ios/scripts/ci-test.sh build
+          vm_stat
+      - name: Save main Xcode compilation cache
+        if: steps.cache.outputs.compilation-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/okou-ios-ci/DerivedData/CompilationCache.noindex
+          key: ${{ steps.cache.outputs.compilation-key }}

@@ -1,17 +1,20 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  context,
   findButton,
   FIRST_CAPABILITY_RUN_ID,
-  installCapabilityChat,
   readyChat,
   RUN_PATH,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import { promptEvent } from "./chat-run-test-fixtures.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 function installProviderFailure(error: string): void {
   const events: MockChatEventInput[] = [

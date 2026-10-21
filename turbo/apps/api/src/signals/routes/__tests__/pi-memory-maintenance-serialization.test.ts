@@ -86,15 +86,14 @@ describe("Serial private Pi maintenance", () => {
     },
   );
 
-  it.each(
-    ["published", "no-diff"].flatMap((outcome) => {
-      return ["active replay", "finalized replay", "expired authority"].map(
-        (phase) => {
-          return { outcome, phase };
-        },
-      );
-    }),
-  )(
+  // Credential expiry is checked before the publication result is inspected.
+  it.each([
+    { outcome: "published", phase: "active replay" },
+    { outcome: "no-diff", phase: "active replay" },
+    { outcome: "published", phase: "finalized replay" },
+    { outcome: "no-diff", phase: "finalized replay" },
+    { outcome: "published", phase: "expired authority" },
+  ])(
     "keeps the $outcome result consistent during $phase",
     async ({ outcome, phase }) => {
       const run = await prepareMaintenance();

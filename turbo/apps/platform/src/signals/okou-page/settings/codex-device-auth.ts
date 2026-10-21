@@ -12,12 +12,7 @@ import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { brandName$, type BrandName } from "../../branding.ts";
-import {
-  bestEffort,
-  resetSignal,
-  waitLoopUntil,
-  withCleanup,
-} from "../../utils.ts";
+import { resetSignal, waitLoopUntil, withCleanup } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type CodexDeviceAuthDialogMode = "connect" | "reconnect";
@@ -408,7 +403,7 @@ function createCodexClose$(ctx: CodexDeviceAuthSignalContext) {
       return;
     }
 
-    await bestEffort(set(cancelCodexDeviceAuth$, sessionToken, signal), signal);
+    await set(cancelCodexDeviceAuth$, sessionToken, signal);
     signal.throwIfAborted();
   });
 }

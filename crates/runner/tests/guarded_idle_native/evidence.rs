@@ -1,7 +1,5 @@
 //! Native receipts complement, rather than replace, the owned-command collector.
 
-use std::io::Read;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,9 +7,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use sandbox::SandboxBackingProcess;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 use super::{TestResult, io};
+
+mod artifact_digest;
 
 pub const PREFIX: &str = "NATIVE_TERMINAL_RECEIPT ";
 const PRESSURE_PREFIX: &str = "NATIVE_PRESSURE_WITNESS ";
@@ -130,54 +129,7 @@ pub fn verify_file(path: &Path, expected: &str) -> TestResult<()> {
     Ok(())
 }
 
-pub(super) fn file_sha256(path: &Path) -> TestResult<String> {
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
-    let before = file.metadata()?;
-    if !before.file_type().is_file() {
-        return Err(io::Error::other("native artifact is not a regular file").into());
-    }
-    let limit = before
-        .len()
-        .checked_add(1)
-        .ok_or_else(|| io::Error::other("native artifact length overflow"))?;
-    let mut reader = (&mut file).take(limit);
-    let mut hash = Sha256::new();
-    let mut buffer = vec![0; 1024 * 1024];
-    let mut total = 0_u64;
-    loop {
-        let count = reader.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        total += count as u64;
-        hash.update(
-            buffer
-                .get(..count)
-                .ok_or_else(|| io::Error::other("invalid native read count"))?,
-        );
-    }
-    let after = file.metadata()?;
-    if total != before.len()
-        || before.len() != after.len()
-        || (
-            before.mtime(),
-            before.mtime_nsec(),
-            before.ctime(),
-            before.ctime_nsec(),
-        ) != (
-            after.mtime(),
-            after.mtime_nsec(),
-            after.ctime(),
-            after.ctime_nsec(),
-        )
-    {
-        return Err(io::Error::other("native artifact changed while hashing").into());
-    }
-    Ok(hex::encode(hash.finalize()))
-}
+pub(super) use artifact_digest::file_sha256;
 
 /// CLOCK_MONOTONIC matches P1's monotonic_ns; wall time is supplementary.
 pub(super) fn clocks() -> io::Result<(u64, u128)> {

@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -12,16 +13,16 @@ import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   AGENT_ID,
-  context,
   expectInlineTemplate,
-  mockTemplateChat,
   sendComposerMessage,
   templatePart,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
-import {
-  buildRunModel,
-  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-} from "./chat-composer-test-helpers.ts";
+import { CLAUDE_SUBSCRIPTION_PROVIDER_ID } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 function buttonNamed(name: string, container: ParentNode = document.body) {
   const button = queryAllByRoleFast("button", container).find((candidate) => {

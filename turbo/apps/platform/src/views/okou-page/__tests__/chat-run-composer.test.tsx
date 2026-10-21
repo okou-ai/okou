@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { screen, waitFor } from "@testing-library/react";
@@ -6,22 +7,25 @@ import { expect, test } from "vitest";
 
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import {
-  mockPushBrowserSupport,
   setupPage,
+  createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
-  context,
   expectTextOrder,
   findButton,
   findEnabledButton,
-  installRunChat,
   NEW_CHAT_PATH,
   promptEvent,
   readyChat,
   RUN_PATH,
   sendText,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { mockPushBrowserSupport } = createChatLifecycleHelpers(context);
+const { installRunChat } = createChatRunFixtures(context);
 
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000501";
 

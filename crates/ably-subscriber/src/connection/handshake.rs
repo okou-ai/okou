@@ -196,10 +196,11 @@ pub(crate) async fn connect_and_attach(
     token: TokenDetails,
     channel: &str,
     channel_params: Option<&HashMap<String, String>>,
+    heartbeat_interval: Option<std::time::Duration>,
     timing: &TimingConfig,
     close_tracker: TransportCloseTracker,
 ) -> Result<(WsTransport, ConnState), Error> {
-    let ws_url = build_ws_url(realtime_host, &token.token, None)?;
+    let ws_url = build_ws_url(realtime_host, &token.token, None, heartbeat_interval)?;
     let mut transport = connect_pending(&ws_url, timing.close_timeout, close_tracker).await?;
     let connected_msg = wait_for_connected(&mut transport).await?;
     let mut conn_state = ConnState::from_connected(&connected_msg, token, timing);

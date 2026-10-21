@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
@@ -7,20 +8,22 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
-import { buildRunModel } from "./chat-composer-test-helpers.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
 import {
   closeModelPanel,
   openModelPanel,
 } from "./chat-model-panel-test-helpers.ts";
 import {
-  context,
   findButton,
-  installRunChat,
   NEW_CHAT_PATH,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 const MODEL = "gpt-6.1-sol";
 

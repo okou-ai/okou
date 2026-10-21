@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.236.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.5...runner-rs-v0.236.6) (2026-10-21)
+
+
+### Refactoring
+
+* **runner:** retire scheduling history generation identity ([#41998](https://github.com/okou-ai/okou/issues/41998)) ([39dbd2a](https://github.com/okou-ai/okou/commit/39dbd2a10242e3e1d9241d8b81c034258f10f842))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.4...runner-rs-v0.236.5) (2026-10-21)
 
 ### Release Dependencies

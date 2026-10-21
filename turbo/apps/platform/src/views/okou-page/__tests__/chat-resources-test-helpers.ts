@@ -2,11 +2,16 @@ import {
   artifactCatalogContract,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
+import {
+  userPreferencesContract,
+  type UpdateUserPreferencesRequest,
+  type UserPreferencesResponse,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifactSummary,
   fileArtifactDetail,
@@ -15,7 +20,23 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
-export const context = testContext();
+export function createChatResourcesHelpers(context: TestContext) {
+  return {
+    recordPreferenceUpdates: (enabled: boolean, hold?: Promise<void>) => {
+      return recordPreferenceUpdates(context, enabled, hold);
+    },
+    setupResources: (options?: Parameters<typeof setupResources>[1]) => {
+      return setupResources(context, options);
+    },
+    setupOverflowResources: (
+      count: number,
+      options?: Parameters<typeof setupOverflowResources>[2],
+    ) => {
+      return setupOverflowResources(context, count, options);
+    },
+  };
+}
+
 const REPORT_URL = "https://files.example.test/report.pdf";
 export const RESOURCE_ARTIFACT_ID = "e0000000-0000-4000-a000-000000000999";
 
@@ -44,6 +65,7 @@ export function installResourceGeometry(initialGutter: number) {
 }
 
 export async function setupResources(
+  context: TestContext,
   options: {
     readonly gutter?: number;
     readonly enabled?: boolean;
@@ -118,6 +140,41 @@ export async function setupResources(
   return resize;
 }
 
+/** Serve user preferences from one record and keep every update body. */
+export function recordPreferenceUpdates(
+  context: TestContext,
+  chatResourcesEnabledByDefault: boolean,
+  hold?: Promise<void>,
+) {
+  let preferences: UserPreferencesResponse = {
+    timezone: "Etc/UTC",
+    locale: "en-US",
+    supportedLocales: ["en-US"],
+    pinnedAgentIds: [],
+    sendMode: "enter",
+    cloudBrowserEnabledByDefault: true,
+    chatResourcesEnabledByDefault,
+    theme: "system",
+    colorTheme: null,
+    captureNetworkBodiesRemaining: 0,
+    memoryInitialized: true,
+  };
+  const updates: UpdateUserPreferencesRequest[] = [];
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, preferences);
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond }) => {
+      updates.push({ ...body });
+      await hold;
+      preferences = { ...preferences, ...body };
+      return respond(200, preferences);
+    },
+  );
+  return updates;
+}
+
 export function resourceButton() {
   return buttonNamed("Resources");
 }
@@ -142,6 +199,7 @@ export function resourceState() {
 }
 
 export async function setupOverflowResources(
+  context: TestContext,
   count: number,
   options: {
     readonly paginated?: boolean;

@@ -224,8 +224,9 @@ test("owner copying uses the canonical version reference returned by the API", a
   await openShareMenu();
   click(action("button", "Copy link"));
   await waitFor(() => {
-    return expect(clipboard.writes).toStrictEqual([ownerUrl]);
+    expect(queryAction("button", "Copied")).toBeDefined();
   });
+  expect(clipboard.writes).toStrictEqual([ownerUrl]);
 });
 
 test("failed permission saves retain the current audience", async () => {

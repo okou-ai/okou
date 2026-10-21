@@ -5,13 +5,16 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
-  context,
+  createSidebarAccountHelpers,
   openAccountMenu,
-  prepareDefaultAgent,
-  setupAddAccountPage,
 } from "./sidebar-account-test-helpers.ts";
+
+const context = testContext();
+const { prepareDefaultAgent, setupAddAccountPage } =
+  createSidebarAccountHelpers(context);
 
 test.each(["success", "failure", "pending task"])(
   "Switch accounts: %s",

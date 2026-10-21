@@ -28,10 +28,7 @@ import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { memoryArchive } from "./public-runner-memory";
 
-export function createPiMemoryMaintenanceFixture(
-  context: TestContext,
-  onboarding: "paid" | "limited-free" = "paid",
-) {
+export function createPiMemoryMaintenanceFixture(context: TestContext) {
   const chat = createChatEventsFixture(context);
   const runs = createRunsApi(context);
   const webhooks = createWebhookCallbackApi(context);
@@ -71,7 +68,7 @@ export function createPiMemoryMaintenanceFixture(
       throw new Error("Expected the Pi actor's organization");
     }
     const actor = { ...identity, orgId: identity.orgId };
-    const paidBootstrap = !orgId && onboarding === "paid";
+    const paidBootstrap = !orgId;
     const registered = paidBootstrap
       ? await runs.grantProEntitlement(actor)
       : await chat.bdd.readOnboardingStatus(actor);

@@ -11,7 +11,8 @@ import {
   type RunnerTestAccounts,
 } from "./lib/clerk-api";
 
-const RUNNER_TEST_ROLES = [
+// Retained workflow attempts can still own roles no longer provisioned here.
+const RUNNER_CLEANUP_ROLES = [
   "runner",
   "runner-real-codex",
   "runner-real-claude",
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
     case "cleanup-recorded-run":
       requiredEnvironmentVariable("JOB_REF");
       await cleanupRecordedClerkTestResources(
-        RUNNER_TEST_ROLES,
+        RUNNER_CLEANUP_ROLES,
         command === "cleanup-recorded-run" ? "run" : "generation",
       );
       break;
@@ -55,23 +56,11 @@ async function prepareRunnerAccounts(
 ): Promise<void> {
   try {
     const createOrganization = await prepareOrganizationProvisioner();
-    const runnerUserId = await createUser(runnerAccounts.runner);
-    const runnerOrganizationId = await createOrganization(
-      `e2e-runner-${jobRef}`,
-      runnerUserId,
-      "runner",
-    );
     const codexUserId = await createUser(runnerAccounts.codex);
     const codexOrganizationId = await createOrganization(
       `e2e-runner-real-codex-${jobRef}`,
       codexUserId,
       "runner-real-codex",
-    );
-    const claudeUserId = await createUser(runnerAccounts.claude);
-    const claudeOrganizationId = await createOrganization(
-      `e2e-runner-real-claude-${jobRef}`,
-      claudeUserId,
-      "runner-real-claude",
     );
     const mockClaudeUserId = await createUser(runnerAccounts.mockClaude);
     const mockClaudeOrganizationId = await createOrganization(
@@ -89,14 +78,10 @@ async function prepareRunnerAccounts(
     await appendFile(
       requiredEnvironmentVariable("GITHUB_OUTPUT"),
       [
-        `runner-organization-id=${runnerOrganizationId}`,
         `codex-organization-id=${codexOrganizationId}`,
-        `claude-organization-id=${claudeOrganizationId}`,
         `mock-claude-organization-id=${mockClaudeOrganizationId}`,
         `codex-built-in-organization-id=${codexBuiltInOrganizationId}`,
-        `runner-email=${runnerAccounts.runner}`,
         `codex-email=${runnerAccounts.codex}`,
-        `claude-email=${runnerAccounts.claude}`,
         `mock-claude-email=${runnerAccounts.mockClaude}`,
         `codex-built-in-email=${runnerAccounts.codexBuiltIn}`,
         "",
@@ -105,16 +90,14 @@ async function prepareRunnerAccounts(
     );
 
     console.log("Prepared runner E2E accounts", {
-      runnerOrganizationId,
       codexOrganizationId,
-      claudeOrganizationId,
       mockClaudeOrganizationId,
       codexBuiltInOrganizationId,
       ...runnerAccounts,
     });
   } catch (cause) {
     try {
-      await cleanupRecordedClerkTestResources(RUNNER_TEST_ROLES);
+      await cleanupRecordedClerkTestResources(RUNNER_CLEANUP_ROLES);
     } catch (cleanupCause) {
       console.error(
         "Recorded runner cleanup failed; deferring to the stale sweep",
@@ -127,13 +110,13 @@ async function prepareRunnerAccounts(
 
 async function cleanupRunnerAccountGeneration(): Promise<void> {
   requiredEnvironmentVariable("JOB_REF");
-  const result = await cleanupCurrentClerkTestGeneration(RUNNER_TEST_ROLES);
+  const result = await cleanupCurrentClerkTestGeneration(RUNNER_CLEANUP_ROLES);
   console.log("Cleaned up runner E2E account generation", result);
 }
 
 async function cleanupRunnerAccountRun(): Promise<void> {
   requiredEnvironmentVariable("JOB_REF");
-  const result = await cleanupCurrentClerkTestRun(RUNNER_TEST_ROLES);
+  const result = await cleanupCurrentClerkTestRun(RUNNER_CLEANUP_ROLES);
   console.log("Cleaned up runner E2E workflow run", result);
 }
 

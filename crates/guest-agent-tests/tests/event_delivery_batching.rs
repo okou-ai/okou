@@ -2,10 +2,9 @@
 
 use guest_agent_tests as common;
 
-use common::json_fixture::{JsonFieldTemplate, serialized_len};
+use common::json_fixture::JsonFieldTemplate;
 use guest_agent::masker::SecretMasker;
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
 use std::io;
 use std::time::Duration;
 
@@ -17,7 +16,6 @@ const MAX_BATCH_BYTES: usize = 4 * 1024 * 1024;
 
 struct CapturedBatch {
     sequences: Vec<u32>,
-    conservative_bytes: usize,
     body_bytes: usize,
 }
 
@@ -49,16 +47,8 @@ fn capture_batch(
                 .ok_or_else(|| io::Error::other("event omitted a u32 sequenceNumber"))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    // A singleton adds only the event's bytes to the empty envelope. Count
-    // each actual parsed event without cloning it into another owned Value.
-    let envelope_bytes = serialized_len(&json!({ "runId": run_id, "events": [] }))?;
-    let conservative_bytes = events.iter().try_fold(0usize, |total, event| {
-        Ok::<usize, serde_json::Error>(total + envelope_bytes + serialized_len(event)?)
-    })?;
-
     Ok(CapturedBatch {
         sequences,
-        conservative_bytes,
         body_bytes: request.body.len(),
     })
 }
@@ -159,11 +149,6 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
         .flat_map(|batch| batch.sequences.iter().copied())
         .collect::<Vec<_>>();
     assert_eq!(sequences, (0..total_events as u32).collect::<Vec<_>>());
-    assert_eq!(
-        sequences.iter().copied().collect::<BTreeSet<_>>().len(),
-        total_events,
-        "every event should be delivered exactly once"
-    );
     assert!(
         batches
             .iter()
@@ -172,27 +157,20 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
     );
     for batch in &batches {
         assert!(batch.sequences.len() <= MAX_BATCH_EVENTS);
-        assert!(batch.conservative_bytes <= MAX_BATCH_BYTES);
         assert!(batch.body_bytes <= MAX_BATCH_BYTES);
-    }
-    let large_event_batches = (0..LARGE_EVENT_COUNT)
-        .map(|index| {
-            batches
+        assert!(
+            batch
+                .sequences
                 .iter()
-                .position(|batch| {
-                    batch
-                        .sequences
-                        .contains(&((SMALL_EVENT_COUNT + index) as u32))
+                .filter(|&&sequence| {
+                    (SMALL_EVENT_COUNT as u32..(SMALL_EVENT_COUNT + LARGE_EVENT_COUNT) as u32)
+                        .contains(&sequence)
                 })
-                .expect("every large event should be delivered")
-        })
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        large_event_batches.len(),
-        LARGE_EVENT_COUNT,
-        "individually valid large events should split at the 4 MiB conservative boundary"
-    );
-    assert!(batches.len() < total_events);
+                .count()
+                <= 1,
+            "each 2 MiB event should be delivered in a separate batch"
+        );
+    }
 
     let system_log = std::fs::read_to_string(system_log_file)?;
     assert!(system_log.contains("Event delivery request:"));

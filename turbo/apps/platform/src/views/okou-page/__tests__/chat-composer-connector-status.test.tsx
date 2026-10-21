@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
@@ -15,15 +16,18 @@ import {
   builtinConnector,
   connectorAccount,
   httpConnector,
-  installComposerConnectorFixture,
   manualAuthMethod,
   SCOUT_AGENT_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
-  context,
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 function savedAccounts(target: ConnectorAccountTarget, expired = false) {
   const defaultAccount = {

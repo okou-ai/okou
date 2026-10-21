@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { act } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -6,12 +7,14 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
 import {
-  context,
   findEnabledButton,
-  installRunChat,
   queryButton,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 function installVoiceInput(): void {
   installRunChat();

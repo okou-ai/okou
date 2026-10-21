@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -16,13 +17,15 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
-  context,
   createUploadedTemplate,
   expectInlineTemplate,
-  mockPresentationTemplateLibrary,
-  mockTemplateChat,
   openTemplatePicker,
+  createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockPresentationTemplateLibrary, mockTemplateChat } =
+  createTemplateGalleryHelpers(context);
 
 test("Website stays usable while uploaded presentations load after switching categories", async () => {
   mockNow(1_785_542_400_000, context.signal);

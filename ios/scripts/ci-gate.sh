@@ -6,6 +6,11 @@ if [ "${DETECT_RESULT:?DETECT_RESULT is required}" != success ]; then
   exit 1
 fi
 
+if [ "${SCRIPT_CHECKS_RESULT:?SCRIPT_CHECKS_RESULT is required}" != success ]; then
+  echo "::error::iOS script checks must succeed; got $SCRIPT_CHECKS_RESULT"
+  exit 1
+fi
+
 case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${PACKAGES_RESULT:-}:${BUILD_RESULT:-}:${ARCHIVE_RESULT:-}:${PUBLISH_RESULT:-}" in
   merge_group:true:success:success:success:success)
     echo 'Swift package tests, simulator tests or exact-input evidence, device archive, and immutable publication passed.'

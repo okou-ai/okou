@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   chatThreadDraftContract,
   chatThreadMarkReadContract,
@@ -13,13 +14,15 @@ import {
 } from "./chat-capability-test-helpers.ts";
 import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
 import {
-  context,
   findButton,
   findEnabledButton,
-  installRunChat,
   promptEvent,
   RUN_PATH,
+  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
 
 test.each(["pending", "unauthorized"] as const)(
   "Send in an existing conversation while unread indicators are %s",

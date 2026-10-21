@@ -5,18 +5,20 @@ import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/contracts
 
 import { click } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
   RESEARCH_AGENT_ID,
-  context,
+  createSidebarHelpers,
   menuItemByText,
   mobileSidebar,
-  mockMobileLayout,
-  mockUnreadAgents,
   pinnedAgentLink,
-  prepareAgents,
   setupSidebarPage,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { mockMobileLayout, mockUnreadAgents, prepareAgents } =
+  createSidebarHelpers(context);
 
 async function openSidebar() {
   mockMobileLayout();

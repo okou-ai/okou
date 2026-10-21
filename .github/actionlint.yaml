@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    # GitHub's standard Xcode image: https://github.com/actions/runner-images
+    - xcode-27

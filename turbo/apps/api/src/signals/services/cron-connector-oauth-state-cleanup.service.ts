@@ -6,6 +6,7 @@ import {
 } from "@okouai/db/schema/connector-oauth-state";
 import { and, asc, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
+import { hostedSiteBrowserSessions } from "@okouai/db/schema/hosted-site-browser-session";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -20,7 +21,8 @@ const cleanupExpiredOAuthRows$ = command(
       | typeof connectorOauthStates
       | typeof connectorOauthCompletions
       | typeof discordOauthStates
-      | typeof discordOrgGrants,
+      | typeof discordOrgGrants
+      | typeof hostedSiteBrowserSessions,
     args: {
       readonly cutoff: Date;
       readonly batchSize: number;
@@ -93,6 +95,12 @@ export const cleanupConnectorOauthStates$ = command(
       args,
       signal,
     );
-    return states + completions + discord + installationConsents;
+    const siteSessions = await set(
+      cleanupExpiredOAuthRows$,
+      hostedSiteBrowserSessions,
+      args,
+      signal,
+    );
+    return states + completions + discord + installationConsents + siteSessions;
   },
 );

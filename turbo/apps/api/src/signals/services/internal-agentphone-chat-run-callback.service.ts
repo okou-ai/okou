@@ -22,7 +22,7 @@ import {
   agentPhoneReplyDestination,
   markdownToImessagePlain,
   resolveAgentPhoneConversationVisibilityRecipients$,
-  resolveAgentPhoneReplyFooterText,
+  resolveAgentPhoneReplyFooterText$,
   storeOutboundAgentPhoneMessage$,
 } from "./agentphone-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -321,7 +321,7 @@ const recordAgentPhoneChatDelivery$ = command(
 
 const deliverClaimedAgentPhoneChatCallback$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly callback: ClaimedAgentPhoneChatDelivery;
       readonly status: "completed" | "failed";
@@ -336,8 +336,7 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
     if (!binding) {
       return "skipped_revoked";
     }
-    const footerText = await resolveAgentPhoneReplyFooterText({
-      db: get(db$),
+    const footerText = await set(resolveAgentPhoneReplyFooterText$, {
       orgId: run.orgId,
       composeId: run.agentId,
     });

@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import {
   chatRemoteAccessContract,
@@ -12,15 +13,16 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
-  context,
-  findFastControl,
-} from "./chat-message-experience-test-helpers.ts";
-import {
-  installComposerConnectorFixture,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 const SSH_ID = "b0000000-0000-4000-8000-000000000031";
 const OTHER_SSH_ID = "b0000000-0000-4000-8000-000000000032";

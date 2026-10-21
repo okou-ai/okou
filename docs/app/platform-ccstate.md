@@ -24,6 +24,10 @@ general rules; ESLint owns the custom lifecycle and import boundaries.
   before an application lifetime exists; its signal can be undefined.
 - `no-direct-fetch` rejects native fetch references. Only
   `lib/resource-fetch.ts` implements the native primitive.
+- `ccstate/no-on-rejection` rejects unreviewed error callbacks. Derive request
+  lifecycle from operation loadables rather than mirroring loading/error in
+  mutable flags. See [onRejection](signals/onRejection.md) for misuse cases and
+  narrow infrastructure exceptions.
 - `signals/fetch.ts` only exposes API navigation/base signals.
 
 ## Asynchronous ownership

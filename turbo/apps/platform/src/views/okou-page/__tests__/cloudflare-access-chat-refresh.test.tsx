@@ -1,17 +1,19 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
-  context,
-  findFastControl,
-} from "./chat-message-experience-test-helpers.ts";
-import {
-  installComposerConnectorFixture,
   SCOUT_THREAD_ID,
+  createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
 
 test("Reopening the composer refreshes a renamed SSH host while preserving default access", async () => {
   const orgId = "org_cloudflare_chat";

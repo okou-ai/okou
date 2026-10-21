@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.4...runner-executor-v0.15.5) (2026-10-21)
+
+
+### Refactoring
+
+* **runner:** retire scheduling history generation identity ([#41998](https://github.com/okou-ai/okou/issues/41998)) ([39dbd2a](https://github.com/okou-ai/okou/commit/39dbd2a10242e3e1d9241d8b81c034258f10f842))
+
 ## [0.15.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.3...runner-executor-v0.15.4) (2026-10-21)
 
 ## [0.15.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.2...runner-executor-v0.15.3) (2026-10-21)

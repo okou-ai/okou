@@ -11,6 +11,11 @@ const ruleTester = new RuleTester();
 ruleTester.run("test-context-in-hooks", rule, {
   valid: [
     {
+      name: "helper consumes an explicit context without registration",
+      code: `export function createHelpers(context) { return { store: () => context.store }; }`,
+      options: [{ allowRegistration: false }],
+    },
+    {
       name: "testContext called at top level without destructuring",
       code: `
         const context = testContext()
@@ -50,6 +55,30 @@ ruleTester.run("test-context-in-hooks", rule, {
     },
   ],
   invalid: [
+    {
+      name: "helper registers a hidden owner",
+      code: `export const context = testContext()`,
+      options: [{ allowRegistration: false }],
+      errors: [{ messageId: "testContextRegistrationInHelper" }],
+    },
+    {
+      name: "helper registers through an import alias",
+      code: `import { testContext as createContext } from './test-helpers'; export const context = createContext();`,
+      options: [{ allowRegistration: false }],
+      errors: [{ messageId: "testContextRegistrationInHelper" }],
+    },
+    {
+      name: "helper registers through a namespace import",
+      code: `import * as fixtures from './test-helpers'; export const context = fixtures.testContext();`,
+      options: [{ allowRegistration: false }],
+      errors: [{ messageId: "testContextRegistrationInHelper" }],
+    },
+    {
+      name: "helper hides registration in a factory",
+      code: `export function createHelpers() { return testContext(); }`,
+      options: [{ allowRegistration: false }],
+      errors: [{ messageId: "testContextRegistrationInHelper" }],
+    },
     {
       name: "testContext destructured at top level",
       code: `

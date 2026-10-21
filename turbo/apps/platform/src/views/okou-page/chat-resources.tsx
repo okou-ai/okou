@@ -29,6 +29,7 @@ import { searchParams$ } from "../../signals/route.ts";
 import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
 import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
@@ -78,16 +79,26 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
-  const automatic = useLastResolved(resources.automatic$) ?? false;
-  // Resources load only while the panel shows, so the default cannot wait for them.
-  const open = chosen ?? automatic;
+  const requested = useLastResolved(resources.requested$) ?? false;
+  const wanted = useLastResolved(resources.wanted$) ?? false;
+  const settled = useLastResolved(resources.settled$) ?? null;
+  // Nothing draws before the resources have answered. Until then the button
+  // breathes and takes no presses, however long the answer takes and even if
+  // the layout no longer has room for the panel.
+  const loading = wanted && settled === null;
+  // An automatic opening waits for something to show; a press shows the panel
+  // even when it is empty.
+  const shown = settled !== null && requested && (settled || chosen !== null);
+  const pressed = shown || (loading && chosen === true);
   const wide = useGet(resources.wide$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
-  const visible = open && boundary !== null;
+  const press = useSet(resources.press$);
+  const rootSignal = useGet(rootSignal$);
+  const visible = shown && boundary !== null;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
   });
@@ -103,6 +114,13 @@ function ChatResourcesButtonInner({
       open={visible}
       modal={false}
       onOpenChange={(nextOpen, details) => {
+        if (details.reason === "trigger-press") {
+          // The preference outlives the page.
+          if (!loading) {
+            detach(press(!shown, rootSignal), Reason.DomCallback);
+          }
+          return;
+        }
         const outside =
           details.reason === "outside-press" || details.reason === "focus-out";
         if (
@@ -120,7 +138,9 @@ function ChatResourcesButtonInner({
     >
       <ChatResourcesTrigger
         thread={thread}
-        open={open}
+        pressed={pressed}
+        open={shown}
+        loading={loading}
         largeTarget={largeTarget}
       />
       <PopoverContent
@@ -163,11 +183,15 @@ function ChatResourcesButtonInner({
 
 function ChatResourcesTrigger({
   thread,
+  pressed,
   open,
+  loading,
   largeTarget,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly pressed: boolean;
   readonly open: boolean;
+  readonly loading: boolean;
   readonly largeTarget: boolean;
 }) {
   const { t } = useTranslation();
@@ -175,6 +199,9 @@ function ChatResourcesTrigger({
   const blurControl = useSet(thread.resources.blurControl$);
   const label = t(($) => {
     return $.chat.resources.title;
+  });
+  const loadingLabel = t(($) => {
+    return $.chat.resources.loading;
   });
   return (
     <TooltipProvider delay={300}>
@@ -198,18 +225,37 @@ function ChatResourcesTrigger({
                   className={cn(
                     "shrink-0 duration-150",
                     largeTarget && "size-11",
-                    open &&
+                    pressed &&
                       "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
+                    // A loading button does not answer the pointer either.
+                    loading &&
+                      (pressed
+                        ? "cursor-default hover:bg-primary/10 active:bg-primary/10"
+                        : "cursor-default hover:bg-transparent hover:text-muted-foreground active:bg-transparent"),
                   )}
                   aria-label={label}
+                  aria-busy={loading}
+                  aria-disabled={loading || undefined}
+                  // Why presses do nothing must not depend on hover or motion.
+                  aria-description={loading ? loadingLabel : undefined}
                 />
               }
             />
           }
         >
-          <Package size={18} />
+          {/* A quick load finishes before the delayed pulse ever starts.
+              Without motion the icon dims instead. */}
+          <Package
+            size={18}
+            className={cn(
+              loading &&
+                "motion-safe:animate-pulse [animation-delay:250ms] motion-reduce:opacity-50",
+            )}
+          />
         </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
+        <TooltipContent side="bottom">
+          {loading ? loadingLabel : label}
+        </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
@@ -308,23 +354,7 @@ function ChatResourcesStatus({
   if (hasContent) {
     return null;
   }
-  if (
-    data === null ||
-    content.state === "loading" ||
-    chats.state === "loading"
-  ) {
-    return (
-      <p
-        role="status"
-        className="px-2 py-6 text-center text-[13px] leading-5 text-muted-foreground"
-      >
-        {t(($) => {
-          return $.chat.resources.loading;
-        })}
-      </p>
-    );
-  }
-  if (data === undefined || chats.state !== "hasData" || chats.data.failed) {
+  if (!data || chats.state !== "hasData" || chats.data.failed) {
     return null;
   }
   return (

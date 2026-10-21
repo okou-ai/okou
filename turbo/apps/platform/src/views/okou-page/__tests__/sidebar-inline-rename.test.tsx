@@ -5,18 +5,21 @@ import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-t
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { pathname } from "../../../signals/location.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  context,
+  createSidebarHelpers,
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
-  mockSidebarThreadStory,
   mockSidebarViewport,
-  prepareDefaultAgent,
   setupSidebarPage,
   sidebar,
   threadLinkByTitle,
 } from "./sidebar-test-helpers.tsx";
+
+const context = testContext();
+const { mockSidebarThreadStory, prepareDefaultAgent } =
+  createSidebarHelpers(context);
 
 const ROW_HEIGHT = 36;
 

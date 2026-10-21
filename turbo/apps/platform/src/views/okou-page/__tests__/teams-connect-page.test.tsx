@@ -286,7 +286,9 @@ test("Read failures remain visible and recover through manual retry", async () =
       status({ isConnected: true, linkedAccounts: [account] }),
     );
   });
-  await setupPage({ context, path: path({ ...target, status: "connected" }) });
+  await expect(
+    setupPage({ context, path: path({ ...target, status: "connected" }) }),
+  ).rejects.toThrow("Failed to fetch");
   await expect(
     screen.findByRole("heading", { name: "Connection failed" }),
   ).resolves.toBeInTheDocument();

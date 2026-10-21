@@ -27,8 +27,8 @@ import {
   type WechatDeliveryTarget,
 } from "./wechat-chat-callback-payload";
 import {
-  resolveIntegrationAdmissionFailurePresentation,
-  resolveIntegrationAgentResponsePresentation,
+  resolveIntegrationAdmissionFailurePresentation$,
+  resolveIntegrationAgentResponsePresentation$,
 } from "./integration-agent-response-presentation.service";
 interface WechatReplyRequest {
   readonly chatEventId: string;
@@ -116,17 +116,18 @@ export const sendWechatChatReply$ = command(
     let content = args.content;
     if (content === undefined) {
       const presentationArgs = {
-        db,
         orgId: args.orgId,
         agentId: reply.agentId,
       };
       const presentation =
         reply.runId === null
-          ? await resolveIntegrationAdmissionFailurePresentation(
+          ? await set(
+              resolveIntegrationAdmissionFailurePresentation$,
               presentationArgs,
               signal,
             )
-          : await resolveIntegrationAgentResponsePresentation(
+          : await set(
+              resolveIntegrationAgentResponsePresentation$,
               { ...presentationArgs, runId: reply.runId },
               signal,
             );

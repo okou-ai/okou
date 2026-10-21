@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -23,15 +24,16 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
   composerInlineTemplates,
-  context,
   expectInlineTemplateInComposer,
   findComposerEditor,
-  mockActiveTemplateThread,
-  mockAgent,
-  mockThread,
   selectTemplate,
   THREAD_ID,
+  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
+
+const context = testContext();
+const { mockActiveTemplateThread, mockAgent, mockThread } =
+  createChatComposerHelpers(context);
 
 function installWorkflows(read: () => readonly ComposerWorkflow[]): void {
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {

@@ -284,11 +284,36 @@ commands real.
 
 ## Test Context and Cleanup
 
-Create one `testContext()` at file scope. It provides a fresh store and worker
-store, an abort signal, and external mocks. Bind external resources to
-`context.signal`. Do not manually clear detached work, browser storage, spies,
-globals, or mocks in file-level cleanup hooks; the shared Vitest setup and test
-context own that lifecycle.
+Register one explicit `testContext()` at the test file's scope for the case's
+document lifecycle, external mocks, and cleanup. General helper modules must not
+call `testContext()` or export a singleton context: importing a builder, DOM
+query, or clipboard tool must not install HTML lifecycle hooks. A helper that
+needs runtime state accepts the caller's `TestContext`, either as a required
+argument or through a factory such as `createChatComposerHelpers(context)`.
+Retain the context handle, not its current `signal` or stores, at module scope;
+its getters provide the fresh case lifetime.
+
+The context's lazy `store` and `workerStore` are separate ccstate domains. Do not
+merge them or globally deduplicate contexts. For a real app replacement or an
+additional worker domain, use a named `createTestRuntime(context)` child. This
+factory registers no hooks and installs no document lifecycle; its independent
+app/worker stores and cancellation signal belong to the explicit parent case.
+It shares the parent's external mock boundary, not the parent's stores. Its
+`dispose(reason)` cancels that runtime without resetting case mocks or deleting
+the document lifecycle. Parent teardown cancels every child. A disposed child
+does not restart within the same case; create a new child for a replacement.
+A file-scope child handle lazily rotates with its parent's next case.
+
+Use `child.workerStore` for an additional worker rather than repurposing the app
+store. Multiple tab connections may intentionally use the same worker store;
+closing one connection must not stop that worker. Name whether a replacement
+app keeps a shared worker or starts a fresh worker domain. The voice replacement
+fixtures use fresh child app/worker stores, preserving their existing isolation
+contract; these helpers do not model independent browser documents or MSW servers.
+
+Bind external resources to the owning `context.signal`. Do not manually clear
+detached work, browser storage, spies, globals, or mocks in file-level cleanup
+hooks; the shared Vitest setup and case context own that lifecycle.
 
 `testContext` aborts the test's root signal. The existing global `afterEach` in
 `src/test/setup.ts` then calls `clearAllDetached()` before resetting MSW handlers.

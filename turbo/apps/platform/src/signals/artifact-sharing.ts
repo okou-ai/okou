@@ -20,6 +20,7 @@ import {
 } from "./attachment-resource-url.ts";
 import { throttleCommand } from "./command-scheduling.ts";
 import { pageSignal$ } from "./page-signal.ts";
+import { createShareLinkCopy } from "./share-link-copy.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
 // Hosted sites are public publications addressed by their own URL, so the
@@ -184,9 +185,11 @@ function createArtifactShareSession(source: ShareSource) {
   });
   const open$ = state(false);
   const resetOpenSignal$ = resetSignal();
+  const linkCopy = createShareLinkCopy();
   const close$ = command(({ set }) => {
     set(open$, false);
     set(resetOpenSignal$);
+    set(linkCopy.clear$);
   });
   const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const signal = set(resetOpenSignal$, parentSignal);
@@ -211,12 +214,19 @@ function createArtifactShareSession(source: ShareSource) {
     });
     await settle(get(details$), signal);
   });
-  const copy$ = command(async ({ get }, signal: AbortSignal) => {
+  const copy$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await get(details$);
     signal.throwIfAborted();
     if (details?.status) {
-      await copyAttachmentLinkToClipboard(details.copyUrl, undefined, signal);
+      await set(linkCopy.copy$, details.copyUrl, signal);
     }
+  });
+  const audience = createAudienceSignals(details$, reload$);
+  // "Copied" confirmed the link under the previous audience; a new choice asks
+  // to be copied again.
+  const change$ = command(({ set }, choice: Audience, signal: AbortSignal) => {
+    set(linkCopy.clear$);
+    return set(audience.change$, choice, signal);
   });
   return {
     signal$,
@@ -226,7 +236,9 @@ function createArtifactShareSession(source: ShareSource) {
     show$,
     refresh$,
     copy$,
-    ...createAudienceSignals(details$, reload$),
+    copiedUrl$: linkCopy.copiedUrl$,
+    draft$: audience.draft$,
+    change$,
   };
 }
 export type ArtifactShareSession = ReturnType<

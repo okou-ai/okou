@@ -458,6 +458,7 @@ export async function observeClientOperation<TResult>(
   execute: () => Promise<TResult>,
 ): Promise<TResult> {
   const measurement = startClientTelemetryMeasurement();
+  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: shared client-operation telemetry.
   const result = await onRejection(execute, (error) => {
     recordClientTelemetry(
       measurement,

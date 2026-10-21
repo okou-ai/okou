@@ -27,10 +27,10 @@ import {
 } from "../services/connector-catalog-columns";
 import {
   catalogSource,
-  listExternalPublicConnectorCatalogStatus,
+  connectorCatalogStatusFromSnapshot,
   connectorCatalogConnectItemsFromSource,
-  listExternalPublicConnectorCatalog,
-  discoverExternalPublicConnectorCatalogStatus,
+  connectorCatalogListFromSnapshot,
+  connectorCatalogDiscoveryFromSnapshot,
   loadAcceptedConnectorCatalogSnapshot,
   publicConnectorCatalogStatusFromSource,
   type ConnectorCatalogSlugSource,
@@ -101,10 +101,18 @@ const listConnectorCatalogInner$ = command(
     const catalogReadFeatureStates = context.featureStates;
     const catalog = await settleConnectorCatalogRead(
       (async () => {
-        return await listExternalPublicConnectorCatalog({
-          db: catalogReadDb,
-          featureStates: catalogReadFeatureStates,
-        });
+        return await (async () => {
+          const viewArgs = { featureStates: catalogReadFeatureStates };
+          const snapshot = await loadAcceptedConnectorCatalogSnapshot(
+            catalogReadDb,
+            undefined,
+            "display",
+          );
+          return connectorCatalogListFromSnapshot({
+            ...viewArgs,
+            catalog: snapshot,
+          });
+        })();
       })(),
       signal,
     );
@@ -125,11 +133,21 @@ const listConnectorCatalogStatusInner$ = command(
     const catalogStatusFeatureStates = context.featureStates;
     const catalog = await settleConnectorCatalogRead(
       (async () => {
-        const read = await listExternalPublicConnectorCatalogStatus({
-          db: catalogStatusDb,
-          featureStates: catalogStatusFeatureStates,
-          referenceConnectorSlugs: [],
-        });
+        const read = await (async () => {
+          const viewArgs = {
+            featureStates: catalogStatusFeatureStates,
+            referenceConnectorSlugs: [],
+          };
+          const snapshot = await loadAcceptedConnectorCatalogSnapshot(
+            catalogStatusDb,
+            undefined,
+            "display",
+          );
+          return connectorCatalogStatusFromSnapshot({
+            ...viewArgs,
+            catalog: snapshot,
+          });
+        })();
         return read.status;
       })(),
       signal,
@@ -246,14 +264,24 @@ const discoverConnectorCatalogInner$ = command(
     const catalogDiscoveryCategory = query.category;
     const catalog = await settleConnectorCatalogRead(
       (async () => {
-        const read = await discoverExternalPublicConnectorCatalogStatus({
-          db: catalogDiscoveryDb,
-          featureStates: catalogDiscoveryFeatureStates,
-          savedConnectorSlugs,
-          keyword: catalogDiscoveryKeyword,
-          category: catalogDiscoveryCategory,
-          referenceConnectorSlugs: [],
-        });
+        const read = await (async () => {
+          const viewArgs = {
+            featureStates: catalogDiscoveryFeatureStates,
+            savedConnectorSlugs,
+            keyword: catalogDiscoveryKeyword,
+            category: catalogDiscoveryCategory,
+            referenceConnectorSlugs: [],
+          };
+          const snapshot = await loadAcceptedConnectorCatalogSnapshot(
+            catalogDiscoveryDb,
+            undefined,
+            "display",
+          );
+          return connectorCatalogDiscoveryFromSnapshot({
+            ...viewArgs,
+            catalog: snapshot,
+          });
+        })();
         return read.status;
       })(),
       signal,

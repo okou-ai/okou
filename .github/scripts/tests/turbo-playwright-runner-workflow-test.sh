@@ -27,11 +27,10 @@ fi
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
 fi
-# Keep the existing paid account prerequisites for billing and capability
-# coverage; retirement must not silently downgrade shared runner identities.
-if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 5 ||
-  "$(grep -Fc 'fileName: "' "$RUNNER_TOKEN")" -ne 5 ]]; then
-  fail "all five runner accounts, including the default mock runner, must upgrade to Pro"
+# Keep paid prerequisites for every retained runtime/billing isolation group.
+if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 3 ||
+  "$(grep -Fc 'fileName: "' "$RUNNER_TOKEN")" -ne 3 ]]; then
+  fail "all three runner isolation groups must upgrade to Pro"
 fi
 
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'
@@ -182,9 +181,7 @@ unless account_prepare.fetch("if").include?(
 end
 
 expected_organization_outputs = {
-  "runner-organization-id" => "runner-organization-id",
   "codex-organization-id" => "codex-organization-id",
-  "claude-organization-id" => "claude-organization-id",
   "mock-claude-organization-id" => "mock-claude-organization-id",
   "codex-built-in-organization-id" => "codex-built-in-organization-id",
 }
@@ -265,9 +262,7 @@ unless upload_step.dig("with", "name") == "e2e-tokens" &&
   raise "runner E2E token artifact must retain the historical contract"
 end
 %w[
-  e2e-api-credentials-runner.json
   e2e-api-credentials-runner-real-codex.json
-  e2e-api-credentials-runner-real-claude.json
   e2e-api-credentials-runner-mock-claude.json
   e2e-api-credentials-runner-real-codex-built-in.json
 ].each do |file_name|
@@ -291,13 +286,11 @@ unless bootstrap_steps.any? do |step|
   end
   raise "runner bootstrap must download the token artifact"
 end
-# Fresh accounts inherit the sole platform model. Personal subscriptions are
-# provisioned independently.
+# Check fresh Auto defaults before personal subscriptions change the catalog.
 auto_accounts = {
-  "runner" => "false",
+  "runner-mock-claude" => "false",
   "runner-real-codex" => "true",
   "runner-real-codex-built-in" => "true",
-  "runner-real-claude" => "true",
 }
 auto_accounts.each do |account, real_agent|
   command = "runner-auto-bootstrap.bash /tmp/e2e-api-credentials-#{account}.json"
@@ -315,6 +308,14 @@ mock_claude_step = bootstrap_steps.find do |step|
   step.fetch("run", "").include?("runner-mock-claude-bootstrap.bash")
 end
 raise "missing personal subscription bootstrap" unless mock_claude_step
+fresh_mock_index = bootstrap_steps.index do |step|
+  step.fetch("run", "").include?(
+    "runner-auto-bootstrap.bash /tmp/e2e-api-credentials-runner-mock-claude.json false",
+  )
+end
+unless fresh_mock_index && fresh_mock_index < bootstrap_steps.index(mock_claude_step)
+  raise "mock identity must verify fresh Auto defaults before installing personal subscriptions"
+end
 unless mock_claude_step.fetch("run").end_with?(
     "runner-mock-claude-bootstrap.bash /tmp/e2e-api-credentials-runner-mock-claude.json",
   )

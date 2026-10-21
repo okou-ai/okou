@@ -1,17 +1,16 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
-import {
-  buttonByText,
-  context,
-  setupPage,
-} from "./chat-lifecycle-test-helpers.ts";
+import { buttonByText, setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   findWorkHistoryToggle,
   getWorkHistoryToggle,
 } from "./chat-run-test-fixtures.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+const context = testContext();
 
 type Capture = (
   eventName: string,

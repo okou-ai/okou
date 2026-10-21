@@ -1,7 +1,9 @@
 import { command, computed, state } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
-import { onRef } from "../utils.ts";
+import { onRef, withCleanup } from "../utils.ts";
+import { toggleAgentConnector$ } from "./job-detail/connectors.ts";
+import { agentName$ } from "./job-detail/agent-name.ts";
 
 // ---------------------------------------------------------------------------
 // JobPermissionsTab UI state
@@ -48,12 +50,45 @@ export const setPermSearchActive$ = command(({ set }, active: boolean) => {
   set(internalPermSearchActive$, active);
 });
 
-const internalPermSavingConnectorSlug$ = state<ConnectorSlug | null>(null);
-export const permSavingConnectorSlug$ = computed((get) => {
-  return get(internalPermSavingConnectorSlug$);
+function createPermissionToggleActions() {
+  // Keep the last outcome separately from the synchronous single-flight guard.
+  const internalRequest$ = state<Promise<void> | null>(null);
+  const internalInFlight$ = state<Promise<void> | null>(null);
+  const request$ = computed((get) => {
+    return get(internalRequest$);
+  });
+  const canToggle$ = command(({ get }) => {
+    return get(internalInFlight$) === null;
+  });
+  const toggle$ = command(
+    (
+      { get, set },
+      connectorSlug: ConnectorSlug,
+      enabled: boolean,
+      signal: AbortSignal,
+    ): Promise<void> | undefined => {
+      if (get(internalInFlight$)) {
+        return;
+      }
+      const request = withCleanup(
+        set(toggleAgentConnector$, connectorSlug, enabled, signal),
+        () => {
+          set(internalInFlight$, null);
+        },
+      );
+      set(internalInFlight$, request);
+      set(internalRequest$, request);
+      return request;
+    },
+  );
+  return { request$, canToggle$, toggle$ };
+}
+
+export type PermissionToggleActions = ReturnType<
+  typeof createPermissionToggleActions
+>;
+
+export const permissionToggleActions$ = computed((get) => {
+  get(agentName$);
+  return createPermissionToggleActions();
 });
-export const setPermSavingConnectorSlug$ = command(
-  ({ set }, connectorSlug: ConnectorSlug | null) => {
-    set(internalPermSavingConnectorSlug$, connectorSlug);
-  },
-);

@@ -9,14 +9,19 @@ import {
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   AGENT_ID,
-  context,
+  createSidebarAccountHelpers,
+  openAccountMenu,
+} from "./sidebar-account-test-helpers.ts";
+
+const context = testContext();
+const {
   mockAdminAccountSidebar,
   mockAdminBillingStatus,
   mockMemberAccountSidebar,
-  openAccountMenu,
-} from "./sidebar-account-test-helpers.ts";
+} = createSidebarAccountHelpers(context);
 
 test("Show a member’s latest package credits in the account menu", async () => {
   mockMemberAccountSidebar();

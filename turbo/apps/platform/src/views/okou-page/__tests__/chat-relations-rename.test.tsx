@@ -178,24 +178,36 @@ async function setupRelationships({
 }
 
 // The parent is both the origin and a related chat, so it is listed once and
-// carries the From tag. Its message history makes the row a disclosure.
-function expectRelationshipTitle(chats: HTMLElement, title: string) {
+// carries the From tag. The row opens it; a separate caret opens its history.
+function expectRelationshipTitle(
+  chats: HTMLElement,
+  title: string,
+  parentId: string,
+) {
   const titles = within(chats).getAllByText(title);
   expect(titles).toHaveLength(1);
-  const row = titles[0]!.closest("button");
+  const row = titles[0]!.closest("a");
+  expect(row).toHaveAttribute("href", `/chats/${parentId}`);
   expect(row).toHaveTextContent(title);
   expect(row).toHaveTextContent("From");
-  expect(row).toHaveAttribute("aria-expanded", "false");
   expect(row).not.toHaveAttribute("title");
   expect(titles[0]).toBeVisible();
+  const caret = queryAllByRoleFast("button", chats).find((button) => {
+    return button.getAttribute("aria-label") === `Messages with ${title}`;
+  });
+  expect(caret).toHaveAttribute("aria-expanded", "false");
 }
 
 test("Show the current parent title when loading historical sources", async () => {
-  const { panel, chats } = await setupRelationships({
+  const { panel, chats, parent } = await setupRelationships({
     title: RENAMED_TITLE,
   });
-  expectRelationshipTitle(chats, RENAMED_TITLE);
-  expect(queryAllByRoleFast("link", chats)).toHaveLength(0);
+  expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
+  expect(
+    queryAllByRoleFast("link", chats).map((link) => {
+      return link.getAttribute("href");
+    }),
+  ).toStrictEqual([`/chats/${parent.id}`]);
   expect(
     within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
@@ -204,6 +216,7 @@ test("Show the current parent title when loading historical sources", async () =
 test("Update relationship titles immediately and synchronize the saved browser title without a realtime notification", async () => {
   const {
     chats,
+    parent,
     parentPane,
     saveResponse,
     relationshipResponse,
@@ -218,31 +231,32 @@ test("Update relationship titles immediately and synchronize the saved browser t
   delayRelationshipResponses();
   await user.keyboard("{Enter}");
   await waitFor(() => {
-    expectRelationshipTitle(chats, RENAMED_TITLE);
+    expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
   });
   saveResponse.resolve();
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
     expect(document.title).toContain(RENAMED_TITLE);
   });
-  expectRelationshipTitle(chats, RENAMED_TITLE);
+  expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
   relationshipResponse.resolve();
 });
 
 test("Update the parent chat row when another tab renames the parent", async () => {
   const {
     chats,
+    parent,
     renameFromAnotherTab,
     relationshipResponse,
     delayRelationshipResponses,
   } = await setupRelationships();
-  expectRelationshipTitle(chats, ORIGINAL_TITLE);
+  expectRelationshipTitle(chats, ORIGINAL_TITLE, parent.id);
   delayRelationshipResponses();
   act(renameFromAnotherTab);
   await expect(
     within(chats).findByText(RENAMED_TITLE),
   ).resolves.toBeInTheDocument();
-  expectRelationshipTitle(chats, RENAMED_TITLE);
+  expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
   relationshipResponse.resolve();
 });
 
@@ -251,4 +265,10 @@ test("Keep unavailable relationships unlinked even when parent metadata is cache
   const row = within(chats).getByText("Unavailable").closest("li");
   expect(row).toHaveTextContent("From");
   expect(queryAllByRoleFast("link", chats)).toHaveLength(0);
+  // The history is still reachable through the caret.
+  expect(
+    queryAllByRoleFast("button", chats).find((button) => {
+      return button.getAttribute("aria-label") === "Messages with Unavailable";
+    }),
+  ).toHaveAttribute("aria-expanded", "false");
 });

@@ -1123,41 +1123,6 @@ function isExpiredAwsSigninRefreshState(
   );
 }
 
-async function getBuiltinConnectorSecretValues(args: {
-  readonly access: BuiltinConnectorCredentialAccess;
-  readonly db: Db;
-  readonly names: readonly string[];
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<ReadonlyMap<string, string>> {
-  if (args.names.length === 0) {
-    return new Map();
-  }
-  // Keep multi-secret credentials (for example AWS SigV4) on one statement
-  // snapshot so a same-method replacement cannot combine two stored states.
-  const rows = await args.db
-    .select({
-      name: secretsTable.name,
-      encryptedValue: secretsTable.encryptedValue,
-    })
-    .from(secretsTable)
-    .where(
-      builtinConnectorCredentialSecretReadCondition({
-        groups: [{ access: args.access, names: args.names }],
-      }),
-    );
-  const values = new Map<string, string>();
-  for (const row of rows) {
-    values.set(
-      row.name,
-      await decryptStoredSecretValue(
-        row.encryptedValue,
-        args.featureSwitchContext,
-      ),
-    );
-  }
-  return values;
-}
-
 async function getSecretValue(args: {
   readonly runId?: string;
   readonly connectorAccess?: BuiltinConnectorCredentialAccess;
@@ -1173,12 +1138,46 @@ async function getSecretValue(args: {
     if (args.connectorAccess === undefined) {
       return null;
     }
-    const values = await getBuiltinConnectorSecretValues({
+    const builtinSecretReadArgs = {
       access: args.connectorAccess,
       db: args.db,
       names: [args.name],
       featureSwitchContext: args.featureSwitchContext,
-    });
+    };
+    const values = await (async (): Promise<ReadonlyMap<string, string>> => {
+      if (builtinSecretReadArgs.names.length === 0) {
+        return new Map();
+      }
+      // Keep multi-secret credentials (for example AWS SigV4) on one statement
+      // snapshot so a same-method replacement cannot combine two stored states.
+      const rows = await builtinSecretReadArgs.db
+        .select({
+          name: secretsTable.name,
+          encryptedValue: secretsTable.encryptedValue,
+        })
+        .from(secretsTable)
+        .where(
+          builtinConnectorCredentialSecretReadCondition({
+            groups: [
+              {
+                access: builtinSecretReadArgs.access,
+                names: builtinSecretReadArgs.names,
+              },
+            ],
+          }),
+        );
+      const values = new Map<string, string>();
+      for (const row of rows) {
+        values.set(
+          row.name,
+          await decryptStoredSecretValue(
+            row.encryptedValue,
+            builtinSecretReadArgs.featureSwitchContext,
+          ),
+        );
+      }
+      return values;
+    })();
     return values.get(args.name) ?? null;
   }
   // Personal subscription credentials live only on their exact account.
@@ -1240,59 +1239,20 @@ async function getVariableValue(args: {
   return row?.value ?? null;
 }
 
-async function upsertModelProviderSecretValue(
-  db: Db,
-  args: {
+function providerSecretScope(
+  sourceId: string,
+  scope: {
+    readonly runId: string | undefined;
     readonly orgId: string;
     readonly userId: string;
-    readonly name: string;
-    readonly value: string;
-    readonly sourceId?: string;
-    readonly runId?: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
   },
-): Promise<void> {
-  const encryptedValue = await encryptStoredSecretValue(
-    args.value,
-    args.featureSwitchContext,
+) {
+  return and(
+    eq(modelProviderAccounts.id, sourceId),
+    personalSubscriptionAccountAccessCondition(scope.runId),
+    eq(modelProviderAccounts.orgId, scope.orgId),
+    eq(modelProviderAccounts.userId, scope.userId),
   );
-  if (args.sourceId) {
-    const [account] = await db
-      .select({ id: modelProviderAccounts.id })
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    if (!account) {
-      return;
-    }
-    await db
-      .insert(modelProviderAccountSecrets)
-      .values({
-        modelProviderAccountId: args.sourceId,
-        name: args.name,
-        encryptedValue,
-        description: `Personal model provider account secret: ${args.name}`,
-      })
-      .onConflictDoUpdate({
-        target: [
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccountSecrets.name,
-        ],
-        set: {
-          encryptedValue,
-          updatedAt: nowDate(),
-        },
-      });
-    return;
-  }
-  throw new Error("Personal subscription refresh requires an account identity");
 }
 
 function modelProviderRuntimeSecretName(args: {
@@ -1407,14 +1367,50 @@ async function getCurrentAccessSecrets(
   if (args.sourceType === "connector") {
     const connectorSlug = args.accessSourceKey;
     const access = args.connectorAccessBySlug.get(connectorSlug)?.access;
-    values = access
-      ? await getBuiltinConnectorSecretValues({
-          access,
-          db: args.db,
-          names: secretNames,
-          featureSwitchContext: args.featureSwitchContext,
-        })
-      : new Map();
+    if (access) {
+      const builtinSecretReadArgs = {
+        access,
+        db: args.db,
+        names: secretNames,
+        featureSwitchContext: args.featureSwitchContext,
+      };
+      values = await (async (): Promise<ReadonlyMap<string, string>> => {
+        if (builtinSecretReadArgs.names.length === 0) {
+          return new Map();
+        }
+        // Keep multi-secret credentials (for example AWS SigV4) on one statement
+        // snapshot so a same-method replacement cannot combine two stored states.
+        const rows = await builtinSecretReadArgs.db
+          .select({
+            name: secretsTable.name,
+            encryptedValue: secretsTable.encryptedValue,
+          })
+          .from(secretsTable)
+          .where(
+            builtinConnectorCredentialSecretReadCondition({
+              groups: [
+                {
+                  access: builtinSecretReadArgs.access,
+                  names: builtinSecretReadArgs.names,
+                },
+              ],
+            }),
+          );
+        const values = new Map<string, string>();
+        for (const row of rows) {
+          values.set(
+            row.name,
+            await decryptStoredSecretValue(
+              row.encryptedValue,
+              builtinSecretReadArgs.featureSwitchContext,
+            ),
+          );
+        }
+        return values;
+      })();
+    } else {
+      values = new Map();
+    }
   } else {
     const type = args.metadata.metadataKey ?? args.accessSourceKey;
     if (!isPersonalSubscriptionProviderType(type) || !args.sourceId) {
@@ -2151,7 +2147,8 @@ async function persistRefreshOutputValues(
     switch (target.kind) {
       case "secret": {
         if (prepared.sourceType === "model-provider") {
-          await upsertModelProviderSecretValue(args.db, {
+          const db = args.db;
+          const secretWrite = {
             orgId: args.orgId,
             userId: context.secretUserId,
             name: target.name,
@@ -2159,7 +2156,45 @@ async function persistRefreshOutputValues(
             sourceId: args.sourceId,
             runId: args.runId,
             featureSwitchContext: args.featureSwitchContext,
-          });
+          };
+          await (async (): Promise<void> => {
+            const encryptedValue = await encryptStoredSecretValue(
+              secretWrite.value,
+              secretWrite.featureSwitchContext,
+            );
+            if (secretWrite.sourceId) {
+              const [account] = await db
+                .select({ id: modelProviderAccounts.id })
+                .from(modelProviderAccounts)
+                .where(providerSecretScope(secretWrite.sourceId, secretWrite))
+                .limit(1);
+              if (!account) {
+                return;
+              }
+              await db
+                .insert(modelProviderAccountSecrets)
+                .values({
+                  modelProviderAccountId: secretWrite.sourceId,
+                  name: secretWrite.name,
+                  encryptedValue,
+                  description: `Personal model provider account secret: ${secretWrite.name}`,
+                })
+                .onConflictDoUpdate({
+                  target: [
+                    modelProviderAccountSecrets.modelProviderAccountId,
+                    modelProviderAccountSecrets.name,
+                  ],
+                  set: {
+                    encryptedValue,
+                    updatedAt: nowDate(),
+                  },
+                });
+              return;
+            }
+            throw new Error(
+              "Personal subscription refresh requires an account identity",
+            );
+          })();
         } else {
           const encryptedValue = await encryptStoredSecretValue(
             value,
@@ -5000,49 +5035,6 @@ type CurrentCustomConnectorAuthRefsResolution =
     }
   | { readonly kind: "unavailable" };
 
-async function resolveCurrentCustomConnectorMemberId(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly customConnectorId: string;
-  readonly sourceId: string;
-}): Promise<string | undefined> {
-  const target = {
-    kind: "custom" as const,
-    customConnectorId: args.customConnectorId,
-  };
-  const db = args.db;
-  const plan = connectorAccountResolutionReadPlan({
-    orgId: args.orgId,
-    userId: args.userId,
-    requests: [
-      {
-        target,
-        selection: { kind: "exact", sourceId: args.sourceId },
-      },
-    ],
-  });
-  const [exactRows, defaultRows] = await Promise.all([
-    plan.exactWhere
-      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
-      : [],
-    plan.defaultWhere
-      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
-      : [],
-  ]);
-  const accountResolutions = connectorAccountResolutionsFromRows({
-    requests: plan.requests,
-    exactRows,
-    defaultRows,
-  });
-  const accountResolution = accountResolutions.get(
-    connectorAccountTargetKey(target),
-  );
-  return accountResolution?.kind === "resolved"
-    ? accountResolution.account.connectorId
-    : undefined;
-}
-
 async function loadCurrentCustomConnectorAuthRefs(args: {
   readonly db: Db;
   readonly orgId: string;
@@ -5050,7 +5042,43 @@ async function loadCurrentCustomConnectorAuthRefs(args: {
   readonly customConnectorId: string;
   readonly sourceId: string;
 }): Promise<CurrentCustomConnectorAuthRefsResolution> {
-  const memberConnectorId = await resolveCurrentCustomConnectorMemberId(args);
+  const memberLookupArgs = args;
+  const memberConnectorId = await (async (): Promise<string | undefined> => {
+    const target = {
+      kind: "custom" as const,
+      customConnectorId: memberLookupArgs.customConnectorId,
+    };
+    const db = memberLookupArgs.db;
+    const plan = connectorAccountResolutionReadPlan({
+      orgId: memberLookupArgs.orgId,
+      userId: memberLookupArgs.userId,
+      requests: [
+        {
+          target,
+          selection: { kind: "exact", sourceId: memberLookupArgs.sourceId },
+        },
+      ],
+    });
+    const [exactRows, defaultRows] = await Promise.all([
+      plan.exactWhere
+        ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+        : [],
+      plan.defaultWhere
+        ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+        : [],
+    ]);
+    const accountResolutions = connectorAccountResolutionsFromRows({
+      requests: plan.requests,
+      exactRows,
+      defaultRows,
+    });
+    const accountResolution = accountResolutions.get(
+      connectorAccountTargetKey(target),
+    );
+    return accountResolution?.kind === "resolved"
+      ? accountResolution.account.connectorId
+      : undefined;
+  })();
   if (memberConnectorId === undefined) {
     return { kind: "unavailable" };
   }

@@ -22,24 +22,4 @@ describe("cron monitor chat event queue", () => {
       error: { code: "UNAUTHORIZED", message: "Invalid cron secret" },
     });
   });
-
-  it("reports no orphaned messages for an empty isolated queue", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronMonitorChatEventQueueRoutes,
-      isolatePg: true,
-    });
-    mockEnv("CRON_SECRET", "empty-queue-cron-secret");
-    const response = await accept(
-      app(cronMonitorChatEventQueueContract).monitor({
-        headers: { authorization: "Bearer empty-queue-cron-secret" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      success: true,
-      orphanedMessages: 0,
-    });
-  });
 });

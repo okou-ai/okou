@@ -1,3 +1,4 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   mailContract,
   type MailDraft,
@@ -13,14 +14,16 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   completedConversation,
-  context,
-  installCapabilityChat,
   quoteSelectedPassage,
   RUN_PATH,
   selectPassage,
   waitForSend,
   type CapturedChatSend,
+  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
+
+const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const MAIL_DRAFT_ID = "e0000000-0000-4000-a000-000000000811";
 const SENT_MAIL_ID = "gmail-sent-message-811";

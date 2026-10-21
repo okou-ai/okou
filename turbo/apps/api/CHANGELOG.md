@@ -9,6 +9,26 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.761.1](https://github.com/okou-ai/okou/compare/api-v1.761.0...api-v1.761.1) (2026-10-21)
+
+
+### Refactoring
+
+* **api:** keep telegram database operations with their owners ([#42043](https://github.com/okou-ai/okou/issues/42043)) ([be95b0a](https://github.com/okou-ai/okou/commit/be95b0a7ab52a046667e658f9b668024436f33bf))
+* **api:** own duplicate initial plan queries in invoice handler ([#41533](https://github.com/okou-ai/okou/issues/41533)) ([28f9969](https://github.com/okou-ai/okou/commit/28f9969eaf94013c835eb7d30f8b8c29c5cf1d12)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* finish connector status retirement cleanup ([#42039](https://github.com/okou-ai/okou/issues/42039)) ([71a4cb7](https://github.com/okou-ai/okou/commit/71a4cb7efd16afc2ef4417ad876e58d8984cc8cc))
+* **runner:** retire scheduling history generation identity ([#41998](https://github.com/okou-ai/okou/issues/41998)) ([39dbd2a](https://github.com/okou-ai/okou/commit/39dbd2a10242e3e1d9241d8b81c034258f10f842))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.584.1
+    * @okouai/core bumped to 8.775.1
+    * @okouai/db bumped to 1.354.1
+    * @okouai/pi-agent-runtime bumped to 1.50.41
+
 ## [1.761.0](https://github.com/okou-ai/okou/compare/api-v1.760.4...api-v1.761.0) (2026-10-21)
 
 
