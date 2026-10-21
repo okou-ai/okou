@@ -251,7 +251,8 @@ private struct WorkspaceRootView: View {
       "Unable to update chats",
       isPresented: Binding(
         get: {
-          store.list.error != nil && store.list.renameRequest == nil && !store.list.isSavingRename
+          store.selectedConversation != nil && store.list.error != nil
+            && store.list.renameRequest == nil && !store.list.isSavingRename
         },
         set: { if !$0 { store.list.dismissError() } }
       )
