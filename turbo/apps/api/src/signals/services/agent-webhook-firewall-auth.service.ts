@@ -1123,41 +1123,6 @@ function isExpiredAwsSigninRefreshState(
   );
 }
 
-async function getBuiltinConnectorSecretValues(args: {
-  readonly access: BuiltinConnectorCredentialAccess;
-  readonly db: Db;
-  readonly names: readonly string[];
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<ReadonlyMap<string, string>> {
-  if (args.names.length === 0) {
-    return new Map();
-  }
-  // Keep multi-secret credentials (for example AWS SigV4) on one statement
-  // snapshot so a same-method replacement cannot combine two stored states.
-  const rows = await args.db
-    .select({
-      name: secretsTable.name,
-      encryptedValue: secretsTable.encryptedValue,
-    })
-    .from(secretsTable)
-    .where(
-      builtinConnectorCredentialSecretReadCondition({
-        groups: [{ access: args.access, names: args.names }],
-      }),
-    );
-  const values = new Map<string, string>();
-  for (const row of rows) {
-    values.set(
-      row.name,
-      await decryptStoredSecretValue(
-        row.encryptedValue,
-        args.featureSwitchContext,
-      ),
-    );
-  }
-  return values;
-}
-
 async function getSecretValue(args: {
   readonly runId?: string;
   readonly connectorAccess?: BuiltinConnectorCredentialAccess;
@@ -1173,12 +1138,46 @@ async function getSecretValue(args: {
     if (args.connectorAccess === undefined) {
       return null;
     }
-    const values = await getBuiltinConnectorSecretValues({
+    const builtinSecretReadArgs = {
       access: args.connectorAccess,
       db: args.db,
       names: [args.name],
       featureSwitchContext: args.featureSwitchContext,
-    });
+    };
+    const values = await (async (): Promise<ReadonlyMap<string, string>> => {
+      if (builtinSecretReadArgs.names.length === 0) {
+        return new Map();
+      }
+      // Keep multi-secret credentials (for example AWS SigV4) on one statement
+      // snapshot so a same-method replacement cannot combine two stored states.
+      const rows = await builtinSecretReadArgs.db
+        .select({
+          name: secretsTable.name,
+          encryptedValue: secretsTable.encryptedValue,
+        })
+        .from(secretsTable)
+        .where(
+          builtinConnectorCredentialSecretReadCondition({
+            groups: [
+              {
+                access: builtinSecretReadArgs.access,
+                names: builtinSecretReadArgs.names,
+              },
+            ],
+          }),
+        );
+      const values = new Map<string, string>();
+      for (const row of rows) {
+        values.set(
+          row.name,
+          await decryptStoredSecretValue(
+            row.encryptedValue,
+            builtinSecretReadArgs.featureSwitchContext,
+          ),
+        );
+      }
+      return values;
+    })();
     return values.get(args.name) ?? null;
   }
   // Personal subscription credentials live only on their exact account.
@@ -1368,14 +1367,50 @@ async function getCurrentAccessSecrets(
   if (args.sourceType === "connector") {
     const connectorSlug = args.accessSourceKey;
     const access = args.connectorAccessBySlug.get(connectorSlug)?.access;
-    values = access
-      ? await getBuiltinConnectorSecretValues({
-          access,
-          db: args.db,
-          names: secretNames,
-          featureSwitchContext: args.featureSwitchContext,
-        })
-      : new Map();
+    if (access) {
+      const builtinSecretReadArgs = {
+        access,
+        db: args.db,
+        names: secretNames,
+        featureSwitchContext: args.featureSwitchContext,
+      };
+      values = await (async (): Promise<ReadonlyMap<string, string>> => {
+        if (builtinSecretReadArgs.names.length === 0) {
+          return new Map();
+        }
+        // Keep multi-secret credentials (for example AWS SigV4) on one statement
+        // snapshot so a same-method replacement cannot combine two stored states.
+        const rows = await builtinSecretReadArgs.db
+          .select({
+            name: secretsTable.name,
+            encryptedValue: secretsTable.encryptedValue,
+          })
+          .from(secretsTable)
+          .where(
+            builtinConnectorCredentialSecretReadCondition({
+              groups: [
+                {
+                  access: builtinSecretReadArgs.access,
+                  names: builtinSecretReadArgs.names,
+                },
+              ],
+            }),
+          );
+        const values = new Map<string, string>();
+        for (const row of rows) {
+          values.set(
+            row.name,
+            await decryptStoredSecretValue(
+              row.encryptedValue,
+              builtinSecretReadArgs.featureSwitchContext,
+            ),
+          );
+        }
+        return values;
+      })();
+    } else {
+      values = new Map();
+    }
   } else {
     const type = args.metadata.metadataKey ?? args.accessSourceKey;
     if (!isPersonalSubscriptionProviderType(type) || !args.sourceId) {
