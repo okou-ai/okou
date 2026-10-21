@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise native cache identity and main-only warm routing without cache writes."""
 
+import ast
 import json
 import os
 import shutil
@@ -14,6 +15,19 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def yaml(path):
     return json.loads(subprocess.check_output(["yq", "-o=json", ".", str(path)]))
+
+
+def compare_literals(expression):
+    comparison = ast.parse(expression, mode="eval").body
+    if not isinstance(comparison, ast.Compare) or len(comparison.ops) != 1:
+        raise ValueError("Expected one literal cache-routing comparison")
+    left = ast.literal_eval(comparison.left)
+    right = ast.literal_eval(comparison.comparators[0])
+    if isinstance(comparison.ops[0], ast.Eq):
+        return left == right
+    if isinstance(comparison.ops[0], ast.NotEq):
+        return left != right
+    raise ValueError("Unsupported cache-routing comparison")
 
 
 class BuildCacheTests(unittest.TestCase):
@@ -121,9 +135,7 @@ class BuildCacheTests(unittest.TestCase):
                 "refs/heads/gh-readonly-queue/main/pr-1",
             ):
                 condition = job["if"].replace("github.ref", repr(ref))
-                self.assertEqual(
-                    eval(condition, {"__builtins__": {}}, {}), ref == "refs/heads/main"
-                )
+                self.assertEqual(compare_literals(condition), ref == "refs/heads/main")
             for step in job["steps"]:
                 if "if" not in step:
                     continue
@@ -133,9 +145,7 @@ class BuildCacheTests(unittest.TestCase):
                         .replace("steps.cache.outputs.dependencies-hit", repr(hit))
                         .replace("steps.cache.outputs.compilation-hit", repr(hit))
                     )
-                    self.assertEqual(
-                        eval(condition, {"__builtins__": {}}, {}), hit != "true"
-                    )
+                    self.assertEqual(compare_literals(condition), hit != "true")
 
     def test_producer_and_restore_paths_and_keys_match(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
