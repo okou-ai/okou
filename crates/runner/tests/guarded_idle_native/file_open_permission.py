@@ -178,6 +178,8 @@ class FileOpenPermission:
             adopted.append((owned, mask))
             if (size, version, reserved, meta) != (32, 3, 0, 24) or pidfd is None:
                 errors.append("unsupported kernel permission/PIDFD record")
+        if errors:
+            self._observation_failed = True
         if validate:
             require(not errors, "; ".join(errors))
             for owned, mask in adopted:
@@ -310,8 +312,17 @@ class FileOpenPermission:
             self._ready.clear()
             require(reads < MAX_RETIRE, "permission retirement read bound reached")
             reads += 1
-            if not self._read(validate=False):
+            try:
+                more = self._read(validate=False)
+            except BaseException:
+                self._observation_failed = True
+                raise
+            if not more:
                 break
+        require(
+            not self._observation_failed,
+            "kernel observation failed; retired events but retained group owner",
+        )
         try:
             os.close(self._group)
             os.close(self._original)

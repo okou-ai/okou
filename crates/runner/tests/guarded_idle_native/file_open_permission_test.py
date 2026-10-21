@@ -313,6 +313,7 @@ print(json.dumps({'written':True}),flush=True)
                 lambda v: v["claims"].update(native_guest_executed=True),
                 lambda v: v.update(source_commit="b" * 40),
                 lambda v: v["cases"][0]["cleanup"].update(group_closed=False),
+                lambda v: v["cases"][0]["cleanup"].update(observation_failed=True),
                 lambda v: v["cases"][1]["producer"].update(exit=0),
                 lambda v: v["cases"][0]["disposition"]["event"].update(
                     inode=v["original"]["inode"] + 1
