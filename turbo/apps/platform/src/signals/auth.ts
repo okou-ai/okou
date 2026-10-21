@@ -15,11 +15,9 @@ import {
 import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
 import { BRAND_NAME, type BrandName } from "./branding.ts";
 import {
-  bestEffort,
   createDeferredPromise,
   type DeferredPromise,
   NEVER_RESOLVED_PROMISE,
-  onDomEventFn,
   onRejection,
 } from "./utils.ts";
 import { ROUTES } from "./route-paths.ts";
@@ -533,53 +531,38 @@ export const watchOrgSwitch$ = command(
     let prevOrgId = clerk.organization?.id ?? undefined;
     setPostHogOrganization(prevOrgId);
 
-    // Listener stays `() => void`: Clerk's `ListenerCallback` signature
-    // is not awaited, and returning a promise from it would trip
-    // `typescript/no-misused-promises`. `onDomEventFn` detaches the async
-    // work, and `bestEffort` keeps reload behavior even when token rotation
-    // rejects.
-    const unsubscribe = clerk.addListener(
-      onDomEventFn(async () => {
-        if (clerk.user === null) {
-          // Signed out: any organization that follows belongs to a new session
-          // and activates rather than switches.
-          prevOrgId = undefined;
-          return;
-        }
-        const newOrgId = clerk.organization?.id ?? undefined;
-        // Clerk clears the organization while `setActive()` navigates, and on
-        // mobile it can also clear it during a background token refresh. Keep
-        // the previous concrete org so that restoration is recognized as
-        // unchanged rather than as an org switch.
-        if (!newOrgId || newOrgId === prevOrgId) {
-          return;
-        }
-        const needsOnboarding = get(createdOrgToOnboard$) === newOrgId;
-        if (needsOnboarding) {
-          set(createdOrgToOnboard$, null);
-        }
-        // Preserve the sign-in destination on first activation unless workspace
-        // creation explicitly requested onboarding for this organization.
-        const isFirstActivation = prevOrgId === undefined;
-        prevOrgId = newOrgId;
-        setPostHogOrganization(newOrgId);
-        if (isFirstActivation && !needsOnboarding) {
-          return;
-        }
+    const unsubscribe = clerk.addListener(() => {
+      if (clerk.user === null) {
+        // Signed out: any organization that follows belongs to a new session
+        // and activates rather than switches.
+        prevOrgId = undefined;
+        return;
+      }
+      const newOrgId = clerk.organization?.id ?? undefined;
+      // Clerk clears the organization while `setActive()` navigates, and on
+      // mobile it can also clear it during a background token refresh. Keep
+      // the previous concrete org so that restoration is recognized as
+      // unchanged rather than as an org switch.
+      if (!newOrgId || newOrgId === prevOrgId) {
+        return;
+      }
+      const needsOnboarding = get(createdOrgToOnboard$) === newOrgId;
+      if (needsOnboarding) {
+        set(createdOrgToOnboard$, null);
+      }
+      // Preserve the sign-in destination on first activation unless workspace
+      // creation explicitly requested onboarding for this organization.
+      const isFirstActivation = prevOrgId === undefined;
+      prevOrgId = newOrgId;
+      setPostHogOrganization(newOrgId);
+      if (isFirstActivation && !needsOnboarding) {
+        return;
+      }
 
-        if (signal.aborted) {
-          return;
-        }
-        await bestEffort(
-          (async () => {
-            return await clerk.session?.getToken({ skipCache: true });
-          })(),
-        );
-        if (!signal.aborted) {
-          location.href = needsOnboarding ? ONBOARDING_PATH : "/";
-        }
-      }),
-    );
+      if (!signal.aborted) {
+        location.href = needsOnboarding ? ONBOARDING_PATH : "/";
+      }
+    });
     signal.addEventListener("abort", unsubscribe);
   },
 );
