@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.406.1](https://github.com/okou-ai/okou/compare/cli-v9.406.0...cli-v9.406.1) (2026-10-21)
+
+
+### Refactoring
+
+* finish connector status retirement cleanup ([#42039](https://github.com/okou-ai/okou/issues/42039)) ([71a4cb7](https://github.com/okou-ai/okou/commit/71a4cb7efd16afc2ef4417ad876e58d8984cc8cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.584.1
+    * @okouai/core bumped to 8.775.1
+    * @okouai/pi-agent-runtime bumped to 1.50.41
+
 ## [9.406.0](https://github.com/okou-ai/okou/compare/cli-v9.405.8...cli-v9.406.0) (2026-10-21)
 
 
