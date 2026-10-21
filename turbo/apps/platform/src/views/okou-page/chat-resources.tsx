@@ -88,8 +88,7 @@ function ChatResourcesButtonInner({
   const loading = wanted && settled === null;
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
-  const shown =
-    settled !== null && requested && (settled.hasContent || chosen !== null);
+  const shown = settled !== null && requested && (settled || chosen !== null);
   const pressed = shown || (loading && chosen === true);
   const wide = useGet(resources.wide$);
   const anchor = useGet(resources.anchor$);
