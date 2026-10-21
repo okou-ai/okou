@@ -51,6 +51,9 @@ final class ConversationStore {
     }, didFail: didFail)
   @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, didFail: didFail)
+  @ObservationIgnored lazy var artifacts = MessageArtifactStore(
+    service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
+    didFail: didFail)
   private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
   private(set) var pending: [PendingMessage] = [] {
     didSet { persistPending() }
@@ -473,6 +476,7 @@ final class ConversationStore {
       guard detailOwner == owner else { return }
       detailOwner = nil
       attachmentViewer.deactivate()
+      artifacts.deactivate()
       failureAccountsTask?.cancel()
       failureAccountsTask = nil
       failureAccountsRequestedID = nil
@@ -510,8 +514,22 @@ final class ConversationStore {
     measurements.clear()
     composer.close()
     attachmentViewer.close()
+    artifacts.close()
     connectorActions.close()
     permissionActions.close()
+  }
+
+  func artifactImageSources(for messageID: String) -> [String] {
+    guard let index = items.firstIndex(where: { $0.id == messageID }) else { return [] }
+    var start = index
+    while start > 0, !items[start].beginsWorkSection, items[start - 1].role == items[index].role {
+      start -= 1
+    }
+    var end = index + 1
+    while end < items.count, !items[end].beginsWorkSection, items[end].role == items[index].role {
+      end += 1
+    }
+    return items[start..<end].compactMap(\.message).map(\.text)
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {

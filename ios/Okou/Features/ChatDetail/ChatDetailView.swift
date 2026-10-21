@@ -134,6 +134,14 @@ struct ChatDetailView: View {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
     }
     .sheet(
+      isPresented: Binding(
+        get: { conversation.artifacts.preview != nil },
+        set: { if !$0 { conversation.artifacts.dismiss() } }
+      )
+    ) {
+      MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
+    }
+    .sheet(
       item: $messageToSelect,
       onDismiss: {
         if let selection = selectionToQuote { conversation.quote(selection) }
@@ -345,7 +353,10 @@ struct ChatDetailView: View {
           actionContext: message.role == .assistant
             ? MessageActionContext(agentID: thread.agentID, threadID: thread.id) : nil,
           connectorActions: conversation.connectorActions,
-          permissionActions: conversation.permissionActions, loadsActions: loadsAttachments
+          permissionActions: conversation.permissionActions,
+          artifacts: message.role == .assistant ? conversation.artifacts : nil,
+          artifactImageSources: conversation.artifactImageSources(for: message.id),
+          loadsActions: loadsAttachments
         )
         .equatable()
         .foregroundStyle(

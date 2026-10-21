@@ -20,7 +20,7 @@ final class ConversationHistoryFixture: Sendable {
 
   init(
     rows initial: [String], fileOrigin: URL? = nil,
-    usage: ChatHTTPFixture.Handler? = nil
+    usage: ChatHTTPFixture.Handler? = nil, artifactResources: ChatHTTPFixture.Handler? = nil
   ) {
     let rows = HistoryRows(initial)
     self.rows = rows
@@ -30,6 +30,12 @@ final class ConversationHistoryFixture: Sendable {
         $0.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
       }
       let path = "/api/chat-threads/\(Self.threadID)"
+      if let artifactResources,
+        request.url?.path.hasPrefix("/api/artifact-references/") == true
+          || request.url?.path == path + "/artifacts"
+      {
+        return try await artifactResources(request)
+      }
       switch request.url?.path {
       case path + "/usage":
         guard let usage else { throw URLError(.unsupportedURL) }
