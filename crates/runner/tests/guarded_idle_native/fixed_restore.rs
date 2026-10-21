@@ -13,6 +13,6 @@ async fn native_fixed_restore_loss_retains_original_uncertainty() -> TestResult<
 }
 
 #[test]
-fn fixed_restore_reader_checks_original_files_and_cli() {
-    guest_preparation::reader_test("fixed_restore_report_test.py");
+fn fixed_restore_reader_checks_original_files_and_cli() -> TestResult<()> {
+    guest_preparation::reader_test("fixed_restore_report_test.py")
 }

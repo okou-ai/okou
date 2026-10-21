@@ -107,6 +107,6 @@ async fn native_final_exec_loss_retains_original_uncertainty() -> TestResult<()>
 }
 
 #[test]
-fn final_exec_reader_checks_original_files_and_cli() {
-    guest_preparation::reader_test("final_exec_report_test.py");
+fn final_exec_reader_checks_original_files_and_cli() -> TestResult<()> {
+    guest_preparation::reader_test("final_exec_report_test.py")
 }

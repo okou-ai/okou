@@ -613,18 +613,20 @@ pub(super) async fn selected(kind: Kind, prefix: &str) -> TestResult<()> {
     .await
 }
 
-pub(super) fn reader_test(name: &str) {
+pub(super) fn reader_test(name: &str) -> TestResult<()> {
     let output = std::process::Command::new("python3")
         .arg(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/guarded_idle_native")
                 .join(name),
         )
-        .output()
-        .expect("fixed restore reader requires Python3");
-    assert!(
-        output.status.success(),
-        "fixed restore reader: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "Guest preparation reader failed: {}",
+            String::from_utf8_lossy(&output.stderr),
+        ))
+        .into());
+    }
+    Ok(())
 }
