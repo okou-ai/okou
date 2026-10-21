@@ -59,11 +59,22 @@ if ! services=$(list_services); then
 fi
 [ -z "$services" ] || fail "empty PR inventory included another namespace"
 
+mkdir -p "${tmp_dir}/root/run/systemd/transient" "${tmp_dir}/root/run/systemd/system"
+cp "${tmp_dir}/test.service" \
+  "${tmp_dir}/root/run/systemd/transient/vm0-runner-pr-42-transient.service"
+
+# Transient files may be collected when stop completes. They are not owned by
+# the subsequent persistent-unit disable and removal phases.
+services=$(list_services) || fail "failed to list a transient-only namespace"
+[ -z "$services" ] || fail "transient service entered persistent cleanup: ${services}"
+
 for lane in api crates; do
   cp "${tmp_dir}/test.service" "${tmp_dir}/root/etc/systemd/system/vm0-runner-pr-42-${lane}.service"
 done
+cp "${tmp_dir}/test.service" \
+  "${tmp_dir}/root/run/systemd/system/vm0-runner-pr-42-runtime.service"
 services=$(list_services) || fail "failed to list installed PR services"
-[ "$services" = $'vm0-runner-pr-42-api.service\nvm0-runner-pr-42-crates.service' ] ||
+[ "$services" = $'vm0-runner-pr-42-api.service\nvm0-runner-pr-42-crates.service\nvm0-runner-pr-42-runtime.service' ] ||
   fail "service inventory did not select the exact PR namespace: ${services}"
 
 if list_services true >"${tmp_dir}/failure.out" 2>"${tmp_dir}/failure.err"; then
@@ -72,4 +83,4 @@ fi
 grep -q 'unit inventory unavailable' "${tmp_dir}/failure.err" ||
   fail "inventory failures must retain their diagnostic output"
 
-echo "PASS: runner cleanup accepts an empty service inventory and preserves real failures"
+echo "PASS: runner cleanup separates persistent and transient units and preserves real failures"

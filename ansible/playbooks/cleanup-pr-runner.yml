@@ -65,11 +65,13 @@
         set -o pipefail
         # systemctl exits 1 when a supplied pattern matches no unit files.
         # Filter the full inventory so directory-only namespaces can be cleaned.
+        # Transient unit files can disappear after stop; only persistent units
+        # belong to the subsequent disable and unit-file removal phases.
         systemctl list-unit-files \
           --type=service \
           --no-legend \
           --no-pager \
-          | awk '$1 ~ /^vm0-runner-{{ job_ref }}-[a-z0-9][a-z0-9.-]*\.service$/ {print $1}' \
+          | awk '$2 != "transient" && $1 ~ /^vm0-runner-{{ job_ref }}-[a-z0-9][a-z0-9.-]*\.service$/ {print $1}' \
           | sort -u
       args:
         executable: /bin/bash
