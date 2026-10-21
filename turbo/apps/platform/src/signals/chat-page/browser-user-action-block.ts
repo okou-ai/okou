@@ -27,7 +27,7 @@ import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { onRef, resetSignal, settle } from "../utils.ts";
+import { onRef, resetSignal, settle, withCleanup } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -1401,7 +1401,23 @@ function createSubmitSignal({
       }
     },
   );
-  return submit$;
+  // Upload staging is shared by request, not by the mounted form. A reopened
+  // form must await the existing submit instead of overwriting its file bytes.
+  const inFlight$ = state<Promise<void> | null>(null);
+  return command(
+    ({ get, set }, action: BrowserInputAction, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      const inFlight = get(inFlight$);
+      if (inFlight) {
+        return inFlight;
+      }
+      const operation = withCleanup(set(submit$, action, signal), () => {
+        set(inFlight$, null);
+      });
+      set(inFlight$, operation);
+      return operation;
+    },
+  );
 }
 
 function createCancelSignal({
