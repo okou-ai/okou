@@ -37,6 +37,7 @@ httpmock = { workspace = true, features = ["cookies"] }
 sandbox.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["process", "test-util"] }
+tokio-tungstenite.workspace = true
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 tracing-test-support.workspace = true
 
