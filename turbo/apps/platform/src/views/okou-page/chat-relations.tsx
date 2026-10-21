@@ -89,8 +89,9 @@ export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
         <ExternalSourceMessageAnnotation
           part={part}
           compact
-          // The 15px source mark sits centred in the 20px glyph slot.
-          className="flex h-8.5 min-w-0 items-center gap-[10.5px] rounded-lg pr-2 pl-[22.5px] text-[13px] leading-5 text-foreground transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
+          // The row pads 8px; the 15px source mark then sits centred in the
+          // 20px glyph slot, and the label starts on the other titles' 36px edge.
+          className="flex h-8.5 min-w-0 items-center gap-[10.5px] rounded-lg pr-2 pl-[10.5px] text-[13px] leading-5 text-foreground transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
         />
       )}
     </section>
