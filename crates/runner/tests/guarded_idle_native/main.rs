@@ -41,6 +41,7 @@ mod observer_loss;
 mod optional;
 mod pressure;
 mod pressure_condition;
+mod quiesce;
 mod read_cancellation;
 mod read_revocation;
 mod read_stop;

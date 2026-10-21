@@ -1,4 +1,4 @@
-//! Shared original custody for genuine fixed-restore and final-exec observation loss.
+//! Shared original custody for genuine Guest preparation observation loss.
 
 use std::{panic::AssertUnwindSafe, path::Path, sync::Mutex, time::Duration};
 
@@ -31,6 +31,7 @@ use super::*;
 pub(super) enum Kind {
     FixedRestore,
     FinalExec,
+    Quiesce,
 }
 
 impl Kind {
@@ -38,13 +39,20 @@ impl Kind {
         match self {
             Self::FixedRestore => RequestKind::GuestStateRestore,
             Self::FinalExec => RequestKind::Exec,
+            Self::Quiesce => RequestKind::Quiesce,
         }
     }
 
-    fn field(self, restore: &'static str, final_exec: &'static str) -> &'static str {
+    fn field(
+        self,
+        restore: &'static str,
+        final_exec: &'static str,
+        quiesce: &'static str,
+    ) -> &'static str {
         match self {
             Self::FixedRestore => restore,
             Self::FinalExec => final_exec,
+            Self::Quiesce => quiesce,
         }
     }
 }
@@ -61,7 +69,7 @@ impl Selection {
     pub fn label(self) -> String {
         format!(
             "{}-{}-{}",
-            self.kind.field("FixedRestore", "FinalExec"),
+            self.kind.field("FixedRestore", "FinalExec", "Quiesce"),
             if self.terminal { "terminal" } else { "capture" },
             match self.fault {
                 native_unpark::Fault::Drop => "drop",
@@ -75,6 +83,7 @@ impl Selection {
         match self.kind {
             Kind::FixedRestore => proof.fixed_restore_witness(phase, value),
             Kind::FinalExec => proof.final_exec_witness(phase, value),
+            Kind::Quiesce => proof.quiesce_witness(phase, value),
         }
     }
 }
@@ -155,6 +164,10 @@ struct FixedRestoreUncertain;
 #[error("final exec retains original uncertainty; required saving is incomplete")]
 struct FinalExecUncertain;
 
+#[derive(Debug, thiserror::Error)]
+#[error("quiesce retains original uncertainty; required saving is incomplete")]
+struct QuiesceUncertain;
+
 pub(super) async fn session_file(
     sandbox: &dyn sandbox::Sandbox,
     thread: &str,
@@ -209,7 +222,7 @@ async fn lose(
                     .map_err(|error| error.to_string())
             })
         })),
-        Kind::FinalExec => Box::pin(owner.repark(fixture::IMAGE_BYTES)),
+        Kind::FinalExec | Kind::Quiesce => Box::pin(owner.repark(fixture::IMAGE_BYTES)),
     };
     let captured = tokio::time::timeout(Duration::from_secs(90),async {
         tokio::select! {
@@ -242,13 +255,14 @@ async fn lose(
             operation,
             &request.sandbox_id.to_string(),
         )?,
+        Kind::Quiesce => quiesce::validate_request(&captured, payload)?,
     }
     live(request).await?;
     witness(
         "request_captured",
         json!({"history_run_id":request.history,"operation_run_id":operation,
         "prepare_started_ns":started,"request":frame(&captured),"backend_dispatched":false,
-        (kind.field("canonical_fixed_helper", "canonical_final_exec")):true,
+        (kind.field("canonical_fixed_helper", "canonical_final_exec", "canonical_quiesce")):true,
         "original_full_lease_active":true,"allocated":request.context.budget.allocated()}),
     )?;
     let mut terminal = None;
@@ -272,8 +286,8 @@ async fn lose(
         "observation_waiting",
         json!({"boundary":if request.selection.terminal {"terminal"} else {"capture"},
         "request":frame(&captured),"response":terminal.as_ref().map(frame),
-        (kind.field("public_restore_polled_pending", "public_repark_polled_pending")):true,
-        (kind.field("running_helper_observed", "running_exec_observed")):false,
+        (kind.field("public_restore_polled_pending", "public_repark_polled_pending", "public_repark_polled_pending")):true,
+        (kind.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")):false,
         "original_full_lease_active":true,"allocated":request.context.budget.allocated()}),
     )?;
     let lost = evidence::clocks()?.0;
@@ -393,25 +407,32 @@ async fn lose(
             if response.message_type() != MSG_GUEST_STATE_RESTORE_RESULT {
                 return Err(io::Error::other("fixed terminal type changed").into());
             }
-            guest_control_proto::decode_guest_state_restore_result(payload)?
+            Some(guest_control_proto::decode_guest_state_restore_result(
+                payload,
+            )?)
         }
-        Kind::FinalExec => final_exec::validate_result(
+        Kind::FinalExec => Some(final_exec::validate_result(
             &response,
             payload,
             request.history,
             operation,
             &request.sandbox_id.to_string(),
-        )?,
+        )?),
+        Kind::Quiesce => {
+            quiesce::validate_response(&response, payload)?;
+            None
+        }
     };
-    if decoded.termination != (ExecTermination::Exited { exit_code: 0 })
-        || !decoded.diagnostic.is_empty()
-        || !matches!(
-            decoded.stderr,
-            guest_control_proto::ExecCapturedOutput::Captured {
-                truncated: false,
-                ..
-            }
-        )
+    if let Some(decoded) = decoded
+        && (decoded.termination != (ExecTermination::Exited { exit_code: 0 })
+            || !decoded.diagnostic.is_empty()
+            || !matches!(
+                decoded.stderr,
+                guest_control_proto::ExecCapturedOutput::Captured {
+                    truncated: false,
+                    ..
+                }
+            ))
     {
         return Err(io::Error::other("real canonical helper did not complete successfully").into());
     }
@@ -460,11 +481,11 @@ async fn lose(
         "actual_terminal_drained",
         json!({"request":frame(&captured),"response":frame(&response),
         "delivery_requested_ns":delivered,"joined_ns":evidence::clocks()?.0,
-        (kind.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero")):true,
-        (kind.field("helper_stdin_stderr_joined", "exec_stdin_stdout_stderr_joined")):true,
+        (kind.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero", "canonical_quiesce_acknowledged")):true,
+        (kind.field("helper_stdin_stderr_joined", "exec_stdin_stdout_stderr_joined", "guest_dispatcher_completed")):true,
         "exchange_joined":!producer_unwind,"transport_producer_unwound":producer_unwind,
         "connection_retained_pending":!producer_unwind,
-        (kind.field("running_helper_observed", "running_exec_observed")):false,
+        (kind.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")):false,
         "ordinary_reuse_reopened":false,"original_full_lease_active":true,"allocated":request.context.budget.allocated()}),
     )?;
     Ok(())
@@ -501,7 +522,7 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
         let snapshot = context.pool.lock().await.status_snapshot();
         context.status.set_idle_snapshot(snapshot).await?;
         let current=owner.as_mut().ok_or_else(||io::Error::other("original capsule absent"))?;
-        if request.selection.kind == Kind::FinalExec {
+        if request.selection.kind != Kind::FixedRestore {
             current.prepare(operation, |sandbox, _, _| Box::pin(async move {
                 runner_executor::executor::restore_guest_state_with_timezone(sandbox, "UTC")
                     .await.map_err(|error| error.to_string())
@@ -514,11 +535,17 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
         let current=task.as_mut().ok_or_else(||io::Error::other("fixed cleanup absent"))?;
         let result=current.join().await??;
         let ActivationCleanupOutcome::NoProgress(error)=result else{return Err(io::Error::other("abandoned fixed RPC fabricated completed saving").into());};
-        if !error.contains("normal operations are not available on this connection") || current.take_completed_lease().is_ok() {
-            return Err(io::Error::other(format!("fixed cleanup did not retain NotParkable refusal: {error}")).into());
+        let expected = request.selection.kind.field(
+            "normal operations are not available on this connection",
+            "normal operations are not available on this connection",
+            "park policy dirty while unpark is a no-op: park attempt dropped after guest quiesce started",
+        );
+        if !error.contains(expected) || current.take_completed_lease().is_ok() {
+            return Err(io::Error::other(format!("Guest cleanup did not retain original refusal: {error}")).into());
         }
         live(&request).await?;
-        request.selection.witness(request.proof,"required_cleanup_refused",json!({"error":error,"normal_operations_not_parkable":true,
+        request.selection.witness(request.proof,"required_cleanup_refused",json!({"error":error,
+            (request.selection.kind.field("normal_operations_not_parkable", "normal_operations_not_parkable", "park_policy_dirty")):true,
             "completed_lease_refused":true,"required_saving_complete":false,"cleanup_complete":false,
             "original_home":home,"original_full_lease_active":true,"allocated":context.budget.allocated()}))?;
         Ok(())
@@ -576,11 +603,13 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
         "original_full_lease_active":true,"original_exit_polled_pending":true,"allocated":context.budget.allocated(),
         "tracker_joined":true,"heartbeat_provider_peer_joined":true,"accounting":cleanup_progress::accounting(&accounting),
         "required_saving_complete":false,"cleanup_complete":false,"physical_relief_proven":false,"memory_credit":false,
-        (request.selection.kind.field("running_helper_boundary", "running_exec_boundary")):"blocked",
-        "preterminal_acceptance_boundary":"blocked","original_cleanup_io_progress":"blocked_not_parkable"}))?;
+        (request.selection.kind.field("running_helper_boundary", "running_exec_boundary", "native_busy_resume_boundary")):"blocked",
+        "preterminal_acceptance_boundary":"blocked",
+        "original_cleanup_io_progress":request.selection.kind.field("blocked_not_parkable", "blocked_not_parkable", "blocked_dirty")}))?;
     match request.selection.kind {
         Kind::FixedRestore => Err(FixedRestoreUncertain.into()),
         Kind::FinalExec => Err(FinalExecUncertain.into()),
+        Kind::Quiesce => Err(QuiesceUncertain.into()),
     }
 }
 
