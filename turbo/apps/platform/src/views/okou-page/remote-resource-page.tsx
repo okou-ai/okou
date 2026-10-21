@@ -37,6 +37,10 @@ import {
   CloudflareAccessPromotionDialog,
 } from "./cloudflare-access.tsx";
 import { NetworkProviderPicker } from "./remote-network-picker.tsx";
+import {
+  mountPrivateNetworkPanel$,
+  mountRemoteControlPanel$,
+} from "../../signals/remote-management-realtime.ts";
 
 function useRemoteResourceRecords() {
   const resource = useGet(remoteResource$);
@@ -186,6 +190,9 @@ export function RemoteResourcePage() {
   const editing = editingSsh || editingVnc;
   const network =
     resource?.kind === "tailscale" || resource?.kind === "cloudflare";
+  const mount = useSet(
+    network ? mountPrivateNetworkPanel$ : mountRemoteControlPanel$,
+  );
   return (
     <RemoteDetailPage
       network={network}
@@ -198,7 +205,7 @@ export function RemoteResourcePage() {
       })}
       onBack={close}
     >
-      <div className="mx-auto grid max-w-[760px] gap-6">
+      <div ref={mount} className="mx-auto grid max-w-[760px] gap-6">
         <Button
           variant="quiet"
           className="justify-self-start"

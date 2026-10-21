@@ -58,6 +58,10 @@ import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
 import { RemoteNetworkConnections } from "./remote-network-summary.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
+import {
+  mountPrivateNetworkPanel$,
+  mountRemoteControlPanel$,
+} from "../../signals/remote-management-realtime.ts";
 import { TailscaleDialog } from "./tailscale-management.tsx";
 import {
   CloudflareAccessDialog,
@@ -450,11 +454,12 @@ export function GuidedRemoteControlPanel({
 }) {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
+  const mount = useSet(mountRemoteControlPanel$);
   if (setup) {
     return <RemoteConnectionSetup vncEnabled={vncEnabled} />;
   }
   return (
-    <div className="grid gap-6">
+    <div ref={mount} className="grid gap-6">
       <RemoteConnectionDirectory vncEnabled={vncEnabled} />
       <Link
         pathname="/connectors"
@@ -677,6 +682,7 @@ function PrivateNetworkConnectionsDialog({
 
 export function GuidedPrivateNetworkPanel() {
   const { t } = useTranslation();
+  const mount = useSet(mountPrivateNetworkPanel$);
   const params = useGet(searchParams$);
   const connectionsParams = new URLSearchParams(params);
   connectionsParams.set("scope", "remote-control");
@@ -702,6 +708,7 @@ export function GuidedPrivateNetworkPanel() {
   const empty = ts?.length === 0 && cf?.length === 0;
   return (
     <section
+      ref={mount}
       aria-label={t(($) => {
         return $.remoteControlSetup.networkTitle;
       })}

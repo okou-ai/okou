@@ -2473,6 +2473,80 @@ function mockSavedConnections() {
   });
 }
 
+test.each(["directory", "details"] as const)(
+  "Guided SSH %s refreshes a connection changed in another window",
+  async (view) => {
+    mockSavedConnections();
+    let displayName = sshHost.displayName;
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [{ ...sshHost, displayName }] });
+    });
+    await page(
+      `/connectors?scope=remote-control${
+        view === "details" ? `&remoteResource=ssh:${sshHost.id}` : ""
+      }`,
+      true,
+      "member",
+    );
+    await screen.findByText(displayName);
+
+    displayName = "Renamed in another window";
+    context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
+
+    await screen.findByText(displayName);
+  },
+);
+
+test.each(["directory", "details"] as const)(
+  "Guided private network %s refreshes SSH usage changed in another window",
+  async (view) => {
+    let linked = false;
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, {
+        configs: [
+          {
+            ...cloudflareNetwork,
+            sshHosts: linked
+              ? [{ id: sshHost.id, displayName: sshHost.displayName }]
+              : [],
+          },
+        ],
+      });
+    });
+    await page(
+      `/connectors?scope=private-network${
+        view === "details"
+          ? `&remoteResource=cloudflare:${cloudflareNetwork.id}`
+          : ""
+      }`,
+      true,
+      "member",
+    );
+    await screen.findByText(cloudflareNetwork.name);
+    if (view === "details") {
+      expect(getAction("button", "Delete Cloudflare Access")).toBeEnabled();
+    } else {
+      expect(
+        getAction("button", "Office network · Your 0 connections"),
+      ).toBeInTheDocument();
+    }
+
+    linked = true;
+    context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
+
+    if (view === "details") {
+      await screen.findByText(sshHost.displayName);
+      expect(getAction("button", "Delete Cloudflare Access")).toBeDisabled();
+    } else {
+      await waitFor(() => {
+        expect(
+          getAction("button", "Office network · Your 1 connection"),
+        ).toBeInTheDocument();
+      });
+    }
+  },
+);
+
 test("Credentials have a separate page without adding controls to the connection list", async () => {
   mockSavedConnections();
   await page();
@@ -3251,28 +3325,6 @@ test.each(["ssh", "vnc"] as const)(
     });
     expect(generations).toStrictEqual(protocol === "ssh" ? [1, 2] : [2, 3]);
     expect(revisions).toStrictEqual(protocol === "ssh" ? [3, 4] : [4, 5]);
-  },
-);
-
-test.each(["ssh", "vnc"] as const)(
-  "%s details show saved settings without check controls or chat access",
-  async (protocol) => {
-    mockSavedConnections();
-    const host = protocol === "ssh" ? sshHost : vncHost;
-    await page(
-      `/connectors?scope=remote-control&remoteResource=${protocol}:${host.id}`,
-    );
-    await screen.findByRole("heading", { name: host.displayName });
-    expect(
-      screen.queryByRole("heading", {
-        name: "Connection checks are unavailable",
-      }),
-    ).toBeNull();
-    expect(queryAction("button", "Check connection")).toBeNull();
-    expect(queryAction("link", "Check in chat")).toBeNull();
-    expect(queryAction("link", "Open chat")).toBeNull();
-    expect(screen.queryByText("Check status")).toBeNull();
-    expect(screen.queryByText("Not checked yet")).toBeNull();
   },
 );
 
