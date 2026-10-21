@@ -57,13 +57,10 @@ function addTargetSearchParams(
 }
 
 function availableInspection(
-  results: readonly ConnectorAccountInspectionResult[] | null,
+  results: readonly ConnectorAccountInspectionResult[],
   connectorSlug: string,
   connectionId: string,
 ): Extract<ConnectorAccountInspectionResult, { kind: "available" }> {
-  if (results === null) {
-    throw new Error("Connector account switching is unavailable");
-  }
   const [result] = results;
   if (result === undefined) {
     throw new Error("Connector account inspection returned no result");

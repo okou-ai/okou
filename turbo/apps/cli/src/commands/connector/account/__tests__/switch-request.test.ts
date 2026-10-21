@@ -341,12 +341,17 @@ describe("okou connector account switch-request command", () => {
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
-  it("rejects the request when connector accounts are unavailable", async () => {
+  it("does not print a switch link when account inspection fails", async () => {
     server.use(
       http.post("http://localhost:3000/api/connector-accounts/inspect", () => {
         return HttpResponse.json(
-          { error: { code: "NOT_FOUND", message: "Not found" } },
-          { status: 404 },
+          {
+            error: {
+              code: "SERVICE_UNAVAILABLE",
+              message: "Account inspection temporarily unavailable",
+            },
+          },
+          { status: 503 },
         );
       }),
     );
@@ -364,8 +369,9 @@ describe("okou connector account switch-request command", () => {
     ).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "Connector account switching is unavailable",
+      "Account inspection temporarily unavailable",
     );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
   it("requires the current web chat callback context", async () => {
