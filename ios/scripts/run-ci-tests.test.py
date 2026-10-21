@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise real CI scripts with controlled external compiler/simulator processes."""
 
+import json
 import os
 import shutil
 import signal
@@ -51,6 +52,8 @@ elif command == 'swift':
     if scenario == 'package-failure':
         sys.exit(19)
 elif command == 'xcodebuild':
+    with (state / 'xcode-commands').open('a') as output:
+        output.write(json.dumps(args) + '\n')
     if '-resolvePackageDependencies' in args:
         role = 'prepare'
         mark('prepare-started')
@@ -131,13 +134,14 @@ class CIProcessTests(unittest.TestCase):
             "CI_PROCESS_STATE": str(self.state),
             "CI_PROCESS_SCENARIO": "success",
         }
+        self.env.pop("IOS_PACKAGE_RESOLUTION_DESTINATION", None)
 
-    def command(self, script="run-ci-tests.sh"):
-        return ["bash", str(self.repo / "ios/scripts" / script)]
+    def command(self, script="run-ci-tests.sh", *args):
+        return ["bash", str(self.repo / "ios/scripts" / script), *args]
 
-    def invoke(self, script="run-ci-tests.sh"):
+    def invoke(self, script="run-ci-tests.sh", *args):
         return subprocess.run(
-            self.command(script),
+            self.command(script, *args),
             cwd=self.repo,
             env=self.env,
             text=True,
@@ -174,6 +178,54 @@ class CIProcessTests(unittest.TestCase):
         self.env["CI_PROCESS_SCENARIO"] = "package-failure"
         result = self.invoke("ci-package-test.sh")
         self.assertEqual(result.returncode, 19, result.stderr)
+
+    def test_prepare_only_waits_for_both_children_without_compiling_or_running_tests(
+        self,
+    ):
+        result = self.invoke("run-ci-tests.sh", "prepare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "prepare-finished").exists())
+        self.assertTrue((self.state / "boot-finished").exists())
+        self.assertIn("iOS combined preparation:", result.stdout)
+        self.assertFalse((self.state / "build-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_resolution_needs_no_simulator_destination(self):
+        self.env["CI_PROCESS_SCENARIO"] = "manual"
+        del self.env["IOS_TEST_DESTINATION"]
+        result = self.invoke("ci-test.sh", "prepare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = [
+            json.loads(line)
+            for line in (self.state / "xcode-commands").read_text().splitlines()
+        ]
+        self.assertEqual(len(commands), 1)
+        self.assertIn("-resolvePackageDependencies", commands[0])
+        self.assertNotIn("-destination", commands[0])
+        self.assertIn("iOS package graph resolution:", result.stdout)
+
+    def test_resolution_control_does_not_change_compile_or_test_destination(self):
+        self.env["CI_PROCESS_SCENARIO"] = "manual"
+        self.env["IOS_PACKAGE_RESOLUTION_DESTINATION"] = (
+            "platform=iOS Simulator,id=resolution-control"
+        )
+        result = self.invoke("ci-test.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = [
+            json.loads(line)
+            for line in (self.state / "xcode-commands").read_text().splitlines()
+        ]
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(
+            commands[0][commands[0].index("-destination") + 1],
+            self.env["IOS_PACKAGE_RESOLUTION_DESTINATION"],
+        )
+        for command in commands[1:]:
+            self.assertEqual(
+                command[command.index("-destination") + 1],
+                self.env["IOS_TEST_DESTINATION"],
+            )
+        self.assert_complete_suite()
 
     def test_resolution_failure_stops_owned_boot_process_and_blocks_native_tests(self):
         self.env["CI_PROCESS_SCENARIO"] = "prepare-failure"

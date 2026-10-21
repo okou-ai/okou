@@ -7,6 +7,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      compare_package_resolution:
+        description: Compare concrete and independent package resolution on fresh runners
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -218,6 +223,87 @@ jobs:
         with:
           name: ios-test-results-${{ github.run_attempt }}
           path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  compare-package-resolution:
+    needs: prepare-package-sources
+    if: github.event_name == 'workflow_dispatch' && inputs.compare_package_resolution
+    runs-on: xcode-27
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        resolution: [concrete, independent]
+        sample: [1, 2, 3]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_BUILD_CACHE_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore identical dependency baseline
+        id: build-cache
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          restore-compilation: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-package-sources-${{ github.sha }}
+          path: ${{ runner.temp }}/ios-package-sources
+      - name: Configure locked package sources
+        run: |
+          echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/okou-ios-ci"
+          python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$RUNNER_TEMP/ios-package-sources"
+          printf '\n' >> "$HOME/.gitconfig"
+          cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
+      - name: Measure preparation with one resolution variable
+        env:
+          RESOLUTION: ${{ matrix.resolution }}
+          SAMPLE: ${{ matrix.sample }}
+          DEPENDENCIES_KEY: ${{ steps.build-cache.outputs.dependencies-key }}
+          DEPENDENCIES_HIT: ${{ steps.build-cache.outputs.dependencies-hit }}
+          TOOLCHAIN_FILE: ${{ steps.build-cache.outputs.toolchain-file }}
+        run: |
+          unset IOS_PACKAGE_RESOLUTION_DESTINATION
+          if [[ "$RESOLUTION" == concrete ]]; then
+            export IOS_PACKAGE_RESOLUTION_DESTINATION="$IOS_TEST_DESTINATION"
+          fi
+          {
+            echo "Resolution: $RESOLUTION; sample: $SAMPLE"
+            echo "Commit: $GITHUB_SHA"
+            echo "iOS tree: $(git rev-parse HEAD:ios)"
+            echo "Dependencies key: $DEPENDENCIES_KEY"
+            echo "Dependencies exact hit: $DEPENDENCIES_HIT"
+            echo "Test destination: $IOS_TEST_DESTINATION"
+            shasum -a 256 ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+            cat "$TOOLCHAIN_FILE"
+            sw_vers
+            sysctl hw.ncpu hw.memsize
+            vm_stat
+            bash ios/scripts/run-ci-tests.sh prepare
+            vm_stat
+          } | tee "$RUNNER_TEMP/ios-resolution-comparison.log"
+      - name: Summarize preparation timings
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/ios-resolution-comparison.log" ]]; then
+            {
+              echo '### Package resolution comparison'
+              echo '```text'
+              grep -E '^(Resolution:|Commit:|iOS tree:|Dependencies |Test destination:|hw\.|iOS )' "$RUNNER_TEMP/ios-resolution-comparison.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain comparison inputs and timings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-resolution-${{ matrix.resolution }}-${{ matrix.sample }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ios-resolution-comparison.log
+            ${{ runner.temp }}/ios-cache-toolchain.json
           if-no-files-found: ignore
           retention-days: 7
 

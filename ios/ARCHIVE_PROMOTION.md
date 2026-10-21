@@ -24,6 +24,9 @@ contain only their executed scripts; detection retains the bounded Git ancestry.
 The simulator job resolves locked dependencies while waiting for `simctl bootstatus`,
 then compiles after system boot readiness. Cold system-service startup must finish
 before asset compilation; requesting a boot alone does not establish readiness.
+Normal package resolution does not bind to the test device. The optional
+`compare_package_resolution` dispatch input measures concrete and independent
+resolution on fresh runners without changing required test or archive evidence.
 
 All three native jobs must succeed before the Ubuntu publisher writes canonical
 objects. The publisher compares their independently captured **complete input

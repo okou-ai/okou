@@ -316,6 +316,9 @@ outside this scope. These tests do not constitute page-level UI acceptance or
 server contract verification. CI starts its configured simulator while resolving
 locked dependencies, then waits for system boot readiness before asset and App
 compilation. This keeps cold system-service startup out of asset-tool discovery.
+Package graph resolution does not select a concrete simulator; compilation and
+execution still use the exact configured destination. Preparation reports graph
+resolution, simulator discovery/boot/readiness, and the combined wait separately.
 After `build-for-testing` succeeds, CI executes every native test with
 `test-without-building`. Failed or
 cancelled preparation still blocks the required gate. The standalone command
@@ -326,6 +329,26 @@ RUNNER_TEMP="$(mktemp -d)" \
   IOS_TEST_DESTINATION='platform=iOS Simulator,id=<DEVICE_ID>' \
   bash ios/scripts/ci-test.sh
 ```
+
+For a controlled preparation comparison on one PR commit, dispatch the existing
+iOS workflow on that branch:
+
+```sh
+gh workflow run ios.yml --ref <PR_BRANCH> -f compare_package_resolution=true
+```
+
+The default-off comparison runs three concrete-destination controls and three
+destination-independent preparations on fresh standard runners. Each restores
+the dependency baseline and uses the same transferred locked sources, then runs
+`run-ci-tests.sh prepare` without compiling or executing tests. The control alone
+sets `IOS_PACKAGE_RESOLUTION_DESTINATION` to the normal test destination; ordinary
+resolution leaves it unset and `ci-test.sh prepare` needs no test destination.
+Compare the recorded commit, lockfile, toolchain, hardware and cache identities
+before comparing timing medians/ranges. Failed or mismatched preparations are not
+valid timing samples. Job summaries and seven-day artifacts retain the inputs
+and phase timings; this small sample does not establish a stable tail percentile.
+The normal workflow still runs every required package and App test independently
+of the experiment, which supplies no archive or test-acceptance evidence.
 
 iOS is not registered with release-please and has no automated publishing job.
 The existing release-PR gate helper reports `ci-gate-ios` success only when an

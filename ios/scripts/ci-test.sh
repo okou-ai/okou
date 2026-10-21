@@ -5,7 +5,6 @@ shopt -s nullglob
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
-: "${IOS_TEST_DESTINATION:?IOS_TEST_DESTINATION is required}"
 
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
@@ -19,12 +18,14 @@ case "$ios_test_phase" in
   all | build | prepare | compile | run) ;;
   *) echo "usage: ci-test.sh [all|build|prepare|compile|run]" >&2; exit 2 ;;
 esac
+if [[ "$ios_test_phase" != prepare ]]; then
+  : "${IOS_TEST_DESTINATION:?IOS_TEST_DESTINATION is required}"
+fi
 
 xcode_args=(
   -project ios/Okou.xcodeproj
   -scheme Okou
   -configuration Debug
-  -destination "$IOS_TEST_DESTINATION"
   -derivedDataPath "$build_root/DerivedData"
   -clonedSourcePackagesDirPath "$build_root/SourcePackages"
   -scmProvider system
@@ -72,7 +73,15 @@ export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconf
 export GIT_CONFIG_COUNT=$((git_config_index + 1))
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
-  xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
+  resolution_args=("${xcode_args[@]}")
+  # The opt-in comparison supplies the concrete-destination control explicitly.
+  # Normal dependency resolution is independent of the later test device.
+  if [[ -n "${IOS_PACKAGE_RESOLUTION_DESTINATION:-}" ]]; then
+    resolution_args+=(-destination "$IOS_PACKAGE_RESOLUTION_DESTINATION")
+  fi
+  ios_resolution_started=$SECONDS
+  xcodebuild "${resolution_args[@]}" -resolvePackageDependencies
+  echo "iOS package graph resolution: $((SECONDS - ios_resolution_started)) seconds"
   cmp "$resolved" "$build_root/Package.resolved.before"
   for repository in "$build_root"/SourcePackages/repositories/*; do
     printf 'Resolved package repository %s shallow: ' "${repository##*/}"
@@ -86,7 +95,8 @@ fi
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == compile ]]; then
   ios_phase_started=$SECONDS
   cmp "$resolved" "$build_root/Package.resolved.before"
-  xcodebuild "${xcode_args[@]}" -showBuildTimingSummary build-for-testing
+  xcodebuild "${xcode_args[@]}" -destination "$IOS_TEST_DESTINATION" \
+    -showBuildTimingSummary build-for-testing
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS build-for-testing: $((SECONDS - ios_phase_started)) seconds"
 fi
