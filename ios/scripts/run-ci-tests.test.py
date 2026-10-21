@@ -228,6 +228,22 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_complete_suite()
 
+    def test_cache_preparation_without_prefetched_sources_on_system_bash(self):
+        self.env["CI_PROCESS_SCENARIO"] = "manual"
+        self.env["IOS_BUILD_CACHE_ENABLED"] = "true"
+        self.env.pop("IOS_PACKAGE_SOURCES_DIR", None)
+        result = subprocess.run(
+            ["/bin/bash", str(self.repo / "ios/scripts/ci-test.sh"), "prepare"],
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=8,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "prepare-finished").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
