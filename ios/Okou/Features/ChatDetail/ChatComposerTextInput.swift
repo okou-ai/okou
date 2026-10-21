@@ -166,6 +166,8 @@ struct ChatComposerTextInput: UIViewRepresentable {
     func textViewDidBeginEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
       if !input.isFocused { input.isFocused = true }
+      // Focus changes the representable's minimum line count, even without a text edit.
+      textView.invalidateIntrinsicContentSize()
       if let view = textView as? ComposerTextView {
         input.editor?.updateMention(in: view)
         view.updateWorkflows(false)
@@ -174,6 +176,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     func textViewDidEndEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
       if input.isFocused { input.isFocused = false }
+      textView.invalidateIntrinsicContentSize()
       input.editor?.dismissMentions()
       if let view = textView as? ComposerTextView { input.editor?.workflows.unregister(view) }
     }

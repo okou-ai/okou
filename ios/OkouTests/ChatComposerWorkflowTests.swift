@@ -16,10 +16,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let workspace = try await fixture.workspace()
     defer { workspace.close() }
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(input)
+    try await focusMentionInput(input)
     input.insertText("Before @")
     try await eventually { mentionTable(in: host.view)?.numberOfSections == 2 }
     let agents = try XCTUnwrap(mentionTable(in: host.view))
@@ -68,10 +68,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(input)
+    try await focusMentionInput(input)
     input.insertText("🌷 Keep /rel tail")
     input.selectedRange = NSRange(location: "🌷 Keep /rel".utf16.count, length: 0)
     let table = try await table(in: host.view, rows: 4)
@@ -112,10 +112,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(input)
+    try await focusMentionInput(input)
     for value in [
       "https://example.com/release", "path/release", "email@example.com/", "//", "/bad_", "/rel.",
     ] {
@@ -155,10 +155,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(input)
+    try await focusMentionInput(input)
     input.insertText("/")
     let overview = try await table(in: host.view, rows: 7)
     let savedRow = try XCTUnwrap(overview.cellForRow(at: IndexPath(row: 0, section: 0)))
@@ -213,17 +213,17 @@ final class ChatComposerWorkflowTests: XCTestCase {
     }
     await workspace.refreshNavigation()
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let old = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(old)
+    try await focusMentionInput(old)
     old.insertText("/rel")
     await fulfillment(of: [started], timeout: 3)
     XCTAssertTrue(workspace.newComposer.editor.workflows.isLoading)
     workspace.startNewChat(agentID: "other-agent")
     try await eventually { self.inputs(in: host.view).first !== old }
     let current = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(current)
+    try await focusMentionInput(current)
     current.insertText("/")
     try await eventually { workspace.newComposer.editor.workflows.error != nil }
     gate.open()
@@ -253,10 +253,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
       source.close()
     }
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(input)
+    try await focusMentionInput(input)
     input.insertText("/rel")
     let table = try await table(in: host.view, rows: 4)
     table.delegate?.tableView?(table, didSelectRowAt: IndexPath(row: 1, section: 0))
@@ -280,7 +280,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(other.recentIDs().isEmpty)
     try await eventually { self.inputs(in: host.view).first !== input }
     let next = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(next)
+    try await focusMentionInput(next)
     next.insertText("/")
     try await eventually(
       message:
@@ -309,7 +309,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
         message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
     conversation.composer.addFeedback(selection)
     let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     defer { unmount(window) }
     try await eventually { self.inputs(in: host.view).contains(where: \.isFirstResponder) }
     let input = try XCTUnwrap(inputs(in: host.view).first(where: \.isFirstResponder))
@@ -347,9 +347,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     await workspace.refreshNavigation()
     let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
-    let window = try await mount(host)
+    let window = try await mountMentionHost(host)
     let input = try XCTUnwrap(inputs(in: host.view).first)
-    try await focus(input)
+    try await focusMentionInput(input)
     input.insertText("Summarize /mor")
     let table = try await table(in: host.view, rows: 1)
     let cell = try XCTUnwrap(table.cellForRow(at: IndexPath(row: 0, section: 0)))
@@ -395,21 +395,6 @@ final class ChatComposerWorkflowTests: XCTestCase {
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .background(Color(uiColor: .systemBackground))
-  }
-  private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWindow {
-    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-    let window = UIWindow(windowScene: scene)
-    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    try await eventually { self.inputs(in: host.view).first?.bounds.isEmpty == false }
-    return window
-  }
-  private func focus(_ input: ComposerTextView) async throws {
-    input.becomeFirstResponder()
-    try await eventually {
-      input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
-    }
   }
   private func inputs(in view: UIView) -> [ComposerTextView] {
     if let view = view as? ComposerTextView { return [view] }

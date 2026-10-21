@@ -185,9 +185,17 @@ func mentionInputs(in view: UIView) -> [ComposerTextView] {
 func focusMentionInput(_ input: ComposerTextView) async throws {
   input.becomeFirstResponder()
   try await eventually(
-    message: "Native composer focus/expansion: \(input.isFirstResponder), \(input.bounds)"
+    message:
+      "Native composer focus/expansion: \(input.isFirstResponder), \(input.bounds); "
+      + "window: \(input.window != nil); current: \(input.isCurrent()); "
+      + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
+      + "key window: \(String(describing: input.window?.isKeyWindow)); "
+      + "scene: \(String(describing: input.window?.windowScene?.activationState)); "
+      + "line height: \(String(describing: input.font?.lineHeight))"
   ) {
-    input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
+    // Measure the native size after its window has laid out the focus change.
+    input.window?.layoutIfNeeded()
+    return input.isFirstResponder && input.bounds.height >= (input.font?.lineHeight ?? 20) * 2 - 1
   }
 }
 
@@ -206,7 +214,13 @@ func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> U
   window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
   window.rootViewController = host
   window.makeKeyAndVisible()
-  try await eventually { mentionInputs(in: host.view).first?.bounds.isEmpty == false }
+  host.view.layoutIfNeeded()
+  try await eventually {
+    guard let input = mentionInputs(in: host.view).first else { return false }
+    return input.window === window && !input.bounds.isEmpty
+  }
+  // Native focus must follow the initial hosting transaction's presented frame.
+  await hostingPresentationFrame()
   return window
 }
 

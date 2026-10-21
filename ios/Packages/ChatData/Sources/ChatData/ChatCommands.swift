@@ -216,9 +216,18 @@ public actor ChatCommands {
     try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST", query: query)
   }
 
-  public func setArchived(threadID: String, archived: Bool) async throws {
+  public func setMuted(threadID: String, muted: Bool, eventID: String) async throws {
+    let action = muted ? "mute" : "unmute"
+    try await client.data(
+      "/api/chat-threads/\(threadID)/\(action)", method: "POST",
+      query: [URLQueryItem(name: "eventId", value: eventID)])
+  }
+
+  public func setArchived(threadID: String, archived: Bool, eventID: String? = nil) async throws {
     let action = archived ? "archive" : "unarchive"
-    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
+    try await client.data(
+      "/api/chat-threads/\(threadID)/\(action)", method: "POST",
+      query: eventID.map { [URLQueryItem(name: "eventId", value: $0)] } ?? [])
   }
 
   public func rename(threadID: String, title: String) async throws {
