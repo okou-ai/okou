@@ -16,7 +16,13 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
-import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLoadable,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
@@ -40,7 +46,7 @@ import {
   type BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 
 export type BrowserUserActionCardVariant = "inline" | "standalone";
@@ -1655,7 +1661,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   const rangeDraft = useGet(signals.rangeDraft$);
   const colorDraft = useGet(signals.colorDraft$);
   const fileDraft = useGet(signals.fileDraft$);
-  const sharedBusy = useGet(signals.busy$);
+  const operation = useLoadable(signals.operation$);
   const entryState = useGet(signals.entryState$);
   const entryAction = useGet(signals.entryAction$);
   const updateDraft = useSet(signals.updateDraft$);
@@ -1677,7 +1683,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
   const submitting = submitLoadable.state === "loading";
   const cancelling = cancelLoadable.state === "loading";
-  const busy = sharedBusy || submitting || cancelling;
+  const busy = operation.state === "loading";
   const failed =
     submitLoadable.state === "hasError" || cancelLoadable.state === "hasError";
   const cancelFailed = cancelLoadable.state === "hasError";
@@ -1981,16 +1987,19 @@ export function BrowserUserActionCard({
   // Keep the settled state while a notification re-reads it, so an open
   // dialog is not remounted by an unrelated change in the same thread.
   const requestLoadable = useLastLoadable(signals.request$);
-  const callbackFailed = useGet(signals.callbackFailed$);
-  const busy = useGet(signals.busy$);
-  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
+  const operation = useLoadable(signals.operation$);
+  const callbackOperation = useLoadable(signals.callbackOperation$);
+  const callbackFailed =
+    callbackOperation.state === "hasError" &&
+    !isAbortError(callbackOperation.error);
+  const continueAction = useSet(signals.continue$);
   const action =
     requestLoadable.state === "hasData" &&
     requestLoadable.data.kind === "action"
       ? requestLoadable.data.action
       : undefined;
   const callbackDelivered = action?.callbackDelivered === true;
-  const continuing = busy || continueLoadable.state === "loading";
+  const continuing = operation.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
   };
