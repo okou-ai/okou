@@ -87,6 +87,25 @@ use tokio::sync::Notify;
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+fn source_candidate(
+    run: RunId,
+    reuse_key: &str,
+    source: RunId,
+) -> TestResult<runner_provider::JobCandidate> {
+    Ok(
+        runner_provider::JobCandidate::new(run, fixture::PROFILE.into())
+            .with_reuse_key(Some(reuse_key.to_owned()))
+            .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                runner_host::runner_process_identity::RunnerProcessIdentity::new(
+                    uuid::Uuid::from_u128(1),
+                    7,
+                )?,
+                runner_provider::RunnerPreferenceTarget::SourceSandbox(source),
+                std::time::Instant::now() + std::time::Duration::from_secs(90),
+            )),
+    )
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Corpus {
     Terminal,
@@ -1747,7 +1766,8 @@ async fn exercise_retirement(
         .with_sandbox_id(sandbox_id)
         .with_profile_name(fixture::PROFILE)
         .with_rootfs_hash(&rootfs_hash)
-        .with_history_generation_run_id(run_id)
+        .with_source_run_id(run_id)
+        .with_native_generation_run_id(run_id)
         .with_home_promotion(promotion)
         .with_storage_fingerprints(storage_fingerprints);
     let candidate = if let Some(identity) = session_identity {
@@ -2238,7 +2258,6 @@ async fn exercise_retirement(
                             reuse_key: None,
                             profile_name: fixture::PROFILE,
                             device_rate_limits: &None,
-                            history_generation_run_id: None,
                             allow_compatible_blank: false,
                             blank_pool_diagnostics: None,
                             vcpu: 2,

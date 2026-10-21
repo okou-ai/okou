@@ -199,22 +199,13 @@ export const runnerPreferenceSchema = z.union([
       kind: z.literal("preference"),
       runnerIdentity: runnerProcessIdentitySchema,
       tier: z.enum([
+        "exactSandbox",
         "finalizingPredecessor",
         "peerFinalizingPredecessor",
         "sourceHomeCache",
       ]),
       expiresAt: z.string().datetime({ offset: true }),
       finalizingSourceRunId: z.uuid(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("preference"),
-      runnerIdentity: runnerProcessIdentitySchema,
-      tier: z.literal("exactSandbox"),
-      expiresAt: z.string().datetime({ offset: true }),
-      // Old serving API writers omit this until #41875; retire in #41876.
-      finalizingSourceRunId: z.uuid().optional(),
     })
     .strict(),
   z
@@ -490,7 +481,6 @@ export const jobSchema = z.object({
   experimentalProfile: z.string(),
   cliAgentSessionId: z.string().nullable().optional(),
   reuseKey: z.string().nullable().optional(),
-  historyGenerationRunId: z.uuid().optional(),
   runnerPreference: runnerPreferenceSchema,
 });
 
@@ -499,9 +489,7 @@ export const heldSandboxStateSchema = z.object({
   lastCompletedAt: z.string().datetime({ offset: true }),
   reusableSandbox: z.object({
     profile: z.string(),
-    historyGenerationRunId: z.uuid().optional(),
-    // Optional until old observation writers/rows retire under #41876.
-    sourceRunId: z.uuid().optional(),
+    sourceRunId: z.uuid(),
   }),
 });
 
@@ -519,7 +507,7 @@ export const heldHomeStateSchema = z.object({
       z.object({
         profile: z.string(),
         homeAffinityVersion: z.literal(1),
-        sourceRunId: z.uuid().optional(),
+        sourceRunId: z.uuid(),
       }),
     )
     .min(1)

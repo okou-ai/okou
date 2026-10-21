@@ -28,7 +28,6 @@ describe("independent finalizing source contract", () => {
       const runnerPreference = { ...preference, tier };
       const parsed = jobSchema.parse({ ...job, runnerPreference });
       expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
-      expect(parsed.historyGenerationRunId).toBeUndefined();
 
       const telemetry = {
         runnerPreference,

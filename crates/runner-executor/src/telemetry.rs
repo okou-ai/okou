@@ -1469,7 +1469,6 @@ mod tests {
         let reporter = telemetry.reporter();
         let runner_id = uuid::Uuid::new_v4().to_string();
         let run_id = RunId::new_v4();
-        let generation = RunId::new_v4();
         let mut loading = HomeObservation::new(Kind::Inventory, Outcome::Loading);
         loading.runner_id = Some(runner_id.clone());
         loading.runner_heartbeat_generation = Some(7);
@@ -1491,7 +1490,6 @@ mod tests {
         admission.runner_id = Some(runner_id.clone());
         admission.runner_heartbeat_generation = Some(7);
         admission.run_id = Some(run_id);
-        admission.history_generation_run_id = Some(generation);
         admission.reuse_key = Some("thread:known".into());
         admission.profile_name = Some("vm0/default".into());
         admission.reason = Some("capacity_exhausted".into());
@@ -1524,7 +1522,6 @@ mod tests {
         assert_eq!(ops[2]["outcome"], "deferred");
         assert_eq!(ops[2]["reason"], "capacity_exhausted");
         assert_eq!(ops[2]["run_id"], run_id.to_string());
-        assert_eq!(ops[2]["history_generation_run_id"], generation.to_string());
         assert_eq!(ops[2]["reuse_key"], "thread:known");
         for op in ops {
             assert_eq!(op["runner_id"], runner_id);

@@ -103,9 +103,6 @@ pub struct HomeObservation {
     pub runner_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_heartbeat_generation: Option<u64>,
-    /// Known source history correlation; never the operation's attributed Run.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub history_generation_run_id: Option<RunId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inventory_loaded: Option<bool>,
     /// States assembled before active/profile filtering and the heartbeat cap.
@@ -134,7 +131,6 @@ impl HomeObservation {
             handoff_path: None,
             runner_id: None,
             runner_heartbeat_generation: None,
-            history_generation_run_id: None,
             inventory_loaded: None,
             inventory_observed_states: None,
             inventory_output_states: None,
@@ -167,7 +163,6 @@ impl HomeObservation {
             handoff_path = self.handoff_path.as_deref(),
             runner_id = self.runner_id.as_deref(),
             runner_heartbeat_generation = self.runner_heartbeat_generation,
-            history_generation_run_id = self.history_generation_run_id.as_ref().map(tracing::field::display),
             inventory_loaded = self.inventory_loaded,
             inventory_observed_states = self.inventory_observed_states,
             inventory_output_states = self.inventory_output_states,

@@ -164,20 +164,12 @@ impl GuardedSpeculativeAdmission {
         let Resource::Speculative(owner) = &mut self.resource else {
             return Err("speculative resource already transferred".into());
         };
-        let matches = match candidate
+        let matches = candidate
             .runner_preference()
             .and_then(|p| p.target().source_run_id())
-        {
-            Some(source) => {
+            .is_some_and(|source| {
                 owner.matches_source_claim(candidate.reuse_key(), source, candidate.profile_name())
-            }
-            // Reachable old API writers retain native-generation matching until #41876.
-            None => owner.matches_claim(
-                candidate.reuse_key(),
-                candidate.history_generation_run_id(),
-                candidate.profile_name(),
-            ),
-        };
+            });
         if !matches {
             return Err(
                 "speculative candidate does not match original resource identity/profile".into(),

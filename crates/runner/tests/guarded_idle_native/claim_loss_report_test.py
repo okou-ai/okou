@@ -43,7 +43,7 @@ class ClaimLossReportTests(unittest.TestCase):
             empty = {k:v for k,v in restored.items() if k != "idle_sandboxes"}
             empty["updated_at"] = "2026-10-19T01:00:03Z"
             held = [{"reuseKey":reuse, "lastCompletedAt":"2026-10-19T01:00:00Z",
-                "reusableSandbox":{"profile":"vm0/default", "historyGenerationRunId":history}}]
+                "reusableSandbox":{"profile":"vm0/default", "sourceRunId":history}}]
             def heartbeat(sequence, begin, end, allocated, states=None):
                 return {"receipt":{"received_ns":at(begin), "acknowledgement_status":204,
                     "state":{"runnerId":runner, "snapshotGeneration":1, "snapshotSequence":sequence,
@@ -171,7 +171,7 @@ class ClaimLossReportTests(unittest.TestCase):
             lambda:self.event("original_restored")["evidence"].update(physical_repark_completed=False),
             lambda:self.event("original_restored")["evidence"].update(sandbox_id=str(uuid.uuid4())),
             lambda:self.event("original_restored")["evidence"].update(revision=1),
-            lambda:self.event("original_restored")["evidence"]["heartbeat"]["receipt"]["state"]["heldSandboxStates"][0]["reusableSandbox"].update(historyGenerationRunId=str(uuid.uuid4())),
+            lambda:self.event("original_restored")["evidence"]["heartbeat"]["receipt"]["state"]["heldSandboxStates"][0]["reusableSandbox"].update(sourceRunId=str(uuid.uuid4())),
             lambda:self.event("tail_blocked")["evidence"]["coverage"]["accounting"].update(cleanup_growth_bytes=0)))
 
     def test_positive_joined_original_saving_and_empty_current_status_are_required(self):

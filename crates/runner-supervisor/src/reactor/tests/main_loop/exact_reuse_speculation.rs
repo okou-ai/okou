@@ -20,17 +20,12 @@ use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use runner_provider::{ActiveRunnerPreference, JobCandidate, RunnerPreferenceTarget};
 use runner_types::types::ExecutionContext;
 
-fn exact_generation_candidate(
-    run_id: RunId,
-    reuse_key: &str,
-    history_generation_run_id: RunId,
-) -> JobCandidate {
+fn exact_source_candidate(run_id: RunId, reuse_key: &str, source_run_id: RunId) -> JobCandidate {
     JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(reuse_key.to_owned()))
-        .with_history_generation_run_id(Some(history_generation_run_id))
         .with_runner_preference(ActiveRunnerPreference::new(
             test_runner_identity(),
-            RunnerPreferenceTarget::ExactSandbox,
+            RunnerPreferenceTarget::SourceSandbox(source_run_id),
             std::time::Instant::now() + Duration::from_secs(30),
         ))
 }
@@ -85,15 +80,12 @@ fn reuse_preparation_requests(
 
 #[tokio::test]
 async fn exact_reuse_restores_guest_while_claim_is_blocked() {
-    for tier in [
-        RunnerPreferenceTarget::ExactSandbox,
-        RunnerPreferenceTarget::HomeCache,
-    ] {
-        assert_exact_reuse_claim_progresses_during_status_write(tier).await;
+    for exact in [true, false] {
+        assert_exact_reuse_claim_progresses_during_status_write(exact).await;
     }
 }
 
-async fn assert_exact_reuse_claim_progresses_during_status_write(tier: RunnerPreferenceTarget) {
+async fn assert_exact_reuse_claim_progresses_during_status_write(exact: bool) {
     let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let status_write_started = Arc::new(tokio::sync::Notify::new());
     let release_status_write = Arc::new(tokio::sync::Semaphore::new(0));
@@ -108,6 +100,11 @@ async fn assert_exact_reuse_claim_progresses_during_status_write(tier: RunnerPre
     add_healthy_reuse_preparation_matcher(&overrides);
     let reuse_key = RunId::new_v4().to_string();
     let generation_run_id = RunId::new_v4();
+    let tier = if exact {
+        RunnerPreferenceTarget::SourceSandbox(generation_run_id)
+    } else {
+        RunnerPreferenceTarget::SourceHomeCache(generation_run_id)
+    };
     let sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,
         &budget,
@@ -117,7 +114,7 @@ async fn assert_exact_reuse_claim_progresses_during_status_write(tier: RunnerPre
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Configured("Asia/Shanghai".into()),
             timing: None,
         },
@@ -135,12 +132,13 @@ async fn assert_exact_reuse_claim_progresses_during_status_write(tier: RunnerPre
     env.handle
         .discover_tx
         .send(
-            exact_generation_candidate(run_id, &reuse_key, generation_run_id)
-                .with_runner_preference(ActiveRunnerPreference::new(
+            exact_source_candidate(run_id, &reuse_key, generation_run_id).with_runner_preference(
+                ActiveRunnerPreference::new(
                     test_runner_identity(),
                     tier,
                     std::time::Instant::now() + Duration::from_secs(30),
-                )),
+                ),
+            ),
         )
         .unwrap();
 
@@ -217,7 +215,7 @@ async fn exact_reuse_journal_timeout_preserves_the_original_reserved_sandbox() {
                 profile_name: "vm0/default",
                 vcpu: 2,
                 memory_mb: 4096,
-                history_generation_run_id: generation_run_id,
+                native_generation_run_id: generation_run_id,
                 guest_timezone_intent: GuestTimezoneIntent::Default,
                 timing: None,
             },
@@ -234,7 +232,7 @@ async fn exact_reuse_journal_timeout_preserves_the_original_reserved_sandbox() {
         );
         env.handle
             .discover_tx
-            .send(exact_generation_candidate(
+            .send(exact_source_candidate(
                 run_id,
                 &reuse_key,
                 generation_run_id,
@@ -309,7 +307,7 @@ async fn assert_timezone_transition_with(
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: previous,
             timing: None,
         },
@@ -323,7 +321,7 @@ async fn assert_timezone_transition_with(
         .set_claim_result(run_id, Some(claimed_context(run_id, &reuse_key, claimed)));
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -444,7 +442,7 @@ async fn assert_timezone_correction_failure_remains_best_effort(
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Configured("Asia/Shanghai".into()),
             timing: None,
         },
@@ -464,7 +462,7 @@ async fn assert_timezone_correction_failure_remains_best_effort(
     );
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -559,7 +557,7 @@ async fn unknown_previous_timezone_keeps_restore_after_claim() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             timing: None,
         },
@@ -576,7 +574,7 @@ async fn unknown_previous_timezone_keeps_restore_after_claim() {
     );
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -619,7 +617,7 @@ async fn unknown_claimed_timezone_repeats_authoritative_guest_restore() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Configured("Asia/Shanghai".into()),
             timing: None,
         },
@@ -639,7 +637,7 @@ async fn unknown_claimed_timezone_repeats_authoritative_guest_restore() {
     );
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -674,7 +672,7 @@ async fn unavailable_claim_reparks_speculative_sandbox() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -688,7 +686,7 @@ async fn unavailable_claim_reparks_speculative_sandbox() {
     env.provider.set_claim_result(run_id, None);
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -732,7 +730,7 @@ async fn unavailable_claim_reparks_speculative_sandbox() {
     );
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             followup_run_id,
             &reuse_key,
             generation_run_id,
@@ -770,7 +768,7 @@ async fn cleanup_failure_destroys_lost_speculative_sandbox() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -783,7 +781,7 @@ async fn cleanup_failure_destroys_lost_speculative_sandbox() {
     env.provider.set_claim_result(run_id, None);
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -819,7 +817,7 @@ async fn mismatched_claim_run_id_reparks_speculative_sandbox() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -837,7 +835,7 @@ async fn mismatched_claim_run_id_reparks_speculative_sandbox() {
     );
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             candidate_run_id,
             &reuse_key,
             generation_run_id,
@@ -891,7 +889,7 @@ async fn cancellation_during_claim_completes_without_starting_agent_and_reparks(
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -906,7 +904,7 @@ async fn cancellation_during_claim_completes_without_starting_agent_and_reparks(
         .set_claim_result(run_id, Some(claimed_context(run_id, &reuse_key, None)));
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -960,7 +958,7 @@ async fn cancellation_during_timezone_correction_does_not_publish_active_or_star
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Configured("Asia/Shanghai".into()),
             timing: None,
         },
@@ -976,7 +974,7 @@ async fn cancellation_during_timezone_correction_does_not_publish_active_or_star
     );
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -1044,7 +1042,7 @@ async fn cancellation_during_speculative_cleanup_does_not_start_fresh_agent() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -1058,7 +1056,7 @@ async fn cancellation_during_speculative_cleanup_does_not_start_fresh_agent() {
         .set_claim_result(run_id, Some(claimed_context(run_id, &reuse_key, None)));
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -1116,7 +1114,7 @@ async fn cancellation_wins_when_speculative_cleanup_is_uncertain() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -1130,7 +1128,7 @@ async fn cancellation_wins_when_speculative_cleanup_is_uncertain() {
         .set_claim_result(run_id, Some(claimed_context(run_id, &reuse_key, None)));
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -1187,7 +1185,7 @@ async fn closed_parking_gate_destroys_lost_speculation_after_repark() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -1201,7 +1199,7 @@ async fn closed_parking_gate_destroys_lost_speculation_after_repark() {
     env.provider.set_claim_result(run_id, None);
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -1247,7 +1245,7 @@ async fn duplicate_repark_keeps_newer_idle_sandbox_and_destroys_speculation() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -1261,7 +1259,7 @@ async fn duplicate_repark_keeps_newer_idle_sandbox_and_destroys_speculation() {
     env.provider.set_claim_result(run_id, None);
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -1288,7 +1286,7 @@ async fn duplicate_repark_keeps_newer_idle_sandbox_and_destroys_speculation() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: RunId::new_v4(),
+            native_generation_run_id: RunId::new_v4(),
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -1331,7 +1329,7 @@ async fn repark_failure_destroys_unclaimed_speculation() {
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: GuestTimezoneIntent::Default,
             timing: None,
         },
@@ -1344,7 +1342,7 @@ async fn repark_failure_destroys_unclaimed_speculation() {
     env.provider.set_claim_result(run_id, None);
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,
@@ -1381,7 +1379,7 @@ async fn assert_speculation_failure_falls_back_to_fresh(
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 4096,
-            history_generation_run_id: generation_run_id,
+            native_generation_run_id: generation_run_id,
             guest_timezone_intent: previous,
             timing: None,
         },
@@ -1395,7 +1393,7 @@ async fn assert_speculation_failure_falls_back_to_fresh(
         .set_claim_result(run_id, Some(claimed_context(run_id, &reuse_key, claimed)));
     env.handle
         .discover_tx
-        .send(exact_generation_candidate(
+        .send(exact_source_candidate(
             run_id,
             &reuse_key,
             generation_run_id,

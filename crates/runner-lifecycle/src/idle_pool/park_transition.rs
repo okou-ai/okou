@@ -98,10 +98,10 @@ pub struct IdleParkRequest {
 /// Resources and metadata supplied while the active job still owns the
 /// sandbox.
 ///
-/// The optional `handoff` is a caller-side exact-history capability: the
-/// finalization path supplies it only when a waiting successor is claiming the
-/// predecessor's exact history generation. Speculative rollback deliberately
-/// calls the shared transition without an observer or handoff.
+/// The optional `handoff` carries a waiting successor's source-bound request
+/// for physical resource transfer. It does not authorize native continuation.
+/// Speculative rollback deliberately calls the shared transition without an
+/// observer or handoff.
 #[must_use = "idle park request parts own active sandbox and budget"]
 pub struct IdleParkRequestParts {
     pub run_id: RunId,
@@ -116,7 +116,7 @@ pub struct IdleParkRequestParts {
     pub source_ip: String,
     pub storage_fingerprints: StorageFingerprints,
     pub restored_session_identity: Option<RestoredSessionIdentity>,
-    pub history_generation_run_id: Option<RunId>,
+    pub native_generation_run_id: Option<RunId>,
     pub guest_timezone_intent: GuestTimezoneIntent,
     pub home_image_size_bytes: u64,
     pub home_promotion: Option<HomeImagePromotionContext>,
@@ -352,7 +352,7 @@ impl IdleParkRequest {
             source_ip,
             storage_fingerprints,
             restored_session_identity,
-            history_generation_run_id,
+            native_generation_run_id,
             guest_timezone_intent,
             home_image_size_bytes,
             home_promotion,
@@ -369,7 +369,7 @@ impl IdleParkRequest {
             source_ip,
             storage_fingerprints,
             restored_session_identity,
-            history_generation_run_id,
+            native_generation_run_id,
             guest_timezone_intent,
             last_completed_at: None,
         };

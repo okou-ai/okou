@@ -37,7 +37,6 @@ async fn ably_duplicate_keeps_first_source_and_expiry_without_native_history() {
     handle_ably_message(&duplicate, &profiles, &wakeups, &inbox, &tokens).await;
 
     let candidate = pop_direct_candidate(&inbox).await.into_job_candidate();
-    assert_eq!(candidate.history_generation_run_id(), None);
     let preference = candidate.runner_preference().unwrap();
     assert_eq!(
         preference.target(),

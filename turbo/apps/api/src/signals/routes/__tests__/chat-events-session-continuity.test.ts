@@ -815,7 +815,6 @@ describe("CHAT-02: run-level model overrides", () => {
               reusableSandbox: {
                 profile: "vm0/default",
                 sourceRunId,
-                historyGenerationRunId: sourceRunId,
               },
             },
           ],

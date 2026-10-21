@@ -769,8 +769,7 @@ async fn handle_ably_message_with_connector_runtime_sync(
                         notification_received_at,
                         notif.reuse_key.map(str::to_owned),
                         notif.runner_preference_context,
-                    )
-                    .with_history_generation_run_id(notif.history_generation_run_id),
+                    ),
                 ))
             } else {
                 info!(
@@ -810,7 +809,6 @@ struct JobNotification<'a> {
     run_id: RunId,
     profile: Option<&'a str>,
     reuse_key: Option<&'a str>,
-    history_generation_run_id: Option<RunId>,
     runner_preference_context: Option<RunnerPreferenceContext>,
 }
 
@@ -1035,11 +1033,6 @@ fn parse_job_notification(msg: &ably_subscriber::Message) -> Option<JobNotificat
         .get("reuseKey")
         .and_then(|v| v.as_str())
         .filter(|value| !value.is_empty());
-    let history_generation_run_id = msg
-        .data
-        .get("historyGenerationRunId")
-        .and_then(|v| v.as_str())
-        .and_then(|value| value.parse().ok());
     let runner_preference_context =
         match parse_runner_preference(msg.data.get("runnerPreference").cloned()) {
             Ok(context) => context,
@@ -1056,7 +1049,6 @@ fn parse_job_notification(msg: &ably_subscriber::Message) -> Option<JobNotificat
         run_id,
         profile,
         reuse_key,
-        history_generation_run_id,
         runner_preference_context,
     })
 }
@@ -2182,7 +2174,6 @@ mod tests {
                 "runId": "00000000-0000-0000-0000-000000000001",
                 "profile": "vm0/default",
                 "reuseKey": "thread:chat-thread",
-                "historyGenerationRunId": "00000000-0000-0000-0000-000000000098",
                 "runnerPreference": {
                     "kind": "preference",
                     "runnerIdentity": {
@@ -2206,10 +2197,6 @@ mod tests {
         assert_eq!(candidate.profile_name(), "vm0/default");
         let candidate = candidate.into_job_candidate();
         assert_eq!(candidate.reuse_key(), Some("thread:chat-thread"));
-        assert_eq!(
-            candidate.history_generation_run_id(),
-            Some("00000000-0000-0000-0000-000000000098".parse().unwrap())
-        );
         let preference = candidate
             .runner_preference()
             .expect("canonical preference should be parsed");

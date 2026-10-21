@@ -2,7 +2,7 @@
 
 use std::{path::Path, time::Duration};
 
-use runner_provider::{JobCandidate, JobProvider};
+use runner_provider::JobProvider;
 use runner_supervisor::pre_claim_admission::{
     GuardedSpeculativeAdmission, GuardedSpeculativeRollback,
 };
@@ -65,9 +65,7 @@ async fn observe_claim(
         history,
         run,
     } = request;
-    let candidate = JobCandidate::new(run, fixture::PROFILE.into())
-        .with_reuse_key(Some(context.reuse_key.clone()))
-        .with_history_generation_run_id(Some(history));
+    let candidate = source_candidate(run, &context.reuse_key, history)?;
     let mut preparation =
         Box::pin(admission.prepare_and_claim(provider, candidate, &context.tracker));
     let mut completed = None;

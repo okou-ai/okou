@@ -75,8 +75,8 @@ async fn nonzero_job_parks_and_successor_reuses_sandbox() {
     let held = idle_pool.lock().await.held_sandbox_states();
     assert_eq!(held.len(), 1);
     assert_eq!(
-        held[0].reusable_sandbox.history_generation_run_id, None,
-        "failed execution must not advertise an exact history generation",
+        held[0].reusable_sandbox.source_run_id, failed_run_id,
+        "failed execution remains the resource producer",
     );
 
     let successor_run_id = RunId::new_v4();
@@ -198,7 +198,7 @@ async fn confirmed_execution_timeout_parks_and_successor_reuses_sandbox() {
     assert_eq!(overrides.destroy_call_count(), 0);
     let held = idle_pool.lock().await.held_sandbox_states();
     assert_eq!(held.len(), 1);
-    assert_eq!(held[0].reusable_sandbox.history_generation_run_id, None);
+    assert_eq!(held[0].reusable_sandbox.source_run_id, timed_out_run_id);
 
     let successor_run_id = RunId::new_v4();
     push_job(
@@ -276,7 +276,7 @@ async fn cooperative_cancellation_parks_and_successor_reuses_sandbox() {
     assert_eq!(overrides.destroy_call_count(), 0);
     let held = idle_pool.lock().await.held_sandbox_states();
     assert_eq!(held.len(), 1);
-    assert_eq!(held[0].reusable_sandbox.history_generation_run_id, None);
+    assert_eq!(held[0].reusable_sandbox.source_run_id, cancelled_run_id);
 
     let successor_run_id = RunId::new_v4();
     push_job(

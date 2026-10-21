@@ -489,7 +489,7 @@ mod tests {
             ResourceBudget::try_reserve_lease(&budget, 2, 8).unwrap(),
         )
         .with_source_run_id(predecessor)
-        .with_history_generation_run_id(predecessor)
+        .with_native_generation_run_id(predecessor)
         .build();
         let RetainedActiveRunHandoffDeliveryResult::Failed(candidate) = guard
             .reuse_publisher()
@@ -736,7 +736,7 @@ mod tests {
         let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
         let candidate = ParkedIdleCandidateBuilder::new("thread:closed-handoff", lease)
             .with_source_run_id(predecessor_run_id)
-            .with_history_generation_run_id(predecessor_run_id)
+            .with_native_generation_run_id(predecessor_run_id)
             .build();
         let recovered = match publisher
             .deliver_exact_handoff(IdleParkCandidate::Ordinary(candidate), predecessor_run_id)
@@ -787,7 +787,7 @@ mod tests {
         let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
         let candidate = ParkedIdleCandidateBuilder::new("thread:cancelled-handoff", lease)
             .with_source_run_id(predecessor_run_id)
-            .with_history_generation_run_id(predecessor_run_id)
+            .with_native_generation_run_id(predecessor_run_id)
             .build();
         assert!(matches!(
             publisher
@@ -829,7 +829,7 @@ mod tests {
         let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
         let candidate = ParkedIdleCandidateBuilder::new("thread:deadline-handoff", lease)
             .with_source_run_id(predecessor_run_id)
-            .with_history_generation_run_id(predecessor_run_id)
+            .with_native_generation_run_id(predecessor_run_id)
             .build();
         assert!(matches!(
             publisher

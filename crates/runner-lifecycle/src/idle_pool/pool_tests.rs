@@ -199,7 +199,7 @@ fn source_reservation_matches_published_producer_without_native_history() {
     ));
     assert!(matches!(
         pool.reserve_reusable_native_source("thread", "vm0/default", &None, source),
-        Err(ExactIdleReservationMiss::HistoryGenerationMismatch)
+        Err(ExactIdleReservationMiss::NativeGenerationMismatch)
     ));
     assert_eq!(pool.status_snapshot().revision, revision);
     assert_eq!(
@@ -226,10 +226,10 @@ fn source_reservation_matches_published_producer_without_native_history() {
 }
 
 #[test]
-fn reusable_generation_reservation_classifies_exact_misses() {
+fn reusable_source_reservation_classifies_exact_misses() {
     let mut pool = IdlePool::new(pool_config(0));
-    let held_generation_run_id = RunId::new_v4();
-    let requested_generation_run_id = RunId::new_v4();
+    let held_source_run_id = RunId::new_v4();
+    let requested_source_run_id = RunId::new_v4();
     let device_rate_limits = sandbox::DeviceRateLimits {
         block: sandbox::BlockRateLimits {
             bandwidth_bytes_per_sec: 100 * 1024 * 1024,
@@ -243,57 +243,57 @@ fn reusable_generation_reservation_classifies_exact_misses() {
     let candidate =
         ParkedIdleCandidateBuilder::new("session-generation", make_budget_lease(2, 2048))
             .with_device_rate_limits(device_rate_limits.clone())
-            .with_history_generation_run_id(held_generation_run_id)
+            .with_source_run_id(held_source_run_id)
             .with_last_completed_at("2026-07-15T00:00:00.000Z")
             .build();
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     let parked_revision = pool.status_snapshot().revision;
 
     assert!(matches!(
-        pool.reserve_reusable_generation_with_reason(
+        pool.reserve_reusable_source(
             "missing-session",
             "vm0/default",
             &Some(device_rate_limits.clone()),
-            held_generation_run_id,
+            held_source_run_id,
         ),
         Err(ExactIdleReservationMiss::Absent)
     ));
     assert!(matches!(
-        pool.reserve_reusable_generation_with_reason(
+        pool.reserve_reusable_source(
             "session-generation",
             "vm0/large",
             &Some(device_rate_limits.clone()),
-            held_generation_run_id,
+            held_source_run_id,
         ),
         Err(ExactIdleReservationMiss::ProfileMismatch)
     ));
     assert!(matches!(
-        pool.reserve_reusable_generation_with_reason(
+        pool.reserve_reusable_source(
             "session-generation",
             "vm0/default",
             &None,
-            held_generation_run_id,
+            held_source_run_id,
         ),
         Err(ExactIdleReservationMiss::DeviceLimitMismatch)
     ));
     assert!(matches!(
-        pool.reserve_reusable_generation_with_reason(
+        pool.reserve_reusable_source(
             "session-generation",
             "vm0/default",
             &Some(device_rate_limits.clone()),
-            requested_generation_run_id,
+            requested_source_run_id,
         ),
-        Err(ExactIdleReservationMiss::HistoryGenerationMismatch)
+        Err(ExactIdleReservationMiss::SourceMismatch)
     ));
     assert_eq!(pool.len(), 1);
     assert_eq!(pool.status_snapshot().revision, parked_revision);
 
     let _reservation = pool
-        .reserve_reusable_generation(
+        .reserve_reusable_source(
             "session-generation",
             "vm0/default",
             &Some(device_rate_limits),
-            held_generation_run_id,
+            held_source_run_id,
         )
         .expect("the exact generation should reserve");
     assert_eq!(pool.len(), 0);
@@ -625,9 +625,9 @@ fn pressure_ordering_breaks_equal_park_time_by_reuse_key() {
 fn pressure_selection_reserves_exact_match_before_oldest_eviction() {
     let mut pool = IdlePool::new(pool_config(0));
     let parked_at = Instant::now();
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let matching = ParkedIdleCandidateBuilder::new("session-matching", make_budget_lease(2, 2048))
-        .with_history_generation_run_id(history_generation_run_id)
+        .with_native_generation_run_id(native_generation_run_id)
         .build();
     let _ = park_at(
         &mut pool,
@@ -642,12 +642,8 @@ fn pressure_selection_reserves_exact_match_before_oldest_eviction() {
         parked_at,
     );
 
-    let selection = pool.reserve_reusable_for_pressure(
-        Some("session-matching"),
-        "vm0/default",
-        &None,
-        Some(history_generation_run_id),
-    );
+    let selection =
+        pool.reserve_reusable_for_pressure(Some("session-matching"), "vm0/default", &None);
 
     let reservation = selection.expect("matching entry must be reserved before pressure eviction");
     assert_eq!(pool.held_reuse_keys(), vec!["session-unrelated"]);
@@ -677,7 +673,7 @@ fn held_reuse_keys() {
 #[test]
 fn held_sandbox_states_include_only_entries_with_timestamps() {
     let mut pool = IdlePool::new(pool_config(0));
-    let history_generation_run_id = RunId::new_v4();
+    let native_generation_run_id = RunId::new_v4();
     let unconfirmed = make_candidate_for("sess-unconfirmed", 2, 2048);
     let source_a = RunId::new_v4();
     let source_b = RunId::new_v4();
@@ -688,7 +684,7 @@ fn held_sandbox_states_include_only_entries_with_timestamps() {
     let confirmed_a = ParkedIdleCandidateBuilder::new("sess-a", make_budget_lease(2, 2048))
         .with_source_run_id(source_a)
         .with_mock_sandbox_name("test")
-        .with_history_generation_run_id(history_generation_run_id)
+        .with_native_generation_run_id(native_generation_run_id)
         .with_last_completed_at("2026-05-28T00:00:00.000Z")
         .build();
 
@@ -705,7 +701,6 @@ fn held_sandbox_states_include_only_entries_with_timestamps() {
                 reusable_sandbox: ReusableSandboxState {
                     source_run_id: source_a,
                     profile: "vm0/default".to_string(),
-                    history_generation_run_id: Some(history_generation_run_id),
                 },
             },
             HeldSandboxState {
@@ -714,7 +709,6 @@ fn held_sandbox_states_include_only_entries_with_timestamps() {
                 reusable_sandbox: ReusableSandboxState {
                     source_run_id: source_b,
                     profile: "vm0/default".to_string(),
-                    history_generation_run_id: None,
                 },
             },
         ],

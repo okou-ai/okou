@@ -208,7 +208,7 @@ impl Fixture {
             source_ip: "10.0.0.1".into(),
             storage_fingerprints: StorageFingerprints::default(),
             restored_session_identity: None,
-            history_generation_run_id: Some(predecessor),
+            native_generation_run_id: Some(predecessor),
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             home_image_size_bytes: TEST_HOME_IMAGE_SIZE_BYTES,
             home_promotion: Some(home.promotion),

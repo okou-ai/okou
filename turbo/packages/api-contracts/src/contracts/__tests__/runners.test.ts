@@ -1087,7 +1087,8 @@ describe("runner reuse preference contract", () => {
       const preference = {
         ...runnerPreference,
         tier,
-        ...(tier === "finalizingPredecessor" ||
+        ...(tier === "exactSandbox" ||
+        tier === "finalizingPredecessor" ||
         tier === "peerFinalizingPredecessor"
           ? { finalizingSourceRunId: "11111111-1111-4111-8111-111111111111" }
           : {}),
@@ -1206,7 +1207,10 @@ describe("runner reuse preference contract", () => {
           {
             reuseKey: "thread:current",
             lastCompletedAt: "2026-07-15T00:00:00.000Z",
-            reusableSandbox: { profile: "vm0/default" },
+            reusableSandbox: {
+              sourceRunId: "33333333-3333-4333-8333-333333333333",
+              profile: "vm0/default",
+            },
           },
         ],
       }).success,
@@ -1280,7 +1284,10 @@ describe("runner reuse preference contract", () => {
         {
           reuseKey: "thread:canonical",
           lastCompletedAt: "2026-07-15T00:00:00.000Z",
-          reusableSandbox: { profile: "vm0/default" },
+          reusableSandbox: {
+            sourceRunId: "33333333-3333-4333-8333-333333333333",
+            profile: "vm0/default",
+          },
         },
       ],
     });
@@ -1335,6 +1342,7 @@ describe("runner reuse preference contract", () => {
     } as const;
     const homeCaches = Array.from({ length: 8 }, (_, index) => {
       return {
+        sourceRunId: "33333333-3333-4333-8333-333333333333",
         profile: `vm0/profile-${index}`,
         homeAffinityVersion: 1 as const,
       };
@@ -1361,7 +1369,13 @@ describe("runner reuse preference contract", () => {
           {
             reuseKey: "thread:over-global-cap",
             lastCompletedAt: "2026-07-15T00:00:00.000Z",
-            homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 1 }],
+            homeCaches: [
+              {
+                sourceRunId: "33333333-3333-4333-8333-333333333333",
+                profile: "vm0/default",
+                homeAffinityVersion: 1,
+              },
+            ],
           },
         ],
       }).success,
@@ -1373,6 +1387,7 @@ describe("runner reuse preference contract", () => {
         homeCaches: [
           ...homeCaches,
           {
+            sourceRunId: "33333333-3333-4333-8333-333333333333",
             profile: "vm0/profile-over-cap",
             homeAffinityVersion: 1,
           },
@@ -1390,7 +1405,13 @@ describe("runner reuse preference contract", () => {
       heldHomeStateSchema.safeParse({
         reuseKey: "thread:invalid-capability",
         lastCompletedAt: "2026-07-15T00:00:00.000Z",
-        homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 2 }],
+        homeCaches: [
+          {
+            sourceRunId: "33333333-3333-4333-8333-333333333333",
+            profile: "vm0/default",
+            homeAffinityVersion: 2,
+          },
+        ],
       }).success,
     ).toBe(false);
   });

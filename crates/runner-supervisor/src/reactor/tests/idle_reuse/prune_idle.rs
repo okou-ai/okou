@@ -50,7 +50,7 @@ async fn prune_idle_publishes_home_cache_before_acknowledging() {
         source_ip: "10.0.0.1".into(),
         storage_fingerprints: crate::storage_fingerprints::StorageFingerprints::default(),
         restored_session_identity: None,
-        history_generation_run_id: None,
+        native_generation_run_id: None,
         guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
         home_image_size_bytes: crate::home_promotion::test_support::TEST_HOME_IMAGE_SIZE_BYTES,
         home_promotion: Some(fixture.promotion),
