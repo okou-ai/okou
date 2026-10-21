@@ -1,12 +1,30 @@
 import Foundation
+import OSLog
+
+private final class NativeHelperStandardError: @unchecked Sendable {
+  private let lock = NSLock()
+  private var byteCount = 0
+
+  func record(_ count: Int) {
+    lock.withLock { byteCount = min(65_536, byteCount + count) }
+  }
+
+  var summary: String {
+    lock.withLock {
+      byteCount == 65_536 ? "stderrBytes>=65536" : "stderrBytes=\(byteCount)"
+    }
+  }
+}
 
 public actor NativeProcess {
+  private let logger = Logger(subsystem: "ai.okou.desktop", category: "native-helper")
   private let executable: URL
   private let environment: [String: String]
   private var process: Process?
   private var input: FileHandle?
   private var output: FileHandle?
   private var errors: FileHandle?
+  private var standardError = NativeHelperStandardError()
   private var timeouts: [Int: Task<Void, Never>] = [:]
   private var buffer = Data()
   private var sequence = 0
@@ -25,6 +43,7 @@ public actor NativeProcess {
     let stdin = Pipe()
     let stdout = Pipe()
     let stderr = Pipe()
+    let standardError = NativeHelperStandardError()
     child.executableURL = executable
     child.arguments = ["serve"]
     child.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value
@@ -37,7 +56,9 @@ public actor NativeProcess {
       Task { await self.receive(data, generation: current) }
     }
     stderr.fileHandleForReading.readabilityHandler = { handle in
-      if handle.availableData.isEmpty { handle.readabilityHandler = nil }
+      let data = handle.availableData
+      standardError.record(data.count)
+      if data.isEmpty { handle.readabilityHandler = nil }
     }
     child.terminationHandler = { _ in Task { await self.exited(generation: current) } }
     try child.run()
@@ -45,6 +66,7 @@ public actor NativeProcess {
     input = stdin.fileHandleForWriting
     output = stdout.fileHandleForReading
     errors = stderr.fileHandleForReading
+    self.standardError = standardError
   }
   public func request(_ values: JSONValue, timeout: TimeInterval = 30) async throws -> JSONValue {
     try Task.checkCancellation()
@@ -81,21 +103,31 @@ public actor NativeProcess {
     while let newline = buffer.firstIndex(of: 10) {
       let line = buffer.prefix(upTo: newline)
       buffer.removeSubrange(...newline)
-      do {
-        let response = try JSONDecoder().decode(JSONValue.self, from: line)
-        guard let number = response["id"].number, let responseId = Int(exactly: number) else {
-          throw DesktopFailure("accessibility_unavailable", "Native response has no request ID")
-        }
-        timeouts.removeValue(forKey: responseId)?.cancel()
-        pending.removeValue(forKey: responseId)?.resume(returning: response)
-      } catch {
-        stop(
-          error: DesktopFailure("accessibility_unavailable", "Native helper returned invalid JSON"))
+      let response: JSONValue
+      do { response = try JSONDecoder().decode(JSONValue.self, from: line) } catch {
+        protocolFailure("invalid JSON", responseBytes: line.count)
+        return
       }
+      guard let number = response["id"].number, let responseId = Int(exactly: number) else {
+        protocolFailure("missing or invalid request ID", responseBytes: line.count)
+        return
+      }
+      timeouts.removeValue(forKey: responseId)?.cancel()
+      pending.removeValue(forKey: responseId)?.resume(returning: response)
     }
     if buffer.count > 32 * 1024 * 1024 {
       stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
     }
+  }
+  private func protocolFailure(_ reason: String, responseBytes: Int) {
+    // Never include helper output or decoder descriptions: either can contain private app data.
+    let diagnostics = "responseBytes=\(responseBytes), \(standardError.summary)"
+    let message = "Native helper protocol failure: \(reason) (\(diagnostics))."
+    logger.error("\(message, privacy: .public)")
+    stop(
+      error: DesktopFailure(
+        "accessibility_unavailable",
+        "\(message) Reconnect Computer Use; do not replay the failed action automatically."))
   }
   private func expire(_ id: Int) {
     guard pending[id] != nil else { return }
@@ -125,6 +157,7 @@ public actor NativeProcess {
     input = nil
     output = nil
     errors = nil
+    standardError = NativeHelperStandardError()
     buffer.removeAll()
     for timeout in timeouts.values { timeout.cancel() }
     timeouts.removeAll()
