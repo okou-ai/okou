@@ -279,6 +279,48 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
   }
 
+  func testBulkReadBlocksConcurrentChangesAndRecoversAfterFailure() async throws {
+    let fixture = SearchUnreadFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    let agent = SearchUnreadFixture.agent
+    let otherThread = try XCTUnwrap(
+      store.list.threads.first { $0.id == SearchUnreadFixture.id(2) })
+    let started = expectation(description: "Bulk read reached the API")
+    let gate = SearchResponseGate()
+    defer { gate.open() }
+    fixture.state.value.withLock {
+      $0.failWrites = true
+      $0.bulkReadGate = gate
+      $0.bulkReadStarted = { started.fulfill() }
+    }
+    let pending = Task { await store.list.markAgentRead(agent) }
+    await fulfillment(of: [started], timeout: 2)
+    XCTAssertTrue(store.list.markingAgentRead)
+    await store.list.markAgentRead(SearchUnreadFixture.otherAgent)
+    await store.setRead(otherThread, read: true)
+    gate.open()
+    await pending.value
+    XCTAssertFalse(store.list.markingAgentRead)
+    XCTAssertTrue(store.list.updatingThreads.isEmpty)
+    XCTAssertNotNil(store.list.error)
+    XCTAssertTrue(store.list.unreadAgentIDs.contains(agent))
+    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
+
+    fixture.state.value.withLock { $0.failWrites = false }
+    await store.list.markAgentRead(agent)
+    XCTAssertNil(store.list.error)
+    XCTAssertFalse(store.list.markingAgentRead)
+    XCTAssertTrue(store.list.updatingThreads.isEmpty)
+    XCTAssertFalse(store.list.unreadAgentIDs.contains(agent))
+    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
+    XCTAssertTrue(store.list.threads.first { $0.id == otherThread.id }?.isUnread == true)
+    XCTAssertEqual(
+      store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
+  }
+
   func testManualUnreadWaitsForAutomaticReadAndSurvivesRefreshUntilReopened() async throws {
     let fixture = SearchUnreadFixture()
     let started = expectation(description: "Automatic read started")
@@ -550,6 +592,8 @@ private final class SearchUnreadFixture: Sendable {
     var omitThreadIndicators = false
     var dropUnreadResponse = false
     var writes: [String] = []
+    var bulkReadGate: SearchResponseGate?
+    var bulkReadStarted: (@Sendable () -> Void)?
     var readGate: SearchResponseGate?
     var readStarted: (@Sendable () -> Void)?
   }
@@ -606,8 +650,19 @@ private final class SearchUnreadFixture: Sendable {
           )
         }
       case "/api/chat-thread-unreads/mark-read":
+        let gate = state.value.withLock { value -> SearchResponseGate? in
+          let gate = value.bulkReadGate
+          value.bulkReadGate = nil
+          value.bulkReadStarted?()
+          value.bulkReadStarted = nil
+          return gate
+        }
+        if let gate { await gate.wait() }
         let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
         return state.value.withLock { value in
+          if value.failWrites {
+            return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
+          }
           value.bulkAgent = body["agentId"]
           value.unread = value.unread.filter {
             ($0.isMultiple(of: 2) ? Self.otherAgent : Self.agent) != body["agentId"]
