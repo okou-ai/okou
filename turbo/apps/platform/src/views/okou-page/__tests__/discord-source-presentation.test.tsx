@@ -180,7 +180,6 @@ test("Activity identifies a Discord run as its source", async () => {
       createdAt: CREATED_AT,
       startedAt: CREATED_AT,
       completedAt: "2026-09-24T09:00:03.000Z",
-      artifact: { name: null, version: null },
     });
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {

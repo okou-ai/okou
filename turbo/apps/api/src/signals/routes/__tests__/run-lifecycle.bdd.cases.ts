@@ -1957,7 +1957,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!memoryMount) {
           throw new Error("Expected canonical memory mount");
         }
-        expect(claim).not.toHaveProperty("runContextStorage");
         const runContext = await api.requestRunContext(
           actor,
           created.runId,
@@ -1965,19 +1964,20 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(runContext.body).toMatchObject({
           runId: created.runId,
-          volumes: expect.arrayContaining([
+          storageMounts: expect.arrayContaining([
             {
               name: workflowStorageName,
               mountPath: workflowMountPath,
-              vasStorageName: workflowStorageName,
-              vasVersionId: workflowStorage.versionId,
+              version: workflowStorage.versionId,
+              writeback: false,
+            },
+            {
+              mountPath: memoryMount.mountPath,
+              name: memoryMount.name,
+              version: memoryMount.versionId,
+              writeback: true,
             },
           ]),
-          artifact: {
-            mountPath: memoryMount.mountPath,
-            vasStorageName: memoryMount.name,
-            vasVersionId: memoryMount.versionId,
-          },
         });
 
         await api.requestCancelRun(actor, created.runId, [200]);
@@ -12641,9 +12641,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             created.runId,
             [200],
           );
-          expect(log.body.artifact).toStrictEqual({
-            name: memoryArtifact.name,
-            version: outputVersion,
+          expect(log.body).toMatchObject({
+            id: created.runId,
+            status: "completed",
+            framework: "claude-code",
           });
 
           const replay = await webhooks.requestAgentComplete(

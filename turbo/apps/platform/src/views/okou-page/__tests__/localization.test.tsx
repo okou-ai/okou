@@ -100,7 +100,6 @@ test("French uses local number formatting", async () => {
       createdAt: "2026-01-01T12:00:00.000Z",
       startedAt: "2026-01-01T12:00:00.000Z",
       completedAt: "2026-01-01T12:00:01.200Z",
-      artifact: { name: null, version: null },
     });
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {

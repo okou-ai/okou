@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
-import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
@@ -70,7 +69,7 @@ function inspectFile(): File {
       createdAt: "2026-03-10T14:56:04Z",
     },
   ];
-  const runContext: RunContextResponse = {
+  const runContext = {
     prompt: "Inspect the latest OAuth trace",
     appendSystemPrompt: "Prefer concise findings",
     runId: "b0000000-0000-4000-a000-000000000777",
@@ -245,7 +244,7 @@ function codexInspectFile(): File {
       createdAt: "2026-03-10T16:56:06Z",
     },
   ];
-  const runContext: RunContextResponse = {
+  const runContext = {
     prompt: "Inspect Codex adapter events",
     appendSystemPrompt: "Prefer normalized Codex rows",
     runId: "b0000000-0000-4000-a000-000000000778",

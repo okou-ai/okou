@@ -153,19 +153,6 @@ export const runAgentEventsContract = c.router({
  * Dynamic fields (environment, firewalls, storageMounts) are stored in Axiom.
  * Static fields (prompt, vars, secretNames) are merged from agent_runs at query time.
  */
-const runContextVolumeSchema = z.object({
-  name: z.string(),
-  mountPath: z.string(),
-  vasStorageName: z.string(),
-  vasVersionId: z.string(),
-});
-
-const runContextArtifactSchema = z.object({
-  mountPath: z.string(),
-  vasStorageName: z.string(),
-  vasVersionId: z.string(),
-});
-
 export const runContextStorageMountSchema = z.object({
   name: z.string(),
   version: z.string(),
@@ -207,77 +194,24 @@ const runContextFirewallSchema = z.union([
   runContextSanitizedFirewallSchema,
 ]);
 
-export const runContextResponseSchema = z
-  .object({
-    prompt: z.string(),
-    appendSystemPrompt: z.string().nullable(),
-    runId: z.string(),
-    sessionId: z.string().nullable(),
-    cliAgentType: z.string().optional(),
-    secretNames: z.array(z.string()),
-    vars: z.record(z.string(), z.string()).nullable(),
-    environment: z.record(z.string(), z.string()),
-    firewalls: z.array(runContextFirewallSchema),
-    networkPolicies: networkPoliciesSchema.nullable(),
-    storageMounts: z.array(runContextStorageMountSchema).optional(),
-    // Keep the previous API/download shape readable until its API rollback
-    // window closes; persisted downloads remain readable separately (#41332).
-    volumes: z.array(runContextVolumeSchema).optional(),
-    artifact: runContextArtifactSchema.nullable().optional(),
-    featureFlags: z.record(z.string(), z.boolean()).nullable(),
-  })
-  .refine(
-    (context) => {
-      return (
-        context.storageMounts !== undefined ||
-        (context.volumes !== undefined && context.artifact !== undefined)
-      );
-    },
-    {
-      message: "Run context is missing Storage mount observations",
-      path: ["storageMounts"],
-    },
-  );
+export const runContextResponseSchema = z.object({
+  prompt: z.string(),
+  appendSystemPrompt: z.string().nullable(),
+  runId: z.string(),
+  sessionId: z.string().nullable(),
+  cliAgentType: z.string().optional(),
+  secretNames: z.array(z.string()),
+  vars: z.record(z.string(), z.string()).nullable(),
+  environment: z.record(z.string(), z.string()),
+  firewalls: z.array(runContextFirewallSchema),
+  networkPolicies: networkPoliciesSchema.nullable(),
+  storageMounts: z.array(runContextStorageMountSchema),
+  featureFlags: z.record(z.string(), z.boolean()).nullable(),
+});
 
 export type RunContextStorageMount = z.infer<
   typeof runContextStorageMountSchema
 >;
-
-export function runContextStorageMounts(context: {
-  readonly storageMounts?: RunContextStorageMount[];
-  readonly volumes?: z.infer<typeof runContextVolumeSchema>[];
-  readonly artifact?: z.infer<typeof runContextArtifactSchema> | null;
-}): RunContextStorageMount[] {
-  if (context.storageMounts !== undefined) {
-    return context.storageMounts;
-  }
-  // New App -> previous API and historical downloaded context snapshots.
-  // Keep the persisted-format reader while those files remain supported;
-  // retiring API rollback targets alone does not retire downloads (#41332).
-  if (context.volumes === undefined || context.artifact === undefined) {
-    throw new Error("Run context is missing Storage mount observations");
-  }
-  return [
-    ...context.volumes.map((volume) => {
-      return {
-        name: volume.vasStorageName,
-        version: volume.vasVersionId,
-        mountPath: volume.mountPath,
-        writeback: false,
-      };
-    }),
-    ...(context.artifact === null
-      ? []
-      : [
-          {
-            name: context.artifact.vasStorageName,
-            version: context.artifact.vasVersionId,
-            mountPath: context.artifact.mountPath,
-            writeback: true,
-          },
-        ]),
-  ];
-}
 
 /**
  * Agent run context contract (GET /api/runs/:id/context)

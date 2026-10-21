@@ -1,16 +1,15 @@
 import { computed } from "ccstate";
-import { runContextContract } from "@okouai/api-contracts/contracts/run-routes";
 import {
-  normalizeActivityRunContext,
-  type ActivityRunContext,
-} from "./run-context.ts";
+  runContextContract,
+  type RunContextResponse,
+} from "@okouai/api-contracts/contracts/run-routes";
 import { apiClient$ } from "../api-client.ts";
 import { currentRunId$ } from "./activity-signals.ts";
 import { accept } from "../../lib/accept.ts";
 
 interface ActivityContext {
   runId: string;
-  context: ActivityRunContext | null;
+  context: RunContextResponse | null;
 }
 
 /**
@@ -36,6 +35,6 @@ export const activityContext$ = computed(async (get) => {
   }
   return {
     runId,
-    context: normalizeActivityRunContext(result.body),
+    context: result.body,
   } satisfies ActivityContext;
 });

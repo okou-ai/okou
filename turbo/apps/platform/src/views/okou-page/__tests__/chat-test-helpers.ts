@@ -940,7 +940,6 @@ export function mockChatLifecycle(
       createdAt: "2026-03-10T00:00:00Z",
       startedAt: "2026-03-10T00:00:01Z",
       completedAt: null,
-      artifact: { name: null, version: null },
     });
   });
   context.mocks.api(runsCancelContract.cancel, ({ respond }) => {

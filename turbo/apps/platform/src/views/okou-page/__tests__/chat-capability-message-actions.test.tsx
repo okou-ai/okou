@@ -116,7 +116,6 @@ test("Keep Copy to the right of an active run's logs before any assistant output
       createdAt: "2026-08-01T10:00:00.000Z",
       startedAt: "2026-08-01T10:00:01.000Z",
       completedAt: null,
-      artifact: { name: null, version: null },
     });
   });
 
@@ -245,7 +244,6 @@ test("Copy workflow trigger bubbles and inspect their associated runs", async ()
       createdAt: "2026-08-01T10:00:00.000Z",
       startedAt: "2026-08-01T10:00:00.000Z",
       completedAt: "2026-08-01T10:00:01.000Z",
-      artifact: { name: null, version: null },
     });
   });
 
@@ -360,7 +358,6 @@ test("Inspect a response from its prompt or copy it from history", async () => {
       createdAt: "2026-08-01T10:00:00.000Z",
       startedAt: "2026-08-01T10:00:01.000Z",
       completedAt: "2026-08-01T10:00:02.000Z",
-      artifact: { name: null, version: null },
     });
   });
 

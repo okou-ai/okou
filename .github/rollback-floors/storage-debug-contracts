@@ -1,0 +1,7 @@
+The first-parent main commit adding this marker is the minimum API rollback
+target for canonical Storage debug interfaces and App floor 0.1048.7.
+Earlier APIs restore a lower App floor and can re-admit pages requiring the
+retired Context aliases and LogDetail.artifact. They also cannot reconstruct
+those aliases from new canonical-only Axiom snapshots. Retained-snapshot and
+downloaded-log conversion remain supported at their read boundaries.
+Recover with an eligible immutable artifact or roll forward.
