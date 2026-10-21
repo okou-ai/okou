@@ -41,7 +41,7 @@ await test("retires reviewed instruction Storage through the native CLI", async 
   });
   suite.beforeEach(async () => {
     await client.query(
-      "TRUNCATE agents, agent_runs, storages, background_jobs, storage_publication_tokens, storage_publication_generations CASCADE",
+      "TRUNCATE agents, agent_runs, storages, background_jobs, export_jobs, storage_publication_tokens, storage_publication_generations CASCADE",
     );
   });
   suite.after(async () => {
@@ -93,24 +93,35 @@ await test("retires reviewed instruction Storage through the native CLI", async 
       "INSERT INTO storages (id, org_id, user_id, name, s3_prefix) VALUES ($1, $2, $3, $4, $5)",
       [id, orgId, userId, name, capturedPrefix],
     );
-    const version = randomUUID().replaceAll("-", "").repeat(2);
+    const version = await addVersion(id, capturedPrefix);
+    await client.query("UPDATE storages SET head_version_id=$2 WHERE id=$1", [
+      id,
+      version.id,
+    ]);
+    return { id, orgId, prefix: capturedPrefix, version: version.id };
+  }
+  async function addVersion(storageId: string, prefix: string) {
+    const id = randomUUID().replaceAll("-", "").repeat(2);
+    const key = `${prefix}/${id}`;
     await client.query(
       `INSERT INTO storage_versions (id, storage_id, s3_key, archive_size, created_by)
       VALUES ($1, $2, $3, 32, 'test-owner')`,
-      [version, id, `${capturedPrefix}/${version}/archive.tar.gz`],
+      [id, storageId, key],
     );
-    await client.query("UPDATE storages SET head_version_id=$2 WHERE id=$1", [
-      id,
-      version,
-    ]);
-    return { id, orgId, prefix: capturedPrefix, version };
+    return { id, key };
   }
   async function preview() {
     const result = await invoke();
     assert.strictEqual(result.code, 0, result.stderr);
     const manifest = z
       .object({
-        storages: z.array(z.object({ id: z.uuid() })),
+        format: z.literal(2),
+        storages: z.array(
+          z.object({
+            id: z.uuid(),
+            versions: z.array(z.object({ id: z.string(), key: z.string() })),
+          }),
+        ),
         tokens: z.array(z.unknown()),
       })
       .parse(JSON.parse(result.stdout));
@@ -242,11 +253,85 @@ await test("retires reviewed instruction Storage through the native CLI", async 
   );
 
   await suite.test(
-    "skips changed identities, independently added versions, and shared prefixes",
+    "retires legacy versions in exact directories outside the registered prefix",
+    async () => {
+      const target = await storage();
+      const outsideRoot = `${target.orgId}/volume/agent-instructions@legacy`;
+      const head = await addVersion(target.id, outsideRoot);
+      const outside = [head, await addVersion(target.id, outsideRoot)];
+      await client.query("UPDATE storages SET head_version_id=$2 WHERE id=$1", [
+        target.id,
+        head.id,
+      ]);
+      const { manifest, path } = await preview();
+      assert.deepStrictEqual(
+        manifest.storages[0]?.versions,
+        [
+          { id: target.version, key: `${target.prefix}/${target.version}` },
+          ...outside,
+        ].sort((left, right) => {
+          return left.id.localeCompare(right.id);
+        }),
+      );
+      const result = await apply(path);
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.deepStrictEqual(
+        (await client.query("SELECT id FROM storages")).rows,
+        [],
+      );
+      assert.deepStrictEqual(
+        (await client.query("SELECT id FROM storage_versions")).rows,
+        [],
+      );
+      const expectedPrefixes = [
+        target.prefix,
+        ...outside.map((version) => {
+          return version.key;
+        }),
+      ].sort();
+      assert.deepStrictEqual(
+        (
+          await client.query(
+            "SELECT input->'target'->>'value' AS prefix FROM background_jobs ORDER BY prefix",
+          )
+        ).rows,
+        expectedPrefixes.map((prefix) => {
+          return { prefix };
+        }),
+      );
+      const receipt = z
+        .object({
+          status: z.literal("cleanup_queued"),
+          jobs: z.array(z.object({ jobId: z.uuid(), prefix: z.string() })),
+        })
+        .parse(JSON.parse(result.stdout.split("\n")[0] ?? ""));
+      assert.deepStrictEqual(
+        receipt.jobs
+          .map((job) => {
+            return job.prefix;
+          })
+          .sort(),
+        expectedPrefixes,
+      );
+      assert.strictEqual((await apply(path)).code, 2);
+      assert.deepStrictEqual(
+        (
+          await client.query(
+            "SELECT count(*)::int AS count FROM background_jobs",
+          )
+        ).rows,
+        [{ count: 3 }],
+      );
+    },
+  );
+
+  await suite.test(
+    "skips changed identities, independently changed version inventories, and shared prefixes",
     async () => {
       const changed = await storage();
       const shared = await storage("agent-instructions@shared");
       const versioned = await storage("agent-instructions@versioned");
+      const moved = await storage("agent-instructions@moved");
       const { path } = await preview();
       await client.query(
         "UPDATE storages SET name='agent-instructions@edited' WHERE id=$1",
@@ -257,25 +342,85 @@ await test("retires reviewed instruction Storage through the native CLI", async 
         "__org__",
         `${shared.prefix}/nested`,
       );
-      await client.query(
-        `INSERT INTO storage_versions (id, storage_id, s3_key, archive_size, created_by)
-      VALUES ($1, $2, $3, 32, 'test-owner')`,
-        [
-          "a".repeat(64),
-          versioned.id,
-          `${versioned.prefix}/new/archive.tar.gz`,
-        ],
-      );
+      await addVersion(versioned.id, versioned.prefix);
+      await client.query("UPDATE storage_versions SET s3_key=$2 WHERE id=$1", [
+        moved.version,
+        `${moved.orgId}/legacy/${moved.version}`,
+      ]);
       const result = await apply(path);
       assert.strictEqual(result.code, 2, result.stderr);
       assert.deepStrictEqual(
         (await client.query("SELECT count(*)::int AS count FROM storages"))
           .rows,
-        [{ count: 4 }],
+        [{ count: 5 }],
       );
       assert.deepStrictEqual(
         (await client.query("SELECT id FROM background_jobs")).rows,
         [],
+      );
+    },
+  );
+
+  await suite.test(
+    "retains outside version directories referenced by other Storage, versions, or exports",
+    async () => {
+      const registered = await storage("agent-instructions@registered");
+      const versioned = await storage("agent-instructions@versioned");
+      const exported = await storage("agent-instructions@exported");
+      const registeredOutside = await addVersion(
+        registered.id,
+        `${registered.orgId}/legacy`,
+      );
+      const versionedOutside = await addVersion(
+        versioned.id,
+        `${versioned.orgId}/legacy`,
+      );
+      const exportedOutside = await addVersion(
+        exported.id,
+        `${exported.orgId}/legacy`,
+      );
+      const { path } = await preview();
+      const nested = await storage(
+        "agent-skills@nested",
+        "__org__",
+        `${registeredOutside.key}/nested`,
+      );
+      const aliased = await storage("agent-skills@aliased");
+      await client.query("UPDATE storage_versions SET s3_key=$2 WHERE id=$1", [
+        aliased.version,
+        versionedOutside.key,
+      ]);
+      await client.query(
+        `INSERT INTO export_jobs (user_id, org_id, status, s3_key)
+        VALUES ('test-export-owner', $1, 'completed', $2)`,
+        [exported.orgId, `${exportedOutside.key}/archive.tar.gz`],
+      );
+      const blocked = await apply(path);
+      assert.strictEqual(blocked.code, 2, blocked.stderr);
+      assert.deepStrictEqual(
+        (await client.query("SELECT count(*)::int AS count FROM storages"))
+          .rows,
+        [{ count: 5 }],
+      );
+      assert.deepStrictEqual(
+        (await client.query("SELECT id FROM background_jobs")).rows,
+        [],
+      );
+      await client.query("DELETE FROM storages WHERE id=ANY($1::uuid[])", [
+        [nested.id, aliased.id],
+      ]);
+      await client.query("DELETE FROM export_jobs WHERE org_id=$1", [
+        exported.orgId,
+      ]);
+      const result = await apply(path);
+      assert.strictEqual(result.code, 0, result.stderr);
+      assert.deepStrictEqual(
+        (
+          await client.query(
+            "SELECT count(*)::int AS count FROM background_jobs",
+          )
+        ).rows,
+        [{ count: 6 }],
       );
     },
   );
@@ -347,12 +492,13 @@ await test("retires reviewed instruction Storage through the native CLI", async 
   );
 
   await suite.test(
-    "keeps the Storage and versions when durable cleanup-job registration fails",
+    "keeps the Storage, all versions and zero jobs when one cleanup target fails registration",
     async () => {
       const target = await storage();
+      const outside = await addVersion(target.id, "outside/legacy");
       const { path } = await preview();
       await client.query(
-        "ALTER TABLE background_jobs ADD CONSTRAINT reject_cleanup_test CHECK (kind <> 'storage-object-cleanup')",
+        "ALTER TABLE background_jobs ADD CONSTRAINT reject_cleanup_test CHECK (input->'target'->>'value' NOT LIKE 'outside/%')",
       );
       try {
         assert.notStrictEqual((await apply(path)).code, 0);
@@ -361,8 +507,15 @@ await test("retires reviewed instruction Storage through the native CLI", async 
           [{ id: target.id }],
         );
         assert.deepStrictEqual(
-          (await client.query("SELECT id FROM storage_versions")).rows,
-          [{ id: target.version }],
+          (await client.query("SELECT id FROM storage_versions ORDER BY id"))
+            .rows,
+          [target.version, outside.id].sort().map((id) => {
+            return { id };
+          }),
+        );
+        assert.deepStrictEqual(
+          (await client.query("SELECT id FROM background_jobs")).rows,
+          [],
         );
       } finally {
         await client.query(
