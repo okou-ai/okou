@@ -73,7 +73,28 @@ const mailDraftAttachmentPathParamsSchema = mailDraftPathParamsSchema.extend({
   partId: z.string().min(1),
 });
 
+export const threadMailSummarySchema = z.object({
+  mailDraftId: z.uuid(),
+  status: z.enum(["draft", "sent"]),
+  subject: z.string(),
+  from: z.string(),
+  createdAt: z.string(),
+});
+
 export const mailContract = c.router({
+  listThreadMail: {
+    method: "GET",
+    path: "/api/mail/threads/:threadId/drafts",
+    headers: authHeadersSchema,
+    pathParams: z.object({ threadId: z.uuid() }),
+    responses: {
+      200: z.object({ mails: z.array(threadMailSummarySchema) }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "List all active drafts and sent emails linked to a chat thread",
+  },
   linkDraft: {
     method: "POST",
     path: "/api/mail/drafts/link",
@@ -161,4 +182,5 @@ export type MailDraftStatus = z.infer<typeof mailDraftStatusSchema>;
 export type MailAttachment = z.infer<typeof mailAttachmentSchema>;
 export type MailInlineImage = z.infer<typeof mailInlineImageSchema>;
 export type MailDraft = z.infer<typeof mailDraftSchema>;
+export type ThreadMailSummary = z.infer<typeof threadMailSummarySchema>;
 export type MailContract = typeof mailContract;

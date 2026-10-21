@@ -44,6 +44,133 @@ const GMAIL_TEXT_BYTES = Buffer.from("mail draft decision");
 const GMAIL_HTML_BODY =
   '<div>Mail body <strong>before</strong></div><img src="cid:email-test-illustration" alt="Cheerful envelope illustration"><ul><li>Mail body after</li></ul><a href="https://example.com/review">Review</a>';
 
+describe("thread email list", () => {
+  it("lists linked drafts, then sent emails, and refuses to delete sent mail", async () => {
+    const fixture = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      fixture.ownsFeatureSwitches();
+      await connectors.updateFeatureSwitches(fixture.actor, {
+        threadEmailManager: true,
+      });
+      mockGmailDraftApi();
+      const linked = await linkDraft(fixture);
+      const list = () => {
+        return client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: fixture.thread.id },
+        });
+      };
+      const drafts = await accept(list(), [200]);
+      expect(drafts.body.mails).toStrictEqual([
+        expect.objectContaining({
+          mailDraftId: linked.body.mailDraftId,
+          subject: "Attachment review",
+          from: "sender@example.com",
+          status: "draft",
+        }),
+      ]);
+      await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      const sent = await accept(list(), [200]);
+      expect(sent.body.mails).toStrictEqual([
+        expect.objectContaining({
+          mailDraftId: linked.body.mailDraftId,
+          status: "sent",
+        }),
+      ]);
+      await accept(
+        client().deleteDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [409],
+      );
+      expect((await accept(list(), [200])).body).toStrictEqual(sent.body);
+    });
+  });
+
+  it("omits deleted drafts immediately and keeps their original links unavailable", async () => {
+    const fixture = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      fixture.ownsFeatureSwitches();
+      await connectors.updateFeatureSwitches(fixture.actor, {
+        threadEmailManager: true,
+      });
+      mockGmailDraftApi();
+      const linked = await linkDraft(fixture);
+      await accept(
+        client().deleteDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [204],
+      );
+      const result = await accept(
+        client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: fixture.thread.id },
+        }),
+        [200],
+      );
+      expect(result.body.mails).toStrictEqual([]);
+      const tombstone = await accept(
+        client().getDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(tombstone.body.mailDraft).toMatchObject({
+        status: "deleted",
+        detailAvailable: false,
+      });
+    });
+  });
+
+  it("checks the feature switch and does not disclose another user's thread", async () => {
+    const fixture = await createPublicGmailMailCardFixture();
+    const other = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      fixture.ownsFeatureSwitches();
+      await connectors.updateFeatureSwitches(fixture.actor, {
+        threadEmailManager: false,
+      });
+      const disabled = await accept(
+        client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: fixture.thread.id },
+        }),
+        [403],
+      );
+      expect(disabled.body.error.code).toBe("FORBIDDEN");
+      await connectors.updateFeatureSwitches(fixture.actor, {
+        threadEmailManager: true,
+      });
+      const missing = await accept(
+        client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: randomUUID() },
+        }),
+        [404],
+      );
+      expect(missing.body.error.code).toBe("NOT_FOUND");
+      const foreign = await accept(
+        client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: other.thread.id },
+        }),
+        [404],
+      );
+      expect(foreign.body).toStrictEqual(missing.body);
+    });
+  });
+});
+
 function encodedBody(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
 }

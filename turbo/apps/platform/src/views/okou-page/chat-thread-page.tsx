@@ -1,6 +1,7 @@
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
+import { ThreadMailButton } from "./thread-mail.tsx";
 import { chatResourcePanelEnabled$ } from "../../signals/chat-page/chat-resources.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -828,6 +829,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
             </Tooltip>
           </TooltipProvider>
           <AutomationMenuButton thread={thread} />
+          <ThreadMailButton thread={thread} />
           <BrowserMenuButton thread={thread} />
           <ArtifactsButton thread={thread} />
         </div>

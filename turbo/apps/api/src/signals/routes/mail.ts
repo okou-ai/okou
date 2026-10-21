@@ -1,7 +1,14 @@
 import { command } from "ccstate";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import {
+  badRequestMessage,
+  conflict,
+  resourceUnavailable,
+  notFound,
+} from "../../lib/error";
 import { env } from "../../lib/env";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -12,10 +19,42 @@ import {
   getMailDraftAttachment$,
   getMailDraft$,
   linkMailDraft$,
+  listThreadMail$,
   sendMailDraft$,
   type MailDraftLinkMutationResult,
   type MailDraftMutationResult,
 } from "../services/mail-draft.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+
+const listThreadMailParams$ = pathParamsOf(mailContract.listThreadMail);
+const listThreadMailInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.ThreadEmailManager, featureContext)
+    ) {
+      return resourceUnavailable("Thread email manager is not enabled");
+    }
+    const mails = await set(
+      listThreadMail$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        ...get(listThreadMailParams$),
+      },
+      signal,
+    );
+    return mails === null
+      ? notFound("Chat thread not found")
+      : { status: 200 as const, body: { mails } };
+  },
+);
 
 function mailDraftUrl(mailDraftId: string): string {
   return `${env("APP_URL")}/mail/drafts/${mailDraftId}`;
@@ -202,6 +241,10 @@ const mailDraftHumanAuth = Object.freeze({
 });
 
 export const mailRoutes: readonly RouteEntry[] = [
+  {
+    route: mailContract.listThreadMail,
+    handler: authRoute(mailDraftHumanAuth, listThreadMailInner$),
+  },
   {
     route: mailContract.linkDraft,
     handler: authRoute(mailDraftLinkAuth, linkDraftInner$),

@@ -11,6 +11,7 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
 
 // ---------------------------------------------------------------------------
 // Page-level coordinator for the thread-owned utility sidebar. Sidebar state
@@ -40,7 +41,9 @@ export const activeThreadSidebar$ = computed(
         return {
           thread,
           target,
-          animateEntry: get(thread.sidebar.animateEntry$),
+          animateEntry:
+            get(thread.sidebar.animateEntry$) &&
+            !(target.type === "email-draft" && target.fromMailList),
         };
       }
     }
@@ -152,6 +155,65 @@ export const openThreadMailDraft$ = command(
       { type: "email-draft", signals },
       get(pageSignal$),
     );
+  },
+);
+
+// Named browser snapshots morph the anchored list into the existing detail
+// panel, and reverse the same path on Back. Reduced motion moves immediately.
+const navigateThreadMail$ = command(
+  async (
+    { set },
+    thread: ChatPanelSignals,
+    mail: ThreadMailSummary | null,
+    signal: AbortSignal,
+  ) => {
+    const update = () => {
+      signal.throwIfAborted();
+      if (mail) {
+        const href = `/mail/drafts/${mail.mailDraftId}`;
+        const signals = set(thread.mail.register$, {
+          mailDraftId: mail.mailDraftId,
+          href,
+          originalUrl: new URL(href, window.location.origin).href,
+        });
+        set(thread.mail.setOpen$, false);
+        set(
+          openOnThread$,
+          thread,
+          { type: "email-draft", signals, fromMailList: true },
+          signal,
+        );
+      } else {
+        set(thread.sidebar.close$);
+        set(thread.mail.setOpen$, true);
+      }
+    };
+    if (
+      !("startViewTransition" in document) ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      update();
+      return;
+    }
+    await document.startViewTransition({ update }).updateCallbackDone;
+    signal.throwIfAborted();
+  },
+);
+
+export const openThreadMailFromList$ = command(
+  async (
+    { set },
+    thread: ChatPanelSignals,
+    mail: ThreadMailSummary,
+    signal: AbortSignal,
+  ) => {
+    await set(navigateThreadMail$, thread, mail, signal);
+  },
+);
+
+export const backToThreadMailList$ = command(
+  async ({ set }, thread: ChatPanelSignals, signal: AbortSignal) => {
+    await set(navigateThreadMail$, thread, null, signal);
   },
 );
 

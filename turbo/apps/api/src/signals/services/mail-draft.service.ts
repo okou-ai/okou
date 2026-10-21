@@ -5,6 +5,7 @@ import {
   type MailDraft,
   type MailDraftStatus,
   type MailInlineImage,
+  type ThreadMailSummary,
 } from "@okouai/api-contracts/contracts/mail";
 import {
   connectorCatalog,
@@ -18,7 +19,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { convert } from "html-to-text";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
@@ -443,6 +444,59 @@ const loadOwnedMailDraft$ = command(
       )
       .limit(1);
     return mailDraftRow(row);
+  },
+);
+
+export const listThreadMail$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ThreadMailSummary[] | null> => {
+    const thread = await set(loadOwnedMailThreadContext$, args);
+    signal.throwIfAborted();
+    if (!thread) {
+      return null;
+    }
+    const rows = await set(writeDb$)
+      .select({
+        mailDraftId: mailDrafts.id,
+        status: mailDrafts.status,
+        subject: mailDrafts.subject,
+        from: mailDrafts.senderAddress,
+        createdAt: mailDrafts.createdAt,
+      })
+      .from(mailDrafts)
+      .where(
+        and(
+          eq(mailDrafts.chatThreadId, args.threadId),
+          inArray(mailDrafts.status, ["draft", "sent"]),
+        ),
+      )
+      .orderBy(desc(mailDrafts.createdAt), desc(mailDrafts.id));
+    signal.throwIfAborted();
+    return rows.flatMap((row): ThreadMailSummary[] => {
+      if (
+        (row.status !== "draft" && row.status !== "sent") ||
+        row.subject === null ||
+        row.from === null
+      ) {
+        return [];
+      }
+      return [
+        {
+          ...row,
+          status: row.status,
+          subject: row.subject,
+          from: row.from,
+          createdAt: row.createdAt.toISOString(),
+        },
+      ];
+    });
   },
 );
 
@@ -1923,8 +1977,10 @@ export const deleteMailDraft$ = command(
     if (deletion.kind === "error") {
       throw deletion.error;
     }
+    const deletedRow = await set(markDeleted$, { row });
+    signal.throwIfAborted();
     const deletedDraft = responseDraft({
-      row: { ...row, status: "deleted" },
+      row: deletedRow,
       details: null,
       detailAvailable: false,
     });
