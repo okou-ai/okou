@@ -3471,27 +3471,6 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
   );
 }
 
-async function syncModelProviderRuntimeSecrets(args: {
-  readonly runId?: string;
-  readonly subscriptionBundles?: SubscriptionBundleReads;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly secrets: Record<string, string>;
-  readonly secretConnectorMap: Record<string, string> | undefined;
-  readonly secretConnectorMetadataMap:
-    Record<string, SecretConnectorMetadata> | undefined;
-  readonly referencedKeys: Set<string>;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<void> {
-  if (!args.secretConnectorMap) {
-    return;
-  }
-
-  // Resolve ancillary subscription keys together; refresh owns reconnect errors.
-  await syncPersonalSubscriptionRuntimeBundles(args, false);
-}
-
 function syncPlatformRuntimeSecrets(args: {
   readonly secrets: Record<string, string>;
   readonly secretConnectorMap: Record<string, string> | undefined;
@@ -3560,7 +3539,7 @@ async function syncFirewallRuntimeSecrets(args: {
     connectorAccessBySlug: args.connectorAccessBySlug,
     featureSwitchContext: args.featureSwitchContext,
   });
-  await syncModelProviderRuntimeSecrets({
+  const runtimeSyncArgs = {
     db: args.db,
     runId: args.auth.runId,
     subscriptionBundles: args.subscriptionBundles,
@@ -3571,7 +3550,15 @@ async function syncFirewallRuntimeSecrets(args: {
     secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
     referencedKeys: args.referencedKeys,
     featureSwitchContext: args.featureSwitchContext,
-  });
+  };
+  await (async (): Promise<void> => {
+    if (!runtimeSyncArgs.secretConnectorMap) {
+      return;
+    }
+
+    // Resolve ancillary subscription keys together; refresh owns reconnect errors.
+    await syncPersonalSubscriptionRuntimeBundles(runtimeSyncArgs, false);
+  })();
   syncPlatformRuntimeSecrets({
     secrets: args.secrets,
     secretConnectorMap: args.body.secretConnectorMap,
@@ -6179,9 +6166,19 @@ export const prepareFirewallAuthResponse$ = command(
   },
 );
 
-function personalSubscriptionRuntimeGroups(
-  args: Parameters<typeof syncModelProviderRuntimeSecrets>[0],
-) {
+function personalSubscriptionRuntimeGroups(args: {
+  readonly runId?: string;
+  readonly subscriptionBundles?: SubscriptionBundleReads;
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly secrets: Record<string, string>;
+  readonly secretConnectorMap: Record<string, string> | undefined;
+  readonly secretConnectorMetadataMap:
+    Record<string, SecretConnectorMetadata> | undefined;
+  readonly referencedKeys: Set<string>;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}) {
   const groups = new Map<
     string,
     {
@@ -6232,7 +6229,19 @@ function personalSubscriptionRuntimeGroups(
 }
 
 async function syncPersonalSubscriptionRuntimeBundles(
-  args: Parameters<typeof syncModelProviderRuntimeSecrets>[0],
+  args: {
+    readonly runId?: string;
+    readonly subscriptionBundles?: SubscriptionBundleReads;
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly secrets: Record<string, string>;
+    readonly secretConnectorMap: Record<string, string> | undefined;
+    readonly secretConnectorMetadataMap:
+      Record<string, SecretConnectorMetadata> | undefined;
+    readonly referencedKeys: Set<string>;
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
   rejectReconnect = true,
 ): Promise<number | null> {
   let expiresAt: number | null = null;
