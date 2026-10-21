@@ -138,7 +138,7 @@ function VncSaveNotice({
   }
   return (
     <div role="alert" className="grid gap-2 text-sm text-muted-foreground">
-      <p>
+      <p className="text-destructive">
         {uncertain
           ? t(($) => {
               return $.vnc.saveRecovery.uncertain;
