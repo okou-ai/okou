@@ -12,6 +12,8 @@ import type {
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
+import { animationFrame } from "signal-timers";
+import { createDeferredPromise, withCleanup } from "../utils.ts";
 
 // ---------------------------------------------------------------------------
 // Page-level coordinator for the thread-owned utility sidebar. Sidebar state
@@ -160,13 +162,34 @@ export const openThreadMailDraft$ = command(
 
 // Named browser snapshots morph the anchored list into the existing detail
 // panel, and reverse the same path on Back. Reduced motion moves immediately.
-const navigateThreadMail$ = command(
+async function waitForMailLayout(signal: AbortSignal): Promise<void> {
+  // React commits the popup first; Floating UI positions it on the next frame.
+  // Capture the settled bounds, without its separate entrance animation.
+  for (let frame = 0; frame < 2; frame += 1) {
+    const ready = createDeferredPromise<void>(signal);
+    animationFrame(
+      () => {
+        ready.resolve();
+      },
+      { signal },
+    );
+    await ready.promise;
+    signal.throwIfAborted();
+  }
+}
+
+const moveThreadMail$ = command(
   async (
-    { set },
+    { get, set },
     thread: ChatPanelSignals,
     mail: ThreadMailSummary | null,
     signal: AbortSignal,
   ) => {
+    if (!mail) {
+      set(thread.mail.refresh$);
+      await get(thread.mail.filtered$);
+      signal.throwIfAborted();
+    }
     const update = () => {
       signal.throwIfAborted();
       if (mail) {
@@ -185,7 +208,7 @@ const navigateThreadMail$ = command(
         );
       } else {
         set(thread.sidebar.close$);
-        set(thread.mail.setOpen$, true);
+        set(thread.mail.restore$);
       }
     };
     if (
@@ -195,8 +218,30 @@ const navigateThreadMail$ = command(
       update();
       return;
     }
-    await document.startViewTransition({ update }).updateCallbackDone;
+    await document.startViewTransition({
+      update: async () => {
+        update();
+        await waitForMailLayout(signal);
+      },
+    }).finished;
     signal.throwIfAborted();
+  },
+);
+
+const navigateThreadMail$ = command(
+  async (
+    { get, set },
+    thread: ChatPanelSignals,
+    mail: ThreadMailSummary | null,
+    signal: AbortSignal,
+  ) => {
+    if (get(thread.mail.navigating$)) {
+      return;
+    }
+    set(thread.mail.navigating$, true);
+    await withCleanup(set(moveThreadMail$, thread, mail, signal), () => {
+      set(thread.mail.navigating$, false);
+    });
   },
 );
 

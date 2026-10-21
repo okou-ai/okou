@@ -177,6 +177,7 @@ export function createThreadMailSignals(
   latestRunFinish$: Computed<Promise<string | undefined>>,
 ) {
   const open$ = state(false);
+  const navigating$ = state(false);
   const query$ = state("");
   const filter$ = state<ThreadMailFilter>("all");
   const reloadVersion$ = state(0);
@@ -219,6 +220,9 @@ export function createThreadMailSignals(
       set(refresh$);
     }
   });
+  const restore$ = command(({ set }) => {
+    set(open$, true);
+  });
   const selection = createMailSelectionSignals(
     mails$,
     filtered$,
@@ -237,6 +241,8 @@ export function createThreadMailSignals(
       return get(open$);
     }),
     setOpen$,
+    restore$,
+    navigating$,
     refresh$,
     query$,
     filter$,

@@ -56,6 +56,7 @@ function ThreadMailButtonInner({
   const setOpen = useSet(thread.mail.setOpen$);
   const target = useGet(thread.sidebar.target$);
   const pending = useGet(thread.mail.pending$);
+  const navigating = useGet(thread.mail.navigating$);
   // Keep an already-open empty list usable after its last draft is deleted.
   if (!open && (mails.state !== "hasData" || mails.data.length === 0)) {
     return null;
@@ -103,6 +104,8 @@ function ThreadMailButtonInner({
           className={cn(
             "flex max-h-[min(600px,var(--available-height))] w-[min(440px,calc(100vw-2rem))] flex-col overflow-hidden p-0",
             open && "[view-transition-name:thread-email-panel]",
+            navigating &&
+              "transition-none data-starting-style:opacity-100 data-starting-style:[transform:none] data-ending-style:opacity-100 data-ending-style:[transform:none]",
           )}
         >
           <ThreadMailList thread={thread} />
@@ -317,7 +320,7 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
   const rows = filtered.state === "hasData" ? filtered.data : [];
   return (
     <div
-      ref={listRef}
+      ref={filtered.state === "hasData" ? listRef : undefined}
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
     >
       {filtered.state === "hasError" ? (
