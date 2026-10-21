@@ -267,7 +267,10 @@ test("A failed built-in connector toggle rolls back its draft and can be retried
   let failSave = true;
   let enabledConnectorSlugs: string[] = [];
   mockConnectorSurface(context, {
-    catalog: [catalogConnectorFixture("github", "GitHub")],
+    catalog: [
+      catalogConnectorFixture("github", "GitHub"),
+      catalogConnectorFixture("slack", "Slack"),
+    ],
   });
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs });
@@ -300,6 +303,10 @@ test("A failed built-in connector toggle rolls back its draft and can be retried
   await saveStarted.promise;
   await waitFor(() => {
     expect(connectorAccessSwitch("Revoke GitHub access")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(connectorAccessSwitch("Grant Slack access")).toHaveAttribute(
       "aria-disabled",
       "true",
     );
