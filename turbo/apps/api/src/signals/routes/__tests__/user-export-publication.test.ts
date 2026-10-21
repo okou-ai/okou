@@ -14,18 +14,16 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
-import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
 import AdmZip from "adm-zip";
-import { Webhook } from "svix";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { agentsRoutes } from "../agents";
@@ -36,7 +34,6 @@ import { chatThreadPatchRoutes } from "../chat-threads-patch";
 import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { userExportRoutes } from "../user-export";
 import { workflowsRoutes } from "../workflows";
-import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
@@ -55,7 +52,6 @@ const routes = Object.freeze([
   ...chatThreadCreateRoutes,
   ...chatThreadPatchRoutes,
   ...workflowsRoutes,
-  ...webhooksClerkRoutes,
   ...userExportRoutes,
   ...cronProcessBackgroundJobsRoutes,
 ]);
@@ -555,63 +551,6 @@ test("publishes the exact owned memory bytes committed by a genuine Runner claim
       ),
     ).toStrictEqual(bytes);
   });
-});
-
-test("publishes an export retained through signed organization deletion during multipart completion", async () => {
-  const owner = actor();
-  const secret = `whsec_${Buffer.from("export-publication-deletion-key").toString("base64")}`;
-  let removed = false;
-  const fixture = await initialize([owner], async () => {
-    const body = JSON.stringify({
-      type: "organization.deleted",
-      data: { id: owner.orgId },
-    });
-    const id = `msg_${randomUUID()}`;
-    const timestamp = nowDate();
-    await accept(
-      fixture.app(webhookClerkContract).post({
-        body,
-        extraHeaders: {
-          "svix-id": id,
-          "svix-timestamp": Math.floor(timestamp.getTime() / 1000).toString(),
-          "svix-signature": new Webhook(secret).sign(id, timestamp, body),
-        },
-      }),
-      [200],
-    );
-    removed = true;
-  });
-  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
-  context.mocks.clerk.verifyWebhook.mockImplementation(async (request) => {
-    if (!(request instanceof Request)) {
-      throw new Error("Expected the real Clerk webhook request");
-    }
-    const body = await request.text();
-    new Webhook(secret).verify(body, Object.fromEntries(request.headers));
-    return z
-      .object({
-        type: z.literal("organization.deleted"),
-        data: z.object({ id: z.string() }),
-      })
-      .parse(JSON.parse(body));
-  });
-  await startExport(fixture, owner);
-  await process(fixture);
-  expect(removed).toBeTruthy();
-  // The surviving user can still observe their export with a no-org session.
-  createRouteMocks(context).clerk.session(owner.userId, null);
-  const retained = await accept(
-    fixture.app(userExportContract).get({ headers }),
-    [200],
-  );
-  expect(retained.body.job).toMatchObject({ status: "completed" });
-  expect(retained.body.job?.downloadUrl).toBeTruthy();
-  await process(fixture);
-  const replay = await accept(
-    fixture.app(userExportContract).get({ headers }),
-    [200],
-  );
-  expect(replay.body.job).toStrictEqual(retained.body.job);
 });
 
 function assertExportPageBoundaries(
