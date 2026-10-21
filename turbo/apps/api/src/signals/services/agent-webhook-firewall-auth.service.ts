@@ -3087,12 +3087,8 @@ function referencedModelProviderAccessMap(args: {
   return refreshable;
 }
 
-async function syncStoredConnectorRuntimeSecrets(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly secrets: Record<string, string>;
-  readonly secretConnectorMap: Record<string, string> | undefined;
+function storedConnectorRuntimeSecretLookups(args: {
+  readonly secretConnectorMap: Record<string, string>;
   readonly secretConnectorMetadataMap:
     Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
@@ -3100,13 +3096,8 @@ async function syncStoredConnectorRuntimeSecrets(args: {
     string,
     BuiltinConnectorAccessState
   >;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<void> {
-  if (!args.secretConnectorMap) {
-    return;
-  }
-
-  const lookups = [...args.referencedKeys].flatMap((key) => {
+}) {
+  return [...args.referencedKeys].flatMap((key) => {
     const accessSourceKey = getOwnConnectorOwner(args.secretConnectorMap, key);
     if (!accessSourceKey) {
       return [];
@@ -3138,61 +3129,6 @@ async function syncStoredConnectorRuntimeSecrets(args: {
       ? [{ access: connectorAccess.access, key, secretName }]
       : [];
   });
-  if (lookups.length === 0) {
-    return;
-  }
-
-  const namesByConnectorId = new Map<
-    string,
-    {
-      readonly access: BuiltinConnectorCredentialAccess;
-      readonly names: Set<string>;
-    }
-  >();
-  for (const lookup of lookups) {
-    const existing = namesByConnectorId.get(lookup.access.connectorId);
-    if (existing) {
-      existing.names.add(lookup.secretName);
-    } else {
-      namesByConnectorId.set(lookup.access.connectorId, {
-        access: lookup.access,
-        names: new Set([lookup.secretName]),
-      });
-    }
-  }
-  const rows = await args.db
-    .select({
-      name: secretsTable.name,
-      encryptedValue: secretsTable.encryptedValue,
-    })
-    .from(secretsTable)
-    .where(
-      builtinConnectorCredentialSecretReadCondition({
-        groups: [...namesByConnectorId.values()].map((group) => {
-          return { access: group.access, names: [...group.names] };
-        }),
-      }),
-    );
-
-  const valuesByName = new Map<string, string>();
-  for (const row of rows) {
-    valuesByName.set(
-      row.name,
-      await decryptStoredSecretValue(
-        row.encryptedValue,
-        args.featureSwitchContext,
-      ),
-    );
-  }
-
-  for (const { key, secretName } of lookups) {
-    const value = valuesByName.get(secretName);
-    if (value === undefined) {
-      delete args.secrets[key];
-    } else {
-      args.secrets[key] = value;
-    }
-  }
 }
 
 async function getModelProviderRuntimeSecretValue(args: {
@@ -3544,7 +3480,7 @@ async function syncFirewallRuntimeSecrets(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly subscriptionBundles: SubscriptionBundleReads;
 }): Promise<void> {
-  await syncStoredConnectorRuntimeSecrets({
+  const storedRuntimeSyncArgs = {
     db: args.db,
     orgId: args.orgId,
     userId: args.auth.userId,
@@ -3554,7 +3490,76 @@ async function syncFirewallRuntimeSecrets(args: {
     referencedKeys: args.referencedKeys,
     connectorAccessBySlug: args.connectorAccessBySlug,
     featureSwitchContext: args.featureSwitchContext,
-  });
+  };
+  await (async (): Promise<void> => {
+    if (!storedRuntimeSyncArgs.secretConnectorMap) {
+      return;
+    }
+
+    const lookups = storedConnectorRuntimeSecretLookups({
+      secretConnectorMap: storedRuntimeSyncArgs.secretConnectorMap,
+      secretConnectorMetadataMap:
+        storedRuntimeSyncArgs.secretConnectorMetadataMap,
+      referencedKeys: storedRuntimeSyncArgs.referencedKeys,
+      connectorAccessBySlug: storedRuntimeSyncArgs.connectorAccessBySlug,
+    });
+
+    if (lookups.length === 0) {
+      return;
+    }
+
+    const namesByConnectorId = new Map<
+      string,
+      {
+        readonly access: BuiltinConnectorCredentialAccess;
+        readonly names: Set<string>;
+      }
+    >();
+    for (const lookup of lookups) {
+      const existing = namesByConnectorId.get(lookup.access.connectorId);
+      if (existing) {
+        existing.names.add(lookup.secretName);
+      } else {
+        namesByConnectorId.set(lookup.access.connectorId, {
+          access: lookup.access,
+          names: new Set([lookup.secretName]),
+        });
+      }
+    }
+    const rows = await storedRuntimeSyncArgs.db
+      .select({
+        name: secretsTable.name,
+        encryptedValue: secretsTable.encryptedValue,
+      })
+      .from(secretsTable)
+      .where(
+        builtinConnectorCredentialSecretReadCondition({
+          groups: [...namesByConnectorId.values()].map((group) => {
+            return { access: group.access, names: [...group.names] };
+          }),
+        }),
+      );
+
+    const valuesByName = new Map<string, string>();
+    for (const row of rows) {
+      valuesByName.set(
+        row.name,
+        await decryptStoredSecretValue(
+          row.encryptedValue,
+          storedRuntimeSyncArgs.featureSwitchContext,
+        ),
+      );
+    }
+
+    for (const { key, secretName } of lookups) {
+      const value = valuesByName.get(secretName);
+      if (value === undefined) {
+        delete storedRuntimeSyncArgs.secrets[key];
+      } else {
+        storedRuntimeSyncArgs.secrets[key] = value;
+      }
+    }
+  })();
   const runtimeSyncArgs = {
     db: args.db,
     runId: args.auth.runId,
