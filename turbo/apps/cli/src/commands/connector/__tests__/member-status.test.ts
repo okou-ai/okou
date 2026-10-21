@@ -24,12 +24,7 @@ const BUILTIN_ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOM_ID = "22222222-2222-4222-8222-222222222222";
 const STALE_ID = "44444444-4444-4444-8444-444444444444";
 const builtinTarget = { kind: "builtin", connectorSlug: "github" } as const;
-const custom = customConnector({
-  connected: true,
-  connectedAccountId: STALE_ID,
-  configuredFieldKeys: ["apiKey"],
-  missingRequiredFields: [],
-});
+const custom = customConnector({});
 const customTarget = { kind: "custom", customConnectorId: custom.id } as const;
 const readers = [
   {
@@ -59,14 +54,13 @@ function installDefinitions() {
   const catalog = catalogStatusItem({
     connectorSlug: "github",
     label: "GitHub",
-    connected: true,
-    scopeMismatch: true,
-    connection: {
+    account: {
       id: STALE_ID,
       authMethod: "oauth",
       externalUsername: "stale",
       externalEmail: null,
       reconnectReason: null,
+      scopeMismatch: true,
     },
   });
   server.use(

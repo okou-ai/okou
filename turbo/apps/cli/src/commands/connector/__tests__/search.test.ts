@@ -806,11 +806,7 @@ describe("okou connector search command", () => {
     });
 
     it("matches a custom run account by custom connector ID", async () => {
-      const definition = customConnector({
-        connected: true,
-        missingRequiredFields: [],
-        configuredFieldKeys: ["secret:apiKey"],
-      });
+      const definition = customConnector({});
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       writeRunConnectorAccountContext(contextPath, [
         {

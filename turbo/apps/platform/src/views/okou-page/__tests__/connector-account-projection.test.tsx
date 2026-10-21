@@ -1,4 +1,3 @@
-import { httpConnectorFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -20,9 +19,11 @@ test.each(["set-default", "delete-default"] as const)(
   "Check the current Job default after a local account %s",
   async (mutation) => {
     const connector = customConnector({
-      connected: true,
-      missingRequiredFields: [],
-      configuredFieldKeys: ["secret"],
+      account: {
+        missingRequiredFields: [],
+        configuredFieldKeys: ["secret"],
+        setupStatus: "complete",
+      },
     });
     const work = customConnectorAccount(connector.id, {
       displayName: "Work",
@@ -37,12 +38,7 @@ test.each(["set-default", "delete-default"] as const)(
     let defaultConnection = work;
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, {
-        connectors: [
-          httpConnectorFixture({
-            ...connector,
-            connected: defaultConnection.connectionStatus === "connected",
-          }),
-        ],
+        connectors: [connector],
       });
     });
     mockSavedConnectorAccounts(context, () => {

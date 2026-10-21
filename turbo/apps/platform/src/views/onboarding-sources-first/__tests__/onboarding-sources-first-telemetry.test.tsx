@@ -50,13 +50,13 @@ function mockCatalog(): void {
       slug: "gmail",
       label: "Gmail",
       description: "Mail for your workspace",
-      connected: true,
+      hasAccount: true,
     }),
     onboardingSourceItem({
       slug: "notion",
       label: "Notion",
       description: "Shared notes for a team",
-      connected: false,
+      hasAccount: false,
     }),
   ]);
 }

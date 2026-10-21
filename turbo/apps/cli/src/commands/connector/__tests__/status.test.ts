@@ -25,35 +25,22 @@ import {
 
 const AGENT_UUID = "550e8400-e29b-41d4-a716-446655440000";
 
-const connectedGithub = {
-  id: "1",
-  slug: "github",
+const githubAccount = {
   authMethod: "oauth",
   externalId: "12345",
   externalUsername: "octocat",
   externalEmail: "octocat@github.com",
   oauthScopes: ["repo", "project"],
-  connectionStatus: "connected",
+  connectionStatus: "connected" as const,
   createdAt: "2025-01-01T00:00:00Z",
   updatedAt: "2025-01-01T00:00:00Z",
 };
 
-function statusItemFromConnector(connector: Record<string, unknown>) {
-  return catalogStatusItem({
-    connectorSlug: connector.slug as string,
-    authMethods: [authCodeMethod(connector.authMethod as string)],
-    connection: {
-      authMethod: connector.authMethod as string,
-      externalUsername: (connector.externalUsername as string | null) ?? null,
-      externalEmail: (connector.externalEmail as string | null) ?? null,
-      reconnectReason: null,
-    },
-    connected: true,
-    connectionStatus:
-      (connector.connectionStatus as "connected" | "reconnect-required") ??
-      "connected",
-  });
-}
+const connectedGithub = catalogStatusItem({
+  connectorSlug: "github",
+  authMethods: [authCodeMethod("oauth")],
+  account: githubAccount,
+});
 
 function stubStatus(
   connectors: Parameters<typeof stubConnectorCatalogDetail>[0],
@@ -63,30 +50,9 @@ function stubStatus(
   return stubConnectorCatalogDetail(connectors, origin);
 }
 
-function stubConnector(
-  body: Record<string, unknown>,
-  status = 200,
-  connectorSlug = "github",
-) {
-  if (status === 200) {
-    server.use(
-      stubConnectorAccounts(
-        catalogAccountConnections([statusItemFromConnector(body)]),
-      ),
-    );
-    return stubStatus([statusItemFromConnector(body)]);
-  }
-  if (status === 404) {
-    return stubStatus([
-      catalogStatusItem({
-        connectorSlug,
-        authMethods: [authCodeMethod("oauth")],
-      }),
-    ]);
-  }
-  return http.get("http://localhost:3000/api/connector-catalog", () => {
-    return HttpResponse.json(body, { status });
-  });
+function stubConnector(connector: ReturnType<typeof catalogStatusItem>) {
+  server.use(stubConnectorAccounts(catalogAccountConnections([connector])));
+  return stubStatus([connector]);
 }
 
 function stubAgent(
@@ -174,12 +140,7 @@ describe("okou connector status command", () => {
     );
 
     it("displays not connected status", async () => {
-      server.use(
-        stubConnector(
-          { error: { message: "Not found", code: "NOT_FOUND" } },
-          404,
-        ),
-      );
+      server.use(stubAvailableConnectors(["github"]));
 
       await statusCommand.parseAsync(["node", "cli", "github"]);
 
@@ -206,10 +167,16 @@ describe("okou connector status command", () => {
 
     it("shows reconnect guidance when connector needs reconnect", async () => {
       server.use(
-        stubConnector({
-          ...connectedGithub,
-          connectionStatus: "reconnect-required",
-        }),
+        stubConnector(
+          catalogStatusItem({
+            connectorSlug: "github",
+            authMethods: [authCodeMethod("oauth")],
+            account: {
+              ...githubAccount,
+              connectionStatus: "reconnect-required",
+            },
+          }),
+        ),
       );
 
       await statusCommand.parseAsync(["node", "cli", "github"]);
@@ -340,9 +307,9 @@ describe("okou connector status command", () => {
       vi.stubEnv("APP_URL", "https://unrelated.example.test");
       vi.stubEnv("OKOU_API_BACKEND_URL", apiOrigin);
       server.use(
-        stubStatus([statusItemFromConnector(connectedGithub)], apiOrigin),
+        stubStatus([connectedGithub], apiOrigin),
         stubConnectorAccounts(
-          catalogAccountConnections([statusItemFromConnector(connectedGithub)]),
+          catalogAccountConnections([connectedGithub]),
           apiOrigin,
         ),
         stubAgent(AGENT_UUID, "maya", apiOrigin),
@@ -369,9 +336,9 @@ describe("okou connector status command", () => {
       vi.stubEnv("OKOU_API_BACKEND_URL", apiOrigin);
       vi.stubEnv("OKOU_APP_URL", `${appOrigin}/ignored-path`);
       server.use(
-        stubStatus([statusItemFromConnector(connectedGithub)], apiOrigin),
+        stubStatus([connectedGithub], apiOrigin),
         stubConnectorAccounts(
-          catalogAccountConnections([statusItemFromConnector(connectedGithub)]),
+          catalogAccountConnections([connectedGithub]),
           apiOrigin,
         ),
         stubAgent(AGENT_UUID, "maya", apiOrigin),
@@ -394,10 +361,7 @@ describe("okou connector status command", () => {
 
     it("shows connect link when connector is not connected", async () => {
       server.use(
-        stubConnector(
-          { error: { message: "Not found", code: "NOT_FOUND" } },
-          404,
-        ),
+        stubAvailableConnectors(["github"]),
         stubAgent(AGENT_UUID, "maya"),
         stubUserConnectors(AGENT_UUID, []),
       );
@@ -424,10 +388,7 @@ describe("okou connector status command", () => {
 
     it("shows connect guidance when connector is authorized but not connected", async () => {
       server.use(
-        stubConnector(
-          { error: { message: "Not found", code: "NOT_FOUND" } },
-          404,
-        ),
+        stubAvailableConnectors(["github"]),
         stubAgent(AGENT_UUID, "maya"),
         stubUserConnectors(AGENT_UUID, ["github"]),
       );
@@ -455,10 +416,16 @@ describe("okou connector status command", () => {
 
     it("shows reconnect guidance when connector needs reconnect", async () => {
       server.use(
-        stubConnector({
-          ...connectedGithub,
-          connectionStatus: "reconnect-required",
-        }),
+        stubConnector(
+          catalogStatusItem({
+            connectorSlug: "github",
+            authMethods: [authCodeMethod("oauth")],
+            account: {
+              ...githubAccount,
+              connectionStatus: "reconnect-required",
+            },
+          }),
+        ),
         stubAgent(AGENT_UUID, "maya"),
         stubUserConnectors(AGENT_UUID, ["github"]),
       );
@@ -551,10 +518,12 @@ describe("okou connector status command", () => {
   describe("error handling", () => {
     it("should handle authentication error", async () => {
       server.use(
-        stubConnector(
-          { error: { message: "Not authenticated", code: "UNAUTHORIZED" } },
-          401,
-        ),
+        http.get("http://localhost:3000/api/connector-catalog", () => {
+          return HttpResponse.json(
+            { error: { message: "Not authenticated", code: "UNAUTHORIZED" } },
+            { status: 401 },
+          );
+        }),
       );
 
       await expect(async () => {

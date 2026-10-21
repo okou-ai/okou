@@ -10,26 +10,11 @@ import { http, HttpResponse } from "msw";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 
 export interface CatalogFixtureAccount {
-  readonly connection?:
-    | (Partial<Pick<ConnectorAccountConnection, "id">> &
-        Pick<
-          ConnectorAccountConnection,
-          | "authMethod"
-          | "externalUsername"
-          | "externalEmail"
-          | "reconnectReason"
-        >)
-    | null;
-  readonly connectionStatus?:
-    "connected" | "not-connected" | "scope-mismatch" | "reconnect-required";
-  readonly connected?: boolean;
-  readonly scopeMismatch?: boolean;
-  readonly authMethodSupportsRefresh?: boolean;
-  readonly tokenExpiresAt?: string | null;
+  readonly account?: Partial<Omit<ConnectorAccountConnection, "target">>;
 }
 const catalogFixtureAccounts = new WeakMap<
   PublicConnectorCatalogStatusItem,
-  CatalogFixtureAccount
+  NonNullable<CatalogFixtureAccount["account"]>
 >();
 export function catalogFixtureAccount(item: PublicConnectorCatalogStatusItem) {
   return catalogFixtureAccounts.get(item);
@@ -145,7 +130,7 @@ export function catalogStatusItem(
     singleAuthCodeAuthMethodId: overrides.singleAuthCodeAuthMethodId ?? null,
     connectNotice: overrides.connectNotice ?? null,
   };
-  catalogFixtureAccounts.set(item, overrides);
+  if (overrides.account) catalogFixtureAccounts.set(item, overrides.account);
   return item;
 }
 

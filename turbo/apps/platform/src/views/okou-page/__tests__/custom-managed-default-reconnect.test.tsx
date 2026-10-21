@@ -37,6 +37,7 @@ test.each(["feishu", "lark"] as const)(
         },
       ],
       missingRequiredFields: [],
+      configuredFieldKeys: [],
       oauthConfig: {
         providerAdapter: "feishu",
         clientId: "managed-client",

@@ -20,7 +20,7 @@ export function onboardingSourceItem(item: {
   readonly slug: PublicConnectorCatalogStatusItem["slug"];
   readonly label: string;
   readonly description: string;
-  readonly connected: boolean;
+  readonly hasAccount: boolean;
 }): PublicConnectorCatalogStatusItem {
   return catalogFixture({
     slug: item.slug,
@@ -50,14 +50,9 @@ export function onboardingSourceItem(item: {
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: null,
-    connected: item.connected,
-    setupStatus: item.connected ? "complete" : null,
-    connectionStatus: item.connected ? "connected" : "not-connected",
-    scopeMismatch: false,
-    tokenExpiresAt: null,
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
+    account: item.hasAccount ? {} : undefined,
   });
 }
 
@@ -67,7 +62,7 @@ export function connectedGmailSource(): PublicConnectorCatalogStatusItem {
     slug: "gmail",
     label: "Gmail",
     description: "Connect Gmail to continue",
-    connected: true,
+    hasAccount: true,
   });
 }
 

@@ -92,20 +92,19 @@ export function catalogConnectorFixture(
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: {
+    singleAuthCodeAuthMethodId: "oauth",
+    connectNotice: null,
+    account: {
       id: crypto.randomUUID(),
       authMethod: "oauth",
       externalUsername: options.externalUsername ?? null,
       externalEmail: null,
       reconnectReason: null,
+      connectionStatus: "connected",
+      setupStatus: "complete",
+      scopeMismatch: false,
+      tokenExpiresAt: null,
     },
-    connected: true,
-    setupStatus: "complete",
-    connectionStatus: "connected",
-    scopeMismatch: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
   });
 }
 
@@ -165,11 +164,12 @@ function customConnectorBase() {
     authMode: "manual" as const,
     skillMarkdown: null,
     storageVersion: 1,
-    connected: true,
-    connectedAccountId: "30000000-0000-4000-8000-000000000001",
-    connectedAccountUpdatedAt: NOW,
-    missingRequiredFields: [],
-    configuredFieldKeys: [],
+    account: {
+      id: "30000000-0000-4000-8000-000000000001",
+      updatedAt: NOW,
+      setupStatus: "complete" as const,
+      configuredFieldKeys: [],
+    },
     createdAt: NOW,
     updatedAt: NOW,
   };

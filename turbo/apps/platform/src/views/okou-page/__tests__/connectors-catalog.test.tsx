@@ -44,11 +44,10 @@ test("Show saved membership without loading accounts when catalog projections ha
   if (!account) {
     throw new Error("Expected the saved GitHub account");
   }
-  const { ...metadata } = publicStatusItem({
+  const metadata = publicStatusItem({
     connectorSlug: "github",
     label: "GitHub",
     authMethods: [oauthMethod()],
-    connectionStatus: "connected",
   });
   context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
     return respond(200, { connectors: [metadata], totalConnectorCount: 1 });
@@ -190,10 +189,8 @@ async function openConnectorFilterCatalog() {
     publicStatusItem({
       connectorSlug: "github",
       label: "GitHub",
-      connection: github,
-      connected: true,
-      connectionStatus: "connected",
       authMethods: [oauthMethod()],
+      account: { ...github, connectionStatus: "connected" },
     }),
     publicStatusItem({
       connectorSlug: "asana",
@@ -391,7 +388,6 @@ function shelfCatalog() {
       label,
       category: "communication-collaboration",
       popularityRank: index,
-      connected: false,
     });
   });
   return [
@@ -401,7 +397,6 @@ function shelfCatalog() {
       label: "ElevenLabs",
       category: "ai-voice-audio",
       popularityRank: 40,
-      connected: false,
     }),
   ];
 }

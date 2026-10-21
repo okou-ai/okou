@@ -1224,13 +1224,13 @@ test("A connector account switch shows its connector icon from that connector's 
               hasCategories: false,
               hasDefaultPolicyOverrides: false,
             },
-            connection: null,
-            connected: true,
-            connectionStatus: "connected",
-            scopeMismatch: false,
-            tokenExpiresAt: null,
             singleAuthCodeAuthMethodId: null,
             connectNotice: null,
+            account: {
+              connectionStatus: "connected",
+              scopeMismatch: false,
+              tokenExpiresAt: null,
+            },
           }),
         })
       : respond(404, {

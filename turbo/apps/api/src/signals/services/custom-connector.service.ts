@@ -73,9 +73,9 @@ import { parseCustomMcpEndpoint } from "./custom-mcp-endpoint";
 import {
   customConnectorDefinitionConnectedAccount,
   customConnectorDefinitionFieldCompatibility,
-  customConnectorConnectedConnections,
+  createCustomConnectorConnectedConnections,
   customConnectorRuntimeStorageSnapshot,
-  customConnectorValueMarkers,
+  createCustomConnectorValueMarkers,
   type CustomConnectorCredentialValueMarker,
   type CustomConnectorStoredValue,
 } from "./custom-connector-credential-access.service";
@@ -829,9 +829,11 @@ export function customConnectorIsConnected(args: {
 
 export function serialiseCustomConnector(args: {
   readonly row: CustomConnectorRow<CustomConnectorOAuthReadConfig>;
-  readonly valueMarkers: readonly CustomConnectorCredentialValueMarker[];
-  readonly connectedAccountId: string | null;
-  readonly connectedAccountUpdatedAt?: Date | null;
+  readonly managedStatus?: {
+    readonly valueMarkers: readonly CustomConnectorCredentialValueMarker[];
+    readonly connectedAccountId: string | null;
+    readonly connectedAccountUpdatedAt?: Date | null;
+  };
 }): CustomConnectorResponse {
   const auth = (() => {
     if (args.row.authMode === "none") {
@@ -846,7 +848,13 @@ export function serialiseCustomConnector(args: {
     if (args.row.authMode === "oauth" && args.row.oauthConfig) {
       const oauthConfig = serialiseOAuthConfig(args.row.oauthConfig);
       if (oauthConfig.providerAdapter === "feishu") {
-        const connectorMarkers = args.valueMarkers.filter((marker) => {
+        const managedStatus = args.managedStatus;
+        if (!managedStatus) {
+          throw new Error(
+            "Managed connector serialization requires account status",
+          );
+        }
+        const connectorMarkers = managedStatus.valueMarkers.filter((marker) => {
           return (
             marker.connectorId === args.row.id &&
             marker.authMode === args.row.authMode &&
@@ -863,26 +871,24 @@ export function serialiseCustomConnector(args: {
         });
         const connected = customConnectorIsConnected({
           row: args.row,
-          connectedAccountId: args.connectedAccountId,
+          connectedAccountId: managedStatus.connectedAccountId,
           missingRequiredFields,
         });
         const responseMissingRequiredFields = [
           ...missingRequiredFields,
-          ...(args.row.authMode === "oauth" && args.connectedAccountId === null
-            ? ["oauth"]
-            : []),
+          ...(managedStatus.connectedAccountId === null ? ["oauth"] : []),
         ];
         return {
           authMode: "oauth" as const,
           oauthConfig: { ...oauthConfig, providerAdapter: "feishu" as const },
           connected,
-          ...(connected && args.connectedAccountId
+          ...(connected && managedStatus.connectedAccountId
             ? {
-                connectedAccountId: args.connectedAccountId,
-                ...(args.connectedAccountUpdatedAt
+                connectedAccountId: managedStatus.connectedAccountId,
+                ...(managedStatus.connectedAccountUpdatedAt
                   ? {
                       connectedAccountUpdatedAt:
-                        args.connectedAccountUpdatedAt.toISOString(),
+                        managedStatus.connectedAccountUpdatedAt.toISOString(),
                     }
                   : {}),
               }
@@ -2635,30 +2641,35 @@ export function getCustomConnectorResponse(args: {
   readonly userId: string;
   readonly connectorId: string;
 }): Computed<Promise<CustomConnectorResponse | null>> {
+  const connector$ = getCustomConnectorById({
+    orgId: args.orgId,
+    connectorId: args.connectorId,
+  });
+  const managedOwner$ = computed(async (get) => {
+    const connector = await get(connector$);
+    return {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorIds:
+        connector && isIntegrationManagedCustomConnector(connector)
+          ? [connector.id]
+          : [],
+    };
+  });
+  const markers$ = createCustomConnectorValueMarkers(managedOwner$);
+  const connectedConnections$ =
+    createCustomConnectorConnectedConnections(managedOwner$);
   return computed(async (get): Promise<CustomConnectorResponse | null> => {
-    get(db$);
-    const connector = await get(
-      getCustomConnectorById({
-        orgId: args.orgId,
-        connectorId: args.connectorId,
-      }),
-    );
+    const connector = await get(connector$);
     if (!connector) {
       return null;
     }
+    if (!isIntegrationManagedCustomConnector(connector)) {
+      return serialiseCustomConnector({ row: connector });
+    }
     const [markers, connectedConnections] = await Promise.all([
-      get(
-        customConnectorValueMarkers({
-          orgId: args.orgId,
-          userId: args.userId,
-        }),
-      ),
-      get(
-        customConnectorConnectedConnections({
-          orgId: args.orgId,
-          userId: args.userId,
-        }),
-      ),
+      get(markers$),
+      get(connectedConnections$),
     ]);
     const connectedAccount = customConnectorDefinitionConnectedAccount({
       connectedConnections,
@@ -2666,9 +2677,11 @@ export function getCustomConnectorResponse(args: {
     });
     return serialiseCustomConnector({
       row: connector,
-      valueMarkers: markers,
-      connectedAccountId: connectedAccount?.id ?? null,
-      connectedAccountUpdatedAt: connectedAccount?.updatedAt,
+      managedStatus: {
+        valueMarkers: markers,
+        connectedAccountId: connectedAccount?.id ?? null,
+        connectedAccountUpdatedAt: connectedAccount?.updatedAt,
+      },
     });
   });
 }
@@ -3180,18 +3193,9 @@ export const setCustomConnectorValues$ = command(
     }
     signal.throwIfAborted();
 
-    const markers = await get(
-      customConnectorValueMarkers({
-        orgId: args.orgId,
-        userId: args.userId,
-      }),
-    );
-    signal.throwIfAborted();
     return {
       ...serialiseCustomConnector({
         row: writeResult.connector,
-        valueMarkers: markers,
-        connectedAccountId: writeResult.connectedAccountId,
       }),
       connectionId: writeResult.connectedAccountId,
     };

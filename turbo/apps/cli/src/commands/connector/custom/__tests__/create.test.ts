@@ -141,7 +141,6 @@ describe("okou connector custom create", () => {
       prefixTemplates: ["https://api.acme.example/v1/"],
       fields: [...manualDefinition().fields],
       headerInjections: [...manualDefinition().headerInjections],
-      missingRequiredFields: ["secret"],
     });
     server.use(
       http.post(
@@ -182,7 +181,6 @@ describe("okou connector custom create", () => {
       prefixTemplates: ["https://api.acme.example/v1/"],
       fields: [],
       headerInjections: [...oauthDefinition().headerInjections],
-      missingRequiredFields: ["oauth"],
       oauthConfig: {
         providerAdapter: "standard",
         clientId: "oauth-client-id",
@@ -356,7 +354,6 @@ describe("okou connector custom create", () => {
               fields: [...definition.fields],
               headerInjections: [...definition.headerInjections],
               queryInjections: [...definition.queryInjections],
-              missingRequiredFields: ["api_token"],
             }),
             { status: 201 },
           );

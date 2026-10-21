@@ -452,14 +452,7 @@ test("An unconfigured custom connector is not offered to an agent", async () => 
         externalUsername: "workspace",
       }),
     ],
-    customConnectors: [
-      acmeConnectorFixture({
-        connected: false,
-        connectedAccountId: undefined,
-        missingRequiredFields: ["apiKey"],
-        configuredFieldKeys: [],
-      }),
-    ],
+    customConnectors: [acmeConnectorFixture({ account: undefined })],
   });
   await setupTeamPage({
     context,
@@ -506,7 +499,7 @@ test.each(["connected", "reconnect-required", "incomplete"] as const)(
         saves.push(args);
       },
     });
-    const { ...definition } = connector;
+    const definition = connector;
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [definition] });
     });
@@ -628,8 +621,8 @@ test.each(["reduce", "expand"] as const)(
   "An expired custom default permits reductions but checks access expansion (%s)",
   async (change) => {
     const connector = acmeConnectorFixture({
-      connected: false,
       permissionBundleRef: "builtin:acme-search@1",
+      account: undefined,
     });
     const saves: unknown[] = [];
     mockConnectorSurface(context, {
@@ -717,10 +710,7 @@ test.each(["reduce", "expand"] as const)(
 );
 
 test("An unavailable custom default keeps its existing agent grant revocable", async () => {
-  const connector = acmeConnectorFixture({
-    connected: false,
-    connectedAccountId: undefined,
-  });
+  const connector = acmeConnectorFixture({ account: undefined });
   const saves: unknown[] = [];
   mockConnectorSurface(context, {
     customConnectors: [connector],
@@ -813,11 +803,7 @@ test("An agent waits for custom definitions without presenting a false empty sta
 });
 
 test("Saved builtin and unavailable custom connectors stay visible without account list reads", async () => {
-  const connector = acmeConnectorFixture({
-    connected: false,
-    connectedAccountId: undefined,
-    connectedAccountUpdatedAt: undefined,
-  });
+  const connector = acmeConnectorFixture({ account: undefined });
   mockConnectorSurface(context, {
     catalog: [catalogConnectorFixture("github", "GitHub")],
     customConnectors: [connector],
@@ -849,6 +835,9 @@ test.each(["Feishu", "Lark"])(
     const connector = acmeConnectorFixture({
       displayName: name,
       authMode: "oauth",
+      connected: true,
+      missingRequiredFields: [],
+      configuredFieldKeys: [],
       connectedAccountId: undefined,
       connectedAccountUpdatedAt: undefined,
       oauthConfig: {

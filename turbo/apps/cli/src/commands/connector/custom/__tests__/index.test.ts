@@ -41,9 +41,7 @@ describe("okou connector custom readers", () => {
   });
 
   it("emits current org JSON with protocol and grants even from inside a run", async () => {
-    const connector = customConnector({
-      connectedAccountId: "55555555-5555-4555-8555-555555555555",
-    });
+    const connector = customConnector({});
     const mcp = customMcpConnector();
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     server.use(

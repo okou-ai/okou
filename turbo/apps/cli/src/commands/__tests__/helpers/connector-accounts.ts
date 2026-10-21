@@ -126,22 +126,8 @@ export function catalogAccountConnections(
 ): readonly ConnectorAccountConnection[] {
   return connectors.flatMap((connector) => {
     const fixture = catalogFixtureAccount(connector);
-    if (!fixture?.connection) return [];
+    if (!fixture) return [];
     const target = { kind: "builtin", connectorSlug: connector.slug } as const;
-    return [
-      connectorAccount(target, {
-        id: fixture.connection.id ?? crypto.randomUUID(),
-        authMethod: fixture.connection.authMethod,
-        externalUsername: fixture.connection.externalUsername,
-        externalEmail: fixture.connection.externalEmail,
-        connectionStatus:
-          fixture.connectionStatus === "reconnect-required"
-            ? "reconnect-required"
-            : "connected",
-        reconnectReason: fixture.connection.reconnectReason,
-        scopeMismatch: fixture.scopeMismatch ?? false,
-        tokenExpiresAt: fixture.tokenExpiresAt ?? null,
-      }),
-    ];
+    return [connectorAccount(target, fixture)];
   });
 }

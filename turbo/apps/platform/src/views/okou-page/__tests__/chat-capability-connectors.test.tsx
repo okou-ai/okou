@@ -173,12 +173,7 @@ function installCustomConnectorApi(args: {
 }): void {
   let grants = args.grants ?? [];
   const account = () => {
-    return connectorFixtureAccount(args.connector()) !== undefined
-      ? customConnectorAccount(CUSTOM_CONNECTOR_ID, {
-          id: CONNECTOR_CONNECTION_ID,
-          configuredFieldKeys: ["apiSecret"],
-        })
-      : null;
+    return connectorFixtureAccount(args.connector()) ?? null;
   };
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -555,8 +550,8 @@ test.each(["connected", "reconnect-required", "incomplete"] as const)(
     const connector = customConnector({
       slug: "_workspace-search",
       displayName: "Workspace Search",
-      connected: true,
       kind: "mcp",
+      account: {},
     });
     installCustomConnectorApi({
       connector: () => {
@@ -564,7 +559,7 @@ test.each(["connected", "reconnect-required", "incomplete"] as const)(
       },
       authorizationUpdates,
     });
-    const { ...definition } = connector;
+    const definition = connector;
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [definition] });
     });
@@ -633,54 +628,44 @@ test.each(["connected", "reconnect-required", "incomplete"] as const)(
 async function attemptCustomMcpConnection(
   hasSavedAccount: boolean,
   complete: boolean,
-  canonicalDefinition = false,
 ) {
   const sends: CapturedChatSend[] = [];
   const submittedAccounts: ConnectorAccountMutationIntent[] = [];
   const authorizationUpdates: AgentCustomConnectorGrant[][] = [];
   let connected = false;
-  const connector = () => {
-    return customConnector({
-      slug: "_workspace-search",
-      displayName: "Workspace Search",
-      connected,
-      kind: "mcp",
-    });
-  };
-  installCustomConnectorApi({ connector, authorizationUpdates });
-  if (canonicalDefinition) {
-    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-      const { ...definition } = connector();
-      return respond(200, { connectors: [definition] });
-    });
-  }
+  let writeAttempted = false;
   const account = customConnectorAccount(CUSTOM_CONNECTOR_ID, {
     id: CONNECTOR_CONNECTION_ID,
     connectionStatus: "reconnect-required",
     reconnectReason: "authorization_expired_or_revoked",
   });
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    const current =
-      hasSavedAccount || connected
-        ? {
-            ...account,
-            connectionStatus: connected
-              ? ("connected" as const)
-              : ("reconnect-required" as const),
-            reconnectReason: connected ? null : account.reconnectReason,
-          }
-        : null;
-    return respond(200, {
-      connections: current ? [current] : [],
-      defaultConnection: current,
-      nextCursor: null,
+  const connector = () => {
+    return customConnector({
+      slug: "_workspace-search",
+      displayName: "Workspace Search",
+      kind: "mcp",
+      account:
+        hasSavedAccount || writeAttempted
+          ? {
+              ...account,
+              connectionStatus: connected ? "connected" : "reconnect-required",
+              reconnectReason: connected ? null : account.reconnectReason,
+              setupStatus:
+                writeAttempted && !complete ? "incomplete" : "complete",
+              missingRequiredFields:
+                writeAttempted && !complete ? ["apiSecret"] : [],
+              configuredFieldKeys: connected ? ["apiSecret"] : [],
+            }
+          : undefined,
     });
-  });
+  };
+  installCustomConnectorApi({ connector, authorizationUpdates });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
     submittedAccounts.push(body.account);
     expect(body.values).toStrictEqual([
       { key: "apiSecret", kind: "secret", value: "secret-value" },
     ]);
+    writeAttempted = true;
     connected = complete;
     return respond(200, customConnectorCompletionFixture(connector()));
   });
@@ -730,9 +715,9 @@ test.each([false, true])(
   },
 );
 
-test("A real custom connection completes its canonical action card and continues once", async () => {
+test("Complete a custom account connection and continue once", async () => {
   const { card, sends, authorizationUpdates } =
-    await attemptCustomMcpConnection(false, true, true);
+    await attemptCustomMcpConnection(false, true);
   await waitFor(() => {
     expect(getButton("Authorized", card)).toBeDisabled();
     expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
@@ -767,7 +752,7 @@ test("Connect a single available connector without an unnecessary chooser", asyn
       slug,
       label: "Drive Demo",
       method,
-      connected,
+      hasAccount: connected,
     });
   };
   installCatalogLookup((requestedSlug) => {
@@ -831,9 +816,9 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
     slug,
     label: "Canonical Drive",
     method: browserAuthMethod(),
-    connected: true,
+    hasAccount: true,
   });
-  const { ...definition } = item;
+  const definition = item;
   context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
     return respond(200, { connector: definition });
   });
@@ -910,64 +895,55 @@ test("Authorize a healthy canonical builtin only after reading its target defaul
   expect(accountReads).toBe(1);
 });
 
-test.each(["current", "canonical"] as const)(
-  "Enable a single no-auth connector from a %s definition without an unnecessary dialog",
-  async (shape) => {
-    const sends: CapturedChatSend[] = [];
-    const slug = "public-data-demo";
-    const method = noAuthMethod();
-    let connected = false;
-    const item = () => {
-      return catalogConnector({
-        slug,
-        label: "Public Data Demo",
-        method,
-        connected,
-      });
-    };
-    installCatalogLookup((requestedSlug) => {
-      return requestedSlug === slug ? item() : null;
+test("Enable a single no-auth connector without an unnecessary dialog", async () => {
+  const sends: CapturedChatSend[] = [];
+  const slug = "public-data-demo";
+  const method = noAuthMethod();
+  let connected = false;
+  const item = () => {
+    return catalogConnector({
+      slug,
+      label: "Public Data Demo",
+      method,
+      hasAccount: connected,
     });
-    if (shape === "canonical") {
-      context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
-        const { ...definition } = item();
-        return respond(200, { connector: definition });
-      });
-    }
-    context.mocks.api(
-      builtinConnectorNoAuthGrantContract.connect,
-      ({ respond }) => {
-        connected = true;
-        return respond(200, {
-          connectionId: connectedConnectorResponse({
-            slug,
-            authMethod: method.id,
-          }).id,
-        });
-      },
-    );
-    installActionConversation({
-      lines: [
-        connectorActionUrl({
+  };
+  installCatalogLookup((requestedSlug) => {
+    return requestedSlug === slug ? item() : null;
+  });
+  context.mocks.api(
+    builtinConnectorNoAuthGrantContract.connect,
+    ({ respond }) => {
+      connected = true;
+      return respond(200, {
+        connectionId: connectedConnectorResponse({
           slug,
-          callbackPrompt: "Resume with public data",
-        }),
-      ],
-      sends,
-    });
+          authMethod: method.id,
+        }).id,
+      });
+    },
+  );
+  installActionConversation({
+    lines: [
+      connectorActionUrl({
+        slug,
+        callbackPrompt: "Resume with public data",
+      }),
+    ],
+    sends,
+  });
 
-    await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
+  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
 
-    await readyChat();
-    const card = await screen.findByTestId("connector-action-card");
-    click(getButton("Connect", card));
+  await readyChat();
+  const card = await screen.findByTestId("connector-action-card");
+  click(getButton("Connect", card));
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(sentPrompts(sends)).toStrictEqual(["Resume with public data"]);
-    });
-  },
-);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(sentPrompts(sends)).toStrictEqual(["Resume with public data"]);
+  });
+});
 
 test("Require an explicit permission selection for a custom connector", async () => {
   const sends: CapturedChatSend[] = [];
@@ -976,9 +952,9 @@ test("Require an explicit permission selection for a custom connector", async ()
     return customConnector({
       slug: "_permissioned-search",
       displayName: "Permissioned Search",
-      connected,
       permissionBundleRef: "builtin:permissioned-search@1",
       kind: "http",
+      account: connected ? {} : undefined,
     });
   };
   installCustomConnectorApi({ connector });
@@ -1025,9 +1001,9 @@ test("Preserve an existing custom connector permission during reconnection", asy
     return customConnector({
       slug: "_permissioned-documents",
       displayName: "Permissioned Documents",
-      connected,
       permissionBundleRef: "builtin:permissioned-documents@1",
       kind: "http",
+      account: connected ? {} : undefined,
     });
   };
   installCustomConnectorApi({ connector, grants: [existingGrant] });
@@ -1091,7 +1067,7 @@ test("Reconnect an expired connector before resuming the task", async () => {
           slug,
           label: "Expired Drive",
           method,
-          connected: true,
+          hasAccount: true,
           reconnectRequired: !restored,
           connectionId: CONNECTOR_CONNECTION_ID,
           tokenExpiresAt: restored ? null : "2026-07-01T00:00:00.000Z",

@@ -309,19 +309,7 @@ export async function startCustomConnectorAuthorization(
       "Failed to start custom connector authorization",
     );
   return verifyAuthorizationAccount(
-    parseConnectorManagementResponse(
-      z.preprocess((value) => {
-        if (
-          typeof value === "object" &&
-          value !== null &&
-          !("result" in value) &&
-          "authorizationUrl" in value
-        )
-          return { ...value, result: "authorization" };
-        return value;
-      }, automaticSchema),
-      result.body,
-    ),
+    parseConnectorManagementResponse(automaticSchema, result.body),
     account,
   );
 }

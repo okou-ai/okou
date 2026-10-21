@@ -206,14 +206,13 @@ function connectedCatalogItem(
 ): PublicConnectorCatalogStatusItem {
   return catalogFixture({
     ...item,
-    connected: true,
-    connectionStatus: "connected",
-    connection: {
+    account: {
       id: connectionId,
       authMethod,
       externalUsername: null,
       externalEmail: null,
       reconnectReason: null,
+      connectionStatus: "connected",
     },
   });
 }
@@ -853,7 +852,7 @@ export function noAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
 export function builtinConnector(args: {
   readonly slug: ConnectorSlug;
   readonly label: string;
-  readonly connected?: boolean;
+  readonly hasAccount?: boolean;
   readonly authMethods?: readonly PublicConnectorCatalogAuthMethodDetail[];
   readonly hasPermissions?: boolean;
   readonly tags?: readonly string[];
@@ -862,7 +861,7 @@ export function builtinConnector(args: {
   readonly mcp?: PublicConnectorCatalogStatusItem["mcp"];
 }): PublicConnectorCatalogStatusItem {
   const authMethods = [...(args.authMethods ?? [oauthAuthMethod()])];
-  const connected = args.connected ?? true;
+  const hasAccount = args.hasAccount ?? true;
   const connectionId = `f0000000-0000-4000-a000-${args.slug
     .split("")
     .reduce((total, character) => {
@@ -894,25 +893,12 @@ export function builtinConnector(args: {
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: connected
-      ? {
-          id: connectionId,
-          authMethod,
-          externalUsername: null,
-          externalEmail: null,
-          reconnectReason: null,
-        }
-      : null,
-    connected,
-    setupStatus: connected ? "complete" : null,
-    connectionStatus: connected ? "connected" : "not-connected",
-    scopeMismatch: false,
-    tokenExpiresAt: null,
     singleAuthCodeAuthMethodId:
       authMethods.length === 1 && authMethods[0]?.grantKind === "auth-code"
         ? authMethod
         : null,
     connectNotice: null,
+    account: hasAccount ? { id: connectionId, authMethod } : undefined,
   });
 }
 
@@ -920,7 +906,7 @@ interface HttpConnectorOptions {
   readonly id: string;
   readonly slug: string;
   readonly displayName: string;
-  readonly connected: boolean;
+  readonly hasAccount: boolean;
   readonly authMode?: "manual" | "oauth";
   readonly permissionBundleRef?: `builtin:${string}@1` | null;
   readonly providerAdapter?: "standard" | "feishu";
@@ -967,19 +953,28 @@ export function httpConnector(
     permissionBundleRef: args.permissionBundleRef ?? null,
     skillMarkdown: null,
     storageVersion: 1,
-    connected: args.connected,
-    ...(args.connected
+    ...(args.providerAdapter === "feishu"
       ? {
-          connectedAccountId: `f${args.id.slice(1)}`,
-          connectedAccountUpdatedAt: CREATED_AT,
+          connected: args.hasAccount,
+          ...(args.hasAccount
+            ? {
+                connectedAccountId: `f${args.id.slice(1)}`,
+                connectedAccountUpdatedAt: CREATED_AT,
+              }
+            : {}),
+          missingRequiredFields: [],
+          configuredFieldKeys: [],
         }
       : {}),
-    missingRequiredFields:
-      args.connected || authMode === "oauth" ? [] : ["secret"],
-    configuredFieldKeys:
-      args.connected && authMode === "manual" ? ["secret"] : [],
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
+    account: args.hasAccount
+      ? {
+          id: `f${args.id.slice(1)}`,
+          updatedAt: CREATED_AT,
+          configuredFieldKeys: authMode === "manual" ? ["secret"] : [],
+        }
+      : undefined,
   });
 }
 
@@ -987,7 +982,7 @@ export function mcpConnector(args: {
   readonly id: string;
   readonly slug: string;
   readonly displayName: string;
-  readonly connected: boolean;
+  readonly hasAccount: boolean;
 }): CustomConnectorMcpResponse {
   return mcpConnectorFixture({
     id: args.id,
@@ -1004,17 +999,11 @@ export function mcpConnector(args: {
     permissionBundleRef: null,
     skillMarkdown: null,
     storageVersion: 1,
-    connected: args.connected,
-    ...(args.connected
-      ? {
-          connectedAccountId: `f${args.id.slice(1)}`,
-          connectedAccountUpdatedAt: CREATED_AT,
-        }
-      : {}),
-    missingRequiredFields: [],
-    configuredFieldKeys: [],
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
+    account: args.hasAccount
+      ? { id: `f${args.id.slice(1)}`, updatedAt: CREATED_AT }
+      : undefined,
   });
 }
 

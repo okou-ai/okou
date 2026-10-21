@@ -344,16 +344,13 @@ test.each(["http", "mcp", "automatic"] as const)(
             authMode: "oauth",
             oauthConfig: customOAuthConfig(),
             fields: [],
-            missingRequiredFields: ["oauth"],
           })
         : mcpCustomConnector({
             ...(kind === "automatic"
               ? { authMode: "automatic" }
               : { authMode: "oauth", oauthConfig: customOAuthConfig() }),
-            connected: false,
             fields: [],
-            missingRequiredFields: ["oauth"],
-            configuredFieldKeys: [],
+            account: undefined,
           });
     const account = connectedAccount({
       kind: "custom",

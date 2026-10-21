@@ -1,7 +1,7 @@
 import {
   catalogFixture,
   connectorFixtureAccount,
-  type BuiltinFixtureAccount,
+  type FixtureAccountOverrides,
   type HttpFixtureOverrides,
   type McpFixtureOverrides,
   httpConnectorFixture,
@@ -302,11 +302,7 @@ export function publicStatusItem(args: {
   readonly authMethods?: PublicConnectorCatalogStatusItem["authMethods"];
   readonly singleAuthCodeAuthMethodId?: string | null;
   readonly connectNotice?: PublicConnectorCatalogStatusItem["connectNotice"];
-  readonly connection?: BuiltinFixtureAccount["connection"];
-  readonly connected?: boolean;
-  readonly connectionStatus?: BuiltinFixtureAccount["connectionStatus"];
-  readonly scopeMismatch?: boolean;
-  readonly tokenExpiresAt?: string | null;
+  readonly account?: FixtureAccountOverrides;
   readonly permissionSummary?: PublicConnectorCatalogStatusItem["permissionSummary"];
   readonly popularityRank?: number;
 }): PublicConnectorCatalogStatusItem {
@@ -331,14 +327,9 @@ export function publicStatusItem(args: {
       hasCategories: false,
       hasDefaultPolicyOverrides: false,
     },
-    connection: args.connection ?? null,
-    connected: args.connected ?? false,
-    setupStatus: args.connected ? "complete" : null,
-    connectionStatus: args.connectionStatus ?? "not-connected",
-    scopeMismatch: args.scopeMismatch ?? false,
-    tokenExpiresAt: args.tokenExpiresAt ?? null,
     singleAuthCodeAuthMethodId: args.singleAuthCodeAuthMethodId ?? null,
     connectNotice: args.connectNotice ?? null,
+    account: args.account,
   });
 }
 
@@ -410,9 +401,6 @@ export function customConnector(
     queryInjections: [],
     authMode: "manual",
     storageVersion: 1,
-    connected: false,
-    missingRequiredFields: ["secret"],
-    configuredFieldKeys: [],
     createdAt: "2026-02-01T00:00:00Z",
     updatedAt: "2026-02-01T00:00:00Z",
     ...overrides,
@@ -440,11 +428,13 @@ export function mcpCustomConnector(
     authMode: "manual",
     permissionBundleRef: null,
     storageVersion: 1,
-    connected: true,
-    missingRequiredFields: [],
-    configuredFieldKeys: ["secret"],
     createdAt: "2026-08-10T00:00:00.000Z",
     updatedAt: "2026-08-10T00:00:00.000Z",
+    account: {
+      missingRequiredFields: [],
+      configuredFieldKeys: ["secret"],
+      setupStatus: "complete",
+    },
     ...overrides,
   });
 }
@@ -516,11 +506,13 @@ export function mockCustomConnectorStory(
         }
         updated = httpConnectorFixture({
           ...connector,
-          connected: true,
-          missingRequiredFields: [],
-          configuredFieldKeys: body.values.map((value) => {
-            return value.key;
-          }),
+          account: {
+            missingRequiredFields: [],
+            configuredFieldKeys: body.values.map((value) => {
+              return value.key;
+            }),
+            setupStatus: "complete",
+          },
         });
         return updated;
       });
@@ -551,7 +543,7 @@ export function mockCustomConnectorStory(
       });
       const connected = httpConnectorFixture({
         ...updated,
-        connectedAccountId: connectionId,
+        account: { id: connectionId },
       });
       connectors = connectors.map((connector) => {
         return connector.id === params.id ? connected : connector;

@@ -239,7 +239,7 @@ test("Choose an account for a custom MCP connector", async () => {
         id: DEEPWIKI_CONNECTOR_ID,
         slug: "deepwiki",
         displayName: "DeepWiki",
-        connected: true,
+        hasAccount: true,
       }),
     ],
     customAuthorizations: {

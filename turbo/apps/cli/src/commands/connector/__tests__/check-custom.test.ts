@@ -163,7 +163,6 @@ describe("custom connector URL diagnostics", () => {
             displayName: "Renamed Acme",
             slug: "_mutable-new-slug",
             prefixTemplates: ["https://api.acme.test/new-default"],
-            connected: false,
           }),
         );
       }),
@@ -274,13 +273,7 @@ describe("custom connector URL diagnostics", () => {
     });
     server.use(
       http.get(`${ORIGIN}/api/custom-connectors/${CUSTOM_ID}`, () => {
-        return HttpResponse.json(
-          customConnector({
-            connected: true,
-            connectedAccountId: DEFAULT_ACCOUNT_ID,
-            missingRequiredFields: [],
-          }),
-        );
+        return HttpResponse.json(customConnector({}));
       }),
     );
     await check("--json");
@@ -386,8 +379,6 @@ describe("custom connector URL diagnostics", () => {
         return HttpResponse.json(
           customConnector({
             id: CUSTOM_ID,
-            connected: true,
-            missingRequiredFields: [],
           }),
         );
       }),
@@ -427,7 +418,6 @@ describe("custom connector URL diagnostics", () => {
         id: CUSTOM_ID,
         slug: `_acme-${kind}`,
         displayName: "Current custom connector",
-        connected: true,
       });
       const definition =
         kind === "http"
@@ -470,7 +460,9 @@ describe("custom connector URL diagnostics", () => {
   );
 
   it("does not infer run admission from a connected org-visible slug", async () => {
-    const definition = customConnector({ id: CUSTOM_ID, connected: true });
+    const definition = customConnector({
+      id: CUSTOM_ID,
+    });
     server.use(stubCustomConnectors([definition]));
     stubDiagnostic({
       outcome: "target-unavailable",

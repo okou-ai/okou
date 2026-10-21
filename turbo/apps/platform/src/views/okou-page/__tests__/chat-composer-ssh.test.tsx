@@ -807,7 +807,7 @@ test("Directory SSH setup follows shelves and categories", async () => {
         return builtinConnector({
           slug: connectorSlugSchema.parse(label.toLowerCase()),
           label,
-          connected: false,
+          hasAccount: false,
           popularityRank,
         });
       },
