@@ -1,6 +1,6 @@
 import { Info } from "lucide-react";
-import type { ReactNode } from "react";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
+import { RemoteCredentialReplacement } from "./remote-credential-card.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
@@ -21,6 +21,7 @@ import {
 } from "./remote-field-help.tsx";
 import { useTranslation } from "react-i18next";
 import {
+  cn,
   Button,
   Checkbox,
   Input,
@@ -436,6 +437,7 @@ export function VncX509NoneWarning() {
 function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
   const transport = useGet(vncTransport$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   if (
     requiresVncProtectiveRoute(profile) &&
     (transport === "cloudflare_access" || transport === "tailscale")
@@ -501,7 +503,9 @@ function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
     <p className="text-sm text-muted-foreground">
       {profile === "apple_vnc_password"
         ? t(($) => {
-            return $.vnc.security.appleVncPasswordHelp;
+            return guided
+              ? $.vnc.security.appleVncSecurityHelp
+              : $.vnc.security.appleVncPasswordHelp;
           })
         : profile === "apple_dh"
           ? t(($) => {
@@ -1534,6 +1538,10 @@ function VncAuthenticationMethod({
   readonly method: VncCredentialResponse["authMethod"];
 }) {
   const { t } = useTranslation();
+  const enabled = useGet(remoteControlGuidedEnabled$);
+  if (enabled) {
+    return null;
+  }
   if (isVncKerberosMethod(method)) {
     return (
       <p className="text-sm">
@@ -1615,6 +1623,16 @@ function VncAuthenticationReplacement({
 }) {
   const { t } = useTranslation();
   const setReplace = useSet(replaceVncAuthentication$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  if (guided) {
+    return (
+      <RemoteCredentialReplacement
+        checked={replace}
+        disabled={disabled}
+        onCheckedChange={setReplace}
+      />
+    );
+  }
   return (
     <div className="grid gap-2">
       <label className="flex items-center gap-2 text-sm">
@@ -1686,39 +1704,8 @@ function VncClientCertificateInputs({
   );
 }
 
-function VncCredentialFormatHelp({
-  id,
-  technical = true,
-  children,
-}: {
-  readonly id: string;
-  readonly technical?: boolean;
-  readonly children: ReactNode;
-}) {
-  const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
-  const content = (
-    <p id={id} className="text-muted-foreground">
-      {children}
-    </p>
-  );
-  return guided && technical ? (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {t(($) => {
-          return $.remoteConnectionHelp.fieldRequirements;
-        })}
-      </summary>
-      <div className="pt-2">{content}</div>
-    </details>
-  ) : (
-    content
-  );
-}
-
 function useVncPasswordFormatHelp(method: VncCredentialResponse["authMethod"]) {
   const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
   const classic =
     method === "vnc_password" || method === "client_certificate_vnc_password";
   const rsa =
@@ -1729,9 +1716,7 @@ function useVncPasswordFormatHelp(method: VncCredentialResponse["authMethod"]) {
       })
     : classic
       ? t(($) => {
-          return guided
-            ? $.remoteConnectionHelp.passwordFormat
-            : $.vnc.credential.passwordHelp;
+          return $.vnc.credential.passwordHelp;
         })
       : method === "apple_dh_username_password"
         ? t(($) => {
@@ -1766,7 +1751,12 @@ function VncPasswordInput({
   const formatHelp = useVncPasswordFormatHelp(method);
   return (
     <div className="grid content-start gap-2 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2",
+          compact && "min-h-7",
+        )}
+      >
         <label htmlFor="vnc-password">
           {classic
             ? t(($) => {
@@ -1779,17 +1769,6 @@ function VncPasswordInput({
         {classic && (
           <VncPasswordHelp apple={profile === "apple_vnc_password"} />
         )}
-        {compact && !classic && (
-          <RemoteFieldHelp
-            title={`${t(($) => {
-              return $.vnc.credential.usernamePassword;
-            })} · ${t(($) => {
-              return $.remoteConnectionHelp.fieldRequirements;
-            })}`}
-          >
-            <p>{formatHelp}</p>
-          </RemoteFieldHelp>
-        )}
       </div>
       <RemoteSecretInput
         ref={mountSecret}
@@ -1797,7 +1776,7 @@ function VncPasswordInput({
         name="password"
         required={!optional}
         autoComplete="new-password"
-        aria-describedby="vnc-password-help"
+        aria-describedby={guided ? undefined : "vnc-password-help"}
         maxLength={
           rsa
             ? VNC_RSA_AES_FIELD_MAX_BYTES
@@ -1830,14 +1809,10 @@ function VncPasswordInput({
                 })
         }
       />
-      {compact && !classic ? (
-        <p id="vnc-password-help" className="sr-only">
+      {!guided && (
+        <p id="vnc-password-help" className="text-muted-foreground">
           {formatHelp}
         </p>
-      ) : (
-        <VncCredentialFormatHelp id="vnc-password-help" technical={!classic}>
-          {formatHelp}
-        </VncCredentialFormatHelp>
       )}
     </div>
   );
@@ -1846,13 +1821,12 @@ function VncPasswordInput({
 function VncUsernameInput({
   credential,
   method,
-  compact,
 }: {
   readonly credential: VncCredentialResponse | null;
   readonly method: VncCredentialResponse["authMethod"];
-  readonly compact: boolean;
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   const formatHelp =
     method === "rsa_aes_username_password"
       ? t(($) => {
@@ -1881,9 +1855,7 @@ function VncUsernameInput({
             return $.vnc.credential.username;
           })}
         </label>
-        <RemoteUsernameHelp>
-          {compact && <p className="text-muted-foreground">{formatHelp}</p>}
-        </RemoteUsernameHelp>
+        <RemoteUsernameHelp />
       </div>
       <Input
         id="vnc-username"
@@ -1902,19 +1874,15 @@ function VncUsernameInput({
         pattern={
           method === "qemu_scram_sha256" ? "(?!.*[,=])[!-~]{1,255}" : undefined
         }
-        aria-describedby="vnc-username-help"
+        aria-describedby={guided ? undefined : "vnc-username-help"}
         placeholder={t(($) => {
           return $.vnc.credential.usernameHint;
         })}
       />
-      {compact ? (
-        <p id="vnc-username-help" className="sr-only">
+      {!guided && (
+        <p id="vnc-username-help" className="text-muted-foreground">
           {formatHelp}
         </p>
-      ) : (
-        <VncCredentialFormatHelp id="vnc-username-help">
-          {formatHelp}
-        </VncCredentialFormatHelp>
       )}
     </div>
   );
@@ -1947,19 +1915,10 @@ function VncAuthenticationInputs({
     );
   }
   return (
-    <div
-      key={method}
-      className={
-        compact && hasUsername ? "grid gap-4 sm:grid-cols-2" : "grid gap-4"
-      }
-    >
+    <div key={method} className="grid gap-4">
       {certificate && <VncClientCertificateInputs optional={optional} />}
       {hasUsername && (
-        <VncUsernameInput
-          credential={credential}
-          method={method}
-          compact={compact}
-        />
+        <VncUsernameInput credential={credential} method={method} />
       )}
       {method !== "client_certificate" && (
         <VncPasswordInput
@@ -1997,10 +1956,11 @@ export function VncCredentialFields({
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
   const setup = useGet(remoteSetup$);
+  const enabled = useGet(remoteControlGuidedEnabled$);
   const guided = connectionLogin || (setup !== null && !credential);
   const method = savedVncAuthenticationMethod(credential, editor.profile);
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       {guided ? (
         <input
           type="hidden"
@@ -2068,7 +2028,7 @@ export function VncCredentialFields({
           credential={credential}
           method={method}
           optional={connectionLogin && credential !== null}
-          compact={connectionLogin && credential !== null}
+          compact={enabled || connectionLogin}
         />
       )}
     </div>
@@ -2367,7 +2327,7 @@ export function VncCredentialImpact({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="grid gap-2 text-sm text-muted-foreground">
+    <div className="grid gap-2 rounded-xl bg-nested-fill p-4 text-sm text-muted-foreground">
       <p>
         {credential.hosts.length > 0
           ? t(
@@ -2381,7 +2341,7 @@ export function VncCredentialImpact({
             })}
       </p>
       {credential.hosts.length > 0 && (
-        <ul className="list-inside list-disc">
+        <ul className="grid list-disc gap-1 pl-5 leading-6 marker:text-muted-foreground">
           {credential.hosts.map((host) => {
             return (
               <li key={host.id} className="break-all">

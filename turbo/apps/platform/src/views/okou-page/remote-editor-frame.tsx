@@ -71,11 +71,7 @@ export function RemoteEditorFrame({
   );
 }
 
-export function RemoteUsernameHelp({
-  children,
-}: {
-  readonly children?: ReactNode;
-}) {
+export function RemoteUsernameHelp() {
   const { t } = useTranslation();
   const enabled = useGet(remoteControlGuidedEnabled$);
   if (!enabled) {
@@ -114,7 +110,6 @@ export function RemoteUsernameHelp({
             })}
           </li>
         </ul>
-        {children}
       </PopoverContent>
     </Popover>
   );

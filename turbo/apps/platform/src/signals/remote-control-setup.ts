@@ -1,7 +1,10 @@
 import { openRemoteNetworkGuide$ } from "./remote-network-guide.ts";
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { SSH_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/contracts/ssh-connections";
+import {
+  SSH_DISPLAY_NAME_MAX_LENGTH,
+  type SshConnectionMode,
+} from "@okouai/api-contracts/contracts/ssh-connections";
 import { VNC_DISPLAY_NAME_MAX_LENGTH } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
@@ -314,6 +317,24 @@ export const updateRemoteSetup$ = command(
       }
       set(setup$, { ...current, ...patch });
     }
+  },
+);
+export const chooseRemoteSshConnection$ = command(
+  ({ get, set }, mode: SshConnectionMode, networkId: string) => {
+    const tailscale = mode === "tailscale" || mode === "tailscale_ssh";
+    if (tailscale && !get(tailscaleEnabled$)) {
+      return;
+    }
+    set(chooseSshConnectionMode$, mode);
+    if (tailscale) {
+      set(chooseSshTailscaleConfig$, networkId);
+    } else if (mode === "cloudflare_access") {
+      set(chooseSshAccessConfig$, networkId);
+    }
+    set(updateRemoteSetup$, {
+      route: mode === "tailscale_ssh" ? "tailscale" : mode,
+      networkId: mode === "direct" ? "" : networkId,
+    });
   },
 );
 export const chooseComputerScreenService$ = command(

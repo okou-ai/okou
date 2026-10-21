@@ -15,6 +15,8 @@ import {
 } from "../../signals/remote-control-setup.ts";
 import { RemoteDetailPage } from "./remote-detail-page.tsx";
 import { RemoteConnectionSetup } from "./remote-connection-setup.tsx";
+import { remoteCredentialsPage$ } from "../../signals/okou-page/settings/remote-control-directory.ts";
+import { RemoteCredentialsPage } from "./remote-credentials-page.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
@@ -1359,12 +1361,39 @@ function isRemoteSetupDetailPage(
   );
 }
 
+function RemoteSetupDetailPage({
+  setup,
+  vncEnabled,
+}: {
+  readonly setup: RemoteSetup;
+  readonly vncEnabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const leaveSetup = useSet(leaveRemoteSetup$);
+  return (
+    <RemoteDetailPage
+      network={setup.sourceNetwork !== null && !setup.fromComputer}
+      title={t(($) => {
+        return setup.step === "computer-network" ||
+          (setup.step === "entry" && setup.fromComputer)
+          ? $.remoteComputerSetup.title
+          : setup.protocol === "ssh"
+            ? $.remoteControlSetup.sshSetup
+            : $.remoteControlSetup.vncSetup;
+      })}
+      onBack={leaveSetup}
+    >
+      <RemoteConnectionSetup vncEnabled={vncEnabled} />
+    </RemoteDetailPage>
+  );
+}
+
 export function ConnectorsPage() {
   const { t } = useTranslation();
   const remoteSetup = useGet(remoteSetup$);
   const remoteResource = useGet(remoteResource$);
+  const credentialsPage = useGet(remoteCredentialsPage$);
   const networkPage = useLastResolved(remoteNetworkPage$);
-  const leaveSetup = useSet(leaveRemoteSetup$);
   const vncEnabled = useGet(vncEnabled$);
   const relatedCatalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
   const filteredCatalogItemsLoadable = useLoadable(
@@ -1592,23 +1621,11 @@ export function ConnectorsPage() {
   }
   if (isRemoteSetupDetailPage(remoteSetup)) {
     return (
-      <RemoteDetailPage
-        network={
-          remoteSetup.sourceNetwork !== null && !remoteSetup.fromComputer
-        }
-        title={t(($) => {
-          return remoteSetup.step === "computer-network" ||
-            (remoteSetup.step === "entry" && remoteSetup.fromComputer)
-            ? $.remoteComputerSetup.title
-            : remoteSetup.protocol === "ssh"
-              ? $.remoteControlSetup.sshSetup
-              : $.remoteControlSetup.vncSetup;
-        })}
-        onBack={leaveSetup}
-      >
-        <RemoteConnectionSetup vncEnabled={vncEnabled} />
-      </RemoteDetailPage>
+      <RemoteSetupDetailPage setup={remoteSetup} vncEnabled={vncEnabled} />
     );
+  }
+  if (credentialsPage) {
+    return <RemoteCredentialsPage vncEnabled={vncEnabled} />;
   }
   return (
     <div

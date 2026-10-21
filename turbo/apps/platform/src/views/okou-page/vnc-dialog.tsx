@@ -301,10 +301,11 @@ function VncFormActions({
   const uncertain = useGet(vncSaveUncertain$);
   const dialog = useLastResolved(vncDialog$);
   const conflict = useGet(vncConflict$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <div
       className={
-        inline
+        inline || guided
           ? "mt-2 flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-5"
           : "flex shrink-0 justify-end gap-2"
       }
@@ -329,7 +330,9 @@ function VncFormActions({
       )}
       <Button
         type="submit"
-        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
+        className={
+          (inline || guided) && !destructive ? REMOTE_PAGE_ACTION : undefined
+        }
         variant={destructive ? "destructive" : "default"}
         disabled={saving || conflict || (!uncertain && blocked)}
       >
@@ -769,6 +772,7 @@ function VncHostFields({
 function VncForm({ dialog, saving, save, inline, onCancel }: VncFormProps) {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   const uncertain = useGet(vncSaveUncertain$);
   const conflict = useGet(vncConflict$);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
@@ -783,7 +787,7 @@ function VncForm({ dialog, saving, save, inline, onCancel }: VncFormProps) {
       inline={inline}
       onCancel={onCancel}
     >
-      <DialogBody className="grid gap-4">
+      <DialogBody className={guided ? "-m-1 grid gap-4 p-1" : "grid gap-4"}>
         {!destructive && (
           <fieldset disabled={disabled} className="grid min-w-0 gap-5">
             {hostEditor ? (

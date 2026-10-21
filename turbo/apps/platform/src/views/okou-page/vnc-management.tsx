@@ -1,4 +1,5 @@
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
+import { RemoteCredentialCard } from "./remote-credential-card.tsx";
 import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -30,7 +31,6 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   VncClientCertificateWarning,
-  VncCredentialImpact,
   VncX509NoneWarning,
 } from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
@@ -614,63 +614,24 @@ function VncCredentialCard({
 }: {
   readonly credential: VncCredentialResponse;
 }) {
-  const { t } = useTranslation();
   const open = useSet(openVncDialog$);
   const signal = useGet(pageSignal$);
   return (
-    <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>
-      <h2 className="break-all font-semibold">{credential.name}</h2>
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.credential.authentication;
-        })}
-        {" · "}
-        <VncAuthenticationLabel method={credential.authMethod} />
-      </p>
-      {(credential.authMethod === "username_password" ||
-        credential.authMethod === "apple_dh_username_password" ||
-        credential.authMethod === "apple_srp_username_password" ||
-        credential.authMethod === "apple_rsa_srp_username_password") && (
-        <p className="break-all text-sm">{credential.username}</p>
-      )}
-      <VncCredentialImpact credential={credential} />
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={() => {
-            detach(
-              open("edit-credential", credential, signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {t(($) => {
-            return $.vnc.credential.edit;
-          })}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={credential.hosts.length > 0}
-          onClick={() => {
-            detach(
-              open("delete-credential", credential, signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {t(($) => {
-            return $.vnc.credential.delete;
-          })}
-        </Button>
-      </div>
-      {credential.hosts.length > 0 && (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.vnc.credential.inUse;
-          })}
-        </p>
-      )}
-    </article>
+    <RemoteCredentialCard
+      name={credential.name}
+      method={<VncAuthenticationLabel method={credential.authMethod} />}
+      username={"username" in credential ? credential.username : undefined}
+      hosts={credential.hosts}
+      onEdit={() => {
+        detach(open("edit-credential", credential, signal), Reason.DomCallback);
+      }}
+      onDelete={() => {
+        detach(
+          open("delete-credential", credential, signal),
+          Reason.DomCallback,
+        );
+      }}
+    />
   );
 }
 
@@ -712,6 +673,7 @@ export function VncCredentials() {
           )}
         </p>
         <Button
+          variant="neutral"
           onClick={() => {
             detach(open("create-credential", null, signal), Reason.DomCallback);
           }}

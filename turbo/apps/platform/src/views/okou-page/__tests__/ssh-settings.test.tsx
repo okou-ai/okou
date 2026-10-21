@@ -255,10 +255,13 @@ test("Shared credential editing explains its impact and conflicts do not retry o
   });
   await page();
   click(getAction("radio", "Credentials"));
-  await screen.findByText("Login changes apply to all 2 hosts:");
+  await screen.findByText("Connections using this credential");
   expect(getAction("button", "Delete credential")).toBeDisabled();
   click(getAction("button", "Edit credential"));
   const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).getByText("Login changes apply to all 2 hosts:"),
+  ).toBeVisible();
   expect(within(dialog).getByText("Second host")).toBeVisible();
   expect(within(dialog).queryByLabelText("Private key")).toBeNull();
   await fill(within(dialog).getByLabelText("SSH username"), "new-user");

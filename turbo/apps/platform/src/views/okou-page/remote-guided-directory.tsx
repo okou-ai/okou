@@ -21,6 +21,7 @@ import {
   Terminal,
   Monitor,
   ChevronRight,
+  KeyRound,
 } from "lucide-react";
 import {
   Button,
@@ -447,6 +448,7 @@ export function GuidedRemoteControlPanel({
 }: {
   readonly vncEnabled: boolean;
 }) {
+  const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
   if (setup) {
     return <RemoteConnectionSetup vncEnabled={vncEnabled} />;
@@ -454,6 +456,21 @@ export function GuidedRemoteControlPanel({
   return (
     <div className="grid gap-6">
       <RemoteConnectionDirectory vncEnabled={vncEnabled} />
+      <Link
+        pathname="/connectors"
+        options={{
+          searchParams: new URLSearchParams({
+            scope: "remote-control",
+            remoteView: "credentials",
+          }),
+        }}
+        className="inline-flex items-center gap-2 justify-self-start rounded-sm text-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <KeyRound size={16} aria-hidden />
+        {t(($) => {
+          return $.remoteControlSetup.manageCredentials;
+        })}
+      </Link>
       <SshDialog />
       {vncEnabled && <VncDialog />}
       <TailscaleDialog />

@@ -1,4 +1,8 @@
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
+import {
+  RemoteCredentialCard,
+  RemoteCredentialReplacement,
+} from "./remote-credential-card.tsx";
 import { RemoteAddressHelp, SshPrivateKeyHelp } from "./remote-field-help.tsx";
 import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
@@ -293,7 +297,6 @@ function GuidedSshAdvancedFields({
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshConnectionModeEditor$);
-  const setup = useGet(remoteSetup$);
   const fixedPort =
     editor.mode === "cloudflare_access" || editor.mode === "tailscale_ssh";
   return (
@@ -304,7 +307,6 @@ function GuidedSshAdvancedFields({
         })}
       </summary>
       <div className="mt-4 grid gap-4">
-        {!setup?.fromComputer && <SshConnectionType disabled={disabled} />}
         <label className="grid gap-2">
           {t(($) => {
             return $.ssh.port;
@@ -315,7 +317,7 @@ function GuidedSshAdvancedFields({
             min={1}
             max={65_535}
             required
-            disabled={fixedPort}
+            disabled={disabled || fixedPort}
             defaultValue={initialPort ?? "22"}
           />
         </label>
@@ -564,11 +566,13 @@ function SshAuthenticationFields({
   disabled,
   connectionLogin,
   guided,
+  compact = false,
 }: {
   readonly credential: SshCredentialResponse | null;
   readonly disabled: boolean;
   readonly connectionLogin: boolean;
   readonly guided: boolean;
+  readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshCredentialEditor$);
@@ -651,7 +655,7 @@ function SshAuthenticationFields({
       ) : (
         <PrivateKeyFields
           key="private-key"
-          guided={guided}
+          guided={guided || compact}
           optional={
             !!credential &&
             connectionLogin &&
@@ -660,6 +664,38 @@ function SshAuthenticationFields({
         />
       )}
     </>
+  );
+}
+
+function SshAuthenticationReplacement({
+  disabled,
+}: {
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshCredentialEditor$);
+  const enabled = useGet(remoteControlGuidedEnabled$);
+  const replace = useSet(replaceSshAuthentication$);
+  if (!enabled) {
+    return (
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox
+          disabled={disabled}
+          checked={editor.replace}
+          onCheckedChange={replace}
+        />
+        {t(($) => {
+          return $.ssh.credential.replaceAuthentication;
+        })}
+      </label>
+    );
+  }
+  return (
+    <RemoteCredentialReplacement
+      checked={editor.replace}
+      disabled={disabled}
+      onCheckedChange={replace}
+    />
   );
 }
 
@@ -675,8 +711,8 @@ function CredentialFields({
   const { t } = useTranslation();
   const editor = useGet(sshCredentialEditor$);
   const setup = useGet(remoteSetup$);
+  const enabled = useGet(remoteControlGuidedEnabled$);
   const guided = connectionLogin || setup !== null;
-  const replace = useSet(replaceSshAuthentication$);
   return (
     <>
       {guided ? (
@@ -727,18 +763,7 @@ function CredentialFields({
         />
       </div>
       {credential && !connectionLogin && (
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            disabled={disabled}
-            checked={editor.replace}
-            onCheckedChange={(checked) => {
-              return replace(checked);
-            }}
-          />
-          {t(($) => {
-            return $.ssh.credential.replaceAuthentication;
-          })}
-        </label>
+        <SshAuthenticationReplacement disabled={disabled} />
       )}
       {(!credential || editor.replace || connectionLogin) && (
         <SshAuthenticationFields
@@ -746,6 +771,7 @@ function CredentialFields({
           disabled={disabled}
           connectionLogin={connectionLogin}
           guided={guided}
+          compact={enabled}
         />
       )}
     </>
@@ -1000,7 +1026,7 @@ function CredentialImpact({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="grid gap-1 text-sm text-muted-foreground">
+    <div className="grid gap-2 rounded-xl bg-nested-fill p-4 text-sm text-muted-foreground">
       <p>
         {credential.hosts.length === 0
           ? t(($) => {
@@ -1016,7 +1042,7 @@ function CredentialImpact({
             )}
       </p>
       {credential.hosts.length > 0 && (
-        <ul className="list-inside list-disc">
+        <ul className="grid list-disc gap-1 pl-5 leading-6 marker:text-muted-foreground">
           {credential.hosts.map((host) => {
             return <li key={host.id}>{host.displayName}</li>;
           })}
@@ -1380,10 +1406,11 @@ function SshFormActions({
   const close = useSet(closeSshDialog$);
   const uncertain = useGet(sshSaveUncertain$);
   const dialog = useLastResolved(sshDialog$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <div
       className={
-        inline
+        inline || guided
           ? "mt-2 flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-divider pt-5"
           : "flex shrink-0 justify-end gap-2"
       }
@@ -1402,7 +1429,9 @@ function SshFormActions({
       )}
       <Button
         type="submit"
-        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
+        className={
+          (inline || guided) && !destructive ? REMOTE_PAGE_ACTION : undefined
+        }
         disabled={isSaving || (!uncertain && blocked)}
         variant={destructive ? "destructive" : "default"}
       >
@@ -1747,11 +1776,11 @@ function SshHostForm({
         detach(save(event.currentTarget, signal), Reason.DomCallback);
       }}
     >
-      <DialogBody className="grid gap-4">
+      <DialogBody className={guided ? "-m-1 grid gap-4 p-1" : "grid gap-4"}>
         {!destructive && (
           <fieldset
             disabled={fieldsDisabled}
-            className={hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-4"}
+            className={hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-5"}
           >
             {hostEditor ? (
               <SshHostFields
@@ -2239,6 +2268,7 @@ export function SshCredentials() {
           )}
         </p>
         <Button
+          variant="neutral"
           onClick={() => {
             return detach(
               open("create-credential", null, signal),
@@ -2261,59 +2291,33 @@ export function SshCredentials() {
       )}
       {credentials.data.map((credential) => {
         return (
-          <article
+          <RemoteCredentialCard
             key={credential.id}
-            className={surfaceVariants({ className: "grid gap-3 p-5" })}
-          >
-            <h2 className="font-semibold">{credential.name}</h2>
-            <p className="text-sm">
-              {credential.username} ·{" "}
-              {credential.authMethod === "password"
+            name={credential.name}
+            username={credential.username}
+            hosts={credential.hosts}
+            method={
+              credential.authMethod === "password"
                 ? t(($) => {
                     return $.ssh.credential.password;
                   })
                 : t(($) => {
                     return $.ssh.privateKey;
-                  })}
-            </p>
-            <CredentialImpact credential={credential} />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  return detach(
-                    open("edit-credential", credential, signal),
-                    Reason.DomCallback,
-                  );
-                }}
-              >
-                {t(($) => {
-                  return $.ssh.credential.edit;
-                })}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={credential.hosts.length > 0}
-                onClick={() => {
-                  return detach(
-                    open("delete-credential", credential, signal),
-                    Reason.DomCallback,
-                  );
-                }}
-              >
-                {t(($) => {
-                  return $.ssh.credential.delete;
-                })}
-              </Button>
-            </div>
-            {credential.hosts.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.ssh.credential.inUseHelp;
-                })}
-              </p>
-            )}
-          </article>
+                  })
+            }
+            onEdit={() => {
+              detach(
+                open("edit-credential", credential, signal),
+                Reason.DomCallback,
+              );
+            }}
+            onDelete={() => {
+              detach(
+                open("delete-credential", credential, signal),
+                Reason.DomCallback,
+              );
+            }}
+          />
         );
       })}
     </div>
