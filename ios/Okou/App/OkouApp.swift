@@ -35,10 +35,11 @@ struct OkouApp: App {
   }
 }
 
-private struct AppRootView: View {
+struct AppRootView: View {
   let authentication: AuthenticationService
   let configuration: AppConfiguration
   @State private var accountError: String?
+  @State private var foregroundRefresh: Task<Void, Never>?
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
@@ -59,8 +60,10 @@ private struct AppRootView: View {
       }
     }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active { Task { await authentication.refresh() } }
+      foregroundRefresh?.cancel()
+      foregroundRefresh = phase == .active ? Task { await authentication.refresh() } : nil
     }
+    .onDisappear { foregroundRefresh?.cancel() }
     .alert(
       "Unable to update account",
       isPresented: Binding(

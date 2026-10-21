@@ -36,13 +36,51 @@ final class AuthenticationService {
   }
 
   let clerk: Clerk?
-  private(set) var isLoading = true
-  private(set) var isSwitchingWorkspace = false
+  private var isRestoringSession = true
+  private var clientRefreshGeneration = 0
+  private var resolvedWorkspaceIdentity: WorkspaceIdentity?
+  private var workspaceSwitch: (id: UUID, sessionID: String, userID: String)?
   private(set) var isLoadingWorkspaces = false
   private(set) var workspaces: [Workspace] = []
   private(set) var errorMessage: String?
   private var refreshGeneration = 0
   private var workspacesSessionID: String?
+  private var workspacesUserID: String?
+
+  private struct WorkspaceIdentity: Equatable {
+    let sessionID: String
+    let userID: String
+    let status: Session.SessionStatus
+    let workspaceID: String?
+  }
+
+  private var workspaceIdentity: WorkspaceIdentity? {
+    guard let session = clerk?.session, let userID,
+      session.status == .active || session.tasks?.first == .chooseOrganization
+    else { return nil }
+    return WorkspaceIdentity(
+      sessionID: session.id, userID: userID, status: session.status,
+      workspaceID: session.lastActiveOrganizationId)
+  }
+
+  var isLoading: Bool {
+    if isRestoringSession { return true }
+    // A restored identity is not ready until membership validation and any
+    // automatic activation finish. Refreshing the same identity keeps chat mounted.
+    guard let identity = workspaceIdentity,
+      isAuthenticated || identity.status == .pending
+    else { return false }
+    return resolvedWorkspaceIdentity != identity
+  }
+
+  var isSwitchingWorkspace: Bool {
+    guard let workspaceSwitch else { return false }
+    return workspaceSwitch.sessionID == clerk?.session?.id && workspaceSwitch.userID == userID
+  }
+
+  init(clerk: Clerk) {
+    self.clerk = clerk
+  }
 
   init(publishableKey: String? = nil) {
     let key =
@@ -51,7 +89,7 @@ final class AuthenticationService {
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard key.hasPrefix("pk_live_") || key.hasPrefix("pk_test_") else {
       clerk = nil
-      isLoading = false
+      isRestoringSession = false
       errorMessage = AuthenticationError.notConfigured.localizedDescription
       return
     }
@@ -74,6 +112,7 @@ final class AuthenticationService {
     guard isAuthenticated,
       !isSwitchingWorkspace,
       workspacesSessionID == clerk?.session?.id,
+      workspacesUserID == userID,
       let id = clerk?.session?.lastActiveOrganizationId,
       workspaces.contains(where: { $0.id == id })
     else { return nil }
@@ -87,7 +126,7 @@ final class AuthenticationService {
   }
 
   var needsWorkspaceSelection: Bool {
-    guard let session = clerk?.session, clerk?.user != nil else { return false }
+    guard !isLoading, let session = clerk?.session, clerk?.user != nil else { return false }
     if session.status == .pending {
       return session.tasks?.first == .chooseOrganization
     }
@@ -98,43 +137,60 @@ final class AuthenticationService {
   func start() async {
     guard let clerk else { return }
     let events = clerk.auth.events
-    await refresh()
-    for await event in events {
-      guard !Task.isCancelled else { return }
-      switch event {
-      case .sessionChanged(let oldSession, let newSession):
-        guard
-          oldSession?.id != newSession?.id
-            || oldSession?.user?.id != newSession?.user?.id
-            || oldSession?.status != newSession?.status
-            || oldSession?.lastActiveOrganizationId != newSession?.lastActiveOrganizationId
-        else { continue }
-        await refreshWorkspaces()
-      case .signedOut, .accountDeleted:
-        clearWorkspaces()
-      default:
-        break
+    await withDiscardingTaskGroup { group in
+      group.addTask { await self.refresh() }
+      for await event in events {
+        guard !Task.isCancelled else { break }
+        switch event {
+        case .sessionChanged(let oldSession, let newSession):
+          guard
+            oldSession?.id != newSession?.id
+              || oldSession?.user?.id != newSession?.user?.id
+              || oldSession?.status != newSession?.status
+              || oldSession?.lastActiveOrganizationId != newSession?.lastActiveOrganizationId
+          else { continue }
+          // A delayed membership response must not block sign-out or a newer identity.
+          if workspaceIdentity != resolvedWorkspaceIdentity {
+            group.addTask { await self.refreshWorkspaces() }
+          }
+        case .signedOut, .accountDeleted:
+          clearWorkspaces()
+        default:
+          break
+        }
       }
+      group.cancelAll()
     }
   }
 
   func refresh() async {
     guard let clerk else { return }
+    clientRefreshGeneration += 1
+    let generation = clientRefreshGeneration
+    let startingIdentity = workspaceIdentity
     // Keep a mounted verification/OAuth flow alive during foreground refresh.
-    if clerk.environment == nil { isLoading = true }
+    if clerk.environment == nil { isRestoringSession = true }
     errorMessage = nil
-    defer { isLoading = false }
+    defer {
+      if generation == clientRefreshGeneration { isRestoringSession = false }
+    }
     do {
       if clerk.environment == nil {
         try await clerk.refreshEnvironment()
       }
       try Task.checkCancellation()
+      guard generation == clientRefreshGeneration else { return }
       try await clerk.refreshClient()
       try Task.checkCancellation()
+      guard generation == clientRefreshGeneration else { return }
       await refreshWorkspaces()
     } catch is CancellationError {
       return
     } catch {
+      guard generation == clientRefreshGeneration, startingIdentity == workspaceIdentity else {
+        return
+      }
+      resolvedWorkspaceIdentity = workspaceIdentity
       errorMessage = error.localizedDescription
     }
   }
@@ -146,17 +202,20 @@ final class AuthenticationService {
       clearWorkspaces()
       return
     }
-    guard session.status == .active || session.tasks?.first == .chooseOrganization else {
+    guard let identity = workspaceIdentity else {
       isLoadingWorkspaces = false
       return
     }
     isLoadingWorkspaces = true
     defer {
-      if generation == refreshGeneration { isLoadingWorkspaces = false }
+      if generation == refreshGeneration {
+        isLoadingWorkspaces = false
+      }
     }
-    if workspacesSessionID != session.id {
+    if workspacesSessionID != session.id || workspacesUserID != user.id {
       workspaces = []
       workspacesSessionID = nil
+      workspacesUserID = nil
     }
     do {
       var memberships: [OrganizationMembership] = []
@@ -166,7 +225,8 @@ final class AuthenticationService {
         try Task.checkCancellation()
         guard generation == refreshGeneration,
           clerk.session?.id == session.id,
-          clerk.user?.id == user.id
+          clerk.user?.id == user.id,
+          workspaceIdentity == identity
         else { return }
         memberships.append(contentsOf: response.data)
         if response.data.isEmpty || memberships.count >= response.totalCount { break }
@@ -174,6 +234,7 @@ final class AuthenticationService {
       }
       workspaces = memberships.map { Workspace(id: $0.organization.id, name: $0.organization.name) }
       workspacesSessionID = session.id
+      workspacesUserID = user.id
       errorMessage = nil
       let activeID = clerk.session?.lastActiveOrganizationId
       if workspaces.count == 1,
@@ -182,10 +243,15 @@ final class AuthenticationService {
       {
         try await switchWorkspace(workspace.id)
       }
+      guard generation == refreshGeneration,
+        clerk.session?.id == session.id, clerk.user?.id == user.id
+      else { return }
+      resolvedWorkspaceIdentity = workspaceIdentity
     } catch is CancellationError {
       return
     } catch {
-      guard generation == refreshGeneration, clerk.session?.id == session.id else { return }
+      guard generation == refreshGeneration, workspaceIdentity == identity else { return }
+      resolvedWorkspaceIdentity = identity
       errorMessage = error.localizedDescription
     }
   }
@@ -195,20 +261,39 @@ final class AuthenticationService {
       throw AuthenticationError.signedOut
     }
     guard !isSwitchingWorkspace else { throw AuthenticationError.workspaceChanged }
-    guard workspacesSessionID == session.id, workspaces.contains(where: { $0.id == workspaceID })
+    guard workspacesSessionID == session.id, workspacesUserID == userID,
+      workspaces.contains(where: { $0.id == workspaceID })
     else {
       throw AuthenticationError.workspaceUnavailable
     }
     if activeWorkspaceID == workspaceID { return }
-    isSwitchingWorkspace = true
-    defer { isSwitchingWorkspace = false }
-    try await clerk.auth.setActive(sessionId: session.id, organizationId: workspaceID)
-    try Task.checkCancellation()
-    guard clerk.session?.id == session.id,
-      clerk.user?.id == userID,
-      clerk.session?.lastActiveOrganizationId == workspaceID
-    else { throw AuthenticationError.workspaceChanged }
-    errorMessage = nil
+    let switchID = UUID()
+    workspaceSwitch = (switchID, session.id, userID)
+    defer {
+      if workspaceSwitch?.id == switchID { workspaceSwitch = nil }
+    }
+    do {
+      try await clerk.auth.setActive(sessionId: session.id, organizationId: workspaceID)
+      try Task.checkCancellation()
+      guard workspaceSwitch?.id == switchID,
+        clerk.session?.id == session.id,
+        clerk.user?.id == userID,
+        clerk.session?.lastActiveOrganizationId == workspaceID,
+        workspacesSessionID == session.id,
+        workspacesUserID == userID,
+        workspaces.contains(where: { $0.id == workspaceID })
+      else { throw AuthenticationError.workspaceChanged }
+      resolvedWorkspaceIdentity = workspaceIdentity
+      errorMessage = nil
+    } catch {
+      if workspaceSwitch?.id == switchID,
+        clerk.session?.id == session.id, clerk.user?.id == userID,
+        !(error is CancellationError)
+      {
+        errorMessage = error.localizedDescription
+      }
+      throw error
+    }
   }
 
   func accessToken(workspaceID: String, scopeID expectedScopeID: String? = nil) async throws
@@ -258,8 +343,13 @@ final class AuthenticationService {
 
   private func clearWorkspaces() {
     refreshGeneration += 1
+    clientRefreshGeneration += 1
+    isRestoringSession = false
+    resolvedWorkspaceIdentity = nil
+    workspaceSwitch = nil
     workspaces = []
     workspacesSessionID = nil
+    workspacesUserID = nil
     isLoadingWorkspaces = false
   }
 }
