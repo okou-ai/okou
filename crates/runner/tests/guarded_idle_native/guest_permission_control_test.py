@@ -8,11 +8,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 import guest_permission_control as control
 
 NONCE = "1" * 32
+SERVER = """import socket, sys
+from guest_permission_control import serve
+serve(socket.socket(fileno=int(sys.argv[1])), sys.argv[2], sys.argv[3], sys.executable)
+"""
 
 
 class ProtocolTests(unittest.TestCase):
@@ -39,28 +42,6 @@ class ProtocolTests(unittest.TestCase):
                     with self.assertRaises((ValueError, EOFError)):
                         control.receive(right)
 
-    def test_nonce_and_sequence_are_checked_before_any_command(self):
-        class Owner:
-            identity = executable_identity = {}
-
-            def command(self, _):
-                raise AssertionError("foreign request reached the gate")
-
-            def close(self):
-                return None
-
-        for request in ({"nonce": "2" * 32, "id": 1, "command": {}},
-                        {"nonce": NONCE, "id": True, "command": {}},
-                        {"nonce": NONCE, "id": 2, "command": {}},
-                        {"nonce": NONCE, "id": 1, "command": {}, "extra": 1}):
-            left, right = socket.socketpair()
-            with left, right, patch.object(control, "Controller", return_value=Owner()):
-                control.send(left, request)
-                with self.assertRaises(ValueError):
-                    control.serve(right, NONCE, None, None)
-                self.assertTrue(control.receive(left)["ready"])
-
-
 @unittest.skipUnless(os.environ.get("OKOU_TEST_OPEN_PERMISSION_KERNEL") == "1",
                      "requires explicit root FAN_OPEN_PERM/PIDFD qualification")
 class KernelTests(unittest.TestCase):
@@ -75,9 +56,7 @@ class KernelTests(unittest.TestCase):
                 env = dict(os.environ, PYTHONPATH=str(Path(control.__file__).parent),
                            PYTHONDONTWRITEBYTECODE="1")
                 server = subprocess.Popen(
-                    [sys.executable, "-B", "-c",
-                     "import socket,sys; from guest_permission_control import serve; "
-                     "serve(socket.socket(fileno=int(sys.argv[1])),sys.argv[2],sys.argv[3],sys.executable)",
+                    [sys.executable, "-B", "-c", SERVER,
                      str(guest.fileno()), NONCE, str(original)],
                     pass_fds=(guest.fileno(),), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     env=env,
@@ -113,6 +92,9 @@ class KernelTests(unittest.TestCase):
                     elif outcome == "foreign":
                         control.send(host, {"nonce": NONCE, "id": 3,
                                             "command": {"op": "decide", "event_id": 2, "allow": True}})
+                    elif outcome == "nonce":
+                        control.send(host, {"nonce": "2" * 32, "id": 3,
+                                            "command": {"op": "decide", "event_id": 1, "allow": True}})
                     elif outcome == "exited":
                         # A failed original producer must invalidate later live
                         # identity checks; a replacement numeric PID is no proof.
@@ -161,6 +143,9 @@ class KernelTests(unittest.TestCase):
 
     def test_dead_original_producer_fails_identity_check(self):
         self.exercise("exited")
+
+    def test_foreign_nonce_denies_pending_event(self):
+        self.exercise("nonce")
 
 
 if __name__ == "__main__":

@@ -4,12 +4,13 @@
 
 use std::error::Error;
 use std::fs::{self, File, OpenOptions};
-use std::future::Future;
+use std::future::{Future, poll_fn};
 use std::io::{self, Write};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use guest_control_client::test_support::ConnectionScope;
@@ -192,28 +193,32 @@ async fn qualify(directory: &Path, allow: bool) -> TestResult<()> {
         );
         Ok(client)
     })?;
-    // Polling join! submits the real listener before spawning the owned VM.
-    let (client, child) = tokio::join!(
+    let mut listening = Box::pin(
         scope.scope(GuestControlClient::wait_for_connection_for_sandbox(
             socket,
             DEADLINE,
-            "native-permission"
+            "native-permission",
         )),
-        async {
-            let log = File::create(directory.join("guest-console.log"))?;
-            Command::new(std::env::var("OKOU_TEST_RPC_FIRECRACKER").map_err(io::Error::other)?)
-                .arg("--no-api")
-                .arg("--config-file")
-                .arg(config_file)
-                .stdin(Stdio::null())
-                .stdout(log.try_clone()?)
-                .stderr(log)
-                .spawn()
-                .map(|child| Vm(Some(child)))
-        }
     );
-    let mut vm = child?;
-    let client = client?;
+    // This production listener binds synchronously before its first accept
+    // wait. Establish that causal boundary before starting the owned VM.
+    poll_fn(|cx| match listening.as_mut().poll(cx) {
+        Poll::Pending => Poll::Ready(Ok(())),
+        Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+        Poll::Ready(Ok(_)) => Poll::Ready(Err(io::Error::other("Guest connected before VM spawn"))),
+    })
+    .await?;
+    let log = File::create(directory.join("guest-console.log"))?;
+    let mut vm = Command::new(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?)
+        .arg("--no-api")
+        .arg("--config-file")
+        .arg(config_file)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log)
+        .spawn()
+        .map(|child| Vm(Some(child)))?;
+    let client = listening.await?;
     let (mut controls, mut exchange, mut connection) = retained
         .lock()
         .map_err(|_| io::Error::other("gate owner poisoned"))?

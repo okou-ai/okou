@@ -261,6 +261,7 @@ class FileOpenPermission:
         it does not prove application acceptance or join the producer.
         """
         self._check_owner()
+        require(not self._observation_failed, "an earlier kernel observation failed")
         owned = self._pending.get(id(event))
         require(owned is not None and owned.observation is event and not owned.attempted,
                 "foreign or completed permission event")
