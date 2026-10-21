@@ -178,6 +178,7 @@ describe("same-host draining predecessor preference", () => {
           reusableSandbox: {
             profile: "vm0/default",
             historyGenerationRunId: f.source.runId,
+            sourceRunId: f.source.runId,
           },
         },
       ],
@@ -185,6 +186,7 @@ describe("same-host draining predecessor preference", () => {
     await peerContinuation(f);
     expect((await peerPoll(f))?.runnerPreference).toMatchObject({
       tier: "exactSandbox",
+      finalizingSourceRunId: f.source.runId,
       runnerIdentity: { runnerId: ready, heartbeatGeneration: 8 },
     });
     mockNow(f.clock + 1000);

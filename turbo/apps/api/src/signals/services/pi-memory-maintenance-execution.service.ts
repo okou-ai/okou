@@ -93,7 +93,6 @@ import { piModelConfigObservation } from "../../lib/pi-model-config-observation"
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
   PiMemoryPhase2CredentialError,
@@ -1515,9 +1514,6 @@ function maintenanceJobPayload(launch: MaintenanceLaunch) {
     cliAgentSessionId: launch.context.piSessionId ?? null,
     // Maintenance runs never share a sandbox with a thread.
     reuseKey: null,
-    historyGenerationRunId: historyGenerationRunIdForStoredExecutionContext(
-      launch.context,
-    ),
     executionContext: launch.context,
   };
 }
@@ -1591,7 +1587,6 @@ function maintenanceRunnerNotification(
     profile: payload.profile,
     reuseKey: payload.reuseKey,
     cliAgentSessionId: payload.cliAgentSessionId,
-    historyGenerationRunId: payload.historyGenerationRunId,
     createdAt: runnerJobCreatedAt,
   };
 }

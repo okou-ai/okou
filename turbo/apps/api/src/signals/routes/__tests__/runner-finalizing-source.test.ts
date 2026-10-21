@@ -41,6 +41,103 @@ function codexAuthJson() {
 }
 
 describe("independent finalizing resource source", () => {
+  it.each(["sandbox", "home", "other-profile-home"] as const)(
+    "ranks previous-Run %s by producer independently of native history",
+    async (resource) => {
+      const f = await terminalPredecessor(context, "failed", false);
+      mockNow(f.clock + 2500);
+      const reuseKey = `thread:${f.run.threadId}`;
+      const unrelatedSource = randomUUID();
+      await heartbeat(f, {
+        snapshotSequence: 2,
+        heldSandboxStates: [
+          {
+            reuseKey,
+            lastCompletedAt: nowDate().toISOString(),
+            reusableSandbox: {
+              profile: "vm0/default",
+              sourceRunId: unrelatedSource,
+              historyGenerationRunId: f.run.runId,
+            },
+          },
+        ],
+      });
+      const ready = randomUUID();
+      await heartbeat(f, {
+        runnerId: ready,
+        admittableProfiles: ["vm0/default"],
+        heldSandboxStates:
+          resource === "sandbox"
+            ? [
+                {
+                  reuseKey,
+                  lastCompletedAt: nowDate().toISOString(),
+                  reusableSandbox: {
+                    profile: "vm0/default",
+                    sourceRunId: f.run.runId,
+                  },
+                },
+              ]
+            : [],
+        heldHomeStates:
+          resource === "sandbox"
+            ? []
+            : [
+                {
+                  reuseKey,
+                  lastCompletedAt: nowDate().toISOString(),
+                  homeCaches: [
+                    {
+                      profile: "vm0/default",
+                      homeAffinityVersion: 1,
+                      sourceRunId:
+                        resource === "home" ? f.run.runId : unrelatedSource,
+                    },
+                    {
+                      profile: "vm0/large",
+                      homeAffinityVersion: 1,
+                      sourceRunId: f.run.runId,
+                    },
+                  ],
+                },
+              ],
+      });
+      context.mocks.ably.publish.mockClear();
+      const next = await continuation(f);
+      const preference =
+        resource === "other-profile-home"
+          ? {
+              kind: "preference",
+              tier: "reusableSandbox",
+              runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
+              expiresAt: new Date(f.clock + 4500).toISOString(),
+            }
+          : {
+              kind: "preference",
+              tier: resource === "sandbox" ? "exactSandbox" : "sourceHomeCache",
+              finalizingSourceRunId: f.run.runId,
+              runnerIdentity: { runnerId: ready, heartbeatGeneration: 7 },
+              expiresAt: new Date(
+                f.clock + (resource === "sandbox" ? 3500 : 4500),
+              ).toISOString(),
+            };
+      expect((await poll(f, next.runId))?.runnerPreference).toStrictEqual(
+        preference,
+      );
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "job",
+        expect.objectContaining({
+          runId: next.runId,
+          runnerPreference: preference,
+        }),
+      );
+      await f.owned.run(async () => {
+        await f.api.requestCancelRun(f.actor, next.runId, [200]);
+        await flushWaitUntilForTest();
+      });
+    },
+  );
+
   it.each(["completed", "cancelled", "failed"] as const)(
     "keeps the %s Claude source after a native Codex framework switch",
     async (status) => {
@@ -201,7 +298,6 @@ describe("independent finalizing resource source", () => {
     });
     const next = await continuation(f);
     const withoutLatestProducer = await poll(f, next.runId);
-    expect(withoutLatestProducer?.historyGenerationRunId).toBe(f.run.runId);
     expect(withoutLatestProducer?.runnerPreference).toMatchObject({
       kind: "noPreference",
     });
@@ -210,10 +306,25 @@ describe("independent finalizing resource source", () => {
       activeReuseProducers: [{ ...producer, runId: newer.runId }],
     });
     const withLatestProducer = await poll(f, next.runId);
-    expect(withLatestProducer?.historyGenerationRunId).toBe(f.run.runId);
     expect(withLatestProducer?.runnerPreference).toMatchObject({
       tier: "finalizingPredecessor",
       finalizingSourceRunId: newer.runId,
+    });
+    const fresh = await f.owned.claimRunnerRun(next.runId);
+    expect(fresh.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: expect.stringContaining(
+        "okou chat messages --output-dir threads",
+      ),
+    });
+    await f.owned.run(async () => {
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: next.runId, exitCode: 1 },
+        { authorization: `Bearer ${fresh.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
     });
   });
 

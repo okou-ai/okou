@@ -1,13 +1,16 @@
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 import { mockEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
   claimEnvironment,
@@ -560,7 +563,9 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(next.claim.nativeContinuation).toMatchObject({
         sessionId: null,
         generationRunId: null,
-        recoveryPrompt: null,
+        recoveryPrompt: expect.stringContaining(
+          "okou chat messages --output-dir threads",
+        ),
       });
       await cancelChatRun(actor, second.runId, next.sandboxHeaders);
     },
@@ -734,7 +739,7 @@ describe("CHAT-02: run-level model overrides", () => {
       toRuntime: "claude-code",
     },
   ] as const)(
-    "starts fresh when switching owned $from on $fromRuntime to $to on $toRuntime",
+    "uses the previous Run's resource and recovers native context across $from -> $to -> $from",
     async ({ from, fromRuntime, to, toRuntime }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
 
@@ -790,6 +795,73 @@ describe("CHAT-02: run-level model overrides", () => {
         "okou chat messages --output-dir threads",
       );
       expect(secondRun.result?.framework).toBe(toRuntime);
+
+      const runners = createRunsApi(context);
+      const holders = [randomUUID(), randomUUID()];
+      for (const [index, sourceRunId] of [
+        first.runId,
+        second.runId,
+      ].entries()) {
+        await runners.requestHeartbeatRunner(true, [200], {
+          runnerId: holders[index],
+          group: runnerGroup,
+          snapshotGeneration: 7,
+          snapshotSequence: 1,
+          admittableProfiles: [],
+          heldSandboxStates: [
+            {
+              reuseKey: `thread:${first.threadId}`,
+              lastCompletedAt: nowDate().toISOString(),
+              reusableSandbox: {
+                profile: "vm0/default",
+                sourceRunId,
+                historyGenerationRunId: sourceRunId,
+              },
+            },
+          ],
+        });
+      }
+      context.mocks.ably.publish.mockClear();
+      const third = await sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        prompt:
+          "continue with both earlier rounds when returning to the first model",
+        model: from,
+      });
+      const polled = await runners.pollRunner(runnerGroup);
+      expect(polled.body.job).toMatchObject({
+        runId: third.runId,
+        runnerPreference: {
+          tier: "exactSandbox",
+          finalizingSourceRunId: second.runId,
+          runnerIdentity: { runnerId: holders[1], heartbeatGeneration: 7 },
+        },
+      });
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "job",
+        expect.objectContaining({
+          runId: third.runId,
+          runnerPreference: polled.body.job?.runnerPreference,
+        }),
+      );
+      const thirdClaim = await claimChatRun(runnerGroup, third.runId);
+      expect(thirdClaim.claim.cliAgentType).toBe(fromRuntime);
+      expect(thirdClaim.claim.nativeContinuation).toMatchObject({
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: expect.stringContaining(
+          "okou chat messages --output-dir threads",
+        ),
+      });
+      await waitForThreadMessages(actor, first.threadId, (items) => {
+        const text = items.map(chatEventDisplayText).join("\n");
+        return (
+          text.includes("establish native history before switching models") &&
+          text.includes("continue with the selected model")
+        );
+      });
+      await cancelChatRun(actor, third.runId);
     },
     90_000,
   );
@@ -848,7 +920,7 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it.each(["failed", "cancelled"] as const)(
-    "starts the first native context after an attempt was %s before initialization",
+    "recovers durable Chat after an executed attempt was %s before initialization",
     async (status) => {
       const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
 
@@ -893,7 +965,9 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(secondClaim.claim.nativeContinuation).toMatchObject({
         sessionId: null,
         generationRunId: null,
-        recoveryPrompt: null,
+        recoveryPrompt: expect.stringContaining(
+          "okou chat messages --output-dir threads",
+        ),
       });
       chatCallbacks.mockChatOutputEvents([]);
       await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);

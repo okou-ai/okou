@@ -300,7 +300,7 @@ import {
   type ChatThreadRequestFacts,
   chatThreadRequestSelection,
 } from "./chat-thread-request-facts";
-import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
+import { previousChatRunId } from "./previous-chat-run";
 import {
   OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
   officialWorkflowThreadCondition,
@@ -866,7 +866,10 @@ function claimCommitArguments(
     queueFirstAssociation: args.queueFirstAssociation,
     timingDimensions: args.timingDimensions,
     threadContinuation: args.threadContinuation
-      ? { expected: args.threadContinuation.expected }
+      ? {
+          expected: args.threadContinuation.expected,
+          admission: args.threadContinuation.admission,
+        }
       : undefined,
   };
 }
@@ -4480,6 +4483,7 @@ interface ValidatedThreadSessionSnapshot {
   readonly framework: string | null;
   readonly frameworkSessionId: string | null;
   readonly frameworkSessionRunId: string | null;
+  readonly admission: ChatThreadContinuation["admission"];
 }
 
 type AtomicLaunchCommitResult =
@@ -4498,7 +4502,10 @@ type CommittedAtomicLaunchResult = Exclude<
   QueueFirstRunClaimLost
 >;
 
-type PendingThreadContinuation = Pick<ChatThreadContinuation, "expected">;
+type PendingThreadContinuation = Pick<
+  ChatThreadContinuation,
+  "expected" | "admission"
+>;
 /** Explicit facts the atomic launch persists; owners assemble them privately. */
 interface PendingRunArguments {
   readonly userId: string;
@@ -4868,8 +4875,8 @@ function appendLaunchCallbackCte(args: {
 function launchThreadBindingCte(args: {
   readonly chatThreadId: string | undefined;
   readonly userId: string;
+  readonly orgId: string;
   readonly identity: LaunchRunIdentity;
-  readonly insertedRun: ReturnedIdCte;
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
 }) {
   const expected = args.validatedThreadSession;
@@ -4879,6 +4886,16 @@ function launchThreadBindingCte(args: {
   if (expected.chatThreadId !== args.chatThreadId) {
     throw new Error("Validated thread does not match launch");
   }
+  if (expected.admission.runId !== args.identity.runId) {
+    throw new Error("Captured predecessor facts do not match launch identity");
+  }
+  const sourceRunId = previousChatRunId({
+    runId: sql.param(args.identity.runId),
+    chatThreadId: sql.param(args.chatThreadId),
+    userId: sql.param(args.userId),
+    orgId: sql.param(args.orgId),
+    createdAt: sql.param(expected.admission.createdAt, agentRuns.createdAt),
+  });
   return new QueryBuilder().$with("validated_launch_thread").as(
     new QueryBuilder()
       .select({ id: chatThreads.id })
@@ -4891,6 +4908,7 @@ function launchThreadBindingCte(args: {
           sql`${chatThreads.framework} IS NOT DISTINCT FROM ${expected.framework}::text`,
           sql`${chatThreads.frameworkSessionId} IS NOT DISTINCT FROM ${expected.frameworkSessionId}::text`,
           sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${expected.frameworkSessionRunId}::uuid`,
+          sql`${sourceRunId} IS NOT DISTINCT FROM ${expected.admission.finalizingSourceRunId}::uuid`,
         ),
       ),
   );
@@ -4898,7 +4916,8 @@ function launchThreadBindingCte(args: {
 
 function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const { rowsArgs, metadata } = args.commit.persistence.rows;
-  const createdAt = nowDate();
+  const createdAt =
+    args.validatedThreadSession?.admission.createdAt ?? nowDate();
   const ctes: WithSubquery[] = [];
 
   const insertedRun = new QueryBuilder()
@@ -4944,8 +4963,8 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const updatedThread = launchThreadBindingCte({
     chatThreadId,
     userId: args.commit.createArgs.userId,
+    orgId: args.commit.createArgs.orgId,
     identity: rowsArgs.identity,
-    insertedRun,
     validatedThreadSession: args.validatedThreadSession,
   });
   return {
@@ -5028,8 +5047,6 @@ function committedAtomicLaunchResponse(args: {
       profile: dispatchedProfile,
       reuseKey: args.committed.runnerJobPayload.reuseKey,
       cliAgentSessionId: args.committed.runnerJobPayload.cliAgentSessionId,
-      historyGenerationRunId:
-        args.committed.runnerJobPayload.historyGenerationRunId,
       createdAt: args.committed.runnerJobCreatedAt,
     },
     timing: {
@@ -6056,7 +6073,6 @@ interface RunnerJobPayload {
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
   readonly reuseKey: string | null;
-  readonly historyGenerationRunId: string | undefined;
   readonly executionContext: StoredExecutionContext;
 }
 
@@ -6072,9 +6088,6 @@ function runnerJobPayload(args: {
     profile: args.profile,
     cliAgentSessionId: args.cliAgentSessionId,
     reuseKey: args.reuseKey,
-    historyGenerationRunId: historyGenerationRunIdForStoredExecutionContext(
-      args.executionContext,
-    ),
     executionContext: args.executionContext,
   };
 }

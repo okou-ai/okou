@@ -2,10 +2,12 @@ import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -14,6 +16,7 @@ import {
   resolveChatThreadContinuation,
 } from "./chat-session-continuity.service";
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
+import { previousChatRunPlan } from "./previous-chat-run";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
 import { createRunTemplates } from "./run-templates.service";
 import {
@@ -82,6 +85,7 @@ export interface ThreadContext extends ThreadWorkflowContext {
   /** Generated once per picked event's claim graph. */
   readonly runIds$: Computed<{
     readonly runId: string;
+    readonly createdAt: Date;
   }>;
   /** Connector accounts chosen from thread, source and default selections. */
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
@@ -160,10 +164,13 @@ export function createThreadContext(
     sourceFeatureSwitches$,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
+  const runIds$ = createRunIds();
   const threadContinuation$ = createThreadContinuation(
     pickedEvent$,
     model.subscriptionSelection$,
     automationTarget$,
+    runIds$,
+    orgId,
   );
   const connectorSourceId$ = createConnectorSourceId(
     pickedEvent$,
@@ -201,7 +208,7 @@ export function createThreadContext(
     modelRoute$: model.modelRoute$,
     providerFramework$: model.providerFramework$,
     dispatchTiming$: model.dispatchTiming$,
-    runIds$: createRunIds(),
+    runIds$,
     connectorSelection$: connectedAccounts.connectorSelection$,
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
     connectorThreadSelections$: connectedAccounts.threadSelections$,
@@ -314,7 +321,7 @@ function createThreadHostGrant(
 
 function createRunIds() {
   return computed(() => {
-    return { runId: randomUUID() };
+    return { runId: randomUUID(), createdAt: nowDate() };
   });
 }
 
@@ -322,6 +329,8 @@ function createThreadContinuation(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   selection$: ThreadModels["subscriptionSelection$"],
   automationTarget$: ThreadContext["automationTarget$"],
+  runIds$: ThreadContext["runIds$"],
+  orgId: string,
 ) {
   return computed(async (get): Promise<ChatThreadContinuation | null> => {
     const [event, selection] = await Promise.all([
@@ -339,9 +348,27 @@ function createThreadContinuation(
     }
     const target =
       event.contextType === "automation" ? await get(automationTarget$) : null;
+    const identity = get(runIds$);
+    const plan = previousChatRunPlan({
+      runId: sql.param(identity.runId),
+      chatThreadId: sql.param(event.thread.id),
+      userId: sql.param(event.thread.userId),
+      orgId: sql.param(orgId),
+      createdAt: sql.param(identity.createdAt, agentRuns.createdAt),
+    });
+    const [previous] = await get(db$)
+      .select(plan.fields)
+      .from(plan.table)
+      .where(plan.where)
+      .orderBy(...plan.orderBy)
+      .limit(1);
     return resolveChatThreadContinuation(event.thread, {
       cliAgentType: selection.cliAgentType,
       officialWorkflow: Boolean(target?.workflow.officialDefinitionName),
+      admission: {
+        ...identity,
+        finalizingSourceRunId: previous?.id ?? null,
+      },
     });
   });
 }

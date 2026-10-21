@@ -631,7 +631,6 @@ export async function publishRunnerJobNotification(args: {
     /** Raw key required for runner-local reuse matching; it stays on the internal runner-group channel. */
     readonly reuseKey: string | null;
     readonly cliAgentSessionId: string | null;
-    readonly historyGenerationRunId: string | undefined;
   };
 }): Promise<boolean> {
   const published = await tapError(
@@ -645,9 +644,6 @@ export async function publishRunnerJobNotification(args: {
           : {}),
         ...(args.metadata?.cliAgentSessionId
           ? { cliAgentSessionId: args.metadata.cliAgentSessionId }
-          : {}),
-        ...(args.metadata?.historyGenerationRunId
-          ? { historyGenerationRunId: args.metadata.historyGenerationRunId }
           : {}),
         runnerPreference: args.runnerPreference,
       });

@@ -44,7 +44,6 @@ describe("terminal predecessor reuse preference", () => {
         "job",
         expect.objectContaining({
           runId: next.runId,
-          historyGenerationRunId: f.run.runId,
           runnerPreference: preference,
         }),
       );
