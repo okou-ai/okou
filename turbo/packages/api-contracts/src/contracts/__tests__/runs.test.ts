@@ -8,7 +8,52 @@ import {
   unifiedRunRequestSchema,
 } from "../runs";
 import { triggerSourceSchema } from "../logs";
-import { runCreateBodySchema } from "../run-routes";
+import {
+  runCreateBodySchema,
+  runContextResponseSchema,
+  runContextStorageMounts,
+} from "../run-routes";
+
+describe("Run context Storage observations", () => {
+  const mount = {
+    name: "output",
+    version: "version-1",
+    mountPath: "/output",
+    writeback: true,
+  };
+  const legacy = {
+    volumes: [],
+    artifact: {
+      vasStorageName: mount.name,
+      vasVersionId: mount.version,
+      mountPath: mount.mountPath,
+    },
+  };
+
+  it.each([
+    { storage: { storageMounts: [mount] }, expected: [mount] },
+    { storage: legacy, expected: [mount] },
+    { storage: { ...legacy, storageMounts: [] }, expected: [] },
+  ])(
+    "reads the supported context Storage representation: $storage",
+    ({ storage, expected }) => {
+      const context = runContextResponseSchema.parse({
+        prompt: "Inspect the output",
+        appendSystemPrompt: null,
+        runId: "run-1",
+        sessionId: null,
+        secretNames: [],
+        vars: null,
+        environment: {},
+        firewalls: [],
+        networkPolicies: null,
+        featureFlags: null,
+        ...storage,
+      });
+      expect(runContextStorageMounts(context)).toStrictEqual(expected);
+    },
+  );
+});
 
 describe("get run response contract", () => {
   it("parses the current Run response", () => {

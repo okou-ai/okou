@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
+import type { ActivityRunContext } from "./run-context.ts";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import type { AgentEvent } from "../okou-page/log-types.ts";
 import { parseInspectLog, type InspectLogMeta } from "./inspect-log-parser.ts";
@@ -25,7 +25,7 @@ function oversizedInspectLogMessage(): string {
 export interface InspectLogData {
   meta: InspectLogMeta | null;
   events: AgentEvent[];
-  context: RunContextResponse | null;
+  context: ActivityRunContext | null;
   networkLogs: NetworkLogEntry[] | null;
 }
 

@@ -508,6 +508,9 @@ test("A user can inspect steps, context, and network details from an exported lo
   expect(screen.getByText("ACCOUNT_ID")).toBeInTheDocument();
   expect(screen.getByText("acct_123")).toBeInTheDocument();
   expect(screen.getByText("storage-workspace")).toBeInTheDocument();
+  expect(screen.getByText("artifact-storage")).toBeInTheDocument();
+  expect(screen.getByText("Read only")).toBeInTheDocument();
+  expect(screen.getByText("Read/write")).toBeInTheDocument();
 
   click(getTabByText("Network"));
 

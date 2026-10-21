@@ -6,7 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@okouai/ui";
-import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
+import type { ActivityRunContext } from "../../../signals/activity-page/run-context.ts";
 import { useTranslation } from "react-i18next";
 
 export function SectionHeader({ title }: { title: string }) {
@@ -79,15 +79,8 @@ export function KeyValueTable({
 
 function StorageTable({
   items,
-  columns,
 }: {
-  items: {
-    mountPath: string;
-    vasStorageName: string;
-    vasVersionId: string;
-    name?: string;
-  }[];
-  columns: string[];
+  items: ActivityRunContext["storageMounts"];
 }) {
   const { t } = useTranslation();
   if (items.length === 0) {
@@ -103,26 +96,51 @@ function StorageTable({
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          {columns.map((col) => {
-            return <TableHead key={col}>{col}</TableHead>;
-          })}
+          <TableHead>
+            {t(($) => {
+              return $.activity.context.storageName;
+            })}
+          </TableHead>
+          <TableHead>
+            {t(($) => {
+              return $.activity.context.mountPath;
+            })}
+          </TableHead>
+          <TableHead>
+            {t(($) => {
+              return $.activity.context.version;
+            })}
+          </TableHead>
+          <TableHead>
+            {t(($) => {
+              return $.activity.context.access;
+            })}
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {items.map((item) => {
           return (
-            <TableRow key={`${item.vasStorageName}-${item.vasVersionId}`}>
-              {item.name !== undefined && (
-                <TableCell className="font-mono text-xs">{item.name}</TableCell>
-              )}
+            <TableRow
+              key={`${item.mountPath}-${item.name}-${item.version}-${item.writeback}`}
+            >
+              <TableCell className="font-mono text-xs break-all">
+                {item.name}
+              </TableCell>
               <TableCell className="font-mono text-xs break-all">
                 {item.mountPath}
               </TableCell>
               <TableCell className="font-mono text-xs break-all">
-                {item.vasStorageName}
+                {item.version}
               </TableCell>
               <TableCell className="font-mono text-xs break-all">
-                {item.vasVersionId}
+                {item.writeback
+                  ? t(($) => {
+                      return $.activity.context.readWrite;
+                    })
+                  : t(($) => {
+                      return $.activity.context.readOnly;
+                    })}
               </TableCell>
             </TableRow>
           );
@@ -171,69 +189,21 @@ function FeatureFlagsSection({
   );
 }
 
-function StorageSections({ context }: { context: RunContextResponse }) {
+function StorageSection({ context }: { context: ActivityRunContext }) {
   const { t } = useTranslation();
-  const none = t(($) => {
-    return $.activity.context.none;
-  });
-
   return (
-    <>
-      <section>
-        <SectionHeader
-          title={t(($) => {
-            return $.activity.context.volumes;
-          })}
-        />
-        <StorageTable
-          items={context.volumes}
-          columns={[
-            t(($) => {
-              return $.activity.context.name;
-            }),
-            t(($) => {
-              return $.activity.context.mountPath;
-            }),
-            t(($) => {
-              return $.activity.context.storageName;
-            }),
-            t(($) => {
-              return $.activity.context.version;
-            }),
-          ]}
-        />
-      </section>
-
-      <section>
-        <SectionHeader
-          title={t(($) => {
-            return $.activity.context.artifact;
-          })}
-        />
-        {context.artifact ? (
-          <StorageTable
-            items={[context.artifact]}
-            columns={[
-              t(($) => {
-                return $.activity.context.mountPath;
-              }),
-              t(($) => {
-                return $.activity.context.storageName;
-              }),
-              t(($) => {
-                return $.activity.context.version;
-              }),
-            ]}
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">{none}</p>
-        )}
-      </section>
-    </>
+    <section>
+      <SectionHeader
+        title={t(($) => {
+          return $.activity.context.storageMounts;
+        })}
+      />
+      <StorageTable items={context.storageMounts} />
+    </section>
   );
 }
 
-export function ContextContent({ context }: { context: RunContextResponse }) {
+export function ContextContent({ context }: { context: ActivityRunContext }) {
   const { t } = useTranslation();
   const none = t(($) => {
     return $.activity.context.none;
@@ -366,7 +336,7 @@ export function ContextContent({ context }: { context: RunContextResponse }) {
           </section>
         )}
 
-      <StorageSections context={context} />
+      <StorageSection context={context} />
     </div>
   );
 }

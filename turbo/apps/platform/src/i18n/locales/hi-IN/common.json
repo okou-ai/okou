@@ -40,7 +40,7 @@
       "warningFallback": "Codex चेतावनी"
     },
     "context": {
-      "artifact": "आर्टिफ़ैक्ट",
+      "access": "ऐक्सेस",
       "environmentMapping": "पर्यावरण मानचित्रण",
       "featureFlags": "फ़ीचर झंडे",
       "firewalls": "फ़ायरवाल",
@@ -51,18 +51,20 @@
       "networkPolicies": "नेटवर्क नीतियाँ",
       "none": "कोई नहीं",
       "prompt": "प्रॉम्प्ट",
+      "readOnly": "केवल पढ़ने के लिए",
+      "readWrite": "पढ़ना/लिखना",
       "runId": "ID चलाएँ",
       "runtimeModel": "रनटाइम मॉडल",
       "runtimeProvider": "रनटाइम प्रदाता",
       "secrets": "रहस्य",
       "selectedModel": "चयनित मॉडल",
       "session": "सत्र",
+      "storageMounts": "स्टोरेज माउंट",
       "storageName": "भंडारण का नाम",
       "systemPrompt": "सिस्टम प्रॉम्प्ट",
       "value": "मान",
       "variables": "चर",
-      "version": "संस्करण",
-      "volumes": "संस्करणों"
+      "version": "संस्करण"
     },
     "detail": {
       "activity": "गतिविधि",

@@ -37,7 +37,6 @@ function makeLogDetail(
     createdAt: CREATED_AT,
     startedAt: CREATED_AT,
     completedAt: status === "running" ? null : "2026-06-26T02:31:30Z",
-    artifact: { name: null, version: null },
   };
 }
 

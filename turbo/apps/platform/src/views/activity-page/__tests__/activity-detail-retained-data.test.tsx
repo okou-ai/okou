@@ -40,7 +40,6 @@ function logDetail(): LogDetail {
     createdAt: "2026-03-10T14:56:00Z",
     startedAt: "2026-03-10T14:56:01Z",
     completedAt: "2026-03-10T14:56:10Z",
-    artifact: { name: null, version: null },
   };
 }
 
@@ -64,8 +63,20 @@ function runContext(): RunContextResponse {
     environment: {},
     firewalls: [],
     networkPolicies: null,
-    volumes: [],
-    artifact: null,
+    storageMounts: [
+      {
+        name: "checkout-docs",
+        version: "docs-version",
+        mountPath: "/docs",
+        writeback: false,
+      },
+      {
+        name: "checkout-output",
+        version: "output-version",
+        mountPath: "/output",
+        writeback: true,
+      },
+    ],
     featureFlags: null,
   };
 }
@@ -164,7 +175,10 @@ test("A user can download all retained diagnostics for an older activity", async
     displayName: "Checkout Export",
     framework: "codex",
   });
-  expect(downloaded.context).toMatchObject({ runId: RUN_ID });
+  expect(downloaded.context).toMatchObject({
+    runId: RUN_ID,
+    storageMounts: runContext().storageMounts,
+  });
   expect(downloaded.networkLogs).toStrictEqual([networkLog()]);
 });
 
@@ -185,6 +199,26 @@ test("Activity context lists model route fields without runtime metadata", async
   const modelRouteHeading = await screen.findByRole("heading", {
     name: "Model Route",
   });
+  const storageHeading = await screen.findByRole("heading", {
+    name: "Storage Mounts",
+  });
+  const storageSection = storageHeading.closest("section");
+  if (!storageSection) {
+    throw new Error("Storage mount section was not rendered");
+  }
+  const storage = within(storageSection);
+  for (const value of [
+    "checkout-docs",
+    "docs-version",
+    "/docs",
+    "Read only",
+    "checkout-output",
+    "output-version",
+    "/output",
+    "Read/write",
+  ]) {
+    expect(storage.getByText(value)).toBeInTheDocument();
+  }
   const modelRouteSection = modelRouteHeading.closest("section");
   if (!modelRouteSection) {
     throw new Error("Model route section was not rendered");

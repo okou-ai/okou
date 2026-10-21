@@ -40,7 +40,7 @@
       "warningFallback": "Codex 警告"
     },
     "context": {
-      "artifact": "成果",
+      "access": "存取權限",
       "environmentMapping": "環境對映",
       "featureFlags": "功能開關",
       "firewalls": "防火牆",
@@ -51,18 +51,20 @@
       "networkPolicies": "網路策略",
       "none": "無",
       "prompt": "提示詞",
+      "readOnly": "唯讀",
+      "readWrite": "讀寫",
       "runId": "執行 ID",
       "runtimeModel": "執行時模型",
       "runtimeProvider": "執行時提供方",
       "secrets": "金鑰",
       "selectedModel": "所選模型",
       "session": "會話",
+      "storageMounts": "儲存掛載",
       "storageName": "儲存名稱",
       "systemPrompt": "系統提示詞",
       "value": "值",
       "variables": "變數",
-      "version": "版本",
-      "volumes": "資料卷"
+      "version": "版本"
     },
     "detail": {
       "activity": "活動",

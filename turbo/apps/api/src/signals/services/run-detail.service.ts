@@ -139,6 +139,7 @@ export function runContext(
         environment: normalizedSnapshot.environment,
         firewalls: normalizedSnapshot.firewalls,
         networkPolicies: normalizedSnapshot.networkPolicies,
+        storageMounts: normalizedSnapshot.storageMounts,
         volumes: normalizedSnapshot.volumes,
         artifact: normalizedSnapshot.artifact,
         featureFlags: normalizedSnapshot.featureFlags,

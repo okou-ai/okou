@@ -40,7 +40,7 @@
       "warningFallback": "Codex 경고"
     },
     "context": {
-      "artifact": "아티팩트",
+      "access": "접근 권한",
       "environmentMapping": "환경 매핑",
       "featureFlags": "기능 플래그",
       "firewalls": "방화벽",
@@ -51,18 +51,20 @@
       "networkPolicies": "네트워크 정책",
       "none": "없음",
       "prompt": "프롬프트",
+      "readOnly": "읽기 전용",
+      "readWrite": "읽기/쓰기",
       "runId": "실행 ID",
       "runtimeModel": "런타임 모델",
       "runtimeProvider": "런타임 공급자",
       "secrets": "비밀",
       "selectedModel": "선택한 모델",
       "session": "세션",
+      "storageMounts": "스토리지 마운트",
       "storageName": "스토리지 이름",
       "systemPrompt": "시스템 프롬프트",
       "value": "값",
       "variables": "변수",
-      "version": "버전",
-      "volumes": "볼륨"
+      "version": "버전"
     },
     "detail": {
       "activity": "활동",

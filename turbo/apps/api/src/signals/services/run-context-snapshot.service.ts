@@ -1,4 +1,9 @@
-import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runContextStorageMounts,
+  runContextStorageMountSchema,
+  type RunContextResponse,
+  type RunContextStorageMount,
+} from "@okouai/api-contracts/contracts/run-routes";
 import {
   executionFirewallBuiltinEntrySchema,
   executionFirewallInlineEntrySchema,
@@ -32,7 +37,7 @@ type RunContextFirewallApi = RunContextSanitizedFirewall["apis"][number];
 type RunContextFirewallPermission = NonNullable<
   RunContextFirewallApi["permissions"]
 >[number];
-type RunContextVolume = RunContextResponse["volumes"][number];
+type RunContextVolume = NonNullable<RunContextResponse["volumes"]>[number];
 
 export interface RunContextEnvironmentEntry {
   readonly name: string;
@@ -93,6 +98,10 @@ export type RunContextAxiomSnapshot = Omit<
     readonly _time: string;
     readonly userId: string;
     readonly cliAgentType?: string;
+    readonly storageMounts: RunContextStorageMount[];
+    // Preparation release: outgoing/rollback APIs still read these fields.
+    readonly volumes: NonNullable<RunContextResponse["volumes"]>;
+    readonly artifact: Exclude<RunContextResponse["artifact"], undefined>;
     readonly environmentEntries: readonly RunContextEnvironmentEntry[];
     readonly firewalls: readonly RunContextAxiomFirewall[];
     readonly networkPolicyEntries: readonly RunContextNetworkPolicyEntry[];
@@ -110,8 +119,9 @@ interface NormalizedRunContextSnapshot {
   readonly environment: Record<string, string>;
   readonly firewalls: RunContextResponse["firewalls"];
   readonly networkPolicies: RunContextResponse["networkPolicies"];
-  readonly volumes: RunContextResponse["volumes"];
-  readonly artifact: RunContextResponse["artifact"];
+  readonly storageMounts: RunContextStorageMount[];
+  readonly volumes: NonNullable<RunContextResponse["volumes"]>;
+  readonly artifact: Exclude<RunContextResponse["artifact"], undefined>;
   readonly featureFlags: Record<string, boolean> | null;
 }
 
@@ -402,7 +412,9 @@ function volumeFromUnknown(value: unknown): RunContextVolume | undefined {
     : undefined;
 }
 
-function volumesFromUnknown(value: unknown): RunContextResponse["volumes"] {
+function volumesFromUnknown(
+  value: unknown,
+): NonNullable<RunContextResponse["volumes"]> {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -412,7 +424,9 @@ function volumesFromUnknown(value: unknown): RunContextResponse["volumes"] {
   });
 }
 
-function artifactFromUnknown(value: unknown): RunContextResponse["artifact"] {
+function artifactFromUnknown(
+  value: unknown,
+): Exclude<RunContextResponse["artifact"], undefined> {
   if (!isRecord(value)) {
     return null;
   }
@@ -531,6 +545,8 @@ export function executionFirewallsToAxiomEntries(
 export function normalizeRunContextSnapshot(
   snapshot: Record<string, unknown>,
 ): NormalizedRunContextSnapshot {
+  const volumes = volumesFromUnknown(snapshot.volumes);
+  const artifact = artifactFromUnknown(snapshot.artifact);
   return {
     runId: stringValue(snapshot.runId),
     userId: stringValue(snapshot.userId),
@@ -546,8 +562,14 @@ export function normalizeRunContextSnapshot(
     environment: environmentFromEntries(snapshot.environmentEntries),
     firewalls: firewallsFromUnknown(snapshot.firewalls),
     networkPolicies: networkPoliciesFromEntries(snapshot.networkPolicyEntries),
-    volumes: volumesFromUnknown(snapshot.volumes),
-    artifact: artifactFromUnknown(snapshot.artifact),
+    // Old Axiom snapshots predate storageMounts. Preserve their captured
+    // observations without rewriting historical telemetry (#41332).
+    storageMounts:
+      snapshot.storageMounts === undefined
+        ? runContextStorageMounts({ volumes, artifact })
+        : z.array(runContextStorageMountSchema).parse(snapshot.storageMounts),
+    volumes,
+    artifact,
     featureFlags: featureFlagsFromEntries(snapshot.featureFlagEntries),
   };
 }

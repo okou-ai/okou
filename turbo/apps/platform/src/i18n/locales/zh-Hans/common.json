@@ -40,7 +40,7 @@
       "warningFallback": "Codex 警告"
     },
     "context": {
-      "artifact": "成果",
+      "access": "访问权限",
       "environmentMapping": "环境映射",
       "featureFlags": "功能开关",
       "firewalls": "防火墙",
@@ -51,18 +51,20 @@
       "networkPolicies": "网络策略",
       "none": "无",
       "prompt": "提示词",
+      "readOnly": "只读",
+      "readWrite": "读写",
       "runId": "运行 ID",
       "runtimeModel": "运行时模型",
       "runtimeProvider": "运行时提供方",
       "secrets": "密钥",
       "selectedModel": "所选模型",
       "session": "会话",
+      "storageMounts": "存储挂载",
       "storageName": "存储名称",
       "systemPrompt": "系统提示词",
       "value": "值",
       "variables": "变量",
-      "version": "版本",
-      "volumes": "数据卷"
+      "version": "版本"
     },
     "detail": {
       "activity": "活动",

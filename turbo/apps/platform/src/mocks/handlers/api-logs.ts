@@ -28,10 +28,6 @@ const mockLogDetails: LogDetail[] = [
     createdAt: "2024-01-01T00:00:00Z",
     startedAt: "2024-01-01T00:00:01Z",
     completedAt: "2024-01-01T00:00:10Z",
-    artifact: {
-      name: "test-artifact",
-      version: "1.0.0",
-    },
   },
   {
     id: "a0000000-0000-4000-a000-000000000002",
@@ -49,10 +45,6 @@ const mockLogDetails: LogDetail[] = [
     createdAt: "2024-01-02T00:00:00Z",
     startedAt: "2024-01-02T00:00:01Z",
     completedAt: "2024-01-02T00:00:10Z",
-    artifact: {
-      name: null,
-      version: null,
-    },
   },
 ];
 

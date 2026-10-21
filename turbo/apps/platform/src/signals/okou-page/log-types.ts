@@ -108,11 +108,6 @@ export function getTriggerSourceLabel(
 }
 
 // Detail response - full log information
-interface Artifact {
-  name: string | null;
-  version: string | null;
-}
-
 export interface LogDetail {
   id: string;
   sessionId: string | null;
@@ -131,7 +126,6 @@ export interface LogDetail {
   createdAt: string; // ISO timestamp
   startedAt: string | null;
   completedAt: string | null;
-  artifact: Artifact;
 }
 
 export type AgentEvent = RunEvent;
