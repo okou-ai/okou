@@ -23,7 +23,8 @@ class TestRegistryAuthCacheEviction:
         path_a = tmp_path / "registry-a.json"
         path_b = tmp_path / "registry-b.json"
         write_simple_registry(path_a, run_id="run-one")
-        write_simple_registry(path_b, run_id="run-two")
+        # Retain the run so run-removal cleanup cannot mask path-switch eviction.
+        write_simple_registry(path_b, run_id="run-one")
         first_registry = registry.load_registry(str(path_a))
         first_generation = getattr(
             first_registry["10.200.0.1"],
@@ -34,6 +35,7 @@ class TestRegistryAuthCacheEviction:
             cache_key,
             headers={"Authorization": "Bearer old"},
         )
+        assert has_auth_state(cache_key)
 
         second_registry = registry.load_registry(str(path_b))
         second_generation = getattr(
