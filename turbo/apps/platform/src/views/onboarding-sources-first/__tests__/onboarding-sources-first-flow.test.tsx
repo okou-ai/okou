@@ -335,6 +335,8 @@ test("A later step returns to the entry until a source is connected", async () =
   expect(pathname()).toBe(ROUTES.onboarding);
 });
 
+const RECOMMENDATION_TOPIC = "onboardingRecommendationChanged";
+
 test("Connected account context replaces the static starting prompt", async () => {
   mockMemberOnboardingNeeded();
   mockCatalog({ connected: true });
@@ -355,10 +357,9 @@ test("Connected account context replaces the static starting prompt", async () =
       return respond(202, { jobId, status: "pending" });
     },
   );
-  let pollCount = 0;
+  let completed = false;
   context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
-    pollCount += 1;
-    return pollCount === 1
+    return !completed
       ? respond(200, { jobId, status: "running" })
       : respond(200, {
           jobId,
@@ -399,6 +400,16 @@ test("Connected account context replaces the static starting prompt", async () =
   click(getButtonByName("Continue"));
   await leaveSlackStepWithNotNow();
 
+  await screen.findByRole("heading", { name: READY_TITLE });
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription(RECOMMENDATION_TOPIC),
+    ).toBeTruthy();
+  });
+  expect(screen.queryByDisplayValue(generatedPrompt)).not.toBeInTheDocument();
+  completed = true;
+  context.mocks.ably.trigger(RECOMMENDATION_TOPIC);
+
   await expect(
     screen.findByText("Clear the replies that matter"),
   ).resolves.toBeInTheDocument();
@@ -407,7 +418,6 @@ test("Connected account context replaces the static starting prompt", async () =
     industry: "marketing",
     locale: "en-US",
   });
-  expect(pollCount).toBe(2);
   // Every step reads the onboarding sources, never the full catalog status.
   expect(statusReads).toBe(0);
 });

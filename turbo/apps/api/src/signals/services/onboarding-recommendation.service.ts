@@ -27,6 +27,7 @@ import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
+import { publishOnboardingRecommendationChangedSafely } from "../external/realtime";
 import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
 import {
   generateVertexText,
@@ -738,6 +739,7 @@ const settleJobAttempt$ = command(
     );
     signal.throwIfAborted();
     if (attempt.ok) {
+      await publishOnboardingRecommendationChangedSafely(job.userId);
       return;
     }
     const errorMessage =
@@ -757,6 +759,7 @@ const settleJobAttempt$ = command(
       );
       signal.throwIfAborted();
       persistenceSignal.throwIfAborted();
+      await publishOnboardingRecommendationChangedSafely(job.userId);
       return;
     }
     await set(

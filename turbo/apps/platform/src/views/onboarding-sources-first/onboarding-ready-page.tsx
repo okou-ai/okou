@@ -1,9 +1,12 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Textarea } from "@okouai/ui";
 import { Loader2 } from "lucide-react";
-import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+  type OnboardingRecommendationStatus,
+} from "@okouai/api-contracts/contracts/onboarding";
 import {
   ONBOARDING_INDUSTRY_IDS,
   type OnboardingIndustry,
@@ -15,6 +18,7 @@ import {
 import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { runOnboardingRequest$ } from "../../signals/onboarding/onboarding-actions.ts";
+import { onboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
 import {
   updateSourcesFirstDraft$,
   type SourcesFirstDraft,
@@ -119,18 +123,21 @@ function StartingPromptPanel({
 
 function readyPromptView(
   draft: SourcesFirstDraft,
+  job: Loadable<OnboardingRecommendationStatus | null>,
   fallbackPrompt: ReturnType<typeof startingPromptFor>,
   fallbackPromptKey: string,
   fallbackSourceLabel: string | null,
 ) {
-  const recommendation =
-    draft.recommendationStatus === "completed" ? draft.recommendation : null;
-  const isLoading =
-    recommendation === null &&
-    (draft.recommendationStatus === "starting" ||
-      draft.recommendationStatus === "pending" ||
-      draft.recommendationStatus === "running");
   const recommendationJobId = draft.recommendationJobId;
+  const settled = job.state === "hasData" ? job.data : null;
+  const recommendation =
+    settled?.status === "completed" ? settled.recommendation : null;
+  // A failed, missing or unreadable job leaves the preset request in place.
+  const isLoading =
+    recommendationJobId !== null &&
+    (job.state === "loading" ||
+      settled?.status === "pending" ||
+      settled?.status === "running");
   if (recommendation !== null && recommendationJobId === null) {
     throw new Error("Completed onboarding recommendation has no job id");
   }
@@ -164,6 +171,8 @@ export function OnboardingReadyPage() {
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const pageSignal = useGet(pageSignal$);
   const [runLoadable, runRequest] = useLoadableSet(runOnboardingRequest$);
+  // Keep the settled job while a notification re-reads it.
+  const recommendationJob = useLastLoadable(onboardingRecommendation$);
 
   const connected =
     catalogLoadable.state === "hasData"
@@ -189,12 +198,12 @@ export function OnboardingReadyPage() {
     industry,
     source ? { slug: source.slug, name: source.label } : null,
   );
-  // Once someone types, their draft owns the text. A recommendation that
-  // finishes after the fallback timeout may still update the headline, but it
-  // can never replace an edit.
+  // Once someone types, their draft owns the text. A recommendation may still
+  // update the headline, but it can never replace an edit.
   const { isLoading, promptKey, text, outcome, outcomeDetail, sourceLabel } =
     readyPromptView(
       flow.draft,
+      recommendationJob,
       fallbackPrompt,
       `${industry}:${source?.slug ?? "none"}`,
       source?.label ?? null,

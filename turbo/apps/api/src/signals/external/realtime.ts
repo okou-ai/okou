@@ -322,6 +322,13 @@ export function publishPersonalModelProvidersChangedSafely(
   return publishUserSignal([userId], "runModelsChanged");
 }
 
+/** The onboarding ready step re-reads its recommendation job on this notice. */
+export function publishOnboardingRecommendationChangedSafely(
+  userId: string,
+): Promise<void> {
+  return publishUserSignal([userId], "onboardingRecommendationChanged");
+}
+
 /** Invalidate the aggregate Run capacity view after a committed state change. */
 export function publishRunQueueChangedForOrgSafely(
   orgId: string,
