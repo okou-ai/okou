@@ -7,7 +7,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull, type SQL } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { publishConnectorRuntimeSyncBatch } from "../external/realtime";
 import {
   connectorRuntimeWakeupBatches,
@@ -23,56 +23,8 @@ interface ConnectorRuntimeWakeupScope {
   readonly agentId?: string;
 }
 
-interface ConnectorRuntimeWakeupArgs {
-  readonly db: ReadonlyDb;
-  readonly scope: ConnectorRuntimeWakeupScope;
-  readonly targets: readonly ConnectorRuntimeTarget[];
-}
-
-/**
- * Treats a committed mutation and its best-effort wakeup as one cancellation
- * boundary. Callers may observe request cancellation only after this returns.
- */
-export async function commitConnectorRuntimeMutation<T>(
-  commit: Promise<T>,
-  wakeupForResult: (result: T) => ConnectorRuntimeWakeupArgs | undefined,
-): Promise<T> {
-  const result = await commit;
-  const wakeup = wakeupForResult(result);
-  if (wakeup) {
-    await (async () => {
-      const result = await settle(
-        (async () => {
-          const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
-          if (targets.length === 0) {
-            return;
-          }
-
-          const rows = await wakeup.db
-            .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
-            .from(agentRuns)
-
-            .where(connectorRuntimeWakeupCondition(wakeup.scope));
-
-          await publishConnectorRuntimeWakeupRows({
-            scope: wakeup.scope,
-            targets,
-            rows,
-          });
-        })(),
-      );
-      if (!result.ok) {
-        reportConnectorRuntimeWakeupDiscoveryFailure({
-          orgId: wakeup.scope.orgId,
-          scopedToUser: wakeup.scope.userId !== undefined,
-          scopedToAgent: wakeup.scope.agentId !== undefined,
-          targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
-          error: result.error,
-        });
-      }
-    })();
-  }
-  return result;
+export function connectorRuntimeWakeupRunColumns() {
+  return { runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup };
 }
 
 export function uniqueConnectorRuntimeTargets(
