@@ -142,16 +142,13 @@ class AcquisitionTests(unittest.TestCase):
 
     def test_failed_unmap_keeps_original_until_explicit_positive_cleanup(self):
         before = len(os.listdir("/proc/self/fd"))
-        owner = acquisition.FileResidency(self.fd, self.identity)
-        try:
+        with acquisition.FileResidency(self.fd, self.identity) as owner:
             ctypes.set_errno(errno.EBUSY)
             with patch.object(acquisition.LIBC, "munmap", return_value=-1):
                 with self.assertRaises(OSError):
                     owner.observe(0, self.page)
             with self.assertRaisesRegex(ValueError, "earlier original mapping"):
                 owner.observe(0, self.page)
-        finally:
-            owner.close()
         self.assertEqual(len(os.listdir("/proc/self/fd")), before)
 
     def test_uncertain_close_never_repeats_against_a_reused_descriptor(self):
