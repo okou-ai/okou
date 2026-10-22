@@ -4,6 +4,7 @@ import asyncio
 import json
 from unittest.mock import patch
 
+import pytest
 from mitmproxy import http
 from mitmproxy.flow import Error
 
@@ -96,13 +97,16 @@ async def test_transport_error_after_expiry_never_serves_old_entry(real_flow):
         catalog_cache.handle_error(retry)
 
 
-async def test_authenticated_models_etag_renews_only_confirmed_credential_until_deadline(real_flow):
+@pytest.mark.parametrize("status", [200, 101])
+async def test_authenticated_models_etag_renews_only_confirmed_credential_until_deadline(
+    real_flow, status
+):
     with patch.object(catalog_cache.time, "monotonic", return_value=100.0) as monotonic:
         await install_catalog(catalog_flow(real_flow))
         await install_catalog(catalog_flow(real_flow, auth_value="auth-b"))
 
         monotonic.return_value = 150.0
-        confirmation = responses_flow(real_flow)
+        confirmation = responses_flow(real_flow, status=status)
         mitm_addon.responseheaders(confirmation)
 
         # Both original entries expire at t=160; only the confirmed credential is renewed.
@@ -125,7 +129,10 @@ async def test_authenticated_models_etag_renews_only_confirmed_credential_until_
         catalog_cache.handle_error(expired)
 
 
-async def test_authenticated_models_etag_confirmation_and_partitioned_invalidation(real_flow):
+@pytest.mark.parametrize("status", [200, 101])
+async def test_authenticated_models_etag_confirmation_and_partitioned_invalidation(
+    real_flow, status
+):
     with patch.object(catalog_cache.time, "monotonic", return_value=100.0) as monotonic:
         await install_catalog(catalog_flow(real_flow))
         await install_catalog(catalog_flow(real_flow, auth_value="auth-b"))
@@ -135,7 +142,7 @@ async def test_authenticated_models_etag_confirmation_and_partitioned_invalidati
         )
 
         monotonic.return_value = 150.0
-        confirmation = responses_flow(real_flow)
+        confirmation = responses_flow(real_flow, status=status)
         mitm_addon.responseheaders(confirmation)
         confirmation_telemetry: dict[str, object] = {}
         catalog_cache.add_network_log_fields(confirmation, confirmation_telemetry)
@@ -152,7 +159,7 @@ async def test_authenticated_models_etag_confirmation_and_partitioned_invalidati
         await prepare_miss(invalidated_version)
         catalog_cache.handle_error(invalidated_version)
 
-        invalidation = responses_flow(real_flow, etag='"catalog-v2"')
+        invalidation = responses_flow(real_flow, etag='"catalog-v2"', status=status)
         mitm_addon.responseheaders(invalidation)
         invalidation_telemetry: dict[str, object] = {}
         catalog_cache.add_network_log_fields(invalidation, invalidation_telemetry)
