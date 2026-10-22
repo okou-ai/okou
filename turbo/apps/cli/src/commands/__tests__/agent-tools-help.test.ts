@@ -179,7 +179,6 @@ describe("agent-facing operational CLI help", () => {
     expect(check).toContain("missing_scope or needed");
 
     const request = await helpFor(connectorCommand, ["permission-request"]);
-    expect(request).toContain("one command per permission");
     expect(request).toContain("do not use callbacks");
     expect(request).toContain("verbatim with all query parameters");
   });

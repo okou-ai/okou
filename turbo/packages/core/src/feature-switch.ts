@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.BatchConnectorPermissions]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Batch connector permissions",
+    description: "Approve up to 20 connector permissions together.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PwaKeyboardViewport]: {
     maintainer: "bingjie@okou.ai",
     displayName: "PWA keyboard viewport",

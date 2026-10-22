@@ -87,6 +87,7 @@ interface ChatEventTreePlan {
 export function chatEventTreePlan(
   event: ChatEvent,
   chatActionContext: ChatActionContext,
+  batchConnectorPermissions = false,
 ): ChatEventTreePlan | null {
   const content = chatEventTreeContent(event);
   if (content === null) {
@@ -96,6 +97,7 @@ export function chatEventTreePlan(
   const plan = eventBodyPlan(content, {
     requireUrlTerminator,
     chatActionContext,
+    batchConnectorPermissions,
   });
   return {
     content,

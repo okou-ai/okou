@@ -63,7 +63,94 @@ export const applyUserPermissionGrantsRequestSchema = z
   })
   .strict();
 
+export const userPermissionGrantBatchItemSchema = z
+  .object({ connectorSlug: connectorSlugSchema, permission: permissionSchema })
+  .strict();
+
+export const userPermissionGrantBatchItemsSchema = z
+  .array(userPermissionGrantBatchItemSchema)
+  .min(1)
+  .max(20)
+  .superRefine((items, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, item] of items.entries()) {
+      const key = `${item.connectorSlug}\0${item.permission}`;
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Duplicate connector permission",
+          path: [index],
+        });
+      }
+      seen.add(key);
+    }
+  });
+
+export const applyUserPermissionGrantsBatchRequestSchema = z
+  .object({
+    agentId: agentIdSchema,
+    groups: z
+      .array(
+        z
+          .object({
+            connectorSlug: connectorSlugSchema,
+            grants: z
+              .array(
+                z
+                  .object({
+                    permission: permissionSchema,
+                    action: z.literal("allow"),
+                    expiresIn: userPermissionGrantExpiresInSchema.optional(),
+                  })
+                  .strict(),
+              )
+              .min(1)
+              .max(20),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(20),
+  })
+  .strict()
+  .superRefine((body, ctx) => {
+    const items = body.groups.flatMap((group) => {
+      return group.grants.map((grant) => {
+        return {
+          connectorSlug: group.connectorSlug,
+          permission: grant.permission,
+        };
+      });
+    });
+    const result = userPermissionGrantBatchItemsSchema.safeParse(items);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        ctx.addIssue({
+          code: "custom",
+          message: issue.message,
+          path: ["groups"],
+        });
+      }
+    }
+  });
+
 export const userPermissionGrantsContract = c.router({
+  applyBatch: {
+    method: "PUT",
+    path: "/api/user-permission-grants/apply-batch",
+    headers: authHeadersSchema,
+    body: applyUserPermissionGrantsBatchRequestSchema,
+    responses: {
+      200: z.array(userPermissionGrantResponseSchema),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Allow up to 20 connector permissions atomically for the current user's agent",
+  },
   list: {
     method: "GET",
     path: "/api/user-permission-grants",
@@ -116,5 +203,11 @@ export type ApplyUserPermissionGrant = z.infer<
 >;
 export type ApplyUserPermissionGrantsRequest = z.infer<
   typeof applyUserPermissionGrantsRequestSchema
+>;
+export type UserPermissionGrantBatchItem = z.infer<
+  typeof userPermissionGrantBatchItemSchema
+>;
+export type ApplyUserPermissionGrantsBatchRequest = z.infer<
+  typeof applyUserPermissionGrantsBatchRequestSchema
 >;
 export type UserPermissionGrantsContract = typeof userPermissionGrantsContract;

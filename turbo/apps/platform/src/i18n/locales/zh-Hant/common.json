@@ -1026,6 +1026,24 @@
       "saving": "儲存中…",
       "userFallback": "朋友",
       "wouldLike": "希望進行以下操作"
+    },
+    "permissionBatch": {
+      "allowAll_other": "允許全部 {{count}} 項權限",
+      "allowed": "權限已允許",
+      "allowedCount": "已允許 {{allowed}} / {{total}} 項權限",
+      "alwaysNote": "這些權限會持續允許，直到你變更或撤銷為止。",
+      "continue": "繼續",
+      "continued": "對話已繼續。",
+      "continueFailed": "權限已允許，但無法繼續對話。請再試一次。",
+      "continuing": "正在繼續…",
+      "details": "查看權限詳情",
+      "dismissed": "未變更任何權限。",
+      "invalid": "此權限連結無效或無法使用。",
+      "loadFailed": "無法驗證所有請求的權限，因此無法變更任何權限。",
+      "loading": "正在載入權限",
+      "notNow": "暫不允許",
+      "scopeNote": "適用於此代理程式，而不僅限於目前的任務。",
+      "title": "允許以下權限"
     }
   },
   "billing": {

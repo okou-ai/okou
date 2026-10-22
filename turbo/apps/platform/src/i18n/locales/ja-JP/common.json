@@ -1026,6 +1026,24 @@
       "saving": "保存中...",
       "userFallback": "そこに",
       "wouldLike": "したいです"
+    },
+    "permissionBatch": {
+      "allowAll_other": "{{count}} 件すべての権限を許可",
+      "allowed": "権限を許可しました",
+      "allowedCount": "{{total}} 件中 {{allowed}} 件の権限を許可済み",
+      "alwaysNote": "これらの権限は、変更または取り消すまで許可されたままになります。",
+      "continue": "続ける",
+      "continued": "会話を再開しました。",
+      "continueFailed": "権限は許可されましたが、会話を再開できませんでした。もう一度「続ける」をお試しください。",
+      "continuing": "再開中…",
+      "details": "権限の詳細を表示",
+      "dismissed": "権限は変更されませんでした。",
+      "invalid": "この権限リンクは無効か、利用できません。",
+      "loadFailed": "リクエストされたすべての権限を確認できませんでした。権限は変更できません。",
+      "loading": "権限を読み込み中",
+      "notNow": "今はしない",
+      "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
+      "title": "以下の権限を許可"
     }
   },
   "billing": {

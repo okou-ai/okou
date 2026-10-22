@@ -1046,6 +1046,26 @@
       "saving": "Guardando...",
       "userFallback": "Ahí",
       "wouldLike": "Me gustaría"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Conceder {{count}} permiso",
+      "allowAll_many": "Conceder los {{count}} permisos",
+      "allowAll_other": "Conceder los {{count}} permisos",
+      "allowed": "Permisos concedidos",
+      "allowedCount": "{{allowed}} de {{total}} permisos concedidos",
+      "alwaysNote": "Estos permisos seguirán concedidos hasta que los cambies o revoques.",
+      "continue": "Continuar",
+      "continued": "La conversación ha continuado.",
+      "continueFailed": "Se han concedido los permisos, pero no se ha podido continuar la conversación. Vuelve a intentar continuar.",
+      "continuing": "Continuando…",
+      "details": "Ver detalles de los permisos",
+      "dismissed": "No se ha cambiado ningún permiso.",
+      "invalid": "Este enlace de permisos no es válido o no está disponible.",
+      "loadFailed": "No se han podido verificar todos los permisos solicitados. No se puede cambiar ningún permiso.",
+      "loading": "Cargando permisos",
+      "notNow": "Ahora no",
+      "scopeNote": "Se aplica a este agente, no solo a la tarea actual.",
+      "title": "Conceder los siguientes permisos"
     }
   },
   "billing": {

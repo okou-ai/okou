@@ -1,6 +1,5 @@
 import { Command, Option } from "commander";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
-import type { ConnectorCheckPolicy } from "@okouai/api-contracts/contracts/connector-check";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import {
@@ -14,7 +13,6 @@ import {
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { createBrowserAuthorizationRequest } from "../../lib/api/domains/browser";
 import { createComputerUseAuthorizationRequest } from "../../lib/api/domains/computer-use";
-import { diagnoseConnectorCheck } from "../../lib/api/domains/connectors";
 import { getOkouToken } from "../../lib/okou-env";
 import { resolveConnectorAgentId } from "./agent-context";
 import {
@@ -26,16 +24,13 @@ import {
 } from "./action-url";
 import {
   addAwsDiagnosticOptions,
-  buildConnectorUrlDiagnosticRequest,
-  resolveConnectorCheckDiagnostic,
   validateDiagnosticUrl,
-  type ResolvedDiagnostic,
 } from "./check-diagnostic";
 import {
-  customConnectorIdFromSelector,
-  customConnectorSettingsGuidance,
-} from "./custom-connector-guidance";
-import { resolveDiagnosticConnectorSelector } from "./diagnostic-connector-selector";
+  diagnosePermissionRequest,
+  printAwsPermissionDiagnosticGuidance,
+} from "./permission-request-diagnostic";
+import { resolvePermissionRequestBatch } from "./permission-request-batch";
 
 interface AwsDiagnosticOptionValues {
   readonly awsService?: string;
@@ -82,95 +77,6 @@ function permissionDescription(permission: string): string {
   return permission === UNKNOWN_PERMISSION_GRANT
     ? "unknown endpoints"
     : `the "${permission}" permission`;
-}
-
-function permissionPolicyForDiagnostic(args: {
-  readonly result: ResolvedDiagnostic;
-  readonly permission: string;
-  readonly method: string;
-  readonly url: string;
-}): ConnectorCheckPolicy {
-  if (args.result.mode !== "url") {
-    throw new Error(
-      "Connector diagnostic returned an environment result for a URL request.",
-    );
-  }
-
-  if (args.permission === UNKNOWN_PERMISSION_GRANT) {
-    if (args.result.permission.kind === "unknown-endpoint") {
-      return args.result.permission.policy;
-    }
-    throw permissionMismatchError({
-      permission: args.permission,
-      method: args.method,
-      url: args.url,
-      matchedPermissions: args.result.permission.permissions.map(
-        (permission) => {
-          return permission.name;
-        },
-      ),
-    });
-  }
-
-  if (args.result.permission.kind === "unknown-endpoint") {
-    throw permissionMismatchError({
-      permission: args.permission,
-      method: args.method,
-      url: args.url,
-      matchedPermissions: [UNKNOWN_PERMISSION_GRANT],
-    });
-  }
-
-  const matchedPermission = args.result.permission.permissions.find(
-    (permission) => {
-      return permission.name === args.permission;
-    },
-  );
-  if (matchedPermission === undefined) {
-    throw permissionMismatchError({
-      permission: args.permission,
-      method: args.method,
-      url: args.url,
-      matchedPermissions: args.result.permission.permissions.map(
-        (permission) => {
-          return permission.name;
-        },
-      ),
-    });
-  }
-  return matchedPermission.policy;
-}
-
-function permissionMismatchError(args: {
-  readonly permission: string;
-  readonly method: string;
-  readonly url: string;
-  readonly matchedPermissions: readonly string[];
-}): Error {
-  return new Error(
-    `Permission "${args.permission}" does not match ${args.method} ${args.url}. The request maps to: ${args.matchedPermissions.join(", ")}. Use the exact permission-request command printed by okou connector check; provider OAuth scopes and missing_scope/needed values cannot be granted here.`,
-  );
-}
-
-function assertRequestablePolicy(args: {
-  readonly policy: ConnectorCheckPolicy;
-  readonly permission: string;
-  readonly method: string;
-  readonly url: string;
-}): void {
-  switch (args.policy.outcome) {
-    case "deny":
-    case "ask":
-      return;
-    case "allow":
-      throw new Error(
-        `${permissionDescription(args.permission)} is already allowed by Okou for ${args.method} ${args.url}. Provider authorization failures cannot be fixed with an Okou permission request.`,
-      );
-    case "unavailable":
-      throw new Error(
-        `Okou permission policy is unavailable for ${args.method} ${args.url}. Retry okou connector check from an active run before requesting access.`,
-      );
-  }
 }
 
 function printSensitivePermissionGuidance(
@@ -340,7 +246,7 @@ const callbackPromptExample = callbackPromptAvailable
   ? '  okou connector permission-request github --permission contents:write --url https://api.github.com/repos/okou-ai/okou --method POST --callback-prompt "Re-check the permission, then continue the previous task"\n'
   : "";
 const callbackPromptNotes = callbackPromptAvailable
-  ? `  - Use --callback-prompt only when this turn needs exactly one connector or permission action\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
+  ? `  - Use --callback-prompt for one single permission action or one batch link covering this turn's permissions\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
   : "";
 
 export const permissionRequestCommand = addAwsDiagnosticOptions(
@@ -350,14 +256,11 @@ export const permissionRequestCommand = addAwsDiagnosticOptions(
       "Request builtin permissions or Browser/Computer Use authorization",
     )
     .argument(
-      "<selector>",
+      "[selector]",
       "Connector slug, custom UUID, unique display name, browser, or computer-use; builtin:/custom: prefixes accepted",
     )
     .addOption(
-      new Option(
-        "--permission <name>",
-        "The permission name to request",
-      ).makeOptionMandatory(),
+      new Option("--permission <name>", "The permission name to request"),
     )
     .addOption(
       new Option(
@@ -377,6 +280,10 @@ export const permissionRequestCommand = addAwsDiagnosticOptions(
       ),
     ),
 )
+  .option(
+    "--batch-file <path>",
+    "Request 1–20 builtin HTTP permissions from a strict JSON array",
+  )
   .addOption(callbackPromptOption)
   .addHelpText(
     "after",
@@ -387,6 +294,7 @@ ${callbackPromptExample}  okou connector permission-request gmail --permission m
   okou connector permission-request cloudflare --permission __unknown__ --url https://api.cloudflare.com/client/v4/example --method POST
   okou connector permission-request computer-use --permission computer-use:write
   okou connector permission-request browser --permission browser:write
+  okou connector permission-request --batch-file ./permissions.json --agent <agent-id>
 
 Notes:
   - AWS options mirror connector check; they preserve the described AWS
@@ -395,7 +303,13 @@ Notes:
   - Plan the concrete connector operations needed for this task; do not request hypothetical future access
   - Check okou whoami --permissions first and skip permissions already allowed
   - First run okou connector check --url <FAILED_URL> --method <METHOD>; use its firewall-denial URL and omit secret query strings or fragments
-  - Use the exact permission-request command printed by connector check, one command per permission
+  - Use the exact permission and URL/method diagnosed by connector check
+  - For multiple builtin HTTP permissions, --batch-file accepts a JSON array of
+    1–20 strict items: {"connector":"github","permission":"contents:read","url":"https://api.github.com/repos/okou-ai/okou","method":"GET"}
+    Optional item fields: awsService, awsAction, awsTarget, awsQueryParam (array),
+    awsHeaderPresent (array). All single-request flags and selector are excluded.
+    Every item is diagnosed before one deduplicated batch approval link is output;
+    already-allowed items are skipped. A current Agent or --agent is required.
   - Provider OAuth errors such as Slack missing_scope or needed are provider scopes, not Okou permission names
   - A platform URL is output only when that request maps to a denied or approval-required permission
   - Builtin requests require --url and run-scoped policy data; an unavailable
@@ -413,16 +327,18 @@ Notes:
   - The user chooses the permission duration on the confirmation page
   - --callback-prompt requires the current web chat and its current Agent;
     it is unsupported for custom, Browser, and Computer Use authorization
-${callbackPromptNotes}  - When multiple connector or permission actions are needed, do not use callbacks; return each ordinary action URL on its own line and wait for all confirmations
+${callbackPromptNotes}  - One batch link may use a single callback for all included permissions
+  - When multiple separate connector or permission action links are needed, do not use callbacks; return each ordinary action URL on its own line and wait for all confirmations
   - Return every generated action URL verbatim with all query parameters
   - Builtin permission requests update the current user's connector grants after confirmation`,
   )
   .action(
     withErrorHandler(
       async (
-        selector: string,
+        selector: string | undefined,
         opts: {
-          permission: string;
+          permission?: string;
+          batchFile?: string;
           agent?: string;
           url?: string;
           method: string;
@@ -433,7 +349,68 @@ ${callbackPromptNotes}  - When multiple connector or permission actions are need
           awsHeaderPresent?: string[];
           callbackPrompt?: string;
         },
+        command: Command,
       ) => {
+        if (opts.batchFile !== undefined) {
+          const singleOnlyOptions = [
+            "permission",
+            "url",
+            "method",
+            "awsService",
+            "awsAction",
+            "awsTarget",
+            "awsQueryParam",
+            "awsHeaderPresent",
+          ];
+          if (
+            selector !== undefined ||
+            singleOnlyOptions.some((name) => {
+              return command.getOptionValueSource(name) === "cli";
+            })
+          ) {
+            throw new Error(
+              "--batch-file cannot be combined with a selector or single-request diagnostic options (including --method).",
+            );
+          }
+          const batch = await resolvePermissionRequestBatch({
+            batchFile: opts.batchFile,
+            agentId: resolveConnectorAgentId(opts.agent),
+            callbackPrompt: opts.callbackPrompt,
+          });
+          for (const summary of batch.summaries) console.log(summary);
+          if (batch.hasAws) printAwsPermissionDiagnosticGuidance();
+          if (
+            batch.summaries.some((summary) => {
+              return summary.endsWith("skipped");
+            })
+          ) {
+            console.log(
+              "Already-allowed permissions need no Okou approval; provider authorization failures require provider-side diagnosis.",
+            );
+          }
+          if (batch.url === undefined) {
+            console.log(
+              "All requested permissions are already allowed. No approval is needed.",
+            );
+            return;
+          }
+          for (const item of batch.items)
+            printSensitivePermissionGuidance(
+              item.connectorSlug,
+              item.permission,
+            );
+          console.log(
+            `Request approval for ${batch.items.length} permission(s). The user chooses the duration on the confirmation page:`,
+          );
+          console.log(batch.url);
+          if (opts.callbackPrompt !== undefined) printCallbackTurnInstruction();
+          return;
+        }
+        if (selector === undefined || opts.permission === undefined) {
+          throw new Error(
+            "Supply a selector and --permission for a single request, or use --batch-file <path>.",
+          );
+        }
         const agentId = resolveConnectorAgentId(opts.agent);
         if (opts.url !== undefined) {
           validateDiagnosticUrl(opts.url);
@@ -473,76 +450,22 @@ ${callbackPromptNotes}  - When multiple connector or permission actions are need
           return;
         }
 
-        const connectorSlug =
-          await resolveDiagnosticConnectorSelector(selector);
-        const customConnectorId = customConnectorIdFromSelector(connectorSlug);
-        if (customConnectorId !== undefined) {
-          throw new Error(
-            customConnectorSettingsGuidance(
-              customConnectorId,
-              await getPlatformOrigin(),
-              opts.permission,
-            ),
-          );
-        }
-        if (opts.url === undefined) {
-          throw new Error(
-            "--url is required for connector permission requests. Run okou connector check --url <FAILED_URL> --method <METHOD> and use the permission-request command it prints.",
-          );
-        }
-
-        const diagnosticRequest = buildConnectorUrlDiagnosticRequest({
-          url: opts.url,
-          method: opts.method,
-          connector: connectorSlug,
-          ...(opts.awsService === undefined
-            ? {}
-            : { awsService: opts.awsService }),
-          ...(opts.awsAction === undefined
-            ? {}
-            : { awsAction: opts.awsAction }),
-          ...(opts.awsTarget === undefined
-            ? {}
-            : { awsTarget: opts.awsTarget }),
-          ...(opts.awsQueryParam === undefined
-            ? {}
-            : { awsQueryParam: opts.awsQueryParam }),
-          ...(opts.awsHeaderPresent === undefined
-            ? {}
-            : { awsHeaderPresent: opts.awsHeaderPresent }),
-        });
-        const diagnostic = await diagnoseConnectorCheck(diagnosticRequest);
-        const result = resolveConnectorCheckDiagnostic(
-          diagnosticRequest,
-          diagnostic,
+        const result = await diagnosePermissionRequest(
+          selector,
+          opts.permission,
+          opts,
         );
-        if (result.connector.target.kind !== "builtin") {
+        if (result.policy.outcome === "allow") {
           throw new Error(
-            "Builtin permission requests require a builtin diagnostic target.",
+            `${permissionDescription(opts.permission)} is already allowed by Okou for ${result.request.method} ${result.request.url}. Provider authorization failures cannot be fixed with an Okou permission request.`,
           );
         }
-        const policy = permissionPolicyForDiagnostic({
-          result,
-          permission: opts.permission,
-          method: diagnosticRequest.method,
-          url: diagnosticRequest.url,
-        });
-        assertRequestablePolicy({
-          policy,
-          permission: opts.permission,
-          method: diagnosticRequest.method,
-          url: diagnosticRequest.url,
-        });
-
-        if (diagnosticRequest.aws !== undefined) {
-          console.log(
-            "AWS selectors describe the intended operation only; no SigV4 signature was validated and no AWS request was sent.",
-          );
-        }
+        if (result.request.aws !== undefined)
+          printAwsPermissionDiagnosticGuidance();
 
         await outputPermissionRequestMessage(
-          result.connector.target.connectorSlug,
-          result.connector.label,
+          result.connectorSlug,
+          result.label,
           opts.permission,
           agentId,
           opts.callbackPrompt,

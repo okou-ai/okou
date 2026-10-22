@@ -1046,6 +1046,26 @@
       "saving": "Enregistrement...",
       "userFallback": "là",
       "wouldLike": "Souhaite"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Accorder {{count}} autorisation",
+      "allowAll_many": "Accorder les {{count}} autorisations",
+      "allowAll_other": "Accorder les {{count}} autorisations",
+      "allowed": "Autorisations accordées",
+      "allowedCount": "{{allowed}} autorisations accordées sur {{total}}",
+      "alwaysNote": "Ces autorisations restent accordées jusqu’à ce que vous les modifiiez ou les révoquiez.",
+      "continue": "Continuer",
+      "continued": "La conversation a repris.",
+      "continueFailed": "Les autorisations ont été accordées, mais la conversation n’a pas pu reprendre. Réessayez de continuer.",
+      "continuing": "Reprise en cours…",
+      "details": "Voir le détail des autorisations",
+      "dismissed": "Aucune autorisation n’a été modifiée.",
+      "invalid": "Ce lien d’autorisation est invalide ou indisponible.",
+      "loadFailed": "Impossible de vérifier toutes les autorisations demandées. Aucune autorisation ne peut être modifiée.",
+      "loading": "Chargement des autorisations",
+      "notNow": "Pas maintenant",
+      "scopeNote": "S’applique à cet agent, pas uniquement à la tâche en cours.",
+      "title": "Accorder les autorisations suivantes"
     }
   },
   "billing": {
