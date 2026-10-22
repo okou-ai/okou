@@ -78,7 +78,16 @@ describe("okou generate image command", () => {
 
   beforeEach(() => {
     ablyRealtimeFake.reset();
-    server.use(ablyTokenExchangeHandler);
+    server.use(
+      ablyTokenExchangeHandler,
+      http.post(`${IMAGE_STATUS_URL}/reconcile`, () => {
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          status: "running",
+          type: "image",
+        });
+      }),
+    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
@@ -799,9 +808,25 @@ describe("okou generate image command", () => {
         tokenRequest: { mac: "private-realtime-signature" },
       },
     };
+    let submissions = 0;
+    let refreshes = 0;
+    let queries = 0;
     server.use(
       http.post(IMAGE_URL, () => {
+        submissions++;
         return HttpResponse.json(receipt, { status: 202 });
+      }),
+      http.post(`${IMAGE_STATUS_URL}/reconcile`, () => {
+        refreshes++;
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          status: "running",
+          type: "image",
+        });
+      }),
+      http.get(IMAGE_STATUS_URL, () => {
+        queries++;
+        return HttpResponse.json({});
       }),
     );
     await generateCommand.parseAsync([
@@ -820,16 +845,167 @@ describe("okou generate image command", () => {
     expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
       "private-realtime-signature",
     );
+    expect(submissions).toBe(1);
+    expect(refreshes).toBe(0);
+    expect(queries).toBe(0);
+  });
+
+  it.each(["refresh", "query"])(
+    "bounds and cancels a stalled %s request without resubmission",
+    async (phase) => {
+      const deadline = new AbortController();
+      const realTimeout = AbortSignal.timeout;
+      const timeout = vi
+        .spyOn(AbortSignal, "timeout")
+        .mockImplementation((ms) => {
+          return ms === 15 * 60 * 1000 ? deadline.signal : realTimeout(ms);
+        });
+      const started = deferred<void>();
+      const aborted = deferred<void>();
+      let submissions = 0;
+      let refreshes = 0;
+      let queries = 0;
+      async function stall(request: Request): Promise<Response> {
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve();
+          },
+          { once: true },
+        );
+        started.resolve();
+        await aborted.promise;
+        return new HttpResponse(null, { status: 503 });
+      }
+      server.use(
+        http.post(IMAGE_URL, () => {
+          submissions++;
+          return HttpResponse.json(
+            {
+              generationId: IMAGE_GENERATION_ID,
+              type: "image",
+              status: "queued",
+              realtime: {},
+            },
+            { status: 202 },
+          );
+        }),
+        http.post(`${IMAGE_STATUS_URL}/reconcile`, ({ request }) => {
+          refreshes++;
+          return phase === "refresh"
+            ? stall(request)
+            : HttpResponse.json({
+                generationId: IMAGE_GENERATION_ID,
+                status: "running",
+                type: "image",
+              });
+        }),
+        http.get(IMAGE_STATUS_URL, ({ request }) => {
+          queries++;
+          return stall(request);
+        }),
+      );
+      try {
+        const finished = expect(
+          generateCommand.parseAsync([
+            "node",
+            "okou",
+            "image",
+            "--raw-prompt",
+            "A fox",
+            "--wait",
+          ]),
+        ).rejects.toThrow("process.exit called");
+        await started.promise;
+        expect(timeout).toHaveBeenCalledWith(15 * 60 * 1000);
+        expect(timeout).toHaveBeenCalledWith(60_000);
+        deadline.abort();
+        await finished;
+        await aborted.promise;
+        expect(submissions).toBe(1);
+        expect(refreshes).toBe(1);
+        expect(queries).toBe(phase === "query" ? 1 : 0);
+        expect(mockConsoleLog).not.toHaveBeenCalled();
+        const stderr = mockConsoleError.mock.calls.flat().join("\n");
+        expect(stderr).toContain(
+          `okou generate get ${IMAGE_GENERATION_ID} --refresh --json`,
+        );
+        expect(stderr).toContain("do not submit another job");
+      } finally {
+        timeout.mockRestore();
+      }
+    },
+  );
+
+  it("does not retry refresh failures or submit a replacement while waiting", async () => {
+    let submissions = 0;
+    let refreshes = 0;
+    let queries = 0;
+    server.use(
+      http.post(IMAGE_URL, () => {
+        submissions++;
+        return HttpResponse.json(
+          {
+            generationId: IMAGE_GENERATION_ID,
+            type: "image",
+            status: "queued",
+            realtime: {},
+          },
+          { status: 202 },
+        );
+      }),
+      http.post(`${IMAGE_STATUS_URL}/reconcile`, () => {
+        refreshes++;
+        return HttpResponse.json(
+          { error: { message: "Refresh unavailable" } },
+          { status: 503 },
+        );
+      }),
+      http.get(IMAGE_STATUS_URL, () => {
+        queries++;
+        return HttpResponse.json({});
+      }),
+    );
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "okou",
+        "image",
+        "--raw-prompt",
+        "A fox",
+        "--wait",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(submissions).toBe(1);
+    expect(refreshes).toBe(1);
+    expect(queries).toBe(0);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Refresh unavailable",
+    );
   });
 
   it.each([IMAGE_RESULT.url, "https://app.okou.ai/artifacts/abcxyz1234.png"])(
-    "waits for an async generation and prints a complete URL for %s",
+    "reconciles an async generation and delivers the final artifact for %s",
     async (url) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
       const expectedUrl = url;
       let statusRequested = false;
+      let submissions = 0;
+      let reconciliations = 0;
       server.use(
+        http.post(`${IMAGE_STATUS_URL}/reconcile`, ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          reconciliations++;
+          return HttpResponse.json({
+            generationId: IMAGE_GENERATION_ID,
+            status: "running",
+            type: "image",
+          });
+        }),
         http.post(IMAGE_URL, () => {
+          submissions++;
           return HttpResponse.json(
             {
               generationId: IMAGE_GENERATION_ID,
@@ -853,6 +1029,7 @@ describe("okou generate image command", () => {
         }),
         http.get(IMAGE_STATUS_URL, ({ request }) => {
           statusRequested = true;
+          expect(reconciliations).toBe(1);
           expect(request.headers.get("authorization")).toBe(
             "Bearer test-token",
           );
@@ -879,10 +1056,80 @@ describe("okou generate image command", () => {
 
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(statusRequested).toBe(true);
+      expect(submissions).toBe(1);
+      expect(reconciliations).toBe(1);
       expect(stdout).toContain(`Image generated: ${expectedUrl}`);
       expect(stdout).toContain(`![${IMAGE_RESULT.filename}](<${expectedUrl}>)`);
     },
   );
+
+  it("polls and reconciles the same job to completion without webhook or realtime delivery", async () => {
+    let submissions = 0;
+    let refreshes = 0;
+    let queries = 0;
+    server.use(
+      http.post(IMAGE_URL, () => {
+        submissions++;
+        return HttpResponse.json(
+          {
+            generationId: IMAGE_GENERATION_ID,
+            type: "image",
+            status: "queued",
+            realtime: {
+              channelName: "user:user-1",
+              eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
+              tokenRequest: { keyName: "test.key" },
+            },
+          },
+          { status: 202 },
+        );
+      }),
+      http.post(
+        "https://main.realtime.ably.net/keys/test.key/requestToken",
+        () => {
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+      http.post(`${IMAGE_STATUS_URL}/reconcile`, async ({ request }) => {
+        expect(await request.json()).toEqual({});
+        refreshes++;
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          status: refreshes > 1 ? "completed" : "running",
+          type: "image",
+        });
+      }),
+      http.get(IMAGE_STATUS_URL, () => {
+        queries++;
+        expect(refreshes).toBe(queries);
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          type: "image",
+          status: refreshes > 1 ? "completed" : "running",
+          ...(refreshes > 1 ? { result: IMAGE_RESULT } : {}),
+        });
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "okou",
+      "image",
+      "--raw-prompt",
+      "A fox",
+      "--wait",
+      "--json",
+    ]);
+    expect(submissions).toBe(1);
+    expect(refreshes).toBe(2);
+    expect(queries).toBe(2);
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({
+      ...IMAGE_RESULT,
+      previewMarkdownBlock: `![${IMAGE_RESULT.filename}](<${IMAGE_RESULT.url}>)`,
+    });
+    expect(ablyRealtimeFake.clients).toHaveLength(0);
+  });
 
   it("prints a completed image while cancelling unfinished token redemption", async () => {
     const started = deferred<void>();

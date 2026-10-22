@@ -127,6 +127,15 @@ if (args[0] === "stop") {
   }
 
   beforeEach(() => {
+    server.use(
+      http.post(`${IMAGE_STATUS_URL}/reconcile`, () => {
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          status: "running",
+          type: "image",
+        });
+      }),
+    );
     chalk.level = 0;
     for (const command of imageBatchCommand.commands) {
       command.setOptionValue("visibility", undefined);

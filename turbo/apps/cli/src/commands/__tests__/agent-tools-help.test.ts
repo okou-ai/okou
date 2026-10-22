@@ -229,9 +229,33 @@ describe("agent-facing operational CLI help", () => {
     expect(generate).toContain(
       "Music, text, code, and document use connectors",
     );
+    expect(generate).toContain("durable job receipt immediately by default");
     expect(generate).toContain(
-      "wait for it to finish and use the returned artifact",
+      'use "okou generate image ... --wait" explicitly',
     );
+    expect(generate).toContain(
+      "retrieve and deliver the final artifact before marking the task complete",
+    );
+    expect(generate).toContain(
+      "a queued/running receipt is not a completed image",
+    );
+    expect(generate).toContain("Never submit a duplicate to check progress");
+    expect(generate).toContain(
+      "For other Okou generations, wait for completion and use the returned artifact",
+    );
+
+    const image = await helpFor(generateCommand, ["image"]);
+    expect(image).toContain("Returns the generation ID and status immediately");
+    expect(image).toContain("use image --wait explicitly");
+    expect(image).toContain(
+      "retrieve and deliver the final artifact before marking the task complete",
+    );
+    expect(image).toContain("never regenerate to check progress");
+    const get = await helpFor(generateCommand, ["get"]);
+    expect(get).toContain("without waiting or submitting another job");
+    expect(get).toContain("--refresh");
+    expect(get).toContain("Advance this job once before querying");
+    expect(get).toContain("--out <path>");
 
     const connectorGeneration = await helpFor(generateCommand, ["text"]);
     expect(connectorGeneration).toContain(

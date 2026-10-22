@@ -203,6 +203,64 @@ describe("durable OpenAI Responses image generation", () => {
     });
   });
 
+  it("lets the owner advance one response without a cron secret and leaves GET observational", async () => {
+    const fixture = await createFixture();
+    await fixture.actor.run(async () => {
+      const provider = mockOpenAiImageResponses();
+      const response = await fixture.generate();
+      const generationId = readAcceptedGenerationId(
+        await response.json(),
+        "image",
+        fixture.actor.userId,
+      );
+      await fixture.status(generationId);
+      expect(provider.retrievals).toStrictEqual([]);
+      const refresh = await fixture.app.request(
+        `/api/built-in-generations/${generationId}/reconcile`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({}),
+        },
+      );
+      expect(refresh.status).toBe(200);
+      expect(
+        builtInGenerationResponseSchema.parse(await refresh.json()),
+      ).toMatchObject({ generationId, status: "running" });
+      expect(provider.retrievals).toStrictEqual([provider.submission().id]);
+      expect(provider.submissions).toHaveLength(1);
+      await fixture.status(generationId);
+      expect(provider.retrievals).toHaveLength(1);
+    });
+  });
+
+  it("rejects an unrelated owner before retrieving a private provider response", async () => {
+    const fixture = await createFixture();
+    const provider = mockOpenAiImageResponses();
+    const response = await fixture.generate();
+    const generationId = readAcceptedGenerationId(
+      await response.json(),
+      "image",
+      fixture.actor.userId,
+    );
+    const other = await createPublicImageMember(context, { credits: 10_000 });
+    await other.run(async () => {
+      createRouteMocks(context).clerk.session(other.userId, other.orgId);
+      const app = createImageIoTestApp(context);
+      const refresh = await app.request(
+        `/api/built-in-generations/${generationId}/reconcile`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({}),
+        },
+      );
+      expect(refresh.status).toBe(404);
+    });
+    expect(provider.retrievals).toStrictEqual([]);
+    expect(provider.submissions).toHaveLength(1);
+  });
+
   it("maps source references and the edit mask to their Responses controls", async () => {
     const fixture = await createFixture();
     await fixture.actor.run(async () => {
@@ -277,6 +335,19 @@ describe("durable OpenAI Responses image generation", () => {
           error: { code: publicCode },
         });
         await fixture.reconcile();
+        const refresh = await fixture.app.request(
+          `/api/built-in-generations/${generationId}/reconcile`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({}),
+          },
+        );
+        expect(refresh.status).toBe(200);
+        expect(await refresh.json()).toMatchObject({
+          status: "failed",
+          error: { code: publicCode },
+        });
         expect(provider.submissions).toHaveLength(1);
         expect(provider.retrievals).toStrictEqual([]);
         await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);

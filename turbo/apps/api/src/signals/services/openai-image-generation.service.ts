@@ -14,6 +14,7 @@ import {
   builtInGenerationIsPrivate,
   completeBuiltInGenerationJob$,
   failBuiltInGenerationJob$,
+  getBuiltInGenerationJob$,
   getBuiltInGenerationWebhookJob$,
   mergeBuiltInGenerationJobInternal$,
   readBuiltInGenerationRequestInternal,
@@ -489,6 +490,47 @@ const recoverOpenAiImageReceipt$ = command(
       .set({ processedAt: nowDate() })
       .where(eq(openaiImageWebhookReceipts.eventId, receipt.eventId));
     signal.throwIfAborted();
+  },
+);
+
+// The authenticated caller can drive the same short task in previews and while
+// explicitly waiting. Ownership is checked before any provider or storage I/O.
+export const reconcileOwnedOpenAiImageJob$ = command(
+  async (
+    { set },
+    args: { generationId: string; orgId: string; userId: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const owned = await set(getBuiltInGenerationJob$, args, signal);
+    if (!owned) {
+      return false;
+    }
+    const job = await set(
+      getBuiltInGenerationWebhookJob$,
+      args.generationId,
+      signal,
+    );
+    if (!job) {
+      return true;
+    }
+    if (job.orgId !== args.orgId || job.userId !== args.userId) {
+      return false;
+    }
+    const internal = readBuiltInGenerationRequestInternal(job.request);
+    if (
+      internal.providerTask === "image-response" &&
+      (job.status === "queued" || job.status === "running")
+    ) {
+      const advanced = await settle(
+        set(advanceOpenAiImageJob$, job, signal),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!advanced.ok) {
+        L.warn("OpenAI image recovery deferred", { generationId: job.id });
+      }
+    }
+    return true;
   },
 );
 

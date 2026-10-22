@@ -61,6 +61,21 @@ export type BuiltInGenerationResponse = z.infer<
 >;
 
 export const builtInGenerationContract = c.router({
+  reconcile: {
+    method: "POST",
+    path: "/api/built-in-generations/:generationId/reconcile",
+    headers: authHeadersSchema,
+    pathParams: z.object({ generationId: z.string().uuid() }),
+    body: z.object({}),
+    responses: {
+      200: builtInGenerationResponseSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Advance an owned image job once without submitting another image",
+  },
   get: {
     method: "GET",
     path: "/api/built-in-generations/:generationId",

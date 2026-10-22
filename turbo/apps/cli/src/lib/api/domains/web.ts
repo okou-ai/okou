@@ -10,13 +10,22 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { MIMEType } from "node:util";
-import type {
-  BuiltInGenerationAcceptedResponse,
-  BuiltInGenerationResponse,
+import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import {
+  builtInGenerationContract,
+  type BuiltInGenerationAcceptedResponse,
+  type BuiltInGenerationResponse,
 } from "@okouai/api-contracts/contracts/built-in-generation";
-import { ApiRequestError, getBaseUrl } from "../core/client-factory";
+import {
+  ApiRequestError,
+  getBaseUrl,
+  handleError,
+} from "../core/client-factory";
 import { getActiveToken } from "../config";
-import { headersWithCliClientHeaders } from "../client-headers";
+import {
+  cliClientHeaderApi,
+  headersWithCliClientHeaders,
+} from "../client-headers";
 import { assertPrivateArtifactUrl } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
 import { downloadHostedSiteFiles } from "../../host/clone-hosted-site";
@@ -27,6 +36,20 @@ import {
 
 const IMAGE_GENERATION_POLL_INTERVAL_MS = 2_000;
 const IMAGE_GENERATION_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
+const IMAGE_GENERATION_REQUEST_TIMEOUT_MS = 60_000;
+
+function builtInGenerationClient(baseUrl: string, token: string) {
+  return initClient(builtInGenerationContract, {
+    baseUrl,
+    baseHeaders: { Authorization: `Bearer ${token}` },
+    api: cliClientHeaderApi,
+  });
+}
+
+function generationRequestSignal(owner?: AbortSignal): AbortSignal {
+  const deadline = AbortSignal.timeout(IMAGE_GENERATION_REQUEST_TIMEOUT_MS);
+  return owner ? AbortSignal.any([owner, deadline]) : deadline;
+}
 
 export type ImageGenerationAcceptedResponse =
   BuiltInGenerationAcceptedResponse & {
@@ -385,14 +408,6 @@ async function parseErrorBody(
   return { message, code };
 }
 
-function authenticatedJsonHeaders(token: string): Headers {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-  return headersWithCliClientHeaders(headers);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -415,21 +430,38 @@ async function getImageGenerationStatus(
   baseUrl: string,
   token: string,
   generationId: string,
+  signal: AbortSignal,
 ): Promise<ImageGenerationResponse> {
-  const response = await fetch(
-    new URL(`/api/built-in-generations/${generationId}`, baseUrl),
-    { headers: authenticatedJsonHeaders(token) },
-  );
-
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Failed to get generation status",
-    );
-    throw new ApiRequestError(message, code, response.status);
+  const result = await builtInGenerationClient(baseUrl, token).get({
+    headers: {},
+    params: { generationId },
+    fetchOptions: { signal: generationRequestSignal(signal) },
+  });
+  if (result.status !== 200) {
+    handleError(result, "Failed to get generation status");
   }
+  return result.body as ImageGenerationResponse;
+}
 
-  return (await response.json()) as ImageGenerationResponse;
+/** Advance an existing job once; never resubmit or retry an uncertain request. */
+async function reconcileBuiltInGeneration(
+  baseUrl: string,
+  token: string,
+  generationId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const result = await builtInGenerationClient(baseUrl, token).reconcile({
+    headers: {},
+    params: { generationId },
+    body: {},
+    fetchOptions: { signal: generationRequestSignal(signal) },
+  });
+  // Older APIs do not expose this optional accelerator. The caller still GETs
+  // the owned job, so a missing/private generation remains an error there. Never
+  // hide auth/server failures or resubmit to compensate for a missing endpoint.
+  if (result.status !== 200 && result.status !== 404) {
+    handleError(result, "Failed to refresh generation status");
+  }
 }
 
 function readImageGenerationResult(
@@ -500,20 +532,27 @@ async function waitForImageGenerationResult(args: {
 }): Promise<GenerateWebImageResult> {
   let notifier: RealtimeNotifier | null = null;
   const owner = new AbortController();
-  const deadlineTimer = setTimeout(() => {
-    return owner.abort();
-  }, IMAGE_GENERATION_WAIT_TIMEOUT_MS);
-  const signal = owner.signal;
+  const signal = AbortSignal.any([
+    owner.signal,
+    AbortSignal.timeout(IMAGE_GENERATION_WAIT_TIMEOUT_MS),
+  ]);
   let notifierCreated = false;
   const startedAt = Date.now();
   const timeoutMs = IMAGE_GENERATION_WAIT_TIMEOUT_MS;
 
   try {
-    while (Date.now() - startedAt < timeoutMs) {
+    while (!signal.aborted && Date.now() - startedAt < timeoutMs) {
+      await reconcileBuiltInGeneration(
+        args.baseUrl,
+        args.token,
+        args.accepted.generationId,
+        signal,
+      );
       const status = await getImageGenerationStatus(
         args.baseUrl,
         args.token,
         args.accepted.generationId,
+        signal,
       );
       const result = readImageGenerationResult(status, args.fallback);
       if (result) {
@@ -530,17 +569,18 @@ async function waitForImageGenerationResult(args: {
       if (notifier && !notifier.closed) {
         await notifier.wait(waitMs);
       } else {
-        await delay(waitMs);
+        await delay(waitMs, undefined, { signal });
       }
     }
+  } catch (error) {
+    if (!signal.aborted) throw error;
   } finally {
-    clearTimeout(deadlineTimer);
     owner.abort();
     await notifier?.close();
   }
 
   throw new ApiRequestError(
-    `${args.fallback} timed out (generationId: ${args.accepted.generationId})`,
+    `${args.fallback} timed out (generationId: ${args.accepted.generationId}). Retrieve this job with okou generate get ${args.accepted.generationId} --refresh --json; do not submit another job.`,
     "GENERATION_TIMEOUT",
     504,
   );
@@ -548,26 +588,25 @@ async function waitForImageGenerationResult(args: {
 
 export async function getBuiltInGeneration(
   generationId: string,
+  options?: { readonly refresh?: boolean },
 ): Promise<BuiltInGenerationResponse> {
   const token = await getActiveToken();
   if (!token) {
     throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
-  const response = await fetch(
-    new URL(
-      `/api/built-in-generations/${encodeURIComponent(generationId)}`,
-      await getBaseUrl(),
-    ),
-    { headers: authenticatedJsonHeaders(token) },
-  );
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Failed to get generation status",
-    );
-    throw new ApiRequestError(message, code, response.status);
+  const baseUrl = await getBaseUrl();
+  if (options?.refresh) {
+    await reconcileBuiltInGeneration(baseUrl, token, generationId);
   }
-  return (await response.json()) as BuiltInGenerationResponse;
+  const result = await builtInGenerationClient(baseUrl, token).get({
+    headers: {},
+    params: { generationId },
+    fetchOptions: { signal: generationRequestSignal() },
+  });
+  if (result.status !== 200) {
+    handleError(result, "Failed to get generation status");
+  }
+  return result.body;
 }
 
 /**

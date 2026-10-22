@@ -702,7 +702,8 @@ export function buildHelpText(
     ),
     "  Introduce Okou?       okou intro",
     "  List generators?       okou generate --help",
-    '  Generate image?        okou generate image --raw-prompt "..."',
+    '  Generate final image?  okou generate image --raw-prompt "..." --wait',
+    "  Image tasks: retrieve and deliver the final artifact before marking complete; a job receipt is not the final image. Query an existing job with okou generate get <id> --refresh; never regenerate to check progress.",
     '  Generate website?      okou generate website --prompt "..."',
     ...(canWriteHost
       ? [

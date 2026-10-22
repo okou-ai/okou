@@ -25,6 +25,7 @@ import {
   cronRenewGoogleCalendarWatchesContract,
   cronRenewGoogleWorkspaceEventSubscriptionsContract,
   cronReconcileBillingEntitlementsContract,
+  cronReconcileImageGenerationsContract,
   cronReconcileArtifactCatalogContract,
   cronReconcileSocialKitDownloadsContract,
   cronSteerRunTimeBudgetContract,
@@ -53,6 +54,10 @@ function readVercelConfig(): VercelConfig {
 }
 
 const expectedVercelCrons = [
+  {
+    path: cronReconcileImageGenerationsContract.process.path,
+    schedule: "* * * * *",
+  },
   {
     path: cronProcessBackgroundJobsContract.process.path,
     schedule: "* * * * *",

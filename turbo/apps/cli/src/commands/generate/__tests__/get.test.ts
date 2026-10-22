@@ -12,6 +12,10 @@ const statusUrl = `http://localhost:3000/api/built-in-generations/${generationId
 
 describe("okou generate get", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+    throw new Error("process.exit called");
+  }) as never);
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "okou-generation-"));
@@ -19,9 +23,12 @@ describe("okou generate get", () => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     getGenerationCommand.setOptionValue("out", undefined);
     getGenerationCommand.setOptionValue("json", undefined);
+    getGenerationCommand.setOptionValue("refresh", undefined);
   });
   afterEach(() => {
     log.mockClear();
+    error.mockClear();
+    exit.mockClear();
     vi.unstubAllEnvs();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -40,7 +47,12 @@ describe("okou generate get", () => {
           ? { error: { code: "GENERATION_FAILED", message: "Provider failed" } }
           : {}),
       };
+      let refreshes = 0;
       server.use(
+        http.post(`${statusUrl}/reconcile`, () => {
+          refreshes++;
+          return HttpResponse.json(job);
+        }),
         http.get(statusUrl, ({ request }) => {
           expect(request.headers.get("authorization")).toBe(
             "Bearer test-token",
@@ -60,8 +72,97 @@ describe("okou generate get", () => {
       ]);
       expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual(job);
       expect(existsSync(out)).toBe(false);
+      expect(refreshes).toBe(0);
     },
   );
+
+  it.each(["queued", "running", "completed", "failed"])(
+    "refreshes a %s job once before querying, without resubmission",
+    async (status) => {
+      const calls: string[] = [];
+      const job = { generationId, type: "image", status };
+      server.use(
+        http.post(`${statusUrl}/reconcile`, async ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          expect(await request.json()).toEqual({});
+          calls.push("refresh");
+          return HttpResponse.json(job);
+        }),
+        http.get(statusUrl, () => {
+          calls.push("get");
+          return HttpResponse.json(job);
+        }),
+      );
+      await generateCommand.parseAsync([
+        "node",
+        "okou",
+        "get",
+        generationId,
+        "--refresh",
+        "--json",
+      ]);
+      expect(calls).toEqual(["refresh", "get"]);
+      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual(job);
+    },
+  );
+
+  it("can still query an owned job on an older API without the reconcile endpoint", async () => {
+    const job = { generationId, type: "image", status: "running" };
+    const calls: string[] = [];
+    server.use(
+      http.post(`${statusUrl}/reconcile`, () => {
+        calls.push("refresh");
+        return HttpResponse.text("404 Not Found", { status: 404 });
+      }),
+      http.get(statusUrl, () => {
+        calls.push("get");
+        return HttpResponse.json(job);
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "okou",
+      "get",
+      generationId,
+      "--refresh",
+      "--json",
+    ]);
+    expect(calls).toEqual(["refresh", "get"]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual(job);
+  });
+
+  it("does not retry or query after an uncertain refresh failure", async () => {
+    let refreshes = 0;
+    let queries = 0;
+    server.use(
+      http.post(`${statusUrl}/reconcile`, () => {
+        refreshes++;
+        return HttpResponse.json(
+          { error: { code: "UNAVAILABLE", message: "Refresh unavailable" } },
+          { status: 503 },
+        );
+      }),
+      http.get(statusUrl, () => {
+        queries++;
+        return HttpResponse.json({});
+      }),
+    );
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "okou",
+        "get",
+        generationId,
+        "--refresh",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(refreshes).toBe(1);
+    expect(queries).toBe(0);
+    expect(error.mock.calls.flat().join("\n")).toContain("Refresh unavailable");
+  });
 
   it("downloads a completed image to the requested path", async () => {
     const job = {

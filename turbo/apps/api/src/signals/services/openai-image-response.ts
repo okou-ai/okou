@@ -322,6 +322,28 @@ export async function deleteOpenAiImageResponse(
   signal.throwIfAborted();
 }
 
+function usageShape(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) {
+    return "absent";
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  if (depth >= 4 || typeof value !== "object") {
+    return typeof value;
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 2).map((item: unknown) => {
+      return usageShape(item, depth + 1);
+    });
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      return [key, usageShape(item, depth + 1)];
+    }),
+  );
+}
+
 function responseFailure(error: unknown): OpenAiImageResponseError | undefined {
   return error ? classifyFailure(400, error) : undefined;
 }
@@ -378,6 +400,11 @@ export async function retrieveOpenAiImageResponse(
         imageHasUsage: Object.hasOwn(rawImage, "usage"),
         responseHasToolUsage: Object.hasOwn(rawResponse, "tool_usage"),
         mainModelUsageAvailable: Boolean(usage),
+        imageFields: Object.keys(rawImage),
+        responseFields: Object.keys(rawResponse),
+        responseUsageShape: usageShape(rawResponse.usage),
+        imageUsageShape: usageShape(rawImage.usage),
+        toolUsageShape: usageShape(rawResponse.tool_usage),
       },
     );
   }

@@ -13,6 +13,10 @@ export const getGenerationCommand = new Command()
   .argument("<generation-id>", "Generation ID returned by image submission")
   .option("--json", "Print the complete job status and result as JSON")
   .option(
+    "--refresh",
+    "Advance this job once before querying (file:write); never submits another job",
+  )
+  .option(
     "--out <path>",
     "Download the image to this path only if the job is completed",
   )
@@ -20,9 +24,11 @@ export const getGenerationCommand = new Command()
     withErrorHandler(
       async (
         generationId: string,
-        options: { json?: boolean; out?: string },
+        options: { json?: boolean; out?: string; refresh?: boolean },
       ) => {
-        const job = await getBuiltInGeneration(generationId);
+        const job = await getBuiltInGeneration(generationId, {
+          refresh: options.refresh,
+        });
         let download: Awaited<ReturnType<typeof downloadWebFile>> | undefined;
         if (options.out && job.status === "completed") {
           if (job.type !== "image" || typeof job.result?.id !== "string") {
@@ -51,7 +57,7 @@ export const getGenerationCommand = new Command()
           console.log(`Downloaded: ${download.path}`);
         } else if (job.status === "queued" || job.status === "running") {
           console.log(
-            `Query again: okou generate get ${job.generationId}${options.out ? ` --out ${JSON.stringify(options.out)}` : " --json"}`,
+            `Query again: okou generate get ${job.generationId} --refresh${options.out ? ` --out ${JSON.stringify(options.out)}` : " --json"}`,
           );
         }
       },

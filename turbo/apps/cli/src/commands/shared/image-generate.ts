@@ -343,6 +343,7 @@ Examples:
   Size and quality:      okou generate image --compiled-prompt "A poster" --size 1024x1536 --quality high
   Image-to-image:        okou generate image --compiled-prompt "Turn this mockup into a polished product shot" --image-url https://example.com/mockup.png
   Query a job:           okou generate get <generation-id> --json
+  Refresh a job once:    okou generate get <generation-id> --refresh --json
   Download a result:     okou generate get <generation-id> --out image.png
   Wait explicitly:       okou generate image --raw-prompt "A watercolor fox" --wait
   List providers:        okou generate image
@@ -352,7 +353,11 @@ Output:
   Returns the generation ID and status immediately with --compiled-prompt
   or --raw-prompt. Query with okou generate get <generation-id>; do not submit
   another job to check progress. --wait explicitly waits for the completed
-  image URL and metadata. --visibility requires --wait. Older APIs that return
+  image URL and metadata, advancing the same job while waiting. For natural-language
+  tasks requesting a final image, use image --wait explicitly. A queued/running
+  receipt is not a completed image: retrieve and deliver the final artifact before
+  marking the task complete. After a timeout, use get --refresh for the same ID;
+  never regenerate to check progress. --visibility requires --wait. Older APIs that return
   a completed image directly are also supported. Use --json for JSON. With
   --style <id> --prompt "..." --compile, prints a prompt-compilation packet
   for the current agent.
@@ -448,12 +453,12 @@ ${formatRegistryListing(styles, "image styles")}`;
           return;
         }
 
+        await assertPaidToolEnabled("image-generation");
         if (options.visibility && !options.wait) {
           throw new Error(
             "--visibility requires --wait so sharing is applied after completion",
           );
         }
-        await assertPaidToolEnabled("image-generation");
         const compression = parseCompression(options.compression);
         const inputFidelity = parseInputFidelity(options.inputFidelity);
         const imagePromptStrength = parseImagePromptStrength(
