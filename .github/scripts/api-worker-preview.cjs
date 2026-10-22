@@ -2,7 +2,9 @@
 // Run from the repository root with Node 24 and the installed toolchain.
 // deploy: JOB_REF, API_ENV_FILE, NEON_API_KEY, NEON_PROJECT_ID,
 // CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GH_TOKEN, GITHUB_REPOSITORY.
-// cleanup uses the same credentials except API_ENV_FILE; accepts PR refs only.
+// PR deploys also require the captured event's EXPECTED_PR_HEAD_SHA.
+// deploy reads the branch prepared by deploy-api; it never creates or migrates it.
+// cleanup needs only JOB_REF, Cloudflare and GitHub credentials; PR refs only.
 // Credentials stay in memory/environment or private temporary files, never argv.
 // Only control-plane APIs are called: never the deployed Worker.
 const fs = require("node:fs");
@@ -23,7 +25,7 @@ function identities(ref) {
   if (!/^(pr-[1-9][0-9]*|staging)$/.test(ref)) {
     throw new Error("Invalid Worker preview job reference");
   }
-  return { worker: `okou-api-preview-${ref}`, branch: `preview-worker/${ref}` };
+  return { worker: `okou-api-preview-${ref}`, branch: `preview/${ref}` };
 }
 
 // The shared resolver writes literal key=value records, including multiline PEMs.
@@ -157,115 +159,28 @@ function command(label, args, env, cwd) {
   }
 }
 
-async function main(mode) {
-  const ref = required("JOB_REF");
-  const names = identities(ref);
-  if (!["deploy", "cleanup"].includes(mode))
-    throw new Error("Usage: api-worker-preview.cjs deploy|cleanup");
-  if (mode === "cleanup" && ref === "staging")
-    throw new Error("Cleanup requires a PR reference");
-  const account = required("CLOUDFLARE_ACCOUNT_ID");
-  const project = required("NEON_PROJECT_ID");
-  if (!/^[a-f0-9]{32}$/.test(account) || !/^[a-z0-9-]+$/.test(project))
-    throw new Error("Invalid control-plane account/project identity");
-  const cfToken = required("CLOUDFLARE_API_TOKEN");
-  const neonToken = required("NEON_API_KEY");
-  const cf = async (method, route, body, missing = false) => {
-    const response = await request(
-      `https://api.cloudflare.com/client/v4/accounts/${account}`,
-      cfToken,
-      method,
-      route,
-      body,
-      missing,
-    );
-    if (response === null) return null;
-    if (response.success !== true)
-      throw new Error("Cloudflare control-plane operation rejected");
-    return response.result;
-  };
-  const neon = (method, route, body) =>
-    request(
-      `https://console.neon.tech/api/v2/projects/${project}`,
-      neonToken,
-      method,
-      route,
-      body,
-    );
-
-  // Both jobs hold the same non-cancelling per-preview concurrency lock. Recheck
-  // GitHub state inside that lock so delayed CI cannot recreate a closed preview.
-  if (ref.startsWith("pr-")) {
-    const repository = required("GITHUB_REPOSITORY");
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
-      throw new Error("Invalid repository identity");
-    const pr = await request(
-      "https://api.github.com",
-      required("GH_TOKEN"),
-      "GET",
-      `/repos/${repository}/pulls/${ref.slice(3)}`,
-    );
-    if (pr.state !== (mode === "cleanup" ? "closed" : "open"))
-      throw new Error("PR state does not authorize Worker preview operation");
-    if (mode === "deploy" && pr.head?.repo?.full_name !== repository)
-      throw new Error("Fork PR cannot deploy a Worker preview");
-  }
-
-  // Neon search can be fuzzy; ownership always uses an exact branch name.
+// deploy-api is the only owner of branch creation, restore, migration and seed.
+// Workers uses a direct connection to that exact existing branch, never a second
+// compute/branch or a hostname derived by rewriting Vercel's pooled URL.
+async function sharedPreviewDatabase(neon, branchName) {
   const branches = (
     await neon(
       "GET",
-      `/branches?search=${encodeURIComponent(names.branch)}&limit=100`,
+      `/branches?search=${encodeURIComponent(branchName)}&limit=100`,
     )
   ).branches;
   if (!Array.isArray(branches) || branches.length >= 100)
     throw new Error("Incomplete Neon preview inventory");
-  const matches = branches.filter((branch) => branch.name === names.branch);
-  if (matches.length > 1) throw new Error("Ambiguous Neon preview identity");
-  let branch = matches[0];
-  if (branch && !/^br-[a-z0-9-]+$/.test(branch.id))
-    throw new Error("Invalid Neon branch ID");
-  const hyperdrives = await cf("GET", "/hyperdrive/configs");
-  if (!Array.isArray(hyperdrives))
-    throw new Error("Invalid Hyperdrive inventory");
-  const configs = hyperdrives.filter((config) => config.name === names.worker);
-  if (configs.length > 1)
-    throw new Error("Ambiguous Hyperdrive preview identity");
-  let hyperdrive = configs[0];
-  if (hyperdrive && !/^[a-f0-9]{32}$/.test(hyperdrive.id))
-    throw new Error("Invalid Hyperdrive ID");
-
-  if (mode === "cleanup") {
-    // Delete the Worker before removing its database binding and origin branch.
-    await cf("DELETE", `/workers/scripts/${names.worker}`, undefined, true);
-    if (hyperdrive) await cf("DELETE", `/hyperdrive/configs/${hyperdrive.id}`);
-    if (branch) await neon("DELETE", `/branches/${branch.id}`);
-    console.log(`Removed Worker preview resources for ${ref}`);
-    return;
-  }
-
-  // Never restore/reset a branch, and never touch preview/<ref> or its parent.
-  if (!branch) {
-    branch = (
-      await neon("POST", "/branches", {
-        branch: { name: names.branch },
-        endpoints: [{ type: "read_write" }],
-      })
-    ).branch;
-  }
-  if (!/^br-[a-z0-9-]+$/.test(branch?.id) || branch.name !== names.branch)
-    throw new Error("Invalid Neon branch identity");
-  let ready = false;
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const current = (await neon("GET", `/branches/${branch.id}`)).branch;
-    if (current?.current_state === "ready") {
-      ready = true;
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  if (!ready)
-    throw new Error("Neon Worker preview branch did not become ready");
+  const matches = branches.filter((branch) => branch.name === branchName);
+  if (matches.length !== 1 || !/^br-[a-z0-9-]+$/.test(matches[0].id))
+    throw new Error("Expected one existing shared API preview branch");
+  const branch = (await neon("GET", `/branches/${matches[0].id}`)).branch;
+  if (
+    branch?.id !== matches[0].id ||
+    branch.name !== branchName ||
+    branch.current_state !== "ready"
+  )
+    throw new Error("Shared API preview branch is not ready");
   const connection = await neon(
     "GET",
     `/connection_uri?branch_id=${encodeURIComponent(branch.id)}&database_name=neondb&role_name=neondb_owner&pooled=false`,
@@ -285,6 +200,91 @@ async function main(mode) {
   )
     throw new Error("Expected a direct Neon database endpoint");
   database.searchParams.set("sslmode", "verify-full");
+  console.log(`Reuse prepared API preview branch ${branchName} (${branch.id})`);
+  return database;
+}
+
+async function main(mode) {
+  const ref = required("JOB_REF");
+  const names = identities(ref);
+  if (!["deploy", "cleanup"].includes(mode))
+    throw new Error("Usage: api-worker-preview.cjs deploy|cleanup");
+  if (mode === "cleanup" && ref === "staging")
+    throw new Error("Cleanup requires a PR reference");
+  const account = required("CLOUDFLARE_ACCOUNT_ID");
+  if (!/^[a-f0-9]{32}$/.test(account))
+    throw new Error("Invalid Cloudflare account identity");
+  const cfToken = required("CLOUDFLARE_API_TOKEN");
+  const cf = async (method, route, body, missing = false) => {
+    const response = await request(
+      `https://api.cloudflare.com/client/v4/accounts/${account}`,
+      cfToken,
+      method,
+      route,
+      body,
+      missing,
+    );
+    if (response === null) return null;
+    if (response.success !== true)
+      throw new Error("Cloudflare control-plane operation rejected");
+    return response.result;
+  };
+  // Turbo may cancel a superseded preview run. Reconcile exact resource names
+  // on the next run, reject stale PR revisions and never replay uncertain writes.
+  // Cleanup executes trusted default-branch code and never owns the shared DB.
+  const assertCurrentPreview = async () => {
+    if (!ref.startsWith("pr-")) return;
+    const repository = required("GITHUB_REPOSITORY");
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
+      throw new Error("Invalid repository identity");
+    const pr = await request(
+      "https://api.github.com",
+      required("GH_TOKEN"),
+      "GET",
+      `/repos/${repository}/pulls/${ref.slice(3)}`,
+    );
+    if (pr.state !== (mode === "cleanup" ? "closed" : "open"))
+      throw new Error("PR state does not authorize Worker preview operation");
+    if (mode === "deploy" && pr.head?.repo?.full_name !== repository)
+      throw new Error("Fork PR cannot deploy a Worker preview");
+    if (mode === "deploy" && pr.head?.sha !== required("EXPECTED_PR_HEAD_SHA"))
+      throw new Error("Superseded PR revision cannot deploy a Worker preview");
+  };
+  await assertCurrentPreview();
+
+  const hyperdrives = await cf("GET", "/hyperdrive/configs");
+  if (!Array.isArray(hyperdrives))
+    throw new Error("Invalid Hyperdrive inventory");
+  const configs = hyperdrives.filter((config) => config.name === names.worker);
+  if (configs.length > 1)
+    throw new Error("Ambiguous Hyperdrive preview identity");
+  let hyperdrive = configs[0];
+  if (hyperdrive && !/^[a-f0-9]{32}$/.test(hyperdrive.id))
+    throw new Error("Invalid Hyperdrive ID");
+
+  if (mode === "cleanup") {
+    // Shared Neon branch cleanup belongs exclusively to the existing DB owner.
+    await cf("DELETE", `/workers/scripts/${names.worker}`, undefined, true);
+    if (hyperdrive) await cf("DELETE", `/hyperdrive/configs/${hyperdrive.id}`);
+    console.log(`Removed Worker preview resources for ${ref}`);
+    return;
+  }
+
+  const project = required("NEON_PROJECT_ID");
+  if (!/^[a-z0-9-]+$/.test(project))
+    throw new Error("Invalid Neon project identity");
+  const neonToken = required("NEON_API_KEY");
+  const neon = (method, route) => {
+    if (method !== "GET")
+      throw new Error("Worker deployment may only read shared Neon resources");
+    return request(
+      `https://console.neon.tech/api/v2/projects/${project}`,
+      neonToken,
+      method,
+      route,
+    );
+  };
+  const database = await sharedPreviewDatabase(neon, names.branch);
   fs.chmodSync(required("API_ENV_FILE"), 0o600);
   const runtime = parseEnvironment(
     fs.readFileSync(required("API_ENV_FILE"), "utf8"),
@@ -294,18 +294,13 @@ async function main(mode) {
     throw new Error("Only preview runtime configuration is allowed");
   const root = process.cwd();
   command(
-    "Migrate isolated Worker preview database",
-    ["-F", "@okouai/db", "db:migrate"],
-    { DATABASE_URL: runtime.DATABASE_URL },
-    path.join(root, "turbo"),
-  );
-  command(
     "Build API Worker",
     ["--dir", "turbo/apps/api", "build:worker"],
     {},
     root,
   );
 
+  await assertCurrentPreview();
   const origin = {
     scheme: "postgres",
     host: database.hostname,
@@ -412,6 +407,7 @@ module.exports = {
   packSecrets,
   request,
   command,
+  sharedPreviewDatabase,
   main,
 };
 if (require.main === module) {
