@@ -177,11 +177,6 @@
       "owner": "upsertBuiltinConnectorTokenConnection$"
     },
     {
-      "id": "TX-0123",
-      "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
-      "owner": "reconcileCanceledBillingCandidate"
-    },
-    {
       "id": "TX-0124",
       "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
       "owner": "refreshRecoveredBillingCandidate"
