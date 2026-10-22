@@ -42,26 +42,7 @@ case "$endpoint" in
     if [ "${MOCK_PR_STATE:-closed}" = "error" ]; then
       exit 1
     fi
-    if [[ " $* " == *" --jq .state "* ]]; then
-      printf '%s\n' "${MOCK_PR_STATE:-closed}"
-    else
-      printf 'feature/late-approval\tokou-ai/okou\t%s\n' "${MOCK_PR_STATE:-closed}"
-    fi
-    ;;
-  repos/okou-ai/okou/actions/runs)
-    if [ "${MOCK_ACTIVE_RUN:-false}" = "true" ] && [[ " $* " == *" status=in_progress "* ]]; then
-      cat <<'JSON'
-[{"workflow_runs":[{"id":100,"name":"Turbo","status":"in_progress","event":"pull_request","head_sha":"old","head_branch":"feature/late-approval","head_repository":{"full_name":"okou-ai/okou"},"path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/100"}]}]
-JSON
-    else
-      printf '[{"workflow_runs":[]}]\n'
-    fi
-    ;;
-  repos/okou-ai/okou/actions/runs/100/force-cancel)
-    printf 'cancel\n' >>"$MOCK_ORDER_LOG"
-    printf 'HTTP/2.0 409\nContent-Type: application/json\n\n'
-    echo '{"message":"Cannot cancel a workflow run that is not in progress.","status":"409"}'
-    exit 1
+    printf '%s\n' "${MOCK_PR_STATE:-closed}"
     ;;
   *)
     echo "unexpected gh endpoint: ${endpoint}" >&2
@@ -98,9 +79,6 @@ cat >"${fake_bin}/ansible-playbook" <<'SH'
 set -euo pipefail
 if [ -n "${MOCK_ANSIBLE_LOG:-}" ]; then
   printf 'ansible\n' >>"$MOCK_ANSIBLE_LOG"
-  if [ -n "${MOCK_ORDER_LOG:-}" ]; then
-    printf 'delete\n' >>"$MOCK_ORDER_LOG"
-  fi
   exit 0
 fi
 printf 'cleanup-entered\n' >"$MOCK_CLEANUP_READY_FIFO"
@@ -137,29 +115,6 @@ for rejected_state in open error; do
 done
 [ ! -e "$authority_ansible_log" ] ||
   fail "cleanup reached Ansible without closed-PR authority"
-
-# A stale run status and cancellation conflict must still allow the locked
-# cleanup to delete the namespace after issuing its cancellation request.
-cancel_order_log="${tmp_dir}/cancel-order.log"
-PATH="${fake_bin}:$PATH" \
-  JOB_REF=pr-42 \
-  GH_TOKEN=test-token \
-  GITHUB_REPOSITORY=okou-ai/okou \
-  GITHUB_RUN_ID=900 \
-  METAL_HOSTS=metal-a.example.test \
-  METAL_USER=runner \
-  PR_NUMBER=42 \
-  MOCK_ANSIBLE_LOG="${tmp_dir}/cancel-ansible.log" \
-  MOCK_ORDER_LOG="$cancel_order_log" \
-  MOCK_ACTIVE_RUN=true \
-  MOCK_LOCK_ROOT="$lock_root" \
-  "$lock_script" "$namespace_cleanup_script" \
-  >"${tmp_dir}/cancel-cleanup.out" 2>"${tmp_dir}/cancel-cleanup.err" || {
-  sed 's/^/  /' "${tmp_dir}/cancel-cleanup.err" >&2
-  fail "locked cleanup did not continue after the cancellation conflict"
-}
-[ "$(cat "$cancel_order_log")" = $'cancel\ndelete' ] ||
-  fail "closed-PR cleanup must cancel CI before deleting its runner namespace"
 
 cleanup_ready_fifo="${tmp_dir}/cleanup-ready"
 cleanup_release_fifo="${tmp_dir}/cleanup-release"

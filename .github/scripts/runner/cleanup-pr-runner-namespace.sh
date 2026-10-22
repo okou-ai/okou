@@ -34,11 +34,8 @@ if [ "$JOB_REF" != "pr-${PR_NUMBER}" ]; then
   exit 2
 fi
 
-# Cancel owners while holding the namespace lock, then delete without waiting
-# for GitHub's run status to converge. Recheck closed-PR authority afterward.
-RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-  "${SCRIPT_DIR}/../cancel-superseded-merge-group-runs.sh"
-
+# The caller requests CI cancellation before taking the namespace lock. Recheck
+# closed-PR authority here before deleting resources under that lock.
 if ! pr_state=$(gh api --method GET \
   "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
   --jq '.state' 2>&1); then

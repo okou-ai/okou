@@ -101,6 +101,10 @@ case "$endpoint" in
     fi
     ;;
   repos/okou-ai/okou/actions/runs/100/force-cancel)
+    if ! flock -n "${MOCK_LOCK_ROOT}/metal.example.test-pr-${MOCK_BLOCKED_PR}.lock" true; then
+      echo "CI cancellation was delayed until after namespace lock acquisition" >&2
+      exit 1
+    fi
     printf 'HTTP/2.0 %s\nContent-Type: application/json\n\n' "$MOCK_CANCEL_HTTP_STATUS"
     echo 'gh: cancellation failed' >&2
     exit 1

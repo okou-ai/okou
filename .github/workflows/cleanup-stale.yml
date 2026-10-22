@@ -332,14 +332,22 @@ jobs:
 
             PR_FAILED=0
 
-            # Cancel CI and clean the PR namespace under Turbo's lifecycle lock.
+            # Request cancellation before acquiring a lock an old owner may hold.
+            if ! PR_NUMBER="$PR_NUMBER" \
+              RUNNER_OWNER_SCOPE=closed-pr-cleanup \
+              "$GITHUB_WORKSPACE/.github/scripts/cancel-superseded-merge-group-runs.sh"; then
+              echo "::warning::CI cancellation failed for pr-${PR_NUMBER}; retaining its resources and continuing with the next PR"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+
+            # Hold the namespace lock through the final PR check and deletion.
             JOB_REF="pr-${PR_NUMBER}"
             export JOB_REF PR_NUMBER
             if ! "$GITHUB_WORKSPACE/.github/scripts/runner/with-runner-lifecycle-lock.sh" \
               "$GITHUB_WORKSPACE/.github/scripts/runner/cleanup-pr-runner-namespace.sh"; then
               echo "::warning::PR runner cleanup failed for pr-${PR_NUMBER}"
-              FAILED=$((FAILED + 1))
-              continue
+              PR_FAILED=1
             fi
 
             # Cleanup Stripe CLI listener
