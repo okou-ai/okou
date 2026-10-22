@@ -27,7 +27,7 @@ def request(value, run, begin, end):
         raise ValueError("missing original held claim request")
     received = batch.clock(value["received_ns"], begin, end)
     body = value["body"]
-    if not isinstance(body, dict) or set(body) != {"runnerIdentity", "capabilities", "nativeContinuationSupported", "telemetry"}:
+    if not isinstance(body, dict) or set(body) != {"runnerIdentity", "capabilities", "telemetry"}:
         raise ValueError("actual provider claim body changed")
     identity = body["runnerIdentity"]
     if not isinstance(identity, dict):
@@ -47,7 +47,7 @@ def request(value, run, begin, end):
             or telemetry["jobDiscoveredToClaimRequestMs"] > 2**53-1):
         raise ValueError("claim discovery telemetry malformed")
     exact(body, {"runnerIdentity": identity, "capabilities": capabilities,
-                "nativeContinuationSupported": True, "telemetry": telemetry}, "claim body contract changed")
+                "telemetry": telemetry}, "claim body contract changed")
     exact(value, {"path": f"/api/runners/jobs/{run}/claim", "received_ns": received, "body": body},
           "claim route is not the original candidate")
     return runner
