@@ -1670,7 +1670,7 @@ impl ApiClient {
         let mut body_read_elapsed = None;
         let mut decode_elapsed = None;
         let result = async {
-            let resp = request.send().await?;
+            let resp = request.send_observed_claim(run_id, execution_started_at).await?;
             let headers_received_at = Instant::now();
             let request_to_response_headers_elapsed =
                 headers_received_at.duration_since(request_to_response_headers_started_at);
@@ -1684,6 +1684,9 @@ impl ApiClient {
                 client_session_id = %request_context.client_session_id,
                 http_status = status,
                 execution_to_response_headers_ms = duration_ms(execution_to_response_headers_elapsed),
+                http_version = ?resp.version(),
+                response_cf_ray = claim_cf_ray(resp.headers()),
+                response_vercel_id = claim_vercel_id(resp.headers()),
                 "claim response headers received"
             );
 
@@ -1943,6 +1946,34 @@ impl ApiClient {
             .timeout(BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT)
             .json(&serde_json::json!({}))
     }
+}
+
+// Only provider-issued request identifiers are retained, never arbitrary
+// response headers. Invalid/unknown shapes are simply unobserved diagnostics.
+fn claim_cf_ray(headers: &reqwest::header::HeaderMap) -> Option<&str> {
+    let value = headers.get("cf-ray")?.to_str().ok()?;
+    let (ray, colo) = value.split_once('-')?;
+    (ray.len() == 16
+        && ray.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && colo.len() == 3
+        && colo.bytes().all(|byte| byte.is_ascii_uppercase()))
+    .then_some(value)
+}
+
+fn claim_vercel_id(headers: &reqwest::header::HeaderMap) -> Option<&str> {
+    let value = headers.get("x-vercel-id")?.to_str().ok()?;
+    let (region, request_id) = value.split_once("::")?;
+    (value.len() <= 128
+        && (4..=6).contains(&region.len())
+        && region
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        && region.bytes().any(|byte| byte.is_ascii_digit())
+        && !request_id.is_empty()
+        && request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-')))
+    .then_some(value)
 }
 
 // The callback is a no-op in production and lets raw-HTTP tests acknowledge the

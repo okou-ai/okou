@@ -1,6 +1,6 @@
 use std::error::Error as _;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use api_contracts::generated::constants::client::headers::{
     CLIENT_REQUEST_ID_HEADER, CLIENT_SESSION_ID_HEADER, CLIENT_TYPE_HEADER, CLIENT_VERSION_HEADER,
@@ -17,6 +17,9 @@ use crate::error::{
     ApiFailureKind, ApiRequestContext, ApiTransportCause, ApiTransportError, ProviderError,
     ProviderResult,
 };
+
+mod transport_timing;
+use transport_timing::{ConnectionTimingLayer, TimedResolver};
 
 /// Validate and normalize the Runner API base URL before authenticated requests.
 pub fn normalize_api_base_url(value: &str) -> ProviderResult<String> {
@@ -289,6 +292,14 @@ impl PreparedApiRequest {
             .await
             .map_err(|e| api_transport_error(context, e))
     }
+
+    pub(crate) async fn send_observed_claim(
+        self,
+        run_id: runner_types::ids::RunId,
+        execution_started_at: Instant,
+    ) -> ProviderResult<Response> {
+        transport_timing::send_claim(self, run_id, execution_started_at).await
+    }
 }
 
 impl ClientHeaders {
@@ -351,6 +362,8 @@ impl HttpClient {
 
         let client = Client::builder()
             .timeout(DEFAULT_TIMEOUT)
+            .dns_resolver(TimedResolver::default())
+            .connector_layer(ConnectionTimingLayer)
             .build()
             .map_err(|e| ProviderError::Internal(format!("http client: {e}")))?;
 

@@ -20,12 +20,15 @@ futures-util = { workspace = true, features = ["async-await", "async-await-macro
 nix = { workspace = true, features = ["fs", "inotify"] }
 reqwest = { workspace = true, features = ["json", "rustls"] }
 hyper.workspace = true
+hyper-util = { workspace = true, features = ["client-legacy", "tokio"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 serde_path_to_error.workspace = true
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
+tower-layer.workspace = true
+tower-service.workspace = true
 tracing = { workspace = true, features = ["attributes", "std"] }
 url = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }

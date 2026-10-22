@@ -121,6 +121,7 @@ hmac = { version = "0.13.0", default-features = false }
 http-body = { version = "1", default-features = false }
 httpmock = { version = "0.9", default-features = false }
 hyper = { version = "1", default-features = false }
+hyper-util = { version = "0.1", default-features = false }
 idna = { version = "1", default-features = false }
 libc = { version = "0.2", default-features = false }
 log = { version = "0.4", default-features = false }
