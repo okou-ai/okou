@@ -116,16 +116,16 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0",
-    "@types/tr46": "5.0.1",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
+    "@types/node": "^24.3.0",
+    "@types/tr46": "5.0.1",
+    "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
     "msw": "^2.13.2",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
-    "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }

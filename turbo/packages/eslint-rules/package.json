@@ -28,17 +28,17 @@
     "libpg-query": "17.7.4"
   },
   "devDependencies": {
-    "@typescript-eslint/rule-tester": "^8.71.1",
-    "@types/node": "^24.3.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
+    "@types/node": "^24.3.0",
+    "@typescript-eslint/rule-tester": "^8.71.1",
+    "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
-    "@typescript/native": "npm:typescript@7.0.2",
+    "tsx": "^4.21.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "^8.71.1",
-    "tsx": "^4.21.0",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }
