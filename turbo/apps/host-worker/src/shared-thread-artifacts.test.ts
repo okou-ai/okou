@@ -11,7 +11,20 @@ import { fetchWorker } from "./test-helpers";
 
 type Env = Parameters<typeof worker.fetch>[1];
 
-const server = setupServer();
+const server = setupServer(
+  http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
+    return HttpResponse.json({ pointer: null });
+  }),
+  http.get(
+    "https://authority.test/api/host/delivery/:siteId/:deploymentId",
+    () => {
+      return HttpResponse.json({ allowed: true, decision: "allow" });
+    },
+  ),
+  http.get("https://authority.test/api/host/sites/:siteId/access", () => {
+    return HttpResponse.json({ allowed: true, decision: "allow" });
+  }),
+);
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
 });
@@ -22,12 +35,11 @@ afterAll(() => {
   server.close();
 });
 
-test("activated hosted snapshots retain no-store headers and recheck access for every resource", async () => {
+test("hosted snapshots retain no-store headers and recheck access for every resource", async () => {
   const f = fixture();
   const env = {
     ...f.env,
     HOSTED_SITE_API_ORIGIN: "https://authority.test",
-    HOSTED_SITE_ACCESS_ENABLED: "true",
   };
   let allowed = true;
   server.use(
@@ -181,6 +193,7 @@ function fixture(tokenLength = 10) {
     HOSTED_SITES_BUCKET: bucket,
     PRIVATE_ARTIFACTS_BUCKET: bucket,
     PUBLIC_ARTIFACT_HOST: "a.okou.io",
+    HOSTED_SITE_API_ORIGIN: "https://authority.test",
     HOST_DOMAIN: "sites.vm0.io",
     OKOU_HOST_DOMAIN: "okou.app",
   };
@@ -321,11 +334,11 @@ test("revoking the parent denies network requests with warm Worker caches, inclu
     for (const method of ["GET", "GET", "HEAD"]) {
       const response = await fetchWorker(new Request(url, { method }), f.env);
       expect(response.status).toBe(200);
-      // HTML documents are always fetched; their assets stay cacheable.
+      // Files retain immutable caching; HTML resources recheck Site access.
       expect(response.headers.get("cache-control")).toBe(
-        url === f.siteUrl
-          ? "private, no-store"
-          : "private, max-age=31536000, immutable",
+        url === f.fileUrl
+          ? "private, max-age=31536000, immutable"
+          : "private, no-store",
       );
     }
   }

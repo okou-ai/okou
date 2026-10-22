@@ -120,7 +120,6 @@ function environment(
     ...(configured
       ? {
           HOSTED_SITE_API_ORIGIN: "https://authority.test",
-          HOSTED_SITE_ACCESS_ENABLED: "true",
         }
       : {}),
     HOSTED_SITES_BUCKET: {
@@ -144,32 +143,7 @@ function environment(
   };
 }
 
-it.each([true, false])(
-  "preserves the old API's allow=%s decision before activation",
-  async (allowed) => {
-    server.use(
-      http.get(endpoint, () => {
-        return HttpResponse.json({ allowed });
-      }),
-    );
-    const env = {
-      ...environment(),
-      HOSTED_SITE_ACCESS_ENABLED: undefined,
-    };
-    for (const alias of ["demo", `dpl-${deploymentId}`]) {
-      for (const method of ["GET", "HEAD"]) {
-        const response = await fetchWorker(
-          new Request(`https://${alias}.okou.app/`, { method }),
-          env,
-        );
-        expect(response.status).toBe(allowed ? 200 : 404);
-        expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-      }
-    }
-  },
-);
-
-it("fails closed on an old API response once access enforcement is activated", async () => {
+it("fails closed when the authority omits its access decision", async () => {
   server.use(
     http.get(endpoint, () => {
       return HttpResponse.json({ allowed: true });
@@ -181,19 +155,16 @@ it("fails closed on an old API response once access enforcement is activated", a
   ).toBe(503);
 });
 
-it.each(["true", "invalid"])(
-  "does not serve storage-only content with activation=%s",
-  async (activation) => {
-    expect(
-      (
-        await fetchWorker(new Request("https://demo.okou.app/"), {
-          ...environment(false),
-          HOSTED_SITE_ACCESS_ENABLED: activation,
-        })
-      ).status,
-    ).toBe(503);
-  },
-);
+it("fails closed without a configured authority", async () => {
+  expect(
+    (
+      await fetchWorker(
+        new Request("https://demo.okou.app/"),
+        environment(false),
+      )
+    ).status,
+  ).toBe(503);
+});
 
 it.each(["/", "/style-12345678.css"])(
   "never reads restricted content without a site session: %s",
@@ -331,15 +302,6 @@ it.each([
   },
 );
 
-it("retains the existing reader until owner validation is configured", async () => {
-  const response = await fetchWorker(
-    new Request("https://demo.okou.app/"),
-    environment(false),
-  );
-  expect(response.status).toBe(200);
-  expect(await response.text()).toBe("<p>ok</p>");
-});
-
 it("serves a renamed alias through the current binding without changing immutable URLs", async () => {
   server.use(
     http.get(
@@ -455,7 +417,7 @@ it.each(["demo", `dpl-${deploymentId}`])(
   },
 );
 
-it("keeps protected assets out of HTTP caches while the old reader keeps its cache policy", async () => {
+it("keeps protected assets out of HTTP caches", async () => {
   server.use(
     http.get(endpoint, () => {
       return HttpResponse.json({ allowed: true, decision: "allow" });
@@ -465,10 +427,6 @@ it("keeps protected assets out of HTTP caches while the old reader keeps its cac
   const protectedResponse = await fetchWorker(new Request(url), environment());
   expect(protectedResponse.status).toBe(200);
   expect(protectedResponse.headers.get("Cache-Control")).toContain("no-store");
-  const oldResponse = await fetchWorker(new Request(url), environment(false));
-  expect(oldResponse.headers.get("Cache-Control")).toBe(
-    "public, max-age=31536000, immutable",
-  );
 });
 
 it("rejects new requests after revocation but lets an already admitted read finish", async () => {

@@ -13,15 +13,6 @@ export interface SiteAuthEnv {
   readonly HOST_DOMAIN: string;
   readonly OKOU_HOST_DOMAIN: string;
   readonly HOSTED_SITE_API_ORIGIN?: string;
-  /** Prepared by default; enable only after #41704 accepts every serving route. */
-  readonly HOSTED_SITE_ACCESS_ENABLED?: string;
-}
-
-const activationSchema = z.enum(["true", "false"]).default("false");
-const preparedDecisionSchema = z.object({ allowed: z.boolean() });
-
-export function hostedSiteAccessEnabled(env: SiteAuthEnv): boolean {
-  return activationSchema.parse(env.HOSTED_SITE_ACCESS_ENABLED) === "true";
 }
 
 const SESSION_COOKIE = "__Host-okou-site-session";
@@ -184,7 +175,6 @@ export async function hostedSiteAuthCallback(
   if (name) setCookie(headers, name, "", 0);
   if (
     request.method !== "GET" ||
-    !hostedSiteAccessEnabled(env) ||
     !env.HOSTED_SITE_API_ORIGIN ||
     url.protocol !== "https:" ||
     !code.success ||
@@ -253,15 +243,6 @@ async function decision(
   if (response.status !== 200)
     throw new Error("Hosted site authority is unavailable");
   const body: unknown = await response.json();
-  // Preserve the GA delivery protocol while API rollback targets predate this
-  // feature. Remove the prepared reader after #41704 establishes the API floor
-  // and activates all routes. Active readers never infer Public on an old API.
-  if (!hostedSiteAccessEnabled(env)) {
-    const { allowed } = preparedDecisionSchema.parse(body);
-    return allowed
-      ? { allowed: true as const, decision: "allow" as const }
-      : { allowed: false as const, decision: "deny" as const };
-  }
   return hostedSiteAccessDecisionSchema.parse(body);
 }
 
@@ -333,9 +314,6 @@ export async function withHostedSiteAccess(
 ): Promise<Response> {
   const completed = await hostedSiteAuthCallback(request, env);
   if (completed) return completed;
-  // Preserve existing preview/share grants during preparation. #41704 removes
-  // this branch only after every serving Worker and API rollback target is ready.
-  if (!hostedSiteAccessEnabled(env)) return serve();
   if (!env.HOSTED_SITE_API_ORIGIN)
     throw new Error("Hosted site authority is unavailable");
   const endpoint = new URL(

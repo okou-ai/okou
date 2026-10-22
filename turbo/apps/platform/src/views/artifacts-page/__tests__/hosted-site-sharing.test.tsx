@@ -27,7 +27,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite(enabled = true, previewEnabled = false) {
+async function openSite(enabled = true) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -55,7 +55,7 @@ async function openSite(enabled = true, previewEnabled = false) {
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.HostedSiteUrlEditing]: enabled,
-      [FeatureSwitchKey.HostedSiteVisibility]: previewEnabled,
+      [FeatureSwitchKey.HostedSiteVisibility]: false,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -367,7 +367,7 @@ test("the disabled switch retains the existing share link", async () => {
   expect(queryButtonByName("Customize URL")).toBeUndefined();
 });
 
-test("restricted Site previews render a temporary resource while sharing the stable Site address", async () => {
+test("restricted Site previews work with visibility settings disabled and share the stable address", async () => {
   const temporary = `https://pv-${"a".repeat(48)}.okou.app/`;
   context.mocks.api(hostContract.sitePreview, ({ params, query, respond }) => {
     expect(params.publicSlug).toBe(site.publicSlug);
@@ -378,7 +378,7 @@ test("restricted Site previews render a temporary resource while sharing the sta
     return respond(200, site);
   });
   const clipboard = context.mocks.browser.clipboardWriteText();
-  await openSite(true, true);
+  await openSite();
   await waitFor(() => {
     expect(
       screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
@@ -394,14 +394,14 @@ test("restricted Site previews render a temporary resource while sharing the sta
   ).toHaveAttribute("src", temporary);
 });
 
-test("Public Site previews continue rendering the anonymous URL when preview resolution is enabled", async () => {
+test("Public Site previews continue rendering the anonymous URL with visibility settings disabled", async () => {
   context.mocks.api(hostContract.sitePreview, ({ respond }) => {
     return respond(200, { url: `${site.url}/`, expiresAt: null });
   });
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site);
   });
-  await openSite(true, true);
+  await openSite();
   await waitFor(() => {
     expect(
       screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),

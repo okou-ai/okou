@@ -9,8 +9,6 @@ import {
   artifactReferencesContract,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { clerk$ } from "./auth.ts";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
@@ -140,10 +138,7 @@ function createAttachmentPresignedToken$(
       : "";
     if (/^[a-z0-9][a-z0-9-]*$/u.test(label) && !/^(?:pv|ps|sh)-/u.test(label)) {
       return computed(async (get) => {
-        if (
-          !get(featureSwitch$)[FeatureSwitchKey.HostedSiteVisibility] ||
-          !(await get(clerk$)).user
-        ) {
+        if (!(await get(clerk$)).user) {
           return null;
         }
         const response = await accept(

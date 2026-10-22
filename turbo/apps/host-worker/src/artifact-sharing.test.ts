@@ -27,7 +27,20 @@ const publicToken = "a".repeat(24);
 const origin = `https://a.okou.io/${publicToken}.pdf`;
 const siteOrigin = `https://${publicToken}.okou.app`;
 const policyKey = `artifact-shares/okou/${id}.json`;
-const server = setupServer();
+const server = setupServer(
+  http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
+    return HttpResponse.json({ pointer: null });
+  }),
+  http.get(
+    "https://authority.test/api/host/delivery/:siteId/:deploymentId",
+    () => {
+      return HttpResponse.json({ allowed: true, decision: "allow" });
+    },
+  ),
+  http.get("https://authority.test/api/host/sites/:siteId/access", () => {
+    return HttpResponse.json({ allowed: true, decision: "allow" });
+  }),
+);
 beforeAll(() => {
   return server.listen({ onUnhandledRequest: "error" });
 });
@@ -40,7 +53,6 @@ test("rechecks Site visibility before a public HTML share's warm content cache",
   const env = {
     ...f.env,
     HOSTED_SITE_API_ORIGIN: "https://authority.test",
-    HOSTED_SITE_ACCESS_ENABLED: "true",
   };
   let allowed = true;
   server.use(
@@ -74,7 +86,7 @@ test("rechecks Site visibility before a public HTML share's warm content cache",
   ).toBe(404);
 });
 
-test("preparation preserves public HTML shares without depending on the new authority", async () => {
+test("public HTML shares fail closed when Site authorization is unavailable", async () => {
   const f = fixture(true);
   const env = { ...f.env, HOSTED_SITE_API_ORIGIN: "https://authority.test" };
   server.use(
@@ -87,7 +99,8 @@ test("preparation preserves public HTML shares without depending on the new auth
       new Request(`${siteOrigin}${path}`),
       env,
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   }
   f.policy.status = "revoked";
   f.objects.set(policyKey, JSON.stringify(f.policy));
@@ -232,6 +245,7 @@ function fixture(
     },
   };
   const env: Env = {
+    HOSTED_SITE_API_ORIGIN: "https://authority.test",
     HOST_DOMAIN: "sites.vm0.io",
     OKOU_HOST_DOMAIN: "okou.app",
     HOSTED_SITES_BUCKET: bucket,
@@ -999,7 +1013,7 @@ test("named HTML migration ignores old registry caches and preserves the revocab
   const migrated = await fetchWorker(new Request(address), f.env);
   expect(migrated.status).toBe(200);
   expect(await migrated.text()).toBe("First public deployment");
-  expect(migrated.headers.get("Cache-Control")).toBe("no-store");
+  expect(migrated.headers.get("Cache-Control")).toBe("private, no-store");
 
   activate("00000000-0000-4000-8000-000000000022", "Newest public deployment");
   expect(await (await fetchWorker(new Request(address), f.env)).text()).toBe(
@@ -1089,13 +1103,11 @@ test("organization snapshots cache bytes but reject expired network credentials"
   };
   const page = await fetchWorker(request("/"), f.env);
   expect(page.status).toBe(200);
-  // The document is always fetched; only its assets are cached by the browser.
+  // Stable snapshot addresses recheck Site access for every network request.
   expect(page.headers.get("Cache-Control")).toBe("private, no-store");
   const style = await fetchWorker(request("/style.css"), f.env);
   expect(style.status).toBe(200);
-  expect(style.headers.get("Cache-Control")).toBe(
-    "private, max-age=31536000, must-revalidate",
-  );
+  expect(style.headers.get("Cache-Control")).toBe("private, no-store");
   const rewritten = new Request(`https://pv-${token}.okou.app/`);
   expect((await fetchWorker(rewritten, f.env)).status).toBe(404);
   expect(f.objects.has(`private-previews/okou/${token}.json`)).toBeFalsy();

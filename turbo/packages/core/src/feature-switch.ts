@@ -80,7 +80,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  // Keep disabled until the live session and rollout gates in #41704 pass.
+  // Gate visibility settings; access and preview delivery always enforce Site policy.
   [FeatureSwitchKey.HostedSiteVisibility]: {
     maintainer: "yuma@okou.ai",
     displayName: "Website visibility",

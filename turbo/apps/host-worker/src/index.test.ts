@@ -1,9 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
 
 import worker from "./index";
 import { fetchWorker } from "./test-helpers";
 
 type WorkerEnv = Parameters<typeof worker.fetch>[1];
+const server = setupServer(
+  http.get(
+    "https://authority.test/api/host/delivery/:siteId/:deploymentId",
+    () => {
+      return HttpResponse.json({ allowed: true, decision: "allow" });
+    },
+  ),
+  http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
+    return HttpResponse.json({ pointer: null });
+  }),
+);
+beforeAll(() => {
+  return server.listen({ onUnhandledRequest: "error" });
+});
+afterEach(() => {
+  return server.resetHandlers();
+});
+afterAll(() => {
+  return server.close();
+});
 type R2Object = NonNullable<
   Awaited<ReturnType<WorkerEnv["HOSTED_SITES_BUCKET"]["get"]>>
 >;
@@ -194,6 +216,7 @@ function env(options: TestEnvOptions = {}): WorkerEnv {
   }
 
   return {
+    HOSTED_SITE_API_ORIGIN: "https://authority.test",
     HOST_DOMAIN: options.hostDomain ?? "sites.vm0.io",
     OKOU_HOST_DOMAIN: options.okouHostDomain ?? "okou.app",
     HOSTED_SITES_BUCKET: {
@@ -362,14 +385,14 @@ describe("hosted site worker", () => {
         site(),
       );
       expect(document.status).toBe(200);
-      expect(document.headers.get("Cache-Control")).toBe("no-store");
+      expect(document.headers.get("Cache-Control")).toBe("private, no-store");
     }
     const asset = await fetchWorker(
       new Request("https://demo.sites.vm0.io/assets/app-4f3a9c12.js"),
       site(),
     );
     expect(asset.status).toBe(200);
-    expect(asset.headers.get("Cache-Control")).toBe("public, max-age=3600");
+    expect(asset.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
   it("serves default robots.txt when the active deployment omits it", async () => {
@@ -382,7 +405,7 @@ describe("hosted site worker", () => {
     expect(response.headers.get("Content-Type")).toBe(
       "text/plain; charset=utf-8",
     );
-    expect(response.headers.get("Cache-Control")).toBe("public, max-age=3600");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(await response.text()).toBe(DEFAULT_ROBOTS_TXT);
   });

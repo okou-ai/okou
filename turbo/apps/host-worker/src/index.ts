@@ -1,7 +1,6 @@
 import {
   authorizeSiteRequest,
   hostedSiteAuthCallback,
-  hostedSiteAccessEnabled,
   withSiteAuthHeaders,
   withHostedSiteAccess,
   type SiteAuthEnv,
@@ -62,7 +61,7 @@ interface Env extends SiteAuthEnv {
   readonly PUBLIC_ARTIFACT_HOST?: string;
   readonly HOST_DOMAIN: string;
   readonly OKOU_HOST_DOMAIN: string;
-  /** Activate only after all serving API instances support owner validation. */
+  /** Canonical authority for Site routing and visibility checks. */
   readonly HOSTED_SITE_API_ORIGIN?: string;
   readonly ARTIFACT_OG_API_ORIGIN?: string;
 }
@@ -450,10 +449,7 @@ function cacheControl(file: ManifestFile): string {
   return "public, max-age=3600";
 }
 
-function hostedDownloadToken(pathname: string, env: Env): string | null {
-  if (!hostedSiteAccessEnabled(env)) return null;
-  if (!env.HOSTED_SITE_API_ORIGIN)
-    throw new Error("Hosted site authority is unavailable");
+function hostedDownloadToken(pathname: string): string | null {
   return /^\/\.okou\/download\/([a-f0-9]{48})$/u.exec(pathname)?.[1] ?? null;
 }
 
@@ -472,7 +468,9 @@ async function serveHostedSite(
 
   const pathname = normalizeRequestPath(url.pathname);
   if (!pathname) return new Response("Bad path", { status: 400 });
-  const download = hostedDownloadToken(pathname, env);
+  if (!env.HOSTED_SITE_API_ORIGIN)
+    throw new Error("Hosted site authority is unavailable");
+  const download = hostedDownloadToken(pathname);
   if (download) return serveHostedDownload(request, env, download);
   const fileHost = url.hostname === env.PUBLIC_ARTIFACT_HOST;
   const target = hostedSiteRequestTarget(url.hostname, env);
@@ -630,7 +628,7 @@ async function serveGrantedArtifactDelivery(
   );
   if (
     record.kind === "thread-resource" &&
-    (artifact.target.kind === "file" || !hostedSiteAccessEnabled(env)) &&
+    artifact.target.kind === "file" &&
     response.ok &&
     !response.headers.get("Content-Type")?.toLowerCase().startsWith("text/html")
   )

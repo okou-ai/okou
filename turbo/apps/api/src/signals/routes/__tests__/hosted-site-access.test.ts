@@ -7,7 +7,6 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { mockEnv } from "../../../lib/env";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { hostRoutes } from "../host";
@@ -60,7 +59,6 @@ function client(user?: ApiTestUser) {
 }
 
 async function enable(user: ApiTestUser, value = true) {
-  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "true");
   client(user);
   await accept(
     setupAppWithRoutes({ context, routes: featureSwitchesRoutes })(
@@ -73,10 +71,9 @@ async function enable(user: ApiTestUser, value = true) {
   );
 }
 
-test("preparation keeps downloads public and blocks writes even with a user override", async () => {
+test("the visibility switch blocks settings while Public access and downloads remain available", async () => {
   const { owner, api, prepared, request } = await publish();
-  await enable(owner);
-  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
+  await enable(owner, false);
   await accept(
     client(owner).updateSiteVisibility({
       headers,
@@ -97,6 +94,18 @@ test("preparation keeps downloads public and blocks writes even with a user over
     throw new Error("Expected hosted download files");
   }
   expect(files.body.files[0]!.downloadUrl).not.toContain("/.okou/download/");
+  await enable(owner);
+  const enabledFiles = await api.requestHostedSiteFiles(
+    owner,
+    `dpl-${prepared.deploymentId}`,
+    [200],
+  );
+  if (enabledFiles.status !== 200) {
+    throw new Error("Expected hosted download files");
+  }
+  expect(enabledFiles.body.files[0]!.downloadUrl).not.toContain(
+    "/.okou/download/",
+  );
 });
 
 async function publish() {
@@ -112,7 +121,6 @@ async function publish() {
   };
   const prepared = await api.prepareHostedSite(owner, input);
   await api.completeHostedSite(owner, prepared.deploymentId);
-  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", prepared.siteId);
   const prefix = `sites/brands/okou/publications/${prepared.deploymentId}`;
   return {
     owner,
@@ -424,6 +432,14 @@ test("redeployment preserves an explicit policy for both aliases and immutable a
 test("issued download grants stop working after a policy revision changes", async () => {
   const { owner, api, prepared } = await publish();
   await enable(owner);
+  const policy = await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "public", expectedRevision: null },
+    }),
+    [200],
+  );
   const files = await api.requestHostedSiteFiles(
     owner,
     `dpl-${prepared.deploymentId}`,
@@ -444,7 +460,7 @@ test("issued download grants stop working after a policy revision changes", asyn
     client(owner).updateSiteVisibility({
       headers,
       params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: null },
+      body: { visibility: "private", expectedRevision: policy.body.revision },
     }),
     [200],
   );
@@ -536,7 +552,6 @@ test("private downloads remain controlled with management disabled and stop afte
     [200],
   );
   await enable(owner, false);
-  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
   const files = await api.requestHostedSiteFiles(
     owner,
     `dpl-${prepared.deploymentId}`,
@@ -575,18 +590,18 @@ test("private downloads remain controlled with management disabled and stop afte
   ).toBeNull();
 });
 
-test("a user-editable switch cannot admit a Site outside the server cohort", async () => {
+test("disabling visibility settings preserves Private policy and browser authorization", async () => {
   const { owner, prepared } = await publish();
   await enable(owner);
-  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", randomUUID());
   await accept(
     client(owner).updateSiteVisibility({
       headers,
       params: { siteId: prepared.siteId },
       body: { visibility: "private", expectedRevision: null },
     }),
-    [403],
+    [200],
   );
+  await enable(owner, false);
   expect(
     (
       await accept(
@@ -597,7 +612,20 @@ test("a user-editable switch cannot admit a Site outside the server cohort", asy
         [200],
       )
     ).body.decision,
-  ).toBe("allow");
+  ).toBe("authenticate");
+  await authorizeBrowser(
+    owner,
+    prepared.siteId,
+    `https://${prepared.publicSlug}.okou.app`,
+  );
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "public", expectedRevision: null },
+    }),
+    [403],
+  );
 });
 
 test("authorization codes require the correct proof, Site and origin, and are single-use", async () => {
@@ -888,6 +916,7 @@ test("restricted previews reuse private-artifact credentials only after current 
     }),
     [200],
   );
+  await enable(owner, false);
   const request = {
     headers,
     params: { publicSlug: prepared.publicSlug },

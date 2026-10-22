@@ -23,6 +23,7 @@ import {
 } from "./api-email-subscription.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
 import { apiGetStartedHandlers } from "./api-get-started.ts";
+import { apiHostHandlers } from "./api-host.ts";
 import {
   apiIntegrationsAgentPhoneHandlers,
   resetMockAgentPhoneIntegration,
@@ -114,6 +115,7 @@ import {
 } from "./api-proactive-suggestions.ts";
 
 export const handlers = [
+  ...apiHostHandlers,
   ...apiMarketingEventsHandlers,
   ...clerkLocalizationHandlers,
   ...localeResourceHandlers,

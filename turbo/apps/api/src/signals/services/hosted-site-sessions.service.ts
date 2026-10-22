@@ -89,13 +89,7 @@ export const authorizeHostedSiteSession$ = command(
       return { status: "denied" as const };
     }
     const policy = await set(readHostedSitePolicy$, args.siteId, signal);
-    if (
-      !policy ||
-      policy.site.linkLayoutSegment !== "okou" ||
-      (policy.revision === null &&
-        (env("HOSTED_SITE_ACCESS_ENABLED") !== "true" ||
-          !env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(args.siteId)))
-    ) {
+    if (!policy || policy.site.linkLayoutSegment !== "okou") {
       return { status: "denied" as const };
     }
     const suffix = new URL(hostedLinkOrigin("current", "site")).hostname.slice(

@@ -1038,7 +1038,6 @@ jobs:
         env:
           CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN: ${{ secrets.CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
-          HOSTED_SITE_WORKER_ACCESS_ENABLED: ${{ vars.HOSTED_SITE_WORKER_ACCESS_ENABLED || 'false' }}
         run: |
           set -euo pipefail
           if [[ -z "${CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN:-}" ]]; then
@@ -1049,13 +1048,8 @@ jobs:
             echo "::error::CF_ACCOUNT_ID must be configured as a GitHub Actions variable or secret"
             exit 1
           fi
-          case "$HOSTED_SITE_WORKER_ACCESS_ENABLED" in
-            true|false) ;;
-            *) echo "HOSTED_SITE_WORKER_ACCESS_ENABLED must be true or false" >&2; exit 1 ;;
-          esac
           CLOUDFLARE_API_TOKEN="$CF_ZERO_HOST_WORKER_DEPLOY_API_TOKEN" \
-            pnpm -F @okouai/host-worker run deploy \
-              --var "HOSTED_SITE_ACCESS_ENABLED:$HOSTED_SITE_WORKER_ACCESS_ENABLED"
+            pnpm -F @okouai/host-worker run deploy
 
       - name: Calculate duration
         id: duration
