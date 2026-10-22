@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
-    ops::Range,
+    ops::{Bound::Excluded, Range},
 };
 
 use aho_corasick::{
@@ -171,11 +171,16 @@ impl StreamingSecretMasker<'_> {
         if let Some((&start, &end)) = self.redactions.range(..=range.start).next_back()
             && end > range.start
         {
-            self.redactions.remove(&start);
             range.start = start;
             range.end = range.end.max(end);
         }
-        while let Some((&start, &end)) = self.redactions.range(range.start..range.end).next() {
+        // Preserve an overlapping predecessor's node so a self-overlap chain
+        // updates its coverage without allocating a new node for every byte.
+        while let Some((&start, &end)) = self
+            .redactions
+            .range((Excluded(range.start), Excluded(range.end)))
+            .next()
+        {
             self.redactions.remove(&start);
             range.end = range.end.max(end);
         }
