@@ -4,6 +4,7 @@ import ctypes
 import math
 import os
 import select
+import stat
 import struct
 import sys
 import threading
@@ -13,12 +14,31 @@ from dataclasses import asdict, dataclass
 from file_residency import credentials, metadata, require, task_identity
 
 FAN_OPEN_PERM = 0x10000
+FAN_ONDIR = 0x40000000
 MAX_PENDING = 64
 MAX_RETIRE = 256
 EVENT = struct.Struct("=IBBHQiiBBHi")
 METADATA = struct.Struct("=IBBHQii")
 RESPONSE = struct.Struct("=iI")
 LIBC = ctypes.CDLL(None, use_errno=True)
+
+
+def original_metadata(fd, *, directory=False):
+    require(type(directory) is bool, "directory selector must be boolean")
+    if not directory:
+        return metadata(fd)
+    value = os.fstat(fd)
+    require(stat.S_ISDIR(value.st_mode), "original must be a directory")
+    return {
+        "device": value.st_dev,
+        "inode": value.st_ino,
+        "uid": value.st_uid,
+        "size": value.st_size,
+        "links": value.st_nlink,
+        "mtime_ns": value.st_mtime_ns,
+        "ctime_ns": value.st_ctime_ns,
+        "file_type": stat.S_IFMT(value.st_mode),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,13 +63,18 @@ class _OwnedEvent:
 class FileOpenPermission:
     """Duplicate a caller-owned original FD and retain kernel permission events.
 
+    Regular files are the default. directory=True requires an actual directory
+    and binds FAN_ONDIR without marking children or a mount/filesystem.
     Requires Linux 5.15+ FAN_REPORT_PIDFD and CAP_SYS_ADMIN. Use only isolated,
     controlled originals/producers. Closing a group can release unseen requests;
     this is a test synchronization primitive, not an authorization boundary.
     Callers independently own and join their producers, including on failure.
     """
 
-    def __init__(self, fd, expected_identity):
+    def __init__(self, fd, expected_identity, *, directory=False):
+        require(type(directory) is bool, "directory selector must be boolean")
+        self._directory = directory
+        self._mask = FAN_OPEN_PERM | (FAN_ONDIR if directory else 0)
         require(
             sys.platform == "linux" and sys.maxsize > 2**32, "requires 64-bit Linux"
         )
@@ -84,7 +109,7 @@ class FileOpenPermission:
         init.restype = ctypes.c_int
         duplicate = os.dup(fd)
         try:
-            value = metadata(duplicate)
+            value = original_metadata(duplicate, directory=self._directory)
             require(
                 (value["device"], value["inode"]) == expected_identity,
                 "foreign original descriptor",
@@ -121,7 +146,7 @@ class FileOpenPermission:
             self._group is not None and not self._uncertain, "closed or uncertain gate"
         )
         require(credentials() == self._authority, "gate credentials changed")
-        value = metadata(self._original)
+        value = original_metadata(self._original, directory=self._directory)
         require(
             (value["device"], value["inode"]) == self._identity
             and value["uid"] == self._authority["filesystem_uid"],
@@ -130,7 +155,7 @@ class FileOpenPermission:
 
     def _change_mark(self, flags):
         path = os.fsencode(f"/proc/self/fd/{self._original}")
-        if self._mark(self._group, flags, FAN_OPEN_PERM, -100, path) != 0:
+        if self._mark(self._group, flags, self._mask, -100, path) != 0:
             raise OSError(ctypes.get_errno(), "original-inode permission mark failed")
 
     def _read(self, validate=True):
@@ -183,8 +208,8 @@ class FileOpenPermission:
         if validate:
             require(not errors, "; ".join(errors))
             for owned, mask in adopted:
-                value = metadata(owned.fd)
-                require(mask == FAN_OPEN_PERM, "unexpected kernel permission mask")
+                value = original_metadata(owned.fd, directory=self._directory)
+                require(mask == self._mask, "unexpected kernel permission mask")
                 require(
                     (value["device"], value["inode"]) == self._identity,
                     "foreign permission-event original",
@@ -263,14 +288,20 @@ class FileOpenPermission:
         self._check_owner()
         require(not self._observation_failed, "an earlier kernel observation failed")
         owned = self._pending.get(id(event))
-        require(owned is not None and owned.observation is event and not owned.attempted,
-                "foreign or completed permission event")
+        require(
+            owned is not None and owned.observation is event and not owned.attempted,
+            "foreign or completed permission event",
+        )
         require(owned.pidfd is not None, "missing original kernel PIDFD")
         with open(f"/proc/self/fdinfo/{owned.pidfd}", encoding="ascii") as stream:
             info = stream.read(4097)
-        rows = [line.split()[1:] for line in info.splitlines() if line.startswith("Pid:")]
-        require(len(info) <= 4096 and rows == [[str(event.pid)]],
-                "kernel PIDFD identity mismatch")
+        rows = [
+            line.split()[1:] for line in info.splitlines() if line.startswith("Pid:")
+        ]
+        require(
+            len(info) <= 4096 and rows == [[str(event.pid)]],
+            "kernel PIDFD identity mismatch",
+        )
         poller = select.poll()
         poller.register(owned.pidfd, select.POLLIN)
         require(event.pid > 0 and not poller.poll(0), "event producer already exited")
