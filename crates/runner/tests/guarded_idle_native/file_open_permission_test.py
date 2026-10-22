@@ -171,6 +171,7 @@ class KernelTests(unittest.TestCase):
                 event = gate.receive()
                 self.assertEqual(event.pid, child.pid)
                 self.assertIsNone(child.poll())
+                gate.check_pending_producer(event)
                 disposition = gate.decide(event, allow)
                 self.assertTrue(disposition["event_descriptors_closed"])
                 kernel_fields = EVENT.unpack(bytes.fromhex(event.raw_hex))
@@ -179,6 +180,8 @@ class KernelTests(unittest.TestCase):
                         os.fstat(descriptor)
                 with self.assertRaisesRegex(ValueError, "completed permission"):
                     gate.decide(event, allow)
+                with self.assertRaisesRegex(ValueError, "completed permission"):
+                    gate.check_pending_producer(event)
                 result = join(child)
                 expected = {"payload_hex": PAYLOAD.hex()} if allow else {"errno": 1}
                 self.assertEqual(

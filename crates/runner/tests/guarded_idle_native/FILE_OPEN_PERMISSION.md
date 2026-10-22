@@ -43,7 +43,10 @@ semantic validation. A delivered immutable token belongs to that exact gate;
 numeric PID lookup is not process authority. `receive` checks the original
 event inode and live kernel PIDFD identity. Pending observation proves that
 kernel open boundary, not canonical executable identity or semantic helper
-acceptance. `decide` accepts one boolean ALLOW/DENY response, checks the write
+acceptance. `check_pending_producer(event)` rechecks the same owned event's
+live kernel PIDFD before and after caller-owned descriptor/argv inspection;
+it rejects foreign, completed and exited producers and does not join them.
+`decide` accepts one boolean ALLOW/DENY response, checks the write
 and closes both event descriptors. Unknown/short response or close errors
 make the owner uncertain and prohibit replay.
 

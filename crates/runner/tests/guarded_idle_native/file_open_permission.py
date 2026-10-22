@@ -254,6 +254,27 @@ class FileOpenPermission:
         self._check_owner()
         return self._group
 
+    def check_pending_producer(self, event):
+        """Recheck the original event's kernel PIDFD before/after inspection.
+
+        This proves a live producer identity only while this event is pending;
+        it does not prove application acceptance or join the producer.
+        """
+        self._check_owner()
+        require(not self._observation_failed, "an earlier kernel observation failed")
+        owned = self._pending.get(id(event))
+        require(owned is not None and owned.observation is event and not owned.attempted,
+                "foreign or completed permission event")
+        require(owned.pidfd is not None, "missing original kernel PIDFD")
+        with open(f"/proc/self/fdinfo/{owned.pidfd}", encoding="ascii") as stream:
+            info = stream.read(4097)
+        rows = [line.split()[1:] for line in info.splitlines() if line.startswith("Pid:")]
+        require(len(info) <= 4096 and rows == [[str(event.pid)]],
+                "kernel PIDFD identity mismatch")
+        poller = select.poll()
+        poller.register(owned.pidfd, select.POLLIN)
+        require(event.pid > 0 and not poller.poll(0), "event producer already exited")
+
     def decide(self, event, allow):
         """Respond exactly once; uncertain writes/closes are never retried."""
         self._check_owner()

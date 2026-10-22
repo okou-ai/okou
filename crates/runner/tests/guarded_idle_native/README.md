@@ -8,6 +8,11 @@ explicit allow/deny and retirement controls for isolated test producers. Its
 qualification does not establish actual Guest/helper execution or any native
 transition, saving, lease or cleanup-IO acceptance below.
 
+[Cancellation-independent Guest control](GUEST_PERMISSION_CONTROL.md) adds a
+dedicated test vsock owner and an opt-in canonical-helper allow/deny fixture.
+It qualifies actual Guest capability and joined wire/controller completion;
+the broader Runner capsule, saving, lease and matrix gates remain required.
+
 ## Guest quiesce cancellation and retained Dirty custody
 
 `quiesce::native_quiesce_loss_retains_original_uncertainty` exercises the
