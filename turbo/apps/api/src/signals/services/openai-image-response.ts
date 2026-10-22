@@ -33,10 +33,41 @@ const mainModelUsageSchema = z
     input_tokens: tokenCount,
     input_tokens_details: z.object({ cached_tokens: tokenCount }),
     output_tokens: tokenCount,
+    total_tokens: tokenCount,
   })
   .refine((usage) => {
-    return usage.input_tokens_details.cached_tokens <= usage.input_tokens;
+    return (
+      usage.input_tokens_details.cached_tokens <= usage.input_tokens &&
+      usage.total_tokens === usage.input_tokens + usage.output_tokens
+    );
   });
+
+// Runtime-verified Responses ledger (Flare, 2026-10-22). This aggregate belongs
+// to the single forced image tool call, not the enclosing mainline-model usage.
+const imageToolUsageSchema = z
+  .object({
+    input_tokens: tokenCount,
+    input_tokens_details: z.object({
+      text_tokens: tokenCount,
+      image_tokens: tokenCount,
+    }),
+    output_tokens: tokenCount.positive(),
+    output_tokens_details: z.object({
+      image_tokens: tokenCount.positive(),
+      text_tokens: z.literal(0),
+    }),
+    total_tokens: tokenCount,
+  })
+  .refine((usage) => {
+    return (
+      usage.input_tokens ===
+        usage.input_tokens_details.text_tokens +
+          usage.input_tokens_details.image_tokens &&
+      usage.output_tokens === usage.output_tokens_details.image_tokens &&
+      usage.total_tokens === usage.input_tokens + usage.output_tokens
+    );
+  });
+const toolUsageSchema = z.object({ image_gen: imageToolUsageSchema });
 
 const imageSchema = z.object({
   type: z.literal("image_generation_call"),
@@ -64,7 +95,8 @@ const responseSchema = z.object({
   ]),
   metadata: z.object({ generation_id: z.string().min(1).optional() }).nullish(),
   output: z.array(z.unknown()),
-  usage: mainModelUsageSchema.nullish(),
+  usage: z.unknown().optional(),
+  tool_usage: z.unknown().optional(),
   error: z.unknown().optional(),
 });
 
@@ -73,6 +105,7 @@ export interface OpenAiImageResponse {
   readonly status: z.infer<typeof responseSchema>["status"];
   readonly metadata: { readonly generation_id?: string };
   readonly image: z.infer<typeof imageSchema> | undefined;
+  readonly imageUsage: z.infer<typeof imageToolUsageSchema> | undefined;
   /** Mainline model usage only; never includes or substitutes image-tool billing. */
   readonly mainModelUsage: OpenAiImageMainModelUsage | undefined;
   /** Sanitized public failure; provider error messages are never retained. */
@@ -322,26 +355,18 @@ export async function deleteOpenAiImageResponse(
   signal.throwIfAborted();
 }
 
-function usageShape(value: unknown, depth = 0): unknown {
-  if (value === null || value === undefined) {
-    return "absent";
+function readMainlineUsage(
+  value: unknown,
+): OpenAiImageMainModelUsage | undefined {
+  const parsed = mainModelUsageSchema.safeParse(value);
+  if (!parsed.success) {
+    return undefined;
   }
-  if (typeof value === "number") {
-    return value;
-  }
-  if (depth >= 4 || typeof value !== "object") {
-    return typeof value;
-  }
-  if (Array.isArray(value)) {
-    return value.slice(0, 2).map((item: unknown) => {
-      return usageShape(item, depth + 1);
-    });
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => {
-      return [key, usageShape(item, depth + 1)];
-    }),
-  );
+  return {
+    inputTokens: parsed.data.input_tokens,
+    cachedInputTokens: parsed.data.input_tokens_details.cached_tokens,
+    outputTokens: parsed.data.output_tokens,
+  };
 }
 
 function responseFailure(error: unknown): OpenAiImageResponseError | undefined {
@@ -372,6 +397,13 @@ export async function retrieveOpenAiImageResponse(
   }
   const body: unknown = await response.json();
   signal.throwIfAborted();
+  return readOpenAiImageResponse(body, responseId);
+}
+
+function readOpenAiImageResponse(
+  body: unknown,
+  responseId: string,
+): OpenAiImageResponse | OpenAiImageResponseError {
   const parsed = responseSchema.safeParse(body);
   if (!parsed.success || parsed.data.id !== responseId) {
     return badResponse();
@@ -389,22 +421,18 @@ export async function retrieveOpenAiImageResponse(
   if (image && !image.success) {
     return badResponse();
   }
-  const usage = result.usage;
-  if (result.status === "completed" && image?.success) {
-    const rawImage = z.record(z.string(), z.unknown()).parse(images[0]);
-    const rawResponse = z.record(z.string(), z.unknown()).parse(body);
+  const mainModelUsage = readMainlineUsage(result.usage);
+  const toolUsage = toolUsageSchema.safeParse(result.tool_usage);
+  if (
+    result.status === "completed" &&
+    image?.success &&
+    (!toolUsage.success || !mainModelUsage)
+  ) {
     logger("OpenAiImageResponses").warn(
-      "Completed image response accounting contract",
+      "Completed image response has unverified tool accounting",
       {
         generationId: result.metadata?.generation_id,
-        imageHasUsage: Object.hasOwn(rawImage, "usage"),
-        responseHasToolUsage: Object.hasOwn(rawResponse, "tool_usage"),
-        mainModelUsageAvailable: Boolean(usage),
-        imageFields: Object.keys(rawImage),
-        responseFields: Object.keys(rawResponse),
-        responseUsageShape: usageShape(rawResponse.usage),
-        imageUsageShape: usageShape(rawImage.usage),
-        toolUsageShape: usageShape(rawResponse.tool_usage),
+        mainModelUsageAvailable: Boolean(mainModelUsage),
       },
     );
   }
@@ -415,48 +443,74 @@ export async function retrieveOpenAiImageResponse(
     status: result.status,
     metadata: result.metadata ?? {},
     image: imageResult ? { ...imageResult, error: undefined } : undefined,
-    mainModelUsage: usage
-      ? {
-          inputTokens: usage.input_tokens,
-          cachedInputTokens: usage.input_tokens_details.cached_tokens,
-          outputTokens: usage.output_tokens,
-        }
-      : undefined,
+    imageUsage: toolUsage.success ? toolUsage.data.image_gen : undefined,
+    mainModelUsage,
     error: responseFailure(failure),
   };
 }
 
-/**
- * Materialize only once image-tool token accounting is established.
- *
- * The official OpenAPI ImageGenToolCall and installed OpenAI 7.19.0
- * ResponseOutputItem.ImageGenerationCall contain no usage field. ImageGenUsage
- * is documented for the Images API, not this Responses output item. Inferring
- * that schema's placement here, estimating from main-model usage, or billing
- * zero would silently mischarge users. A provider-verified usage contract is
- * required before this path may return ParsedImageGeneration.
- */
+/** Materialize with the verified tool ledger; never substitute mainline tokens. */
 export function parseOpenAiImageResponse(
   response: OpenAiImageResponse,
-  _options: ImageOptions,
+  options: ImageOptions,
 ): ParsedImageGeneration | OpenAiImageResponseError {
   if (response.error) {
     return response.error;
   }
   if (
     response.status !== "completed" ||
-    !response.image?.result ||
-    !response.mainModelUsage
+    response.image?.status !== "completed" ||
+    !response.image.result
   ) {
     return badResponse();
   }
-  return {
-    status: 502,
-    body: {
-      error: {
-        code: "OPENAI_IMAGE_USAGE_UNAVAILABLE",
-        message: "OpenAI did not provide verified image-tool token usage",
+  const usage = response.imageUsage;
+  if (!usage || !response.mainModelUsage) {
+    return {
+      status: 502,
+      body: {
+        error: {
+          code: "OPENAI_IMAGE_USAGE_UNAVAILABLE",
+          message: "OpenAI did not provide verified image-tool token usage",
+        },
       },
-    },
+    };
+  }
+  const imageBytes = Buffer.from(response.image.result, "base64");
+  if (imageBytes.byteLength === 0) {
+    return badResponse();
+  }
+  return {
+    model: options.model,
+    provider: "openai",
+    imageBytes,
+    revisedPrompt: response.image.revised_prompt ?? undefined,
+    imageSize: response.image.size ?? options.size,
+    quality: response.image.quality ?? options.quality,
+    background: response.image.background ?? options.background,
+    outputFormat: response.image.output_format ?? options.outputFormat,
+    outputCompression: options.outputCompression,
+    moderation: options.moderation,
+    safetyTolerance: undefined,
+    billing: [
+      {
+        category: "tokens.input.text",
+        quantity: usage.input_tokens_details.text_tokens,
+      },
+      {
+        category: "tokens.input.image",
+        quantity: usage.input_tokens_details.image_tokens,
+      },
+      {
+        category: "tokens.output.image",
+        quantity: usage.output_tokens_details.image_tokens,
+      },
+    ],
+    sourceUrl: undefined,
+    seed: undefined,
+    sourceImageUrls: options.sourceImageUrls,
+    maskImageUrl: options.maskImageUrl,
+    inputFidelity: options.inputFidelity,
+    imagePromptStrength: undefined,
   };
 }

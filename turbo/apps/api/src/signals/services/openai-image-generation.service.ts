@@ -38,6 +38,7 @@ import { resolveProviderReferenceUrls$ } from "./provider-reference-url.service"
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { processUsageEventKeys$ } from "./credit-usage.service";
 import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
+import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usage-idempotency";
 
 const L = logger("OpenAiImageJobs");
 const MAINLINE_PRICING_PROVIDER = `openai/${MAINLINE_MODEL}`;
@@ -249,9 +250,14 @@ const settleStoredOpenAiImageJob$ = command(
     };
     const pricing = await get(openAiImageOrchestrationPricing$);
     signal.throwIfAborted();
-    const events = MAINLINE_CATEGORIES.map((category) => {
+    const events = MAINLINE_CATEGORIES.filter((category) => {
+      return quantities[category] > 0;
+    }).map((category) => {
       return {
-        idempotencyKey: `image-response:${job.id}:${category}`,
+        idempotencyKey: builtInGenerationUsageIdempotencyKey({
+          generationId: job.id,
+          category: `orchestration:${category}`,
+        }),
         orgId: job.orgId,
         userId: job.userId,
         kind: "model",

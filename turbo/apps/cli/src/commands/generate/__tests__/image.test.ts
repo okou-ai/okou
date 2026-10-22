@@ -850,15 +850,20 @@ describe("okou generate image command", () => {
     expect(queries).toBe(0);
   });
 
-  it.each(["refresh", "query"])(
-    "bounds and cancels a stalled %s request without resubmission",
-    async (phase) => {
+  it.each([
+    ["refresh", 60_000],
+    ["query", 60_000],
+    ["refresh", 15 * 60 * 1000],
+    ["query", 15 * 60 * 1000],
+  ] as const)(
+    "bounds and cancels a stalled %s request at %i ms without losing the receipt",
+    async (phase, deadlineMs) => {
       const deadline = new AbortController();
       const realTimeout = AbortSignal.timeout;
       const timeout = vi
         .spyOn(AbortSignal, "timeout")
         .mockImplementation((ms) => {
-          return ms === 15 * 60 * 1000 ? deadline.signal : realTimeout(ms);
+          return ms === deadlineMs ? deadline.signal : realTimeout(ms);
         });
       const started = deferred<void>();
       const aborted = deferred<void>();
@@ -919,7 +924,7 @@ describe("okou generate image command", () => {
         await started.promise;
         expect(timeout).toHaveBeenCalledWith(15 * 60 * 1000);
         expect(timeout).toHaveBeenCalledWith(60_000);
-        deadline.abort();
+        deadline.abort(new DOMException("Request timed out", "TimeoutError"));
         await finished;
         await aborted.promise;
         expect(submissions).toBe(1);
@@ -931,6 +936,7 @@ describe("okou generate image command", () => {
           `okou generate get ${IMAGE_GENERATION_ID} --refresh --json`,
         );
         expect(stderr).toContain("do not submit another job");
+        expect(stderr).toContain("504");
       } finally {
         timeout.mockRestore();
       }

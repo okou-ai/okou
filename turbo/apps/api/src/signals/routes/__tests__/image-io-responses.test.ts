@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts/built-in-generation";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -12,6 +13,7 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import { cronReconcileImageGenerationsRoutes } from "../cron-reconcile-image-generations";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
+  completedImageResponseWithUsage,
   completedImageResponseWithoutUsage,
   mockOpenAiImageResponses,
   OPENAI_RESPONSES_URL,
@@ -93,6 +95,14 @@ async function createFixture() {
       const response = await app.request(
         `/api/built-in-generations/${generationId}`,
         { headers },
+      );
+      expect(response.status).toBe(200);
+      return builtInGenerationResponseSchema.parse(await response.json());
+    },
+    async refresh(generationId: string) {
+      const response = await app.request(
+        `/api/built-in-generations/${generationId}/reconcile`,
+        { method: "POST", headers, body: JSON.stringify({}) },
       );
       expect(response.status).toBe(200);
       return builtInGenerationResponseSchema.parse(await response.json());
@@ -234,6 +244,182 @@ describe("durable OpenAI Responses image generation", () => {
     });
   });
 
+  it("delivers the provider-backed tool ledger through owner refresh and settles exactly once", async () => {
+    const fixture = await createFixture();
+    await fixture.actor.run(async () => {
+      const provider = mockOpenAiImageResponses();
+      const response = await fixture.generate();
+      expect(response.status).toBe(202);
+      const generationId = readAcceptedGenerationId(
+        await response.json(),
+        "image",
+        fixture.actor.userId,
+      );
+      const submission = provider.submission();
+      provider.responses.set(
+        submission.id,
+        completedImageResponseWithUsage(submission),
+      );
+      // Storage is a durable checkpoint; a separate short task settles it.
+      // An intermediate artifact must not advertise an uncharged estimate.
+      const checkpoint = await fixture.refresh(generationId);
+      expect(checkpoint.status).toBe("running");
+      expect(checkpoint.result).toBeUndefined();
+      await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);
+      const completed = await fixture.refresh(generationId);
+      expect(completed).toMatchObject({
+        generationId,
+        status: "completed",
+        result: {
+          contentType: "image/png",
+          size: Buffer.byteLength("generated image bytes"),
+          model,
+          provider: "openai",
+          privateArtifacts: true,
+          // Separately rounded: image text 1 + image output 6 +
+          // mainline input 1 + mainline output 1.
+          creditsCharged: 9,
+        },
+      });
+      expect(completed.result).toMatchObject({
+        id: expect.any(String),
+        url: expect.stringMatching(/\/artifacts\//u),
+      });
+      for (let repeat = 0; repeat < 2; repeat += 1) {
+        await expect(fixture.refresh(generationId)).resolves.toStrictEqual(
+          completed,
+        );
+        await fixture.reconcile();
+        await expect(fixture.status(generationId)).resolves.toStrictEqual(
+          completed,
+        );
+      }
+      expect(provider.submissions).toHaveLength(1);
+      expect(provider.retrievals).toStrictEqual([submission.id]);
+      expect(provider.deletions).toStrictEqual([submission.id]);
+      await expect(orgCredits(context, fixture.actor)).resolves.toBe(9991);
+      const uploads = context.mocks.s3.send.mock.calls
+        .map(([command]) => {
+          return command;
+        })
+        .filter((command): command is PutObjectCommand => {
+          return (
+            command instanceof PutObjectCommand &&
+            command.input.ContentType === "image/png"
+          );
+        });
+      expect(uploads).toHaveLength(1);
+      expect(uploads[0]?.input).toMatchObject({
+        Body: Buffer.from("generated image bytes"),
+        ContentType: "image/png",
+        Key: expect.stringMatching(/^private-artifacts\//u),
+      });
+    });
+  });
+
+  it("bills cached mainline input separately without counting it again as ordinary input", async () => {
+    const fixture = await createFixture();
+    await fixture.actor.run(async () => {
+      const provider = mockOpenAiImageResponses();
+      const response = await fixture.generate();
+      const generationId = readAcceptedGenerationId(
+        await response.json(),
+        "image",
+        fixture.actor.userId,
+      );
+      const submission = provider.submission();
+      const completed = completedImageResponseWithUsage(submission);
+      provider.responses.set(submission.id, {
+        ...completed,
+        usage: {
+          input_tokens: 1_000_000,
+          input_tokens_details: { cached_tokens: 500_000 },
+          output_tokens: 100,
+          total_tokens: 1_000_100,
+        },
+      });
+      await fixture.refresh(generationId);
+      await expect(fixture.refresh(generationId)).resolves.toMatchObject({
+        status: "completed",
+        result: { creditsCharged: 1258 },
+      });
+      await expect(orgCredits(context, fixture.actor)).resolves.toBe(8742);
+      expect(provider.submissions).toHaveLength(1);
+      expect(provider.retrievals).toStrictEqual([submission.id]);
+    });
+  });
+
+  it.each(["missing-mainline", "image-total", "mainline-total"] as const)(
+    "keeps a %s ledger recoverable without charging or storing an image",
+    async (failure) => {
+      const fixture = await createFixture();
+      await fixture.actor.run(async () => {
+        const provider = mockOpenAiImageResponses();
+        const response = await fixture.generate();
+        const generationId = readAcceptedGenerationId(
+          await response.json(),
+          "image",
+          fixture.actor.userId,
+        );
+        const submission = provider.submission();
+        const completed = completedImageResponseWithUsage(submission);
+        provider.responses.set(submission.id, {
+          ...completed,
+          ...(failure === "missing-mainline"
+            ? { usage: null }
+            : failure === "mainline-total"
+              ? { usage: { ...completed.usage, total_tokens: 583 } }
+              : {
+                  tool_usage: {
+                    image_gen: {
+                      ...completed.tool_usage.image_gen,
+                      total_tokens: 256,
+                    },
+                  },
+                }),
+        });
+        await expect(fixture.refresh(generationId)).resolves.toMatchObject({
+          status: "running",
+        });
+        await fixture.reconcile();
+        const pending = await fixture.status(generationId);
+        expect(pending).toMatchObject({ generationId, status: "running" });
+        expect(pending.result).toBeUndefined();
+        expect(pending.error).toBeUndefined();
+        await expect(orgCredits(context, fixture.actor)).resolves.toBe(10_000);
+        expect(
+          context.mocks.s3.send.mock.calls.filter(([command]) => {
+            return command instanceof PutObjectCommand;
+          }),
+        ).toHaveLength(0);
+        provider.responses.set(submission.id, completed);
+        const checkpoint = await fixture.refresh(generationId);
+        expect(checkpoint.status).toBe("running");
+        expect(checkpoint.result).toBeUndefined();
+        await expect(fixture.refresh(generationId)).resolves.toMatchObject({
+          status: "completed",
+          result: { creditsCharged: 9 },
+        });
+        await fixture.reconcile();
+        await expect(orgCredits(context, fixture.actor)).resolves.toBe(9991);
+        expect(provider.submissions).toHaveLength(1);
+        expect(provider.retrievals).toStrictEqual([
+          submission.id,
+          submission.id,
+          submission.id,
+        ]);
+        expect(
+          context.mocks.s3.send.mock.calls.filter(([command]) => {
+            return (
+              command instanceof PutObjectCommand &&
+              command.input.ContentType === "image/png"
+            );
+          }),
+        ).toHaveLength(1);
+      });
+    },
+  );
+
   it("rejects an unrelated owner before retrieving a private provider response", async () => {
     const fixture = await createFixture();
     const provider = mockOpenAiImageResponses();
@@ -344,7 +530,7 @@ describe("durable OpenAI Responses image generation", () => {
           },
         );
         expect(refresh.status).toBe(200);
-        expect(await refresh.json()).toMatchObject({
+        await expect(refresh.json()).resolves.toMatchObject({
           status: "failed",
           error: { code: publicCode },
         });

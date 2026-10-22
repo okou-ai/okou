@@ -229,11 +229,15 @@ function privateGenerationResult(result: unknown): Record<string, unknown> {
 function serializeBuiltInGenerationJob(
   job: BuiltInGenerationJobRow,
 ): BuiltInGenerationResponse {
+  const task = readBuiltInGenerationRequestInternal(job.request).providerTask;
+  const unsettledImage =
+    (task === "image-response" || task === "image-response-cleaned") &&
+    job.status !== "completed";
   return {
     generationId: job.id,
     type: job.type,
     status: job.status,
-    ...(isRecord(job.result)
+    ...(!unsettledImage && isRecord(job.result)
       ? {
           result: builtInGenerationIsPrivate(job.request)
             ? privateGenerationResult(job.result)

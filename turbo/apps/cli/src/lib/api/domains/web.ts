@@ -573,7 +573,27 @@ async function waitForImageGenerationResult(args: {
       }
     }
   } catch (error) {
-    if (!signal.aborted) throw error;
+    if (!signal.aborted) {
+      // The receipt has already been accepted. Even a single-request timeout or
+      // transport failure must preserve the ID so the caller can recover it.
+      const requestTimedOut =
+        error instanceof Error && error.name === "TimeoutError";
+      const failure = new ApiRequestError(
+        `${error instanceof Error ? error.message : `${args.fallback} wait failed`} (generationId: ${args.accepted.generationId}). Retrieve this job with okou generate get ${args.accepted.generationId} --refresh --json; do not submit another job.`,
+        requestTimedOut
+          ? "GENERATION_REQUEST_TIMEOUT"
+          : error instanceof ApiRequestError
+            ? error.code
+            : "GENERATION_WAIT_FAILED",
+        requestTimedOut
+          ? 504
+          : error instanceof ApiRequestError
+            ? error.status
+            : 502,
+      );
+      failure.cause = error;
+      throw failure;
+    }
   } finally {
     owner.abort();
     await notifier?.close();

@@ -24,6 +24,7 @@ export function mockOpenAiImageResponses(
 ) {
   const submissions: ImageResponseSubmission[] = [];
   const retrievals: string[] = [];
+  const deletions: string[] = [];
   const responses = new Map<string, Record<string, unknown>>();
   server.use(
     http.post(OPENAI_RESPONSES_URL, async ({ request }) => {
@@ -45,6 +46,12 @@ export function mockOpenAiImageResponses(
       responses.set(submission.id, response);
       return options.submit?.(submission) ?? HttpResponse.json(response);
     }),
+    http.delete(`${OPENAI_RESPONSES_URL}/:responseId`, ({ params }) => {
+      const id = String(params.responseId);
+      deletions.push(id);
+      responses.delete(id);
+      return new HttpResponse(null, { status: 204 });
+    }),
     http.get(`${OPENAI_RESPONSES_URL}/:responseId`, ({ params }) => {
       const id = String(params.responseId);
       retrievals.push(id);
@@ -61,7 +68,35 @@ export function mockOpenAiImageResponses(
     }
     return value;
   }
-  return { submissions, retrievals, responses, submission };
+  return { submissions, retrievals, deletions, responses, submission };
+}
+
+/**
+ * Sanitized from a deployed completed response: image tokens belong to the
+ * top-level tool ledger, not image_generation_call or the mainline usage.
+ */
+export function completedImageResponseWithUsage(
+  submission: ImageResponseSubmission,
+) {
+  return {
+    ...completedImageResponseWithoutUsage(submission),
+    tool_usage: {
+      image_gen: {
+        input_tokens: 59,
+        input_tokens_details: { image_tokens: 0, text_tokens: 59 },
+        output_tokens: 196,
+        output_tokens_details: { image_tokens: 196, text_tokens: 0 },
+        total_tokens: 255,
+      },
+    },
+    usage: {
+      input_tokens: 476,
+      input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 },
+      output_tokens: 106,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 582,
+    },
+  };
 }
 
 /** No invented image-tool usage: only the documented mainline usage is present. */
