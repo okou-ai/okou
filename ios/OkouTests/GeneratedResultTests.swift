@@ -248,7 +248,7 @@ final class GeneratedResultTests: XCTestCase {
     viewer.dismiss()
     XCTAssertNil(viewer.preview)
     XCTAssertNil(viewer.sharing)
-    withExtendedLifetime(consumer) {
+    try withExtendedLifetime(consumer) {
       XCTAssertEqual(
         try String(contentsOf: url, encoding: .utf8),
         "Synthetic generated text\nRead, copy, share, or save to Files.")
