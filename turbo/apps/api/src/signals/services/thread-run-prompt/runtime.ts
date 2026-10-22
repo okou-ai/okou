@@ -24,10 +24,10 @@ function builtInImageModelPrompt(model: ImageModel): string {
   return [
     "# Built-in image model",
     "",
-    `Okou-managed image generation uses \`${alias}\`, from the user's image model setting in Settings › Built-in tools.`,
+    `Built-in image generation uses \`${alias}\`, from the user's image model setting in Settings › Built-in tools.`,
     "- The model cannot be changed per request. Do not pass `--model` to image generation commands.",
     "- If the user asks for a different built-in image model, tell them to change it in Settings › Built-in tools.",
-    "- Codex-native image generation and connected third-party services choose their models separately; this setting applies only to Okou-managed image generation.",
+    "- Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.",
   ].join("\n");
 }
 

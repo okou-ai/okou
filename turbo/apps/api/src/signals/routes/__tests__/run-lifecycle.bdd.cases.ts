@@ -11585,9 +11585,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.environment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
-        expect(claim.appendSystemPrompt).toContain(
-          "this setting applies only to Okou-managed image generation",
-        );
         await api.requestCancelRun(actor, queued.runId, [200]);
         await finishCancelledRun(queued.runId, claim.sandboxToken);
 
