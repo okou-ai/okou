@@ -625,6 +625,13 @@ function isAccessibilityHidden(element: Element): boolean {
   return element.closest('[aria-hidden="true"], [hidden], [inert]') !== null;
 }
 
+// Testing Library documents this cache hook and uses it in its own role query,
+// but its published declaration only includes the first parameter.
+const isInaccessibleWithSubtree: (
+  element: Element,
+  options: { isSubtreeInaccessible: (element: Element) => boolean },
+) => boolean = isInaccessible;
+
 /**
  * Fast role lookup that returns the same elements as
  * `getAllByRole(role)` for text-content roles, without the ARIA tree walk
@@ -643,6 +650,25 @@ export function queryAllByRoleFast(
   role: FastRole,
   container: ParentNode = document.body,
 ): HTMLElement[] {
+  const inaccessibleSubtrees = new WeakMap<Element, boolean>();
+  function cachedIsSubtreeInaccessible(element: Element): boolean {
+    const cached = inaccessibleSubtrees.get(element);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const view = element.ownerDocument.defaultView;
+    if (!view) {
+      throw new Error("Accessibility queries require an owner window");
+    }
+    // Cache subtree exclusion only. A descendant may override inherited
+    // visibility, which is still checked by isInaccessible for each candidate.
+    const inaccessible =
+      ("hidden" in element && element.hidden === true) ||
+      element.getAttribute("aria-hidden") === "true" ||
+      view.getComputedStyle(element).display === "none";
+    inaccessibleSubtrees.set(element, inaccessible);
+    return inaccessible;
+  }
   return Array.from(
     container.querySelectorAll<HTMLElement>(ROLE_SELECTORS[role]),
   ).filter((el) => {
@@ -650,7 +676,9 @@ export function queryAllByRoleFast(
       const explicitRole = el.getAttribute("role");
       return (
         (explicitRole === null || explicitRole.split(" ")[0] === role) &&
-        !isInaccessible(el)
+        !isInaccessibleWithSubtree(el, {
+          isSubtreeInaccessible: cachedIsSubtreeInaccessible,
+        })
       );
     }
     return !isAccessibilityHidden(el);
