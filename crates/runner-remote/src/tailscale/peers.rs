@@ -274,6 +274,9 @@ impl Binding {
         self.cancelled.clone()
     }
     pub(super) fn live(&self) -> bool {
+        #[cfg(test)]
+        super::tests::relay_projection::record_liveness();
+
         !self.cancelled.is_cancelled() && !self.identity.expired()
     }
 }
