@@ -672,7 +672,7 @@ pub(in crate::exec_operation) fn register_exec_operation_start(
             shared.reserve_normal_operation()?,
         )),
         ExecOperationTracking::Composite(normal_operation) => Some(
-            ExecOperationNormalTracking::Composite(normal_operation.transition_handle()?),
+            ExecOperationNormalTracking::Composite(normal_operation.transition_handle()),
         ),
         ExecOperationTracking::Untracked => None,
     };

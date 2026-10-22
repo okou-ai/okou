@@ -97,42 +97,26 @@ impl Drop for PendingRequestGuard {
 }
 
 pub(crate) struct CompositeNormalOperation {
-    normal_operation: Option<NormalOperationToken>,
+    normal_operation: NormalOperationToken,
 }
 
 impl CompositeNormalOperation {
     pub(crate) fn from_token(normal_operation: NormalOperationToken) -> Self {
-        Self {
-            normal_operation: Some(normal_operation),
-        }
+        Self { normal_operation }
     }
 
     pub(crate) fn reserve(shared: &Arc<Shared>) -> io::Result<Self> {
         Ok(Self::from_token(shared.reserve_normal_operation()?))
     }
 
-    pub(crate) fn transition_handle(&self) -> io::Result<NormalOperationTransitionHandle> {
-        self.normal_operation
-            .as_ref()
-            .map(NormalOperationToken::transition_handle)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "composite normal operation already completed",
-                )
-            })
+    pub(crate) fn transition_handle(&self) -> NormalOperationTransitionHandle {
+        self.normal_operation.transition_handle()
     }
 
-    pub(crate) fn complete(mut self) -> io::Result<()> {
-        let normal_operation = self.normal_operation.take().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "composite normal operation already completed",
-            )
-        })?;
+    pub(crate) fn complete(self) -> io::Result<()> {
         // Terminal proof can race with connection close, which clears tracker
         // operations. Completion is idempotent for the composite owner.
-        match normal_operation.complete() {
+        match self.normal_operation.complete() {
             Ok(()) | Err(NormalOperationTransitionError::UnknownOperation { .. }) => Ok(()),
             Err(error) => Err(normal_operation_transition_error(error)),
         }
@@ -486,7 +470,7 @@ pub(crate) async fn request_on_shared_with_composite_operation_and_observer_fram
             route_id,
             response_tx: tx,
             normal_operation: Some(PendingNormalOperation::Composite(
-                normal_operation.transition_handle()?,
+                normal_operation.transition_handle(),
             )),
             normal_terminal_msg_types: terminal_msg_types,
         })
