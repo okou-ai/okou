@@ -8,10 +8,6 @@
       "import": "./src/index.ts",
       "types": "./src/index.ts"
     },
-    "./columns/pi-memory-phase2-job": {
-      "import": "./src/columns/pi-memory-phase2-job.ts",
-      "types": "./src/columns/pi-memory-phase2-job.ts"
-    },
     "./runtime/*": {
       "import": "./src/runtime/*.ts",
       "types": "./src/runtime/*.ts"
@@ -69,8 +65,8 @@
     "billing:attribution": "tsx scripts/billing-attribution.ts",
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
-    "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs",
-    "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts"
+    "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
+    "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",

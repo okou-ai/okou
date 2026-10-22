@@ -2,36 +2,26 @@ import { nativeThreadBindingSql } from "@okouai/db/operations/native-thread-bind
 
 import { isDeepStrictEqual } from "node:util";
 
-import type { z } from "zod";
-import {
-  runStatusSchema,
-  type RunStatus,
-  type RunResult,
-  runResultSchema,
-} from "@okouai/api-contracts/contracts/runs";
 import { nativeContinuationSchema } from "@okouai/api-contracts/contracts/runners";
-import { runCompletionMetadataSchema } from "@okouai/api-contracts/contracts/webhooks";
-
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
-import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import {
-  maintenancePublicationResultCondition,
-  maintenancePublicationVersion,
-  maintenanceUnpublishedRecoveryCondition,
-  maintenanceOutputResultVersion,
-} from "./pi-memory-phase2-result";
+  runResultSchema,
+  runStatusSchema,
+  type RunResult,
+  type RunStatus,
+} from "@okouai/api-contracts/contracts/runs";
+import { runCompletionMetadataSchema } from "@okouai/api-contracts/contracts/webhooks";
+import type { z } from "zod";
+
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import type { PersistedStorageMount } from "@okouai/db/types";
 
-import { and, eq, isNotNull, or } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { badRequestMessage, notFound } from "../../lib/error";
 
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
-import type { Db } from "../external/db";
 
 export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
@@ -40,7 +30,6 @@ export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
 export interface AgentRunOutputInput {
   readonly auth: SandboxAuth;
   readonly body: AgentRunOutputBody;
-  readonly recovery: boolean;
 }
 
 export type AgentRunOutputErrorResponse =
@@ -58,7 +47,6 @@ interface RunOutputContext {
   readonly orgId: string;
   readonly framework: string | null;
   readonly frameworkSessionId: string | null;
-  readonly existingOutput: ExistingRunOutput | undefined;
 }
 
 function resolvedOutputMounts(args: {
@@ -135,7 +123,6 @@ async function lockRunOutputContext(
     ? {
         ...run,
         status: runStatusSchema.parse(run.status),
-        existingOutput: undefined,
       }
     : undefined;
 }
@@ -312,177 +299,6 @@ async function exactRunOutputRetryResponse(
   return runOutputSuccessResponse(existing.result);
 }
 
-function finalizedMaintenanceOutput(
-  binding: {
-    readonly memoryStorageId: string;
-    readonly claimedBaseVersionId: string;
-  },
-  run: RunOutputContext,
-  body: AgentRunOutputBody,
-): { memoryStorageId: string; versionId: string } | string {
-  const outputError = runStorageOutputError(
-    run.storageMounts,
-    body.storageOutputs,
-  );
-  if (outputError) {
-    return outputError;
-  }
-  const existing = run.existingOutput;
-  const mount = run.storageMounts?.find((entry) => {
-    return entry.storageId === binding.memoryStorageId && entry.writeback;
-  });
-  const snapshot = body.storageOutputs?.find((entry) => {
-    return entry.name === mount?.name && entry.mountPath === mount.mountPath;
-  });
-  const committed = existing?.result?.storageOutputs?.find((entry) => {
-    return entry.name === mount?.name && entry.mountPath === mount.mountPath;
-  });
-  if (
-    !mount ||
-    !snapshot ||
-    !committed ||
-    (snapshot.version !== binding.claimedBaseVersionId &&
-      snapshot.version !== committed.version) ||
-    existing?.result === undefined ||
-    existing.type !== body.cliAgentType ||
-    existing.sessionId !== body.cliAgentSessionId ||
-    existing.historyHash !== null ||
-    !isDeepStrictEqual(
-      existing.result.storageOutputs,
-      storageOutputs(
-        resolvedOutputMounts({
-          runStorageMounts: run.storageMounts,
-          storageOutputs: body.storageOutputs,
-        }).map((entry) => {
-          // Fresh completion already normalizes the launch base recovery output
-          // to the publication result. Retain that same normalization on replay.
-          return entry.storageId === binding.memoryStorageId
-            ? { ...entry, version: committed.version }
-            : entry;
-        }),
-      ),
-    )
-  ) {
-    return "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output";
-  }
-  return {
-    memoryStorageId: binding.memoryStorageId,
-    versionId: committed.version,
-  };
-}
-
-function privateMaintenanceIdentityMatches(
-  binding: { readonly orgId: string; readonly userId: string },
-  input: AgentRunOutputInput,
-  run: RunOutputContext,
-): boolean {
-  return (
-    binding.orgId === input.auth.orgId &&
-    binding.userId === input.auth.userId &&
-    run.chatThreadId === null &&
-    isPiHistoryRun(run) &&
-    input.body.cliAgentSessionId === input.body.runId &&
-    input.body.cliAgentSessionHistoryDisposition === "native_only"
-  );
-}
-
-function privateMaintenanceSnapshotOutput(
-  binding: {
-    readonly memoryStorageId: string;
-    readonly claimedBaseVersionId: string;
-  },
-  run: RunOutputContext,
-  body: AgentRunOutputBody,
-  versionId: string,
-): { memoryStorageId: string; versionId: string } | string {
-  const mount = run.storageMounts?.find((entry) => {
-    return entry.storageId === binding.memoryStorageId && entry.writeback;
-  });
-  const snapshot = body.storageOutputs?.find((entry) => {
-    return entry.name === mount?.name && entry.mountPath === mount.mountPath;
-  });
-  if (
-    !mount ||
-    !snapshot ||
-    (snapshot.version !== binding.claimedBaseVersionId &&
-      snapshot.version !== versionId)
-  ) {
-    return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
-  }
-  return { memoryStorageId: binding.memoryStorageId, versionId };
-}
-
-// Private maintenance has no public Pi history. The Job proves fresh publication;
-// a finalized Run's immutable output proves only that Run's exact replay.
-async function privateMaintenanceOutput(
-  db: Db | Tx,
-  input: AgentRunOutputInput,
-  run: RunOutputContext,
-): Promise<
-  { memoryStorageId: string; versionId: string } | string | undefined
-> {
-  if (!isPiHistoryRun(run)) {
-    return undefined;
-  }
-  const [callback] = await db
-    .select({ payload: agentRunCallbacks.payload })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, input.body.runId),
-        eq(agentRunCallbacks.internalKind, "pi-memory:phase2"),
-      ),
-    )
-    .limit(1);
-  if (!callback) {
-    return undefined;
-  }
-  const parsed = piMemoryPhase2MaintenanceCallbackPayloadSchema.safeParse(
-    callback.payload,
-  );
-  if (
-    !parsed.success ||
-    !privateMaintenanceIdentityMatches(parsed.data, input, run)
-  ) {
-    return "[PI_MAINTENANCE_IDENTITY_INVALID] Private output identity does not match its launch";
-  }
-  const binding = parsed.data;
-  if (
-    ["completed", "failed", "cancelled"].includes(run.status) &&
-    run.existingOutput?.result !== undefined
-  ) {
-    return finalizedMaintenanceOutput(binding, run, input.body);
-  }
-  const [result] = await db
-    .select({ versionId: maintenanceOutputResultVersion(input.body.runId) })
-    .from(piMemoryPhase2Jobs)
-    .where(
-      or(
-        maintenancePublicationResultCondition({
-          ...binding,
-          runId: input.body.runId,
-        }),
-        input.recovery || ["failed", "cancelled"].includes(run.status)
-          ? maintenanceUnpublishedRecoveryCondition({
-              ...binding,
-              runId: input.body.runId,
-            })
-          : undefined,
-      ),
-    )
-    .limit(1);
-  const publicationVersionId = maintenancePublicationVersion(result);
-  if (publicationVersionId === undefined) {
-    return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
-  }
-  return privateMaintenanceSnapshotOutput(
-    binding,
-    run,
-    input.body,
-    publicationVersionId,
-  );
-}
-
 function runStorageOutputError(
   mounts: readonly PersistedStorageMount[] | null,
   outputs: AgentRunOutputBody["storageOutputs"],
@@ -505,38 +321,6 @@ function runStorageOutputError(
     identities.add(identity);
   }
   return null;
-}
-
-function isTerminalPrivatePiRun(run: RunOutputContext): boolean {
-  return (
-    ["completed", "failed", "cancelled"].includes(run.status) &&
-    run.chatThreadId === null &&
-    isPiHistoryRun(run)
-  );
-}
-
-function restoreTerminalPrivateOutput(
-  run: RunOutputContext,
-  existing: ExistingRunOutput | undefined,
-): RunOutputContext | string {
-  if (!existing) {
-    return run.status === "completed"
-      ? "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output"
-      : run;
-  }
-  if (
-    existing.result !== undefined &&
-    !(
-      existing.result.framework === existing.type &&
-      existing.result.frameworkSessionId === existing.sessionId
-    )
-  ) {
-    return "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output";
-  }
-  return {
-    ...run,
-    existingOutput: existing,
-  };
 }
 
 function capturedNativeOutputError(
@@ -576,28 +360,12 @@ export async function persistAgentRunOutputsInTransaction(
   input: AgentRunOutputInput,
   signal: AbortSignal,
 ): Promise<AgentRunOutputResponse> {
-  let run = await lockRunOutputContext(tx, input);
+  const run = await lockRunOutputContext(tx, input);
   signal.throwIfAborted();
   if (!run) {
     return notFound("Agent run not found");
   }
 
-  if (isTerminalPrivatePiRun(run)) {
-    // Read native identity and exact committed output from the same locked Run.
-    const existing = await loadExistingRunOutput(tx, input.body.runId);
-    signal.throwIfAborted();
-    const terminalRun = restoreTerminalPrivateOutput(run, existing);
-    if (typeof terminalRun === "string") {
-      return badRequestMessage(terminalRun);
-    }
-    run = terminalRun;
-  }
-
-  const maintenance = await privateMaintenanceOutput(tx, input, run);
-  signal.throwIfAborted();
-  if (typeof maintenance === "string") {
-    return badRequestMessage(maintenance);
-  }
   const outputError = runStorageOutputError(
     run.storageMounts,
     input.body.storageOutputs,
@@ -608,10 +376,6 @@ export async function persistAgentRunOutputsInTransaction(
   const storageMounts = resolvedOutputMounts({
     runStorageMounts: run.storageMounts,
     storageOutputs: input.body.storageOutputs,
-  }).map((mount) => {
-    return maintenance?.memoryStorageId === mount.storageId
-      ? { ...mount, version: maintenance.versionId }
-      : mount;
   });
   const nativeError = capturedNativeOutputError(run, input.body);
   if (nativeError) {

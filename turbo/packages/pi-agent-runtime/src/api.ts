@@ -1,13 +1,3 @@
-import {
-  measurePiPreparation,
-  measurePiPreparationSync,
-  startPiPreparationObservation,
-} from "./preparation-timing";
-import type {
-  PiPreparationObservation,
-  PiPreparationObserver,
-} from "./preparation-timing";
-import { MemoryPiSession } from "./session-memory";
 import type {
   PiPreheatedAgentsFile,
   PiPreheatedResourceSnapshot,
@@ -15,28 +5,28 @@ import type {
   PiSessionInspection,
 } from "./api-types";
 import { UnsupportedPiSessionVersionError } from "./errors";
+import type {
+  PiPreparationObservation,
+  PiPreparationObserver,
+} from "./preparation-timing";
 import {
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_PRESET,
-} from "./memory-background-config";
-import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
-export {
-  piMemoryPhase2SelectionDigest,
-  PI_MEMORY_PRESET,
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  UnsupportedPiSessionVersionError,
-};
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+} from "./preparation-timing";
+import { MemoryPiSession } from "./session-memory";
 export {
   measurePiPreparation,
   measurePiPreparationSync,
   startPiPreparationObservation,
+  UnsupportedPiSessionVersionError,
 };
 export type {
-  PiPreparationObservation,
-  PiPreparationObserver,
   PiPreheatedAgentsFile,
   PiPreheatedResourceSnapshot,
   PiPreheatedSkill,
+  PiPreparationObservation,
+  PiPreparationObserver,
   PiSessionInspection,
 };
 

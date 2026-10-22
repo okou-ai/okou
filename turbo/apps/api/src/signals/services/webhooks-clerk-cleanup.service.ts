@@ -1,20 +1,15 @@
-import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
-import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
+import { agents } from "@okouai/db/schema/agent";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
-import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
-import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -35,11 +30,13 @@ import {
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { appendCanonicalChatEventsSql } from "./chat-event-append.service";
 import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
-import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.service";
 import { cancelAndRefundOrgBillingForDeletion$ } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
+import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { removeUsagePackMemberAllocation$ } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits$ } from "./usage-pack-credit-refund.service";
+import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
+import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.service";
 
 const L = logger("WebhookClerkCleanup");
 type SlotsReleased = (slots: readonly ReleasedRunSlot[]) => void;
@@ -133,79 +130,6 @@ const stopClerkDeletedOwnerSchedules$ = command(
             ? eq(morningBriefScheduleClaims.ownerUserId, owner.userId)
             : eq(morningBriefScheduleClaims.orgId, owner.orgId),
           eq(morningBriefScheduleClaims.settlement, "unsettled"),
-        ),
-      );
-    signal.throwIfAborted();
-    await db
-      .update(piMemoryStage1Days)
-      .set({ consumedAt: stoppedAt })
-      .where(
-        and(
-          owner.kind === "user"
-            ? eq(piMemoryStage1Days.userId, owner.userId)
-            : eq(piMemoryStage1Days.orgId, owner.orgId),
-          isNull(piMemoryStage1Days.consumedAt),
-        ),
-      );
-    signal.throwIfAborted();
-    // Only unfinished control rows change. Generated memories, summaries,
-    // source hashes, blob references, watermarks and successful rows survive.
-    await db
-      .update(piMemoryStage1Candidates)
-      .set({
-        status: "terminal_failure",
-        leaseToken: null,
-        leaseExpiresAt: null,
-        retryAt: null,
-        lastErrorClass: "owner_deleted",
-        updatedAt: stoppedAt,
-      })
-      .where(
-        and(
-          owner.kind === "user"
-            ? eq(piMemoryStage1Candidates.userId, owner.userId)
-            : eq(piMemoryStage1Candidates.orgId, owner.orgId),
-          inArray(piMemoryStage1Candidates.status, [
-            "pending",
-            "retryable_failure",
-            "leased",
-          ]),
-        ),
-      );
-    signal.throwIfAborted();
-    await db
-      .update(piMemoryPhase2Jobs)
-      .set({
-        status: "terminal_failure",
-        claimedRevision: null,
-        claimedBaseVersionId: null,
-        leaseToken: null,
-        leaseExpiresAt: null,
-        retryCount: 3,
-        retryAt: null,
-        lastErrorClass: "owner_deleted",
-        claimedSelectionDigest: null,
-        claimedSelectedCount: null,
-        claimedSelectedUtf8Bytes: null,
-        maintenanceRunId: null,
-        updatedAt: stoppedAt,
-      })
-      .where(
-        and(
-          owner.kind === "user"
-            ? eq(piMemoryPhase2Jobs.userId, owner.userId)
-            : eq(piMemoryPhase2Jobs.orgId, owner.orgId),
-          or(
-            inArray(piMemoryPhase2Jobs.status, [
-              "pending",
-              "retryable_failure",
-              "leased",
-            ]),
-            and(
-              eq(piMemoryPhase2Jobs.status, "terminal_failure"),
-              eq(piMemoryPhase2Jobs.lastErrorClass, "mixed_source_credentials"),
-            ),
-          ),
         ),
       );
     signal.throwIfAborted();

@@ -1,4 +1,6 @@
--- #37970: read-only production preflight; counts and catalog names only.
+-- Historical #37970 preflight for the pre-retirement schema, retained for audit.
+-- Not runnable after session/conversation or Pi memory tables are retired.
+-- Read-only production preflight; counts and catalog names only.
 -- Run using the previously authorized production read-only SQL connection.
 -- No history/message bodies, hashes, credentials, or user identifiers are returned.
 -- Statements are independent observations, not a synchronized snapshot.

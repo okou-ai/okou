@@ -9,7 +9,6 @@ export const internalRunCallbackKinds = [
   "feishu:org",
   "workflow-automation:cron",
   "workflow-automation:loop",
-  "pi-memory:phase2",
 ] as const;
 
 export type InternalRunCallbackKind = (typeof internalRunCallbackKinds)[number];
@@ -56,8 +55,7 @@ function isInternalRunCallbackKind(
     case "telegram:chat":
     case "feishu:org":
     case "workflow-automation:cron":
-    case "workflow-automation:loop":
-    case "pi-memory:phase2": {
+    case "workflow-automation:loop": {
       return true;
     }
     default: {

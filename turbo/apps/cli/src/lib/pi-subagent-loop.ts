@@ -1,18 +1,18 @@
+import { PI_AGENT_DIR } from "@okouai/api-contracts/contracts/runners";
+import { runPiSubagent } from "@okouai/pi-agent-runtime/node";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { z } from "zod";
-import { PI_AGENT_DIR } from "@okouai/api-contracts/contracts/runners";
-import { runPiSubagent } from "@okouai/pi-agent-runtime/node";
 
+import { guestTaskStartupSchema } from "./guest-task";
 import { piSandboxAgentConfigFromEnv } from "./pi-agent-loop";
 import { PI_SESSION_ROLE_ENV } from "./pi-session-env";
 import {
   removeSubagentDirectory,
   validateSubagentDirectory,
 } from "./pi-subagents";
-import { guestTaskStartupSchema } from "./guest-task";
 
 const inputSchema = z.object({ prompt: z.string().trim().min(1) });
 const bootstrapSchema = inputSchema.extend({
@@ -55,9 +55,6 @@ export async function runPiSubagentLoop(
     handle = input.handle;
     const { prompt } = input;
     const config = await piSandboxAgentConfigFromEnv();
-    if (config.launchPayload.launchConfig.maintenance) {
-      throw new Error("Memory maintenance cannot launch subagents.");
-    }
     const inputFile = fifo;
     await runPiSubagent(
       {

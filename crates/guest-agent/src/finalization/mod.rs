@@ -46,8 +46,6 @@ struct FinalizationInputs<'a> {
     artifact_entries: &'a [env::ArtifactEnv],
     session_metadata: &'a CapturedSessionMetadata,
     final_session_history_identity_file: Cow<'a, str>,
-    pi_launch_config: &'a str,
-    pi_launch_payload_file: &'a str,
 }
 
 impl<'a> FinalizationInputs<'a> {
@@ -63,8 +61,6 @@ impl<'a> FinalizationInputs<'a> {
             final_session_history_identity_file: Cow::Borrowed(
                 runtime.paths.final_session_history_identity_file(),
             ),
-            pi_launch_config: &runtime.config.pi_launch_config,
-            pi_launch_payload_file: runtime.paths.pi_launch_payload_file(),
         }
     }
 }
@@ -202,14 +198,7 @@ async fn prepare_finalization_impl(
     // for both results even after one fails so a started blocking operation is
     // not detached from the finalization future.
     let (storage_outputs, finalization_history) = tokio::join!(
-        artifact::snapshot_artifact_entries(
-            http,
-            inputs.run_id,
-            inputs.artifact_entries,
-            mode,
-            inputs.pi_launch_config,
-            inputs.pi_launch_payload_file,
-        ),
+        artifact::snapshot_artifact_entries(http, inputs.run_id, inputs.artifact_entries,),
         session_history::prepare_retained_session_history(inputs.session_metadata),
     );
     let finalization_history = finalization_history?;
@@ -237,11 +226,7 @@ mod tests {
     use super::*;
     use httpmock::prelude::*;
     use serde_json::json;
-    #[cfg(unix)]
-    use std::process::Stdio;
     use std::time::Duration;
-    #[cfg(unix)]
-    use tokio::io::{AsyncBufReadExt, BufReader};
 
     struct FinalizationFilesGuard {
         guest_paths: crate::paths::GuestPaths,
@@ -289,8 +274,6 @@ mod tests {
             final_session_history_identity_file: guest_paths
                 .final_session_history_identity_file()
                 .into(),
-            pi_launch_config: "",
-            pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
         for mode in [FinalizationMode::Success, FinalizationMode::Recovery] {
             let prepared = prepare_finalization_impl(&http, mode, &inputs)
@@ -349,8 +332,6 @@ mod tests {
             final_session_history_identity_file: guest_paths
                 .final_session_history_identity_file()
                 .into(),
-            pi_launch_config: "",
-            pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
 
         let err = prepare_finalization_impl(&http, FinalizationMode::Success, &inputs)
@@ -362,210 +343,6 @@ mod tests {
             err.to_string().contains("Failed to walk artifact files"),
             "got: {err}"
         );
-        prepare.assert_calls(0);
-        commit.assert_calls(0);
-    }
-
-    #[tokio::test]
-    async fn maintenance_success_rejects_partial_tree_before_storage_publication() {
-        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
-        let server = MockServer::start();
-        let prepare = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/prepare");
-            then.status(200).json_body(json!({"unreachable": true}));
-        });
-        let commit = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/commit");
-            then.status(200).json_body(json!({"unreachable": true}));
-        });
-        let http = HttpClient::with_api_config(
-            server.base_url(),
-            "test-token",
-            "",
-            "maintenance-run-success",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
-        let memory_root = dir.path().join("memory");
-        std::fs::create_dir_all(&memory_root).unwrap();
-        std::fs::write(memory_root.join("MEMORY.md"), "partially applied").unwrap();
-        let storage_id = "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63";
-        let base_version = "a".repeat(64);
-        let launch = json!({
-            "schemaVersion": 2,
-            "maintenance": {
-                "schemaVersion": 1,
-                "memoryStorageId": storage_id,
-                "claimedRevision": 7,
-                "claimedBaseVersionId": base_version,
-                "leaseToken": "44754115-d375-4c46-aea7-a55bd1b61ec7",
-                "selectionDigest": "b".repeat(64),
-                "selected": [],
-            }
-        });
-        let entries = vec![env::ArtifactEnv {
-            name: "memory".to_string(),
-            mount_path: memory_root.to_string_lossy().into_owned(),
-            storage_id: storage_id.to_string(),
-            version_id: base_version,
-            missing_root_policy: Some(ArtifactEntryMissingRootPolicy::Fail),
-        }];
-        let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-success", None);
-        let launch_json = launch.to_string();
-        let inputs = FinalizationInputs {
-            run_id: "maintenance-run-success",
-            framework: env::Framework::Pi,
-            artifact_entries: &entries,
-            session_metadata: &session_metadata,
-            final_session_history_identity_file: guest_paths
-                .final_session_history_identity_file()
-                .into(),
-            pi_launch_config: &launch_json,
-            pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
-        };
-
-        let error = prepare_finalization_with_inputs(&http, &inputs)
-            .await
-            .err()
-            .expect("success finalization without a validation marker must fail");
-
-        assert!(
-            error
-                .to_string()
-                .contains("maintenance publication validation")
-        );
-        prepare.assert_calls(0);
-        commit.assert_calls(0);
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn maintenance_recovery_finalization_preserves_parent_after_partial_apply() {
-        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
-        let server = MockServer::start();
-        let prepare = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/prepare");
-            then.status(200).json_body(json!({"unreachable": true}));
-        });
-        let commit = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/commit");
-            then.status(200).json_body(json!({"unreachable": true}));
-        });
-        let http = HttpClient::with_api_config(
-            server.base_url(),
-            "test-token",
-            "",
-            "maintenance-run-recovery",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
-        let memory_root = dir.path().join("memory");
-        std::fs::create_dir_all(memory_root.join("skills/interrupted")).unwrap();
-        // Block in the shell itself so interruption cannot orphan a sleeper.
-        let mut child = tokio::process::Command::new("sh")
-            .args([
-                "-ec",
-                r#"printf partial > "$1/MEMORY.md"
-printf half > "$1/skills/interrupted/SKILL.md"
-printf 'started\n'
-IFS= read -r _ || exit 1
-printf late > "$1/memory_summary.md""#,
-                "sh",
-                &memory_root.to_string_lossy(),
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let mut reader = BufReader::new(stdout);
-        let mut started = String::new();
-        let fixture_timeout = Duration::from_secs(5);
-        let readiness = tokio::time::timeout(fixture_timeout, reader.read_line(&mut started)).await;
-
-        // Reap the fixture even if readiness failed before asserting its result.
-        child.start_kill().unwrap();
-        let status = tokio::time::timeout(fixture_timeout, child.wait())
-            .await
-            .expect("interrupted fixture should exit")
-            .unwrap();
-        readiness.expect("fixture should become ready").unwrap();
-        assert_eq!(started, "started\n");
-        assert!(!status.success());
-        started.clear();
-        assert_eq!(
-            tokio::time::timeout(fixture_timeout, reader.read_line(&mut started))
-                .await
-                .expect("fixture stdout should close without surviving descendants")
-                .unwrap(),
-            0
-        );
-        assert_eq!(
-            std::fs::read_to_string(memory_root.join("MEMORY.md")).unwrap(),
-            "partial"
-        );
-        assert_eq!(
-            std::fs::read_to_string(memory_root.join("skills/interrupted/SKILL.md")).unwrap(),
-            "half"
-        );
-        assert!(!memory_root.join("memory_summary.md").exists());
-        let storage_id = "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63";
-        let base_version = "a".repeat(64);
-        let launch = json!({
-            "schemaVersion": 2,
-            "maintenance": {
-                "schemaVersion": 1,
-                "memoryStorageId": storage_id,
-                "claimedRevision": 7,
-                "claimedBaseVersionId": base_version,
-                "leaseToken": "44754115-d375-4c46-aea7-a55bd1b61ec7",
-                "selectionDigest": "b".repeat(64),
-                "selected": [],
-            }
-        });
-        let entries = vec![env::ArtifactEnv {
-            name: "memory".to_string(),
-            mount_path: memory_root.to_string_lossy().into_owned(),
-            storage_id: storage_id.to_string(),
-            version_id: base_version.clone(),
-            missing_root_policy: Some(ArtifactEntryMissingRootPolicy::Fail),
-        }];
-        let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-recovery", None);
-        let launch_json = launch.to_string();
-        let inputs = FinalizationInputs {
-            run_id: "maintenance-run-recovery",
-            framework: env::Framework::Pi,
-            artifact_entries: &entries,
-            session_metadata: &session_metadata,
-            final_session_history_identity_file: guest_paths
-                .final_session_history_identity_file()
-                .into(),
-            pi_launch_config: &launch_json,
-            pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
-        };
-
-        let prepared = prepare_recovery_finalization_with_inputs(&http, &inputs)
-            .await
-            .unwrap();
-        let snapshots = prepared
-            .request()
-            .storage_outputs
-            .as_ref()
-            .expect("maintenance recovery should preserve its memory mount");
-
-        assert_eq!(snapshots.len(), 1);
-        assert_eq!(snapshots[0].version, base_version);
         prepare.assert_calls(0);
         commit.assert_calls(0);
     }
@@ -614,8 +391,6 @@ printf late > "$1/memory_summary.md""#,
             final_session_history_identity_file: guest_paths
                 .final_session_history_identity_file()
                 .into(),
-            pi_launch_config: "",
-            pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
 
         prepare_recovery_finalization_with_inputs(&http, &inputs)
