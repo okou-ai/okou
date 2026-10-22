@@ -235,7 +235,7 @@ describe("Entrusted Jobs", () => {
       text: "Ten verified prospects",
       references: [],
     };
-    let current = (
+    const current = (
       await accept(
         client().update({
           headers: f.headers,
@@ -254,20 +254,18 @@ describe("Entrusted Jobs", () => {
       text: "Updated verified shortlist",
       references: [],
     };
-    current = (
-      await accept(
-        client().update({
-          headers: f.headers,
-          params: { id: job.id },
-          body: patch(current, {
-            status: "completed",
-            work: { ...current.work, currentResultId: second.id },
-            result: second,
-          }),
+    await accept(
+      client().update({
+        headers: f.headers,
+        params: { id: job.id },
+        body: patch(current, {
+          status: "completed",
+          work: { ...current.work, currentResultId: second.id },
+          result: second,
         }),
-        [200],
-      )
-    ).body;
+      }),
+      [200],
+    );
     const oldReceipt = await accept(
       client().viewed({
         headers: human(f.actor),
