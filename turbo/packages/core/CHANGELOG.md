@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.777.6](https://github.com/okou-ai/okou/compare/core-v8.777.5...core-v8.777.6) (2026-10-22)
+
+
+### Bug Fixes
+
+* **host:** enforce site policies and resolve restricted previews ([#42243](https://github.com/okou-ai/okou/issues/42243)) ([31a1a37](https://github.com/okou-ai/okou/commit/31a1a376b2c6597dd12b16d668bc940e69e09829))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.1
+
 ## [8.777.5](https://github.com/okou-ai/okou/compare/core-v8.777.4...core-v8.777.5) (2026-10-22)
 
 

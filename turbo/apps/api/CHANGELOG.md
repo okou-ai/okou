@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.764.1](https://github.com/okou-ai/okou/compare/api-v1.764.0...api-v1.764.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **api:** adapt live china social results and privacy errors ([#42283](https://github.com/okou-ai/okou/issues/42283)) ([fde53e3](https://github.com/okou-ai/okou/commit/fde53e370e47b6154b007c7c2b56634f8bba509d))
+* **api:** commit agentphone cooldowns before sending verification texts ([#42309](https://github.com/okou-ai/okou/issues/42309)) ([ca9ce66](https://github.com/okou-ai/okou/commit/ca9ce663c0af041ae08b0210ea734e9e287c4508))
+* **host:** enforce site policies and resolve restricted previews ([#42243](https://github.com/okou-ai/okou/issues/42243)) ([31a1a37](https://github.com/okou-ai/okou/commit/31a1a376b2c6597dd12b16d668bc940e69e09829))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.1
+    * @okouai/core bumped to 8.777.6
+    * @okouai/db bumped to 1.356.1
+    * @okouai/pi-agent-runtime bumped to 1.50.49
+
 ## [1.764.0](https://github.com/okou-ai/okou/compare/api-v1.763.4...api-v1.764.0) (2026-10-22)
 
 

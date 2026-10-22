@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1052.2](https://github.com/okou-ai/okou/compare/app-v0.1052.1...app-v0.1052.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **host:** enforce site policies and resolve restricted previews ([#42243](https://github.com/okou-ai/okou/issues/42243)) ([31a1a37](https://github.com/okou-ai/okou/commit/31a1a376b2c6597dd12b16d668bc940e69e09829))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.1
+    * @okouai/core bumped to 8.777.6
+
 ## [0.1052.1](https://github.com/okou-ai/okou/compare/app-v0.1052.0...app-v0.1052.1) (2026-10-22)
 
 
