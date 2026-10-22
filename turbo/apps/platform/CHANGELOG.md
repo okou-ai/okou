@@ -12,6 +12,32 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1055.1](https://github.com/okou-ai/okou/compare/app-v0.1055.0...app-v0.1055.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **app:** give share copy link the neutral button weight ([#42375](https://github.com/okou-ai/okou/issues/42375)) ([349339a](https://github.com/okou-ai/okou/commit/349339a7de09e1b17b6c685886900aecb57eb6c7))
+* **host:** show access recovery pages and static website covers ([#42371](https://github.com/okou-ai/okou/issues/42371)) ([e56611e](https://github.com/okou-ai/okou/commit/e56611ee7374ad6f62cba34a0382bdaad8f950b5))
+
+
+### Refactoring
+
+* **app:** replace recent cleanup wrappers with owned lifetimes ([#42372](https://github.com/okou-ai/okou/issues/42372)) ([ca4d8d4](https://github.com/okou-ai/okou/commit/ca4d8d47572adda30db674ddc6c753bf8bd96b30))
+
+
+### Performance Improvements
+
+* **platform:** shorten voice transcription windows to fifteen seconds ([#42351](https://github.com/okou-ai/okou/issues/42351)) ([d3438d7](https://github.com/okou-ai/okou/commit/d3438d7dc0941efd09106a785b1355e48a7c6144))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.1
+    * @okouai/core bumped to 8.779.1
+
 ## [0.1055.0](https://github.com/okou-ai/okou/compare/app-v0.1054.0...app-v0.1055.0) (2026-10-22)
 
 

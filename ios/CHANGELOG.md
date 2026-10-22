@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.4](https://github.com/okou-ai/okou/compare/ios-v0.18.3...ios-v0.18.4) (2026-10-22)
+
+
+### CI
+
+* **ios:** refill shared caches automatically ([#42330](https://github.com/okou-ai/okou/issues/42330)) ([c6ddf76](https://github.com/okou-ai/okou/commit/c6ddf76e5afcd312e1a237dadeef3c353cff5fee))
+
 ## [0.18.3](https://github.com/okou-ai/okou/compare/ios-v0.18.2...ios-v0.18.3) (2026-10-22)
 
 
