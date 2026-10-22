@@ -55,9 +55,9 @@ import { settle } from "../utils";
 import {
   calculateUsagePackAdditionCreditGrant,
   calculateUsagePackUpgradeCreditGrants,
-  fulfillUsagePackSubscriptionChangeInvoice,
+  fulfillUsagePackSubscriptionChangeInvoice$,
   reconcileUsagePackAllocationChangeSubscription$,
-  usagePackInvoiceFulfillmentExists,
+  usagePackInvoiceFulfillmentExistsOwned$,
   usagePackPreviewSubscriptionMatches,
   type UsagePackChangeInvoiceInput,
 } from "./usage-pack-allocation-change.service";
@@ -3969,8 +3969,8 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
     // A saved schedule alone does not prove this invoice's credits were fulfilled.
     if (
       stored.root.deferredSchedule &&
-      (await usagePackInvoiceFulfillmentExists(
-        db,
+      (await set(
+        usagePackInvoiceFulfillmentExistsOwned$,
         invoice.id,
         stored.subscription.id,
       ))
@@ -3986,7 +3986,7 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
     assertImmediateInvoicePlan(root, subscription, invoice);
     const period = usagePackPeriod(subscription);
     await set(reconcileUsagePackAllocationChangeSubscription$, subscription);
-    await fulfillUsagePackSubscriptionChangeInvoice(db, {
+    await set(fulfillUsagePackSubscriptionChangeInvoice$, {
       subscriptionChangeId: root.id,
       prorationTimestamp: root.prorationTimestamp,
       periodStart: period.start,
