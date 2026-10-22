@@ -96,7 +96,7 @@ for workflow, name, save in writers:
 assert producer["runs-on"] == "ubuntu-latest"
 assert jobs["native-kerberos-runtime"]["strategy"]["matrix"]["os"] == ["ubuntu-latest", "ubuntu-24.04-arm"]
 release = workflows["release"]["jobs"]["build-runner-release-assets"]
-assert release["runs-on"] == "ubuntu-latest-8-cores"
+assert release["runs-on"] == "ubuntu-latest"
 assert release["strategy"]["matrix"]["target"] == ["aarch64-unknown-linux-musl", "x86_64-unknown-linux-musl"]
 for workflow, name in (("runner-architecture", "compile"), ("runner-image", "prewarm-rust-cache")):
     assert workflows[workflow]["jobs"][name]["runs-on"] == release["runs-on"]

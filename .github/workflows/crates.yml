@@ -1349,7 +1349,7 @@ jobs:
 
   # Compilation only needs the selected target; overlap it with image preparation.
   host-cpu-fairness-build:
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs:
