@@ -4,6 +4,8 @@ import type {
 } from "@okouai/api-contracts/contracts/social-data";
 import type {
   SocialDataJobError,
+  SocialDataJobProviderCursor,
+  SocialDataJobCollectionProgress,
   SocialDataJobRequest,
   SocialDataJobResult,
 } from "@okouai/db/jsonb-contracts/social-data-job";
@@ -52,6 +54,15 @@ export const socialDataJobs = pgTable(
     providerName: text("provider_name").notNull(),
     providerEndpoint: text("provider_endpoint").notNull(),
     upstreamRunId: text("upstream_run_id"),
+    sourceJobId: uuid("source_job_id"),
+    providerCursor:
+      jsonb("provider_cursor").$type<SocialDataJobProviderCursor>(),
+    nextProviderCursor: jsonb(
+      "next_provider_cursor",
+    ).$type<SocialDataJobProviderCursor>(),
+    collectionProgress: jsonb(
+      "collection_progress",
+    ).$type<SocialDataJobCollectionProgress>(),
     result: jsonb("result").$type<SocialDataJobResult>(),
     error: jsonb("error").$type<SocialDataJobError>(),
     estimatedCostUsdMicros: bigint("estimated_cost_usd_micros", {
@@ -82,6 +93,7 @@ export const socialDataJobs = pgTable(
         table.requestId,
       ),
       uniqueIndex("uq_social_data_jobs_usage").on(table.usageIdempotencyKey),
+      uniqueIndex("uq_social_data_jobs_source").on(table.sourceJobId),
       uniqueIndex("uq_social_data_jobs_upstream").on(table.upstreamRunId),
       index("idx_social_data_jobs_owner_id").on(
         table.orgId,

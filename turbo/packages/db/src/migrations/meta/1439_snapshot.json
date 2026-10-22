@@ -1,5 +1,5 @@
 {
-  "id": "6eccfc6e-830d-4b9d-8a27-13123238cf6c",
+  "id": "3cf82994-0d95-470a-9875-a4ec8e55dac6",
   "prevId": "a8c6e848-bee7-4a0d-a025-c4cd5ccb1bf4",
   "version": "7",
   "dialect": "postgresql",
@@ -26939,6 +26939,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "source_job_id": {
+          "name": "source_job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_cursor": {
+          "name": "provider_cursor",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_provider_cursor": {
+          "name": "next_provider_cursor",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "collection_progress": {
+          "name": "collection_progress",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "result": {
           "name": "result",
           "type": "jsonb",
@@ -27078,6 +27102,21 @@
           "columns": [
             {
               "expression": "usage_idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_social_data_jobs_source": {
+          "name": "uq_social_data_jobs_source",
+          "columns": [
+            {
+              "expression": "source_job_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -36998,12 +37037,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "import_session_id": {
-          "name": "import_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -37043,21 +37076,6 @@
             },
             {
               "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workflows_import_session": {
-          "name": "idx_workflows_import_session",
-          "columns": [
-            {
-              "expression": "import_session_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

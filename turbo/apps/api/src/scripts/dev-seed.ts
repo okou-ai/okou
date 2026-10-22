@@ -610,6 +610,15 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup("social", "socialkit", [
     [MANAGED_SOCIALKIT_BILLING_CATEGORY, usd(0.003), 1],
   ]),
+  ...usageGroup("social", "monid/douyin", [
+    ["provider_cost_usd_micros", 1250, 1_000_000],
+  ]),
+  ...usageGroup("social", "monid/weibo", [
+    ["provider_cost_usd_micros", 1250, 1_000_000],
+  ]),
+  ...usageGroup("commerce", "dataforseo", [
+    ["provider_cost_usd_micros", 1250, 1_000_000],
+  ]),
   // APIDojo Yahoo Finance — https://rapidapi.com/apidojo/api/yahoo-finance1/pricing
   // Pro is $10 per 10,000 requests, so one successful request costs 1 credit.
   ...usageGroup("finance", "apidojo", [["request", usd(0.001), 1]]),

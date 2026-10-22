@@ -90,12 +90,6 @@ impl RequestWriteProgress {
     }
 }
 
-impl PendingRequestGuard {
-    fn new(shared: Arc<Shared>, route_id: RouteId) -> Self {
-        Self { shared, route_id }
-    }
-}
-
 impl Drop for PendingRequestGuard {
     fn drop(&mut self) {
         self.shared.remove_pending(self.route_id);
@@ -262,7 +256,7 @@ fn encode_request_frame(msg_type: u8, seq: u32, payload: &[u8]) -> io::Result<Ve
 fn register_pending_response(
     shared: &Arc<Shared>,
     build_pending: impl FnOnce(RouteId, oneshot::Sender<RawMessage>) -> io::Result<PendingResponse>,
-) -> io::Result<(RouteId, oneshot::Receiver<RawMessage>)> {
+) -> io::Result<(oneshot::Receiver<RawMessage>, PendingRequestGuard)> {
     // Register under the state lock: `Closed` short-circuits to an
     // immediate error, and insertion into `pending` is serialised with
     // the `Connected -> Closed` transition in `close()`. There is no
@@ -285,7 +279,13 @@ fn register_pending_response(
         );
         Ok(())
     })?;
-    Ok((route_id, rx))
+    Ok((
+        rx,
+        PendingRequestGuard {
+            shared: Arc::clone(shared),
+            route_id,
+        },
+    ))
 }
 
 async fn write_registered_request_and_wait(
@@ -384,7 +384,7 @@ async fn request_raw_on_shared(
     deadline: Instant,
     timeout: Duration,
 ) -> io::Result<RawMessage> {
-    let (route_id, rx) = register_pending_response(shared, |route_id, tx| {
+    let (rx, pending_guard) = register_pending_response(shared, |route_id, tx| {
         Ok(PendingResponse {
             route_id,
             response_tx: tx,
@@ -392,7 +392,7 @@ async fn request_raw_on_shared(
             normal_terminal_msg_types: &[],
         })
     })?;
-    let _pending_guard = PendingRequestGuard::new(Arc::clone(shared), route_id);
+    let route_id = pending_guard.route_id;
     let seq = route_id.wire_seq();
     let data = encode_request_frame(msg_type, seq, payload)?;
 
@@ -447,8 +447,8 @@ pub(crate) async fn normal_request_on_shared_with_timing_frame_builder(
     if let (Some(timing), Some(started)) = (timing.as_deref_mut(), setup_started) {
         timing.setup = Some(started.elapsed());
     }
-    let (route_id, rx) = registration?;
-    let _pending_guard = PendingRequestGuard::new(Arc::clone(shared), route_id);
+    let (rx, pending_guard) = registration?;
+    let route_id = pending_guard.route_id;
     let seq = route_id.wire_seq();
 
     write_registered_request_and_wait_with_frame_builder(
@@ -481,7 +481,7 @@ pub(crate) async fn request_on_shared_with_composite_operation_and_observer_fram
         ));
     }
     let deadline = deadline_after(timeout, "request timeout overflowed")?;
-    let (route_id, rx) = register_pending_response(shared, |route_id, tx| {
+    let (rx, pending_guard) = register_pending_response(shared, |route_id, tx| {
         Ok(PendingResponse {
             route_id,
             response_tx: tx,
@@ -491,7 +491,7 @@ pub(crate) async fn request_on_shared_with_composite_operation_and_observer_fram
             normal_terminal_msg_types: terminal_msg_types,
         })
     })?;
-    let _pending_guard = PendingRequestGuard::new(Arc::clone(shared), route_id);
+    let route_id = pending_guard.route_id;
     let seq = route_id.wire_seq();
 
     write_registered_request_and_wait_with_frame_builder(

@@ -98,8 +98,6 @@ const listCommand = new Command()
           transport: connector.transport,
           endpoint: connector.endpoint,
           runtimeAvailable: connector.runtimeAvailable,
-          // Preserve the CLI JSON field using canonical Run availability.
-          connected: connector.runtimeAvailable,
           connectionStatus: connector.connectionStatus,
           setupStatus: connector.setupStatus,
           missingRequiredFields: connector.missingRequiredFields,

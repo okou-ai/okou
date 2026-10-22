@@ -23,6 +23,7 @@ import {
   createWorkspace$,
   workspaceCreation$,
   workspaceInvitations$,
+  workspaceAcceptance$,
   type WorkspaceInvitationActions,
 } from "../../signals/select-org/workspace-actions.ts";
 import { ThumbnailPlaceholder, WorkspaceLogo } from "../components/avatar.tsx";
@@ -31,15 +32,13 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 function InvitationRow({ actions }: { actions: WorkspaceInvitationActions }) {
   const { invitation } = actions;
   const acceptance = useLoadable(actions.request$);
+  const sharedAcceptance = useLoadable(workspaceAcceptance$);
   const joinWorkspace = useSet(actions.join$);
   const signal = useGet(pageSignal$);
   const isAccepting = acceptance.state === "loading";
   const { t } = useTranslation();
 
   const handleAccept = onDomEventFn(async () => {
-    if (isAccepting) {
-      return;
-    }
     await joinWorkspace(signal);
   });
 
@@ -54,7 +53,7 @@ function InvitationRow({ actions }: { actions: WorkspaceInvitationActions }) {
       </span>
       <Button
         type="button"
-        disabled={isAccepting}
+        disabled={sharedAcceptance.state === "loading"}
         onClick={handleAccept}
         variant="quiet"
         size="xs"
@@ -81,9 +80,6 @@ function CreateWorkspaceMenuItem() {
   const { t } = useTranslation();
 
   const handleCreateOrg = onDomEventFn(async () => {
-    if (creatingOrg) {
-      return;
-    }
     await createWorkspace(signal);
   });
 

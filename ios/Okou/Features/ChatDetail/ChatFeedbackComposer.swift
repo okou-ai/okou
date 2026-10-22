@@ -41,10 +41,6 @@ struct ChatFeedbackComposer: View {
                   }
                   .accessibilityIdentifier("feedback-quote-\(block.id)")
                 }
-                if block.isFeedback, !block.content.contextLabels.isEmpty {
-                  Text(block.content.contextLabels.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary)
-                }
                 ChatComposerTextInput(
                   text: Binding(
                     get: {
@@ -69,6 +65,12 @@ struct ChatFeedbackComposer: View {
                   },
                   pasteImages: state.attachments.importPastedImages,
                   editor: state.editor, editorOrder: order, isAppendTarget: block.id == appendID,
+                  document: Binding(
+                    get: {
+                      state.editorBlocks.first(where: { $0.id == block.id })?.content
+                        ?? ChatDraftDocument()
+                    },
+                    set: { state.editBlock(block.id, document: $0) }),
                   searchableRanges: {
                     state.editorBlocks.first(where: { $0.id == block.id })?.searchableRanges ?? []
                   },

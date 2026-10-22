@@ -11,7 +11,7 @@ import {
   BROWSER_SCREEN_WIDTH,
 } from "@okouai/api-contracts/contracts/browser";
 import { Button, cn } from "@okouai/ui";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -174,7 +174,8 @@ function ContainedLiveBrowserViewport({
   const { t } = useTranslation();
   const fitViewport = useSet(signals.fitViewport$);
   const fitViewportRef = useSet(signals.fitViewportRef$);
-  const fittingWindow = useGet(signals.fittingWindow$);
+  const fitWindowOperation = useLoadable(signals.fitWindowOperation$);
+  const fittingWindow = fitWindowOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
   return (
@@ -305,7 +306,8 @@ export function BrowserSessionPanel({
   const sessionLoadable = useLastLoadable(signals.panelSession$);
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const start = useSet(signals.start$);
-  const starting = useGet(signals.starting$);
+  const startOperation = useLoadable(signals.startOperation$);
+  const starting = startOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
   if (sessionLoadable.state === "loading") {

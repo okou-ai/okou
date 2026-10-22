@@ -91,6 +91,312 @@ describe("saved Social data jobs", () => {
     return output.mock.calls.flat().join("\n");
   }
 
+  it.each([
+    {
+      operation: "inspect",
+      input: "https://www.douyin.com/user/MS4wLjABAAAAprofile",
+      platform: "douyin",
+      flags: [],
+      extra: {},
+      limit: 1,
+    },
+    {
+      operation: "posts",
+      input: "https://weibo.com/u/1234567890",
+      platform: "weibo",
+      flags: [],
+      extra: {},
+      limit: 10,
+    },
+    {
+      operation: "replies",
+      input: "https://www.douyin.com/video/7123456789012345678",
+      platform: "douyin",
+      flags: ["--comment-id", "987654321"],
+      extra: { commentId: "987654321" },
+      limit: 10,
+    },
+    {
+      operation: "replies",
+      input: "https://weibo.com/1234567890/5123456789012345",
+      platform: "weibo",
+      flags: ["--comment-id", "987654321"],
+      extra: { commentId: "987654321" },
+      limit: 10,
+    },
+    {
+      operation: "followers",
+      input: "https://www.douyin.com/user/MS4wLjABAAAAprofile",
+      platform: "douyin",
+      flags: [],
+      extra: {},
+      limit: 10,
+    },
+    {
+      operation: "following",
+      input: "https://www.douyin.com/user/MS4wLjABAAAAprofile",
+      platform: "douyin",
+      flags: [],
+      extra: {},
+      limit: 10,
+    },
+  ])(
+    "quotes $platform $operation as an explicit bounded job",
+    async (testCase) => {
+      let body: unknown;
+      server.use(
+        http.post(`${api}/quote`, async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({
+            platform: testCase.platform,
+            operation: testCase.operation,
+            estimatedCredits: 10,
+            maxCredits: 10,
+            quantity: 1,
+            unit: "request",
+          });
+        }),
+      );
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        testCase.operation,
+        testCase.input,
+        ...testCase.flags,
+        "--dry-run",
+        "--json",
+      ]);
+      expect(body).toEqual({
+        operation: testCase.operation,
+        platform: testCase.platform,
+        url: testCase.input,
+        limit: testCase.limit,
+        ...testCase.extra,
+      });
+      expect(JSON.parse(stdout())).toMatchObject({
+        kind: "quote",
+        maxCredits: 10,
+      });
+    },
+  );
+
+  it.each([
+    ["douyin", "account"],
+    ["weibo", "post"],
+    ["youtube", "shorts"],
+    ["wechat", "article"],
+  ])(
+    "preserves the platform-specific %s search type %s",
+    async (platform, type) => {
+      let body: unknown;
+      server.use(
+        http.post(`${api}/quote`, async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({
+            platform,
+            operation: "search",
+            estimatedCredits: 10,
+            maxCredits: 10,
+            quantity: 1,
+            unit: "request",
+          });
+        }),
+      );
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "search",
+        "coffee",
+        "--platform",
+        platform,
+        "--type",
+        type,
+        "--limit",
+        "1000",
+        "--dry-run",
+        "--json",
+      ]);
+      expect(body).toEqual({
+        operation: "search",
+        platform,
+        query: "coffee",
+        type,
+        limit: 1000,
+      });
+      expect(JSON.parse(stdout())).toMatchObject({ kind: "quote", platform });
+    },
+  );
+
+  it("requires an explicit job control for new relationship operations", async () => {
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "followers",
+        "https://www.douyin.com/user/MS4wLjABAAAAprofile",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "requires a saved data job control",
+    );
+  });
+
+  it("enforces the whole-collection limit before requesting a quote", async () => {
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "search",
+        "coffee",
+        "--platform",
+        "douyin",
+        "--limit",
+        "1001",
+        "--dry-run",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(errors.mock.calls.flat().join("\n")).toContain("1000");
+  });
+
+  it("quotes continuation without changing the saved target or total limit", async () => {
+    let body: unknown;
+    server.use(
+      http.post(`${api}/jobs/${jobId}/continue/quote`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          platform: "douyin",
+          operation: "followers",
+          estimatedCredits: 10,
+          maxCredits: 10,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "jobs",
+      "continue",
+      jobId,
+      "--dry-run",
+      "--max-credits",
+      "9",
+      "--json",
+    ]);
+    expect(body).toEqual({});
+    expect(JSON.parse(stdout())).toMatchObject({
+      kind: "quote",
+      budget: { maxCredits: 9, fits: false },
+    });
+  });
+
+  it("submits a separately budgeted continuation and exposes its recovery ID", async () => {
+    const successorId = "747b03d1-907b-4e46-963e-dc922b4210ca";
+    let body: unknown;
+    server.use(
+      http.post(`${api}/jobs/${jobId}/continue`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(
+          job({
+            jobId: successorId,
+            platform: "douyin",
+            operation: "followers",
+          }),
+          { status: 202 },
+        );
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "jobs",
+      "continue",
+      jobId,
+      "--max-credits",
+      "12",
+      "--request-id",
+      requestId,
+      "--async",
+      "--json",
+    ]);
+    expect(body).toEqual({ requestId, maxCredits: 12 });
+    expect(JSON.parse(stdout())).toMatchObject({
+      jobId: successorId,
+      recoveryCommand: `okou social jobs get ${successorId} --wait --json`,
+    });
+  });
+
+  it("requires a new explicit budget even for an asynchronous continuation", async () => {
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "jobs",
+        "continue",
+        jobId,
+        "--async",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "requires an independent --max-credits",
+    );
+  });
+
+  it("exports only the successor page while preserving cumulative collection metadata", async () => {
+    const successorId = "747b03d1-907b-4e46-963e-dc922b4210ca";
+    const destination = join(directory, "next-page.json");
+    const collection = {
+      requestedItems: 30,
+      itemsReturned: 1,
+      cumulativeItemsReturned: 11,
+      hasMore: true,
+      continuationAvailable: true,
+      sourceJobId: jobId,
+    };
+    server.use(
+      http.post(`${api}/jobs/${jobId}/continue`, () => {
+        return HttpResponse.json(
+          job({
+            jobId: successorId,
+            platform: "douyin",
+            operation: "followers",
+            collection,
+            data: { items: [{ id: "follower-11", username: "coffee" }] },
+          }),
+          { status: 202 },
+        );
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "jobs",
+      "continue",
+      jobId,
+      "--max-credits",
+      "12",
+      "--request-id",
+      requestId,
+      "--output",
+      destination,
+      "--json",
+    ]);
+    expect(JSON.parse(await readFile(destination, "utf8"))).toMatchObject({
+      jobId: successorId,
+      collection,
+      data: { items: [{ id: "follower-11", username: "coffee" }] },
+    });
+    expect(JSON.parse(stdout())).toMatchObject({
+      kind: "export",
+      collection,
+      export: { path: destination },
+    });
+  });
+
   it("quotes Facebook posts through the free API without invoking a legacy intent", async () => {
     const requests: unknown[] = [];
     server.use(
@@ -469,7 +775,7 @@ describe("saved Social data jobs", () => {
       jobId,
       "--json",
     ]);
-    expect(queries).toEqual([`?limit=5&cursor=${jobId}`]);
+    expect(queries).toEqual([`?limit=5&cursor=${jobId}&includeExpanded=true`]);
     expect(JSON.parse(stdout())).toMatchObject({
       jobs: [{ jobId }],
       nextCursor: null,

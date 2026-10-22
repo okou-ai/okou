@@ -371,6 +371,127 @@ test("Explain a member's model credit usage", async () => {
   expect(screen.queryByText("openai/gpt-5.6-sol")).not.toBeInTheDocument();
 });
 
+test("Team usage groups Social and Product Data while conserving non-model credits", async () => {
+  const user = userEvent.setup();
+  mockUsageStory();
+  context.mocks.api(usageMembersContract.get, ({ respond }) => {
+    return respond(200, {
+      period: {
+        start: "2026-03-01T00:00:00Z",
+        end: "2026-04-01T00:00:00Z",
+      },
+      members: [
+        {
+          userId: "test-user-123",
+          email: "alice@example.com",
+          inputTokens: 12_000,
+          outputTokens: 3000,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          creditsCharged: 70,
+          breakdown: [
+            {
+              kind: "connector",
+              credits: 10,
+              providers: [
+                {
+                  provider: "dataforseo",
+                  credits: 3,
+                  usageKinds: [{ kind: "commerce", credits: 3 }],
+                },
+                { provider: "slack", credits: 7, usageKinds: [] },
+              ],
+            },
+            {
+              kind: "other",
+              credits: 50,
+              providers: [
+                {
+                  provider: "monid/dy",
+                  credits: 5,
+                  usageKinds: [{ kind: "social", credits: 5 }],
+                },
+                {
+                  provider: "monid/weibo",
+                  credits: 7,
+                  usageKinds: [{ kind: "social", credits: 7 }],
+                },
+                {
+                  provider: "dataforseo",
+                  credits: 24,
+                  usageKinds: [
+                    { kind: "commerce", credits: 11 },
+                    {
+                      kind: "commerce/dataforseo/provider_cost_usd_micros",
+                      credits: 13,
+                    },
+                  ],
+                },
+                {
+                  provider: "unknown",
+                  credits: 14,
+                  usageKinds: [{ kind: "legacy-data", credits: 14 }],
+                },
+              ],
+            },
+            {
+              kind: "model",
+              credits: 10,
+              providers: [
+                { provider: "gpt-5.6-sol", credits: 10, usageKinds: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  await openCreditUsage();
+  selectTeamUsage();
+  await screen.findByText("Alice Admin");
+  expect(screen.getAllByText("70").length).toBeGreaterThanOrEqual(1);
+
+  const connectorSegment = screen.getByTestId(
+    "member-usage-kind-test-user-123-connector",
+  );
+  await user.hover(connectorSegment);
+  const heading = await screen.findByText("Connectors - 46");
+  const details = heading.parentElement;
+  if (!details) {
+    throw new Error("Member connector usage details not found");
+  }
+  for (const [label, credits] of [
+    ["Social Data", "12"],
+    ["Product Data", "27"],
+    ["Slack", "7"],
+  ]) {
+    expect(within(details).getByText(label).parentElement).toHaveTextContent(
+      `${label}${credits}`,
+    );
+  }
+  expect(
+    within(details).queryByText(/monid|dataforseo/iu),
+  ).not.toBeInTheDocument();
+
+  await user.unhover(connectorSegment);
+  const otherSegment = screen.getByTestId(
+    "member-usage-kind-test-user-123-other",
+  );
+  await user.hover(otherSegment);
+  await screen.findByText("Other - 14");
+  expect(screen.getByText("Legacy Data").parentElement).toHaveTextContent(
+    "Legacy Data14",
+  );
+
+  await user.unhover(otherSegment);
+  await user.hover(screen.getByTestId("member-usage-kind-test-user-123-model"));
+  await screen.findByText("Models - 10");
+  expect(screen.getByText("GPT 5.6 Sol").parentElement).toHaveTextContent(
+    "GPT 5.6 Sol10",
+  );
+});
+
 test("Review workspace credit usage for the last seven days", async () => {
   const { requests, user } = await setupTeamCreditUsage();
   click(screen.getByText("Billing period"));

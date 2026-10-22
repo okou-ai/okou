@@ -1,4 +1,4 @@
-import { command, computed, type Command, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ChatThreadDraft } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   createRestoredAttachment,
@@ -46,30 +46,58 @@ export function createThreadDraftLoad(
       get(draft.attachments$).length > 0
     );
   });
+  const persistencePending$ = state(false);
+  const finishHandoff$ = command(
+    async (
+      { get, set },
+      restored: RestoredDraftState | null,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      set(persistencePending$, true);
+      const [finished] = await Promise.allSettled([
+        get(draft.composerDraftHandoff$)
+          ? set(draft.finishComposerDraftHandoff$, restored, signal)
+          : set(draft.reconcileComposerDraft$, signal),
+      ]);
+      signal.throwIfAborted();
+      // Preserve confirmed removals and marks even if rebuilding a copy fails.
+      // The serializer rejects unresolved originals rather than saving a subset.
+      const [saved] = await Promise.allSettled([set(save$, signal)]);
+      signal.throwIfAborted();
+      if (saved?.status === "fulfilled") {
+        set(persistencePending$, false);
+      }
+      if (finished?.status === "rejected") {
+        throw finished.reason;
+      }
+      if (saved?.status === "rejected") {
+        throw saved.reason;
+      }
+    },
+  );
   const load$ = command(async ({ get, set }, signal: AbortSignal) => {
     const handoff = get(draft.composerDraftHandoff$);
+    if (!handoff && get(persistencePending$)) {
+      await set(finishHandoff$, null, signal);
+      return;
+    }
     if (get(hasLocalDraft$) && !handoff) {
       return;
     }
     if (handoff && !handoff.needsRemoteMerge) {
-      if (await set(draft.finishComposerDraftHandoff$, null, signal)) {
-        await set(save$, signal);
-      }
+      await set(finishHandoff$, null, signal);
       return;
     }
     const threadDraft = await get(threadDraft$);
     signal.throwIfAborted();
 
     if (get(draft.composerDraftHandoff$)) {
-      if (
-        await set(
-          draft.finishComposerDraftHandoff$,
-          threadDraft ? userMessageDraftState(threadDraft) : null,
-          signal,
-        )
-      ) {
-        await set(save$, signal);
-      }
+      await set(
+        finishHandoff$,
+        threadDraft ? userMessageDraftState(threadDraft) : null,
+        signal,
+      );
       return;
     }
 

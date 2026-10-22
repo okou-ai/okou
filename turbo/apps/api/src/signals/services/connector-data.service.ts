@@ -37,6 +37,9 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
+import { gmailWatchStates } from "@okouai/db/schema/gmail-event";
+import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
+import { mailDrafts } from "@okouai/db/schema/mail-draft";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
@@ -71,7 +74,11 @@ import {
   connectorAccountTargetKey,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
-import { reconcileConnectorAccountState } from "./connector-account-state.service";
+import {
+  connectorAccountEmailWhere,
+  connectorAccountPrincipalWatchTables,
+  connectorAccountReconciliationIdentity,
+} from "./connector-account-state.service";
 import { normalizeManualGrantSubmittedValuesWithMethod } from "./connector-catalog-form-fields.service";
 import {
   connectorCatalogSearchFromSnapshot,
@@ -114,6 +121,11 @@ import {
   userFeatureSwitchOverrides,
 } from "./feature-switches.service";
 import { reconcileGmailWatchesForUser$ } from "./gmail-automation-watch.service";
+import { gmailAutomationResolvedLabelInvalidationWrite } from "./gmail-automation-account.service";
+import {
+  notionPendingEventsReconnectScope,
+  notionPendingEventsSkipWrite,
+} from "./notion-automation-account.service";
 import {
   prepareGoogleCalendarWatchStopForConnector$,
   stopPreparedGoogleCalendarWatches,
@@ -2215,86 +2227,6 @@ async function prepareConnectorTokenState(
   };
 }
 
-async function upsertConnectorTokenSecrets(
-  args: {
-    readonly db: Db;
-    readonly connectorId: string;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly secrets: readonly EncryptedBuiltinConnectorTokenSecret[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.secrets.length === 0) {
-    return;
-  }
-
-  for (const secret of args.secrets) {
-    const db = args.db;
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: secret.name,
-      encryptedValue: secret.encryptedValue,
-      description: secret.description,
-      updatedDescription: secret.description,
-    };
-    const write = connectorOwnedSecretWrite(credential);
-    const [row] = await db
-      .insert(secrets)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: secrets.id });
-    if (!row) {
-      throw new Error(
-        `Connector secret ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-}
-
-async function upsertConnectorTokenVariables(
-  args: {
-    readonly db: Db;
-    readonly connectorId: string;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly variables: readonly PreparedBuiltinConnectorTokenVariable[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  for (const variable of args.variables) {
-    const db = args.db;
-    const credential = {
-      connectorId: args.connectorId,
-      storage: args.method.storage,
-      orgId: args.orgId,
-      userId: args.userId,
-      name: variable.name,
-      value: variable.value,
-      description: null,
-      updatedDescription: null,
-    };
-    const write = connectorOwnedVariableWrite(credential);
-    const [row] = await db
-      .insert(variables)
-      .values(write.values)
-      .onConflictDoUpdate(write.conflict)
-      .returning({ id: variables.id });
-    if (!row) {
-      throw new Error(
-        `Connector variable ${credential.name} is owned by another row`,
-      );
-    }
-    signal.throwIfAborted();
-  }
-}
-
 async function upsertPreparedConnectorTokenState(
   args: {
     readonly db: Db;
@@ -2306,28 +2238,96 @@ async function upsertPreparedConnectorTokenState(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  await upsertConnectorTokenSecrets(
-    {
-      db: args.db,
-      connectorId: args.connectorId,
-      method: args.method,
-      orgId: args.orgId,
-      userId: args.userId,
-      secrets: args.state.secrets,
-    },
-    signal,
-  );
-  await upsertConnectorTokenVariables(
-    {
-      db: args.db,
-      connectorId: args.connectorId,
-      method: args.method,
-      orgId: args.orgId,
-      userId: args.userId,
-      variables: args.state.variables,
-    },
-    signal,
-  );
+  const tokenSecretsWriteArgs: {
+    readonly db: Db;
+    readonly connectorId: string;
+    readonly method: ConnectorAuthMethodRuntimeConfig;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly secrets: readonly EncryptedBuiltinConnectorTokenSecret[];
+  } = {
+    db: args.db,
+    connectorId: args.connectorId,
+    method: args.method,
+    orgId: args.orgId,
+    userId: args.userId,
+    secrets: args.state.secrets,
+  };
+  const tokenSecretsWriteSignal = signal;
+  await (async (): Promise<void> => {
+    if (tokenSecretsWriteArgs.secrets.length === 0) {
+      return;
+    }
+
+    for (const secret of tokenSecretsWriteArgs.secrets) {
+      const db = tokenSecretsWriteArgs.db;
+      const credential = {
+        connectorId: tokenSecretsWriteArgs.connectorId,
+        storage: tokenSecretsWriteArgs.method.storage,
+        orgId: tokenSecretsWriteArgs.orgId,
+        userId: tokenSecretsWriteArgs.userId,
+        name: secret.name,
+        encryptedValue: secret.encryptedValue,
+        description: secret.description,
+        updatedDescription: secret.description,
+      };
+      const write = connectorOwnedSecretWrite(credential);
+      const [row] = await db
+        .insert(secrets)
+        .values(write.values)
+        .onConflictDoUpdate(write.conflict)
+        .returning({ id: secrets.id });
+      if (!row) {
+        throw new Error(
+          `Connector secret ${credential.name} is owned by another row`,
+        );
+      }
+      tokenSecretsWriteSignal.throwIfAborted();
+    }
+  })();
+  const tokenVariablesWriteArgs: {
+    readonly db: Db;
+    readonly connectorId: string;
+    readonly method: ConnectorAuthMethodRuntimeConfig;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly variables: readonly PreparedBuiltinConnectorTokenVariable[];
+  } = {
+    db: args.db,
+    connectorId: args.connectorId,
+    method: args.method,
+    orgId: args.orgId,
+    userId: args.userId,
+    variables: args.state.variables,
+  };
+  const tokenVariablesWriteSignal = signal;
+  await (async (): Promise<void> => {
+    for (const variable of tokenVariablesWriteArgs.variables) {
+      const db = tokenVariablesWriteArgs.db;
+      const credential = {
+        connectorId: tokenVariablesWriteArgs.connectorId,
+        storage: tokenVariablesWriteArgs.method.storage,
+        orgId: tokenVariablesWriteArgs.orgId,
+        userId: tokenVariablesWriteArgs.userId,
+        name: variable.name,
+        value: variable.value,
+        description: null,
+        updatedDescription: null,
+      };
+      const write = connectorOwnedVariableWrite(credential);
+      const [row] = await db
+        .insert(variables)
+        .values(write.values)
+        .onConflictDoUpdate(write.conflict)
+        .returning({ id: variables.id });
+      if (!row) {
+        throw new Error(
+          `Connector variable ${credential.name} is owned by another row`,
+        );
+      }
+      tokenVariablesWriteSignal.throwIfAborted();
+    }
+  })();
 }
 
 function isExplicitReconnectIdentityMismatch(args: {
@@ -2422,12 +2422,59 @@ interface CommitBuiltinConnectorTokenConnectionArgs extends PreparedBuiltinConne
   readonly db: Tx;
 }
 
+interface ResolvedBuiltinConnectorTokenConnectionArgs extends CommitBuiltinConnectorTokenConnectionArgs {
+  readonly resolution: ConnectorConnectionMutationResolution;
+}
+
 interface CommittedBuiltinConnectorTokenConnection {
   readonly status: "connected";
   readonly connectorRow: StoredConnectorRow;
   readonly created: boolean;
   readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
   readonly pendingGoogleCalendarWatchStop: PendingGoogleCalendarWatchStop | null;
+}
+
+type BuiltinConnectorTokenConnectionCommitResult =
+  | CommittedBuiltinConnectorTokenConnection
+  | ConnectorConnectionMutationFailure
+  | { readonly status: "identityMismatch" };
+
+function builtinConnectorTokenConnectionValues(
+  connection: PreparedBuiltinConnectorTokenConnection,
+) {
+  return {
+    metadata: {
+      orgId: connection.orgId,
+      userId: connection.userId,
+      authMethod: connection.runtimeMethod.authMethodId,
+      storageVersion: connection.runtimeMethod.method.storage.version,
+      tokenExpiresAt: connection.tokenExpiresAt,
+      target: {
+        kind: "builtin" as const,
+        connectorSlug: connection.runtimeMethod.connectorSlug,
+        identity: {
+          kind: "external" as const,
+          externalId: connection.userInfo.id,
+          externalUsername: connection.userInfo.username,
+          externalEmail: connection.userInfo.email,
+          oauthRequestedScopes: connection.oauthRequestedScopes,
+          oauthGrantedScopes: connection.oauthGrantedScopes,
+        },
+      },
+    },
+    credentials: {
+      method: connection.runtimeMethod.method,
+      orgId: connection.orgId,
+      userId: connection.userId,
+      state: connection.connectorTokenState,
+    },
+    quest: {
+      orgId: connection.orgId,
+      userId: connection.userId,
+      questKey: "connector" as const,
+      sourceKey: `builtin:${connection.runtimeMethod.connectorSlug}`,
+    },
+  };
 }
 
 interface BuiltinConnectorTokenConnectionArgs {
@@ -2522,17 +2569,9 @@ export async function resolveBuiltinConnectorTokenConnectionMutation(
   return resolution;
 }
 export async function commitBuiltinConnectorTokenConnection(
-  args: CommitBuiltinConnectorTokenConnectionArgs & {
-    readonly resolution: ConnectorConnectionMutationResolution;
-  },
+  args: ResolvedBuiltinConnectorTokenConnectionArgs,
   signal: AbortSignal,
-): Promise<
-  | CommittedBuiltinConnectorTokenConnection
-  | ConnectorConnectionMutationFailure
-  | {
-      readonly status: "identityMismatch";
-    }
-> {
+): Promise<BuiltinConnectorTokenConnectionCommitResult> {
   const resolution = args.resolution;
   signal.throwIfAborted();
   if (resolution.kind !== "ready") {
@@ -2556,38 +2595,72 @@ export async function commitBuiltinConnectorTokenConnection(
       signal,
     );
   if (existingConnector !== null) {
-    await reconcileConnectorAccountState(
-      args.db,
-      {
-        connectorId: existingConnector.id,
-        previousPrincipalId: existingConnector.externalId,
-        nextPrincipalId: args.userInfo.id,
-        previousEmail: existingConnector.externalEmail,
-        nextEmail: args.userInfo.email,
-      },
-      signal,
+    const db = args.db;
+    const ref = connectorAccountReconciliationIdentity(
+      existingConnector,
+      args.userInfo,
     );
+    await (async () => {
+      if (ref.previousPrincipalId === ref.nextPrincipalId) {
+        if (ref.nextEmail !== null && ref.previousEmail !== ref.nextEmail) {
+          await db
+            .update(gmailWatchStates)
+            .set({ emailAddress: ref.nextEmail, updatedAt: nowDate() })
+            .where(eq(gmailWatchStates.connectorId, ref.connectorId));
+          signal.throwIfAborted();
+          if (ref.previousEmail !== null) {
+            await db
+              .update(googleCalendarWatchStates)
+              .set({ needsRewatch: true, updatedAt: nowDate() })
+              .where(
+                connectorAccountEmailWhere(ref.connectorId, ref.previousEmail),
+              );
+            signal.throwIfAborted();
+          }
+        }
+        return;
+      }
+      const labelDb = db;
+      const labelConnectorId = ref.connectorId;
+      await (async () => {
+        const write =
+          gmailAutomationResolvedLabelInvalidationWrite(labelConnectorId);
+        await labelDb.update(write.table).set(write.values).where(write.where);
+      })();
+      signal.throwIfAborted();
+      const pendingEventDb = db;
+      const invalidatedConnectorId = ref.connectorId;
+      await (async () => {
+        const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
+        await (async () => {
+          const write = notionPendingEventsSkipWrite(
+            scope.condition,
+            scope.reason,
+          );
+          await pendingEventDb
+            .update(write.table)
+            .set(write.values)
+            .where(write.where);
+        })();
+      })();
+      signal.throwIfAborted();
+      for (const table of connectorAccountPrincipalWatchTables) {
+        await db.delete(table).where(eq(table.connectorId, ref.connectorId));
+        signal.throwIfAborted();
+      }
+      await db
+        .update(mailDrafts)
+        .set({ connectorId: null })
+        .where(eq(mailDrafts.connectorId, ref.connectorId));
+      signal.throwIfAborted();
+    })();
   }
+  const { db, ...connection } = args;
+  const values = builtinConnectorTokenConnectionValues(connection);
   const written = await replaceConnectorConnectionOutcome(
-    args.db,
+    db,
     {
-      orgId: args.orgId,
-      userId: args.userId,
-      authMethod: args.runtimeMethod.authMethodId,
-      storageVersion: args.runtimeMethod.method.storage.version,
-      tokenExpiresAt: args.tokenExpiresAt,
-      target: {
-        kind: "builtin",
-        connectorSlug: args.runtimeMethod.connectorSlug,
-        identity: {
-          kind: "external",
-          externalId: args.userInfo.id,
-          externalUsername: args.userInfo.username,
-          externalEmail: args.userInfo.email,
-          oauthRequestedScopes: args.oauthRequestedScopes,
-          oauthGrantedScopes: args.oauthGrantedScopes,
-        },
-      },
+      ...values.metadata,
       resolution: resolution.mutation,
       insertConnectionId: args.insertConnectionId,
       writeCredentials: async ({ db, connectorId }, writeSignal) => {
@@ -2595,10 +2668,7 @@ export async function commitBuiltinConnectorTokenConnection(
           {
             db,
             connectorId,
-            method: args.runtimeMethod.method,
-            orgId: args.orgId,
-            userId: args.userId,
-            state: args.connectorTokenState,
+            ...values.credentials,
           },
           writeSignal,
         );
@@ -2611,17 +2681,7 @@ export async function commitBuiltinConnectorTokenConnection(
   }
   const connectorRow = written.row;
   if (isOneClickConnectorGrantKind(args.runtimeMethod.method.grant.kind)) {
-    await args.db.execute(
-      completedGetStartedQuestSql(
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          questKey: "connector",
-          sourceKey: `builtin:${args.runtimeMethod.connectorSlug}`,
-        },
-        nowDate(),
-      ),
-    );
+    await args.db.execute(completedGetStartedQuestSql(values.quest, nowDate()));
   }
   await reprojectConnectedWorkflowAutomations(
     { ...args, connectorSlug: args.runtimeMethod.connectorSlug },

@@ -765,19 +765,19 @@ test.each(["click", "Enter"])(
   },
 );
 
-test("Merge every Social Search vendor into one connector-segment row", async () => {
+test("Merge Social and Product Data into Connectors without changing other credit totals", async () => {
   const user = userEvent.setup();
   mockPersonalUsageStory([
     {
       ...usageRow({
         title: "Social platform research",
-        credits: 90,
+        credits: 129,
         runId: "run-social-platform-research",
       }),
       breakdown: [
         {
           kind: "other",
-          credits: 65,
+          credits: 100,
           providers: [
             {
               provider: "monid/x",
@@ -809,12 +809,48 @@ test("Merge every Social Search vendor into one connector-segment row", async ()
               credits: 12,
               usageKinds: [{ kind: "social", credits: 12 }],
             },
+            {
+              provider: "monid/dy",
+              credits: 2,
+              usageKinds: [{ kind: "social", credits: 2 }],
+            },
+            {
+              provider: "monid/weibo",
+              credits: 3,
+              usageKinds: [{ kind: "social", credits: 3 }],
+            },
+            {
+              provider: "dataforseo",
+              credits: 15,
+              usageKinds: [
+                { kind: "commerce", credits: 9 },
+                {
+                  kind: "commerce/dataforseo/provider_cost_usd_micros",
+                  credits: 6,
+                },
+              ],
+            },
+            {
+              provider: "unknown",
+              credits: 8,
+              usageKinds: [{ kind: "legacy-data", credits: 8 }],
+            },
+            {
+              provider: "apidojo",
+              credits: 7,
+              usageKinds: [{ kind: "finance", credits: 7 }],
+            },
           ],
         },
         {
           kind: "connector",
-          credits: 15,
+          credits: 19,
           providers: [
+            {
+              provider: "dataforseo",
+              credits: 4,
+              usageKinds: [{ kind: "commerce", credits: 4 }],
+            },
             { provider: "x", credits: 12, usageKinds: [] },
             {
               provider: "slack",
@@ -833,18 +869,20 @@ test("Merge every Social Search vendor into one connector-segment row", async ()
   ]);
   await openUsageSettings("usage-records");
   await screen.findByText("Social platform research");
+  expect(screen.getAllByText("129").length).toBeGreaterThanOrEqual(1);
 
   const connectorSegment = screen.getByTestId("usage-kind-segment-connector");
   await user.hover(connectorSegment);
-  const heading = await screen.findByText("Connectors - 80");
+  const heading = await screen.findByText("Connectors - 104");
   const details = heading.parentElement;
   if (!details) {
     throw new Error("Connector usage details not found");
   }
   for (const [label, credits] of [
-    // The X connector keeps its own row; every kind "social" vendor merges.
+    // The X connector stays separate from Social and Product Data.
     ["X", "12"],
-    ["Social Search", "65"],
+    ["Social Data", "70"],
+    ["Product Data", "19"],
     ["Slack", "3"],
   ]) {
     expect(within(details).getByText(label).parentElement).toHaveTextContent(
@@ -857,10 +895,26 @@ test("Merge every Social Search vendor into one connector-segment row", async ()
     expect(within(details).queryByText(platform)).not.toBeInTheDocument();
   }
 
-  // Every social vendor moved out, so the remaining "other" bucket is empty.
-  expect(
-    screen.queryByTestId("usage-kind-segment-other"),
-  ).not.toBeInTheDocument();
+  expect(within(details).queryByText(/dataforseo/iu)).not.toBeInTheDocument();
+
+  await user.unhover(connectorSegment);
+  await user.hover(screen.getByTestId("usage-kind-segment-other"));
+  await screen.findByText("Other - 15");
+  for (const [label, credits] of [
+    ["Legacy Data", "8"],
+    ["Finance", "7"],
+  ]) {
+    expect(screen.getByText(label).parentElement).toHaveTextContent(
+      `${label}${credits}`,
+    );
+  }
+
+  await user.unhover(screen.getByTestId("usage-kind-segment-other"));
+  await user.hover(screen.getByTestId("usage-kind-segment-model"));
+  await screen.findByText("Models - 10");
+  expect(screen.getByText("GPT 5.6 Sol").parentElement).toHaveTextContent(
+    "GPT 5.6 Sol10",
+  );
 });
 
 test("Refresh all loaded usage pages after billing changes", async () => {

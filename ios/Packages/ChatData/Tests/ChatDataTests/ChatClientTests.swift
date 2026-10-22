@@ -20,6 +20,9 @@ final class ChatClientTests: XCTestCase {
     let queries = Mutex<[[URLQueryItem]]>([])
     let pinEventID = UUID().uuidString
     let unpinEventID = UUID().uuidString
+    let muteEventID = UUID().uuidString
+    let unmuteEventID = UUID().uuidString
+    let archiveEventID = UUID().uuidString
     let fixture = ChatHTTPFixture { request in
       queries.withLock {
         $0.append(
@@ -38,11 +41,13 @@ final class ChatClientTests: XCTestCase {
     try await service.setPinned(
       threadID: fixtureThread, pinned: true, eventID: pinEventID, pinOrder: "a0")
     try await service.setPinned(threadID: fixtureThread, pinned: false, eventID: unpinEventID)
-    try await service.setArchived(threadID: fixtureThread, archived: true)
+    try await service.setArchived(threadID: fixtureThread, archived: true, eventID: archiveEventID)
     try await service.setArchived(threadID: fixtureThread, archived: false)
+    try await service.setMuted(threadID: fixtureThread, muted: true, eventID: muteEventID)
+    try await service.setMuted(threadID: fixtureThread, muted: false, eventID: unmuteEventID)
     try await service.rename(threadID: fixtureThread, title: "Renamed")
 
-    XCTAssertEqual(requests.withLock { $0.map(\.0) }, Array(repeating: "POST", count: 5))
+    XCTAssertEqual(requests.withLock { $0.map(\.0) }, Array(repeating: "POST", count: 7))
     XCTAssertEqual(
       requests.withLock { $0.map(\.1) },
       [
@@ -50,6 +55,8 @@ final class ChatClientTests: XCTestCase {
         "/api/chat-threads/\(fixtureThread)/unpin",
         "/api/chat-threads/\(fixtureThread)/archive",
         "/api/chat-threads/\(fixtureThread)/unarchive",
+        "/api/chat-threads/\(fixtureThread)/mute",
+        "/api/chat-threads/\(fixtureThread)/unmute",
         "/api/chat-threads/\(fixtureThread)/rename",
       ])
     XCTAssertEqual(requests.withLock { $0.last?.2 }, "{\"title\":\"Renamed\"}")
@@ -60,6 +67,11 @@ final class ChatClientTests: XCTestCase {
         URLQueryItem(name: "pinOrder", value: "a0"),
       ])
     XCTAssertEqual(queries.withLock { $0[1] }, [URLQueryItem(name: "eventId", value: unpinEventID)])
+    XCTAssertEqual(
+      queries.withLock { $0[2] }, [URLQueryItem(name: "eventId", value: archiveEventID)])
+    XCTAssertEqual(queries.withLock { $0[4] }, [URLQueryItem(name: "eventId", value: muteEventID)])
+    XCTAssertEqual(
+      queries.withLock { $0[5] }, [URLQueryItem(name: "eventId", value: unmuteEventID)])
   }
 
   func testCreateUsesSelectedAgentAndSavedModelWithoutOnboardingBootstrap() async throws {

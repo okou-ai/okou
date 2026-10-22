@@ -70,6 +70,8 @@ export interface AgentDeleteSession {
 }
 
 const internalAgentDeleteSession$ = state<AgentDeleteSession | null>(null);
+// Claim synchronously; React's loadable feedback is not a command mutex.
+const activeAgentDeleteSession$ = state<symbol | null>(null);
 export const agentDeleteSession$ = computed((get) => {
   return get(internalAgentDeleteSession$);
 });
@@ -96,7 +98,7 @@ export const setAgentDeleteDialogOpen$ = command(
     const sameOwner =
       previous?.agentId === agentId && previous.owner === signal;
     if (!open) {
-      if (sameOwner && previous.phase === "idle") {
+      if (sameOwner && get(activeAgentDeleteSession$) !== previous.id) {
         set(internalAgentDeleteSession$, {
           ...previous,
           open: false,
@@ -144,7 +146,11 @@ export const setAgentDeleteCopyChoices$ = command(
     workflows: readonly AgentDeleteWorkflow[],
   ) => {
     const session = get(internalAgentDeleteSession$);
-    if (session?.id === sessionId && session.open && session.phase === "idle") {
+    if (
+      session?.id === sessionId &&
+      session.open &&
+      get(activeAgentDeleteSession$) !== sessionId
+    ) {
       set(internalAgentDeleteSession$, { ...session, choices, workflows });
     }
   },
@@ -153,7 +159,11 @@ export const setAgentDeleteCopyChoices$ = command(
 export const reloadAgentDeleteWorkflows$ = command(
   ({ get, set }, sessionId: symbol) => {
     const session = get(internalAgentDeleteSession$);
-    if (session?.id === sessionId && session.open && session.phase === "idle") {
+    if (
+      session?.id === sessionId &&
+      session.open &&
+      get(activeAgentDeleteSession$) !== sessionId
+    ) {
       session.owner.throwIfAborted();
       set(internalAgentDeleteSession$, { ...session, result: undefined });
       set(reloadWorkflows$);
@@ -186,7 +196,7 @@ export const deleteAgent$ = command(
       session?.id !== sessionId ||
       session.owner !== signal ||
       !session.open ||
-      session.phase !== "idle"
+      get(activeAgentDeleteSession$) === sessionId
     ) {
       return;
     }
@@ -203,10 +213,10 @@ export const deleteAgent$ = command(
         );
       },
     );
+    set(activeAgentDeleteSession$, sessionId);
     set(internalAgentDeleteSession$, {
       ...session,
       phase: copyWorkflow && rescues.length > 0 ? "copying" : "deleting",
-      result: undefined,
     });
     const result = withCleanup(
       (async () => {
@@ -244,6 +254,9 @@ export const deleteAgent$ = command(
         signal.throwIfAborted();
       })(),
       () => {
+        if (get(activeAgentDeleteSession$) === sessionId) {
+          set(activeAgentDeleteSession$, null);
+        }
         const current = get(internalAgentDeleteSession$);
         if (current?.id === sessionId) {
           set(internalAgentDeleteSession$, {

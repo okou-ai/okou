@@ -46,6 +46,7 @@ export const CAPABILITIES = [
   "social:read",
   "finance:read",
   "seo:read",
+  "commerce:read",
   "computer-use:write",
   "computer-use:shell:write",
   "browser:read",
@@ -229,6 +230,10 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "finance:read": {
     group: "Finance",
     label: "Use managed finance services",
+  },
+  "commerce:read": {
+    group: "Commerce",
+    label: "Use managed Amazon product data",
   },
   "seo:read": {
     group: "SEO",

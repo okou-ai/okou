@@ -6100,7 +6100,8 @@ function ComposerConnectorAccountMenuContent({
     accountList.connections.length > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
     accountList.hasMultiplePages === true ||
     accountList.nextCursor !== null;
-  const saving = actions.savingAccount;
+  const saveOperation = useLoadable(signals.connector.accounts.saveOperation$);
+  const saving = saveOperation.state === "loading";
   return (
     <Combobox.Root<string>
       inline
@@ -8414,11 +8415,11 @@ function ComposerConnectorDialogsSlot({
       signal,
     ) => {
       return actions.runConnectSuccess(
-        connectorSlug,
         (_completedConnectionId, continuationSignal) => {
           return completeConnectorAddition(connectorSlug, continuationSignal);
         },
         connectionId,
+        connectorSlug,
         signal,
       );
     };

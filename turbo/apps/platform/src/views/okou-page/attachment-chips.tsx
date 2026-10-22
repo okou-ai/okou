@@ -1907,10 +1907,10 @@ function AnnotationUploadRetry({
   readonly annotationActions: ComposerAttachmentAnnotationActions;
 }) {
   const { t } = useTranslation();
-  const status = useGet(attachment.annotationUploadStatus$);
+  const operation = useLoadable(attachment.annotationOperation$);
   const retry = useSet(annotationActions.retryAttachmentAnnotations$);
   const pageSignal = useGet(pageSignal$);
-  if (status !== "failed") {
+  if (operation.state !== "hasError") {
     return null;
   }
   return (
@@ -1946,9 +1946,9 @@ function AttachmentChip({
   const { t } = useTranslation();
   const infoLoadable = useLoadable(attachment.fileInfo$);
   const preview = useLastResolved(attachment.preview$) ?? null;
-  const annotationStatus = useGet(attachment.annotationUploadStatus$);
+  const annotationOperation = useLoadable(attachment.annotationOperation$);
   const uploading =
-    infoLoadable.state === "loading" || annotationStatus === "pending";
+    infoLoadable.state === "loading" || annotationOperation.state === "loading";
   const url =
     infoLoadable.state === "hasData" && infoLoadable.data
       ? canonicalUserMessageFileUrl(infoLoadable.data.id)

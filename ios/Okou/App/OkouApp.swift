@@ -35,10 +35,11 @@ struct OkouApp: App {
   }
 }
 
-private struct AppRootView: View {
+struct AppRootView: View {
   let authentication: AuthenticationService
   let configuration: AppConfiguration
   @State private var accountError: String?
+  @State private var foregroundRefresh: Task<Void, Never>?
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
@@ -59,8 +60,10 @@ private struct AppRootView: View {
       }
     }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active { Task { await authentication.refresh() } }
+      foregroundRefresh?.cancel()
+      foregroundRefresh = phase == .active ? Task { await authentication.refresh() } : nil
     }
+    .onDisappear { foregroundRefresh?.cancel() }
     .alert(
       "Unable to update account",
       isPresented: Binding(
@@ -136,7 +139,10 @@ private struct WorkspaceRootView: View {
         Group {
           if let conversation = store.selectedConversation {
             ChatDetailView(
-              conversation: conversation, topContentInset: headerHeight, sidebar: sidebar
+              conversation: conversation, topContentInset: headerHeight, sidebar: sidebar,
+              mentionSource: ComposerMentionSource(
+                agentID: conversation.thread.agentID, agents: store.list.agents,
+                threads: store.list.threads)
             )
             .id(conversation.thread.id)
           } else {
@@ -151,7 +157,11 @@ private struct WorkspaceRootView: View {
                   attachments: composer.attachments,
                   draftState: composer,
                   submit: { await store.sendNewChat() }, refresh: nil,
-                  modelSelection: store.newModelSelection)
+                  modelSelection: store.newModelSelection,
+                  mentionSource: ComposerMentionSource(
+                    agentID: store.selectedAgentID, agents: store.list.agents,
+                    threads: store.list.threads),
+                  workflowSource: store.composerWorkflows, agentID: store.selectedAgentID)
               }
           }
         }
@@ -213,6 +223,13 @@ private struct WorkspaceRootView: View {
       )
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
+    .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
+    .overlay(alignment: .bottom) {
+      if let feedback = store.threadFeedback {
+        ChatThreadFeedbackView(store: store, feedback: feedback)
+          .padding(.bottom, 100)
+      }
+    }
     .task {
       store.setForeground(scenePhase == .active)
       await store.start(userID: userID, workspaceID: workspaceID)
@@ -233,7 +250,10 @@ private struct WorkspaceRootView: View {
     .alert(
       "Unable to update chats",
       isPresented: Binding(
-        get: { store.selectedConversation != nil && store.list.error != nil },
+        get: {
+          store.selectedConversation != nil && store.list.error != nil
+            && store.list.renameRequest == nil && !store.list.isSavingRename
+        },
         set: { if !$0 { store.list.dismissError() } }
       )
     ) {
@@ -256,34 +276,7 @@ private struct WorkspaceRootView: View {
   }
 
   private var mainHeader: some View {
-    ZStack {
-      Text(
-        store.list.threads.first(where: { $0.id == store.selectedThreadID })?.displayTitle
-          ?? store.currentAgentName
-      )
-      .font(.system(size: 17, weight: .semibold))
-      .lineLimit(1)
-      .padding(.horizontal, 66)
-      HStack {
-        Button(action: openSidebar) {
-          Image(systemName: "line.3.horizontal")
-            .font(.system(size: 19, weight: .medium))
-            .frame(width: 32, height: 32)
-        }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .accessibilityLabel("Open sidebar")
-        .accessibilityIdentifier("open-sidebar")
-        Spacer()
-        if let thread = store.list.threads.first(where: { $0.id == store.selectedThreadID }) {
-          ChatThreadPinButton(
-            list: store.list, threadID: thread.id, needsUpgrade: store.needsUpgrade)
-        }
-      }
-    }
-    .buttonStyle(.plain)
-    .padding(.horizontal, 16)
-    .frame(height: headerHeight)
+    ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
   }
 
   private var newChatHome: some View {

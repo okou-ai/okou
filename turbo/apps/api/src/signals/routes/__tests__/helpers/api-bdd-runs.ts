@@ -817,7 +817,6 @@ export function createRunsApi(context: TestContext) {
           body: {
             runnerIdentity: defaultRunnerIdentity,
             capabilities: defaultClaimCapabilities(),
-            nativeContinuationSupported: true,
             ...body,
           },
         }),
@@ -989,7 +988,6 @@ export function createRunsApi(context: TestContext) {
           params: { id: runId },
           body: {
             capabilities: defaultClaimCapabilities(),
-            nativeContinuationSupported: true,
             ...body,
           },
         }),
@@ -1454,7 +1452,6 @@ export function createRunsApi(context: TestContext) {
           body: {
             runnerIdentity: defaultRunnerIdentity,
             capabilities: defaultClaimCapabilities(),
-            nativeContinuationSupported: true,
             ...body,
           },
         }),

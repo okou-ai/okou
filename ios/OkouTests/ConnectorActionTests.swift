@@ -65,6 +65,27 @@ final class ConnectorActionTests: XCTestCase {
     }
     XCTAssertTrue(status.complete)
   }
+  func testSavedAccountsWithoutDefaultDoNotOpenAnAddFlow() async throws {
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.httpMethod, "GET")
+      if request.url?.path == "/api/connector-accounts/connections" {
+        return ChatHTTPResponse(
+          body: """
+            {"connections":[\(F.account(isDefault: false))],"nextCursor":null,"defaultConnection":null}
+            """)
+      }
+      return try XCTUnwrap(F.response(request))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let action = try descriptor(fixture)
+    store.activate(action)
+    try await eventually {
+      if case .failed = store.states[action.id] { return true }
+      return false
+    }
+    XCTAssertNil(store.active)
+  }
   func testExactReconnectRejectsASiblingReceiptAndAllowsRetry() async throws {
     let starts = Mutex(0)
     let fixture = ChatHTTPFixture { request in

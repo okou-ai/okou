@@ -1,4 +1,5 @@
 import ChatData
+import ChatDomain
 import SwiftUI
 import Textual
 
@@ -14,6 +15,8 @@ struct MessageBodyView: View, Equatable {
   let actionContext: MessageActionContext?
   let connectorActions: ConnectorActionStore?
   let permissionActions: PermissionActionRegistry?
+  let artifacts: MessageArtifactStore?
+  let artifactImageSources: [String]
   let loadsActions: Bool
   @Environment(\.openURL) private var openURL
   private struct Prepared {
@@ -26,6 +29,7 @@ struct MessageBodyView: View, Equatable {
     text: String, baseURL: URL, markdown: MessageMarkdownCache,
     actionContext: MessageActionContext? = nil, connectorActions: ConnectorActionStore? = nil,
     permissionActions: PermissionActionRegistry? = nil,
+    artifacts: MessageArtifactStore? = nil, artifactImageSources: [String] = [],
     loadsActions: Bool = false
   ) {
     self.text = text
@@ -34,6 +38,8 @@ struct MessageBodyView: View, Equatable {
     self.actionContext = actionContext
     self.connectorActions = connectorActions
     self.permissionActions = permissionActions
+    self.artifacts = artifacts
+    self.artifactImageSources = artifactImageSources
     self.loadsActions = loadsActions
     _prepared = State(
       initialValue: markdown.cached(text).map { Prepared(source: text, content: $0) })
@@ -43,6 +49,7 @@ struct MessageBodyView: View, Equatable {
     lhs.text == rhs.text && lhs.baseURL == rhs.baseURL && lhs.markdown === rhs.markdown
       && lhs.actionContext == rhs.actionContext && lhs.connectorActions === rhs.connectorActions
       && lhs.permissionActions === rhs.permissionActions
+      && lhs.artifacts === rhs.artifacts && lhs.artifactImageSources == rhs.artifactImageSources
       && lhs.loadsActions == rhs.loadsActions
   }
 
@@ -57,7 +64,7 @@ struct MessageBodyView: View, Equatable {
           case .markdown(let fragment):
             if !String(fragment.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             {
-              StructuredText(text, parser: PreparedMessageParser(content: fragment))
+              artifactBody(fragment)
             }
           case .connector(let action):
             ConnectorActionCard(action: action, store: connectorActions, loadsState: loadsActions)
@@ -70,6 +77,32 @@ struct MessageBodyView: View, Equatable {
               .font(.subheadline).foregroundStyle(.secondary)
               .padding(14).frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
               .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+          }
+        }
+      }
+    } else {
+      artifactBody(content)
+    }
+  }
+
+  @ViewBuilder private func artifactBody(_ content: AttributedString) -> some View {
+    if let artifacts {
+      let images =
+        prepared.map { MessageArtifactBody.resources($0.content, viewer: artifacts) } ?? []
+      let blocks = MessageArtifactBody.blocks(content, viewer: artifacts)
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+          switch block {
+          case .markdown(let fragment):
+            if !String(fragment.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+              StructuredText(text, parser: PreparedMessageParser(content: fragment))
+            }
+          case .artifact(let resource, let label, let destination):
+            MessageArtifactCard(
+              resource: resource, label: label, destination: destination,
+              images: images, imageSources: artifactImageSources, viewer: artifacts,
+              loadsContent: loadsActions)
           }
         }
       }
@@ -90,7 +123,9 @@ struct MessageBodyView: View, Equatable {
     .textual.codeBlockStyle(MessageCodeBlockStyle())
     .textual.tableStyle(.overflow)
     .textual.structuredTextStyle(.gitHub)
-    .textual.imageAttachmentLoader(MessageImageLoader(baseURL: baseURL))
+    .textual.imageAttachmentLoader(
+      MessageImageLoader(baseURL: baseURL, artifacts: artifacts, loadsContent: loadsActions)
+    )
     .textual.textSelection(.enabled)
     .frame(maxWidth: .infinity, alignment: .leading)
     .environment(
@@ -99,7 +134,13 @@ struct MessageBodyView: View, Equatable {
         guard ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") else {
           return .discarded
         }
-        openURL(url)
+        if let artifacts, let resource = artifacts.resource(url.absoluteString) {
+          let images =
+            prepared.map { MessageArtifactBody.resources($0.content, viewer: artifacts) } ?? []
+          artifacts.open(resource, images: images, imageSources: artifactImageSources)
+        } else {
+          openURL(url)
+        }
         return .handled
       }
     )
@@ -145,6 +186,8 @@ private struct MessageCodeBlockStyle: StructuredText.CodeBlockStyle {
 
 private struct MessageImageLoader: AttachmentLoader {
   let baseURL: URL
+  let artifacts: MessageArtifactStore?
+  let loadsContent: Bool
 
   private var loader: some AttachmentLoader { .image(relativeTo: baseURL) }
 
@@ -155,7 +198,20 @@ private struct MessageImageLoader: AttachmentLoader {
     guard ["https", "http"].contains(resolved.scheme?.lowercased() ?? "") else {
       throw URLError(.unsupportedURL)
     }
-    return try await loader.attachment(for: resolved, text: text, environment: environment)
+    if let artifacts, let resource = await artifacts.resource(resolved.absoluteString) {
+      guard loadsContent else { throw CancellationError() }
+      let card = try await artifacts.card(resource, thumbnail: true)
+      guard let data = card.thumbnail else { throw APIClientError.invalidResponse }
+      let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString + ".png")
+      try data.write(to: temporary)
+      defer { try? FileManager.default.removeItem(at: temporary) }
+      let erase: (any Textual.Attachment) -> AnyAttachment = AnyAttachment.init
+      return erase(
+        try await loader.attachment(for: temporary, text: text, environment: environment))
+    }
+    let erase: (any Textual.Attachment) -> AnyAttachment = AnyAttachment.init
+    return erase(try await loader.attachment(for: resolved, text: text, environment: environment))
   }
 }
 

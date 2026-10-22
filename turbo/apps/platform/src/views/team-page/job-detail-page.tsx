@@ -504,7 +504,6 @@ function ConnectedPermissionConnectorRow({
   onManage: (connectorSlug: ConnectorSlug) => void;
   isLast: boolean;
 }) {
-  const { t } = useTranslation("agents");
   const pageSignal = useGet(pageSignal$);
   const [toggleLoadable, toggleConnector] = useLoadableSet(
     toggleActions.toggle$,
@@ -526,11 +525,6 @@ function ConnectedPermissionConnectorRow({
           return;
         }
         await request;
-        toast.success(
-          t(($) => {
-            return $.authorization.connectorsSaved;
-          }),
-        );
       })}
       loading={toggleLoadable.state === "loading"}
       showManage={canManagePermissions && connector.hasPermissions}

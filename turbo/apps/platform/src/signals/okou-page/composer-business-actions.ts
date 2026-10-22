@@ -115,8 +115,9 @@ export function createComposerDraftActions(
       annotations: ImageAnnotation | null,
       signal: AbortSignal,
     ): Promise<void> => {
-      // The upload must settle before persistence: marks without their derivative
-      // restore as a failed annotation. Preserve saving on failure as well.
+      // Persist the marks and their derivative together after a successful
+      // upload. On failure, still save the marks as a missing-copy draft while
+      // preserving the actual rejection for the caller and the attachment chip.
       await withCleanup(
         set(attachment.confirmAnnotations$, annotations, signal),
         () => {

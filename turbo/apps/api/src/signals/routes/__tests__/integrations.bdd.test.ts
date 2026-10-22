@@ -795,7 +795,6 @@ async function runFirstCanonicalSlackPiTurn(
   expect((await readRunLog(scenario.actor, runId)).prompt).toContain(prompt);
   const claim = await runs.claimRunnerJob(runId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
-    nativeContinuationSupported: true,
   });
   return { prompt, runId, claim };
 }
@@ -867,7 +866,6 @@ async function expectSlackPiOwnership(args: {
     [404],
     {
       capabilities: { piModelConfigGenerations: [1, 2] },
-      nativeContinuationSupported: true,
     },
   );
   expect(duplicateClaim.status).toBe(404);
@@ -908,7 +906,6 @@ async function claimContinuedSlackPiTurn(args: {
   const runId = await pollSlackRun(args.scenario.runnerGroup);
   const claim = await runs.claimRunnerJob(runId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
-    nativeContinuationSupported: true,
   });
   expect(claim.cliAgentType).toBe("pi");
   expect(claim.piLaunchConfig).toBeDefined();
@@ -987,7 +984,6 @@ async function runSuccessfulRecoveredSlackPiTurn(args: {
   const completedRunId = await pollSlackRun(args.scenario.runnerGroup);
   const claim = await runs.claimRunnerJob(completedRunId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
-    nativeContinuationSupported: true,
   });
 
   expect(claim.piSessionId).toBe(args.scenario.chatThreadId);

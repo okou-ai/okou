@@ -3,18 +3,17 @@ import type {
   ConnectorCheckTargetAwareDiagnosticResult,
 } from "@okouai/api-contracts/contracts/connector-check";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
-import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
-import { memberAccountStatus, memberAccountSummary } from "./member-status";
+import {
+  customConnectorManagedStatusSchema,
+  isIntegrationManagedCustomConnector,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import { readMemberAccountFacts } from "./member-status";
 
 import {
   getAgentCustomConnectorGrants,
   getAgentUserBuiltinConnectors,
 } from "../../lib/api/domains/agents";
-import {
-  getBuiltinConnector,
-  getCustomConnector,
-  listConnectorAccountConnections,
-} from "../../lib/api/domains/connectors";
+import { getCustomConnector } from "../../lib/api/domains/connectors";
 import { getOkouAgentId } from "../../lib/okou-env";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import {
@@ -158,50 +157,40 @@ async function loadCheckEvidence(
   runBound: boolean,
   agentId: string | undefined,
 ) {
-  const [definition, currentConnection, accounts, authorized, origin] =
-    await Promise.all([
-      target.kind === "custom"
-        ? getCustomConnector(target.customConnectorId)
-        : null,
-      !runBound && target.kind === "builtin"
-        ? getBuiltinConnector(target.connectorSlug)
-        : null,
-      runBound ? resolveRunConnectorAccountLookups([target]) : null,
-      agentId === undefined
-        ? null
-        : target.kind === "builtin"
-          ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
-              return slugs.includes(target.connectorSlug);
-            })
-          : getAgentCustomConnectorGrants(agentId).then((grants) => {
-              return grants.some((grant) => {
-                return grant.customConnectorId === target.customConnectorId;
-              });
-            }),
-      getPlatformOrigin(),
-    ]);
+  const [definition, accounts, authorized, origin] = await Promise.all([
+    target.kind === "custom"
+      ? getCustomConnector(target.customConnectorId)
+      : null,
+    runBound ? resolveRunConnectorAccountLookups([target]) : null,
+    agentId === undefined
+      ? null
+      : target.kind === "builtin"
+        ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
+            return slugs.includes(target.connectorSlug);
+          })
+        : getAgentCustomConnectorGrants(agentId).then((grants) => {
+            return grants.some((grant) => {
+              return grant.customConnectorId === target.customConnectorId;
+            });
+          }),
+    getPlatformOrigin(),
+  ]);
   const account = accounts === null ? null : accounts[0];
   if (account === undefined) {
     throw new Error("Missing run account lookup for connector");
   }
-  const memberAccounts =
+  const memberFacts =
     !runBound &&
     !(definition && isIntegrationManagedCustomConnector(definition))
-      ? await listConnectorAccountConnections(target, undefined, {
-          includeScopeMismatch: target.kind === "builtin",
-        })
+      ? await readMemberAccountFacts(target)
       : null;
-  const accountSummary = memberAccountSummary(target, memberAccounts);
-  const memberStatus =
-    memberAccounts === null ? null : memberAccountStatus(memberAccounts);
   return {
     definition,
-    currentConnection,
     account,
     authorized,
     origin,
-    accountSummary,
-    memberStatus,
+    accountSummary: memberFacts?.accountSummary ?? null,
+    memberStatus: memberFacts?.memberStatus ?? null,
   };
 }
 
@@ -273,39 +262,6 @@ function checkConnectionActions(
     );
   }
   return connectionActions;
-}
-
-/** Keep the CLI's current-member output separate from admitted Run account facts. */
-function currentMemberConnection(
-  target: ConnectorAccountTarget,
-  evidence: Awaited<ReturnType<typeof loadCheckEvidence>>,
-  runBound: boolean,
-) {
-  if (runBound) {
-    return null;
-  }
-  if (target.kind === "builtin") {
-    return evidence.currentConnection;
-  }
-  const definition = evidence.definition;
-  if (definition === null) {
-    return null;
-  }
-  if (isIntegrationManagedCustomConnector(definition)) {
-    return {
-      connected: definition.connected,
-      connectionId: definition.connectedAccountId ?? null,
-      missingRequiredFields: definition.missingRequiredFields,
-    };
-  }
-  const account = evidence.accountSummary?.defaultConnection;
-  return account
-    ? {
-        connected: evidence.memberStatus === "connected",
-        connectionId: account.id,
-        missingRequiredFields: account.missingRequiredFields,
-      }
-    : null;
 }
 
 export async function printConnectorCheckJson(
@@ -403,7 +359,12 @@ export async function printConnectorCheckJson(
         account,
         accountSummary: evidence.accountSummary,
         memberStatus: evidence.memberStatus,
-        connection: currentMemberConnection(target, evidence, runBound),
+        managedStatus:
+          !runBound &&
+          definition !== null &&
+          isIntegrationManagedCustomConnector(definition)
+            ? customConnectorManagedStatusSchema.parse(definition)
+            : null,
         authorization: agentId === undefined ? null : { agentId, authorized },
         guidance: [
           "Routing and permission diagnostics describe current intended state; they do not confirm that the runner has applied the latest update.",

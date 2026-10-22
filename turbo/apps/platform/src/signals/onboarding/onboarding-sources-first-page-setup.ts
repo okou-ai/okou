@@ -35,10 +35,7 @@ import { detach, Reason } from "../utils.ts";
 import { promptHandoffParams } from "./onboarding-actions.ts";
 import { setupOnboardingPromptPage$ } from "./onboarding-page-setup.ts";
 import { watchOnboardingSkillImport$ } from "./onboarding-skill-import.ts";
-import {
-  allowOnboardingRecommendationFallback$,
-  resumeOnboardingRecommendation$,
-} from "./onboarding-recommendation.ts";
+import { watchOnboardingRecommendation$ } from "./onboarding-recommendation.ts";
 import {
   claimSourcesFirstStartEvent$,
   clearSourcesFirstDraft$,
@@ -141,8 +138,6 @@ function createSourcesFirstPageSetup(
       set(redirectTo$, SOURCES_FIRST_STEP_ROUTES[resumeStep]);
       return;
     }
-    set(resumeOnboardingRecommendation$, signal);
-
     // The run started, whichever step this setup ended up on: a guard redirect
     // below, or the way back, still belongs to the same run.
     if (set(claimSourcesFirstStartEvent$)) {
@@ -307,5 +302,5 @@ export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingReadyPage,
-  enter: allowOnboardingRecommendationFallback$,
+  watch: [watchOnboardingRecommendation$],
 });

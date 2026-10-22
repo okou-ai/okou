@@ -10,6 +10,7 @@ import {
 
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { agents } from "@okouai/db/schema/agent";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -33,7 +34,15 @@ import type {
   ConnectorServerFirewallSelection,
   ConnectorServerFirewallMetadataCatalog,
 } from "./connector-server-firewall-catalog.service";
-import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
+import {
+  connectorRuntimeWakeupRunColumns,
+  connectorRuntimeWakeupCondition,
+  publishConnectorRuntimeWakeupRows,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+  uniqueConnectorRuntimeTargets,
+  type ConnectorRuntimeWakeupBusinessArgs,
+} from "./connector-runtime-wakeup.service";
+import { settle } from "../utils";
 import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,
@@ -591,15 +600,17 @@ async function applyRowsAndPublishNetworkPolicyRefreshes(
   args: ApplyUserPermissionGrantsArgs,
   serverFirewalls: ConnectorServerFirewallSelection,
 ): Promise<readonly StoredPermissionGrantRow[] | NotFoundResponse> {
-  return await commitConnectorRuntimeMutation(
-    applyVisibleGrantRows(db, args),
-    (rows) => {
+  const commit = applyVisibleGrantRows(db, args);
+  return await (async () => {
+    const result = await commit;
+    const wakeup = ((
+      rows: typeof result,
+    ): ConnectorRuntimeWakeupBusinessArgs | undefined => {
       if ("status" in rows || !serverFirewalls.has(args.apply.connectorSlug)) {
         return undefined;
       }
       const responseScope = applyPermissionGrantResponseScope(args);
       return {
-        db,
         scope: {
           orgId: args.orgId,
           userId: args.userId,
@@ -607,8 +618,39 @@ async function applyRowsAndPublishNetworkPolicyRefreshes(
         },
         targets: [{ kind: "builtin", connectorSlug: args.apply.connectorSlug }],
       };
-    },
-  );
+    })(result);
+    if (wakeup) {
+      await (async () => {
+        const result = await settle(
+          (async () => {
+            const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+            if (targets.length === 0) {
+              return;
+            }
+            const rows = await db
+              .select(connectorRuntimeWakeupRunColumns())
+              .from(agentRuns)
+              .where(connectorRuntimeWakeupCondition(wakeup.scope));
+            await publishConnectorRuntimeWakeupRows({
+              scope: wakeup.scope,
+              targets,
+              rows,
+            });
+          })(),
+        );
+        if (!result.ok) {
+          reportConnectorRuntimeWakeupDiscoveryFailure({
+            orgId: wakeup.scope.orgId,
+            scopedToUser: wakeup.scope.userId !== undefined,
+            scopedToAgent: wakeup.scope.agentId !== undefined,
+            targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+            error: result.error,
+          });
+        }
+      })();
+    }
+    return result;
+  })();
 }
 
 function permissionGrantCatalogSlugsFromRows(

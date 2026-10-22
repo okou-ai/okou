@@ -1123,41 +1123,6 @@ function isExpiredAwsSigninRefreshState(
   );
 }
 
-async function getBuiltinConnectorSecretValues(args: {
-  readonly access: BuiltinConnectorCredentialAccess;
-  readonly db: Db;
-  readonly names: readonly string[];
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<ReadonlyMap<string, string>> {
-  if (args.names.length === 0) {
-    return new Map();
-  }
-  // Keep multi-secret credentials (for example AWS SigV4) on one statement
-  // snapshot so a same-method replacement cannot combine two stored states.
-  const rows = await args.db
-    .select({
-      name: secretsTable.name,
-      encryptedValue: secretsTable.encryptedValue,
-    })
-    .from(secretsTable)
-    .where(
-      builtinConnectorCredentialSecretReadCondition({
-        groups: [{ access: args.access, names: args.names }],
-      }),
-    );
-  const values = new Map<string, string>();
-  for (const row of rows) {
-    values.set(
-      row.name,
-      await decryptStoredSecretValue(
-        row.encryptedValue,
-        args.featureSwitchContext,
-      ),
-    );
-  }
-  return values;
-}
-
 async function getSecretValue(args: {
   readonly runId?: string;
   readonly connectorAccess?: BuiltinConnectorCredentialAccess;
@@ -1173,12 +1138,46 @@ async function getSecretValue(args: {
     if (args.connectorAccess === undefined) {
       return null;
     }
-    const values = await getBuiltinConnectorSecretValues({
+    const builtinSecretReadArgs = {
       access: args.connectorAccess,
       db: args.db,
       names: [args.name],
       featureSwitchContext: args.featureSwitchContext,
-    });
+    };
+    const values = await (async (): Promise<ReadonlyMap<string, string>> => {
+      if (builtinSecretReadArgs.names.length === 0) {
+        return new Map();
+      }
+      // Keep multi-secret credentials (for example AWS SigV4) on one statement
+      // snapshot so a same-method replacement cannot combine two stored states.
+      const rows = await builtinSecretReadArgs.db
+        .select({
+          name: secretsTable.name,
+          encryptedValue: secretsTable.encryptedValue,
+        })
+        .from(secretsTable)
+        .where(
+          builtinConnectorCredentialSecretReadCondition({
+            groups: [
+              {
+                access: builtinSecretReadArgs.access,
+                names: builtinSecretReadArgs.names,
+              },
+            ],
+          }),
+        );
+      const values = new Map<string, string>();
+      for (const row of rows) {
+        values.set(
+          row.name,
+          await decryptStoredSecretValue(
+            row.encryptedValue,
+            builtinSecretReadArgs.featureSwitchContext,
+          ),
+        );
+      }
+      return values;
+    })();
     return values.get(args.name) ?? null;
   }
   // Personal subscription credentials live only on their exact account.
@@ -1368,14 +1367,50 @@ async function getCurrentAccessSecrets(
   if (args.sourceType === "connector") {
     const connectorSlug = args.accessSourceKey;
     const access = args.connectorAccessBySlug.get(connectorSlug)?.access;
-    values = access
-      ? await getBuiltinConnectorSecretValues({
-          access,
-          db: args.db,
-          names: secretNames,
-          featureSwitchContext: args.featureSwitchContext,
-        })
-      : new Map();
+    if (access) {
+      const builtinSecretReadArgs = {
+        access,
+        db: args.db,
+        names: secretNames,
+        featureSwitchContext: args.featureSwitchContext,
+      };
+      values = await (async (): Promise<ReadonlyMap<string, string>> => {
+        if (builtinSecretReadArgs.names.length === 0) {
+          return new Map();
+        }
+        // Keep multi-secret credentials (for example AWS SigV4) on one statement
+        // snapshot so a same-method replacement cannot combine two stored states.
+        const rows = await builtinSecretReadArgs.db
+          .select({
+            name: secretsTable.name,
+            encryptedValue: secretsTable.encryptedValue,
+          })
+          .from(secretsTable)
+          .where(
+            builtinConnectorCredentialSecretReadCondition({
+              groups: [
+                {
+                  access: builtinSecretReadArgs.access,
+                  names: builtinSecretReadArgs.names,
+                },
+              ],
+            }),
+          );
+        const values = new Map<string, string>();
+        for (const row of rows) {
+          values.set(
+            row.name,
+            await decryptStoredSecretValue(
+              row.encryptedValue,
+              builtinSecretReadArgs.featureSwitchContext,
+            ),
+          );
+        }
+        return values;
+      })();
+    } else {
+      values = new Map();
+    }
   } else {
     const type = args.metadata.metadataKey ?? args.accessSourceKey;
     if (!isPersonalSubscriptionProviderType(type) || !args.sourceId) {
@@ -3052,12 +3087,8 @@ function referencedModelProviderAccessMap(args: {
   return refreshable;
 }
 
-async function syncStoredConnectorRuntimeSecrets(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly secrets: Record<string, string>;
-  readonly secretConnectorMap: Record<string, string> | undefined;
+function storedConnectorRuntimeSecretLookups(args: {
+  readonly secretConnectorMap: Record<string, string>;
   readonly secretConnectorMetadataMap:
     Record<string, SecretConnectorMetadata> | undefined;
   readonly referencedKeys: Set<string>;
@@ -3065,13 +3096,8 @@ async function syncStoredConnectorRuntimeSecrets(args: {
     string,
     BuiltinConnectorAccessState
   >;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<void> {
-  if (!args.secretConnectorMap) {
-    return;
-  }
-
-  const lookups = [...args.referencedKeys].flatMap((key) => {
+}) {
+  return [...args.referencedKeys].flatMap((key) => {
     const accessSourceKey = getOwnConnectorOwner(args.secretConnectorMap, key);
     if (!accessSourceKey) {
       return [];
@@ -3103,61 +3129,6 @@ async function syncStoredConnectorRuntimeSecrets(args: {
       ? [{ access: connectorAccess.access, key, secretName }]
       : [];
   });
-  if (lookups.length === 0) {
-    return;
-  }
-
-  const namesByConnectorId = new Map<
-    string,
-    {
-      readonly access: BuiltinConnectorCredentialAccess;
-      readonly names: Set<string>;
-    }
-  >();
-  for (const lookup of lookups) {
-    const existing = namesByConnectorId.get(lookup.access.connectorId);
-    if (existing) {
-      existing.names.add(lookup.secretName);
-    } else {
-      namesByConnectorId.set(lookup.access.connectorId, {
-        access: lookup.access,
-        names: new Set([lookup.secretName]),
-      });
-    }
-  }
-  const rows = await args.db
-    .select({
-      name: secretsTable.name,
-      encryptedValue: secretsTable.encryptedValue,
-    })
-    .from(secretsTable)
-    .where(
-      builtinConnectorCredentialSecretReadCondition({
-        groups: [...namesByConnectorId.values()].map((group) => {
-          return { access: group.access, names: [...group.names] };
-        }),
-      }),
-    );
-
-  const valuesByName = new Map<string, string>();
-  for (const row of rows) {
-    valuesByName.set(
-      row.name,
-      await decryptStoredSecretValue(
-        row.encryptedValue,
-        args.featureSwitchContext,
-      ),
-    );
-  }
-
-  for (const { key, secretName } of lookups) {
-    const value = valuesByName.get(secretName);
-    if (value === undefined) {
-      delete args.secrets[key];
-    } else {
-      args.secrets[key] = value;
-    }
-  }
 }
 
 async function getModelProviderRuntimeSecretValue(args: {
@@ -3509,7 +3480,7 @@ async function syncFirewallRuntimeSecrets(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly subscriptionBundles: SubscriptionBundleReads;
 }): Promise<void> {
-  await syncStoredConnectorRuntimeSecrets({
+  const storedRuntimeSyncArgs = {
     db: args.db,
     orgId: args.orgId,
     userId: args.auth.userId,
@@ -3519,7 +3490,76 @@ async function syncFirewallRuntimeSecrets(args: {
     referencedKeys: args.referencedKeys,
     connectorAccessBySlug: args.connectorAccessBySlug,
     featureSwitchContext: args.featureSwitchContext,
-  });
+  };
+  await (async (): Promise<void> => {
+    if (!storedRuntimeSyncArgs.secretConnectorMap) {
+      return;
+    }
+
+    const lookups = storedConnectorRuntimeSecretLookups({
+      secretConnectorMap: storedRuntimeSyncArgs.secretConnectorMap,
+      secretConnectorMetadataMap:
+        storedRuntimeSyncArgs.secretConnectorMetadataMap,
+      referencedKeys: storedRuntimeSyncArgs.referencedKeys,
+      connectorAccessBySlug: storedRuntimeSyncArgs.connectorAccessBySlug,
+    });
+
+    if (lookups.length === 0) {
+      return;
+    }
+
+    const namesByConnectorId = new Map<
+      string,
+      {
+        readonly access: BuiltinConnectorCredentialAccess;
+        readonly names: Set<string>;
+      }
+    >();
+    for (const lookup of lookups) {
+      const existing = namesByConnectorId.get(lookup.access.connectorId);
+      if (existing) {
+        existing.names.add(lookup.secretName);
+      } else {
+        namesByConnectorId.set(lookup.access.connectorId, {
+          access: lookup.access,
+          names: new Set([lookup.secretName]),
+        });
+      }
+    }
+    const rows = await storedRuntimeSyncArgs.db
+      .select({
+        name: secretsTable.name,
+        encryptedValue: secretsTable.encryptedValue,
+      })
+      .from(secretsTable)
+      .where(
+        builtinConnectorCredentialSecretReadCondition({
+          groups: [...namesByConnectorId.values()].map((group) => {
+            return { access: group.access, names: [...group.names] };
+          }),
+        }),
+      );
+
+    const valuesByName = new Map<string, string>();
+    for (const row of rows) {
+      valuesByName.set(
+        row.name,
+        await decryptStoredSecretValue(
+          row.encryptedValue,
+          storedRuntimeSyncArgs.featureSwitchContext,
+        ),
+      );
+    }
+
+    for (const { key, secretName } of lookups) {
+      const value = valuesByName.get(secretName);
+      if (value === undefined) {
+        delete storedRuntimeSyncArgs.secrets[key];
+      } else {
+        storedRuntimeSyncArgs.secrets[key] = value;
+      }
+    }
+  })();
   const runtimeSyncArgs = {
     db: args.db,
     runId: args.auth.runId,
@@ -4144,27 +4184,18 @@ async function prepareFirewallAuthResolutionContext(args: {
   };
 }
 
-async function resolveMatchedBuiltinConnectorVariables(
-  db: Db,
-  body: FirewallAuthBody,
-  context: FirewallAuthResolutionContext,
-): Promise<Record<string, string> | undefined> {
-  const matchedFirewall = body.matchedFirewall;
-  if (matchedFirewall?.connectorSlug === undefined) {
-    return body.vars ?? {};
-  }
-  const connectorSlug = matchedFirewall.connectorSlug;
-  const connectorAccess = context.connectorAccessBySlug.get(connectorSlug);
-  if (connectorAccess === undefined) {
-    return undefined;
-  }
-  const referencedBindings =
-    connectorAccess.runtimeMetadata.runtimeBindings.filter((binding) => {
+function matchedVariableReadPlan(
+  runtimeMetadata: ConnectorAuthMethodRuntimeMetadata,
+  referencedVars: ReadonlySet<string>,
+) {
+  const referencedBindings = runtimeMetadata.runtimeBindings.filter(
+    (binding) => {
       return (
         binding.source.kind === "connector-variable" &&
-        context.referenced.vars.has(binding.envName)
+        referencedVars.has(binding.envName)
       );
-    });
+    },
+  );
   const storageNames = [
     ...new Set(
       referencedBindings.flatMap((binding) => {
@@ -4174,22 +4205,15 @@ async function resolveMatchedBuiltinConnectorVariables(
       }),
     ),
   ];
-  const rows =
-    storageNames.length === 0
-      ? []
-      : await db
-          .select({ name: variablesTable.name, value: variablesTable.value })
-          .from(variablesTable)
-          .where(
-            builtinConnectorCredentialVariableReadCondition({
-              groups: [
-                {
-                  access: connectorAccess.access,
-                  names: storageNames,
-                },
-              ],
-            }),
-          );
+  return { referencedBindings, storageNames };
+}
+
+function matchedVariablesFromRows(
+  rows: readonly { readonly name: string; readonly value: string }[],
+  body: FirewallAuthBody,
+  matchedFirewall: NonNullable<FirewallAuthBody["matchedFirewall"]>,
+  referencedBindings: ConnectorAuthMethodRuntimeMetadata["runtimeBindings"],
+): Record<string, string> | undefined {
   const currentValuesByName = new Map(
     rows.map((row) => {
       return [row.name, row.value] as const;
@@ -5000,49 +5024,6 @@ type CurrentCustomConnectorAuthRefsResolution =
     }
   | { readonly kind: "unavailable" };
 
-async function resolveCurrentCustomConnectorMemberId(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly customConnectorId: string;
-  readonly sourceId: string;
-}): Promise<string | undefined> {
-  const target = {
-    kind: "custom" as const,
-    customConnectorId: args.customConnectorId,
-  };
-  const db = args.db;
-  const plan = connectorAccountResolutionReadPlan({
-    orgId: args.orgId,
-    userId: args.userId,
-    requests: [
-      {
-        target,
-        selection: { kind: "exact", sourceId: args.sourceId },
-      },
-    ],
-  });
-  const [exactRows, defaultRows] = await Promise.all([
-    plan.exactWhere
-      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
-      : [],
-    plan.defaultWhere
-      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
-      : [],
-  ]);
-  const accountResolutions = connectorAccountResolutionsFromRows({
-    requests: plan.requests,
-    exactRows,
-    defaultRows,
-  });
-  const accountResolution = accountResolutions.get(
-    connectorAccountTargetKey(target),
-  );
-  return accountResolution?.kind === "resolved"
-    ? accountResolution.account.connectorId
-    : undefined;
-}
-
 async function loadCurrentCustomConnectorAuthRefs(args: {
   readonly db: Db;
   readonly orgId: string;
@@ -5050,7 +5031,43 @@ async function loadCurrentCustomConnectorAuthRefs(args: {
   readonly customConnectorId: string;
   readonly sourceId: string;
 }): Promise<CurrentCustomConnectorAuthRefsResolution> {
-  const memberConnectorId = await resolveCurrentCustomConnectorMemberId(args);
+  const memberLookupArgs = args;
+  const memberConnectorId = await (async (): Promise<string | undefined> => {
+    const target = {
+      kind: "custom" as const,
+      customConnectorId: memberLookupArgs.customConnectorId,
+    };
+    const db = memberLookupArgs.db;
+    const plan = connectorAccountResolutionReadPlan({
+      orgId: memberLookupArgs.orgId,
+      userId: memberLookupArgs.userId,
+      requests: [
+        {
+          target,
+          selection: { kind: "exact", sourceId: memberLookupArgs.sourceId },
+        },
+      ],
+    });
+    const [exactRows, defaultRows] = await Promise.all([
+      plan.exactWhere
+        ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+        : [],
+      plan.defaultWhere
+        ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+        : [],
+    ]);
+    const accountResolutions = connectorAccountResolutionsFromRows({
+      requests: plan.requests,
+      exactRows,
+      defaultRows,
+    });
+    const accountResolution = accountResolutions.get(
+      connectorAccountTargetKey(target),
+    );
+    return accountResolution?.kind === "resolved"
+      ? accountResolution.account.connectorId
+      : undefined;
+  })();
   if (memberConnectorId === undefined) {
     return { kind: "unavailable" };
   }
@@ -5751,11 +5768,47 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
   if (missingSecretsResponse) {
     return { ok: false, response: missingSecretsResponse };
   }
-  const vars = await resolveMatchedBuiltinConnectorVariables(
-    args.db,
-    args.body,
-    args.prepared.context,
-  );
+  const variableDb = args.db;
+  const variableBody = args.body;
+  const variableContext = args.prepared.context;
+  const vars = await (async (): Promise<Record<string, string> | undefined> => {
+    const matchedFirewall = variableBody.matchedFirewall;
+    if (matchedFirewall?.connectorSlug === undefined) {
+      return variableBody.vars ?? {};
+    }
+    const connectorSlug = matchedFirewall.connectorSlug;
+    const connectorAccess =
+      variableContext.connectorAccessBySlug.get(connectorSlug);
+    if (connectorAccess === undefined) {
+      return undefined;
+    }
+    const { referencedBindings, storageNames } = matchedVariableReadPlan(
+      connectorAccess.runtimeMetadata,
+      variableContext.referenced.vars,
+    );
+    const rows =
+      storageNames.length === 0
+        ? []
+        : await variableDb
+            .select({ name: variablesTable.name, value: variablesTable.value })
+            .from(variablesTable)
+            .where(
+              builtinConnectorCredentialVariableReadCondition({
+                groups: [
+                  {
+                    access: connectorAccess.access,
+                    names: storageNames,
+                  },
+                ],
+              }),
+            );
+    return matchedVariablesFromRows(
+      rows,
+      variableBody,
+      matchedFirewall,
+      referencedBindings,
+    );
+  })();
   if (vars === undefined) {
     return { ok: false, response: connectorNotConfigured() };
   }

@@ -1242,6 +1242,20 @@ export {
   type SeoSerpRequest,
 } from "./seo";
 export {
+  AMAZON_MARKETPLACES,
+  amazonMarketplaceSchema,
+  commerceContract,
+  commerceSearchRequestSchema,
+  commerceInspectRequestSchema,
+  commerceResponseSchema,
+  parseAmazonProductTarget,
+  type AmazonMarketplace,
+  type CommerceContract,
+  type CommerceSearchRequest,
+  type CommerceInspectRequest,
+  type CommerceResponse,
+} from "./commerce";
+export {
   PEOPLE_SEARCH_DEFAULT_LIMIT,
   PEOPLE_SEARCH_MAX_COMPANY_CHARS,
   PEOPLE_SEARCH_MAX_LIMIT,

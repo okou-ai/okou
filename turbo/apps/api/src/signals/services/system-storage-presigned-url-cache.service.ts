@@ -631,22 +631,6 @@ function storagePresignedUrlCacheConflictSet() {
   };
 }
 
-async function upsertCacheValues(
-  db: Db,
-  values: readonly CacheRowValue[],
-): Promise<void> {
-  if (values.length === 0) {
-    return;
-  }
-  await db
-    .insert(systemStoragePresignedUrlCache)
-    .values(storagePresignedUrlCacheValues(values))
-    .onConflictDoUpdate({
-      target: systemStoragePresignedUrlCache.cacheKey,
-      set: storagePresignedUrlCacheConflictSet(),
-    });
-}
-
 export interface SelectedStoragePresignedUrlCacheRow {
   readonly cacheKey: string;
   readonly presignedUrl: string;
@@ -1255,7 +1239,20 @@ function resolveStoragePresignedUrls<TRequest extends object>(args: {
       ReadonlyMap<string, StoragePresignedUrlResult>
     > => {
       const persist = async () => {
-        await upsertCacheValues(persistDb, prepared.freshValues);
+        const db = persistDb;
+        const values = prepared.freshValues;
+        await (async (): Promise<void> => {
+          if (values.length === 0) {
+            return;
+          }
+          await db
+            .insert(systemStoragePresignedUrlCache)
+            .values(storagePresignedUrlCacheValues(values))
+            .onConflictDoUpdate({
+              target: systemStoragePresignedUrlCache.cacheKey,
+              set: storagePresignedUrlCacheConflictSet(),
+            });
+        })();
       };
       if (prepared.timing) {
         await onRejection(

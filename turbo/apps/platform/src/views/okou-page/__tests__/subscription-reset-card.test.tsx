@@ -412,56 +412,20 @@ test("unknown usage still exposes credit details without inventing zero quota", 
   ).toBeInTheDocument();
 });
 
-test.each([
-  {
-    outcome: "reset" as const,
-    credits: 2,
-    notice: "Usage reset successfully.",
-  },
-  {
-    outcome: "nothingToReset" as const,
-    credits: 3,
-    notice: "There is no exhausted usage window to reset.",
-  },
-])(
-  "a pending $outcome retains the row and refreshes credits automatically",
-  async ({ outcome, credits, notice }) => {
-    const gate = context.mocks.deferred<void>();
-    let redeemed = false;
-    context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {
-      return respond(
-        200,
-        subscription({ subscriptionResetCredits: redeemed ? credits : 3 }),
-      );
-    });
-    context.mocks.api(
-      personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
-      async ({ respond, withSignal }) => {
-        await withSignal(gate.promise);
-        redeemed = true;
-        return respond(200, { outcome });
-      },
-    );
-    await setupChat(URL);
-    await screen.findByText("Remaining resets: 3");
-    const originalFrame = frame();
-    const row = screen.getByTestId("subscription-reset-card");
-    click(button("3 resets"));
-    await waitFor(() => {
-      expect(button("Resetting…")).toBeDisabled();
-    });
-    expect(row).toHaveAttribute("aria-busy", "true");
-    expect(frame()).toBe(originalFrame);
-    gate.resolve();
-    await screen.findByText(notice);
-    await waitFor(() => {
-      expect(button(`${credits} resets`)).toBeDisabled();
-      expect(row).toHaveAttribute("aria-busy", "false");
-    });
-    expect(frame()).toBe(originalFrame);
-    expect(screen.getByTestId("subscription-reset-card")).toBe(row);
-  },
-);
+test("nothing to reset is a terminal outcome without spending a credit", async () => {
+  mockRead();
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ respond }) => {
+      return respond(200, { outcome: "nothingToReset" });
+    },
+  );
+  await setupChat(URL);
+  await screen.findByText("Remaining resets: 3");
+  click(button("3 resets"));
+  await screen.findByText("There is no exhausted usage window to reset.");
+  expect(button("3 resets")).toBeDisabled();
+});
 
 test("a failed subscription read shows an error without reset or refresh actions", async () => {
   context.mocks.api(personalSubscriptionsContract.get, ({ respond }) => {

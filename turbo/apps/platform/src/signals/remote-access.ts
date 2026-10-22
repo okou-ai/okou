@@ -10,9 +10,9 @@ import { command, computed, state, type Computed } from "ccstate";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
-import { sshIdentity$, invalidateSsh$ } from "./ssh.ts";
-import { invalidateVnc$ } from "./vnc.ts";
+import { sshIdentity$ } from "./ssh.ts";
 import {
+  invalidateRemoteAccess$,
   invalidateThreadRemoteAccess$,
   remoteHostDefaultsReload$,
   threadRemoteAccessReload$,
@@ -130,8 +130,9 @@ export const setRemoteHostDefault$ = command(
     );
     signal.throwIfAborted();
     if (client.identity === (await get(sshIdentity$))) {
-      set(invalidateSsh$);
-      set(invalidateVnc$);
+      set(invalidateRemoteAccess$);
+      await get(remoteHostDefaults$);
+      signal.throwIfAborted();
     }
     return result.body;
   },

@@ -33,6 +33,7 @@ final class ConversationStore {
   }
 
   let modelSelection: ChatModelSelectionStore?
+  let workflowSource: ComposerWorkflowSource?
   var thread: ChatThread
   var draft: String {
     get { composer.text }
@@ -51,6 +52,9 @@ final class ConversationStore {
     }, didFail: didFail)
   @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, didFail: didFail)
+  @ObservationIgnored lazy var artifacts = MessageArtifactStore(
+    service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
+    didFail: didFail)
   private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
   private(set) var pending: [PendingMessage] = [] {
     didSet { persistPending() }
@@ -124,6 +128,7 @@ final class ConversationStore {
     didFail: @escaping @MainActor (Error) -> Void,
     didSettle: @escaping @MainActor () -> Void,
     modelSelection: ChatModelSelectionStore? = nil,
+    workflowSource: ComposerWorkflowSource? = nil,
     activitySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -131,6 +136,7 @@ final class ConversationStore {
     didRequestNewChat: @escaping @MainActor () -> Void = {}
   ) {
     self.modelSelection = modelSelection
+    self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
     self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
@@ -418,6 +424,9 @@ final class ConversationStore {
         didSettle()
       }
       do {
+        let workflowIDs =
+          try await workflowSource?.prepareUse(
+            in: message.text, document: message.document, agentID: thread.agentID) ?? []
         _ = try await commands.send(
           thread: thread, text: message.text, attachments: message.attachments,
           document: message.document,
@@ -425,6 +434,7 @@ final class ConversationStore {
           reasoningEffort: message.reasoningEffort)
         try Task.checkCancellation()
         guard !closed else { return }
+        workflowSource?.recordUse(workflowIDs)
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }
@@ -473,6 +483,7 @@ final class ConversationStore {
       guard detailOwner == owner else { return }
       detailOwner = nil
       attachmentViewer.deactivate()
+      artifacts.deactivate()
       failureAccountsTask?.cancel()
       failureAccountsTask = nil
       failureAccountsRequestedID = nil
@@ -510,8 +521,22 @@ final class ConversationStore {
     measurements.clear()
     composer.close()
     attachmentViewer.close()
+    artifacts.close()
     connectorActions.close()
     permissionActions.close()
+  }
+
+  func artifactImageSources(for messageID: String) -> [String] {
+    guard let index = items.firstIndex(where: { $0.id == messageID }) else { return [] }
+    var start = index
+    while start > 0, !items[start].beginsWorkSection, items[start - 1].role == items[index].role {
+      start -= 1
+    }
+    var end = index + 1
+    while end < items.count, !items[end].beginsWorkSection, items[end].role == items[index].role {
+      end += 1
+    }
+    return items[start..<end].compactMap(\.message).map(\.text)
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {

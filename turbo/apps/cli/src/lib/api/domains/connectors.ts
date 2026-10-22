@@ -17,7 +17,6 @@ import {
   type ConnectedConnectors,
 } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
-  builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
   builtinConnectorManualGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
@@ -56,7 +55,6 @@ import {
   type McpConnector,
 } from "@okouai/api-contracts/contracts/mcp-connectors";
 import {
-  builtinConnectorResponseSchema,
   type BuiltinConnectorListResponse as ApiBuiltinConnectorListResponse,
   type BuiltinConnectorResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
@@ -307,34 +305,6 @@ export async function diagnoseConnectorCheck(
   request: ConnectorCheckRequestBody,
 ): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
   return (await diagnoseConnectorCheckWithContext(request)).diagnostic;
-}
-
-/**
- * Get a connector by slug.
- * Returns null if not connected (404 response).
- */
-export async function getBuiltinConnector(
-  connectorSlug: ConnectorSlug,
-): Promise<BuiltinConnector | null> {
-  const config = await getConnectorManagementConfig();
-  const client = initClient(builtinConnectorsBySlugContract, config);
-
-  const result = await client.get({
-    params: { connectorSlug },
-  });
-
-  if (result.status === 200) {
-    return parseConnectorManagementResponse(
-      builtinConnectorResponseSchema,
-      result.body,
-    );
-  }
-
-  if (result.status === 404) {
-    return null;
-  }
-
-  handleManagementError(result, "Failed to get connector account");
 }
 
 export async function connectBuiltinConnectorManualGrant(

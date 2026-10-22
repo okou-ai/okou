@@ -21,7 +21,7 @@ final class ChatThreadPinTests: XCTestCase {
     let button = try XCTUnwrap(pinButton(in: host.view))
     XCTAssertEqual(button.accessibilityValue, "Not pinned")
 
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { fixture.writes.count == 1 && button.accessibilityValue == "Pinned" }
     XCTAssertTrue(button.isEnabled)
     XCTAssertTrue(store.list.updatingThreads.contains(PinFixture.target))
@@ -32,20 +32,20 @@ final class ChatThreadPinTests: XCTestCase {
     let marked = await store.list.setRead(target, read: false)
     XCTAssertFalse(marked)
     XCTAssertNil(store.list.error)
-    XCTAssertEqual(button.accessibilityLabel, "Unpin chat")
+    XCTAssertEqual(pinAction(in: button)?.title, "Unpin chat")
     XCTAssertEqual(
-      button.configuration?.image?.pngData(), UIImage(systemName: "pin.fill")?.pngData())
+      button.configuration?.image?.pngData(), UIImage(systemName: "ellipsis")?.pngData())
     XCTAssertEqual(
       store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.target)
     XCTAssertEqual(fixture.writes.first?.rank, "Zz")
-    attach(window, name: "Optimistic pin shown immediately in the native header and sidebar")
+    attach(window, name: "Optimistic pin shown immediately in the native more menu and sidebar")
 
     // An older refresh was already reading before the next local click.
     let readGate = PinGate()
     fixture.state.value.withLock { $0.nextReadGate = readGate }
     let refreshing = Task { await store.refresh() }
     try await eventually { fixture.state.value.withLock { $0.readStarted } }
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { button.accessibilityValue == "Not pinned" }
     XCTAssertTrue(button.isEnabled)
     XCTAssertEqual(fixture.writes.count, 1)
@@ -59,7 +59,7 @@ final class ChatThreadPinTests: XCTestCase {
     XCTAssertEqual(fixture.writes.map(\.action), ["pin", "unpin"])
     XCTAssertNil(fixture.writes.dropFirst().first?.rank)
     XCTAssertEqual(button.accessibilityValue, "Not pinned")
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { button.accessibilityValue == "Pinned" }
     XCTAssertEqual(fixture.writes.count, 2)
     fixture.confirm(1)
@@ -78,11 +78,12 @@ final class ChatThreadPinTests: XCTestCase {
     fixture.remoteUnpin()
     await store.list.refresh(waitForCurrent: true)
     try await eventually { button.accessibilityValue == "Not pinned" }
-    XCTAssertEqual(button.accessibilityLabel, "Pin chat")
-    XCTAssertEqual(button.configuration?.image?.pngData(), UIImage(systemName: "pin")?.pngData())
+    XCTAssertEqual(pinAction(in: button)?.title, "Pin chat")
+    XCTAssertEqual(
+      button.configuration?.image?.pngData(), UIImage(systemName: "ellipsis")?.pngData())
     XCTAssertEqual(
       store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.peer)
-    attach(window, name: "Native circular glass pin and sidebar after event reconciliation")
+    attach(window, name: "Native circular glass more menu and sidebar after event reconciliation")
   }
 
   func testFailedPinKeepsOptimisticDisplayAndNextSaveStillRuns() async throws {
@@ -132,9 +133,9 @@ final class ChatThreadPinTests: XCTestCase {
     let window = try await mount(host)
     defer { unmount(window) }
     let button = try XCTUnwrap(pinButton(in: host.view))
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { fixture.writes.count == 1 && button.accessibilityValue == "Pinned" }
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { button.accessibilityValue == "Not pinned" }
     XCTAssertEqual(fixture.writes.count, 1)
 
@@ -143,7 +144,7 @@ final class ChatThreadPinTests: XCTestCase {
     XCTAssertEqual(store.list.error, "Pin save unavailable")
     XCTAssertEqual(button.accessibilityValue, "Not pinned")
     XCTAssertTrue(button.isEnabled)
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { button.accessibilityValue == "Pinned" }
     XCTAssertEqual(fixture.writes.count, 2)
     fixture.gates[1].open()
@@ -195,9 +196,9 @@ final class ChatThreadPinTests: XCTestCase {
     let window = try await mount(host)
     defer { unmount(window) }
     let button = try XCTUnwrap(pinButton(in: host.view))
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { fixture.writes.count == 1 }
-    button.sendActions(for: .touchUpInside)
+    try activatePin(button)
     try await eventually { button.accessibilityValue == "Not pinned" }
     fixture.gates[0].open()
     try await eventually { store.needsUpgrade && !button.isEnabled }
@@ -232,8 +233,7 @@ private struct PinSidebarHarness: View {
   let store: WorkspaceStore
   var body: some View {
     VStack {
-      ChatThreadPinButton(
-        list: store.list, threadID: PinFixture.target, needsUpgrade: store.needsUpgrade)
+      ChatThreadMoreButton(store: store, threadID: PinFixture.target)
       ChatSidebarView(
         store: store, authentication: AuthenticationService(publishableKey: ""),
         workspaceID: "workspace", accountError: .constant(nil), close: {}, newChat: { _ in })
@@ -243,10 +243,24 @@ private struct PinSidebarHarness: View {
 
 @MainActor
 private func pinButton(in view: UIView) -> UIButton? {
-  if let button = view as? UIButton, button.accessibilityIdentifier == "toggle-chat-pin" {
+  if let button = view as? UIButton, button.accessibilityIdentifier == "chat-thread-more" {
     return button
   }
   return view.subviews.lazy.compactMap { pinButton(in: $0) }.first
+}
+
+@MainActor
+private func pinAction(in button: UIButton) -> UIAction? {
+  button.menu?.children.compactMap { $0 as? UIAction }.first {
+    $0.identifier == UIAction.Identifier("chat-pin")
+  }
+}
+
+@MainActor
+private func activatePin(_ button: UIButton) throws {
+  let action = try XCTUnwrap(pinAction(in: button))
+  XCTAssertFalse(action.attributes.contains(.disabled))
+  button.sendAction(action)
 }
 
 private final class PinGate: Sendable {

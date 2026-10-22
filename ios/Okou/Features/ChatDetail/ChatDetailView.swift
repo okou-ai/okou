@@ -6,6 +6,7 @@ struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let topContentInset: CGFloat
   let sidebar: SidebarInteraction?
+  let mentionSource: ComposerMentionSource?
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,11 +23,12 @@ struct ChatDetailView: View {
 
   init(
     conversation: ConversationStore, topContentInset: CGFloat = 0,
-    sidebar: SidebarInteraction? = nil
+    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil
   ) {
     self.conversation = conversation
     self.topContentInset = topContentInset
     self.sidebar = sidebar
+    self.mentionSource = mentionSource
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -134,6 +136,14 @@ struct ChatDetailView: View {
       MessageAttachmentPreview(viewer: conversation.attachmentViewer)
     }
     .sheet(
+      isPresented: Binding(
+        get: { conversation.artifacts.preview != nil },
+        set: { if !$0 { conversation.artifacts.dismiss() } }
+      )
+    ) {
+      MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
+    }
+    .sheet(
       item: $messageToSelect,
       onDismiss: {
         if let selection = selectionToQuote { conversation.quote(selection) }
@@ -186,7 +196,9 @@ struct ChatDetailView: View {
           } else {
             await conversation.send()
           }
-        }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection
+        }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
+        mentionSource: mentionSource,
+        workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
@@ -345,7 +357,10 @@ struct ChatDetailView: View {
           actionContext: message.role == .assistant
             ? MessageActionContext(agentID: thread.agentID, threadID: thread.id) : nil,
           connectorActions: conversation.connectorActions,
-          permissionActions: conversation.permissionActions, loadsActions: loadsAttachments
+          permissionActions: conversation.permissionActions,
+          artifacts: message.role == .assistant ? conversation.artifacts : nil,
+          artifactImageSources: conversation.artifactImageSources(for: message.id),
+          loadsActions: loadsAttachments
         )
         .equatable()
         .foregroundStyle(

@@ -2,7 +2,6 @@ import { command, computed, state } from "ccstate";
 import {
   onboardingIndustrySchema,
   onboardingSubscriptionProviderSchema,
-  type OnboardingRecommendation,
   type OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
@@ -62,15 +61,6 @@ export interface SourcesFirstInvite {
   readonly failure: string | null;
 }
 
-export type SourcesFirstRecommendationStatus =
-  | "idle"
-  | "starting"
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "timed-out";
-
 export interface SourcesFirstDraft {
   readonly industry: OnboardingIndustry | null;
   /** One entry per address this run tried, with what the API answered. */
@@ -88,11 +78,8 @@ export interface SourcesFirstDraft {
   readonly startingPromptKey: string;
   /** The durable context-generation job started when the source step continues. */
   readonly recommendationJobId: string | null;
-  /** Client wall-clock time when that generation attempt began. */
+  /** Client wall-clock time when that generation attempt began; identifies it. */
   readonly recommendationStartedAt: number | null;
-  readonly recommendationStatus: SourcesFirstRecommendationStatus;
-  /** Only the final, schema-validated recommendation; raw source data never enters the browser. */
-  readonly recommendation: OnboardingRecommendation | null;
 }
 
 function emptyDraft(): SourcesFirstDraft {
@@ -105,8 +92,6 @@ function emptyDraft(): SourcesFirstDraft {
     startingPromptKey: "",
     recommendationJobId: null,
     recommendationStartedAt: null,
-    recommendationStatus: "idle",
-    recommendation: null,
   };
 }
 
@@ -165,13 +150,6 @@ function restoredDraft(
   if (saved === null) {
     return emptyDraft();
   }
-  // A page reload cannot resume a POST that never returned a job ID.
-  const recommendationStatus: SourcesFirstRecommendationStatus =
-    saved.recommendationJobId !== null
-      ? "pending"
-      : saved.recommendationStartedAt === null
-        ? "idle"
-        : "failed";
   return {
     ...emptyDraft(),
     industry: saved.industry,
@@ -181,7 +159,6 @@ function restoredDraft(
     startingPromptKey: saved.startingPromptKey,
     recommendationJobId: saved.recommendationJobId,
     recommendationStartedAt: saved.recommendationStartedAt,
-    recommendationStatus,
   };
 }
 

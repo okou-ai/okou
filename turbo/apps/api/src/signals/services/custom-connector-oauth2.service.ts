@@ -32,6 +32,7 @@ import {
   OAuthProviderHttpError,
 } from "@okouai/connectors/auth-providers/oauth/error";
 import { connectors } from "@okouai/db/schema/connector";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
@@ -71,13 +72,21 @@ import { customConnectorDefinitionSelection } from "./custom-connector-definitio
 import type { StoredCustomConnectorOAuthState } from "./connector-oauth-state.service";
 import {
   type ConnectorConnectionMutationResolution,
+  connectorConnectionWrittenRow,
   existingConnectorConnectionSelection,
-  replaceConnectorConnection,
+  replaceConnectorConnectionOutcome,
   resolveConnectorConnectionMutation,
 } from "./connector-connection-write.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { addUserCustomConnector } from "./user-connectors.service";
-import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
+import {
+  connectorRuntimeWakeupRunColumns,
+  connectorRuntimeWakeupCondition,
+  publishConnectorRuntimeWakeupRows,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+  uniqueConnectorRuntimeTargets,
+  type ConnectorRuntimeWakeupBusinessArgs,
+} from "./connector-runtime-wakeup.service";
 import type { CapturedConnectorClientInvalidationAbort } from "./connector-client-invalidation.service";
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 import {
@@ -963,28 +972,77 @@ function automaticNoAuthAgentAuthorizationFailure(
   }
 }
 
+type AutomaticNoAuthConnector = CustomConnectorRow & {
+  readonly kind: "mcp";
+  readonly authMode: "automatic";
+  readonly oauthConfig: null;
+};
+
+type CustomConnectorReplacementArgs = Parameters<
+  typeof replaceConnectorConnectionOutcome
+>[1];
+
+interface AutomaticNoAuthPersistenceContext {
+  readonly db: Db;
+  readonly connector: AutomaticNoAuthConnector;
+  readonly args: StartCustomConnectorOAuth2Args;
+}
+
+function automaticNoAuthCredentialContractRef(
+  args: StartCustomConnectorOAuth2Args,
+  connector: AutomaticNoAuthConnector,
+) {
+  return {
+    orgId: args.orgId,
+    connectorId: connector.id,
+    storageVersion: connector.storageVersion,
+    authMode: "automatic" as const,
+  };
+}
+
+function automaticNoAuthConnectionWriteValues(
+  args: StartCustomConnectorOAuth2Args,
+  connector: AutomaticNoAuthConnector,
+  resolution: Extract<ConnectorConnectionMutationResolution, { kind: "ready" }>,
+) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    authMethod: "none" as const,
+    storageVersion: connector.storageVersion,
+    tokenExpiresAt: null,
+    target: {
+      kind: "custom" as const,
+      customConnectorId: connector.id,
+      oauthScopes: null,
+      identity: { kind: "local" as const },
+    },
+    resolution: resolution.mutation,
+  };
+}
+
+function automaticNoAuthConnectionResponse(
+  connector: AutomaticNoAuthConnector,
+  connection: { readonly id: string },
+) {
+  return {
+    result: "connected" as const,
+    connector: serialiseCustomConnector({
+      row: connector,
+    }),
+    connectionId: connection.id,
+  };
+}
+
 async function persistAutomaticNoAuthConnection(
-  context: {
-    readonly db: Db;
-    readonly connector: CustomConnectorRow & {
-      readonly kind: "mcp";
-      readonly authMode: "automatic";
-      readonly oauthConfig: null;
-    };
-    readonly args: StartCustomConnectorOAuth2Args;
-  },
+  context: AutomaticNoAuthPersistenceContext,
   signal: AbortSignal,
 ) {
   const { db, connector, args } = context;
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0139; new non-billing transactions are prohibited.
   const transaction = db.transaction(async (tx) => {
     const credentialContractDb = tx;
-    const contractRef = {
-      orgId: args.orgId,
-      connectorId: connector.id,
-      storageVersion: connector.storageVersion,
-      authMode: "automatic" as const,
-    };
+    const contractRef = automaticNoAuthCredentialContractRef(args, connector);
     await (async () => {
       const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
       const rows = await credentialContractDb
@@ -1006,46 +1064,74 @@ async function persistAutomaticNoAuthConnection(
     if (resolution.kind !== "ready") {
       return { resolution, connection: null };
     }
-    const connection = await replaceConnectorConnection(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        authMethod: "none",
-        storageVersion: connector.storageVersion,
-        tokenExpiresAt: null,
-        target: {
-          kind: "custom",
-          customConnectorId: connector.id,
-          oauthScopes: null,
-          identity: { kind: "local" },
-        },
-        resolution: resolution.mutation,
-        writeCredentials: async ({ db: credentialDb, connectorId }) => {
-          await credentialDb
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-        },
+    const connectionDb = tx;
+    const connectionArgs: CustomConnectorReplacementArgs = {
+      ...automaticNoAuthConnectionWriteValues(args, connector, resolution),
+      writeCredentials: async ({ db: credentialDb, connectorId }) => {
+        await credentialDb
+          .delete(customConnectorAccountOauthBindings)
+          .where(
+            eq(
+              customConnectorAccountOauthBindings.connectorAccountId,
+              connectorId,
+            ),
+          );
       },
-      signal,
-    );
+    };
+    const connectionSignal = signal;
+    const connection = await (async () => {
+      return connectorConnectionWrittenRow(
+        await replaceConnectorConnectionOutcome(
+          connectionDb,
+          connectionArgs,
+          connectionSignal,
+        ),
+      );
+    })();
     return { resolution, connection };
   });
   let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
-  const result = await commitConnectorRuntimeMutation(transaction, (value) => {
-    return value.connection
-      ? {
-          db,
-          scope: { orgId: args.orgId, userId: args.userId },
-          targets: [{ kind: "custom", customConnectorId: connector.id }],
+  const result = await (async () => {
+    const result = await transaction;
+    const wakeup: ConnectorRuntimeWakeupBusinessArgs | undefined =
+      result.connection
+        ? {
+            scope: { orgId: args.orgId, userId: args.userId },
+            targets: [{ kind: "custom", customConnectorId: connector.id }],
+          }
+        : undefined;
+    if (wakeup) {
+      await (async () => {
+        const result = await settle(
+          (async () => {
+            const targets = uniqueConnectorRuntimeTargets(wakeup.targets);
+            if (targets.length === 0) {
+              return;
+            }
+            const rows = await db
+              .select(connectorRuntimeWakeupRunColumns())
+              .from(agentRuns)
+              .where(connectorRuntimeWakeupCondition(wakeup.scope));
+            await publishConnectorRuntimeWakeupRows({
+              scope: wakeup.scope,
+              targets,
+              rows,
+            });
+          })(),
+        );
+        if (!result.ok) {
+          reportConnectorRuntimeWakeupDiscoveryFailure({
+            orgId: wakeup.scope.orgId,
+            scopedToUser: wakeup.scope.userId !== undefined,
+            scopedToAgent: wakeup.scope.agentId !== undefined,
+            targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
+            error: result.error,
+          });
         }
-      : undefined;
-  });
+      })();
+    }
+    return result;
+  })();
   if (signal.aborted) {
     postCommitAbort = { reason: signal.reason };
   }
@@ -1074,13 +1160,7 @@ async function persistAutomaticNoAuthConnection(
       return authorizationFailure;
     }
   }
-  return {
-    result: "connected" as const,
-    connector: serialiseCustomConnector({
-      row: connector,
-    }),
-    connectionId: result.connection.id,
-  };
+  return automaticNoAuthConnectionResponse(connector, result.connection);
 }
 
 export const startCustomConnectorOAuth2$ = command(
@@ -1690,44 +1770,51 @@ export async function storeCustomConnectorOAuth2Connection(
     if (resolution.kind !== "ready") {
       return resolution;
     }
-    const connection = await replaceConnectorConnection(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        authMethod: "oauth",
-        storageVersion: args.storageVersion,
-        tokenExpiresAt: args.token.expiresAt,
-        target: customOAuthConnectionTarget(args.connectorId, args.token),
-        resolution: resolution.mutation,
-        insertConnectionId: args.insertConnectionId,
-        writeCredentials: async ({ db, connectorId }) => {
-          await db.insert(secrets).values(
-            connectionTokenRows({
-              ...args,
-              connectionId: connectorId,
-              encrypted,
-            }),
+    const connectionDb = tx;
+    const connectionArgs: CustomConnectorReplacementArgs = {
+      orgId: args.orgId,
+      userId: args.userId,
+      authMethod: "oauth",
+      storageVersion: args.storageVersion,
+      tokenExpiresAt: args.token.expiresAt,
+      target: customOAuthConnectionTarget(args.connectorId, args.token),
+      resolution: resolution.mutation,
+      insertConnectionId: args.insertConnectionId,
+      writeCredentials: async ({ db, connectorId }) => {
+        await db.insert(secrets).values(
+          connectionTokenRows({
+            ...args,
+            connectionId: connectorId,
+            encrypted,
+          }),
+        );
+        await db
+          .delete(customConnectorAccountOauthBindings)
+          .where(
+            eq(
+              customConnectorAccountOauthBindings.connectorAccountId,
+              connectorId,
+            ),
           );
-          await db
-            .delete(customConnectorAccountOauthBindings)
-            .where(
-              eq(
-                customConnectorAccountOauthBindings.connectorAccountId,
-                connectorId,
-              ),
-            );
-          if (args.automaticOAuthBinding) {
-            await db.insert(customConnectorAccountOauthBindings).values({
-              connectorAccountId: connectorId,
-              customConnectorId: args.connectorId,
-              ...args.automaticOAuthBinding,
-            });
-          }
-        },
+        if (args.automaticOAuthBinding) {
+          await db.insert(customConnectorAccountOauthBindings).values({
+            connectorAccountId: connectorId,
+            customConnectorId: args.connectorId,
+            ...args.automaticOAuthBinding,
+          });
+        }
       },
-      signal,
-    );
+    };
+    const connectionSignal = signal;
+    const connection = await (async () => {
+      return connectorConnectionWrittenRow(
+        await replaceConnectorConnectionOutcome(
+          connectionDb,
+          connectionArgs,
+          connectionSignal,
+        ),
+      );
+    })();
     await tx.execute(
       completedGetStartedQuestSql(
         {

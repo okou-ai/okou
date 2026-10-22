@@ -84,9 +84,31 @@ private actor MarkdownWorker {
 
   func parse(_ text: String) -> AttributedString {
     guard !Task.isCancelled else { return AttributedString(text) }
-    // Match Textual's pinned parser (no syntax extensions), outside the main actor.
-    return (try? AttributedString(markdown: text, including: \.textual, baseURL: baseURL))
-      ?? AttributedString(text)
+    // Foundation drops imageURL for an image inside a link. Source positions let us recover
+    // that image node without scanning code/HTML or changing the authored outer destination.
+    let tracksImages = text.contains("![")
+    guard
+      var content = try? AttributedString(
+        markdown: text, including: \.textual,
+        options: .init(appliesSourcePositionAttributes: tracksImages), baseURL: baseURL)
+    else {
+      return AttributedString(text)
+    }
+    if tracksImages {
+      for run in content.runs {
+        guard run.link != nil, run.imageURL == nil,
+          run.inlinePresentationIntent?.contains(.code) != true,
+          let position = run.markdownSourcePosition, let range = Range(position, in: text),
+          text[range].hasPrefix("!["),
+          let image = try? AttributedString(
+            markdown: String(text[range]), including: \.textual, baseURL: baseURL),
+          let url = image.runs.first?.imageURL
+        else { continue }
+        content[run.range].imageURL = url
+      }
+      content.markdownSourcePosition = nil
+    }
+    return content
   }
 }
 

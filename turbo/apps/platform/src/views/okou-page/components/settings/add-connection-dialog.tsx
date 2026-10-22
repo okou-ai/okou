@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useLoadable, useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Input } from "@okouai/ui/components/ui/input";
@@ -33,10 +33,15 @@ import type {
   PlatformConnectorCatalogStatusItem,
 } from "../../../../signals/connector-domain.ts";
 import {
-  builtinConnectFlowSlug$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinConnectOperation$,
+  builtinConnectorBrowserAuthOperation$,
+  builtinConnectorOAuthDeviceAuthStartOperation$,
+  builtinConnectorOAuthDeviceAuthStartContext$,
+  builtinConnectorExternalCodeStartOperation$,
+  builtinConnectorExternalCodeStartContext$,
   builtinConnectorExternalCodeState$,
   builtinConnectorOAuthDeviceAuthState$,
+  builtinConnectorOAuthDeviceAuthPollOperation$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
   connectBuiltinConnectorNoAuthAndSettle$,
@@ -61,6 +66,7 @@ import {
   type BuiltinConnectorOAuthDeviceAuthState,
 } from "../../../../signals/okou-page/settings/connectors.ts";
 import { hasTokenInputValue } from "../../../../signals/okou-page/settings/token-input.ts";
+import { ConnectorConnectionError } from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 
 import { ConnectorIcon } from "./connector-icons.tsx";
@@ -256,22 +262,14 @@ function connectorOAuthDeviceAuthFlowIsActive(
   state: BuiltinConnectorOAuthDeviceAuthState,
   connectorSlug: ConnectorSlug,
 ): boolean {
-  return (
-    state.connectorSlug === connectorSlug &&
-    (state.status === "starting" ||
-      state.status === "pending" ||
-      state.status === "polling")
-  );
+  return state.connectorSlug === connectorSlug && state.status === "pending";
 }
 
 function connectorExternalCodeFlowIsActive(
   state: BuiltinConnectorExternalCodeState,
   connectorSlug: ConnectorSlug,
 ): boolean {
-  return (
-    state.connectorSlug === connectorSlug &&
-    (state.status === "starting" || state.status === "pending")
-  );
+  return state.connectorSlug === connectorSlug && state.status === "pending";
 }
 
 function connectorOAuthDeviceAuthStateForMethod(
@@ -424,15 +422,23 @@ function useConnectorProgressContent(
     readonly external: boolean;
   },
 ) {
-  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const browserOperation = useLoadable(builtinConnectorBrowserAuthOperation$);
+  const deviceStart = useLoadable(
+    builtinConnectorOAuthDeviceAuthStartOperation$,
+  );
+  const externalStart = useLoadable(
+    builtinConnectorExternalCodeStartOperation$,
+  );
   const deviceAuthState = useGet(builtinConnectorOAuthDeviceAuthState$);
   const externalCodeState = useGet(builtinConnectorExternalCodeState$);
-  const isPolling = pollingConnectorSlug === connectorSlug;
+  const isPolling = browserOperation.state === "loading";
   const settling =
     pending.browser ||
     (pending.device &&
+      deviceStart.state !== "loading" &&
       !connectorOAuthDeviceAuthFlowIsActive(deviceAuthState, connectorSlug)) ||
     (pending.external &&
+      externalStart.state !== "loading" &&
       !connectorExternalCodeFlowIsActive(externalCodeState, connectorSlug));
   // While browser authorization is in progress, only show connecting state.
   if (isPolling) {
@@ -528,13 +534,8 @@ function OAuthAuthCodeConnectMethodContent(props: ConnectMethodContentProps) {
   );
 }
 
-function getOAuthDeviceAuthStatusText(
-  state: Extract<
-    BuiltinConnectorOAuthDeviceAuthState,
-    { readonly status: "pending" | "polling" }
-  >,
-): string {
-  if (state.status === "polling") {
+function getOAuthDeviceAuthStatusText(isChecking: boolean): string {
+  if (isChecking) {
     return i18n.t(($) => {
       return $.connectors.connectDialog.device.checking;
     });
@@ -550,11 +551,14 @@ function OAuthDeviceAuthCodePanel({
 }: {
   state: Extract<
     BuiltinConnectorOAuthDeviceAuthState,
-    { readonly status: "pending" | "polling" }
+    { readonly status: "pending" }
   >;
   onOpenVerificationPage: () => void;
 }) {
   const { t } = useTranslation();
+  const pollLoadable = useLoadable(
+    builtinConnectorOAuthDeviceAuthPollOperation$,
+  );
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
@@ -601,7 +605,7 @@ function OAuthDeviceAuthCodePanel({
         })}
       </Button>
       <p className="text-xs text-muted-foreground" role="status">
-        {getOAuthDeviceAuthStatusText(state)}
+        {getOAuthDeviceAuthStatusText(pollLoadable.state === "loading")}
       </p>
     </div>
   );
@@ -811,6 +815,10 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const state = useGet(builtinConnectorOAuthDeviceAuthState$);
+  const startContext = useGet(builtinConnectorOAuthDeviceAuthStartContext$);
+  const startOperation = useLoadable(
+    builtinConnectorOAuthDeviceAuthStartOperation$,
+  );
   const openVerificationPage = useSet(
     openBuiltinConnectorOAuthDeviceAuthVerificationPage$,
   );
@@ -847,7 +855,10 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
     props.item.slug,
     props.authMethod,
   );
-  const starting = current?.status === "starting";
+  const starting =
+    startOperation.state === "loading" &&
+    startContext?.connectorSlug === props.item.slug &&
+    startContext.authMethod === props.authMethod;
 
   const start = onDomEventFn(async () => {
     await props.connectOAuthDeviceAuthAndSettle(
@@ -870,7 +881,7 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
     );
   });
 
-  if (current?.status === "starting") {
+  if (starting) {
     return (
       <p className="text-sm text-muted-foreground">
         {t(($) => {
@@ -880,7 +891,7 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
     );
   }
 
-  if (current?.status === "pending" || current?.status === "polling") {
+  if (current?.status === "pending") {
     return (
       <OAuthDeviceAuthCodePanel
         state={current}
@@ -1077,6 +1088,10 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const state = useGet(builtinConnectorExternalCodeState$);
+  const startContext = useGet(builtinConnectorExternalCodeStartContext$);
+  const startOperation = useLoadable(
+    builtinConnectorExternalCodeStartOperation$,
+  );
   const setCode = useSet(setBuiltinConnectorExternalCodeAuthorizationCode$);
   const openAuthorizationPage = useSet(
     openBuiltinConnectorExternalCodeAuthorizationPage$,
@@ -1086,7 +1101,10 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
     props.item.slug,
     props.authMethod,
   );
-  const starting = current?.status === "starting";
+  const starting =
+    startOperation.state === "loading" &&
+    startContext?.connectorSlug === props.item.slug &&
+    startContext.authMethod === props.authMethod;
 
   const start = onDomEventFn(async () => {
     await props.connectExternalCode(
@@ -1414,6 +1432,40 @@ function StandardConnectMethodsContent({
   );
 }
 
+function ConnectorConnectionFeedback({
+  operations,
+  connectorSlug,
+}: {
+  operations: readonly ReturnType<typeof useLoadableSet>[0][];
+  connectorSlug: ConnectorSlug;
+}) {
+  const externalStart = useLoadable(
+    builtinConnectorExternalCodeStartOperation$,
+  );
+  const externalContext = useGet(builtinConnectorExternalCodeStartContext$);
+  const currentOperations =
+    externalContext?.connectorSlug === connectorSlug
+      ? [...operations, externalStart]
+      : operations;
+  const failed = currentOperations.find((operation) => {
+    return (
+      operation.state === "hasError" &&
+      operation.error instanceof ConnectorConnectionError
+    );
+  });
+  if (
+    failed?.state !== "hasError" ||
+    !(failed.error instanceof ConnectorConnectionError)
+  ) {
+    return null;
+  }
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      {failed.error.message}
+    </p>
+  );
+}
+
 function ConnectModalContent({
   item,
   agentId,
@@ -1429,7 +1481,7 @@ function ConnectModalContent({
   const [deviceAuthLoadable, connectOAuthDeviceAuthAndSettle] = useLoadableSet(
     connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
   );
-  const [, connectExternalCodeCommand] = useLoadableSet(
+  const connectExternalCodeCommand = useSet(
     connectBuiltinConnectorExternalCode$,
   );
   const [completeExternalCodeLoadable, completeExternalCodeAndSettleCommand] =
@@ -1452,7 +1504,7 @@ function ConnectModalContent({
     connectionId,
     signal,
   ) => {
-    await runConnectSuccess(item.slug, onSuccess, connectionId, signal);
+    await runConnectSuccess(onSuccess, connectionId, item.slug, signal);
   };
   const connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn = async (
     connectorSlug,
@@ -1493,15 +1545,6 @@ function ConnectModalContent({
   ) => {
     await completeExternalCodeAndSettleCommand(args, signal);
   };
-  const connectionError = [
-    settleLoadable,
-    deviceAuthLoadable,
-    completeExternalCodeLoadable,
-    manualGrantLoadable,
-    noAuthLoadable,
-  ].find((loadable) => {
-    return loadable.state === "hasError";
-  });
   const progressContent = useConnectorProgressContent(item.slug, {
     browser: settleLoadable.state === "loading",
     device: deviceAuthLoadable.state === "loading",
@@ -1513,11 +1556,16 @@ function ConnectModalContent({
 
   return (
     <>
-      {connectionError && (
-        <p role="alert" className="text-sm text-destructive">
-          {String(connectionError.error)}
-        </p>
-      )}
+      <ConnectorConnectionFeedback
+        connectorSlug={item.slug}
+        operations={[
+          settleLoadable,
+          deviceAuthLoadable,
+          completeExternalCodeLoadable,
+          manualGrantLoadable,
+          noAuthLoadable,
+        ]}
+      />
       <StandardConnectMethodsContent
         item={item}
         agentId={agentId}
@@ -1572,8 +1620,7 @@ export function ConnectModal({
     clearBuiltinConnectorOAuthDeviceAuth$,
   );
   const clearConnectorExternalCode = useSet(clearBuiltinConnectorExternalCode$);
-  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
-  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectOperation = useLoadable(builtinConnectOperation$);
   const connectorOAuthDeviceAuthState = useGet(
     builtinConnectorOAuthDeviceAuthState$,
   );
@@ -1586,8 +1633,7 @@ export function ConnectModal({
   const selectedConnectorSlug = item.slug;
 
   const connectFlowActive =
-    connectFlowConnectorSlug === selectedConnectorSlug ||
-    pollingConnectorSlug === selectedConnectorSlug ||
+    connectOperation.state === "loading" ||
     connectorOAuthDeviceAuthFlowIsActive(
       connectorOAuthDeviceAuthState,
       selectedConnectorSlug,

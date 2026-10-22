@@ -1,19 +1,20 @@
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 
-import {
-  thirdPartySubscriptions$,
-  reloadThirdPartySubscriptions$,
-} from "../external/third-party-subscriptions.ts";
+import { thirdPartySubscriptions$ } from "../external/third-party-subscriptions.ts";
 import {
   claudeCodeDeviceAuthDialogStatePersonal$,
+  claudeCodeDeviceAuthFlowStatePersonal$,
+  claudeCodeDeviceAuthStartOperationPersonal$,
   openClaudeCodeDeviceAuthDialogPersonal$,
 } from "../okou-page/settings/claude-code-device-auth.ts";
 import {
   codexDeviceAuthDialogStatePersonal$,
+  codexDeviceAuthFlowStatePersonal$,
+  codexDeviceAuthStartOperationPersonal$,
+  codexDeviceAuthRunOperationPersonal$,
   openCodexDeviceAuthDialogPersonal$,
 } from "../okou-page/settings/codex-device-auth.ts";
-import { withCleanup } from "../utils.ts";
 import {
   sourcesFirstDraft$,
   type SubscriptionProvider,
@@ -25,7 +26,8 @@ import {
  *
  * What the step reports comes from `/api/me/3rd-party-subscriptions`: a dialog that
  * says it finished is not the account, so only a provider the API lists counts
- * as connected. An attempt that fails or is called off says so instead.
+ * as connected. Startup feedback observes the provider's actual operation;
+ * closing a dialog alone does not establish why its session ended.
  */
 
 const PROVIDER_TYPES = {
@@ -41,17 +43,31 @@ export type OnboardingSubscriptionStatus =
   | "connecting"
   | "connected"
   | "failed"
-  | "cancelled"
   /** The provider list could not be read, so the account is unknown. */
   | "unconfirmed";
 
-/** One attempt, from the click until the dialog hands control back. */
-interface ConnectAttempt {
-  readonly provider: SubscriptionProvider;
-  readonly outcome: "running" | "failed" | "ended";
-}
+export const onboardingSubscriptionOperation$ = computed((get) => {
+  const { provider } = get(sourcesFirstDraft$);
+  if (provider === null) {
+    return null;
+  }
+  // Codex owns a full authorization run; Claude intentionally owns a short
+  // startup, followed by independent code submissions in its dialog.
+  return provider === "codex"
+    ? get(codexDeviceAuthRunOperationPersonal$)
+    : get(claudeCodeDeviceAuthStartOperationPersonal$);
+});
 
-const internalAttempt$ = state<ConnectAttempt | null>(null);
+export const onboardingSubscriptionStartOperation$ = computed((get) => {
+  const { provider } = get(sourcesFirstDraft$);
+  if (provider === null) {
+    return null;
+  }
+  // Observe retries in the same provider dialog as well as its initial start.
+  return provider === "codex"
+    ? get(codexDeviceAuthStartOperationPersonal$)
+    : get(claudeCodeDeviceAuthStartOperationPersonal$);
+});
 
 /** Either personal dialog being open is this step's own work in progress. */
 const personalDeviceAuthOpen$ = computed((get) => {
@@ -74,44 +90,29 @@ function hasConnectedAccount(
   });
 }
 
-function statusOfAttempt(
-  attempt: ConnectAttempt | null,
-  provider: SubscriptionProvider,
-): OnboardingSubscriptionStatus {
-  if (!attempt || attempt.provider !== provider) {
-    return "idle";
-  }
-  switch (attempt.outcome) {
-    case "running": {
-      return "connecting";
-    }
-    case "failed": {
-      return "failed";
-    }
-    // The dialog handed control back without an error of its own, and the
-    // account still has no provider: the person stopped.
-    case "ended": {
-      return "cancelled";
-    }
-  }
-}
-
 export const onboardingSubscriptionStatus$ = computed(
   async (get): Promise<OnboardingSubscriptionStatus> => {
     const { provider } = get(sourcesFirstDraft$);
     if (provider === null) {
       return "idle";
     }
-    // Read the synchronous answers first, so this recomputes when a dialog
-    // opens or an attempt settles rather than only when the list reloads.
+    // Subscribe to session changes before awaiting the account read.
     const dialogOpen = get(personalDeviceAuthOpen$)[provider];
-    const attempt = get(internalAttempt$);
+    const sessionStatus =
+      provider === "codex"
+        ? get(codexDeviceAuthFlowStatePersonal$).status
+        : get(claudeCodeDeviceAuthFlowStatePersonal$).status;
     const { subscriptions } = await get(thirdPartySubscriptions$);
 
     if (hasConnectedAccount(subscriptions, provider)) {
       return "connected";
     }
-    return dialogOpen ? "connecting" : statusOfAttempt(attempt, provider);
+    if (sessionStatus === "expired" || sessionStatus === "error") {
+      return "failed";
+    }
+    // Closing is not evidence of user cancellation: success, expiry and owner
+    // disposal can also end a session. Only the account list proves connection.
+    return dialogOpen ? "connecting" : "idle";
   },
 );
 
@@ -121,40 +122,22 @@ export const connectOnboardingSubscription$ = command(
     provider: SubscriptionProvider,
     signal: AbortSignal,
   ): Promise<void> => {
-    const attempt: ConnectAttempt = { provider, outcome: "running" };
-    set(internalAttempt$, attempt);
-    // Identity keeps a superseded attempt from writing over the current one,
-    // and keeps a reported failure from being relabelled when it ends.
-    const settle = (outcome: ConnectAttempt["outcome"]): void => {
-      set(internalAttempt$, (current) => {
-        return current === attempt ? { provider, outcome } : current;
-      });
-    };
+    signal.throwIfAborted();
 
-    await withCleanup(
-      (async () => {
-        const started =
-          provider === "codex"
-            ? await set(
-                openCodexDeviceAuthDialogPersonal$,
-                { mode: "connect" },
-                signal,
-              )
-            : await set(
-                openClaudeCodeDeviceAuthDialogPersonal$,
-                { mode: "connect" },
-                signal,
-              );
-        if (!started) {
-          settle("failed");
-        }
-      })(),
-      () => {
-        settle("ended");
-        // Finished, failed or called off, the account is whatever the API
-        // lists: read it again instead of trusting the dialog's own result.
-        set(reloadThirdPartySubscriptions$);
-      },
-    );
+    // Provider commands own account invalidation for start/run, close,
+    // completion and owner cancellation, including retries outside onboarding.
+    if (provider === "codex") {
+      await set(
+        openCodexDeviceAuthDialogPersonal$,
+        { mode: "connect" },
+        signal,
+      );
+    } else {
+      await set(
+        openClaudeCodeDeviceAuthDialogPersonal$,
+        { mode: "connect" },
+        signal,
+      );
+    }
   },
 );

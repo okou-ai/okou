@@ -3,6 +3,7 @@ import Foundation
 
 /// Workspace-scoped mutations. Read synchronization belongs to ChatSync.
 public actor ChatCommands {
+  public nonisolated let artifacts: ChatArtifacts
   public nonisolated let permissions: ChatPermissions
   let client: APIClient
   public nonisolated let connectorActions: ChatConnectorService
@@ -12,6 +13,7 @@ public actor ChatCommands {
   private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
   public init(client: APIClient, sync: ChatSync) {
+    artifacts = ChatArtifacts(client: client)
     permissions = ChatPermissions(client: client)
     self.client = client
     connectorActions = ChatConnectorService(client: client)
@@ -110,7 +112,9 @@ public actor ChatCommands {
     let body = SendBody(
       agentId: metadata.agentId, threadId: thread.id,
       prompt: prompt.isEmpty
-        ? (document?.hasFeedback == true ? "(see quoted passages)" : "(see attached files)")
+        ? (document?.hasFeedback == true
+          ? "(see quoted passages)"
+          : (document?.hasTextContent == true ? "(see references)" : "(see attached files)"))
         : prompt,
       clientEventId: clientEventID, chatThreadSortEventId: chatThreadSortEventID,
       userMessage: document
@@ -123,7 +127,7 @@ public actor ChatCommands {
                 "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
               ])
             }),
-      hasTextContent: !prompt.isEmpty || document?.hasFeedback == true,
+      hasTextContent: !prompt.isEmpty || document?.hasTextContent == true,
       modelSelection: modelSelection,
       reasoningEffort: reasoningEffort)
     do {
@@ -212,9 +216,18 @@ public actor ChatCommands {
     try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST", query: query)
   }
 
-  public func setArchived(threadID: String, archived: Bool) async throws {
+  public func setMuted(threadID: String, muted: Bool, eventID: String) async throws {
+    let action = muted ? "mute" : "unmute"
+    try await client.data(
+      "/api/chat-threads/\(threadID)/\(action)", method: "POST",
+      query: [URLQueryItem(name: "eventId", value: eventID)])
+  }
+
+  public func setArchived(threadID: String, archived: Bool, eventID: String? = nil) async throws {
     let action = archived ? "archive" : "unarchive"
-    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
+    try await client.data(
+      "/api/chat-threads/\(threadID)/\(action)", method: "POST",
+      query: eventID.map { [URLQueryItem(name: "eventId", value: $0)] } ?? [])
   }
 
   public func rename(threadID: String, title: String) async throws {

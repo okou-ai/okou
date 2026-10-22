@@ -216,7 +216,9 @@ describe("custom connector URL diagnostics", () => {
           connectionId: ACCOUNT_ID,
           metadata: { connectionStatus: "connected" },
         },
-        connection: null,
+        accountSummary: null,
+        memberStatus: null,
+        managedStatus: null,
         authorization: { authorized: false },
         diagnostic: {
           run: { bases: ["https://api.acme.test/pinned"] },
@@ -254,7 +256,7 @@ describe("custom connector URL diagnostics", () => {
     });
   });
 
-  it("uses current organization connection metadata outside a run", async () => {
+  it("uses the canonical current-member account summary outside a run", async () => {
     server.use(
       stubConnectorAccounts([
         connectorAccount(
@@ -282,11 +284,75 @@ describe("custom connector URL diagnostics", () => {
       context: "current",
       account: null,
       authorization: null,
-      connection: { connected: true, connectionId: DEFAULT_ACCOUNT_ID },
+      accountSummary: {
+        accountCount: 1,
+        defaultConnection: { id: DEFAULT_ACCOUNT_ID, setupStatus: "complete" },
+      },
+      memberStatus: "connected",
+      managedStatus: null,
       diagnostic: { run: { status: "not-scoped" } },
     });
     expect(output()).not.toContain(ACCOUNT_ID);
   });
+
+  it.each([
+    { runBound: false, connected: true },
+    { runBound: false, connected: false },
+    { runBound: true, connected: true },
+    { runBound: true, connected: false },
+  ])(
+    "keeps managed business status separate from member and Run accounts ($runBound, $connected)",
+    async ({ runBound, connected }) => {
+      const managedStatus = {
+        connected,
+        ...(connected
+          ? {
+              connectedAccountId: DEFAULT_ACCOUNT_ID,
+              connectedAccountUpdatedAt: "2026-10-21T00:00:00.000Z",
+            }
+          : {}),
+        missingRequiredFields: connected ? [] : ["clientSecret"],
+        configuredFieldKeys: connected ? ["clientSecret"] : [],
+      };
+      const managed = customConnector({
+        id: CUSTOM_ID,
+        authMode: "oauth",
+        ...managedStatus,
+        oauthConfig: {
+          providerAdapter: "feishu",
+          clientId: "managed-client-must-not-appear",
+          authorizationUrl: "https://auth.example.test/authorize",
+          tokenUrl: "https://auth.example.test/token",
+          tokenEndpointAuthMethod: "client_secret_post",
+          pkceMethod: "S256",
+          scopes: [],
+          authorizationParams: {},
+        },
+      });
+      server.use(
+        http.get(`${ORIGIN}/api/custom-connectors/${CUSTOM_ID}`, () => {
+          return HttpResponse.json(managed);
+        }),
+      );
+      if (!runBound) {
+        vi.stubEnv("OKOU_AGENT_ID", "");
+        stubDiagnostic({ ...resolvedCustom(), run: { status: "not-scoped" } });
+      }
+      await check("--json");
+      const json: unknown = JSON.parse(output());
+      expect(json).toMatchObject({
+        context: runBound ? "run" : "current",
+        account: runBound ? { connectionId: ACCOUNT_ID } : null,
+        accountSummary: null,
+        memberStatus: null,
+      });
+      expect(json).toHaveProperty(
+        "managedStatus",
+        runBound ? null : managedStatus,
+      );
+      expect(output()).not.toContain("managed-client-must-not-appear");
+    },
+  );
 
   it("keeps unavailable run context separate from current custom connection metadata", async () => {
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
@@ -294,7 +360,9 @@ describe("custom connector URL diagnostics", () => {
     const json: unknown = JSON.parse(output());
     expect(json).toMatchObject({
       context: "run",
-      connection: null,
+      accountSummary: null,
+      memberStatus: null,
+      managedStatus: null,
       account: { state: "context-unavailable", reason: "legacy-or-missing" },
     });
     expect(output()).not.toContain(DEFAULT_ACCOUNT_ID);

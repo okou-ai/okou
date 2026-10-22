@@ -16,13 +16,7 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
-import {
-  useGet,
-  useLastLoadable,
-  useLoadable,
-  useSet,
-  type Loadable,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
@@ -42,6 +36,7 @@ import {
   type BrowserRadioDraft,
   type BrowserRangeDraft,
   type BrowserSelectChoiceDraft,
+  type BrowserInputEntry,
   type BrowserUserActionRequestState,
   type BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
@@ -147,21 +142,21 @@ function ActionState({
 }
 
 function TerminalActionState({
+  signals,
   callbackDelivered,
-  callbackFailed,
   cancelled,
-  continuing,
-  onContinue,
   variant,
 }: {
+  readonly signals: BrowserUserActionSignals;
   readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
   readonly cancelled: boolean;
-  readonly continuing: boolean;
-  readonly onContinue: () => void;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
+  const continuing = continueLoadable.state === "loading";
+  const callbackFailed = mutationFailed(continueLoadable);
   const callbackFailureDescription = t(($) => {
     return $.chat.browserInput.callbackFailed;
   });
@@ -192,7 +187,9 @@ function TerminalActionState({
           size="sm"
           variant="outline"
           disabled={continuing}
-          onClick={onContinue}
+          onClick={() => {
+            detach(continueAction(pageSignal), Reason.DomCallback);
+          }}
         >
           {continuing && <Loader2 size={15} className="animate-spin" />}
           {continuing
@@ -213,18 +210,12 @@ function TerminalActionState({
 }
 
 function StateFromRequest({
+  signals,
   request,
-  callbackDelivered,
-  callbackFailed,
-  continuing,
-  onContinue,
   variant,
 }: {
+  readonly signals: BrowserUserActionSignals;
   readonly request: BrowserUserActionRequestState;
-  readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
-  readonly continuing: boolean;
-  readonly onContinue: () => void;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
@@ -303,11 +294,9 @@ function StateFromRequest({
   if (action.state === "succeeded" || action.state === "cancelled") {
     return (
       <TerminalActionState
-        callbackDelivered={callbackDelivered}
-        callbackFailed={callbackFailed}
+        signals={signals}
+        callbackDelivered={action.callbackDelivered === true}
         cancelled={action.state === "cancelled"}
-        continuing={continuing}
-        onContinue={onContinue}
         variant={variant}
       />
     );
@@ -1535,18 +1524,19 @@ function BrowserInputFields({
 }
 
 function PendingFormActions({
+  busy,
   submitting,
   cancelling,
   canSubmit,
   onCancel,
 }: {
+  readonly busy: boolean;
   readonly submitting: boolean;
   readonly cancelling: boolean;
   readonly canSubmit: boolean;
   readonly onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const busy = submitting || cancelling;
   return (
     <>
       <p className="text-xs leading-5 text-muted-foreground">
@@ -1585,18 +1575,18 @@ function PendingFormActions({
   );
 }
 
+type BrowserInputEntryLoadable = Loadable<BrowserInputEntry>;
+
 function PendingFormPreflight({
   signals,
-  entryState,
+  entry,
 }: {
   readonly signals: BrowserUserActionSignals;
-  readonly entryState:
-    "idle" | "checking" | "ready" | "unavailable" | "invalid";
+  readonly entry: BrowserInputEntryLoadable;
 }) {
   const { t } = useTranslation();
-  const beginEntry = useSet(signals.beginEntry$);
-  const pageSignal = useGet(pageSignal$);
-  if (entryState === "idle" || entryState === "checking") {
+  const refreshEntry = useSet(signals.refreshEntry$);
+  if (entry.state === "loading") {
     return (
       <p
         role="status"
@@ -1609,12 +1599,12 @@ function PendingFormPreflight({
       </p>
     );
   }
-  if (entryState === "unavailable" || entryState === "invalid") {
+  if (entry.state === "hasError" || entry.data.kind !== "ready") {
     return (
       <div className="flex flex-wrap items-center gap-2" role="alert">
         <p className="text-sm text-destructive">
           {t(($) => {
-            return entryState === "invalid"
+            return entry.state === "hasData" && entry.data.kind === "rejected"
               ? $.chat.browserInput.applyFailed
               : $.chat.browserInput.checkFailed;
           })}
@@ -1624,7 +1614,7 @@ function PendingFormPreflight({
           variant="outline"
           size="sm"
           onClick={() => {
-            detach(beginEntry(pageSignal), Reason.DomCallback);
+            refreshEntry();
           }}
         >
           {t(($) => {
@@ -1635,6 +1625,27 @@ function PendingFormPreflight({
     );
   }
   return null;
+}
+
+function readyEntryAction(entry: BrowserInputEntryLoadable) {
+  return entry.state === "hasData" && entry.data.kind === "ready"
+    ? entry.data.action
+    : null;
+}
+
+function entryCannotSubmit(entry: BrowserInputEntryLoadable): boolean {
+  return (
+    entry.state === "hasError" ||
+    (entry.state === "hasData" && entry.data.kind !== "ready")
+  );
+}
+
+/** A cancelled owner is not a failed write. */
+function mutationFailed(mutation: {
+  readonly state: string;
+  readonly error?: unknown;
+}): boolean {
+  return mutation.state === "hasError" && !isAbortError(mutation.error);
 }
 
 function hasNativeBrowserInputs(action: PendingBrowserInputAction): boolean {
@@ -1661,9 +1672,8 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   const rangeDraft = useGet(signals.rangeDraft$);
   const colorDraft = useGet(signals.colorDraft$);
   const fileDraft = useGet(signals.fileDraft$);
-  const operation = useLoadable(signals.operation$);
-  const entryState = useGet(signals.entryState$);
-  const entryAction = useGet(signals.entryAction$);
+  // Keep the settled check while a notification re-reads the request.
+  const entry = useLastLoadable(signals.entry$);
   const updateDraft = useSet(signals.updateDraft$);
   const removeDraft = useSet(signals.removeDraft$);
   const updateChoiceDraft = useSet(signals.updateChoiceDraft$);
@@ -1683,12 +1693,12 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
   const submitting = submitLoadable.state === "loading";
   const cancelling = cancelLoadable.state === "loading";
-  const busy = operation.state === "loading";
-  const failed =
-    submitLoadable.state === "hasError" || cancelLoadable.state === "hasError";
-  const cancelFailed = cancelLoadable.state === "hasError";
-  const activeAction =
-    entryState === "ready" && entryAction ? entryAction : request.action;
+  const busy = submitting || cancelling;
+  const cancelFailed = mutationFailed(cancelLoadable);
+  const failed = mutationFailed(submitLoadable) || cancelFailed;
+  const entryAction = readyEntryAction(entry);
+  const entryUnavailable = entryCannotSubmit(entry);
+  const activeAction = entryAction ?? request.action;
   const selectValuesValid = requiredSelectsSatisfied(activeAction, choiceDraft);
   const checkboxValuesValid = requiredCheckboxesSatisfied(
     activeAction,
@@ -1710,7 +1720,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
     if (!fieldsValid || !event.currentTarget.reportValidity()) {
       return;
     }
-    detach(submit(pageSignal), Reason.DomCallback);
+    detach(submit(activeAction, pageSignal), Reason.DomCallback);
   };
 
   return (
@@ -1752,9 +1762,9 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
         onRemoveColor={removeColorDraft}
       />
 
-      <PendingFormPreflight signals={signals} entryState={entryState} />
+      <PendingFormPreflight signals={signals} entry={entry} />
 
-      {failed && entryState !== "invalid" && (
+      {failed && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
             return cancelFailed
@@ -1765,13 +1775,13 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
       )}
 
       <PendingFormActions
+        busy={busy}
         submitting={submitting}
         cancelling={cancelling}
         canSubmit={
-          entryState !== "unavailable" &&
-          entryState !== "invalid" &&
+          !entryUnavailable &&
           fieldsValid &&
-          (!hasNativeBrowserInputs(request.action) || entryState === "ready")
+          (!hasNativeBrowserInputs(request.action) || entryAction !== null)
         }
         onCancel={() => {
           detach(cancel(pageSignal), Reason.DomCallback);
@@ -1785,38 +1795,17 @@ function PendingFormWithCheck({
   signals,
   request,
   showTitle = true,
-}: {
-  readonly signals: BrowserUserActionSignals;
-  readonly request: PendingBrowserInputRequest;
-  readonly showTitle?: boolean;
-}) {
-  const entryState = useGet(signals.entryState$);
-  const entryAction = useGet(signals.entryAction$);
+}: PendingFormProps) {
+  const entry = useLastLoadable(signals.entry$);
   return (
     <PendingForm
       signals={signals}
       request={{
         ...request,
-        action:
-          entryState === "ready" && entryAction ? entryAction : request.action,
+        action: readyEntryAction(entry) ?? request.action,
       }}
       showTitle={showTitle}
     />
-  );
-}
-
-function PendingStandaloneAction({
-  signals,
-  request,
-}: {
-  readonly signals: BrowserUserActionSignals;
-  readonly request: PendingBrowserInputRequest;
-}) {
-  const entryRef = useSet(signals.standaloneEntryRef$);
-  return (
-    <div ref={entryRef} className="contents">
-      <PendingFormWithCheck signals={signals} request={request} />
-    </div>
   );
 }
 
@@ -1828,8 +1817,7 @@ function PendingInlineAction({
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const beginEntry = useSet(signals.beginEntry$);
+  const refreshEntry = useSet(signals.refreshEntry$);
   const title =
     request.action.title ??
     t(($) => {
@@ -1841,8 +1829,9 @@ function PendingInlineAction({
       <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
         <Dialog
           onOpenChange={(nextOpen) => {
+            // Opening the form checks the website again.
             if (nextOpen) {
-              detach(beginEntry(pageSignal), Reason.DomCallback);
+              refreshEntry();
             }
           }}
         >
@@ -1897,18 +1886,10 @@ function ApplyingState({
 }
 
 function BrowserUserActionCardContent({
-  callbackDelivered,
-  callbackFailed,
-  continuing,
-  onContinue,
   requestLoadable,
   signals,
   variant,
 }: {
-  readonly callbackDelivered: boolean;
-  readonly callbackFailed: boolean;
-  readonly continuing: boolean;
-  readonly onContinue: () => void;
   readonly requestLoadable: Loadable<BrowserUserActionRequestState>;
   readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
@@ -1957,17 +1938,14 @@ function BrowserUserActionCardContent({
       variant === "inline" ? (
         <PendingInlineAction signals={signals} request={pendingRequest} />
       ) : (
-        <PendingStandaloneAction signals={signals} request={pendingRequest} />
+        <PendingFormWithCheck signals={signals} request={pendingRequest} />
       );
   } else {
     content = (
       <DraftClearingState signals={signals}>
         <StateFromRequest
+          signals={signals}
           request={requestLoadable.data}
-          callbackDelivered={callbackDelivered}
-          callbackFailed={callbackFailed}
-          continuing={continuing}
-          onContinue={onContinue}
           variant={variant}
         />
       </DraftClearingState>
@@ -1983,33 +1961,12 @@ export function BrowserUserActionCard({
   readonly signals: BrowserUserActionSignals;
   readonly variant?: BrowserUserActionCardVariant;
 }) {
-  const pageSignal = useGet(pageSignal$);
   // Keep the settled state while a notification re-reads it, so an open
   // dialog is not remounted by an unrelated change in the same thread.
   const requestLoadable = useLastLoadable(signals.request$);
-  const operation = useLoadable(signals.operation$);
-  const callbackOperation = useLoadable(signals.callbackOperation$);
-  const callbackFailed =
-    callbackOperation.state === "hasError" &&
-    !isAbortError(callbackOperation.error);
-  const continueAction = useSet(signals.continue$);
-  const action =
-    requestLoadable.state === "hasData" &&
-    requestLoadable.data.kind === "action"
-      ? requestLoadable.data.action
-      : undefined;
-  const callbackDelivered = action?.callbackDelivered === true;
-  const continuing = operation.state === "loading";
-  const onContinue = () => {
-    detach(continueAction(pageSignal), Reason.DomCallback);
-  };
   return (
     <BrowserActionSurface variant={variant}>
       <BrowserUserActionCardContent
-        callbackDelivered={callbackDelivered}
-        callbackFailed={callbackFailed}
-        continuing={continuing}
-        onContinue={onContinue}
         requestLoadable={requestLoadable}
         signals={signals}
         variant={variant}

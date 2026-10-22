@@ -82,7 +82,6 @@ final class ChatConnectorTests: XCTestCase {
         XCTAssertEqual(connectorQuery("connectorSlug", in: request), "slack")
         return ChatHTTPResponse(body: F.account(connected: false))
       }
-      XCTAssertNotEqual(request.url?.path, "/api/connector-accounts")
       return try XCTUnwrap(F.response(request))
     }
     let status = try await ChatConnectorService(client: fixture.client).status(
@@ -102,10 +101,10 @@ final class ChatConnectorTests: XCTestCase {
       } catch APIClientError.invalidResponse {}
     }
     let fixture = ChatHTTPFixture { request in
-      if request.url?.path == "/api/connector-accounts" {
+      if request.url?.path == "/api/connector-accounts/connections" {
         return ChatHTTPResponse(
           body:
-            "{\"summaries\":[{\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"},\"defaultConnection\":\(F.account(setup: false))}]}"
+            "{\"connections\":[],\"nextCursor\":null,\"defaultConnection\":\(F.account(setup: false))}"
         )
       }
       return try XCTUnwrap(F.response(request))
@@ -114,6 +113,102 @@ final class ChatConnectorTests: XCTestCase {
       _ = try await ChatConnectorService(client: fixture.client).status(action())
       XCTFail("Expected unknown setup failure")
     } catch APIClientError.incompatibleData {}
+  }
+  func testTargetAccountPagePreservesAnOffPageDefault() async throws {
+    for custom in [false, true] {
+      let fixture = ChatHTTPFixture { request in
+        if request.url?.path == "/api/connector-accounts/connections" {
+          XCTAssertEqual(connectorQuery("kind", in: request), custom ? "custom" : "builtin")
+          XCTAssertEqual(
+            connectorQuery(custom ? "customConnectorId" : "connectorSlug", in: request),
+            custom ? F.customID : "slack")
+          XCTAssertEqual(connectorQuery("limit", in: request), "1")
+          return ChatHTTPResponse(
+            body: """
+              {"connections":[\(F.account(id: F.siblingID, custom: custom, isDefault: false))],"nextCursor":"next-page","defaultConnection":\(F.account(custom: custom))}
+              """)
+        }
+        return try XCTUnwrap(F.response(request))
+      }
+      let status = try await ChatConnectorService(client: fixture.client).status(
+        action(custom ? "/connectors/_internal/connect" : "/connectors/slack/connect"))
+      XCTAssertEqual(status?.account?.id, F.accountID)
+      XCTAssertTrue(try XCTUnwrap(status).connected)
+    }
+  }
+  func testSavedAccountsWithoutDefaultRemainAnActionableFailure() async throws {
+    for custom in [false, true] {
+      let fixture = ChatHTTPFixture { request in
+        if request.url?.path == "/api/connector-accounts/connections" {
+          return ChatHTTPResponse(
+            body: """
+              {"connections":[\(F.account(custom: custom, isDefault: false))],"nextCursor":null,"defaultConnection":null}
+              """)
+        }
+        return try XCTUnwrap(F.response(request))
+      }
+      do {
+        _ = try await ChatConnectorService(client: fixture.client).status(
+          action(custom ? "/connectors/_internal/connect" : "/connectors/slack/connect"))
+        XCTFail("Expected an explicit default-account choice")
+      } catch let error as APIClientError {
+        XCTAssertEqual(error.statusCode, 409)
+      }
+    }
+  }
+  func testMalformedAccountInventoryCannotBecomeAnAddIntent() async throws {
+    let responses = [
+      "{\"connections\":[],\"nextCursor\":null}",
+      "{\"connections\":[],\"defaultConnection\":null}",
+    ]
+    for body in responses {
+      let fixture = ChatHTTPFixture { request in
+        if request.url?.path == "/api/connector-accounts/connections" {
+          return ChatHTTPResponse(body: body)
+        }
+        return try XCTUnwrap(F.response(request))
+      }
+      do {
+        _ = try await ChatConnectorService(client: fixture.client).status(action())
+        XCTFail("Expected incomplete account inventory rejection")
+      } catch APIClientError.incompatibleData {}
+    }
+  }
+  func testAccountPageRejectsForeignTargetsAndMalformedDefaultIdentity() async throws {
+    let responses = [
+      "{\"connections\":[],\"nextCursor\":null,\"defaultConnection\":\(F.account(custom: true))}",
+      "{\"connections\":[],\"nextCursor\":null,\"defaultConnection\":\(F.account(id: "not-an-id"))}",
+      "{\"connections\":[\(F.account(custom: true))],\"nextCursor\":null,\"defaultConnection\":null}",
+    ]
+    for body in responses {
+      let fixture = ChatHTTPFixture { request in
+        if request.url?.path == "/api/connector-accounts/connections" {
+          return ChatHTTPResponse(body: body)
+        }
+        return try XCTUnwrap(F.response(request))
+      }
+      do {
+        _ = try await ChatConnectorService(client: fixture.client).status(action())
+        XCTFail("Expected account inventory identity rejection")
+      } catch APIClientError.invalidResponse {}
+    }
+  }
+  func testAccountReadDependencyAndUpgradeErrorsRemainFailures() async throws {
+    for code in [503, 426] {
+      let fixture = ChatHTTPFixture { request in
+        if request.url?.path == "/api/connector-accounts/connections" {
+          return ChatHTTPResponse(
+            status: code, body: "{\"error\":{\"message\":\"Unavailable\"}}")
+        }
+        return try XCTUnwrap(F.response(request))
+      }
+      do {
+        _ = try await ChatConnectorService(client: fixture.client).status(action())
+        XCTFail("Expected account read failure")
+      } catch let error as APIClientError {
+        XCTAssertEqual(error.statusCode, code)
+      }
+    }
   }
   func testMissingActionIsUnavailableButDependencyAndUpgradeFailuresRemainErrors() async throws {
     for code in [404, 503, 426] {
@@ -180,7 +275,11 @@ final class ChatConnectorTests: XCTestCase {
           let body = String(decoding: chatRequestBody(request), as: UTF8.self)
           XCTAssertTrue(body.contains(F.agentID) || body.contains("\"values\":[]"))
           XCTAssertFalse(body.contains("authorizeAgent"))
-          return ChatHTTPResponse(body: "{\"connectedAccountId\":\"\(F.accountID)\"}")
+          XCTAssertTrue(body.contains("\"intent\":\"add\""))
+          return ChatHTTPResponse(
+            body: ["oauth", "automatic"].contains(mode)
+              ? "{\"result\":\"connected\",\"connector\":\(F.custom(mode: mode)),\"connectionId\":\"\(F.accountID)\"}"
+              : String(F.custom(mode: mode).dropLast()) + ",\"connectionId\":\"\(F.accountID)\"}")
         }
         return try XCTUnwrap(F.response(request, connected: false, customMode: mode))
       }
@@ -221,7 +320,7 @@ final class ChatConnectorTests: XCTestCase {
       attemptID: F.attemptID, target: .custom(F.customID))
     XCTAssertNil(result)
     for body in [
-      "{}", "{\"connectionId\":\"\(F.accountID)\",\"connectedAccountId\":\"\(F.siblingID)\"}",
+      "{}", "{\"connectionId\":\"not-an-id\"}",
     ] {
       let receipt = try JSONDecoder().decode(ChatConnectorReceipt.self, from: Data(body.utf8))
       XCTAssertThrowsError(try receipt.operatedID)

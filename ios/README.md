@@ -26,8 +26,10 @@ the compact composer animates it into a multiline field. The ChatGPT-style
 sliding sidebar contains pinned agents and recent chats scoped to the selected
 agent, with workspace switching at the top and a bottom new-chat action. Its
 settings menu provides account actions. Native list actions support pinning,
-archiving, and renaming chats; archive controls follow the existing
-`chatThreadArchiving` feature switch. Opening a new chat is local and immediate;
+archiving, and renaming chats. The chat header's native More menu also supports
+muting. Archive and mute controls follow the existing `chatThreadArchiving` and
+`chatThreadMuting` feature switches; muted chats can still be unmuted after the
+muting switch is turned off. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
 agent and the existing saved model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
@@ -37,8 +39,18 @@ Conversation history renders durable user messages and assistant results using
 Textual 0.5.0. The renderer supports Markdown headings, lists, quotes, tables,
 links, images, and code blocks, with text selection, code copying, and horizontal
 overflow for wide tables and code. Ably notifications trigger fresh API reads;
-transient token output and tool cards are not rendered. Sharing, Cloud Browser,
-Computer Use, artifact controls, and the global connector picker are outside this local UI.
+transient token output and tool cards are not rendered. Conversation sharing, Cloud Browser,
+Computer Use, artifact publishing, and the global connector picker are outside this local UI.
+Generated results retain inline link labels and show native cards for Markdown image
+embeds. Images support enlarged system viewing and navigation within their transcript
+group. Video/audio use system playback; PDF and supported Office files use Quick Look.
+Markdown, text, JSON and CSV have in-app readers, while generated HTML runs its actual
+content in an isolated WebKit session. Authorized downloads can be shared or saved to
+Files through the native share sheet, including formats without a system preview.
+Resource identities remain stable; access URLs are resolved for the current scope and
+never persisted in the chat cache. Closing the detail cancels result work and releases
+its temporary files.
+
 Trusted connector and permission action links in assistant messages render as native cards,
 including exact-account reconnect, conversation account confirmation, and permission decisions.
 Permission details and confirmation use a native sheet. Credential forms remain

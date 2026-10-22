@@ -62,7 +62,6 @@ test.each([
             runnerIdentity: { runnerId, heartbeatGeneration: index + 1 },
             runnerHostname: `native-claim-${index}`,
             capabilities: { piModelConfigGenerations: [2, 3, 5] },
-            nativeContinuationSupported: true,
           }),
         });
       });

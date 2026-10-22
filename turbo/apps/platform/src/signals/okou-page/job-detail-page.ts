@@ -3,6 +3,9 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { onRef, withCleanup } from "../utils.ts";
 import { toggleAgentConnector$ } from "./job-detail/connectors.ts";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
+import { pageVersion$ } from "../page-signal.ts";
 import { agentName$ } from "./job-detail/agent-name.ts";
 
 // ---------------------------------------------------------------------------
@@ -71,7 +74,18 @@ function createPermissionToggleActions() {
         return;
       }
       const request = withCleanup(
-        set(toggleAgentConnector$, connectorSlug, enabled, signal),
+        (async () => {
+          await set(toggleAgentConnector$, connectorSlug, enabled, signal);
+          signal.throwIfAborted();
+          toast.success(
+            i18n.t(
+              ($) => {
+                return $.authorization.connectorsSaved;
+              },
+              { ns: "agents" },
+            ),
+          );
+        })(),
         () => {
           set(internalInFlight$, null);
         },
@@ -88,7 +102,10 @@ export type PermissionToggleActions = ReturnType<
   typeof createPermissionToggleActions
 >;
 
+// Filtering may unmount a row, but its result still belongs to this page.
+// Replace the graph when either the domain agent or page setup changes.
 export const permissionToggleActions$ = computed((get) => {
   get(agentName$);
+  get(pageVersion$);
   return createPermissionToggleActions();
 });

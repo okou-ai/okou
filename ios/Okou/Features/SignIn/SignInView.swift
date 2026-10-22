@@ -97,9 +97,6 @@ private struct WorkspaceSignInView: View {
     }
     .scrollBounceBehavior(.basedOnSize)
     .tint(SignInStyle.primary)
-    .task(id: authentication.userID) {
-      await authentication.refreshWorkspaces()
-    }
   }
 
   private var content: some View {
@@ -112,7 +109,7 @@ private struct WorkspaceSignInView: View {
         .foregroundStyle(.secondary)
       if authentication.isLoadingWorkspaces && authentication.workspaces.isEmpty {
         ProgressView("Loading workspaces…")
-      } else if authentication.workspaces.isEmpty {
+      } else if authentication.workspaces.isEmpty && authentication.errorMessage == nil {
         VStack(alignment: .leading, spacing: 16) {
           Text("Finish setting up your workspace on the web, then return here.")
             .foregroundStyle(.secondary)

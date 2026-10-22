@@ -3,10 +3,11 @@ import type { BrowserClerk as Clerk } from "@clerk/shared/types";
 import {
   getAllFeatureStates,
   getEmailEnabledFeatureStates,
+  isFeatureSwitchAvailable,
 } from "@okouai/core/feature-switch";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { clerk$ } from "../auth";
+import { authenticatedSessionKey$, clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { syncShellDocumentAttributes$ } from "../theme.ts";
@@ -21,6 +22,11 @@ interface FeatureSwitchIdentity {
   readonly email: string | undefined;
   readonly orgId: string;
   readonly userId: string;
+}
+
+interface FeatureSwitchSnapshot {
+  readonly owner: string | null;
+  readonly switches: Record<FeatureSwitchKey, boolean>;
 }
 
 function readFeatureSwitchIdentity(
@@ -54,15 +60,25 @@ function applySwitches(
 }
 
 const internalReloadFeatureSwitches$ = state(0);
+const remoteUiOwner$ = state<string | null>(null);
+
+export const availableFeatureSwitchKeys$ = computed(async (get) => {
+  get(authenticatedSessionKey$);
+  const identity = readFeatureSwitchIdentity(await get(clerk$));
+  return Object.values(FeatureSwitchKey).filter((key) => {
+    return isFeatureSwitchAvailable(key, identity ?? {});
+  });
+});
 
 /** The authoritative feature switches for the active workspace. */
 export const featureSwitches$ = computed(async (get) => {
   get(internalReloadFeatureSwitches$);
   const createClient = get(apiClient$);
   const clerk = await get(clerk$);
+  const owner = get(authenticatedSessionKey$);
   const identity = readFeatureSwitchIdentity(clerk);
   if (!identity) {
-    return getAllFeatureStates({});
+    return { owner: null, switches: getAllFeatureStates({}) };
   }
 
   const client = createClient(featureSwitchesContract, {
@@ -80,15 +96,24 @@ export const featureSwitches$ = computed(async (get) => {
   );
   applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
   applySwitches(combined, result.body.switches);
-  return combined;
+  // Reapply audience restrictions after both server and stored overrides.
+  return {
+    owner,
+    switches: getAllFeatureStates({ ...identity, overrides: combined }),
+  };
 });
 
 export const featureSwitch$ = computed((get) => {
-  return get(featureSwitchState$);
+  const switches = get(featureSwitchState$);
+  const owner = get(remoteUiOwner$);
+  return owner && owner === get(authenticatedSessionKey$)
+    ? switches
+    : { ...switches, [FeatureSwitchKey.RemoteControlGuidedSetup]: false };
 });
 
 export const applyFeatureSwitches$ = command(
-  ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
+  ({ set }, { owner, switches }: FeatureSwitchSnapshot) => {
+    set(remoteUiOwner$, owner);
     set(setFeatureSwitchState$, switches);
     set(syncShellDocumentAttributes$);
   },

@@ -172,6 +172,10 @@ describe("connector client response contracts", () => {
     expect(builtinConnectorResponseSchema.parse(connector)).toStrictEqual(
       connector,
     );
+    const emptyInventory = { connectors: [], connectorProvidedBindings: [] };
+    expect(
+      builtinConnectorListResponseSchema.parse(emptyInventory),
+    ).toStrictEqual(emptyInventory);
     expect(
       builtinConnectorListResponseSchema.parse({
         connectors: [connector],

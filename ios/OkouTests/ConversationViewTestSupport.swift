@@ -163,12 +163,13 @@ func readingDescription(_ id: String, conversation: ConversationStore, view: UIV
 
 @MainActor
 func eventually(
-  file: StaticString = #filePath, line: UInt = #line, message: @autoclosure () -> String = "",
+  timeout: Duration = .seconds(3), file: StaticString = #filePath, line: UInt = #line,
+  message: @autoclosure () -> String = "",
   _ predicate: () -> Bool
 )
   async throws
 {
-  let deadline = ContinuousClock.now + .seconds(3)
+  let deadline = ContinuousClock.now + timeout
   while !predicate() && ContinuousClock.now < deadline {
     await hostingPresentationFrame()
   }

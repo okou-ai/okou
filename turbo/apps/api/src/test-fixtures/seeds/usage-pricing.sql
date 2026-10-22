@@ -188,5 +188,8 @@ VALUES
   ('scrape', 'firecrawl', 'enhanced.links', 20, 1),
   ('web-search', 'perplexity', 'request', 5, 1),
   ('social', 'socialkit', 'request', 3, 1),
+  ('social', 'monid/douyin', 'provider_cost_usd_micros', 1250, 1000000),
+  ('social', 'monid/weibo', 'provider_cost_usd_micros', 1250, 1000000),
+  ('commerce', 'dataforseo', 'provider_cost_usd_micros', 1250, 1000000),
   ('people-search', 'perplexity', 'request', 20, 1)
 ON CONFLICT (kind, provider, category) DO NOTHING;
