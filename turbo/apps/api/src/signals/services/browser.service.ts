@@ -1755,7 +1755,7 @@ const claimStartedProviderInstance$ = command(
                 eq(browserSessions.chatThreadId, args.context.chatThreadId),
                 eq(browserSessions.orgId, args.context.orgId),
                 eq(browserSessions.userId, args.context.userId),
-                eq(browserSessions.runId, current.runId),
+                eq(browserSessions.runId, args.context.runId),
                 eq(browserSessions.status, current.status),
                 eq(browserSessions.updatedAt, current.updatedAt),
                 eq(db.select({ count: count() }).from(preceding), 1),
