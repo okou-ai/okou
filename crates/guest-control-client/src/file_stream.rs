@@ -65,13 +65,17 @@ pub(crate) struct Transfer<'a> {
     begin: Option<Begin>,
     sequence: Option<oneshot::Receiver<u32>>,
     credit: mpsc::Receiver<u8>,
-    raw: Option<Vec<u8>>,
-    source: Option<&'a [u8]>,
+    input: Option<TransferInput<'a>>,
     started: Arc<AtomicBool>,
     completion: TransferCompletion,
     owner: Option<OperationCancellationContext>,
     pub(crate) wire_payload_bytes: u64,
     pub(crate) encoder_pipeline_elapsed: Duration,
+}
+
+enum TransferInput<'a> {
+    Raw(Vec<u8>),
+    Source(&'a [u8]),
 }
 
 enum TransferCompletion {
@@ -90,25 +94,11 @@ impl<'a> Transfer<'a> {
                 .to_be_bytes(),
         );
         payload.extend_from_slice(&metadata);
-        let (sequence_tx, sequence_rx) = oneshot::channel();
-        let (credit_tx, credit_rx) = mpsc::channel(WINDOW + 1);
-        Ok(Self {
+        Ok(Self::with_input(
             shared,
-            begin: Some(Begin {
-                payload,
-                sequence: sequence_tx,
-                credit: credit_tx,
-            }),
-            sequence: Some(sequence_rx),
-            credit: credit_rx,
-            raw: Some(raw.to_vec()),
-            source: None,
-            started: Arc::new(AtomicBool::new(false)),
-            completion: TransferCompletion::Pending,
-            owner: OperationCancellationContext::current(),
-            wire_payload_bytes: 0,
-            encoder_pipeline_elapsed: Duration::ZERO,
-        })
+            TransferInput::Raw(raw.to_vec()),
+            payload,
+        ))
     }
 
     pub(crate) fn from_source(
@@ -127,10 +117,14 @@ impl<'a> Transfer<'a> {
         );
         payload.extend_from_slice(&crc32.to_be_bytes());
         payload.extend_from_slice(&metadata);
-        Ok(Self::source_transfer(shared, source, payload))
+        Ok(Self::with_input(
+            shared,
+            TransferInput::Source(source),
+            payload,
+        ))
     }
 
-    fn source_transfer(shared: Arc<Shared>, source: &'a [u8], payload: Vec<u8>) -> Self {
+    fn with_input(shared: Arc<Shared>, input: TransferInput<'a>, payload: Vec<u8>) -> Self {
         let (sequence_tx, sequence_rx) = oneshot::channel();
         let (credit_tx, credit_rx) = mpsc::channel(WINDOW + 1);
         Self {
@@ -142,8 +136,7 @@ impl<'a> Transfer<'a> {
             }),
             sequence: Some(sequence_rx),
             credit: credit_rx,
-            raw: None,
-            source: Some(source),
+            input: Some(input),
             started: Arc::new(AtomicBool::new(false)),
             completion: TransferCompletion::Pending,
             owner: OperationCancellationContext::current(),
@@ -214,22 +207,25 @@ impl<'a> Transfer<'a> {
             .map_err(io::Error::other)?;
         // Guest admission precedes codec work.
         let mut credits = self.next_credit().await?;
-        if let Some(source) = self.source.take() {
-            for bytes in source.chunks(BLOCK) {
-                self.send_data(seq, bytes, &mut credits).await?;
+        let input = self
+            .input
+            .take()
+            .ok_or_else(|| io::Error::other("stream input already consumed"))?;
+        match input {
+            TransferInput::Source(source) => {
+                for bytes in source.chunks(BLOCK) {
+                    self.send_data(seq, bytes, &mut credits).await?;
+                }
             }
-        } else {
-            let raw = self
-                .raw
-                .take()
-                .ok_or_else(|| io::Error::other("stream input already consumed"))?;
-            let encoder_started = Instant::now();
-            let mut producer = Producer::start(raw)?;
-            while let Some(bytes) = producer.next().await {
-                self.send_data(seq, &bytes, &mut credits).await?;
+            TransferInput::Raw(raw) => {
+                let encoder_started = Instant::now();
+                let mut producer = Producer::start(raw)?;
+                while let Some(bytes) = producer.next().await {
+                    self.send_data(seq, &bytes, &mut credits).await?;
+                }
+                producer.finish()?;
+                self.encoder_pipeline_elapsed = encoder_started.elapsed();
             }
-            producer.finish()?;
-            self.encoder_pipeline_elapsed = encoder_started.elapsed();
         }
         let frame = guest_control_proto::encode(MSG_WRITE_FILE_STREAM_END, seq, &[])
             .map_err(io::Error::other)?;
