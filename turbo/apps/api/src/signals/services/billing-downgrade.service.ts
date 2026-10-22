@@ -756,9 +756,12 @@ const publishDowngrade$ = command(
         ? db
             .with(...publications, canceled, scheduled)
             .select({
-              complete: sql`1 / CASE WHEN ${and(
-                eq(db.select({ count: count() }).from(canceled), 1),
-                eq(db.select({ count: count() }).from(scheduled), 1),
+              complete: sql`1 / CASE WHEN ${eq(
+                db.select({ count: count() }).from(canceled),
+                1,
+              )} AND ${eq(
+                db.select({ count: count() }).from(scheduled),
+                1,
               )} THEN 1 ELSE 0 END`.mapWith(pgIntegerDecoder),
             })
             .from(carrier)
