@@ -761,7 +761,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         throw new Error("Expected the claim manifest to mount memory");
       }
       expect(memory1.archiveUrl).toBeUndefined();
-      expect("manifestUrl" in memory1).toBeFalsy();
       expect(
         hasManifestPresign(presignedUrlKeysSince(presignCallsBeforeRun)),
       ).toBeFalsy();

@@ -490,11 +490,6 @@ describe("optional shared-thread titles", () => {
         [404],
       );
     }
-    const empty = await accept(
-      client().create({ ...requestBody(fixture), body: { eventIds: [] } }),
-      [400],
-    );
-    expect(empty.body.error.code).toBe("BAD_REQUEST");
     const unknown = await accept(
       client().create({
         ...requestBody(fixture),

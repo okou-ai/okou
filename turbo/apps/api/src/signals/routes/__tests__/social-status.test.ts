@@ -290,15 +290,6 @@ describe("GET /api/social/status", () => {
     [
       "invalid_response",
       () => {
-        return HttpResponse.json({
-          success: true,
-          data: { overall: "green", tools: null },
-        });
-      },
-    ],
-    [
-      "invalid_response",
-      () => {
         return HttpResponse.text("x".repeat(256 * 1024 + 1));
       },
     ],

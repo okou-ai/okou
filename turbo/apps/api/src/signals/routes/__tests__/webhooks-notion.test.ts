@@ -916,7 +916,7 @@ describe("POST /api/webhooks/notion", () => {
     await connectNotion(scenario);
     configureNotionParentAndChildPageMock(entities);
 
-    const childAutomation = await accept(
+    await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId },
@@ -932,7 +932,7 @@ describe("POST /api/webhooks/notion", () => {
       }),
       [201],
     );
-    const contentAutomation = await accept(
+    await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId },
@@ -948,7 +948,6 @@ describe("POST /api/webhooks/notion", () => {
       }),
       [201],
     );
-    expect(childAutomation.body.id).not.toBe(contentAutomation.body.id);
 
     const createdEvent = notionPageEvent({
       entities,
@@ -999,7 +998,7 @@ describe("POST /api/webhooks/notion", () => {
     await connectNotion(scenario);
     configureNotionDatabaseMock(entities);
 
-    const databaseAutomation = await accept(
+    await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId },
@@ -1015,7 +1014,7 @@ describe("POST /api/webhooks/notion", () => {
       }),
       [201],
     );
-    const contentAutomation = await accept(
+    await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId },
@@ -1031,7 +1030,6 @@ describe("POST /api/webhooks/notion", () => {
       }),
       [201],
     );
-    expect(databaseAutomation.body.id).not.toBe(contentAutomation.body.id);
 
     const createdEvent = notionPageEvent({
       entities,

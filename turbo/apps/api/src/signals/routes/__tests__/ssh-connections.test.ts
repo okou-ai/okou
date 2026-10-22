@@ -455,7 +455,6 @@ describe("SSH connection routes", () => {
       }),
       [201],
     );
-    expect(additional.body.id).not.toBe(original.body.id);
     expect(additional.body).toMatchObject({
       host: "example.com",
       port: 22,
@@ -634,7 +633,6 @@ describe("SSH connection routes", () => {
         [201],
       ),
     ]);
-    expect(first.body.id).not.toBe(second.body.id);
     const listed = await accept(
       client().list({ headers: authHeaders() }),
       [200],

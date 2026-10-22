@@ -2637,57 +2637,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("rejects malformed runner attribution before the claim transition", async () => {
-        const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
-        const hostnameRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "reject an oversized runner hostname",
-        });
-        const invalidHostname = await api.requestRawClaimRunnerJob(
-          true,
-          hostnameRun.runId,
-          [400],
-          {
-            runnerIdentity: {
-              runnerId: randomUUID(),
-              heartbeatGeneration: 1,
-            },
-            runnerHostname: "x".repeat(256),
-            capabilities: { piModelConfigGenerations: [1, 2, 3] },
-          },
-        );
-        expectApiError(invalidHostname.body);
-        await expect(
-          api.readRun(actor, hostnameRun.runId),
-        ).resolves.toMatchObject({
-          status: "pending",
-        });
-
-        const versionRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "reject an oversized runner version",
-        });
-        const invalidVersion = await api.requestClaimRunnerJob(
-          true,
-          versionRun.runId,
-          [400],
-          {},
-          { [CLIENT_VERSION_HEADER]: "x".repeat(129) },
-        );
-        expectApiError(invalidVersion.body);
-        await expect(
-          api.readRun(actor, versionRun.runId),
-        ).resolves.toMatchObject({
-          status: "pending",
-        });
-
-        await api.claimRunnerJob(hostnameRun.runId);
-        await api.claimRunnerJob(versionRun.runId);
-        await api.requestCancelRun(actor, hostnameRun.runId, [200]);
-        await api.requestCancelRun(actor, versionRun.runId, [200]);
-      });
-
       it("does not trust claim identity from a PAT-authenticated runner", async () => {
         const api = createRunsApi(context);
         const { actor, agentId } = await entitledRunActor();

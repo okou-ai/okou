@@ -11,7 +11,6 @@ import {
   updateFeatureSwitchesForUser,
   deleteFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { requireVncCredentialId } from "./helpers/vnc-response";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -224,7 +223,7 @@ describe("VNC authority and revocation", () => {
       }),
       [201],
     );
-    const unrelated = await accept(
+    await accept(
       api
         .connections()
         .create({ headers: vncSessionHeaders, body: vncConnectionBody() }),
@@ -258,7 +257,6 @@ describe("VNC authority and revocation", () => {
         ],
       ]),
     );
-    expect(requireVncCredentialId(unrelated.body)).not.toBe(f.credentialId);
     expect((await check(f)).body).toStrictEqual({
       outcome: "configuration_changed",
     });

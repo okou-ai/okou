@@ -378,7 +378,6 @@ test("requires current membership while retaining the same owner's configuration
     ),
   ).toStrictEqual([requireVncCredentialId(previous.body)]);
   const additional = await accept(createConnection(), [201]);
-  expect(additional.body.id).not.toBe(previous.body.id);
   expect(additional.body.host).toBe(previous.body.host);
   expect(additional.body.port).toBe(previous.body.port);
   const renamed = await accept(

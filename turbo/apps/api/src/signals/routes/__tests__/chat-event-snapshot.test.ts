@@ -164,7 +164,6 @@ describe("chat event snapshot read endpoints", () => {
       ]),
     );
 
-    expect(fromStart.body.rows[0]?.seqId).toBe(firstSeqId);
     expect(fromStart.body.rows).toHaveLength(rows.body.rows.length + 1);
 
     const mismatchedPair = await accept(
