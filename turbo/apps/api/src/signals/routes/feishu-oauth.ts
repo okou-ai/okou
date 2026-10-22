@@ -672,6 +672,8 @@ const persistFeishuOAuthConnection$ = command(
     signal: AbortSignal,
   ): Promise<PersistFeishuOAuthConnectionResult> {
     const p = feishuOAuthPlan(args);
+    // Identity ownership, wallet/quest initialization, credentials and agent
+    // grants must commit together; validation failures roll back every write.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0018; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(async (tx) => {
       const a = p.agent;

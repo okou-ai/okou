@@ -1,5 +1,9 @@
 import type { Plugin } from "vite";
 import { CLERK_UI_ASSET_PATTERN } from "./clerk-ui.ts";
+import {
+  MESSAGE_PDF_WORKER_FILE_PATTERN,
+  MESSAGE_PDF_WORKER_LIMIT_BYTES,
+} from "./message-pdf-worker.ts";
 import { SHARED_DATABASE_WORKER_FILE_PATTERN } from "./shared-database-worker-html.ts";
 
 export const RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES = 8_500_000;
@@ -285,10 +289,35 @@ export function applicationBundleViolations(
   if (uiAssets.length !== 1) {
     return ["Expected exactly one separately built Clerk UI asset"];
   }
-  const javaScriptOutputs = outputs.filter((output) => {
-    return output.fileName.endsWith(".js") && !uiAssets.includes(output);
+  const pdfWorkerAssets = outputs.filter((output) => {
+    return (
+      output.type === "asset" &&
+      MESSAGE_PDF_WORKER_FILE_PATTERN.test(output.fileName)
+    );
   });
-  return eagerApplicationBundleViolations(javaScriptOutputs, vendorChunkCount);
+  if (pdfWorkerAssets.length !== 1) {
+    return ["Expected exactly one separately built on-demand PDF worker asset"];
+  }
+  // Only this exact optional asset is excluded. Unknown JavaScript outputs,
+  // the shared database worker, and the lazy chunk keep their existing budget.
+  const javaScriptOutputs = outputs.filter((output) => {
+    return (
+      output.fileName.endsWith(".js") &&
+      !uiAssets.includes(output) &&
+      !pdfWorkerAssets.includes(output)
+    );
+  });
+  const violations = eagerApplicationBundleViolations(
+    javaScriptOutputs,
+    vendorChunkCount,
+  );
+  const pdfWorkerBytes = rawJavaScriptBytes(pdfWorkerAssets);
+  if (pdfWorkerBytes > MESSAGE_PDF_WORKER_LIMIT_BYTES) {
+    violations.push(
+      `On-demand PDF worker: ${pdfWorkerBytes} raw bytes exceeds ${MESSAGE_PDF_WORKER_LIMIT_BYTES}`,
+    );
+  }
+  return violations;
 }
 
 function eagerApplicationBundleViolations(

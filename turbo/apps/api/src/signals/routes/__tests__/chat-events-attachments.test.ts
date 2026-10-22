@@ -21,6 +21,7 @@ import {
   formatUserPresentationTemplateId,
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
+import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -611,7 +612,10 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     const workflow = WORKFLOW_TEMPLATE_ITEMS[0];
-    if (!style || !workflow) {
+    const presentation = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+      return item.slug === "taped-consulting";
+    });
+    if (!style || !workflow || !presentation) {
       throw new Error("Expected registered inline templates");
     }
     const illustrationTemplate: GenerationTemplateRequest = {
@@ -648,6 +652,18 @@ describe("CHAT-02: generation templates and attachments", () => {
               titleSnapshot: style.title,
               template: illustrationTemplate,
             },
+            { type: "text", text: " and " },
+            {
+              type: "template",
+              titleSnapshot: presentation.title,
+              template: {
+                type: "presentation",
+                selection: {
+                  templateId: presentation.templateId,
+                  colorSystemId: presentation.colorSystemId,
+                },
+              },
+            },
           ],
         },
       ],
@@ -662,10 +678,14 @@ describe("CHAT-02: generation templates and attachments", () => {
     const firstMarker = `[Template #1: ${style.title} (illustration)]`;
     const secondMarker = `[Template #2: ${workflow.title} (workflow)]`;
     const feedbackMarker = `[Template #3: ${style.title} (illustration)]`;
+    const presentationMarker =
+      "[Template #4: Taped Consulting Presentation (presentation)]";
     expect(run.prompt).toContain(
       `Use ${firstMarker} for the dog, then ${secondMarker} for the follow-up`,
     );
-    expect(run.prompt).toContain(`Restyle with ${feedbackMarker}`);
+    expect(run.prompt).toContain(
+      `Restyle with ${feedbackMarker} and ${presentationMarker}`,
+    );
     expect(run.prompt.indexOf(firstMarker)).toBeLessThan(
       run.prompt.indexOf(secondMarker),
     );
@@ -675,6 +695,10 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(systemPrompt).toContain("## Template #1 (illustration)");
     expect(systemPrompt).toContain("## Template #2 (workflow)");
     expect(systemPrompt).toContain("## Template #3 (illustration)");
+    expect(systemPrompt).toContain("## Template #4 (presentation)");
+    expect(systemPrompt).toContain(
+      "Selected presentation template: Taped Consulting Presentation (template:html-ppt-taped-consulting)",
+    );
     expect(systemPrompt).toContain(style.illustrationStyleId);
     expect(systemPrompt).toContain(workflow.id);
 
@@ -702,6 +726,65 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
     });
+    await cancelChatRun(actor, sent.runId);
+  }, 90_000);
+
+  it("uses runbook names for presentation prompts while preserving picker titles in chat history", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Compare these presentation templates: " },
+        ...PRESENTATION_TEMPLATE_PICKER_ITEMS.map(
+          (item): UserMessageInputDocument["parts"][number] => {
+            return {
+              type: "template",
+              titleSnapshot: item.title,
+              template: {
+                type: "presentation",
+                selection: {
+                  templateId: item.templateId,
+                  colorSystemId: item.colorSystemId,
+                  previewUrl: item.embedUrl,
+                },
+              },
+            };
+          },
+        ),
+      ],
+    };
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "Compare these presentation templates",
+      userMessage,
+    });
+    const run = await api.readRun(actor, sent.runId);
+
+    for (const [index, item] of PRESENTATION_TEMPLATE_PICKER_ITEMS.entries()) {
+      const runbook = findPresentationRunbookPackage(item.templateId);
+      if (!runbook) {
+        throw new Error(
+          `Expected a presentation runbook for ${item.templateId}`,
+        );
+      }
+      expect(run.prompt).toContain(
+        `[Template #${index + 1}: ${runbook.name} (presentation)]`,
+      );
+      expect(run.appendSystemPrompt).toContain(
+        `Selected presentation template: ${runbook.name} (${item.templateId})`,
+      );
+    }
+
+    const messages = await chat.listThreadEvents(actor, sent.threadId);
+    const message = userMessages(messages.events).find(
+      (item): item is PromptMessage => {
+        return item.eventType === "input.prompt" && item.runId === sent.runId;
+      },
+    );
+    expect(message?.userMessage?.parts).toStrictEqual([
+      ...userMessage.parts,
+      { type: "model", selectedModel: "claude-fable-5-1" },
+    ]);
     await cancelChatRun(actor, sent.runId);
   }, 90_000);
 
@@ -884,7 +967,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
     const presentationRun = await api.readRun(actor, presentation.runId);
     expect(presentationRun.prompt).toBe(
-      "make a launch deck\n\n[Template #1: Presentation template (presentation)]",
+      "make a launch deck\n\n[Template #1: Playful Launch Presentation (presentation)]",
     );
     const presentationPrompt = presentationRun.appendSystemPrompt ?? "";
     expect(presentationPrompt).toMatch(

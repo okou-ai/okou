@@ -313,15 +313,30 @@ describe("slug-first current catalog business readers", () => {
     );
     expect(missing.body.error.code).toBe("NOT_FOUND");
   });
-  it("serves complete lists, search and compatibility from published entries", async () => {
-    const candidate = await publishedCatalog();
-    const listed = await accept(catalogClient().list({ headers }), [200]);
-    expect(listed.body.connectors).toContainEqual(
-      expect.objectContaining({ slug: "github" }),
-    );
-    await directory(candidate);
-    const oneClick = await accept(catalogClient().oneClick({ headers }), [200]);
-    expect(oneClick.body.connectors.length).toBeGreaterThan(0);
+  it("serves concurrent and subsequent catalog reads across publications", async () => {
+    for (const label of ["Initial catalog", "Replacement catalog"]) {
+      const candidate = release(`2099-02-01.${randomUUID()}`, label, "github");
+      serve(candidate);
+      expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+      routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+      const client = catalogClient();
+      const responses = await Promise.all(
+        Array.from({ length: 3 }, () => {
+          return accept(client.list({ headers }), [200]);
+        }),
+      );
+      for (const response of responses) {
+        expect(response.body.connectors).toContainEqual(
+          expect.objectContaining({ slug: "github", label }),
+        );
+        expect(response.body).toStrictEqual(responses[0]?.body);
+      }
+      const subsequent = await accept(client.list({ headers }), [200]);
+      expect(subsequent.body).toStrictEqual(responses[0]?.body);
+      await directory(candidate);
+      const oneClick = await accept(client.oneClick({ headers }), [200]);
+      expect(oneClick.body.connectors.length).toBeGreaterThan(0);
+    }
   });
 
   it("lists named onboarding sources from current entries", async () => {

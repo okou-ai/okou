@@ -1126,19 +1126,10 @@
     "invoices": {
       "amount": "金額",
       "date": "日期",
-      "downloadDescription": "最多選擇連續 3 個月，該區間內的收據 PDF 會打包成一個 ZIP 檔案。",
       "downloadInvoice": "下載{{month}}的帳單",
-      "downloadReceipts": "下載收據",
-      "downloadZip": "下載 ZIP",
       "empty": "還沒有帳單。",
-      "from": "從",
       "invoice": "帳單",
-      "loading": "正在載入帳單",
-      "monthAria": "{{label}}月份",
-      "preparingReceipts": "正在準備收據…",
-      "rangeError": "請選擇不超過連續 3 個月的區間。",
-      "selectMonth": "選擇月份",
-      "to": "到"
+      "loading": "正在載入帳單"
     },
     "paymentMethods": {
       "description": "在 Stripe 中管理用於扣款的支付方式。",
@@ -1293,7 +1284,6 @@
       "downgradeScheduledDate": "降級已安排。當前套餐在 {{date}} 前仍然有效。",
       "downgradeScheduledPeriod": "降級已安排。當前套餐在本個帳單週期結束前仍然有效。",
       "planRestored": "套餐已恢復，訂閱將正常續費。",
-      "receiptsDownloaded": "收據已下載",
       "subscriptionChangeConfirmed": "訂閱變更已確認。"
     },
     "usage": {
@@ -1376,8 +1366,12 @@
       "copy": "複製",
       "copyMessage": "複製訊息",
       "delete": "刪除",
+      "downloadPdf": "下載 PDF",
       "edit": "編輯",
+      "generatePdf": "產生 PDF",
+      "generatingPdf": "正在產生 PDF…",
       "more": "更多操作",
+      "pdfGenerationFailed": "無法產生 PDF，請重試。",
       "remove": "移除",
       "rename": "重新命名",
       "saving": "正在儲存…",
@@ -1826,13 +1820,22 @@
       "checkingCompatibility": "正在檢查相容性",
       "cloudBrowser": "雲端瀏覽器",
       "connectMyComputer": "連線我的電腦",
-      "dialogDescription": "這樣 {{desktopProductName}} 就能替你在瀏覽器和各種應用裡幹活，連 LinkedIn、Reddit 這類沒有連接器的也可以。",
-      "dialogTitle": "讓 {{desktopProductName}} 使用你的電腦",
       "downloadMacos": "下載 macOS 版",
       "hosts": "Computer Use 主機",
       "macosRequirement": "需要搭載 Apple 晶片、執行 macOS 14 或更高版本的 Mac，不支援 Intel Mac。",
       "noOnlineComputers": "沒有線上的電腦",
       "offline": "離線",
+      "setupSteps": {
+        "chatDescription": "開啟聊天輸入框的「連接器」，開啟「你的電腦」中的裝置開關。",
+        "chatTitle": "在聊天中啟用",
+        "done": "完成",
+        "installDescription": "安裝並開啟 {{desktopProductName}}，使用與網頁相同的帳號和工作區。",
+        "installTitle": "安裝並登入",
+        "permissionsDescription": "允許「輔助使用」和「螢幕錄製」，並保持客戶端上線。",
+        "permissionsTitle": "開啟權限並保持上線",
+        "previous": "上一步",
+        "thisMac": "這台 Mac"
+      },
       "unsupportedIntelMac": "需要搭載 Apple 晶片的 Mac",
       "yourComputer": "你的電腦"
     },
@@ -4654,11 +4657,8 @@
   },
   "remoteComputerSetup": {
     "addNetwork": "設定 Tailscale",
-    "advanced": "手動連線（進階）",
-    "advancedDescription": "使用既有的 SSH 或 VNC 設定，支援直接連線及已儲存的 Tailscale、Cloudflare 網路。",
     "commands": "執行指令（SSH）",
     "continue": "使用此網路繼續",
-    "description": "讓 Okou 在你的家用或辦公電腦上工作。",
     "macScreenReady": "先在 Mac 上開啟螢幕共享，並允許要使用的帳號存取。能否連線取決於該服務支援的登入協定。",
     "networkDescription": "選擇電腦使用的 Tailscale 網路，或設定新的網路。",
     "networkEmptyDescription": "先設定 Tailscale，讓 Okou 連接你的電腦。",
@@ -4727,7 +4727,6 @@
   },
   "remoteControlSetup": {
     "add": "新增連線",
-    "addFirstDevice": "新增第一台裝置",
     "addNetwork": "新增網路",
     "addNetworkInline": "新增私人網路",
     "address": "裝置位址",
@@ -4751,6 +4750,8 @@
     "cfAddressMissing": "若找不到應用程式或無法存取，請洽網路管理員索取 hostname，或請管理員建立應用程式。",
     "companyGroup": "QEMU 或企業驗證",
     "compatibleLoginOnly": "選擇現有連線使用的登入資訊，請確認它也能登入這台裝置。",
+    "computerUse": "Computer use",
+    "computerUseDescription": "透過桌面用戶端操作電腦上的瀏覽器和應用程式。",
     "connectionDetails": "連線詳細資料",
     "connectionMethod": "連線方式",
     "connectionSettings": "連線設定",
@@ -5449,9 +5450,19 @@
         "retryMessage": "晨報設定無法載入或更新，請重試以繼續。",
         "title": "晨報"
       },
+      "proactiveAction": {
+        "description": "讓 Okou 每小時自動推進下一步，並在對話中展示工作結果。啟用後暫停主動建議。",
+        "missingDefaultAgent": "選擇一個可用的預設智能體以啟用主動行動。",
+        "preparationFailed": "暫時無法執行，Okou 會自動重試。",
+        "preparing": "正在準備每小時的主動行動。你可以隨時關閉。",
+        "retry": "重試",
+        "retryMessage": "無法載入或更新主動行動設定，請重試。",
+        "title": "主動行動"
+      },
       "proactiveSuggestions": {
         "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
         "missingDefaultAgent": "請選擇可用的預設 Agent 以接收主動建議。",
+        "pausedForAction": "主動行動已開啟，主動建議暫時停止。你的設定已保留。",
         "preparationFailed": "暫時無法執行，Okou 會自動重試。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
         "retry": "重試",

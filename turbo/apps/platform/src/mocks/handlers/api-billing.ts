@@ -287,13 +287,6 @@ export const apiBillingHandlers = [
     });
   }),
 
-  mockApi(billingInvoicesContract.downloadReceipts, ({ respond }) => {
-    return respond(
-      200,
-      new Blob(["mock receipts"], { type: "application/zip" }),
-    );
-  }),
-
   mockApi(billingRedeemContract.create, ({ respond }) => {
     return respond(200, mockRedeemResponse);
   }),

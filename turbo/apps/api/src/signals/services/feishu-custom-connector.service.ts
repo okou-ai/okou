@@ -16,7 +16,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { FEISHU_OAUTH_SCOPES } from "@okouai/api-contracts/contracts/feishu-connect";
 import { connectors } from "@okouai/db/schema/connector";
@@ -442,6 +442,8 @@ const ensureFeishuCustomConnector$ = command(
     prepared: PreparedFeishuCustomConnectorSkill,
     signal: AbortSignal,
   ): Promise<FeishuCustomConnectorReconciliation> => {
+    // Publication must roll back with definition/config validation and the
+    // installation link; stale-target arbitration precedes every write.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0162; new non-billing transactions are prohibited.
     return await set(writeDb$).transaction(
       async (tx): Promise<FeishuCustomConnectorReconciliation> => {
@@ -631,57 +633,51 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    signal.throwIfAborted();
+    // Keep a fresh snapshot after locking/removing the installation: a concurrent
+    // reconciler may have just committed a new connector and installation link.
+    // A single statement could return that new link but miss its new connector.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0163; new non-billing transactions are prohibited.
     const deletion = db.transaction(async (tx) => {
       const [installation] = await tx
-        .select({
-          id: feishuOrgInstallations.id,
-          customConnectorId: feishuOrgInstallations.customConnectorId,
-        })
-        .from(feishuOrgInstallations)
-        .where(
-          and(
-            eq(feishuOrgInstallations.orgId, args.orgId),
-            eq(feishuOrgInstallations.id, args.installationId),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!installation) {
-        return { installationDeleted: false, connectorId: null };
-      }
-
-      const connectorId = installation.customConnectorId;
-
-      await tx
         .delete(feishuOrgInstallations)
         .where(
           and(
             eq(feishuOrgInstallations.orgId, args.orgId),
             eq(feishuOrgInstallations.id, args.installationId),
           ),
-        );
+        )
+        .returning({
+          customConnectorId: feishuOrgInstallations.customConnectorId,
+        });
       signal.throwIfAborted();
+      if (!installation) {
+        return { installationDeleted: false, connectorId: null };
+      }
+      const connectorId = installation.customConnectorId;
       if (!connectorId) {
         return { installationDeleted: true, connectorId: null };
       }
-      const selectionDeletion = { customConnectorId: connectorId };
-      await tx
-        .delete(chatThreadConnectorSelections)
-        .where(
-          eq(
-            chatThreadConnectorSelections.customConnectorId,
-            selectionDeletion.customConnectorId,
-          ),
+      const selections = tx
+        .$with("deleted_feishu_connector_selections")
+        .as(
+          tx
+            .delete(chatThreadConnectorSelections)
+            .where(
+              eq(chatThreadConnectorSelections.customConnectorId, connectorId),
+            )
+            .returning({ id: chatThreadConnectorSelections.connectorId }),
         );
-      signal.throwIfAborted();
       const [deletedConnector] = await tx
+        .with(selections)
         .delete(orgCustomConnectors)
         .where(
           and(
             eq(orgCustomConnectors.orgId, args.orgId),
             eq(orgCustomConnectors.id, connectorId),
+            // Consume all selections before cascading connector deletion,
+            // including the zero-selection case.
+            gte(tx.select({ count: count() }).from(selections), 0),
           ),
         )
         .returning({ id: orgCustomConnectors.id });

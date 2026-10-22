@@ -39,7 +39,11 @@ async function setupHostedSite(
   let currentSlug = initialSlug;
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  context.mocks.data.userPreferences({
+    timezone: "Etc/UTC",
+    locale: "en-US",
+    chatResourcesEnabledByDefault: false,
+  });
   const summary = {
     ...artifactSummary(artifactId, "hosted-site", siteTitle),
     sourceUrl: deploymentUrl,

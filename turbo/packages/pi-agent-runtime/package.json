@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.50.49",
+  "version": "1.50.51",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,6 +11,10 @@
     "./api": {
       "types": "./dist/api.d.ts",
       "import": "./src/api.ts"
+    },
+    "./phase2-memory-selection": {
+      "types": "./dist/phase2-memory-selection.d.ts",
+      "import": "./src/phase2-memory-selection.ts"
     },
     "./node": {
       "types": "./dist/node.d.ts",

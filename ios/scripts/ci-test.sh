@@ -100,10 +100,12 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     echo "Expected exactly one built test specification, found ${#test_runs[@]}" >&2
     exit 1
   fi
+  # Keep test results and attachments without failure-triggered simulator sysdiagnoses.
   xcodebuild -xctestrun "${test_runs[0]}" \
     -destination "$IOS_TEST_DESTINATION" \
     -parallel-testing-enabled NO \
     -maximum-concurrent-test-simulator-destinations 1 \
+    -collect-test-diagnostics never \
     -resultBundlePath "$build_root/Tests.xcresult" \
     test-without-building
   cmp "$resolved" "$build_root/Package.resolved.before"

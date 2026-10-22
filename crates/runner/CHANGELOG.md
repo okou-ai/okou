@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.236.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.15...runner-rs-v0.236.16) (2026-10-22)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.236.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.14...runner-rs-v0.236.15) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** upgrade to mitmproxy 12.3.0 with bundled trust ([#42291](https://github.com/okou-ai/okou/issues/42291)) ([f246eb6](https://github.com/okou-ai/okou/commit/f246eb6921f4b4d32e8699361e7eec4ed054fd4c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.13...runner-rs-v0.236.14) (2026-10-22)
 
 ### Release Dependencies

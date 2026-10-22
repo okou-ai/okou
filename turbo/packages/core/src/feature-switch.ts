@@ -160,6 +160,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ProactiveAction]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Proactive action",
+    description:
+      "Let Okou take useful next steps hourly in a visible chat instead of generating proactive suggestions.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.BuiltinDocumentTemplates]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Built-in document templates",
@@ -192,6 +200,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.ChatMessagePdf]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Message PDF export",
+    description:
+      "Generate a PDF of an assistant response, then download it with rendered diagrams, formulas, images, and clickable links.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatThreadInlineRename]: {
     maintainer: "tongx@okou.ai",
@@ -390,13 +406,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
-  },
-  [FeatureSwitchKey.PiMemory]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Extract, consolidate, and recall memory for Pi threads in the staff organization.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",

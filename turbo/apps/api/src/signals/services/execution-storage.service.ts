@@ -1,31 +1,26 @@
-import { computed, command, type Computed } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
 import {
-  readExecutionStorageCacheRows$,
-  type ExecutionStorageCacheRows,
-} from "./execution-storage-cache-read.service";
-import { alias } from "drizzle-orm/pg-core";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
-import {
+  getCustomSkillStorageName,
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
-  getCustomSkillStorageName,
 } from "@okouai/core/storage-names";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
+import { command, computed, type Computed } from "ccstate";
+import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publicPresignedGetUrlSigner$ } from "../external/s3";
 import { settle } from "../utils";
+import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
 import {
+  readOnlyStoragePresignedUrlCacheKey,
   signStorageManifestPresignedUrls,
-  signStorageManifestPresignedUrls$,
   storageManifestPresignedUrlCacheLookupPairs,
   systemStoragePresignedUrlCacheKey,
   workflowSkillStoragePresignedUrlCacheKey,
-  readOnlyStoragePresignedUrlCacheKey,
-  type StorageManifestPresignedUrlCacheScope,
   type SelectedStoragePresignedUrlCacheRow,
+  type StorageManifestPresignedUrlCacheScope,
 } from "./system-storage-presigned-url-cache.service";
 
 export interface ExecutionStorageIdentity {
@@ -144,100 +139,13 @@ function validateRequests(mounts: readonly ExecutionStorageRequest[]): void {
   }
 }
 
-const readExactVersions$ = command(
-  async ({ get }, mounts: readonly ExecutionStorageRequest[]) => {
-    validateRequests(mounts);
-    if (mounts.length === 0) {
-      return [];
-    }
-    const unique = [
-      ...new Map(
-        mounts.map((mount) => {
-          return [mountKey(mount), mount];
-        }),
-      ).values(),
-    ];
-    const rows = await get(db$)
-      .select({
-        orgId: storages.orgId,
-        userId: storages.userId,
-        storageId: storages.id,
-        name: storages.name,
-        versionId: storageVersions.id,
-        s3Key: storageVersions.s3Key,
-        archiveSize: storageVersions.archiveSize,
-        fileCount: storageVersions.fileCount,
-      })
-      .from(storages)
-      .innerJoin(
-        sql`unnest(
-    ${sql.param(
-      unique.map((mount) => {
-        return mount.orgId;
-      }),
-    )}::text[],
-    ${sql.param(
-      unique.map((mount) => {
-        return mount.userId;
-      }),
-    )}::text[],
-    ${sql.param(
-      unique.map((mount) => {
-        return mount.storageId;
-      }),
-    )}::uuid[],
-    ${sql.param(
-      unique.map((mount) => {
-        return mount.versionId;
-      }),
-    )}::varchar(64)[],
-    ${sql.param(
-      unique.map((mount) => {
-        return mount.name;
-      }),
-    )}::varchar(256)[]
-  ) AS requested(org_id, user_id, storage_id, version_id, name)`,
-        and(
-          eq(storages.orgId, sql`requested.org_id`),
-          eq(storages.userId, sql`requested.user_id`),
-          eq(storages.id, sql`requested.storage_id`),
-          eq(storages.name, sql`requested.name`),
-        ),
-      )
-      .innerJoin(
-        storageVersions,
-        and(
-          eq(storageVersions.storageId, storages.id),
-          eq(storageVersions.id, sql`requested.version_id`),
-        ),
-      );
-    const found = new Map(
-      rows.map((row) => {
-        return [mountKey({ ...row, mountPath: "" }), row];
-      }),
-    );
-    for (const mount of unique) {
-      const row = found.get(mountKey(mount));
-      if (!row) {
-        throw new Error(
-          `Requested storage version is unavailable: ${mount.storageId}/${mount.versionId}`,
-        );
-      }
-      if (
-        !Number.isSafeInteger(row.archiveSize) ||
-        row.archiveSize < 0 ||
-        !Number.isSafeInteger(row.fileCount) ||
-        row.fileCount < 0 ||
-        !row.s3Key
-      ) {
-        throw new Error("Invalid persisted execution storage version");
-      }
-    }
-    return rows;
-  },
-);
-
-type VersionRow = Awaited<ReturnType<typeof readExactVersions$.write>>[number];
+type VersionRow = Pick<
+  typeof storageVersions.$inferSelect,
+  "storageId" | "s3Key" | "archiveSize" | "fileCount"
+> &
+  Pick<typeof storages.$inferSelect, "orgId" | "userId" | "name"> & {
+    readonly versionId: typeof storageVersions.$inferSelect.id;
+  };
 
 function cacheRequest(
   mount: ExecutionStorageRequest,
@@ -502,32 +410,6 @@ function cacheSnapshot(
   }
   return { rowsByScope, cacheKeysByRequest };
 }
-
-/** Fixed preparation owner: exact versions, one cache snapshot, then local signing. */
-export const prepareExecutionStorageMounts$ = command(
-  async (
-    { set },
-    mounts: readonly ExecutionStorageRequest[],
-  ): Promise<readonly PreparedExecutionStorageMount[]> => {
-    if (mounts.length === 0) {
-      return [];
-    }
-    const versions = await set(readExactVersions$, mounts);
-    const requests = signingRequests(
-      mounts,
-      versions,
-      env("R2_USER_STORAGES_BUCKET_NAME"),
-    );
-    const { pairs, cacheKeysByRequest } =
-      storageManifestPresignedUrlCacheLookupPairs(requests.input, false);
-    const rows = await set(readExecutionStorageCacheRows$, pairs);
-    const signed = await set(signStorageManifestPresignedUrls$, {
-      input: requests.input,
-      prefetchedRows: cacheSnapshot(rows, cacheKeysByRequest),
-    });
-    return preparedMounts(requests, signed);
-  },
-);
 
 /**
  * The approved log-only exception, run by the owner after its commit: stores

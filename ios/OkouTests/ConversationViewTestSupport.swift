@@ -173,5 +173,5 @@ func eventually(
   while !predicate() && ContinuousClock.now < deadline {
     await hostingPresentationFrame()
   }
-  XCTAssertTrue(predicate(), message(), file: file, line: line)
+  _ = try XCTUnwrap(predicate() ? true : nil, message(), file: file, line: line)
 }

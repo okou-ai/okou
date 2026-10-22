@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.18](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.17...runner-remote-v0.29.18) (2026-10-22)
+
+
+### Performance Improvements
+
+* **runner-remote:** gate relay liveness checks by peer key ([#42318](https://github.com/okou-ai/okou/issues/42318)) ([049a727](https://github.com/okou-ai/okou/commit/049a7274d1c72cb3991940662e64e9a0ebe4797c))
+
 ## [0.29.17](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.16...runner-remote-v0.29.17) (2026-10-22)
 
 

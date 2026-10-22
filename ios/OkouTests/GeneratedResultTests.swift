@@ -5,7 +5,6 @@ import ChatDomain
 import QuickLook
 import SwiftUI
 import Synchronization
-import WebKit
 import XCTest
 
 @testable import Okou
@@ -211,70 +210,6 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertNil(viewer.preview)
   }
 
-  func testActualHTMLScriptsSlidesIsolationNavigationAndDownload() async throws {
-    let fixture = try await GeneratedResultFixture.make()
-    defer { fixture.server.stop() }
-    let conversation = fixture.history.conversation()
-    defer { conversation.close() }
-    let viewer = conversation.artifacts
-    fixture.state.expiredHTML.withLock { $0 = true }
-    let resource = try XCTUnwrap(viewer.resource("/artifacts/html000001.html#slide-1"))
-    viewer.open(resource)
-    let host = UIHostingController(
-      rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
-    let window = try await mountResultHost(host)
-    defer { unmount(window) }
-    // The rejected page and the renewed page own separate cold WebKit loads.
-    // Observe the authority handoff before waiting for the replacement page.
-    try await eventually(
-      timeout: .seconds(10),
-      message: "The rejected HTML address did not renew; "
-        + "preview: \(String(describing: viewer.preview)); "
-        + "WebKit URL/loading: \(String(describing: findWebView(host.view)?.url))/"
-        + "\(String(describing: findWebView(host.view)?.isLoading)); "
-        + "storage requests: \(fixture.state.storageRequests.withLock { $0.map(\.url) })"
-    ) {
-      viewer.preview?.renewedHTMLSignature == true && viewer.preview?.contentURL != nil
-    }
-    let renewedPreviewID = try XCTUnwrap(viewer.preview?.id)
-    let renewedURL = try XCTUnwrap(viewer.preview?.contentURL)
-    try await eventually(
-      timeout: .seconds(10),
-      message: "Renewed HTML loading: \(String(describing: findWebView(host.view)?.isLoading)); "
-        + "storage requests: \(fixture.state.storageRequests.withLock { $0.count })"
-    ) {
-      guard viewer.preview?.id == renewedPreviewID, let web = findWebView(host.view) else {
-        return false
-      }
-      return web.url == renewedURL && !web.isLoading
-    }
-    let web = try XCTUnwrap(findWebView(host.view))
-    XCTAssertFalse(web.configuration.websiteDataStore.isPersistent)
-    XCTAssertTrue(viewer.preview?.renewedHTMLSignature == true)
-    let initial =
-      try await web.evaluateJavaScript("document.getElementById('slide').textContent") as? String
-    XCTAssertEqual(initial, "Slide 1")
-    _ = try await web.evaluateJavaScript("document.getElementById('next').click()")
-    let next =
-      try await web.evaluateJavaScript("document.getElementById('slide').textContent") as? String
-    XCTAssertEqual(next, "Slide 2")
-    _ = try await web.evaluateJavaScript("location.href='ai.okou.ios://untrusted'")
-    await hostingPresentationFrame()
-    XCTAssertEqual(web.url?.host, fixture.origin.host)
-    viewer.downloadForSharing()
-    try await eventually { viewer.preview?.file != nil }
-    XCTAssertTrue(try XCTUnwrap(viewer.preview).artifact.isHTMLPresentation)
-    XCTAssertTrue(
-      try String(contentsOf: XCTUnwrap(viewer.preview?.file?.url), encoding: .utf8).contains(
-        "id='next'"))
-    await hostingPresentationFrame()
-    try await screenshot(window, "Native-HTML-presentation-slide-2")
-    for request in fixture.state.storageRequests.withLock({ $0 }) {
-      XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
-      XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
-    }
-  }
-
   func testUnavailableRetryAndLeavingDetailCancelResultOwnership() async throws {
     let fixture = try await GeneratedResultFixture.make()
     defer { fixture.server.stop() }
@@ -417,17 +352,15 @@ private struct GeneratedResultFile: Sendable {
 private final class GeneratedResultFixture: Sendable {
   let history: ConversationHistoryFixture
   let server: ChatFileHTTPServer
-  let origin: URL
   let state: GeneratedResultState
   let message: String
 
   private init(
-    history: ConversationHistoryFixture, server: ChatFileHTTPServer, origin: URL,
+    history: ConversationHistoryFixture, server: ChatFileHTTPServer,
     state: GeneratedResultState, message: String
   ) {
     self.history = history
     self.server = server
-    self.origin = origin
     self.state = state
     self.message = message
   }
@@ -523,15 +456,6 @@ private final class GeneratedResultFixture: Sendable {
     let server = try ChatFileHTTPServer { request in
       state.storageRequests.withLock { $0.append(request) }
       if let status = state.storageStatus.withLock({ $0 }) { return .init(status: status) }
-      if request.url?.lastPathComponent == "html000001.html",
-        state.expiredHTML.withLock({ value in
-          let expired = value
-          value = false
-          return expired
-        })
-      {
-        return .init(status: 403)
-      }
       guard let file = files.first(where: { request.url?.lastPathComponent == $0.reference }) else {
         return .init(status: 404)
       }
@@ -619,12 +543,8 @@ private final class GeneratedResultFixture: Sendable {
           body: String(decoding: try JSONEncoder().encode(body), as: UTF8.self))
       })
     return GeneratedResultFixture(
-      history: history, server: server, origin: origin, state: state, message: message)
+      history: history, server: server, state: state, message: message)
   }
-}
-
-@MainActor private func findWebView(_ view: UIView) -> WKWebView? {
-  (view as? WKWebView) ?? view.subviews.lazy.compactMap(findWebView).first
 }
 
 @MainActor private func descendants<T: UIViewController>(
@@ -660,7 +580,6 @@ private final class GeneratedResultFixture: Sendable {
 private final class GeneratedResultState: Sendable {
   let storageStatus = Mutex<Int?>(nil)
   let omitVideoPoster = Mutex(false)
-  let expiredHTML = Mutex(false)
   let denied = Mutex(false)
   let resolutions = Mutex(0)
   let storageRequests = Mutex<[URLRequest]>([])

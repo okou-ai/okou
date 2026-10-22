@@ -723,6 +723,7 @@ function ComposerTaskTabs({
   const { t } = useTranslation();
   const browseTask = useSet(signals.taskChips.browseTask$);
   const selectTask = useSet(signals.taskChips.selectTask$);
+  const hasSuggestions = tasks.includes("suggestions");
   const labels = t(
     ($) => {
       return $.chat.taskChips.tasks;
@@ -747,7 +748,12 @@ function ComposerTaskTabs({
         return $.chat.taskChips.label;
       })}
     >
-      <TabsList className="mx-auto h-auto flex-wrap gap-2 bg-transparent p-0">
+      <TabsList
+        className={cn(
+          "mx-auto h-auto flex-wrap gap-2 bg-transparent p-0",
+          hasSuggestions && "gap-1",
+        )}
+      >
         {tasks.map((task) => {
           const Icon = TASK_ICONS[task];
           // Keep the Button's chip geometry; the styled TabsTrigger supplies
@@ -758,7 +764,11 @@ function ComposerTaskTabs({
               value={task}
               className="data-active:bg-segment-selected data-active:shadow-segment-selected"
               render={
-                <Button type="button" variant="outline" className={TASK_CHIP} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={cn(TASK_CHIP, hasSuggestions && "gap-1 px-2")}
+                />
               }
             >
               <Icon size={16} className="text-muted-foreground" aria-hidden />

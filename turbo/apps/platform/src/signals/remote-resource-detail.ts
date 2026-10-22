@@ -1,14 +1,24 @@
-import { closeSshDialog$ } from "./ssh.ts";
-import { closeVncDialog$, vncEnabled$ } from "./vnc.ts";
+import { closeSshDialog$, openSshDialog$, invalidateSsh$ } from "./ssh.ts";
+import {
+  closeVncDialog$,
+  openVncDialog$,
+  invalidateVnc$,
+  vncEnabled$,
+} from "./vnc.ts";
+import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
+import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import { command, computed } from "ccstate";
 import { searchParams$, updateSearchParams$ } from "./route.ts";
 import {
   remoteControlGuidedEnabled$,
-  remoteNetworkPicker$,
-  selectedRemoteNetworkProvider$,
   setRemoteNetworkPicker$,
   startComputerSetup$,
+  clearRemoteSetupParams,
 } from "./remote-control-setup.ts";
+import {
+  remoteNetworkLocation$,
+  clearRemoteNetworkParams,
+} from "./remote-network-location.ts";
 import {
   closeTailscaleDialog$,
   saveTailscale$,
@@ -38,6 +48,31 @@ export const privateNetworkDirectorySummary$ = computed(async (get) => {
 });
 
 export type RemoteResourceKind = "ssh" | "vnc" | "tailscale" | "cloudflare";
+export type RemoteConnectionEditor =
+  | { readonly kind: "ssh"; readonly connection: SshConnectionResponse }
+  | { readonly kind: "vnc"; readonly connection: VncConnectionResponse };
+
+export const openRemoteConnectionEditor$ = command(
+  async (
+    { set },
+    resource: RemoteConnectionEditor,
+    retry: boolean,
+    signal: AbortSignal,
+  ) => {
+    if (resource.kind === "ssh") {
+      if (retry) {
+        set(invalidateSsh$);
+      }
+      await set(openSshDialog$, "edit", resource.connection, signal);
+    } else {
+      if (retry) {
+        set(invalidateVnc$);
+      }
+      await set(openVncDialog$, "edit", resource.connection, signal);
+    }
+    signal.throwIfAborted();
+  },
+);
 export function remoteResourceSearchParams(
   params: URLSearchParams,
   kind: RemoteResourceKind,
@@ -45,6 +80,8 @@ export function remoteResourceSearchParams(
 ) {
   const next = new URLSearchParams(params);
   next.delete("setup");
+  clearRemoteSetupParams(next);
+  clearRemoteNetworkParams(next);
   next.delete("networkConnections");
   next.set(
     "scope",
@@ -111,34 +148,11 @@ export const closeRemoteResource$ = command(({ get, set }) => {
   params.delete("remoteResource");
   set(updateSearchParams$, params);
 });
-export const remoteNetworkPage$ = computed(async (get) => {
-  if (
-    !get(remoteControlGuidedEnabled$) ||
-    get(searchParams$).get("scope") !== "private-network"
-  ) {
-    return null;
-  }
-  if (get(remoteNetworkPicker$)) {
-    return "provider";
-  }
-  const [tailscale, cloudflare] = await Promise.all([
-    get(tailscaleDialog$),
-    get(cloudflareAccessDialog$),
-  ]);
-  const provider = get(selectedRemoteNetworkProvider$);
-  if (
-    tailscale?.kind === "edit" ||
-    (provider === "tailscale" && tailscale?.kind === "create")
-  ) {
-    return "tailscale";
-  }
-  if (
-    cloudflare?.kind === "edit" ||
-    (provider === "cloudflare_access" && cloudflare?.kind === "create")
-  ) {
-    return "cloudflare";
-  }
-  return null;
+export const remoteNetworkPage$ = computed((get) => {
+  const location = get(remoteNetworkLocation$);
+  return location?.provider === "add"
+    ? "provider"
+    : (location?.provider ?? null);
 });
 export const closeRemoteNetworkPage$ = command(({ get, set }) => {
   set(setRemoteNetworkPicker$, false);

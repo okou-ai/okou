@@ -66,7 +66,6 @@ export async function runPiSubagentLoop(
         sessionId: config.sessionId,
         model: config.model,
         appendSystemPrompt: config.launchPayload.appendSystemPrompt,
-        memoryRecall: config.launchPayload.launchConfig.memoryRecall,
         prompt,
         onEvent(event) {
           process.stdout.write(`${JSON.stringify(event)}\n`);

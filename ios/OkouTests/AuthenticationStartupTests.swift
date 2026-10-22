@@ -1,3 +1,4 @@
+import ChatDataTestSupport
 import ClerkKit
 import SwiftUI
 import Vision
@@ -7,6 +8,23 @@ import XCTest
 
 @MainActor
 final class AuthenticationStartupTests: XCTestCase {
+  func testUnexpectedAPIRequestFailsAtTheHTTPBoundary() async throws {
+    let fixture = try AuthenticationHTTPFixture()
+    addTeardownBlock { await fixture.close() }
+    let url = fixture.api.baseURL.appending(path: "api/unhandled-startup-request")
+    XCTExpectFailure(
+      "An unconfigured startup endpoint must fail with the request URL",
+      issueMatcher: { @Sendable issue in
+        issue.compactDescription.contains("Unhandled app HTTP request: GET \(url)")
+      })
+    do {
+      _ = try await fixture.api.session.data(from: url)
+      XCTFail("An unconfigured startup request must be rejected")
+    } catch let error as URLError {
+      XCTAssertEqual(error.code, .unsupportedURL)
+    }
+  }
+
   func testOverlappingRefreshKeepsStartupUntilLatestMembershipsAreVerified() async throws {
     let h = try await harness()
     await h.fixture.memberships.hold()
@@ -194,15 +212,17 @@ final class AuthenticationStartupTests: XCTestCase {
     async throws -> AuthenticationStartupHarness
   {
     let fixture = try AuthenticationHTTPFixture()
+    addTeardownBlock { await fixture.close() }
     fixture.state.withLock { configure(&$0) }
     let authentication = try await fixture.authentication()
     let h = try AuthenticationStartupHarness(
-      fixture: fixture, authentication: authentication, configuration: configuration())
-    addTeardownBlock { await h.close() }
+      fixture: fixture, authentication: authentication,
+      configuration: configuration(apiURL: fixture.api.baseURL))
+    addTeardownBlock { try await h.close() }
     return h
   }
 
-  private func configuration() throws -> AppConfiguration {
+  private func configuration(apiURL: URL) throws -> AppConfiguration {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
       "startup-configuration-\(UUID().uuidString).bundle", isDirectory: true)
     addTeardownBlock { try FileManager.default.removeItem(at: directory) }
@@ -210,7 +230,7 @@ final class AuthenticationStartupTests: XCTestCase {
     let info = [
       "CFBundleIdentifier": "ai.okou.tests.startup",
       "CFBundleShortVersionString": "1.0.0",
-      "APIBaseURL": "https://api.example.invalid",
+      "APIBaseURL": apiURL.absoluteString,
       "WebBaseURL": "https://app.example.invalid",
     ]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
@@ -252,8 +272,7 @@ final class AuthenticationStartupTests: XCTestCase {
       }
     } while ContinuousClock.now < deadline
     attach(h.window, name: "Unexpected screen: " + expected.joined(separator: "; "))
-    XCTFail("Expected rendered text: \(expected); recognized: \(observed)")
-    return observed
+    return try XCTUnwrap(nil, "Expected rendered text: \(expected); recognized: \(observed)")
   }
 
   private func assertRejectedToken(_ h: AuthenticationStartupHarness, scope: String) async {
@@ -334,7 +353,8 @@ private final class AuthenticationStartupHarness {
     self.fixture = fixture
     self.authentication = authentication
     host = UIHostingController(
-      rootView: AppRootView(authentication: authentication, configuration: configuration))
+      rootView: AppRootView(
+        authentication: authentication, configuration: configuration, session: fixture.api.session))
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     window = UIWindow(windowScene: scene)
     window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -353,11 +373,21 @@ private final class AuthenticationStartupHarness {
     tasks.append(Task { await authentication.start() })
   }
 
-  func close() async {
-    unmount(window)
+  func close() async throws {
+    defer { unmount(window) }
     for task in tasks { task.cancel() }
-    await fixture.close()
+    await fixture.memberships.releaseAll()
+    await fixture.activation.releaseAll()
     for task in tasks { await task.value }
-    try? await Clerk.clearAllKeychainItemsAndWait()
+    // Retire the real workspace before releasing its HTTP transport. Realtime token
+    // callbacks can outlive window removal and must see the signed-out scope.
+    if authentication.clerk?.session != nil { try await authentication.signOut() }
+    func containsComposer(_ view: UIView) -> Bool {
+      view is ComposerTextView || view.subviews.contains(where: containsComposer)
+    }
+    try await eventually(message: "The signed-out workspace did not leave the native view") {
+      !containsComposer(host.view)
+    }
+    try await Clerk.clearAllKeychainItemsAndWait()
   }
 }

@@ -11,6 +11,7 @@ import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { isOrgAdmin$ } from "./org.ts";
 import { accept } from "../lib/accept.ts";
+import { withCleanup } from "./utils.ts";
 
 export type RemoteNetworkProvider = "tailscale" | "cloudflare";
 type RemoteNetworkScope = "personal" | "organization";
@@ -28,7 +29,10 @@ const pending$ = state<ScopeChange | null>(null);
 const acknowledged$ = state<string | null>(null);
 const approved$ = state(false);
 const error$ = state<"conflict" | "unavailable" | "uncertain" | null>(null);
-const busy$ = state(false);
+const request$ = state<Promise<unknown> | null>(null);
+export const remoteNetworkScopeOperation$ = computed((get) => {
+  return get(request$);
+});
 const saved$ = state<{ id: string; sessionKey: string } | null>(null);
 const enabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
@@ -53,7 +57,6 @@ export const remoteNetworkScopeStatus$ = computed((get) => {
       get(pending$)?.sessionKey === sessionKey);
   const saved = get(saved$);
   return {
-    busy: active && get(busy$),
     error: active ? get(error$) : null,
     acknowledged: active ? get(acknowledged$) : null,
     savedId:
@@ -68,7 +71,7 @@ export const editRemoteNetworkScope$ = command(
     scope: RemoteNetworkScope,
   ) => {
     const sessionKey = get(authenticatedSessionKey$);
-    if (!sessionKey || !get(enabled$) || get(busy$)) {
+    if (!sessionKey || !get(enabled$) || get(request$)) {
       return;
     }
     set(draft$, { provider, configId, scope, sessionKey });
@@ -80,7 +83,7 @@ export const editRemoteNetworkScope$ = command(
   },
 );
 export const cancelRemoteNetworkScope$ = command(({ get, set }) => {
-  if (!get(busy$)) {
+  if (!get(request$)) {
     set(pending$, null);
     set(approved$, false);
     set(acknowledged$, null);
@@ -179,7 +182,7 @@ export const applyRemoteNetworkScope$ = command(
     if (!matchingScopeDraft(draft, provider, config)) {
       return config;
     }
-    if (get(busy$) || get(error$)) {
+    if (get(request$) || get(error$)) {
       return null;
     }
     const admin = await get(isOrgAdmin$);
@@ -211,7 +214,6 @@ export const applyRemoteNetworkScope$ = command(
       set(approved$, false);
       return null;
     }
-    set(busy$, true);
     set(approved$, false);
     const client = get(scopeClient$)[provider];
     const params = { configId: config.id };
@@ -230,16 +232,18 @@ export const applyRemoteNetworkScope$ = command(
             },
             fetchOptions: { signal },
           });
-    const [outcome] = await Promise.allSettled([
-      accept(request, [200, 400, 401, 403, 404, 409, 500], signal, {
-        showErrorToast: false,
-      }),
-    ]).finally(() => {
-      set(busy$, false);
-      if (signal.aborted && pending === get(remoteNetworkScopeChange$)) {
-        set(error$, "uncertain");
-      }
-    });
+    const operation = withCleanup(
+      Promise.allSettled([
+        accept(request, [200, 400, 401, 403, 404, 409, 500], signal, {
+          showErrorToast: false,
+        }),
+      ]),
+      () => {
+        set(finishScopeOperation$, pending, signal);
+      },
+    );
+    set(request$, operation);
+    const [outcome] = await operation;
     signal.throwIfAborted();
     if (pending !== get(remoteNetworkScopeChange$)) {
       return null;
@@ -260,8 +264,17 @@ export const applyRemoteNetworkScope$ = command(
   },
 );
 
+const finishScopeOperation$ = command(
+  ({ get, set }, pending: ScopeChange, signal: AbortSignal) => {
+    set(request$, null);
+    if (signal.aborted && pending === get(remoteNetworkScopeChange$)) {
+      set(error$, "uncertain");
+    }
+  },
+);
+
 export const resetRemoteNetworkScope$ = command(({ get, set }) => {
-  if (!get(busy$)) {
+  if (!get(request$)) {
     set(draft$, null);
     set(pending$, null);
     set(approved$, false);

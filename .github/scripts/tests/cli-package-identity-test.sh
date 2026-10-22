@@ -139,7 +139,7 @@ class Zeros:
         return b'\0' * size
 
 budget = root / 'archive-budget.tgz'
-with tarfile.open(budget, 'w:gz') as archive:
+with tarfile.open(budget, 'w:gz', compresslevel=1) as archive:
     entry = tarfile.TarInfo('package/package.json')
     entry.size = len(valid)
     archive.addfile(entry, io.BytesIO(valid))

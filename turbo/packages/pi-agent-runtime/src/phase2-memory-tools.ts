@@ -9,7 +9,7 @@ import {
   PI_MEMORY_SUMMARY_MAX_TOKENS,
 } from "@okouai/api-contracts/contracts/runners";
 
-import { piMemorySummaryTokenCount } from "./memory-recall";
+import { piMemorySummaryTokenCount } from "./memory-tokenizer";
 
 export const PI_MEMORY_PHASE2_TOOL_NAMES = Object.freeze([
   "phase2_list",

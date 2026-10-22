@@ -1148,19 +1148,10 @@
     "invoices": {
       "amount": "Montant",
       "date": "Date",
-      "downloadDescription": "Choisissez jusqu'à 3 mois consécutifs. Les PDF des reçus dans cette plage seront regroupés dans un seul fichier ZIP.",
       "downloadInvoice": "Télécharger la facture de {{month}}",
-      "downloadReceipts": "Télécharger les reçus",
-      "downloadZip": "Télécharger ZIP",
       "empty": "Pas encore de factures.",
-      "from": "De",
       "invoice": "Facture",
-      "loading": "Chargement des factures",
-      "monthAria": "Mois {{label}}",
-      "preparingReceipts": "Préparation des reçus...",
-      "rangeError": "Sélectionnez une période de maximum 3 mois consécutifs.",
-      "selectMonth": "Sélectionner le mois",
-      "to": "À"
+      "loading": "Chargement des factures"
     },
     "paymentMethods": {
       "description": "Gérez les moyens de paiement utilisés pour la facturation dans Stripe.",
@@ -1315,7 +1306,6 @@
       "downgradeScheduledDate": "Rétrogradation programmée. Votre forfait actuel reste actif jusqu'au {{date}}.",
       "downgradeScheduledPeriod": "Rétrogradation programmée. Votre forfait actuel reste actif jusqu'à la fin de la période de facturation.",
       "planRestored": "Forfait restauré. Votre abonnement se renouvellera normalement.",
-      "receiptsDownloaded": "Reçus téléchargés",
       "subscriptionChangeConfirmed": "La modification de l’abonnement a été confirmée."
     },
     "usage": {
@@ -1399,8 +1389,12 @@
       "copy": "Copier",
       "copyMessage": "Copier le message",
       "delete": "Supprimer",
+      "downloadPdf": "Télécharger le PDF",
       "edit": "Modifier",
+      "generatePdf": "Générer un PDF",
+      "generatingPdf": "Génération du PDF…",
       "more": "Plus d'actions",
+      "pdfGenerationFailed": "Impossible de générer le PDF. Réessayez.",
       "remove": "Retirer",
       "rename": "Renommer",
       "saving": "Enregistrement...",
@@ -1856,13 +1850,22 @@
       "checkingCompatibility": "Vérification de la compatibilité",
       "cloudBrowser": "Navigateur cloud",
       "connectMyComputer": "Connecter mon ordinateur",
-      "dialogDescription": "Ainsi, {{desktopProductName}} peut travailler dans votre navigateur et vos applications pour vous, même celles sans connecteur comme LinkedIn ou Reddit.",
-      "dialogTitle": "Autoriser {{desktopProductName}} à utiliser votre ordinateur",
       "downloadMacos": "Télécharger pour macOS",
       "hosts": "Hôtes d'utilisation de l'ordinateur",
       "macosRequirement": "Nécessite un Mac Apple silicon avec macOS 14 ou version ultérieure. Les Mac Intel ne sont pas pris en charge.",
       "noOnlineComputers": "Aucun ordinateur en ligne",
       "offline": "Hors ligne",
+      "setupSteps": {
+        "chatDescription": "Ouvrez Connecteurs dans la zone de saisie du chat et activez votre appareil sous Votre ordinateur.",
+        "chatTitle": "Activer dans le chat",
+        "done": "Terminer",
+        "installDescription": "Installez et ouvrez {{desktopProductName}}. Utilisez le même compte et espace de travail que sur le Web.",
+        "installTitle": "Installer et se connecter",
+        "permissionsDescription": "Autorisez Accessibilité et Enregistrement de l’écran, puis gardez l’app de bureau en ligne.",
+        "permissionsTitle": "Autoriser l’accès et rester en ligne",
+        "previous": "Précédent",
+        "thisMac": "Ce Mac"
+      },
       "unsupportedIntelMac": "Nécessite un Mac Apple silicon",
       "yourComputer": "Votre ordinateur"
     },
@@ -4726,11 +4729,8 @@
   },
   "remoteComputerSetup": {
     "addNetwork": "Configurer Tailscale",
-    "advanced": "Connexion manuelle (avancée)",
-    "advancedDescription": "Utilisez une configuration SSH ou VNC existante. Connexions directes et réseaux Tailscale ou Cloudflare enregistrés pris en charge.",
     "commands": "Exécuter des commandes (SSH)",
     "continue": "Continuer avec ce réseau",
-    "description": "Laissez Okou travailler sur votre ordinateur personnel ou professionnel.",
     "macScreenReady": "Activez le partage d’écran sur le Mac et autorisez l’accès au compte à utiliser. La compatibilité dépend du protocole de connexion du service.",
     "networkDescription": "Choisissez le réseau Tailscale de votre ordinateur ou configurez-en un nouveau.",
     "networkEmptyDescription": "Configurez Tailscale pour qu’Okou puisse se connecter à votre ordinateur.",
@@ -4799,7 +4799,6 @@
   },
   "remoteControlSetup": {
     "add": "Ajouter une connexion",
-    "addFirstDevice": "Ajouter votre premier appareil",
     "addNetwork": "Ajouter un réseau",
     "addNetworkInline": "Ajouter un réseau privé",
     "address": "Adresse de l’appareil",
@@ -4823,6 +4822,8 @@
     "cfAddressMissing": "Si l’application est introuvable ou que vous n’y avez pas accès, demandez son nom d’hôte à votre administrateur réseau ou demandez-lui de créer l’application.",
     "companyGroup": "QEMU ou authentification d’entreprise",
     "compatibleLoginOnly": "Choisissez les identifiants d’une connexion existante. Vérifiez qu’ils fonctionnent aussi sur cet appareil.",
+    "computerUse": "Computer use",
+    "computerUseDescription": "Utilisez l’application de bureau pour travailler dans votre navigateur et vos applications.",
     "connectionDetails": "Détails de la connexion",
     "connectionMethod": "Méthode de connexion",
     "connectionSettings": "Paramètres de connexion",
@@ -5527,9 +5528,19 @@
         "retryMessage": "Les paramètres de Morning Brief n'ont pas pu être chargés ou mis à jour. Réessayez pour continuer.",
         "title": "Résumé du matin"
       },
+      "proactiveAction": {
+        "description": "Laissez Okou avancer chaque heure et présenter son travail dans un Chat. Les suggestions proactives sont suspendues pendant ce temps.",
+        "missingDefaultAgent": "Choisissez un agent par défaut disponible pour activer les actions proactives.",
+        "preparationFailed": "Temporairement indisponible. Okou réessaiera automatiquement.",
+        "preparing": "Préparation des actions horaires. Vous pouvez les désactiver à tout moment.",
+        "retry": "Réessayer",
+        "retryMessage": "Impossible de charger ou de mettre à jour les paramètres des actions proactives. Réessayez.",
+        "title": "Action proactive"
+      },
       "proactiveSuggestions": {
         "description": "Okou consulte vos sources connectées chaque heure et propose des actions utiles sur votre page d’accueil.",
         "missingDefaultAgent": "Choisissez un Agent par défaut disponible pour recevoir des suggestions proactives.",
+        "pausedForAction": "En pause pendant que les actions proactives sont activées. Votre préférence est conservée.",
         "preparationFailed": "Temporairement indisponible. Okou réessaiera automatiquement.",
         "preparing": "Préparation des suggestions horaires. Vous pouvez les désactiver à tout moment.",
         "retry": "Réessayer",

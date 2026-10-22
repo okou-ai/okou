@@ -179,15 +179,6 @@ runs:
         github_app_private_key="$(repo_secret OKOU_GITHUB_APP_PRIVATE_KEY)"
         machine_secret_key="$(repo_secret OKOU_MACHINE_SECRET_KEY)"
         api_backend_url="$INPUT_API_BACKEND_URL"
-        pi_memory_background_workers_enabled=""
-        if [[ "$INPUT_APP" == "api" ]]; then
-          if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
-            pi_memory_background_workers_enabled="$(boolean_repo_var PI_MEMORY_BACKGROUND_WORKERS_ENABLED)"
-          else
-            pi_memory_background_workers_enabled="false"
-          fi
-        fi
-
         : > "$env_file"
 
         if [[ -n "$INPUT_DATABASE_URL" ]]; then
@@ -249,7 +240,6 @@ runs:
           add_env FINICITY_WEBHOOK_BASE_URL "$api_backend_url"
           add_env OKOU_WEB_URL "$web_url"
           add_env ENV "$deploy_env"
-          add_env PI_MEMORY_BACKGROUND_WORKERS_ENABLED "$pi_memory_background_workers_enabled"
           if [[ "$INPUT_ENVIRONMENT" == "preview" && -n "$INPUT_JOB_REF" ]]; then
             add_env OKOU_PREVIEW_JOB_REF "$INPUT_JOB_REF"
           fi

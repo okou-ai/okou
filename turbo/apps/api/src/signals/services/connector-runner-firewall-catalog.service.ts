@@ -14,7 +14,6 @@ import { computed } from "ccstate";
 
 import { singleton } from "../../lib/singleton";
 import { db$ } from "../external/db";
-import { onRejection } from "../utils";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { connectorCatalogRuntimeColumns } from "./connector-catalog-columns";
 import { connectorCatalogCurrentWhere } from "./connector-catalog-slug-source.service";
@@ -33,7 +32,6 @@ interface ConnectorRunnerFirewallCatalog {
 interface CatalogCache {
   catalog: ConnectorRunnerFirewallCatalog | undefined;
   key: string | undefined;
-  readonly inFlight: Map<string, Promise<ConnectorRunnerFirewallCatalog>>;
 }
 
 interface CapturedCatalog {
@@ -93,7 +91,7 @@ function createCatalog(
 }
 
 const catalogCache = singleton((): CatalogCache => {
-  return { catalog: undefined, key: undefined, inFlight: new Map() };
+  return { catalog: undefined, key: undefined };
 });
 
 export const connectorRunnerFirewallCatalog$ = computed(async (get) => {
@@ -116,43 +114,21 @@ export const connectorRunnerFirewallCatalog$ = computed(async (get) => {
   if (cache.key === key && cache.catalog !== undefined) {
     return cache.catalog;
   }
-  // Concurrent misses after a publish share one full firewall read.
-  const existing = cache.inFlight.get(key);
-  if (existing) {
-    return await existing;
-  }
   // The digest covers every connector firewall, so read all entries at the
   // captured hash, selecting only the slug and firewall rules.
-  const promise = (async (): Promise<ConnectorRunnerFirewallCatalog> => {
-    const connectors = await db
-      .select({
-        slug: connectorCatalogRuntimeColumns.slug,
-        firewall: connectorCatalogRuntimeColumns.firewall,
-      })
-      .from(connectorCatalogEntries)
-      .where(eq(connectorCatalogEntries.hash, captured.hash))
-      .orderBy(asc(connectorCatalogEntries.slug));
-    if (connectors.length === 0) {
-      throw new ExternalConnectorCatalogUnavailableError("missing_entries");
-    }
-    return createCatalog(connectors);
-  })();
-  cache.inFlight.set(key, promise);
-  const catalog = await onRejection(promise, () => {
-    deleteInFlightCatalog(cache, key, promise);
-  });
-  deleteInFlightCatalog(cache, key, promise);
+  const connectors = await db
+    .select({
+      slug: connectorCatalogRuntimeColumns.slug,
+      firewall: connectorCatalogRuntimeColumns.firewall,
+    })
+    .from(connectorCatalogEntries)
+    .where(eq(connectorCatalogEntries.hash, captured.hash))
+    .orderBy(asc(connectorCatalogEntries.slug));
+  if (connectors.length === 0) {
+    throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+  }
+  const catalog = createCatalog(connectors);
   cache.key = key;
   cache.catalog = catalog;
   return catalog;
 });
-
-function deleteInFlightCatalog(
-  cache: CatalogCache,
-  key: string,
-  promise: Promise<ConnectorRunnerFirewallCatalog>,
-): void {
-  if (cache.inFlight.get(key) === promise) {
-    cache.inFlight.delete(key);
-  }
-}

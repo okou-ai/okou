@@ -1,8 +1,15 @@
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
-import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
+import { remoteNetworkInitialization$ } from "../../signals/remote-network-page-setup.ts";
+import {
+  useLastLoadable,
+  useLastResolved,
+  useGet,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft } from "lucide-react";
-import { Button, Card } from "@okouai/ui";
+import { Button, Card, LoadErrorRow } from "@okouai/ui";
 import {
   remoteResource$,
   closeRemoteResource$,
@@ -15,14 +22,22 @@ import {
   sshConnections$,
   sshDialog$,
   closeSshDialog$,
+  invalidateSsh$,
 } from "../../signals/ssh.ts";
 import {
   vncConnections$,
   vncDialog$,
   closeVncDialog$,
+  invalidateVnc$,
 } from "../../signals/vnc.ts";
-import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
-import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
+import {
+  tailscaleConfigs$,
+  invalidateTailscale$,
+} from "../../signals/tailscale.ts";
+import {
+  cloudflareAccessConfigs$,
+  invalidateCloudflareAccess$,
+} from "../../signals/cloudflare-access.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { RemoteDetailPage } from "./remote-detail-page.tsx";
 import { SshHostCard, SshDialog } from "./ssh-management.tsx";
@@ -44,10 +59,10 @@ import {
 
 function useRemoteResourceRecords() {
   const resource = useGet(remoteResource$);
-  const ssh = useLoadable(sshConnections$);
-  const vnc = useLoadable(vncConnections$);
-  const tailscale = useLoadable(tailscaleConfigs$);
-  const access = useLoadable(cloudflareAccessConfigs$);
+  const ssh = useLastLoadable(sshConnections$);
+  const vnc = useLastLoadable(vncConnections$);
+  const tailscale = useLastLoadable(tailscaleConfigs$);
+  const access = useLastLoadable(cloudflareAccessConfigs$);
   const sshHost =
     ssh.state === "hasData"
       ? ssh.data?.find((host) => {
@@ -75,13 +90,7 @@ function useRemoteResourceRecords() {
   return { sshHost, vncHost, ts, cf };
 }
 
-function useRemoteResourceState() {
-  const resource = useGet(remoteResource$);
-  const ssh = useLoadable(sshConnections$);
-  const vnc = useLoadable(vncConnections$);
-  const tailscale = useLoadable(tailscaleConfigs$);
-  const access = useLoadable(cloudflareAccessConfigs$);
-  const admin = useLoadable(isOrgAdmin$);
+function useRemoteResourceEditing() {
   const sessionKey = useGet(authenticatedSessionKey$);
   const sshDialog = useLastResolved(sshDialog$);
   const vncDialog = useLastResolved(vncDialog$);
@@ -89,6 +98,17 @@ function useRemoteResourceState() {
     sshDialog?.sessionKey === sessionKey && sshDialog?.kind === "edit";
   const vncEdit =
     vncDialog?.sessionKey === sessionKey && vncDialog?.kind === "edit";
+  return { sshEdit, vncEdit };
+}
+
+function useRemoteResourceState() {
+  const resource = useGet(remoteResource$);
+  const ssh = useLastLoadable(sshConnections$);
+  const vnc = useLastLoadable(vncConnections$);
+  const tailscale = useLastLoadable(tailscaleConfigs$);
+  const access = useLastLoadable(cloudflareAccessConfigs$);
+  const admin = useLoadable(isOrgAdmin$);
+  const { sshEdit, vncEdit } = useRemoteResourceEditing();
   const data =
     resource?.kind === "ssh"
       ? ssh
@@ -100,7 +120,38 @@ function useRemoteResourceState() {
   return { resource, sshEdit, vncEdit, data, admin };
 }
 
-function RemoteResourceContent() {
+function RemoteResourceLoadError() {
+  const { t } = useTranslation();
+  const resource = useGet(remoteResource$);
+  const retry = useSet(
+    resource?.kind === "ssh"
+      ? invalidateSsh$
+      : resource?.kind === "vnc"
+        ? invalidateVnc$
+        : resource?.kind === "tailscale"
+          ? invalidateTailscale$
+          : invalidateCloudflareAccess$,
+  );
+  return (
+    <LoadErrorRow
+      message={t(($) => {
+        return resource?.kind === "ssh"
+          ? $.ssh.loadFailed
+          : resource?.kind === "vnc"
+            ? $.vnc.loadFailed
+            : resource?.kind === "tailscale"
+              ? $.tailscale.loadFailed
+              : $.cloudflareAccess.loadFailed;
+      })}
+      retryLabel={t(($) => {
+        return $.remoteControlSetup.retry;
+      })}
+      onRetry={retry}
+    />
+  );
+}
+
+function RemoteResourceDetails() {
   const records = useRemoteResourceRecords();
   const { t } = useTranslation();
   const { resource, sshEdit, vncEdit, data, admin } = useRemoteResourceState();
@@ -108,12 +159,13 @@ function RemoteResourceContent() {
     return null;
   }
   if (data.state !== "hasData" && !sshEdit && !vncEdit) {
+    if (data.state === "hasError") {
+      return <RemoteResourceLoadError />;
+    }
     return (
-      <p role={data.state === "hasError" ? "alert" : "status"}>
+      <p role="status">
         {t(($) => {
-          return data.state === "hasError"
-            ? $.remoteControlSetup.failedLoad
-            : $.remoteControlSetup.loading;
+          return $.remoteControlSetup.loading;
         })}
       </p>
     );
@@ -160,6 +212,15 @@ function RemoteResourceContent() {
           })}
         </p>
       )}
+    </>
+  );
+}
+
+function RemoteResourceContent() {
+  const { sshEdit, vncEdit } = useRemoteResourceEditing();
+  return (
+    <>
+      <RemoteResourceDetails />
       <SshDialog inline={sshEdit} />
       <VncDialog inline={vncEdit} />
       <TailscaleDialog />
@@ -174,19 +235,12 @@ export function RemoteResourcePage() {
   const { t } = useTranslation();
   const resource = useGet(remoteResource$);
   const close = useSet(closeRemoteResource$);
-  const sshDialog = useLastResolved(sshDialog$);
-  const vncDialog = useLastResolved(vncDialog$);
+  const { sshEdit, vncEdit } = useRemoteResourceEditing();
   const sessionKey = useGet(authenticatedSessionKey$);
   const closeSsh = useSet(closeSshDialog$);
   const closeVnc = useSet(closeVncDialog$);
-  const editingSsh =
-    resource?.kind === "ssh" &&
-    sshDialog?.sessionKey === sessionKey &&
-    sshDialog?.kind === "edit";
-  const editingVnc =
-    resource?.kind === "vnc" &&
-    vncDialog?.sessionKey === sessionKey &&
-    vncDialog?.kind === "edit";
+  const editingSsh = resource?.kind === "ssh" && sshEdit;
+  const editingVnc = resource?.kind === "vnc" && vncEdit;
   const editing = editingSsh || editingVnc;
   const network =
     resource?.kind === "tailscale" || resource?.kind === "cloudflare";
@@ -220,14 +274,19 @@ export function RemoteResourcePage() {
                 : $.remoteControlSetup.backToConnections;
           })}
         </Button>
-        <RemoteResourceContent />
+        {sessionKey && (
+          <RemoteResourceContent
+            key={`${sessionKey}:${resource?.kind}:${resource?.id}`}
+          />
+        )}
       </div>
     </RemoteDetailPage>
   );
 }
 export function RemoteNetworkPage() {
   const { t } = useTranslation();
-  const page = useLastResolved(remoteNetworkPage$);
+  const page = useGet(remoteNetworkPage$);
+  const initialization = useLoadable(remoteNetworkInitialization$);
   const close = useSet(closeRemoteNetworkPage$);
   return (
     <RemoteDetailPage
@@ -244,13 +303,25 @@ export function RemoteNetworkPage() {
             return $.remoteControlSetup.back;
           })}
         </Button>
-        {page === "provider" && <NetworkProviderPicker inline />}
-        <div hidden={page !== "tailscale"}>
-          <TailscaleDialog inline saveAction={saveRemoteTailscale$} />
-        </div>
-        <div hidden={page !== "cloudflare"}>
-          <CloudflareAccessDialog inline saveAction={saveRemoteCloudflare$} />
-        </div>
+        {initialization.state !== "hasData" ? (
+          <p role={initialization.state === "hasError" ? "alert" : "status"}>
+            {t(($) => {
+              return initialization.state === "hasError"
+                ? $.remoteControlSetup.failedLoad
+                : $.remoteControlSetup.loading;
+            })}
+          </p>
+        ) : page === "provider" ? (
+          <NetworkProviderPicker inline />
+        ) : page === "tailscale" ? (
+          <div>
+            <TailscaleDialog inline saveAction={saveRemoteTailscale$} />
+          </div>
+        ) : (
+          <div>
+            <CloudflareAccessDialog inline saveAction={saveRemoteCloudflare$} />
+          </div>
+        )}
       </div>
     </RemoteDetailPage>
   );

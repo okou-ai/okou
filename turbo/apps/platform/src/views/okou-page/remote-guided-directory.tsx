@@ -1,4 +1,5 @@
 import { isOrgAdmin$ } from "../../signals/org.ts";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import type { ReactNode } from "react";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
 import {
@@ -410,7 +411,7 @@ function OwnerRemoteConnectionDirectory({
         return $.remoteControlSetup.add;
       })}
       emptyActionLabel={t(($) => {
-        return $.remoteControlSetup.addFirstDevice;
+        return $.remoteControlSetup.add;
       })}
       emptyTitle={t(($) => {
         return $.remoteControlSetup.emptyTitle;
@@ -681,6 +682,11 @@ function PrivateNetworkConnectionsDialog({
 }
 
 export function GuidedPrivateNetworkPanel() {
+  const sessionKey = useGet(authenticatedSessionKey$);
+  return sessionKey ? <OwnerPrivateNetworkPanel key={sessionKey} /> : null;
+}
+
+function OwnerPrivateNetworkPanel() {
   const { t } = useTranslation();
   const mount = useSet(mountPrivateNetworkPanel$);
   const params = useGet(searchParams$);
@@ -689,8 +695,8 @@ export function GuidedPrivateNetworkPanel() {
   connectionsParams.delete("remoteResource");
   connectionsParams.delete("networkConnections");
   connectionsParams.delete("setup");
-  const tailscale = useLoadable(tailscaleConfigs$);
-  const access = useLoadable(cloudflareAccessConfigs$);
+  const tailscale = useLastLoadable(tailscaleConfigs$);
+  const access = useLastLoadable(cloudflareAccessConfigs$);
   const tailscaleEnabled = useGet(tailscaleSettingsEnabled$);
   const open = useSet(setRemoteNetworkPicker$);
   const retry = useSet(retryTailscale$);

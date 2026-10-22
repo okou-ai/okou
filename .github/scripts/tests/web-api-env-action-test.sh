@@ -646,8 +646,6 @@ assert_google_llm_config "$success_env_file" "llm-dev@vm0-ai-488909.iam.gservice
 assert_env_value "$success_env_file" FEISHU_CALLBACK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$success_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_web_url_canonical "$success_env_file" "https://pr-123-www.okou.test"
-assert_env_key_count "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
-assert_env_value "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
 assert_env_value "$success_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
 assert_env_absent_value "$success_env_file" "ONBOARDING_URL="
 assert_env_value "$success_env_file" OKOU_PRICE_PRO "price_test_pro"
@@ -699,7 +697,6 @@ assert_web_url_absent "$preview_web_env_file"
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
-assert_env_key_absent "$preview_web_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
 
 empty_job_ref_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_job_ref_dir")
@@ -742,7 +739,6 @@ assert_web_url_absent "$production_web_env_file"
 assert_env_key_absent "$production_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$production_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$production_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
-assert_env_key_absent "$production_web_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
 assert_env_value "$production_web_env_file" POSTHOG_KEY "github-posthog-key"
 assert_env_value "$production_web_env_file" POSTHOG_HOST "https://posthog.github.test"
 assert_env_value "$production_web_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
@@ -807,8 +803,6 @@ assert_env_value "$production_api_env_file" STRIPE_AUTOMATION_WEBHOOK_SECRET "gi
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-billing-webhook-secret"
 assert_env_absent_value "$production_api_env_file" "doppler-stripe-automation-webhook-secret"
 assert_preview_job_ref_absent "$production_api_env_file"
-assert_env_key_count "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
-assert_env_value "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
 
 for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRET_ACCESS_KEY; do
   missing_kms_dir="$(mktemp -d)"
@@ -969,82 +963,6 @@ for discord_environment in preview production; do
   assert_env_key_absent "$unconfigured_discord_env_file" DISCORD_GATEWAY_ENABLED
   assert_env_key_absent "$unconfigured_discord_env_file" DISCORD_GATEWAY_CONTROL_SECRET
   assert_env_absent_value "$unconfigured_discord_env_file" "github-discord-legacy"
-done
-
-for worker_switch_case in \
-  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":""}|false' \
-  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"false"}|false' \
-  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true"}|true'; do
-  IFS='|' read -r worker_switch_vars worker_switch_expected <<< "$worker_switch_case"
-  worker_switch_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$worker_switch_dir")
-  worker_switch_output="$(
-    run_switch_action \
-      "$worker_switch_dir" \
-      api \
-      production \
-      "$worker_switch_vars" \
-      2>&1
-  )"
-  worker_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${worker_switch_dir}/github-output")"
-  assert_contains "$worker_switch_output" "Rendered"
-  assert_env_key_count "$worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
-  assert_env_value "$worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "$worker_switch_expected"
-done
-
-preview_worker_switch_dir="$(mktemp -d)"
-TEMP_DIRS+=("$preview_worker_switch_dir")
-preview_worker_switch_output="$(
-  run_switch_action \
-    "$preview_worker_switch_dir" \
-    api \
-    preview \
-    '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true"}' \
-    2>&1
-)"
-preview_worker_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${preview_worker_switch_dir}/github-output")"
-assert_contains "$preview_worker_switch_output" "Rendered"
-assert_env_key_count "$preview_worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
-assert_env_value "$preview_worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
-
-web_worker_switch_dir="$(mktemp -d)"
-TEMP_DIRS+=("$web_worker_switch_dir")
-web_worker_switch_output="$(
-  run_switch_action \
-    "$web_worker_switch_dir" \
-    web \
-    production \
-    '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true"}' \
-    2>&1
-)"
-web_worker_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${web_worker_switch_dir}/github-output")"
-assert_contains "$web_worker_switch_output" "Rendered"
-assert_env_key_absent "$web_worker_switch_env_file" LINK_OAUTH_CLIENT_ID
-assert_env_key_absent "$web_worker_switch_env_file" LINK_OAUTH_CLIENT_SECRET
-assert_env_key_absent "$web_worker_switch_env_file" LINK_STRIPE_PUBLISHABLE_KEY
-assert_env_key_absent "$web_worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
-
-for invalid_worker_switch_vars in \
-  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"enabled"}' \
-  '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":"true\nINJECTED_ENV=true"}'; do
-  invalid_worker_switch_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$invalid_worker_switch_dir")
-  status=0
-  invalid_worker_switch_output="$(
-    run_switch_action \
-      "$invalid_worker_switch_dir" \
-      api \
-      production \
-      "$invalid_worker_switch_vars" \
-      2>&1
-  )" || status=$?
-  if [[ "$status" -eq 0 ]]; then
-    fail "expected invalid Pi memory background worker switch to fail"
-  fi
-  assert_contains "$invalid_worker_switch_output" "::error::PI_MEMORY_BACKGROUND_WORKERS_ENABLED must be true or false when set"
-  if [[ -e "${invalid_worker_switch_dir}/web-api-api-production.env" ]]; then
-    fail "invalid Pi memory background worker switch must fail before creating an environment file"
-  fi
 done
 
 missing_dir="$(mktemp -d)"

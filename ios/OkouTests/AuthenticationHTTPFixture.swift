@@ -3,6 +3,7 @@ import ClerkKit
 import Foundation
 import Network
 import Synchronization
+import XCTest
 
 @testable import Okou
 
@@ -22,6 +23,39 @@ final class AuthenticationHTTPFixture: Sendable {
   let state = Mutex(State())
   let memberships = AuthenticationRequestGate()
   let activation = AuthenticationRequestGate()
+  let api = ChatHTTPFixture { request in
+    switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
+    case ("GET", "/api/agents"):
+      return ChatHTTPResponse(body: "[]")
+    case ("GET", "/api/user-preferences"):
+      return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+    case ("GET", "/api/feature-switches"):
+      return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
+    case ("GET", "/api/chat-threads/snapshot"):
+      return ChatHTTPResponse(
+        body: "{\"chatThreads\":[],\"latestEventId\":null,\"latestSeqId\":null}")
+    case ("GET", "/api/chat-threads/events"):
+      return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+    case ("GET", "/api/indicators"):
+      return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+    case ("GET", "/api/user-model-preference"):
+      return ChatHTTPResponse(body: "{}")
+    case ("GET", "/api/run-models"):
+      return runModelsResponse()
+    case ("GET", "/api/model-catalog"):
+      return modelCatalogResponse()
+    case ("POST", "/api/realtime/token"):
+      // Exercise startup without authorizing a connection to the external realtime service.
+      return ChatHTTPResponse(
+        status: 403, body: "{\"error\":{\"message\":\"No live updates in this fixture\"}}")
+    default:
+      let message =
+        "Unhandled app HTTP request: \(request.httpMethod ?? "GET") "
+        + "\(request.url?.absoluteString ?? "<missing URL>")"
+      await MainActor.run { XCTFail(message) }
+      throw URLError(.unsupportedURL)
+    }
+  }
   let host = "startup-" + UUID().uuidString.lowercased() + ".example.invalid"
   var publishableKey: String { "pk_test_" + Data((host + "$").utf8).base64EncodedString() }
 
@@ -216,6 +250,8 @@ final class AuthenticationHTTPFixture: Sendable {
         .base64EncodedString().replacingOccurrences(of: "=", with: "")
       return ChatHTTPResponse(body: "{\"jwt\":\"eyJhbGciOiJub25lIn0.\(payload).signature\"}")
     default:
+      let message = "Unhandled Clerk HTTP request: \(request.httpMethod ?? "GET") \(request.url!)"
+      await MainActor.run { XCTFail(message) }
       throw URLError(.unsupportedURL)
     }
   }

@@ -59,7 +59,7 @@ test("lets a Debug administrator persist each allowed preset for the organizatio
   session("org:admin", orgId);
   await debug(true);
   const peer = await accept(client().get({ headers }), [200]);
-  expect(peer.body.openrouterPreset).toBe("@preset/memory");
+  expect(peer.body.openrouterPreset).toBe("@preset/okou-experimental");
   session();
   await debug(true);
   const elsewhere = await accept(client().get({ headers }), [200]);
@@ -70,7 +70,10 @@ test("lets a Debug administrator clear the preset for the organization and selec
   const orgId = session();
   await debug(true);
   await accept(
-    client().update({ headers, body: { openrouterPreset: "@preset/memory" } }),
+    client().update({
+      headers,
+      body: { openrouterPreset: "@preset/okou-experimental" },
+    }),
     [200],
   );
   const cleared = await accept(
@@ -111,7 +114,10 @@ test.each([
     session(role, orgId);
     await debug(enabled);
     await accept(client().get({ headers }), [403]);
-    for (const openrouterPreset of ["@preset/memory", null] as const) {
+    for (const openrouterPreset of [
+      "@preset/okou-experimental",
+      null,
+    ] as const) {
       await accept(
         client().update({ headers, body: { openrouterPreset } }),
         [403],
@@ -137,7 +143,7 @@ test("rejects unlisted presets and caller-selected organizations without changin
   const request = setupRawAppRequest({ context, routes });
   for (const body of [
     { openrouterPreset: "@preset/not-allowed" },
-    { openrouterPreset: "@preset/memory", orgId: "org_another" },
+    { openrouterPreset: "@preset/okou-experimental", orgId: "org_another" },
     { openrouterPreset: null, orgId: "org_another" },
   ]) {
     const response = await request("/api/org/openrouter-preset", {
@@ -154,14 +160,19 @@ test("rejects unlisted presets and caller-selected organizations without changin
 test("requires authentication for both reads and writes", async () => {
   const read = await accept(client().get(), [401]);
   const write = await accept(
-    client().update({ body: { openrouterPreset: "@preset/memory" } }),
+    client().update({
+      body: { openrouterPreset: "@preset/okou-experimental" },
+    }),
     [401],
   );
   expect([read.status, write.status]).toStrictEqual([401, 401]);
   mocks.clerk.session(`user_${randomUUID()}`, null);
   const withoutOrg = await accept(client().get({ headers }), [401]);
   const writeWithoutOrg = await accept(
-    client().update({ headers, body: { openrouterPreset: "@preset/memory" } }),
+    client().update({
+      headers,
+      body: { openrouterPreset: "@preset/okou-experimental" },
+    }),
     [401],
   );
   expect([withoutOrg.status, writeWithoutOrg.status]).toStrictEqual([401, 401]);

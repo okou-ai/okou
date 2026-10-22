@@ -1,4 +1,5 @@
 import ChatData
+import Foundation
 import SwiftUI
 
 @main
@@ -38,9 +39,19 @@ struct OkouApp: App {
 struct AppRootView: View {
   let authentication: AuthenticationService
   let configuration: AppConfiguration
+  let session: URLSession
   @State private var accountError: String?
   @State private var foregroundRefresh: Task<Void, Never>?
   @Environment(\.scenePhase) private var scenePhase
+
+  init(
+    authentication: AuthenticationService, configuration: AppConfiguration,
+    session: URLSession = .shared
+  ) {
+    self.authentication = authentication
+    self.configuration = configuration
+    self.session = session
+  }
 
   var body: some View {
     AppStartupContainer(isLoading: authentication.isLoading || authentication.isSwitchingWorkspace)
@@ -52,7 +63,7 @@ struct AppRootView: View {
         WorkspaceRootView(
           authentication: authentication, configuration: configuration,
           workspaceID: workspaceID, userID: userID, scopeID: scopeID,
-          accountError: $accountError
+          accountError: $accountError, session: session
         )
         .id(scopeID)
       } else {
@@ -91,14 +102,14 @@ private struct WorkspaceRootView: View {
   init(
     authentication: AuthenticationService, configuration: AppConfiguration,
     workspaceID: String, userID: String, scopeID: String,
-    accountError: Binding<String?>
+    accountError: Binding<String?>, session: URLSession
   ) {
     self.authentication = authentication
     self.workspaceID = workspaceID
     self.userID = userID
     _accountError = accountError
     let client = APIClient(
-      baseURL: configuration.apiURL, clientVersion: configuration.appVersion
+      baseURL: configuration.apiURL, clientVersion: configuration.appVersion, session: session
     ) {
       try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
     }

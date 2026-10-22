@@ -1,5 +1,4 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -16,7 +15,6 @@ const context = testContext();
 const {
   api,
   chat,
-  authDeviceSupport,
   entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
@@ -45,9 +43,6 @@ describe("personal native subscription activation", () => {
       });
       ownsFeatureSwitches();
       await own(async () => {
-        await authDeviceSupport.updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.PiMemory]: true,
-        });
         const workflows = createWorkflowsBddApi(context);
         const workflowId = await workflows.createWorkflow(actor, {
           agentId,
@@ -138,9 +133,6 @@ describe("personal native subscription activation", () => {
 
   it("keeps official Claude member subscription credentials on Claude Code with Pi enabled", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiMemory]: true,
-    });
     const run = await sendChatRun(actor, {
       agentId,
       model: "claude-fable-5-1",

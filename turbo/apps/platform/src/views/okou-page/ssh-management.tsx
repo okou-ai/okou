@@ -6,7 +6,15 @@ import {
 import { RemoteAddressHelp, SshPrivateKeyHelp } from "./remote-field-help.tsx";
 import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
-import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
+import {
+  useLastLoadable,
+  useLastResolved,
+  useGet,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
+import { RemoteConnectionEditButton } from "./remote-connection-edit-button.tsx";
+import { RemoteFormFooter } from "./remote-form-footer.tsx";
 import {
   RemoteLoginPicker,
   RemoteSelectedLogin,
@@ -52,7 +60,6 @@ import {
 import {
   RemoteEditorFrame,
   RemoteUsernameHelp,
-  REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -1326,22 +1333,18 @@ function useDialogCopy(dialog: SshDialogState | null, inline: boolean) {
 
 interface SshFormProps {
   readonly dialog: SshDialogState;
-  readonly isSaving: boolean;
-  readonly save: (
-    form: HTMLFormElement,
-    signal: AbortSignal,
-  ) => Promise<unknown>;
+  readonly saveAction: typeof saveSsh$;
   readonly inline?: boolean;
   readonly onCancel?: () => void;
   readonly initialHost?: string;
   readonly initialPort?: string;
 }
 
-function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
+function SshSaveNotice() {
   const { t } = useTranslation();
   const uncertain = useGet(sshSaveUncertain$);
   const message = useGet(sshSaveMessage$);
-  if (isSaving || (!uncertain && !message)) {
+  if (!uncertain && !message) {
     return null;
   }
   return (
@@ -1355,95 +1358,6 @@ function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
             return $.ssh.errors.invalidInput;
           }))}
     </p>
-  );
-}
-
-function SshSaveLabel({
-  isSaving,
-  uncertain,
-  destructive,
-  title,
-  createConnection,
-}: {
-  readonly isSaving: boolean;
-  readonly uncertain: boolean;
-  readonly destructive: boolean;
-  readonly title: string;
-  readonly createConnection: boolean;
-}) {
-  const { t } = useTranslation();
-  return isSaving
-    ? t(($) => {
-        return $.connectors.actions.saving;
-      })
-    : uncertain
-      ? t(($) => {
-          return $.ssh.retry;
-        })
-      : destructive
-        ? title
-        : t(($) => {
-            return createConnection ? $.remoteControlSetup.add : $.ssh.save;
-          });
-}
-
-function SshFormActions({
-  isSaving,
-  blocked,
-  destructive,
-  title,
-  inline,
-  onCancel,
-}: {
-  readonly isSaving: boolean;
-  readonly blocked: boolean;
-  readonly destructive: boolean;
-  readonly title: string;
-  readonly inline?: boolean;
-  readonly onCancel?: () => void;
-}) {
-  const { t } = useTranslation();
-  const close = useSet(closeSshDialog$);
-  const uncertain = useGet(sshSaveUncertain$);
-  const dialog = useLastResolved(sshDialog$);
-  const guided = useGet(remoteControlGuidedEnabled$);
-  return (
-    <div
-      className={
-        inline || guided
-          ? "mt-2 flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-divider pt-5"
-          : "flex shrink-0 justify-end gap-2"
-      }
-    >
-      {(!inline || dialog?.kind === "edit") && (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isSaving}
-          onClick={onCancel ?? close}
-        >
-          {t(($) => {
-            return $.ssh.cancel;
-          })}
-        </Button>
-      )}
-      <Button
-        type="submit"
-        className={
-          (inline || guided) && !destructive ? REMOTE_PAGE_ACTION : undefined
-        }
-        disabled={isSaving || (!uncertain && blocked)}
-        variant={destructive ? "destructive" : "default"}
-      >
-        <SshSaveLabel
-          isSaving={isSaving}
-          uncertain={uncertain}
-          destructive={destructive}
-          title={title}
-          createConnection={!!inline && dialog?.kind === "create"}
-        />
-      </Button>
-    </div>
   );
 }
 
@@ -1718,109 +1632,168 @@ function SshHostFields({
   );
 }
 
+function useSshFormSubmission(
+  dialog: SshDialogState,
+  saveAction: typeof saveSsh$,
+  inline: boolean,
+) {
+  const { t } = useTranslation();
+  const { title } = useDialogCopy(dialog, inline);
+  const [saving, save] = useLoadableSet(saveAction);
+  const isSaving = saving.state === "loading";
+  const uncertain = useGet(sshSaveUncertain$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const credentialEditor = useGet(sshCredentialEditor$);
+  const connectionEditor = useGet(sshConnectionModeEditor$);
+  const confirmLogin = useSet(requestRemoteLoginSave$);
+  const signal = useGet(pageSignal$);
+  const blocked = useSshHostSaveBlocked(dialog, isSaving);
+  const destructive = ["delete", "reset", "delete-credential"].includes(
+    dialog.kind,
+  );
+  return {
+    isSaving,
+    uncertain,
+    destructive,
+    submitDisabled: isSaving || (!uncertain && blocked),
+    submitLabel: isSaving
+      ? t(($) => {
+          return $.connectors.actions.saving;
+        })
+      : uncertain
+        ? t(($) => {
+            return $.ssh.retry;
+          })
+        : destructive
+          ? title
+          : t(($) => {
+              return inline && dialog.kind === "create"
+                ? $.remoteControlSetup.add
+                : $.ssh.save;
+            }),
+    submit(form: HTMLFormElement) {
+      if (isSaving || (!uncertain && blocked)) {
+        return;
+      }
+      if (
+        guided &&
+        dialog.kind === "edit" &&
+        dialog.loginCredential &&
+        credentialEditor.selection === dialog.loginCredential.id &&
+        connectionEditor.mode !== "tailscale_ssh" &&
+        !confirmLogin(
+          "ssh",
+          dialog.loginCredential.hosts,
+          sshLoginPatch(
+            form,
+            dialog.loginCredential,
+            credentialEditor.method,
+          ) !== null,
+        )
+      ) {
+        return;
+      }
+      // Keep retryable input only in this form, never in ccstate or caches.
+      detach(save(form, signal), Reason.DomCallback);
+    },
+  };
+}
+
 function SshHostForm({
   dialog,
-  isSaving,
-  save,
+  saveAction,
   inline = false,
   onCancel,
   initialHost,
   initialPort,
 }: SshFormProps) {
   const { t } = useTranslation();
-  const uncertain = useGet(sshSaveUncertain$);
+  const {
+    isSaving,
+    uncertain,
+    destructive,
+    submitDisabled,
+    submitLabel,
+    submit,
+  } = useSshFormSubmission(dialog, saveAction, inline);
+  const close = useSet(closeSshDialog$);
   const guided = useGet(remoteControlGuidedEnabled$);
-  const credentialEditor = useGet(sshCredentialEditor$);
-  const confirmLogin = useSet(requestRemoteLoginSave$);
   const fieldsDisabled = isSaving || uncertain;
-  const connectionEditor = useGet(sshConnectionModeEditor$);
   const mountForm = useSet(mountSshForm$);
-  const signal = useGet(pageSignal$);
-  const blocked = useSshHostSaveBlocked(dialog, isSaving);
-  const { title } = useDialogCopy(dialog, inline);
+  const { title, description } = useDialogCopy(dialog, inline);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
-  const destructive = ["delete", "reset", "delete-credential"].includes(
-    dialog.kind,
-  );
   return (
-    <form
-      ref={mountForm}
-      id={guided ? "remote-ssh-edit-form" : undefined}
-      className="flex min-h-0 min-w-0 flex-col gap-4"
-      autoComplete="off"
-      aria-busy={isSaving}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (isSaving || (!uncertain && blocked)) {
-          return;
-        }
-        if (
-          guided &&
-          dialog.kind === "edit" &&
-          dialog.loginCredential &&
-          credentialEditor.selection === dialog.loginCredential.id &&
-          connectionEditor.mode !== "tailscale_ssh" &&
-          !confirmLogin(
-            "ssh",
-            dialog.loginCredential.hosts,
-            sshLoginPatch(
-              event.currentTarget,
-              dialog.loginCredential,
-              credentialEditor.method,
-            ) !== null,
-          )
-        ) {
-          return;
-        }
-        // Keep retryable input only in this form, never in ccstate or caches.
-        detach(save(event.currentTarget, signal), Reason.DomCallback);
-      }}
+    <RemoteEditorFrame
+      inline={inline}
+      title={title}
+      description={description}
+      busy={isSaving}
+      onClose={onCancel ?? close}
     >
-      <DialogBody className={guided ? "-m-1 grid gap-4 p-1" : "grid gap-4"}>
-        {!destructive && (
-          <fieldset
-            disabled={fieldsDisabled}
-            className={hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-5"}
-          >
-            {hostEditor ? (
-              <SshHostFields
-                dialog={dialog}
-                inline={inline}
-                initialHost={initialHost}
-                initialPort={initialPort}
-                fieldsDisabled={fieldsDisabled}
-              />
-            ) : (
-              <CredentialFields
-                credential={dialog.credential}
-                disabled={fieldsDisabled}
-              />
-            )}
-          </fieldset>
-        )}
-        {dialog.credential && (
-          <CredentialImpact credential={dialog.credential} />
-        )}
-        <SshConflictReview dialog={dialog} />
-        <SshSaveNotice isSaving={isSaving} />
-        {dialog.connectionSaved && (
-          <p role="alert" className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.partialLoginSave;
-            })}
-          </p>
-        )}
-      </DialogBody>
-      <SshFormActions
-        isSaving={isSaving}
-        blocked={blocked}
-        destructive={destructive}
-        title={title}
-        inline={inline}
-        onCancel={onCancel}
-      />
-      {guided && <RemoteLoginConfirmation protocol="ssh" />}
-    </form>
+      <form
+        ref={mountForm}
+        id={guided ? "remote-ssh-edit-form" : undefined}
+        className="flex min-h-0 min-w-0 flex-col gap-4"
+        autoComplete="off"
+        aria-busy={isSaving}
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit(event.currentTarget);
+        }}
+      >
+        <DialogBody className={guided ? "-m-1 grid gap-4 p-1" : "grid gap-4"}>
+          {!destructive && (
+            <fieldset
+              disabled={fieldsDisabled}
+              className={
+                hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-5"
+              }
+            >
+              {hostEditor ? (
+                <SshHostFields
+                  dialog={dialog}
+                  inline={inline}
+                  initialHost={initialHost}
+                  initialPort={initialPort}
+                  fieldsDisabled={fieldsDisabled}
+                />
+              ) : (
+                <CredentialFields
+                  credential={dialog.credential}
+                  disabled={fieldsDisabled}
+                />
+              )}
+            </fieldset>
+          )}
+          {dialog.credential && (
+            <CredentialImpact credential={dialog.credential} />
+          )}
+          <SshConflictReview dialog={dialog} />
+          {!isSaving && <SshSaveNotice />}
+          {dialog.connectionSaved && (
+            <p role="alert" className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.partialLoginSave;
+              })}
+            </p>
+          )}
+        </DialogBody>
+        <RemoteFormFooter
+          separated={inline || guided}
+          onCancel={
+            !inline || dialog.kind === "edit" ? (onCancel ?? close) : undefined
+          }
+          cancelLabel={t(($) => {
+            return $.ssh.cancel;
+          })}
+          cancelDisabled={isSaving}
+          submitDisabled={submitDisabled}
+          destructive={destructive}
+          submitLabel={submitLabel}
+        />
+        {guided && <RemoteLoginConfirmation protocol="ssh" />}
+      </form>
+    </RemoteEditorFrame>
   );
 }
 
@@ -1841,11 +1814,7 @@ export function SshDialog({
   const sessionKey = useGet(authenticatedSessionKey$);
   const editor = useGet(sshConnectionModeEditor$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
-  const close = useSet(closeSshDialog$);
-  const [saving, save] = useLoadableSet(saveAction);
   const dialog = lastDialog?.sessionKey === sessionKey ? lastDialog : null;
-  const { title, description } = useDialogCopy(dialog, inline);
-  const isSaving = saving.state === "loading";
   if (
     !dialog ||
     ((dialog.kind === "create" || dialog.kind === "edit") &&
@@ -1855,24 +1824,15 @@ export function SshDialog({
     return null;
   }
   return (
-    <RemoteEditorFrame
+    <SshHostForm
       key={dialog.instanceId}
+      dialog={dialog}
+      saveAction={saveAction}
       inline={inline}
-      title={title}
-      description={description}
-      busy={isSaving}
-      onClose={onCancel ?? close}
-    >
-      <SshHostForm
-        dialog={dialog}
-        isSaving={isSaving}
-        save={save}
-        inline={inline}
-        onCancel={onCancel}
-        initialHost={initialHost}
-        initialPort={initialPort}
-      />
-    </RemoteEditorFrame>
+      onCancel={onCancel}
+      initialHost={initialHost}
+      initialPort={initialPort}
+    />
   );
 }
 
@@ -2119,17 +2079,27 @@ export function SshHostCard({
         </>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          disabled={unavailable || (tailscale && !tailscaleEnabled)}
-          onClick={() => {
-            return detach(open("edit", connection, signal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return detail ? $.remoteControlSetup.editConnection : $.ssh.edit;
-          })}
-        </Button>
+        {detail ? (
+          <RemoteConnectionEditButton
+            resource={{ kind: "ssh", connection }}
+            disabled={unavailable || (tailscale && !tailscaleEnabled)}
+          />
+        ) : (
+          <Button
+            variant="outline"
+            disabled={unavailable || (tailscale && !tailscaleEnabled)}
+            onClick={() => {
+              return detach(
+                open("edit", connection, signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {t(($) => {
+              return detail ? $.remoteControlSetup.editConnection : $.ssh.edit;
+            })}
+          </Button>
+        )}
         <Button
           variant="outline"
           disabled={unavailable || !connection.learnedHostKey}
@@ -2231,8 +2201,20 @@ export function SshHosts() {
 }
 
 export function SshCredentials() {
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const sessionKey = useGet(authenticatedSessionKey$);
+  if (!guided) {
+    return <OwnerSshCredentials />;
+  }
+  return sessionKey ? <OwnerSshCredentials key={sessionKey} /> : null;
+}
+
+function OwnerSshCredentials() {
   const { t } = useTranslation();
-  const credentials = useLoadable(sshCredentials$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const current = useLoadable(sshCredentials$);
+  const retained = useLastLoadable(sshCredentials$);
+  const credentials = guided ? retained : current;
   const open = useSet(openSshCredentialDialog$);
   const signal = useGet(pageSignal$);
   if (credentials.state === "loading") {

@@ -598,33 +598,6 @@ export default [
     },
   },
   {
-    files: [
-      "src/signals/services/pi-memory-stage1-worker.service.ts",
-      "src/signals/services/pi-memory-phase2-worker.service.ts",
-    ],
-    rules: {
-      "api/no-logger-info": [
-        "error",
-        {
-          allowedMessages: [
-            "Pi memory Stage 1 candidate processed",
-            "Pi memory Phase 2 work completed",
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/services/pi-memory-stage1-cost.service.ts"],
-    rules: {
-      // Versioned cost observations are the explicit production budget contract.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["Pi memory Stage 1 cost observed"] },
-      ],
-    },
-  },
-  {
     files: ["src/signals/services/agent-run-failure-log.service.ts"],
     rules: {
       // Guest root filesystem exhaustion is already a classified, bounded

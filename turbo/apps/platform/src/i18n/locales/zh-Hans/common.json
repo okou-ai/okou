@@ -1126,19 +1126,10 @@
     "invoices": {
       "amount": "金额",
       "date": "日期",
-      "downloadDescription": "最多选择连续 3 个月，该区间内的收据 PDF 会打包成一个 ZIP 文件。",
       "downloadInvoice": "下载{{month}}的账单",
-      "downloadReceipts": "下载收据",
-      "downloadZip": "下载 ZIP",
       "empty": "还没有账单。",
-      "from": "从",
       "invoice": "账单",
-      "loading": "正在加载账单",
-      "monthAria": "{{label}}月份",
-      "preparingReceipts": "正在准备收据…",
-      "rangeError": "请选择不超过连续 3 个月的区间。",
-      "selectMonth": "选择月份",
-      "to": "到"
+      "loading": "正在加载账单"
     },
     "paymentMethods": {
       "description": "在 Stripe 中管理用于扣款的支付方式。",
@@ -1293,7 +1284,6 @@
       "downgradeScheduledDate": "降级已安排。当前套餐在 {{date}} 前仍然有效。",
       "downgradeScheduledPeriod": "降级已安排。当前套餐在本个账单周期结束前仍然有效。",
       "planRestored": "套餐已恢复，订阅将正常续费。",
-      "receiptsDownloaded": "收据已下载",
       "subscriptionChangeConfirmed": "订阅变更已确认。"
     },
     "usage": {
@@ -1376,8 +1366,12 @@
       "copy": "复制",
       "copyMessage": "复制消息",
       "delete": "删除",
+      "downloadPdf": "下载 PDF",
       "edit": "编辑",
+      "generatePdf": "生成 PDF",
+      "generatingPdf": "正在生成 PDF…",
       "more": "更多操作",
+      "pdfGenerationFailed": "无法生成 PDF，请重试。",
       "remove": "移除",
       "rename": "重命名",
       "saving": "正在保存…",
@@ -1826,13 +1820,22 @@
       "checkingCompatibility": "正在检查兼容性",
       "cloudBrowser": "云端浏览器",
       "connectMyComputer": "连接我的电脑",
-      "dialogDescription": "这样 {{desktopProductName}} 就能替你在浏览器和各种应用里干活，连 LinkedIn、Reddit 这类没有连接器的也可以。",
-      "dialogTitle": "让 {{desktopProductName}} 使用你的电脑",
       "downloadMacos": "下载 macOS 版",
       "hosts": "Computer Use 主机",
       "macosRequirement": "需要搭载 Apple 芯片、运行 macOS 14 或更高版本的 Mac，不支持 Intel Mac。",
       "noOnlineComputers": "没有在线的电脑",
       "offline": "离线",
+      "setupSteps": {
+        "chatDescription": "打开聊天输入框的「连接器」，开启「你的电脑」中的设备开关。",
+        "chatTitle": "在聊天中启用",
+        "done": "完成",
+        "installDescription": "安装并打开 {{desktopProductName}}，使用与网页相同的账号和工作区。",
+        "installTitle": "安装并登录",
+        "permissionsDescription": "允许「辅助功能」和「屏幕录制」，并保持客户端在线。",
+        "permissionsTitle": "开启权限并保持在线",
+        "previous": "上一步",
+        "thisMac": "这台 Mac"
+      },
       "unsupportedIntelMac": "需要搭载 Apple 芯片的 Mac",
       "yourComputer": "你的电脑"
     },
@@ -4654,11 +4657,8 @@
   },
   "remoteComputerSetup": {
     "addNetwork": "设置 Tailscale",
-    "advanced": "手动连接（高级）",
-    "advancedDescription": "使用已有的 SSH 或 VNC 配置，支持直接连接及已保存的 Tailscale、Cloudflare 网络。",
     "commands": "运行命令（SSH）",
     "continue": "使用此网络继续",
-    "description": "让 Okou 在你的家庭或办公电脑上工作。",
     "macScreenReady": "先在 Mac 上开启屏幕共享，并允许要使用的账户访问。能否连接取决于该服务支持的登录协议。",
     "networkDescription": "选择电脑使用的 Tailscale 网络，或设置新的网络。",
     "networkEmptyDescription": "先设置 Tailscale，让 Okou 连接你的电脑。",
@@ -4727,7 +4727,6 @@
   },
   "remoteControlSetup": {
     "add": "添加连接",
-    "addFirstDevice": "添加第一台设备",
     "addNetwork": "添加网络",
     "addNetworkInline": "添加私有网络",
     "address": "设备地址",
@@ -4751,6 +4750,8 @@
     "cfAddressMissing": "找不到应用或没有访问权限时，请网络管理员提供应用域名，或为设备创建应用。",
     "companyGroup": "QEMU 或企业认证",
     "compatibleLoginOnly": "选择已有连接使用的登录信息，请确认它也能登录这台设备。",
+    "computerUse": "Computer use",
+    "computerUseDescription": "通过桌面客户端操作电脑上的浏览器和应用。",
     "connectionDetails": "连接详情",
     "connectionMethod": "连接方式",
     "connectionSettings": "连接设置",
@@ -5449,9 +5450,19 @@
         "retryMessage": "晨报设置无法加载或更新，请重试以继续。",
         "title": "晨报"
       },
+      "proactiveAction": {
+        "description": "让 Okou 每小时自动推进下一步，并在对话中展示工作结果。启用后暂停主动建议。",
+        "missingDefaultAgent": "选择一个可用的默认智能体以启用主动行动。",
+        "preparationFailed": "暂时无法运行，Okou 会自动重试。",
+        "preparing": "正在准备每小时的主动行动。你可以随时关闭。",
+        "retry": "重试",
+        "retryMessage": "无法加载或更新主动行动设置，请重试。",
+        "title": "主动行动"
+      },
       "proactiveSuggestions": {
         "description": "让 Okou 每小时检查已连接的信息来源，并在主页推荐有用的下一步行动。",
         "missingDefaultAgent": "请选择可用的默认 Agent 以接收主动建议。",
+        "pausedForAction": "主动行动已开启，主动建议暂时停止。你的设置已保留。",
         "preparationFailed": "暂时无法运行，Okou 会自动重试。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",
         "retry": "重试",
