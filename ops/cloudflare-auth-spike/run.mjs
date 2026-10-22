@@ -157,7 +157,7 @@ async function build() {
     platform: "browser",
     external: [...builtinModules, "node:*", "cloudflare:workers"],
     banner: {
-      js: 'import { createRequire as createWorkerRequire } from "node:module"; const require = createWorkerRequire(import.meta.url);',
+      js: 'import { createRequire as createWorkerRequire } from "node:module"; const require = createWorkerRequire("/");',
     },
     nodePaths: [
       path.join(root, "turbo/apps/api/node_modules"),
