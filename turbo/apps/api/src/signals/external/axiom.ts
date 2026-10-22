@@ -1,6 +1,7 @@
 import { computed, type Computed } from "ccstate";
 import { Axiom } from "@axiomhq/js";
 import { delay } from "signal-timers";
+import { decodeHTML } from "entities";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -8,6 +9,7 @@ import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import {
   awaitWithSignal,
+  safeJsonParse,
   settleIncludingAbort,
   startUntrackedBestEffortCleanup,
 } from "../utils";
@@ -20,6 +22,8 @@ const AXIOM_API_ORIGIN = "https://api.axiom.co";
 const AXIOM_QUERY_TIMEOUT_MS = 120_000;
 const AXIOM_INGEST_FAILURE_DETAIL_LIMIT = 3;
 const AXIOM_INGEST_FAILURE_ERROR_MAX_LENGTH = 512;
+const AXIOM_ERROR_BODY_MAX_BYTES = 4096;
+const AXIOM_ERROR_BODY_TIMEOUT_MS = 200;
 const AXIOM_TRACE_ATTEMPT_TIMEOUT_MS = 5000;
 const AXIOM_TRACE_RETRY_DELAY_MS = 100;
 const AXIOM_TRANSPORT_ERROR_MESSAGES = {
@@ -135,13 +139,26 @@ interface AxiomIngestStatus {
 type DirectAxiomIngestResult =
   { readonly configured: false } | { readonly configured: true };
 
+interface AxiomHttpErrorResponse {
+  readonly upstreamRequestId?: string;
+  readonly responseContentType?: string;
+  readonly responseBodySummary?: string;
+  readonly responseBodyTruncated?: boolean;
+}
+
+interface AxiomHttpIngestErrorOptions extends AxiomHttpErrorResponse {
+  readonly reason: "http_status";
+  readonly dataset: string;
+  readonly status: number;
+  readonly retryAfterMs?: number;
+  readonly eventCount: number;
+  readonly requestBytes: number;
+  readonly timeoutMs: number;
+  readonly elapsedMs: number;
+}
+
 type DirectAxiomIngestErrorOptions =
-  | {
-      readonly reason: "http_status";
-      readonly dataset: string;
-      readonly status: number;
-      readonly retryAfterMs?: number;
-    }
+  | AxiomHttpIngestErrorOptions
   | {
       readonly reason: "invalid_response";
       readonly dataset: string;
@@ -186,6 +203,10 @@ export class DirectAxiomIngestError extends Error {
   readonly requestBytes?: number;
   readonly timeoutMs?: number;
   readonly elapsedMs?: number;
+  readonly upstreamRequestId?: string;
+  readonly responseContentType?: string;
+  readonly responseBodySummary?: string;
+  readonly responseBodyTruncated?: boolean;
 
   constructor(message: string, options: DirectAxiomIngestErrorOptions) {
     super(
@@ -200,6 +221,10 @@ export class DirectAxiomIngestError extends Error {
     if (options.reason === "http_status") {
       this.status = options.status;
       this.retryAfterMs = options.retryAfterMs;
+      this.upstreamRequestId = options.upstreamRequestId;
+      this.responseContentType = options.responseContentType;
+      this.responseBodySummary = options.responseBodySummary;
+      this.responseBodyTruncated = options.responseBodyTruncated;
     }
     if (options.reason === "partial_ingest") {
       this.expected = options.expected;
@@ -209,7 +234,11 @@ export class DirectAxiomIngestError extends Error {
       this.failureDetails = options.failureDetails;
       this.failureDetailsOmitted = options.failureDetailsOmitted;
     }
-    if (options.reason === "timeout" || options.reason === "transport_error") {
+    if (
+      options.reason === "http_status" ||
+      options.reason === "timeout" ||
+      options.reason === "transport_error"
+    ) {
       this.eventCount = options.eventCount;
       this.requestBytes = options.requestBytes;
       this.timeoutMs = options.timeoutMs;
@@ -302,6 +331,127 @@ function axiomRetryAfterMs(value: string | null): number | undefined {
     : undefined;
 }
 
+function sanitizedAxiomErrorDetail(value: string, token: string): string {
+  const normalized = Array.from(
+    decodeHTML(value).replace(/<[^>]*>/gu, " "),
+    (character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127 ? " " : character;
+    },
+  ).join("");
+  const redacted = normalized
+    .replaceAll(token, "[redacted]")
+    .replace(/\b(?:Bearer|Basic)\s+[^\s,;"'<>]+/giu, "[redacted authorization]")
+    .replace(
+      /\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|authorization|password|secret|token)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;<>]+)/giu,
+      "$1=[redacted]",
+    )
+    .replace(/\bhttps?:\/\/[^\s<>"';]+/giu, "[url]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, "[email]");
+  return boundedAxiomIngestFailureError(redacted);
+}
+
+function axiomErrorResponseMessage(text: string): string | undefined {
+  const payload = safeJsonParse(text);
+  if (typeof payload === "string") {
+    return payload;
+  }
+  if (isRecord(payload)) {
+    if (typeof payload.message === "string") {
+      return payload.message;
+    }
+    if (typeof payload.error === "string") {
+      return payload.error;
+    }
+    if (isRecord(payload.error) && typeof payload.error.message === "string") {
+      return payload.error.message;
+    }
+    return undefined;
+  }
+  // Proxies can return text/HTML. Do not dump malformed JSON or echoed objects.
+  const firstCharacter = text.trimStart()[0];
+  return payload === undefined &&
+    firstCharacter !== "[" &&
+    firstCharacter !== "{"
+    ? text
+    : undefined;
+}
+
+async function axiomErrorResponseBody(
+  response: Response,
+  token: string,
+  signal: AbortSignal,
+): Promise<AxiomHttpErrorResponse> {
+  if (!response.body) {
+    return {};
+  }
+  const reader = response.body.getReader();
+  const readSignal = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(AXIOM_ERROR_BODY_TIMEOUT_MS),
+  ]);
+  const chunks: Uint8Array[] = [];
+  let bytesRead = 0;
+  // The HTTP status is already known. Optional diagnostics must not replace it.
+  const read = async (): Promise<AxiomHttpErrorResponse> => {
+    while (true) {
+      const { done, value } = await awaitWithSignal(reader.read(), readSignal);
+      if (done) {
+        break;
+      }
+      bytesRead += value.byteLength;
+      if (bytesRead > AXIOM_ERROR_BODY_MAX_BYTES) {
+        return { responseBodyTruncated: true };
+      }
+      chunks.push(value);
+    }
+    const message = axiomErrorResponseMessage(
+      Buffer.concat(chunks).toString("utf8"),
+    );
+    return {
+      responseBodySummary:
+        message === undefined
+          ? undefined
+          : sanitizedAxiomErrorDetail(message, token),
+    };
+  };
+  const result = await settleIncludingAbort(read()).finally(() => {
+    startUntrackedBestEffortCleanup(reader.cancel());
+    reader.releaseLock();
+  });
+  return result.ok ? result.value : {};
+}
+
+async function axiomHttpErrorDetails(
+  response: Response,
+  request: PreparedAxiomIngest,
+  timing: { readonly timeoutMs: number; readonly startedAt: number },
+  signal: AbortSignal,
+): Promise<AxiomHttpIngestErrorOptions> {
+  const details = await axiomErrorResponseBody(response, request.token, signal);
+  const requestId =
+    response.headers.get("x-axiom-request-id") ??
+    response.headers.get("x-request-id");
+  const contentType = response.headers.get("content-type");
+  return {
+    reason: "http_status",
+    dataset: request.dataset,
+    status: response.status,
+    retryAfterMs: axiomRetryAfterMs(response.headers.get("Retry-After")),
+    eventCount: request.eventCount,
+    requestBytes: request.requestBytes,
+    timeoutMs: timing.timeoutMs,
+    elapsedMs: Math.max(0, now() - timing.startedAt),
+    upstreamRequestId: requestId
+      ? sanitizedAxiomErrorDetail(requestId, request.token).slice(0, 128)
+      : undefined,
+    responseContentType: contentType
+      ? sanitizedAxiomErrorDetail(contentType, request.token).slice(0, 128)
+      : undefined,
+    ...details,
+  };
+}
+
 async function ingestAxiomRequest(
   request: PreparedAxiomIngest,
   timeoutMs: number,
@@ -362,17 +512,16 @@ async function ingestAxiomRequest(
   const response = fetchResult.value;
 
   if (!response.ok) {
-    if (response.body) {
-      startUntrackedBestEffortCleanup(response.body.cancel());
-    }
+    const details = await axiomHttpErrorDetails(
+      response,
+      request,
+      { timeoutMs, startedAt },
+      requestSignal,
+    );
+    signal.throwIfAborted();
     throw new DirectAxiomIngestError(
       `Axiom ingest failed with status ${response.status}`,
-      {
-        reason: "http_status",
-        dataset,
-        status: response.status,
-        retryAfterMs: axiomRetryAfterMs(response.headers.get("Retry-After")),
-      },
+      details,
     );
   }
 

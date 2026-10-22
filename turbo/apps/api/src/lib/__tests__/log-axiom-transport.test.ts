@@ -2,16 +2,244 @@ import { gunzipSync } from "node:zlib";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
-import { testContext } from "../../__tests__/test-context";
+import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
+import { accept, testContext } from "../../__tests__/test-context";
 
 import { withRealAxiomLoggingForTest } from "../../__tests__/mocks";
+import { setupApp } from "../../__tests__/test-helpers";
 import { server } from "../../mocks/server";
 import { createChatEventsFixture } from "../../signals/routes/__tests__/helpers/chat-events-fixture";
+import { publicChatActor } from "../../signals/routes/__tests__/helpers/public-chat-actor";
 import { useSecretKmsProbe } from "../../signals/routes/__tests__/helpers/secret-kms-probe";
+import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/webhooks-agent-health-usage-telemetry";
+import { createDeferredPromise } from "../../signals/utils";
+import { mockOptionalEnv } from "../env";
 
 const context = testContext();
 const FAILURE_MESSAGE =
   "Fal built-in generation webhook reported failed generation";
+
+async function ownedTelemetryUpload() {
+  const owned = await publicChatActor(context);
+  const { runId } = await owned.sendChatRun(owned.actor, {
+    agentId: owned.agentId,
+    prompt: "Exercise Axiom error diagnostics",
+  });
+  const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+  const client = setupApp({
+    context,
+    routes: webhooksAgentHealthUsageTelemetryRoutes,
+  })(webhookTelemetryContract);
+  return {
+    owned,
+    runId,
+    send: () => {
+      return client.send({
+        headers: { authorization: `Bearer ${claim.sandboxToken}` },
+        body: {
+          runId,
+          metrics: [
+            {
+              ts: "2026-10-21T15:53:23.000Z",
+              cpu: 1,
+              mem_used: 10,
+              mem_total: 100,
+            },
+          ],
+        },
+      });
+    },
+  };
+}
+
+// Logger-owned transport exception: the real webhook/error boundary must retain
+// useful sanitized provider details without exposing them to its Guest caller.
+describe("Axiom ingest HTTP error diagnostics", () => {
+  it.each(["json", "html"])(
+    "logs bounded %s upstream details and permits a later successful upload",
+    async (format) => {
+      const upload = await ownedTelemetryUpload();
+      await upload.owned.run(async () => {
+        const token = "xaat-private-error-diagnostic-token";
+        mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", token);
+        const privateEcho = "private-echoed-metric-payload";
+        const message = `no healthy upstream; ${token}; Bearer another-private-token; password="private password"; https://provider.example/private?token=secret; owner@example.test; ${"upstream context ".repeat(40)}`;
+        let requestBytes = 0;
+        server.use(
+          http.post(
+            "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+            async ({ request }) => {
+              requestBytes = Buffer.byteLength(await request.text(), "utf8");
+              const headers = {
+                "x-request-id": "axiom-upstream-request-42186",
+                "retry-after": "2",
+              };
+              return format === "json"
+                ? HttpResponse.json(
+                    { error: { message }, echoedEvents: privateEcho },
+                    { status: 503, headers },
+                  )
+                : new HttpResponse(
+                    `<html><body>${message.replace("Bearer another-private-token", "<span>Bearer&#32;another-private-token</span>")}</body></html>`,
+                    {
+                      status: 503,
+                      headers: { ...headers, "content-type": "text/html" },
+                    },
+                  );
+            },
+          ),
+        );
+
+        const failed = await accept(upload.send(), [500]);
+        expect(failed.body).toStrictEqual({ error: "Internal server error" });
+        expect(context.mocks.axiomLogging.error).toHaveBeenCalledWith(
+          "Unhandled request error: Axiom ingest failed with status 503",
+          expect.objectContaining({
+            error: expect.objectContaining({
+              reason: "http_status",
+              status: 503,
+              dataset: "sandbox-telemetry-metrics",
+              retryAfterMs: 2000,
+              eventCount: 1,
+              requestBytes,
+              timeoutMs: expect.any(Number),
+              elapsedMs: expect.any(Number),
+              upstreamRequestId: "axiom-upstream-request-42186",
+              responseContentType:
+                format === "json" ? "application/json" : "text/html",
+              responseBodySummary: expect.stringContaining(
+                "no healthy upstream",
+              ),
+            }),
+          }),
+        );
+        const fields = z
+          .object({
+            error: z.object({ responseBodySummary: z.string().max(512) }),
+          })
+          .parse(
+            context.mocks.axiomLogging.error.mock.calls.find(([logMessage]) => {
+              return (
+                logMessage ===
+                "Unhandled request error: Axiom ingest failed with status 503"
+              );
+            })?.[1],
+          );
+        expect(fields.error.responseBodySummary).toContain(
+          "[redacted authorization]",
+        );
+        expect(fields.error.responseBodySummary).toMatch(/\.\.\.$/u);
+        const logged = JSON.stringify(
+          context.mocks.axiomLogging.error.mock.calls,
+        );
+        for (const secret of [
+          token,
+          "another-private-token",
+          "private password",
+          "owner@example.test",
+          privateEcho,
+        ]) {
+          expect(logged).not.toContain(secret);
+        }
+
+        server.use(
+          http.post(
+            "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+            () => {
+              return HttpResponse.json({
+                ingested: 1,
+                failed: 0,
+                processedBytes: requestBytes,
+              });
+            },
+          ),
+        );
+        const accepted = await accept(upload.send(), [200]);
+        expect(accepted.body).toStrictEqual({
+          success: true,
+          id: upload.runId,
+        });
+      });
+    },
+  );
+
+  it.each(["oversized", "interrupted", "deadline"])(
+    "preserves the known HTTP failure when the error body is %s",
+    async (mode) => {
+      const upload = await ownedTelemetryUpload();
+      await upload.owned.run(async () => {
+        const diagnosticStarted = createDeferredPromise<void>(context.signal);
+        const diagnosticDeadline = new AbortController();
+        context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+          if (milliseconds === 200) {
+            diagnosticStarted.resolve(undefined);
+            return diagnosticDeadline.signal;
+          }
+          return undefined;
+        });
+        let bodyController:
+          ReadableStreamDefaultController<Uint8Array> | undefined;
+        let bodyFinished = false;
+        onTestFinished(() => {
+          if (!bodyFinished) {
+            bodyFinished = true;
+            bodyController?.close();
+          }
+        });
+        server.use(
+          http.post(
+            "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+            () => {
+              if (mode === "oversized") {
+                return HttpResponse.json(
+                  { message: "x".repeat(5000) },
+                  { status: 503 },
+                );
+              }
+              return new HttpResponse(
+                new ReadableStream<Uint8Array>({
+                  start(controller) {
+                    bodyController = controller;
+                  },
+                  cancel() {
+                    bodyFinished = true;
+                  },
+                }),
+                { status: 503 },
+              );
+            },
+          ),
+        );
+
+        const pending = upload.send();
+        await diagnosticStarted.promise;
+        if (mode === "interrupted") {
+          bodyFinished = true;
+          bodyController?.error(
+            new Error("private provider body read failure"),
+          );
+        } else if (mode === "deadline") {
+          diagnosticDeadline.abort(
+            new DOMException("body deadline", "TimeoutError"),
+          );
+        }
+        const failed = await accept(pending, [500]);
+        expect(failed.body).toStrictEqual({ error: "Internal server error" });
+        expect(context.mocks.axiomLogging.error).toHaveBeenCalledWith(
+          "Unhandled request error: Axiom ingest failed with status 503",
+          expect.objectContaining({
+            error: expect.objectContaining({
+              reason: "http_status",
+              status: 503,
+              responseBodySummary: undefined,
+              ...(mode === "oversized" ? { responseBodyTruncated: true } : {}),
+            }),
+          }),
+        );
+      });
+    },
+  );
+});
 
 // Logger-owned transport exception: verify the selected-eager operation payload
 // at the existing external SDK ingest boundary, using real connect/send/claim
