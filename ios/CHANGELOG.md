@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.3](https://github.com/okou-ai/okou/compare/ios-v0.18.2...ios-v0.18.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* **ios:** fail promptly and isolate startup test http ([#42143](https://github.com/okou-ai/okou/issues/42143)) ([b70b5c3](https://github.com/okou-ai/okou/commit/b70b5c35e00ba9e516bb7a069907fd38dd259e6a))
+
 ## [0.18.2](https://github.com/okou-ai/okou/compare/ios-v0.18.1...ios-v0.18.2) (2026-10-22)
 
 
