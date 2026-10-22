@@ -333,6 +333,22 @@ class DirectoryKernelTests(unittest.TestCase):
                     self.assertEqual(output, {"errno": 1})
             self.assertEqual((path / "payload").read_bytes(), PAYLOAD)
 
+    def test_stop_accepting_retains_held_open_and_allows_future_original_opens(self):
+        with self.fixture() as (path, gate, children, state):
+            held = self.start(path, children)
+            event = gate.receive()
+            gate.stop_accepting()
+            later = self.start(path, children)
+            self.assertEqual(join(later)["exit"], 0)
+            gate.check_pending_producer(event)
+            self.assertIsNone(held.poll())
+            self.assertTrue(gate.decide(event, False)["event_descriptors_closed"])
+            self.assertEqual(join(held)["exit"], 23)
+            retired = gate.close()
+            state["closed"] = True
+            self.assertTrue(retired["mark_removed"])
+            self.assertEqual(retired["denied"], [])
+
     def test_child_and_unrelated_opens_progress_while_original_is_held(self):
         with self.fixture() as (path, gate, children, _):
             held = self.start(path, children)

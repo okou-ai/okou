@@ -58,6 +58,12 @@ it rejects foreign, completed and exited producers and does not join them.
 and closes both event descriptors. Unknown/short response or close errors
 make the owner uncertain and prohibit replay.
 
+`stop_accepting()` removes only this original mark and keeps accepted event
+descriptors/PIDFDs owned and blocked until their explicit decision. It lets a
+single-boundary caller stop later helper opens from becoming new events before
+releasing the held open. It neither decides nor joins accepted producers;
+`close()` still retires every queued/observed event and all owned descriptors.
+
 `close` removes the original mark, explicitly denies known and queued events,
 then closes its group and original duplicate. Ordinary context-manager unwind
 uses the same retirement. At most 64 events remain pending, each read is at

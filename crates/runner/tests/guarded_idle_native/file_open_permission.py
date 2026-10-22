@@ -347,6 +347,13 @@ class FileOpenPermission:
             "event_descriptors_closed": True,
         }
 
+    def stop_accepting(self):
+        """Remove this original mark while retaining every already accepted event."""
+        self._check_owner()
+        if self._marked:
+            self._change_mark(2)
+            self._marked = False
+
     def close(self):
         """Unmark, explicitly deny queued/observed events, then retire owned FDs.
 
@@ -355,9 +362,7 @@ class FileOpenPermission:
         """
         self._check_owner()
         started = time.monotonic_ns()
-        if self._marked:
-            self._change_mark(2)
-            self._marked = False
+        self.stop_accepting()
         denied = []
         reads = 0
         while True:
