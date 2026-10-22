@@ -50,7 +50,7 @@ test.each([
     await setupPage({ context, path: RUN_PATH });
     click(await findEnabledButton("Voice input"));
     const emit = await capture.promise;
-    emit(new Float32Array(60 * 16_000).fill(0.1));
+    emit(new Float32Array(15 * 16_000).fill(0.1));
     emit(new Float32Array(16_000).fill(tail));
     click(await findEnabledButton("Stop recording"));
     await waitFor(() => {
