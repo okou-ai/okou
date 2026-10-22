@@ -5,6 +5,8 @@ export const CAPABILITIES = [
   "notify:write",
   "suggestion:read",
   "suggestion:write",
+  "job:read",
+  "job:write",
   "agent:read",
   "agent:write",
   "agent:delete",
@@ -82,6 +84,8 @@ export interface CapabilityMeta {
  * will produce a TypeScript compile error.
  */
 export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
+  "job:read": { group: "Jobs", label: "Read your entrusted jobs" },
+  "job:write": { group: "Jobs", label: "Advance your entrusted jobs" },
   "computer-use:shell:write": {
     group: "Computer Use",
     label: "Use interactive shells on your authorized computer",

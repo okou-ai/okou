@@ -8,10 +8,32 @@ import {
   PROACTIVE_ACTION_BLUEPRINT_KEY,
 } from "@okouai/api-contracts/contracts/proactive-action";
 import {
+  PROACTIVE_JOBS_BLUEPRINT_KEY,
+  PROACTIVE_JOBS_DEFINITION_NAME,
+  PROACTIVE_JOBS_INTERVAL_SECONDS,
+} from "@okouai/api-contracts/contracts/proactive-jobs";
+
+import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowSourceCatalog,
   type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
+
+const PROACTIVE_JOBS_INSTRUCTION = `# Proactive jobs
+
+Advance only work explicitly entrusted as Okou Jobs. This hidden execution Chat is not a user-facing delivery channel. Never create Jobs from ordinary questions or Suggestions. Do not curate Suggestions.
+
+Read the public CLI help, then use \`okou job list --runnable --json\`, following nextAfter with --after to cover every page. Read each selected Job with \`okou job get <id> --json\`. The Job's persisted objective, progress, inputs and Results are the continuation authority; old Chat messages are not current state.
+
+Process Jobs sequentially. Prioritize unprocessed user input, then active Jobs least recently updated, with ID as a stable tie-breaker. Take a bounded, useful step per Job so the run budget does not starve the rest. Re-read a Job before another external action; skip archived Jobs. Respect current permissions and explicit user authorization. A changed default Agent requires rechecking Agent-scoped grants.
+
+Use ordinary skills and tools to advance work, verify the outcome, and save progress through \`okou job update <id> --file update.json --json\`. The JSON carries expected: {status, work} copied from the inspected Job, the new status and work, and optionally result: {id, text, references: [{title, url}]}. Preserve existing work fields you are not changing. work.processedInputIds acknowledges only the exact prefix of input IDs actually read; newly appended input must remain pending. Preserve stable IDs for retries. On a conflict, read current state before deciding; never repeat an uncertain external action.
+
+Choose active while useful work remains. When user input is needed, set waiting_decision with a specific explanation, or waiting_authorization with a stable request ID, current agentId, concrete action, connector and permission. Only request connector permissions supported by the existing permission system. The user responds inside Job details; never ask them to open the worker Chat. Permission grants must actually be effective for the requested action and current Agent. An authorization response is evidence to verify, not a permission grant. Refusal or expiry must not be treated as approval.
+
+Read new replies even on waiting or completed Jobs, then decide whether to continue, remain waiting, or retain completion. A reply such as thanks need not reopen a Job. When work is complete, verify it, publish a Result with a stable UUID, and set work.currentResultId to that ID in the same update with status completed. Put the completion summary and authorized deliverable references on the Result; retain previous Results. The home page shows state and new Results without duplicate notices. Do not send external messages unless the Job explicitly authorizes that delivery.
+
+Archived is terminal for automatic execution. Never restore it through stale progress, pending input or callback messages. If no runnable Jobs remain, finish; the system sleeps until new eligible work or user input arrives. Further eligible runs wait five minutes after completion. Missing CLI capability or temporary tool failure is an execution error, not a completed Job or a fabricated user-decision blocker.`;
 
 const MORNING_BRIEF_CONTEXT_INSTRUCTION = `# Morning Brief
 
@@ -154,6 +176,31 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
   Object.freeze<OfficialWorkflowSourceCatalog>({
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
+      {
+        name: PROACTIVE_JOBS_DEFINITION_NAME,
+        lifecycle: "active",
+        workflow: {
+          displayName: "Proactive jobs",
+          description:
+            "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
+          instruction: PROACTIVE_JOBS_INSTRUCTION,
+          files: [],
+        },
+        blueprints: [
+          {
+            key: PROACTIVE_JOBS_BLUEPRINT_KEY,
+            parameters: [],
+            desiredState: {
+              kind: "schedule",
+              schedule: {
+                type: "loop",
+                intervalSeconds: PROACTIVE_JOBS_INTERVAL_SECONDS,
+              },
+            },
+          },
+        ],
+        presentation: { category: "productivity" },
+      },
       {
         name: PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
         lifecycle: "active",

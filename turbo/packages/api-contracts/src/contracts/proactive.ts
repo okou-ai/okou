@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export type ProactiveWorkflowKind = "suggestions" | "action";
+export type ProactiveWorkflowKind = "suggestions" | "action" | "jobs";
 
 export const proactivePreferenceSchema = z.object({
   enabled: z.boolean(),

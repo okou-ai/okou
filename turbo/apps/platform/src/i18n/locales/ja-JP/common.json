@@ -1920,6 +1920,47 @@
       "useDefault": "デフォルトを使用"
     },
     "documentTitle": "チャット",
+    "entrustedJobs": {
+      "archive": "Archive job",
+      "authorize": "Authorize",
+      "currentGrant": "Current access: {{scope}} · {{expiry}}",
+      "decline": "Decline",
+      "declined": "Authorization declined",
+      "details": "Job details",
+      "detailsDescription": "Review progress, reply, or view the result here.",
+      "duration": "Allow access for",
+      "durations": {
+        "1h": "1 hour",
+        "24h": "24 hours",
+        "7d": "7 days",
+        "always": "Always"
+      },
+      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "filters": {
+        "archived": "Archived",
+        "history": "History",
+        "home": "Current"
+      },
+      "granted": "Authorization saved",
+      "loading": "Loading Jobs",
+      "next": "Next",
+      "noExpiry": "No expiry",
+      "previous": "Previous",
+      "progress": "Progress",
+      "replies": "Your replies",
+      "reply": "Reply",
+      "result": "Result",
+      "retry": "Retry",
+      "saved": "Saved for the next evaluation",
+      "saveReply": "Save reply",
+      "states": {
+        "active": "In progress",
+        "archived": "Archived",
+        "completed": "Completed",
+        "waiting_authorization": "Waiting for authorization",
+        "waiting_decision": "Waiting for your decision"
+      }
+    },
     "errors": {
       "genericTitle": "この実行を完了できませんでした",
       "loadMessages": "メッセージの読み込みに失敗しました",
@@ -2521,6 +2562,7 @@
       "tasks": {
         "document": "ドキュメント",
         "image": "画像",
+        "jobs": "Jobs",
         "presentation": "スライド",
         "suggestions": "提案",
         "visualization": "可視化",
@@ -5481,6 +5523,15 @@
         "retry": "再試行",
         "retryMessage": "自発的なアクションの設定を読み込めないか、更新できませんでした。再試行してください。",
         "title": "自発的なアクション"
+      },
+      "proactiveJobs": {
+        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
+        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
+        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
+        "preparing": "Preparing your jobs. You can turn this off at any time.",
+        "retry": "Retry",
+        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive jobs"
       },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",

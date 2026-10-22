@@ -4,7 +4,8 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
-import { and, asc, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, ne, or } from "drizzle-orm";
+import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -106,6 +107,10 @@ const recoverOfficialSchedule$ = command(
         and(
           observedWorkflowAutomationCondition(automation),
           eq(workflowAutomations.enabled, false),
+          ne(
+            workflowAutomations.officialBlueprintKey,
+            PROACTIVE_JOBS_BLUEPRINT_KEY,
+          ),
           eq(workflowAutomations.officialIntendedEnabled, true),
           // A catalog retirement or replacement wins over this recovery attempt.
           eq(officialWorkflowCatalogState.acceptedReleaseId, catalog.releaseId),

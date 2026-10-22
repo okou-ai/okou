@@ -1,5 +1,9 @@
 import { AGENT_EXECUTION_TIMEOUT_SECONDS } from "@okouai/api-contracts/contracts/runners";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computed, type Computed } from "ccstate";
 import type { BootstrapAgent } from "../agent-data.service";
 import { buildAgentIdentityPrompt } from "../agent-identity-prompt.service";
@@ -41,12 +45,17 @@ export function createAgentPrompt(
       systemPromptVariables: {
         agentIdentity: agent ? (buildAgentIdentityPrompt(agent) ?? "") : "",
         executionLimit: buildExecutionTimeLimitPrompt(),
-        tools: buildAgentToolsPrompt(
-          buildAgentToolsPromptInputs({
-            featureSwitchContext,
-            cloudBrowserEnabled,
-          }),
-        ),
+        tools:
+          buildAgentToolsPrompt(
+            buildAgentToolsPromptInputs({
+              featureSwitchContext,
+              cloudBrowserEnabled,
+            }),
+          ) +
+          (agent?.id === agent?.defaultAgentId &&
+          isFeatureEnabled(FeatureSwitchKey.ProactiveJobs, featureSwitchContext)
+            ? "\n- Jobs: create a persistent Job only when the user explicitly entrusts work as an Okou Job. Use `okou job --help`, then `okou job create --file <path> --json` with a stable UUID, title and objective. Ordinary questions, tasks and Suggestions do not become Jobs automatically. `okou job list --json` and `okou job get <id> --json` read saved progress and Results. User replies and permission responses belong to Job details. Never infer permission from a stored approval or bypass current tool grants."
+            : ""),
       },
       userPromptVariables: {},
       skillVolumes: [],

@@ -48,11 +48,16 @@ import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { now, nowDate } from "../../lib/time";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
-import { appendCanonicalChatEventsSql } from "./chat-event-append.service";
+import {
+  appendCanonicalChatEventsSql,
+  canonicalChatEventAppendCtes,
+} from "./chat-event-append.service";
+import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/proactive-jobs";
+import { jobsOwnerEnabledSql, runnableJobsExistSql } from "./user-jobs-query";
 import {
   workflowCallbackReceiptPlan,
   workflowWebhookReceiptPlan,
@@ -569,6 +574,72 @@ interface PreparedWorkflowInputCommit {
   readonly timing: ApiDispatchTimingCollector;
 }
 
+/** The Jobs schedule anchor, canonical input, context and queue commit together. */
+const commitJobsWorkflowInput$ = command(
+  async (
+    { set },
+    input: PreparedWorkflowInputCommit,
+    signal: AbortSignal,
+  ): Promise<ChatInputEnqueueCommit | null> => {
+    const { args, plan, source, model } = input;
+    const { automation, chatThreadId, agentId } = args.due;
+    if (
+      source.steps.length !== 0 ||
+      model.threadModelReplacement !== null ||
+      args.scheduleClaim
+    ) {
+      throw new Error(
+        "Jobs admission requires an Official schedule without an external event source",
+      );
+    }
+    const database = set(writeDb$);
+    const at = nowDate();
+    const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
+    const claim = database
+      .update(workflowAutomations)
+      .set({ nextRunAt: null, lastRunAt: at, updatedAt: at })
+      .where(
+        and(
+          eq(workflowAutomations.id, automation.id),
+          eq(workflowAutomations.enabled, true),
+          eq(
+            workflowAutomations.officialBlueprintKey,
+            PROACTIVE_JOBS_BLUEPRINT_KEY,
+          ),
+          automation.nextRunAt === null
+            ? isNull(workflowAutomations.nextRunAt)
+            : eq(workflowAutomations.nextRunAt, automation.nextRunAt),
+          sql`${workflowAutomations.lastRunAt} IS NOT DISTINCT FROM ${automation.lastRunAt}::timestamp`,
+          jobsOwnerEnabledSql(owner, agentId),
+          runnableJobsExistSql(owner),
+          sql`NOT EXISTS (SELECT 1 FROM agent_runs AS running WHERE running.workflow_automation_id = ${automation.id}::uuid AND running.status IN ('pending', 'running'))`,
+          sql`NOT EXISTS (SELECT 1 FROM chat_events AS pending JOIN chat_automation_context AS context ON context.id = pending.context_id WHERE context.automation_id = ${automation.id}::uuid AND pending.run_id IS NULL AND pending.event_type = 'input.automation' AND NOT EXISTS (SELECT 1 FROM chat_events AS revoker WHERE revoker.revokes_event_id = pending.id))`,
+        ),
+      )
+      .returning({ id: workflowAutomations.id });
+    const queue = queuedChatThreadEnqueuePlan({
+      chatThreadId,
+      orgId: automation.orgId,
+    });
+    // Context is inserted only for the canonical event accepted in this statement.
+    const inserted = (
+      await database.execute(sql`WITH accepted_jobs_anchor AS (${claim.getSQL()}),
+    ${canonicalChatEventAppendCtes([plan.row], plan.conflict, sql`EXISTS (SELECT 1 FROM accepted_jobs_anchor)`)},
+    automation_context AS (
+      INSERT INTO chat_automation_context (id, chat_thread_id, automation_id, workflow_name, event_type, event_payload, connector_source_id, trigger_brief, created_at)
+      SELECT ${plan.context.id}::uuid, ${plan.context.chatThreadId}::uuid, ${plan.context.automationId}::uuid, ${plan.context.workflowName}, ${plan.context.eventType}, ${sql.param(plan.context.eventPayload, chatAutomationContext.eventPayload)}, ${plan.context.connectorSourceId}::uuid, ${plan.context.triggerBrief}, ${sql.param(plan.context.createdAt, chatAutomationContext.createdAt)} FROM inserted
+      ON CONFLICT DO NOTHING RETURNING id
+    ), queued AS (
+      INSERT INTO queued_chat_threads (chat_thread_id, org_id, queued_at)
+      SELECT ${chatThreadId}::uuid, ${automation.orgId}, ${sql.param(queue.values.queuedAt, queuedChatThreads.queuedAt)} FROM automation_context
+      ON CONFLICT (chat_thread_id) DO UPDATE SET queued_at = greatest(EXCLUDED.queued_at, queued_chat_threads.queued_at + interval '1 millisecond')
+    ) SELECT id FROM inserted`)
+    ).rowCount;
+    signal.throwIfAborted();
+    return inserted === 0 ? null : { eventId: plan.row.id, committedAt: now() };
+  },
+);
+
 /** Compose the existing append from plain values; SQL executes in the owner. */
 function pendingTickRevocationSql(
   chatThreadId: string,
@@ -597,6 +668,12 @@ const commitWorkflowInput$ = command(
     input: PreparedWorkflowInputCommit,
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
+    if (
+      input.args.due.automation.officialBlueprintKey ===
+      PROACTIVE_JOBS_BLUEPRINT_KEY
+    ) {
+      return await set(commitJobsWorkflowInput$, input, signal);
+    }
     const { args, plan, source, replacePendingTicks, model, timing } = input;
     const { automation, chatThreadId } = args.due;
     const queueTarget = { chatThreadId, orgId: automation.orgId };
@@ -751,6 +828,19 @@ const workflowQueueDisplayName$ = command(
   },
 );
 
+function workflowAutomationAdmissionTiming(args: RunWorkflowAutomationNowArgs) {
+  const timing = args.timing ?? new ApiDispatchTimingCollector();
+  if (!args.timing) {
+    timing.recordElapsed(
+      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
+      "nested",
+      args.apiStartTime,
+    );
+  }
+
+  return timing;
+}
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
@@ -758,14 +848,7 @@ export const runWorkflowAutomationNow$ = command(
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
     const { automation, chatThreadId } = args.due;
-    const timing = args.timing ?? new ApiDispatchTimingCollector();
-    if (!args.timing) {
-      timing.recordElapsed(
-        "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-        "nested",
-        args.apiStartTime,
-      );
-    }
+    const timing = workflowAutomationAdmissionTiming(args);
 
     const { scheduleClaim } = args;
     const replacePendingTicks = pendingTickReplacement(args);
@@ -829,6 +912,13 @@ export const runWorkflowAutomationNow$ = command(
               }
               throw attempt.error;
             }
+            if (
+              attempt.value === null &&
+              automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY
+            ) {
+              admissionOutcome = "superseded";
+              return false;
+            }
             enqueueCommit = attempt.value ?? undefined;
             admissionOutcome = "inserted";
             return true;
@@ -874,6 +964,10 @@ export const runWorkflowAutomationNow$ = command(
       );
       waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
-    return workflowEnqueueResult(scheduleClaim !== undefined, enqueued);
+    return workflowEnqueueResult(
+      scheduleClaim !== undefined ||
+        automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY,
+      enqueued,
+    );
   },
 );

@@ -182,6 +182,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ProactiveJobs]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Proactive jobs",
+    description:
+      "Automatically advance explicitly entrusted Jobs and show their progress and Results.",
+    enabled: false,
+  },
   [FeatureSwitchKey.BuiltinDocumentTemplates]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Built-in document templates",
