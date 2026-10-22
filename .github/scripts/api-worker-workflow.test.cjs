@@ -23,19 +23,19 @@ function jobs(source) {
   );
 }
 function field(source, key, indent = 4) {
-  const match = source.match(
-    new RegExp(
-      `^ {${indent}}${key}: ([^\\n]*)(?:\\n((?: {${indent + 2},}[^\\n]*\\n|\\n)*))?`,
-      "m",
-    ),
-  );
-  assert.ok(match, `Missing ${key}`);
-  return ["|", ">-"].includes(match[1])
-    ? match[2]
-        .split("\n")
-        .map((line) => line.slice(indent + 2))
-        .join("\n")
-    : match[1];
+  const lines = source.split("\n");
+  const prefix = `${" ".repeat(indent)}${key}: `;
+  const index = lines.findIndex((line) => line.startsWith(prefix));
+  assert.ok(index >= 0, `Missing ${key}`);
+  const value = lines[index].slice(prefix.length);
+  if (!["|", ">-"].includes(value)) return value;
+  const body = [];
+  const bodyPrefix = " ".repeat(indent + 2);
+  for (const line of lines.slice(index + 1)) {
+    if (line.trim() !== "" && !line.startsWith(bodyPrefix)) break;
+    body.push(line.slice(indent + 2));
+  }
+  return body.join("\n");
 }
 function dependencies(job) {
   const inline = job.match(/^    needs: \[([^\]]+)\]/m);
