@@ -160,12 +160,6 @@ test("Lab keeps staff-only data rollouts unavailable outside their audience", as
         FeatureSwitchKey.Commerce,
     ),
   ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(
-      metadata[FeatureSwitchKey.SocialDataExpansion].displayName ??
-        FeatureSwitchKey.SocialDataExpansion,
-    ),
-  ).not.toBeInTheDocument();
 });
 
 test("The maintainer can manage the remote UI switch in Lab", async () => {

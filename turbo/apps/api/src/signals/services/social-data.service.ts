@@ -12,8 +12,6 @@ import {
   type SocialDataQuoteResponse,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -43,34 +41,10 @@ import {
 } from "./social-data-provider-catalog";
 
 import { SocialDataProviderError } from "./social-data-provider-error";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   completedSocialDataPage,
   socialDataCollectionView,
 } from "./social-data-collection";
-
-const expandedSocialAccess$ = command(
-  async ({ set }, auth: Actor, signal: AbortSignal) => {
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return isFeatureEnabled(FeatureSwitchKey.SocialDataExpansion, context);
-  },
-);
-
-function expandedRequest(request: SocialDataRequest): boolean {
-  return (
-    request.platform === "douyin" ||
-    request.platform === "weibo" ||
-    request.operation === "replies" ||
-    request.operation === "followers" ||
-    request.operation === "following"
-  );
-}
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -230,16 +204,6 @@ export const quoteSocialData$ = command(
     | { readonly status: 200; readonly body: SocialDataQuoteResponse }
     | ErrorResponse
   > => {
-    if (
-      expandedRequest(args.body) &&
-      !(await set(expandedSocialAccess$, args.auth, signal))
-    ) {
-      return errorResponse(
-        403,
-        "FORBIDDEN",
-        "This Social data platform is not available.",
-      );
-    }
     const db = set(writeDb$);
     const result = await settle(
       (async () => {
@@ -446,16 +410,6 @@ export const createSocialDataJob$ = command(
     signal.throwIfAborted();
     if (existing) {
       return replayJob(existing, args.body, args.source?.id ?? null);
-    }
-    if (
-      expandedRequest(args.body) &&
-      !(await set(expandedSocialAccess$, args.auth, signal))
-    ) {
-      return errorResponse(
-        403,
-        "FORBIDDEN",
-        "This Social data platform is not available.",
-      );
     }
     if (args.source) {
       const [successor] = await db

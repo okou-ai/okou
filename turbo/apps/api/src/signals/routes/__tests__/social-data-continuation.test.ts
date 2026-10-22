@@ -5,7 +5,6 @@ import {
   socialDataContract,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -13,12 +12,10 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { billingStatusRoutes } from "../billing-status";
 import { socialDataRoutes } from "../social-data";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createPublicBillingScenario } from "./helpers/public-billing-scenario";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -43,8 +40,7 @@ function authenticate(actor: ApiTestUser) {
 }
 
 async function scenario() {
-  const orgId = createUniqueStaffOrgIdFixture();
-  const actor = createBddApi(context).user({ orgId });
+  const actor = createBddApi(context).user();
   const billing = createPublicBillingScenario(context);
   let restoreSetup: (() => void) | undefined;
   billing.releaseBeforeDrain(() => {
@@ -61,20 +57,11 @@ async function scenario() {
   });
   restoreSetup = undefined;
   mockEnv("OKOU_SOCIAL_MONID_API_KEY", "social-continuation-test-key");
-  await billing.run(() => {
-    return updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.SocialDataExpansion]: true,
-      },
-    );
-  });
   const app = setupApp({ context, routes: ROUTES });
   const social = app(socialDataContract);
   return {
     actor,
-    orgId,
+    orgId: actor.orgId,
     run: billing.run,
     social,
     async credits() {
@@ -487,7 +474,7 @@ describe("Social data explicit page continuation", () => {
     });
   });
 
-  it("keeps expanded pages opt-in for old lists and recovers owned results after the flag is disabled", async () => {
+  it("keeps expanded pages opt-in for old lists and recovers owned results", async () => {
     const setup = await scenario();
     await setup.run(async () => {
       const provider = douyinPages([
@@ -546,29 +533,6 @@ describe("Social data explicit page continuation", () => {
       expect(provider.runs).toHaveLength(1);
       await expect(setup.credits()).resolves.toBe(before);
 
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...setup.actor, orgId: setup.orgId },
-        {
-          [FeatureSwitchKey.SocialDataExpansion]: false,
-        },
-      );
-      await accept(
-        setup.social.quote({
-          headers: authenticate(setup.actor),
-          body: REQUEST,
-        }),
-        [403],
-      );
-      await accept(
-        setup.social.create({
-          headers: authenticate(setup.actor),
-          body: { ...REQUEST, requestId: randomUUID() },
-        }),
-        [403],
-      );
-      await accept(quoteNext(setup, root.body.jobId), [403]);
-      await accept(continuePage(setup, root.body.jobId), [403]);
       const recoveredList = await accept(
         setup.social.list({
           headers: authenticate(setup.actor),
