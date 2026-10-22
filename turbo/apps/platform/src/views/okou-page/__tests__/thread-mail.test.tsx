@@ -562,6 +562,43 @@ describe("thread email manager", () => {
     expect(location.has("mailQuery")).toBeFalsy();
   });
 
+  it("restores mail history ahead of another pane's utility sidebar", async () => {
+    installMails();
+    const params = new URLSearchParams({
+      sidebar: RIGHT_THREAD_ID,
+      mailThread: RIGHT_THREAD_ID,
+      mailView: "list",
+    });
+    await openChat(
+      true,
+      false,
+      `/chats/${THREAD_ID}?${params}`,
+      RIGHT_THREAD_ID,
+    );
+    const list = await screen.findByRole("dialog", { name: "Emails" });
+    click(await link("Open email: Proposal 12", list));
+    await screen.findByText("Proposal details 12");
+    const leftPane = document.querySelector(
+      `[data-chat-thread-container-id="${THREAD_ID}"]`,
+    );
+    if (!leftPane) {
+      throw new Error("Missing left chat pane");
+    }
+    click(await button("Open artifacts", leftPane));
+    await screen.findByTestId("thread-sidebar-artifacts");
+    act(() => {
+      window.history.back();
+    });
+    await screen.findByText("Proposal details 12");
+    act(() => {
+      window.history.back();
+    });
+    await screen.findByRole("dialog", { name: "Emails" });
+    expect(
+      screen.queryByTestId("thread-sidebar-artifacts"),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps a failed initial list read accessible and retries from the manager", async () => {
     const fixture = installMails();
     fixture.listing.fail = true;

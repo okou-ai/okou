@@ -14,6 +14,7 @@ import { pageSignal$ } from "../page-signal.ts";
 import { delay } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
+  threadMailLocation$,
   threadMailParams,
   type ThreadMailDestination,
 } from "./thread-mail-location.ts";
@@ -37,8 +38,16 @@ export const activeThreadSidebar$ = computed(
     readonly target: ThreadSidebarTarget;
     readonly animateEntry: boolean;
   } | null => {
+    const mailLocation = get(threadMailLocation$);
+    if (mailLocation?.view === "list") {
+      return null;
+    }
     for (const thread of [get(currentLeftThread$), get(currentRightThread$)]) {
-      if (!thread) {
+      // History can restore mail while another pane retains its utility target.
+      if (
+        !thread ||
+        (mailLocation && mailLocation.threadId !== thread.threadId)
+      ) {
         continue;
       }
       const target = get(thread.sidebar.target$);
