@@ -836,7 +836,7 @@ const refreshRecoveredBillingCandidate$ = command(
       resolveStripeSubscriptionSnapshot(entitlementArgs),
     );
     const projected = db
-      .$with("refreshed_recovered_plan")
+      .$with("refreshed_recovered_plan", {})
       .as(
         stripePlanEntitlementInsertSql(
           db.select({ orgId: changed.orgId }).from(changed).getSQL(),

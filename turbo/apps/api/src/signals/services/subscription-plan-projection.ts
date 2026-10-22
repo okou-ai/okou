@@ -118,10 +118,9 @@ function stripePlanEntitlementUpdateSet(
 export function stripePlanEntitlementInsertSql(
   parentOrgIds: SQL,
   values: PlanEntitlementProjection,
-  showUsagePack: SQL = sql.param(
-    values.showUsagePack,
-    orgPlanEntitlements.showUsagePack,
-  ),
+  showUsagePack: SQL = sql
+    .param(values.showUsagePack, orgPlanEntitlements.showUsagePack)
+    .getSQL(),
 ): SQL {
   const updateSet = stripePlanEntitlementUpdateSet(values);
   const snapshot = stripeSubscriptionSnapshotSql(values);
