@@ -106,7 +106,19 @@ impl SandboxFactory for MockSandboxFactory {
             Some(o) => MockSandbox::with_overrides(config.id.to_string(), Arc::clone(o)),
             None => MockSandbox::new(config.id.to_string()),
         };
-        let sandbox = match self.create_backings.lock_ignoring_poison().pop_front() {
+        let backing = self
+            .create_backings
+            .lock_ignoring_poison()
+            .pop_front()
+            .or_else(|| {
+                self.overrides
+                    .as_ref()?
+                    .factory
+                    .create_backings
+                    .lock_ignoring_poison()
+                    .pop_front()
+            });
+        let sandbox = match backing {
             Some(backing) => sandbox.with_backing_process(backing),
             None => sandbox,
         };

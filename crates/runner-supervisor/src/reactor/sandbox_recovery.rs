@@ -250,7 +250,7 @@ impl BlankRecovery {
         job: IdleDestroyJob,
     ) -> Result<(), ExecutorError> {
         let cleanup = job
-            .run_retaining_lease("disk_replacement_blank_failed")
+            .run_retaining_lease_with_confirmed_exit("disk_replacement_blank_failed")
             .await;
         if cleanup.outcome != DestroyOutcome::Completed {
             self.current.mark_unresolved();

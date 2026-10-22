@@ -12,13 +12,31 @@ const WAIT: Duration = Duration::from_secs(5);
 
 #[tokio::test]
 async fn exhausted_home_cleanup_prefers_existing_blank_then_bounds_cold_fallback() {
-    for (blank_fails, uncertain_retirement) in [(false, false), (true, false), (false, true)] {
+    for (blank_fails, retirement) in [
+        (false, "confirmed"),
+        (true, "confirmed"),
+        (false, "panic"),
+        (false, "failed_wait"),
+        (false, "missing_wait"),
+    ] {
         let mut profiles = test_profiles();
         profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
         // A capacity of two disables automatic blank replenishment. Seed one
         // actual parked boundary resource, so the budget assertions have no
         // unrelated background preparation reservation.
         let overrides = Arc::new(MockSandboxOverrides::new());
+        let (blank_exit, blank_backing) = sandbox_mock::MockBackingProcess::channel();
+        blank_exit.confirm_exit();
+        overrides.push_create_backing(blank_backing);
+        if retirement != "missing_wait" {
+            let (original_exit, original_backing) = sandbox_mock::MockBackingProcess::channel();
+            if retirement == "failed_wait" {
+                original_exit.fail_wait();
+            } else {
+                original_exit.confirm_exit();
+            }
+            overrides.push_create_backing(original_backing);
+        }
         let (mut config, env) =
             mock_run_config_with_overrides(profiles, 16, 32_768, 2, overrides.clone());
         let budget = config.capacity.budget.clone();
@@ -86,7 +104,7 @@ async fn exhausted_home_cleanup_prefers_existing_blank_then_bounds_cold_fallback
             pattern:"guest-agent-binary".into(), exit_code:0,
             stdout:b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 6000000 6000000 50% /\n/dev/vdb 24000000 24000000 0 100% /home/user\nVM0_DF_INODES_V1\n/dev/root 800000 100000 700000 13% /\n/dev/vdb 1500000 300000 1200000 20% /home/user\n".to_vec(), stderr:Vec::new(),
         });
-        if uncertain_retirement {
+        if retirement == "panic" {
             overrides.push_destroy_panic("disk-full resource retirement uncertain");
         }
         let wait = MockLifecycleGate::new();
@@ -97,7 +115,7 @@ async fn exhausted_home_cleanup_prefers_existing_blank_then_bounds_cold_fallback
         context.prompt = "Current input survives every resource replacement".into();
         let task = tokio::spawn(run(config));
         push_job(&env, run_id, "vm0/default", Some(context));
-        if uncertain_retirement {
+        if retirement != "confirmed" {
             let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
             assert_ne!(completion.exit_code, 0);
             assert_eq!(overrides.create_configs().len(), 2);

@@ -1397,12 +1397,16 @@ pub(super) async fn destroy_sandbox_panic_safe(
     factory: &dyn SandboxFactory,
     sandbox: Box<dyn Sandbox>,
 ) -> DestroySandboxOutcome {
+    let backing = sandbox.backing_process();
     if AssertUnwindSafe(factory.destroy(sandbox))
         .catch_unwind()
         .await
         .is_err()
     {
         warn!("sandbox destroy panicked after start failure");
+        DestroySandboxOutcome::Uncertain
+    } else if backing.is_some() && !crate::idle_pool::confirm_backing_exit(backing).await {
+        warn!("sandbox destroy returned without confirmed backing exit");
         DestroySandboxOutcome::Uncertain
     } else {
         DestroySandboxOutcome::Completed
@@ -1467,9 +1471,13 @@ pub(super) async fn replace_disk_full_sandbox(
             .await;
     }
     let destroyed = match attempt.outcome.sandbox.take() {
-        Some(sandbox) => destroy_sandbox_panic_safe(factory, sandbox)
-            .await
-            .is_completed(),
+        Some(sandbox) => {
+            let has_backing = sandbox.backing_process().is_some();
+            destroy_sandbox_panic_safe(factory, sandbox)
+                .await
+                .is_completed()
+                && has_backing
+        }
         None => false,
     };
     if !destroyed || inputs.controls.cancel.is_cancelled() {

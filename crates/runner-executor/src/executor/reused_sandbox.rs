@@ -230,9 +230,12 @@ async fn replace_unusable_blank(
         .network_log_session
         .close_for_upload(context.run_id, &config.network_log_drain)
         .await;
+    let has_required_backing =
+        !inputs.controls.disk_recovery || prepared.sandbox.backing_process().is_some();
     let destroy_completed = destroy_sandbox_panic_safe(factory, prepared.sandbox)
         .await
-        .is_completed();
+        .is_completed()
+        && has_required_backing;
     if !unregister_completed || !destroy_completed {
         if !destroy_completed
             && inputs.controls.disk_recovery

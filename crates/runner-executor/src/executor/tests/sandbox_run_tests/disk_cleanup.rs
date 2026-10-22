@@ -3,6 +3,17 @@ use guest_contracts::disk_cleanup::{DiskCleanupFilesystem, DiskCleanupReport};
 use httpmock::prelude::*;
 use runner_types::types::HomeReuseResult;
 
+fn confirmed_backing() -> Arc<dyn sandbox::SandboxBackingProcess> {
+    let (completion, backing) = sandbox_mock::MockBackingProcess::channel();
+    completion.confirm_exit();
+    backing
+}
+
+fn retiring_factory(overrides: Arc<sandbox_mock::MockSandboxOverrides>) -> MockSandboxFactory {
+    overrides.push_create_backing(confirmed_backing());
+    MockSandboxFactory::with_overrides(overrides)
+}
+
 fn full_filesystem(
     overrides: &sandbox_mock::MockSandboxOverrides,
     filesystem: DiskCleanupFilesystem,
@@ -114,7 +125,7 @@ async fn full_cached_home_is_replaced_with_current_inputs_and_only_final_cold_re
     )));
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 1024);
-    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let factory = retiring_factory(overrides.clone());
     let mut telemetry = test_telemetry(&config, &context);
     let mut outcome = execute_new_sandbox(
         &factory,
@@ -186,7 +197,7 @@ async fn reused_vm_disk_exhaustion_runs_one_clean_replacement() {
     let dir = tempfile::tempdir().unwrap();
     let (config, _api) = test_executor_config_with_startup_api(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let factory = retiring_factory(overrides.clone());
     let mut context = minimal_context();
     context.prompt = "Current reused run".into();
     overrides.push_private_write_files_result(Err(sandbox_write_file_error(
@@ -195,10 +206,10 @@ async fn reused_vm_disk_exhaustion_runs_one_clean_replacement() {
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 1024);
     let id = SandboxId::new_v4();
-    let sandbox = Box::new(MockSandbox::with_overrides(
-        id.to_string(),
-        overrides.clone(),
-    ));
+    let sandbox = Box::new(
+        MockSandbox::with_overrides(id.to_string(), overrides.clone())
+            .with_backing_process(confirmed_backing()),
+    );
     let mut telemetry = test_telemetry(&config, &context);
     let mut outcome = execute_reused_sandbox(
         ReusedSandboxRun {
@@ -256,7 +267,7 @@ async fn bootstrap_recovers_home_and_rootfs_before_starting_one_agent() {
         )));
         full_filesystem(&overrides, filesystem);
         cleanup_report(&overrides, filesystem, 256 * 1024 * 1024);
-        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let factory = retiring_factory(Arc::clone(&overrides));
 
         let outcome =
             run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
@@ -287,7 +298,7 @@ async fn bootstrap_recovers_both_full_filesystems_before_starting_one_agent() {
     both_filesystems_full(&overrides);
     cleanup_report(&overrides, DiskCleanupFilesystem::Rootfs, 256 * 1024 * 1024);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 256 * 1024 * 1024);
-    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let factory = retiring_factory(Arc::clone(&overrides));
 
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await
@@ -322,7 +333,7 @@ async fn insufficient_capacity_on_either_full_filesystem_still_cleans_both() {
             };
             cleanup_report(&overrides, filesystem, available);
         }
-        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let factory = retiring_factory(Arc::clone(&overrides));
 
         let outcome =
             run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
@@ -351,7 +362,7 @@ async fn insufficient_capacity_replaces_the_sandbox_before_starting_one_agent() 
     )));
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 1024);
-    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let factory = retiring_factory(Arc::clone(&overrides));
 
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await
@@ -419,7 +430,7 @@ async fn failed_or_untrusted_cleanup_reports_retire_the_vm_without_in_place_repl
             stdout,
             stderr: Vec::new(),
         });
-        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let factory = retiring_factory(Arc::clone(&overrides));
 
         let outcome =
             run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
@@ -443,7 +454,7 @@ async fn acknowledged_enospc_can_replace_a_vm_when_capacity_inspection_is_unavai
     overrides.push_private_write_files_result(Err(sandbox_write_file_error(
         "No space left on device (os error 28)",
     )));
-    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let factory = retiring_factory(overrides.clone());
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await
         .unwrap();
@@ -467,7 +478,7 @@ async fn second_disk_failure_replaces_once_without_repeating_old_cleanup() {
     }
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 256 * 1024 * 1024);
-    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let factory = retiring_factory(Arc::clone(&overrides));
 
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await
@@ -493,7 +504,7 @@ async fn disk_full_pristine_replacement_is_terminal_without_a_third_sandbox() {
         cleanup_report(&overrides, DiskCleanupFilesystem::Home, 1024);
     }
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
-    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let factory = retiring_factory(overrides.clone());
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await
         .unwrap();
@@ -524,7 +535,7 @@ async fn uncertain_old_sandbox_destruction_prevents_disk_replacement() {
     overrides.push_destroy_panic("uncertain disk-full VM destruction");
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 1024);
-    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let factory = retiring_factory(overrides.clone());
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await
         .unwrap();
@@ -547,7 +558,7 @@ async fn cancellation_while_retiring_disk_full_sandbox_prevents_replacement() {
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 1024);
     let gate = MockLifecycleGate::new();
     overrides.set_destroy_lifecycle_gate(gate.clone());
-    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let factory = retiring_factory(overrides.clone());
     let cancel = tokio_util::sync::CancellationToken::new();
     let context = minimal_context();
     let mut telemetry = test_telemetry(&config, &context);
@@ -579,6 +590,35 @@ async fn cancellation_while_retiring_disk_full_sandbox_prevents_replacement() {
 }
 
 #[tokio::test]
+async fn normal_destroy_without_positive_child_wait_never_starts_a_replacement() {
+    for missing in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+            "No space left on device (os error 28)",
+        )));
+        full_filesystem(&overrides, DiskCleanupFilesystem::Home);
+        cleanup_report(&overrides, DiskCleanupFilesystem::Home, 1024);
+        if !missing {
+            let (completion, backing) = sandbox_mock::MockBackingProcess::channel();
+            completion.fail_wait();
+            overrides.push_create_backing(backing);
+        }
+        let factory = MockSandboxFactory::with_overrides(overrides.clone());
+        let outcome =
+            run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
+                .await
+                .unwrap();
+        assert_eq!(outcome.exit_code(), 1);
+        assert_eq!(overrides.destroy_call_count(), 1);
+        assert_eq!(overrides.create_configs().len(), 1);
+        assert!(overrides.start_agent_process_calls().is_empty());
+        assert!(outcome.startup_report.is_none());
+    }
+}
+
+#[tokio::test]
 async fn uncertain_bootstrap_write_is_not_replayed() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
@@ -588,7 +628,7 @@ async fn uncertain_bootstrap_write_is_not_replayed() {
         stage: sandbox::SandboxOperationTimeoutStage::AwaitingTerminalResponse,
         timeout_ms: 1000,
     }));
-    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let factory = retiring_factory(Arc::clone(&overrides));
 
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await
@@ -611,7 +651,7 @@ async fn inline_instruction_enospc_recovers_before_private_inputs_and_agent_star
     )));
     full_filesystem(&overrides, DiskCleanupFilesystem::Home);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 256 * 1024 * 1024);
-    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let factory = retiring_factory(Arc::clone(&overrides));
     let mut context = minimal_context();
     context.agent_instructions = Some("Preserve these current instructions".into());
 
@@ -639,7 +679,7 @@ async fn disk_error_from_process_start_is_not_replayed() {
         reason: SandboxOperationReason::Guest,
         message: "No space left on device (os error 28)".into(),
     });
-    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+    let factory = retiring_factory(Arc::clone(&overrides));
 
     let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
         .await

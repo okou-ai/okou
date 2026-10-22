@@ -2015,6 +2015,9 @@ async fn execute_inner_run_payload_enospc_inspects_resources_then_starts_one_fre
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (completion, backing) = sandbox_mock::MockBackingProcess::channel();
+    completion.confirm_exit();
+    overrides.push_create_backing(backing);
     overrides.push_private_write_files_result(Err(sandbox_write_file_error(
         "No space left on device (os error 28)",
     )));
