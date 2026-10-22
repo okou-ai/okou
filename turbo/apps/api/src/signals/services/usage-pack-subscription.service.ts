@@ -88,7 +88,8 @@ import {
 } from "./usage-pack-plan-change.service";
 import { completeBillingOperationInvoiceWithInvoice } from "./billing-operation-invoice.service";
 import {
-  publishUsagePackPendingSnapshotCount,
+  assertPendingSnapshotPublished,
+  usagePackPendingSnapshotCountWrite,
   writeUsagePackPendingSnapshots$,
   pendingSnapshotResult,
 } from "./usage-pack-pending-snapshot.service";
@@ -2254,6 +2255,29 @@ function unchangedSubscriptionRootWhere(root: UsagePackSubscriptionRow) {
   );
 }
 
+function usagePackCheckoutRoot(
+  roots: readonly UsagePackSubscriptionRow[],
+  orgId: string,
+  usagePackSubscriptionId: string,
+) {
+  if (
+    roots.some((root) => {
+      return root.orgId !== orgId;
+    })
+  ) {
+    throw new Error("Usage pack subscription moved outside its locked scope");
+  }
+  const subscription = roots.find((root) => {
+    return root.id === usagePackSubscriptionId;
+  });
+  if (!subscription) {
+    throw new Error(
+      `Unknown usage pack subscription: ${usagePackSubscriptionId}`,
+    );
+  }
+  return subscription;
+}
+
 const publishUsagePackCheckoutState$ = command(
   async (
     { set },
@@ -2281,23 +2305,11 @@ const publishUsagePackCheckoutState$ = command(
           ),
         )
         .orderBy(asc(usagePackSubscriptions.id));
-      if (
-        roots.some((root) => {
-          return root.orgId !== args.orgId;
-        })
-      ) {
-        throw new Error(
-          "Usage pack subscription moved outside its locked scope",
-        );
-      }
-      const localSubscription = roots.find((root) => {
-        return root.id === args.usagePackSubscriptionId;
-      });
-      if (!localSubscription) {
-        throw new Error(
-          `Unknown usage pack subscription: ${args.usagePackSubscriptionId}`,
-        );
-      }
+      const localSubscription = usagePackCheckoutRoot(
+        roots,
+        args.orgId,
+        args.usagePackSubscriptionId,
+      );
       await tx
         .insert(usagePackPendingSnapshotGuards)
         .values({ orgId: args.orgId, pendingSnapshotCount: 0 })
@@ -2375,12 +2387,19 @@ const publishUsagePackCheckoutState$ = command(
       }
       // Migration 1132 retired the pending-count trigger. Publish only the
       // actual count transition with the subscription's business writes.
-      await publishUsagePackPendingSnapshotCount(
-        tx,
+      const countWrite = usagePackPendingSnapshotCountWrite(
         args.orgId,
         counts.before,
         counts.after,
       );
+      if (countWrite) {
+        const [publishedCount] = await tx
+          .update(usagePackPendingSnapshotGuards)
+          .set(countWrite.values)
+          .where(countWrite.condition)
+          .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
+        assertPendingSnapshotPublished(publishedCount);
+      }
     });
   },
 );
@@ -3002,6 +3021,16 @@ function throwUsagePackOrgBillingMismatch(
   );
 }
 
+function subscriptionOrgWhere(
+  orgId: string,
+  subscription: UsagePackSubscriptionRow,
+) {
+  return and(
+    eq(orgMetadata.orgId, orgId),
+    eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
+  );
+}
+
 const commitUsagePackPlanActivation$ = command(
   async (
     { set },
@@ -3094,15 +3123,7 @@ const commitUsagePackPlanActivation$ = command(
             const [org] = await tx
               .select({ orgId: orgMetadata.orgId })
               .from(orgMetadata)
-              .where(
-                and(
-                  eq(orgMetadata.orgId, orgId),
-                  eq(
-                    orgMetadata.stripeCustomerId,
-                    subscription.stripeCustomerId,
-                  ),
-                ),
-              );
+              .where(subscriptionOrgWhere(orgId, subscription));
             return throwUsagePackOrgBillingMismatch(org, orgId, subscription);
           })();
         }
@@ -3126,12 +3147,19 @@ const commitUsagePackPlanActivation$ = command(
             set: entitlement,
           });
       }
-      await publishUsagePackPendingSnapshotCount(
-        tx,
+      const countWrite = usagePackPendingSnapshotCountWrite(
         orgId,
         counts.before,
         counts.after,
       );
+      if (countWrite) {
+        const [publishedCount] = await tx
+          .update(usagePackPendingSnapshotGuards)
+          .set(countWrite.values)
+          .where(countWrite.condition)
+          .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
+        assertPendingSnapshotPublished(publishedCount);
+      }
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
@@ -3326,15 +3354,7 @@ const commitUsagePackFulfillment$ = command(
             const [org] = await tx
               .select({ orgId: orgMetadata.orgId })
               .from(orgMetadata)
-              .where(
-                and(
-                  eq(orgMetadata.orgId, orgId),
-                  eq(
-                    orgMetadata.stripeCustomerId,
-                    subscription.stripeCustomerId,
-                  ),
-                ),
-              );
+              .where(subscriptionOrgWhere(orgId, subscription));
             return throwUsagePackOrgBillingMismatch(org, orgId, subscription);
           })();
         }
@@ -3352,12 +3372,19 @@ const commitUsagePackFulfillment$ = command(
         });
       }
       await tx.insert(usagePackInvoiceFulfillments).values(prepared.receipt);
-      await publishUsagePackPendingSnapshotCount(
-        tx,
+      const countWrite = usagePackPendingSnapshotCountWrite(
         orgId,
         pendingCount,
         finalFulfillmentPendingCount(args, owned, projection.advance),
       );
+      if (countWrite) {
+        const [publishedCount] = await tx
+          .update(usagePackPendingSnapshotGuards)
+          .set(countWrite.values)
+          .where(countWrite.condition)
+          .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
+        assertPendingSnapshotPublished(publishedCount);
+      }
       signal.throwIfAborted();
     });
     signal.throwIfAborted();

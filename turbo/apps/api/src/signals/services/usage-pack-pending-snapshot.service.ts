@@ -9,7 +9,6 @@ import { usagePackPendingSnapshotGuards } from "@okouai/db/schema/usage-pack-sub
 
 import { and, eq } from "drizzle-orm";
 import { command } from "ccstate";
-import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -22,25 +21,26 @@ import type {
 } from "./usage-pack-subscription.service";
 const retainedRowSchema = z.record(z.string(), z.unknown());
 
-export async function publishUsagePackPendingSnapshotCount(
-  tx: Pick<Tx, "update">,
+export function usagePackPendingSnapshotCountWrite(
   orgId: string,
   before: number,
   after: number,
-): Promise<void> {
+) {
   if (before === after) {
-    return;
+    return null;
   }
-  const [published] = await tx
-    .update(usagePackPendingSnapshotGuards)
-    .set({ pendingSnapshotCount: after })
-    .where(
-      and(
-        eq(usagePackPendingSnapshotGuards.orgId, orgId),
-        eq(usagePackPendingSnapshotGuards.pendingSnapshotCount, before),
-      ),
-    )
-    .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
+  return {
+    values: { pendingSnapshotCount: after },
+    condition: and(
+      eq(usagePackPendingSnapshotGuards.orgId, orgId),
+      eq(usagePackPendingSnapshotGuards.pendingSnapshotCount, before),
+    ),
+  };
+}
+
+export function assertPendingSnapshotPublished(
+  published: { readonly orgId: string } | undefined,
+): void {
   if (!published) {
     throw new UsagePackPendingSnapshotConflict(
       "Usage pack pending snapshot count changed during publication",

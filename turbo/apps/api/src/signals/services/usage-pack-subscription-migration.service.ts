@@ -35,7 +35,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import {
   getStripeClient,
@@ -2012,67 +2012,68 @@ function latestInvoiceId(subscription: StripeSubscription): string | null {
   return stripeObjectId(subscription.latest_invoice);
 }
 
-async function persistMigrationInvoiceState(
-  db: Db,
-  migration: MigrationRow,
-  selections: readonly MigrationSelectionRow[],
-  subscription: StripeSubscription,
-): Promise<MigrationRow> {
-  const candidateInvoiceIds = new Set(
-    [latestInvoiceId(subscription), migration.stripeInvoiceId].filter(
-      (invoiceId): invoiceId is string => {
-        return invoiceId !== null;
-      },
-    ),
-  );
-  let invoice: StripeInvoice | null = null;
-  for (const invoiceId of candidateInvoiceIds) {
-    const candidate = await retrieveMigrationInvoice(invoiceId);
-    if (migrationInvoiceMatchesSelections(candidate, migration, selections)) {
-      invoice = candidate;
-      break;
-    }
-  }
-  const updatedAt = nowDate();
-  const [updated] = await db
-    .update(usagePackSubscriptionMigrations)
-    .set({
-      status: "scheduled",
-      stripeInvoiceId: invoice?.id ?? migration.stripeInvoiceId,
-      stripePaymentIntentId:
-        (invoice ? invoicePaymentIntentId(invoice) : null) ??
-        migration.stripePaymentIntentId,
-      hostedInvoiceUrl:
-        invoice?.hosted_invoice_url ?? migration.hostedInvoiceUrl,
-      updatedAt,
-    })
-    .where(
-      and(
-        eq(usagePackSubscriptionMigrations.id, migration.id),
-        inArray(usagePackSubscriptionMigrations.status, [
-          ...RECONCILING_MIGRATION_STATUSES,
-        ]),
+// Reconciliation owns the cancellation check after this provider/write phase.
+const persistMigrationInvoiceState$ = command(
+  async (
+    { set },
+    migration: MigrationRow,
+    selections: readonly MigrationSelectionRow[],
+    subscription: StripeSubscription,
+  ): Promise<MigrationRow> => {
+    const db = set(writeDb$);
+    const candidateInvoiceIds = new Set(
+      [latestInvoiceId(subscription), migration.stripeInvoiceId].filter(
+        (invoiceId): invoiceId is string => {
+          return invoiceId !== null;
+        },
       ),
-    )
-    .returning();
-  return updated ?? migration;
-}
+    );
+    let invoice: StripeInvoice | null = null;
+    for (const invoiceId of candidateInvoiceIds) {
+      const candidate = await retrieveMigrationInvoice(invoiceId);
+      if (migrationInvoiceMatchesSelections(candidate, migration, selections)) {
+        invoice = candidate;
+        break;
+      }
+    }
+    const updatedAt = nowDate();
+    const [updated] = await db
+      .update(usagePackSubscriptionMigrations)
+      .set({
+        status: "scheduled",
+        stripeInvoiceId: invoice?.id ?? migration.stripeInvoiceId,
+        stripePaymentIntentId:
+          (invoice ? invoicePaymentIntentId(invoice) : null) ??
+          migration.stripePaymentIntentId,
+        hostedInvoiceUrl:
+          invoice?.hosted_invoice_url ?? migration.hostedInvoiceUrl,
+        updatedAt,
+      })
+      .where(
+        and(
+          eq(usagePackSubscriptionMigrations.id, migration.id),
+          inArray(usagePackSubscriptionMigrations.status, [
+            ...RECONCILING_MIGRATION_STATUSES,
+          ]),
+        ),
+      )
+      .returning();
+    return updated ?? migration;
+  },
+);
 
 /** The Stripe binding, not the conversion UUID, owns the subscription root. */
-async function migrationSubscriptionRoot(
-  db: Pick<Db, "select">,
+function migrationSubscriptionRootWhere(migration: MigrationRow) {
+  return eq(
+    usagePackSubscriptions.stripeSubscriptionId,
+    migration.stripeSubscriptionId,
+  );
+}
+
+function validatedMigrationSubscriptionRoot(
   migration: MigrationRow,
+  root: typeof usagePackSubscriptions.$inferSelect | undefined,
 ) {
-  const [root] = await db
-    .select()
-    .from(usagePackSubscriptions)
-    .where(
-      eq(
-        usagePackSubscriptions.stripeSubscriptionId,
-        migration.stripeSubscriptionId,
-      ),
-    )
-    .limit(1);
   if (
     root &&
     (root.orgId !== migration.orgId ||
@@ -2084,6 +2085,18 @@ async function migrationSubscriptionRoot(
   }
   return root ?? null;
 }
+
+// The caller checks cancellation after ownership validation, as before.
+const readMigrationSubscriptionRoot$ = command(
+  async ({ get }, migration: MigrationRow) => {
+    const [root] = await get(db$)
+      .select()
+      .from(usagePackSubscriptions)
+      .where(migrationSubscriptionRootWhere(migration))
+      .limit(1);
+    return validatedMigrationSubscriptionRoot(migration, root);
+  },
+);
 
 function migrationPlanRootConversion(
   migration: MigrationRow,
@@ -2129,18 +2142,12 @@ function migrationPlanRootConversion(
   };
 }
 
-async function validateMigrationAllocations(
-  db: Pick<Db, "select">,
+function validateMigrationAllocations(
+  allocations: readonly (typeof usagePackAllocations.$inferSelect)[],
   migration: MigrationRow,
   selections: readonly MigrationSelectionRow[],
-  scope: { readonly rootId: string; readonly requireSelections: boolean },
-  signal: AbortSignal,
-): Promise<void> {
-  const allocations = await db
-    .select()
-    .from(usagePackAllocations)
-    .where(eq(usagePackAllocations.usagePackSubscriptionId, scope.rootId));
-  signal.throwIfAborted();
+  requireSelections: boolean,
+): void {
   const same = selections.every((selection) => {
     return allocations.some((allocation) => {
       return (
@@ -2154,39 +2161,41 @@ async function validateMigrationAllocations(
   });
   if (
     allocations.length !== selections.length ||
-    (scope.requireSelections && !same)
+    (requireSelections && !same)
   ) {
     throw new Error(`Usage pack migration ${migration.id} allocations changed`);
   }
 }
 
-async function committedMigrationMaterialization(
-  db: Db,
-  migration: MigrationRow,
-  selections: readonly MigrationSelectionRow[],
-  signal: AbortSignal,
-): Promise<string> {
-  const winner = await migrationSubscriptionRoot(db, migration);
-  signal.throwIfAborted();
-  if (
-    !winner ||
-    winner.tier !== migration.targetTier ||
-    winner.stripePlanPriceId !== migration.stripePlanPriceId
-  ) {
-    throw new Error(
-      `Usage pack migration ${migration.id} has no matching materialized root`,
-    );
-  }
-  await validateMigrationAllocations(
-    db,
-    migration,
-    selections,
-    { rootId: winner.id, requireSelections: true },
-    signal,
-  );
-  signal.throwIfAborted();
-  return winner.id;
-}
+const committedMigrationMaterialization$ = command(
+  async (
+    { get, set },
+    migration: MigrationRow,
+    selections: readonly MigrationSelectionRow[],
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const db = get(db$);
+    const winner = await set(readMigrationSubscriptionRoot$, migration);
+    signal.throwIfAborted();
+    if (
+      !winner ||
+      winner.tier !== migration.targetTier ||
+      winner.stripePlanPriceId !== migration.stripePlanPriceId
+    ) {
+      throw new Error(
+        `Usage pack migration ${migration.id} has no matching materialized root`,
+      );
+    }
+    const allocations = await db
+      .select()
+      .from(usagePackAllocations)
+      .where(eq(usagePackAllocations.usagePackSubscriptionId, winner.id));
+    signal.throwIfAborted();
+    validateMigrationAllocations(allocations, migration, selections, true);
+    signal.throwIfAborted();
+    return winner.id;
+  },
+);
 
 function materializedMigrationAllocations(
   migration: MigrationRow,
@@ -2230,7 +2239,12 @@ const materializeUsagePackSnapshot$ = command(
         // A Plan root already bound to this Stripe subscription keeps both
         // identities. The migration UUID identifies the conversion operation,
         // not a second root competing for the same unique provider binding.
-        const existing = await migrationSubscriptionRoot(tx, migration);
+        const [root] = await tx
+          .select()
+          .from(usagePackSubscriptions)
+          .where(migrationSubscriptionRootWhere(migration))
+          .limit(1);
+        const existing = validatedMigrationSubscriptionRoot(migration, root);
         const [locked] = await tx
           .select()
           .from(usagePackSubscriptionMigrations)
@@ -2247,12 +2261,7 @@ const materializeUsagePackSnapshot$ = command(
         const currentSelections = await tx
           .select()
           .from(usagePackSubscriptionMigrationSelections)
-          .where(
-            eq(
-              usagePackSubscriptionMigrationSelections.migrationId,
-              migration.id,
-            ),
-          );
+          .where(migrationSelectionsWhere(migration.id));
         assertMigrationConfiguration(
           expectedConfiguration,
           locked,
@@ -2310,12 +2319,16 @@ const materializeUsagePackSnapshot$ = command(
               );
           }
         } else {
-          await validateMigrationAllocations(
-            tx,
+          const allocations = await tx
+            .select()
+            .from(usagePackAllocations)
+            .where(eq(usagePackAllocations.usagePackSubscriptionId, rootId));
+          signal.throwIfAborted();
+          validateMigrationAllocations(
+            allocations,
             migration,
             selections,
-            { rootId, requireSelections: locked.status !== "completed" },
-            signal,
+            locked.status !== "completed",
           );
         }
         signal.throwIfAborted();
@@ -2331,8 +2344,8 @@ const materializeUsagePackSnapshot$ = command(
     }
     // The losing transaction has rolled back. Resolve one committed canonical
     // root once; neither generate another UUID nor rerun materialization.
-    return await committedMigrationMaterialization(
-      db,
+    return await set(
+      committedMigrationMaterialization$,
       migration,
       selections,
       signal,
@@ -2541,38 +2554,30 @@ function invoicePaidAt(invoice: StripeInvoice): Date {
   return typeof paidAt === "number" ? new Date(paidAt * 1000) : nowDate();
 }
 
-/**
- * Exact-row CAS replaces the row lock: a concurrent writer that moved the
- * migration rolls back the caller's purchases for a retry.
- */
-async function completeLockedMigration(
-  tx: Pick<Db, "update">,
-  args: {
-    readonly migrationId: string;
-    readonly rowVersion: string;
-    readonly invoice: StripeInvoice;
-    readonly paymentIntentId: string | null;
-  },
-): Promise<boolean> {
-  const completedAt = nowDate();
-  const [completed] = await tx
-    .update(usagePackSubscriptionMigrations)
-    .set({
-      status: "completed",
-      stripeInvoiceId: args.invoice.id,
-      stripePaymentIntentId: args.paymentIntentId,
-      hostedInvoiceUrl: args.invoice.hosted_invoice_url ?? null,
-      completedAt,
-      updatedAt: completedAt,
-    })
-    .where(
-      and(
-        eq(usagePackSubscriptionMigrations.id, args.migrationId),
-        migrationRowVersionIs(args.rowVersion),
-      ),
-    )
-    .returning({ id: usagePackSubscriptionMigrations.id });
-  return completed !== undefined;
+function migrationCompletionValues(
+  invoice: StripeInvoice,
+  paymentIntentId: string | null,
+  completedAt: Date,
+) {
+  return {
+    status: "completed" as const,
+    stripeInvoiceId: invoice.id,
+    stripePaymentIntentId: paymentIntentId,
+    hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+    completedAt,
+    updatedAt: completedAt,
+  };
+}
+
+function migrationCompletionWhere(migrationId: string, rowVersion: string) {
+  return and(
+    eq(usagePackSubscriptionMigrations.id, migrationId),
+    migrationRowVersionIs(rowVersion),
+  );
+}
+
+function migrationSelectionsWhere(migrationId: string) {
+  return eq(usagePackSubscriptionMigrationSelections.migrationId, migrationId);
 }
 
 function migrationInvitationValues(args: {
@@ -2683,29 +2688,31 @@ const completeMigrationInvitations$ = command(
       const currentSelections = await tx
         .select()
         .from(usagePackSubscriptionMigrationSelections)
-        .where(
-          eq(
-            usagePackSubscriptionMigrationSelections.migrationId,
-            migration.id,
-          ),
-        );
+        .where(migrationSelectionsWhere(migration.id));
       assertMigrationConfiguration(
         expectedConfiguration,
         locked,
         currentSelections,
       );
-      const root = await migrationSubscriptionRoot(tx, migration);
+      const [selectedRoot] = await tx
+        .select()
+        .from(usagePackSubscriptions)
+        .where(migrationSubscriptionRootWhere(migration))
+        .limit(1);
+      const root = validatedMigrationSubscriptionRoot(migration, selectedRoot);
       if (root?.id !== usagePackSubscriptionId) {
         throw new Error(
           `Usage pack migration ${migration.id} lost correlation`,
         );
       }
-      const completed = await completeLockedMigration(tx, {
-        migrationId: migration.id,
-        rowVersion: locked.rowVersion,
-        invoice,
-        paymentIntentId,
-      });
+      // Exact-row CAS keeps the completed transition and invitation payments
+      // atomic if another writer moved the migration after the read.
+      const completedAt = nowDate();
+      const [completed] = await tx
+        .update(usagePackSubscriptionMigrations)
+        .set(migrationCompletionValues(invoice, paymentIntentId, completedAt))
+        .where(migrationCompletionWhere(migration.id, locked.rowVersion))
+        .returning({ id: usagePackSubscriptionMigrations.id });
       if (!completed) {
         const [winner] = await tx
           .select()
@@ -3013,79 +3020,98 @@ function scheduledMigrationResponse(
   };
 }
 
-async function scheduleMigration(
-  db: Db,
-  migration: MigrationRow,
-  selections: readonly MigrationSelectionRow[],
-  subscription: StripeSubscription,
-  signal: AbortSignal | undefined,
-): Promise<MigrationRow> {
-  if (!legacyMigrationShape(migration, subscription)) {
-    throw new Error(`Legacy subscription ${subscription.id} changed`);
-  }
-  const legacyItem = legacyPlanItem(subscription, migration.sourceTier);
-  if (!legacyItem) {
-    throw new Error(`Legacy subscription ${subscription.id} lost its plan`);
-  }
-  const stripe = getStripeClient();
-  const createdSchedule = migration.stripeScheduleId
-    ? null
-    : await stripe.subscriptionSchedules.create(
-        { from_subscription: migration.stripeSubscriptionId },
-        {
-          idempotencyKey: `usage-pack-migration:${migration.id}:schedule-create`,
-        },
+// Finish the original publication phase after the final provider abort check.
+const publishMigrationSchedule$ = command(
+  async (
+    { set },
+    migration: MigrationRow,
+    scheduleId: string,
+  ): Promise<MigrationRow> => {
+    const updatedAt = nowDate();
+    const [scheduled] = await set(writeDb$)
+      .update(usagePackSubscriptionMigrations)
+      .set({ status: "scheduled", stripeScheduleId: scheduleId, updatedAt })
+      .where(
+        and(
+          eq(usagePackSubscriptionMigrations.id, migration.id),
+          inArray(usagePackSubscriptionMigrations.status, [
+            "applying",
+            "revising",
+          ]),
+        ),
+      )
+      .returning();
+    const persisted = scheduled ?? migration;
+    L.debug("usage pack subscription migration scheduled", {
+      migrationId: migration.id,
+      orgId: migration.orgId,
+      stripeScheduleId: scheduleId,
+      effectiveAt: migration.effectiveAt.toISOString(),
+    });
+    return {
+      ...persisted,
+      status: "scheduled",
+      stripeScheduleId: scheduleId,
+    };
+  },
+);
+
+const scheduleMigration$ = command(
+  async (
+    { set },
+    migration: MigrationRow,
+    selections: readonly MigrationSelectionRow[],
+    subscription: StripeSubscription,
+    signal: AbortSignal | undefined,
+  ): Promise<MigrationRow> => {
+    if (!legacyMigrationShape(migration, subscription)) {
+      throw new Error(`Legacy subscription ${subscription.id} changed`);
+    }
+    const legacyItem = legacyPlanItem(subscription, migration.sourceTier);
+    if (!legacyItem) {
+      throw new Error(`Legacy subscription ${subscription.id} lost its plan`);
+    }
+    const stripe = getStripeClient();
+    const createdSchedule = migration.stripeScheduleId
+      ? null
+      : await stripe.subscriptionSchedules.create(
+          { from_subscription: migration.stripeSubscriptionId },
+          {
+            idempotencyKey: `usage-pack-migration:${migration.id}:schedule-create`,
+          },
+        );
+    signal?.throwIfAborted();
+    const scheduleId = migration.stripeScheduleId ?? createdSchedule?.id;
+    if (!scheduleId) {
+      throw new Error("Stripe did not return a migration schedule ID");
+    }
+    const attachedScheduleId = stripeObjectId(subscription.schedule);
+    if (attachedScheduleId && attachedScheduleId !== scheduleId) {
+      throw new Error(
+        `Legacy subscription ${subscription.id} schedule changed`,
       );
-  signal?.throwIfAborted();
-  const scheduleId = migration.stripeScheduleId ?? createdSchedule?.id;
-  if (!scheduleId) {
-    throw new Error("Stripe did not return a migration schedule ID");
-  }
-  const attachedScheduleId = stripeObjectId(subscription.schedule);
-  if (attachedScheduleId && attachedScheduleId !== scheduleId) {
-    throw new Error(`Legacy subscription ${subscription.id} schedule changed`);
-  }
-  const scheduleConfiguration = migrationScheduleConfiguration(
-    migration,
-    migration.stripePlanPriceId,
-    selections,
-    subscription,
-    legacyItem,
-  );
-  await stripe.subscriptionSchedules.update(scheduleId, scheduleConfiguration, {
-    idempotencyKey:
-      migration.status === "revising"
-        ? `usage-pack-migration:${migration.id}:schedule-revision:${migrationScheduleRevisionHash(migration, selections)}`
-        : `usage-pack-migration:${migration.id}:schedule-update`,
-  });
-  signal?.throwIfAborted();
-  const updatedAt = nowDate();
-  const [scheduled] = await db
-    .update(usagePackSubscriptionMigrations)
-    .set({ status: "scheduled", stripeScheduleId: scheduleId, updatedAt })
-    .where(
-      and(
-        eq(usagePackSubscriptionMigrations.id, migration.id),
-        inArray(usagePackSubscriptionMigrations.status, [
-          "applying",
-          "revising",
-        ]),
-      ),
-    )
-    .returning();
-  const persisted = scheduled ?? migration;
-  L.debug("usage pack subscription migration scheduled", {
-    migrationId: migration.id,
-    orgId: migration.orgId,
-    stripeScheduleId: scheduleId,
-    effectiveAt: migration.effectiveAt.toISOString(),
-  });
-  return {
-    ...persisted,
-    status: "scheduled",
-    stripeScheduleId: scheduleId,
-  };
-}
+    }
+    const scheduleConfiguration = migrationScheduleConfiguration(
+      migration,
+      migration.stripePlanPriceId,
+      selections,
+      subscription,
+      legacyItem,
+    );
+    await stripe.subscriptionSchedules.update(
+      scheduleId,
+      scheduleConfiguration,
+      {
+        idempotencyKey:
+          migration.status === "revising"
+            ? `usage-pack-migration:${migration.id}:schedule-revision:${migrationScheduleRevisionHash(migration, selections)}`
+            : `usage-pack-migration:${migration.id}:schedule-update`,
+      },
+    );
+    signal?.throwIfAborted();
+    return await set(publishMigrationSchedule$, migration, scheduleId);
+  },
+);
 
 const reconcileMigration$ = command(
   async (
@@ -3115,8 +3141,8 @@ const reconcileMigration$ = command(
       );
     }
     if (desiredMigrationShape(migration, selections, subscription)) {
-      const persisted = await persistMigrationInvoiceState(
-        db,
+      const persisted = await set(
+        persistMigrationInvoiceState$,
         migration,
         selections,
         subscription,
@@ -3165,8 +3191,8 @@ const reconcileMigration$ = command(
       return { status: "failed", orgId: migration.orgId };
     }
     if (migration.status === "applying" || migration.status === "revising") {
-      const scheduled = await scheduleMigration(
-        db,
+      const scheduled = await set(
+        scheduleMigration$,
         migration,
         selections,
         subscription,
@@ -3392,7 +3418,7 @@ export const handleUsagePackMigrationInvoicePaid$ = command(
       }
     }
     if (migration.status === "completed") {
-      const root = await migrationSubscriptionRoot(db, migration);
+      const root = await set(readMigrationSubscriptionRoot$, migration);
       signal.throwIfAborted();
       if (!root) {
         throw new Error(
