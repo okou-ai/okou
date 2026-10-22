@@ -34,14 +34,21 @@ pub enum StatusPersistenceError {
         #[source]
         source: LifecycleError,
     },
-    /// The deadline elapsed without confirming publication of this snapshot.
+    /// Publication of this snapshot was not confirmed within the foreground
+    /// budget, or it was immediately deferred behind a retained in-flight write.
+    ///
+    /// A write can be retained after its caller is cancelled, even if no deadline
+    /// elapsed. `timeout` is the configured foreground publication budget, not
+    /// the measured elapsed time for this call.
     ///
     /// The write may not have started, may still finish after this error, or
     /// may be superseded by a newer coalesced snapshot. A started write is not
     /// cancelled by the timeout. Use
     /// [`StatusTracker::retry_unpublished_snapshot`] to request publication of
     /// the tracker's current state rather than assuming the file is unchanged.
-    #[error("runner status persistence for {path} timed out after {timeout:?}")]
+    #[error(
+        "runner status persistence for {path} is unconfirmed (configured publication budget: {timeout:?})"
+    )]
     Timeout { path: PathBuf, timeout: Duration },
 }
 
@@ -661,8 +668,8 @@ impl StatusTracker {
     /// Request publication of the current whole status when requested state is
     /// newer than the latest successful publication.
     ///
-    /// This retries the current in-memory snapshot, not necessarily the
-    /// snapshot from an earlier timed-out call. It does not cancel a prior
+    /// This retries the current in-memory snapshot, not necessarily the snapshot
+    /// from an earlier unconfirmed publication attempt. It does not cancel a prior
     /// in-flight write, and this attempt can also return
     /// [`StatusPersistenceError::Timeout`] with an uncertain publication outcome.
     pub async fn retry_unpublished_snapshot(&self) -> StatusResult<()> {
