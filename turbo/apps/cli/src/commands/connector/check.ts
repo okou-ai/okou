@@ -75,6 +75,7 @@ interface BuiltinDiagContext extends DiagContext {
 type ConnectorConfigurationStatus = {
   readonly isConnected: boolean;
   readonly isExpired: boolean;
+  readonly isSetupComplete: boolean;
 } & (
   | {
       readonly runAccount: RunConnectorAccountLookup;
@@ -172,6 +173,12 @@ function printRunConnectionStatus(
   }
   console.log(`Account used by this run: ${runAccount.label}`);
   console.log(`Connection ID: ${runAccount.connectionId}`);
+  console.log(`Setup status: ${runAccount.metadata.setupStatus}`);
+  if (runAccount.metadata.missingRequiredFields.length > 0) {
+    console.log(
+      `Missing required configuration: ${runAccount.metadata.missingRequiredFields.join(", ")}`,
+    );
+  }
   if (runAccount.metadata.connectionStatus === "reconnect-required") {
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
@@ -184,6 +191,17 @@ function printRunConnectionStatus(
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
     printCallbackActionUrlExample(url, ctx.agentId);
     console.log("After reconnecting, start a new run.");
+  } else if (runAccount.metadata.setupStatus !== "complete") {
+    const url = connectorActionUrl({
+      origin: ctx.platformOrigin,
+      path: "/connectors",
+      agentId: ctx.agentId,
+    });
+    console.log(
+      "The account selected for this run requires configuration review.",
+    );
+    console.log(`Review it at: [Manage ${ctx.label} accounts](${url})`);
+    console.log("After updating the account, start a new run.");
   } else {
     console.log(`The ${ctx.label} connector is connected and active.`);
   }
@@ -292,6 +310,7 @@ function checkEnvironmentNames(ctx: DiagContext): void {
 async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
   readonly isConnected: boolean;
   readonly isExpired: boolean;
+  readonly isSetupComplete: boolean;
   readonly hasPermission: boolean;
 }> {
   console.log("## Step 2: Connector configuration");
@@ -312,6 +331,9 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
           }
           return {
             isConnected: runAccount.state === "available",
+            isSetupComplete:
+              runAccount.state === "available" &&
+              runAccount.metadata.setupStatus === "complete",
             isExpired:
               runAccount.state === "available" &&
               runAccount.metadata.connectionStatus === "reconnect-required",
@@ -328,6 +350,9 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
               facts.memberStatus === "connected" ||
               facts.memberStatus === "reconnect-required",
             isExpired: facts.memberStatus === "reconnect-required",
+            isSetupComplete:
+              facts.accountSummary?.defaultConnection?.setupStatus ===
+              "complete",
             runAccount: null,
             memberFacts: facts,
           } satisfies ConnectorConfigurationStatus;
@@ -347,6 +372,7 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
   return {
     isConnected: configuration.isConnected,
     isExpired: configuration.isExpired,
+    isSetupComplete: configuration.isSetupComplete,
     hasPermission,
   };
 }
@@ -845,6 +871,7 @@ Permission recovery:
       } else if (
         status?.isConnected &&
         !status.isExpired &&
+        status.isSetupComplete &&
         status.hasPermission
       ) {
         console.log(

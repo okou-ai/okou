@@ -174,6 +174,10 @@ describe("run connector account inspection", () => {
       expect(output).toContain("Thread-selected work account");
       expect(output).toContain(PINNED_CONNECTION_ID);
       expect(output).toContain("Current Status:");
+      expect(output).toMatch(/Setup Status:\s+(complete|incomplete)/);
+      if (setup.setupStatus === "incomplete") {
+        expect(output).toMatch(/Missing Fields:\s+token/);
+      }
 
       mockConsoleLog.mockClear();
       await statusCommand.parseAsync([

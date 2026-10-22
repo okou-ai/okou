@@ -49,7 +49,9 @@ export function runConnectorSearchAction(
   switch (lookup.state) {
     case "available":
       if (lookup.metadata.connectionStatus !== "reconnect-required") {
-        return null;
+        return lookup.metadata.setupStatus === "complete"
+          ? null
+          : accountSettingsAction(connector);
       }
       return connector.kind === "custom"
         ? accountSettingsAction(connector)

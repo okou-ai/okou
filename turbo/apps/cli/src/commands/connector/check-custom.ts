@@ -58,11 +58,22 @@ export function printCustomConnectorCheckStatus(
     case "available":
       console.log(`Account used by this run: ${account.label}`);
       console.log(`Connection ID: ${account.connectionId}`);
+      console.log(`Setup status: ${account.metadata.setupStatus}`);
+      if (account.metadata.missingRequiredFields.length > 0) {
+        console.log(
+          `Missing required configuration: ${account.metadata.missingRequiredFields.join(", ")}`,
+        );
+      }
       if (account.metadata.connectionStatus === "reconnect-required") {
         console.log(
           "The account selected for this run needs to be reconnected.",
         );
         console.log("After reconnecting, start a new run.");
+      } else if (account.metadata.setupStatus !== "complete") {
+        console.log(
+          "The account selected for this run requires configuration review.",
+        );
+        console.log("After updating the account, start a new run.");
       } else {
         console.log("The account selected for this run is connected.");
       }
@@ -71,7 +82,8 @@ export function printCustomConnectorCheckStatus(
   if (
     !context.definitionAvailable ||
     account.state !== "available" ||
-    account.metadata.connectionStatus === "reconnect-required"
+    account.metadata.connectionStatus === "reconnect-required" ||
+    account.metadata.setupStatus !== "complete"
   ) {
     console.log(customConnectorSettingsGuidance(context.id, platformOrigin));
   }

@@ -68,9 +68,12 @@ function renderRunAccountCell(lookup: RunConnectorAccountLookup): string {
 function renderRunAvailabilityCell(lookup: RunConnectorAccountLookup): string {
   switch (lookup.state) {
     case "available":
-      return lookup.metadata.connectionStatus === "reconnect-required"
-        ? chalk.yellow("no (reconnect needed)")
-        : chalk.green("yes");
+      if (lookup.metadata.connectionStatus === "reconnect-required") {
+        return chalk.yellow("no (reconnect needed)");
+      }
+      return lookup.metadata.setupStatus === "complete"
+        ? chalk.green("yes")
+        : chalk.yellow(`no (setup ${lookup.metadata.setupStatus})`);
     case "metadata-unavailable":
       return chalk.dim("no (metadata unavailable or deleted)");
     case "not-admitted":
@@ -348,7 +351,8 @@ Examples:
                     ? null
                     : account.state === "available" &&
                       account.metadata.connectionStatus !==
-                        "reconnect-required",
+                        "reconnect-required" &&
+                      account.metadata.setupStatus === "complete",
                 authorized: agentContext
                   ? isConnectorDiscoveryAuthorized(connector, agentContext)
                   : null,

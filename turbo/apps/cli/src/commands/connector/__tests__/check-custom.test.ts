@@ -440,9 +440,78 @@ describe("custom connector URL diagnostics", () => {
     );
   });
 
+  it.each(["incomplete", "invalid"] as const)(
+    "explains %s setup on the admitted custom account in text and JSON",
+    async (setupStatus) => {
+      server.use(
+        stubAgentCustomConnectors([
+          { customConnectorId: CUSTOM_ID, permissionNames: ["items:write"] },
+        ]),
+        stubConnectorAccounts([
+          connectorAccount(TARGET, {
+            id: DEFAULT_ACCOUNT_ID,
+            authMethod: "manual",
+            displayName: "Default sibling",
+            configuredFieldKeys: ["apiKey"],
+          }),
+        ]),
+        stubRunConnectorAccountInspection([
+          {
+            ...account(),
+            setupStatus,
+            missingRequiredFields:
+              setupStatus === "incomplete" ? ["apiKey"] : [],
+          },
+          {
+            ...account(),
+            connectionId: DEFAULT_ACCOUNT_ID,
+            displayName: "Default sibling",
+          },
+        ]),
+      );
+      await check("--connector", `custom:${CUSTOM_ID}`);
+      expect(output()).toContain(`Connection ID: ${ACCOUNT_ID}`);
+      expect(output()).toContain(`Setup status: ${setupStatus}`);
+      if (setupStatus === "incomplete") {
+        expect(output()).toContain("Missing required configuration: apiKey");
+      }
+      expect(output()).toContain(
+        "[Connectors](http://localhost:3000/connectors)",
+      );
+      expect(output()).not.toMatch(
+        /Default sibling|account selected for this run is connected/,
+      );
+
+      log.mockClear();
+      await check("--connector", `custom:${CUSTOM_ID}`, "--json");
+      const json: unknown = JSON.parse(output());
+      expect(json).toMatchObject({
+        account: {
+          connectionId: ACCOUNT_ID,
+          metadata: { connectionStatus: "connected", setupStatus },
+        },
+        authorization: { authorized: true },
+        actions: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "link",
+            label: "Review Renamed Acme accounts and agent access",
+            supportsCallback: false,
+          }),
+        ]),
+      });
+      expect(output()).not.toContain(DEFAULT_ACCOUNT_ID);
+    },
+  );
+
   it("does not substitute a healthy default for a reconnect-required run account", async () => {
     server.use(
-      stubRunConnectorAccountInspection([account("reconnect-required")]),
+      stubRunConnectorAccountInspection([
+        {
+          ...account("reconnect-required"),
+          setupStatus: "incomplete",
+          missingRequiredFields: ["apiKey"],
+        },
+      ]),
       http.get(`${ORIGIN}/api/custom-connectors/${CUSTOM_ID}`, () => {
         return HttpResponse.json(
           customConnector({

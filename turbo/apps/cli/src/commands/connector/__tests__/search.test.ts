@@ -20,6 +20,7 @@ import { stubConnectedConnectors } from "../../__tests__/helpers/connector-accou
 import {
   authCodeMethod,
   catalogItem,
+  manualAuthMethod,
   stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
 import {
@@ -259,7 +260,7 @@ describe("okou connector search command", () => {
         stubUserConnectors(AGENT_UUID, []),
         stubRunConnectorAccountInspection([
           {
-            setupStatus: "complete",
+            setupStatus: "invalid",
             missingRequiredFields: [],
             configuredFieldKeys: [],
             kind: "available",
@@ -287,7 +288,10 @@ describe("okou connector search command", () => {
             account: {
               state: "available",
               connectionId: RUN_CONNECTION_ID,
-              metadata: { connectionStatus: "reconnect-required" },
+              metadata: {
+                connectionStatus: "reconnect-required",
+                setupStatus: "invalid",
+              },
             },
             availableForRun: false,
             authorized: false,
@@ -751,6 +755,91 @@ describe("okou connector search command", () => {
       ]);
     });
   });
+
+  describe.each(["builtin", "custom"] as const)(
+    "%s run account setup",
+    (kind) => {
+      it.each(["incomplete", "invalid"] as const)(
+        "reports %s setup consistently in JSON and text",
+        async (setupStatus) => {
+          const custom = customConnector();
+          const target =
+            kind === "builtin"
+              ? ({ kind, connectorSlug: "openai" } as const)
+              : ({ kind, customConnectorId: custom.id } as const);
+          const slug = kind === "builtin" ? "openai" : custom.slug;
+          vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+          writeRunConnectorAccountContext(contextPath, [
+            { ...target, connectionId: RUN_CONNECTION_ID },
+          ]);
+          server.use(
+            stubConnectorCatalog([
+              catalogItem({
+                connectorSlug: "openai",
+                authMethods: [manualAuthMethod()],
+              }),
+            ]),
+            stubCustomConnectors([custom]),
+            stubConnectedConnectors(["openai"], [custom]),
+            stubAgent(AGENT_UUID, "Agent"),
+            stubUserConnectors(AGENT_UUID, ["openai"]),
+            stubRunConnectorAccountInspection([
+              {
+                kind: "available",
+                target,
+                connectionId: RUN_CONNECTION_ID,
+                authMethod: kind === "builtin" ? "api-token" : "manual",
+                displayName: "Run-selected account",
+                externalId: null,
+                externalUsername: null,
+                externalEmail: null,
+                connectionStatus: "connected",
+                reconnectReason: null,
+                setupStatus,
+                missingRequiredFields:
+                  setupStatus === "incomplete" ? ["apiKey"] : [],
+                configuredFieldKeys: [],
+              },
+            ]),
+          );
+
+          await searchCommand.parseAsync(["node", "cli", slug, "--json"]);
+          const json: unknown = JSON.parse(
+            mockConsoleLog.mock.calls.flat().join("\n"),
+          );
+          expect(json).toMatchObject({
+            context: "run",
+            connectors: [
+              {
+                target,
+                account: {
+                  connectionId: RUN_CONNECTION_ID,
+                  metadata: { connectionStatus: "connected", setupStatus },
+                },
+                availableForRun: false,
+              },
+            ],
+            actions: [
+              {
+                url: expect.stringContaining(
+                  "http://localhost:3000/connectors?",
+                ),
+                supportsCallback: false,
+              },
+            ],
+          });
+
+          mockConsoleLog.mockClear();
+          searchCommand.setOptionValue("json", false);
+          await searchCommand.parseAsync(["node", "cli", slug]);
+          const text = mockConsoleLog.mock.calls.flat().join("\n");
+          expect(text).toContain(`no (setup ${setupStatus})`);
+          expect(text).toContain("Run-selected account");
+          expect(text).toContain("http://localhost:3000/connectors?");
+        },
+      );
+    },
+  );
 
   describe("run account column", () => {
     it("renders the exact reconnect-required run account independently of saved-account directory membership", async () => {

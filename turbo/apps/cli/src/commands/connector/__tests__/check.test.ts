@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
   CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
@@ -321,6 +322,9 @@ describe("okou connector check command", () => {
       readonly connectionId?: string;
       readonly label?: string;
       readonly origin?: string;
+      readonly setupStatus?: ConnectorAccountConnection["setupStatus"];
+      readonly missingRequiredFields?: string[];
+      readonly authMethod?: string;
     } = {},
   ): void {
     const connectionId = options.connectionId ?? SELECTED_CONNECTION_ID;
@@ -337,13 +341,13 @@ describe("okou connector check command", () => {
           ? []
           : [
               {
-                setupStatus: "complete",
-                missingRequiredFields: [],
+                setupStatus: options.setupStatus ?? "complete",
+                missingRequiredFields: options.missingRequiredFields ?? [],
                 configuredFieldKeys: [],
                 kind: "available",
                 target,
                 connectionId,
-                authMethod: "oauth",
+                authMethod: options.authMethod ?? "oauth",
                 displayName: options.label ?? "Run-selected account",
                 externalId: "run-external-id",
                 externalUsername: "run-user",
@@ -1392,6 +1396,7 @@ describe("okou connector check command", () => {
       setRunAccount("github", "reconnect-required", {
         connectionId: SELECTED_CONNECTION_ID,
         label: "Run account B",
+        setupStatus: "invalid",
       });
       stubDiagnostic(resolvedEnvironment());
       stubConnector("github", connectorResponse("github"), () => {
@@ -1413,8 +1418,92 @@ describe("okou connector check command", () => {
         `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}?agentId=${AGENT_ID}`,
       );
       expect(text).toContain("After reconnecting, start a new run.");
+      expect(text).toContain("Setup status: invalid");
       expect(defaultAccountRequests).toBe(0);
     });
+
+    it.each(["incomplete", "invalid"] as const)(
+      "diagnoses %s setup on the exact run account despite a healthy default",
+      async (setupStatus) => {
+        setRunAccount("openai", "connected", {
+          label: "Run account B",
+          authMethod: "api-token",
+          setupStatus,
+          missingRequiredFields: setupStatus === "incomplete" ? ["apiKey"] : [],
+        });
+        stubDiagnostic(
+          resolvedEnvironment({
+            connector: connectorIdentity({
+              connectorSlug: "openai",
+              label: "OpenAI",
+            }),
+            environmentName: "OPENAI_API_KEY",
+            run: { status: "configured", bases: ["https://api.openai.com"] },
+          }),
+        );
+        server.use(
+          stubConnectorAccounts(
+            [
+              connectorAccount(
+                { kind: "builtin", connectorSlug: "openai" },
+                {
+                  id: "00000000-0000-4000-8000-000000000003",
+                  authMethod: "api-token",
+                  displayName: "Healthy default",
+                  configuredFieldKeys: ["apiKey"],
+                },
+              ),
+            ],
+            API_BASE_URL,
+          ),
+        );
+        stubAgentConnectors(["openai"]);
+
+        await checkConnectorCommand.parseAsync([
+          "node",
+          "cli",
+          "--env-name",
+          "OPENAI_API_KEY",
+        ]);
+        const text = getOutput();
+        expect(text).toContain(`Connection ID: ${SELECTED_CONNECTION_ID}`);
+        expect(text).toContain("Account used by this run: Run account B");
+        expect(text).toContain(`Setup status: ${setupStatus}`);
+        if (setupStatus === "incomplete") {
+          expect(text).toContain("Missing required configuration: apiKey");
+        }
+        expect(text).toContain("/connectors?agentId=");
+        expect(text).toContain("authorized for this agent.");
+        expect(text).not.toMatch(
+          /connected and active|connected, active, and authorized/,
+        );
+
+        mockConsoleLog.mockClear();
+        await checkConnectorCommand.parseAsync([
+          "node",
+          "cli",
+          "--env-name",
+          "OPENAI_API_KEY",
+          "--json",
+        ]);
+        const json: unknown = JSON.parse(getOutput());
+        expect(json).toMatchObject({
+          context: "run",
+          account: {
+            connectionId: SELECTED_CONNECTION_ID,
+            metadata: { connectionStatus: "connected", setupStatus },
+          },
+          authorization: { authorized: true },
+          actions: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "link",
+              url: expect.stringContaining("/connectors?agentId="),
+              supportsCallback: false,
+            }),
+          ]),
+        });
+      },
+    );
 
     it("reports the healthy run account without reading a reconnect-required default sibling", async () => {
       let defaultAccountRequests = 0;
