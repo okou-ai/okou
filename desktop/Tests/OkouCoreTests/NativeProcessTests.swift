@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 
@@ -354,5 +355,106 @@ final class NativeProcessTests: XCTestCase {
     let event = try XCTUnwrap(collector.events().first)
     XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "launch_failed")
     XCTAssertFalse(event.formatted.contains("private-helper-installation"))
+  }
+
+  func testFragmentedLargeResponsesPreserveEveryByteAcrossRequests() async throws {
+    let (helper, _) = try nativeFixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, sys
+      marker = chr(0x6c49) + chr(0x1f642) + chr(92) + chr(34) + chr(10)
+      payload = ''.join(str(i) + ':' + 'abcdef0123456789' * 5 + ':' + marker for i in range(20000))
+      for line in sys.stdin:
+          requests = [json.loads(line), json.loads(sys.stdin.readline())]
+          frames = []
+          for request in requests:
+              response = {'id': request['id'], 'status': 'succeeded',
+                          'result': {'value': payload, 'sequence': request['sequence']}}
+              frames.append(json.dumps(response, ensure_ascii=False).encode() + b'\n')
+          data = b''.join(frames)
+          step = 4093 + requests[0]['sequence'] % 3 * 4096
+          for offset in range(0, len(data), step):
+              chunk = memoryview(data)[offset:offset + step]
+              while chunk:
+                  chunk = chunk[os.write(1, chunk):]
+      """#)
+    let expected = (0..<20_000).map {
+      "\($0):" + String(repeating: "abcdef0123456789", count: 5) + ":汉🙂\\\"\n"
+    }.joined()
+
+    for sequence in stride(from: 0, to: 16, by: 2) {
+      async let first = helper.request(
+        .object(["kind": .string("app.state"), "sequence": .number(Double(sequence))]))
+      async let second = helper.request(
+        .object(["kind": .string("app.state"), "sequence": .number(Double(sequence + 1))]))
+      let responses = try await [first, second]
+      for (offset, response) in responses.enumerated() {
+        XCTAssertEqual(response["result"]["sequence"].number, Double(sequence + offset))
+        XCTAssertTrue(
+          response["result"]["value"].string == expected, "Fragmented response content changed")
+      }
+    }
+  }
+
+  func testFinalLargeResponseIsDrainedBeforeHelperExit() async throws {
+    let (helper, _) = try nativeFixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, sys
+      request = json.loads(sys.stdin.readline())
+      data = json.dumps({'id': request['id'], 'status': 'succeeded',
+                         'result': {'value': 'final-response-' * 131072}}).encode() + b'\n'
+      chunk = memoryview(data)
+      while chunk:
+          chunk = chunk[os.write(1, chunk):]
+      os._exit(0)
+      """#)
+    let response = try await helper.request(.object(["kind": .string("app.state")]))
+    XCTAssertTrue(
+      response["result"]["value"].string == String(repeating: "final-response-", count: 131_072),
+      "The helper's final response must be complete")
+  }
+
+  func testInternalTimeoutReapsHelperBeforeFailureAndRecoversForANewCommand() async throws {
+    let (executor, directory) = try fixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, pathlib, sys
+      attempts = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY']) / 'attempts'
+      for line in sys.stdin:
+          request = json.loads(line)
+          response = {'id': request['id'], 'status': 'succeeded'}
+          if request['kind'] == 'permissions.state':
+              response['result'] = {'accessibility': True, 'screenRecording': True}
+          else:
+              first = not attempts.exists()
+              with attempts.open('a') as stream:
+                  stream.write(str(os.getpid()) + '\n')
+              if first:
+                  response['status'] = 'failed'
+                  response['error'] = {'code': 'target_app_unresponsive',
+                                       'message': 'Synthetic internal watchdog timeout'}
+              else:
+                  response['result'] = {'apps': [{'bundleId': 'test.recovered'}]}
+          print(json.dumps(response), flush=True)
+      """#)
+
+    let failed = await listApps(executor)
+    XCTAssertEqual(failed["error"]["code"].string, "target_app_unresponsive")
+    XCTAssertTrue(failed["error"]["message"].string?.contains("do not replay") == true)
+    let attempts = directory.appendingPathComponent("attempts")
+    let firstDispatch = try String(contentsOf: attempts, encoding: .utf8).split(separator: "\n")
+    XCTAssertEqual(firstDispatch.count, 1)
+    let retiredPID = try XCTUnwrap(firstDispatch.first.flatMap { Int32($0) })
+    let processStatus = kill(retiredPID, 0)
+    let processError = errno
+    XCTAssertEqual(processStatus, -1)
+    XCTAssertEqual(processError, ESRCH)
+
+    let recovered = await listApps(executor)
+    XCTAssertEqual(recovered["result"]["apps"].array?.first?["bundleId"].string, "test.recovered")
+    let dispatches = try String(contentsOf: attempts, encoding: .utf8).split(separator: "\n")
+    XCTAssertEqual(dispatches.count, 2)
+    XCTAssertNotEqual(dispatches.first, dispatches.last)
   }
 }

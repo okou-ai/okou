@@ -41,6 +41,8 @@ public actor NativeProcess {
   private var sequence = 0
   private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
   private var generation = 0
+  private var outputClosed = false
+  private var exitStatus: Int32?
 
   public init(executable: URL, environment: [String: String] = [:]) {
     self.executable = executable
@@ -48,6 +50,10 @@ public actor NativeProcess {
   }
   private func start() throws {
     if process?.isRunning == true { return }
+    if let process {
+      reportFailure(.unexpectedExit, exitStatus: process.terminationStatus)
+      stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
+    }
     generation += 1
     let current = generation
     let child = Process()
@@ -73,7 +79,10 @@ public actor NativeProcess {
       standardError.record(data.count)
       if data.isEmpty { handle.readabilityHandler = nil }
     }
-    child.terminationHandler = { _ in Task { await self.exited(generation: current) } }
+    child.terminationHandler = { child in
+      let status = child.terminationStatus
+      Task { await self.exited(generation: current, status: status) }
+    }
     do { try child.run() } catch {
       reportFailure(.launch)
       throw error
@@ -101,8 +110,9 @@ public actor NativeProcess {
           stop(error: DesktopFailure("accessibility_unavailable", "Native helper write failed"))
           return
         }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
         timeouts[id] = Task {
-          do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+          do { try await Task.sleep(until: deadline) } catch { return }
           self.expire(id)
         }
       }
@@ -124,13 +134,14 @@ public actor NativeProcess {
       let readSequence = nextReadSequence
       nextReadSequence += 1
       queuedReadBytes -= next.count
-      consume(next, sequence: readSequence)
+      consume(next, sequence: readSequence, generation: current)
       guard current == generation else { return }
     }
   }
-  private func consume(_ data: Data, sequence: Int) {
+  private func consume(_ data: Data, sequence: Int, generation current: Int) {
     if data.isEmpty {
-      output?.readabilityHandler = nil
+      outputClosed = true
+      if let exitStatus { exited(generation: current, status: exitStatus) }
       return
     }
     readFragments.append(
@@ -160,6 +171,18 @@ public actor NativeProcess {
           .missingRequestID, reason: "missing or invalid request ID", response: line,
           responseStart: frameStart, decoderError: nil,
           decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
+        return
+      }
+      if response["status"].string == "failed",
+        response["error"]["code"].string == "target_app_unresponsive"
+      {
+        // The helper's watchdog cannot cancel an in-flight native operation.
+        // Reap it before exposing failure or admitting another command.
+        stop(
+          error: DesktopFailure(
+            "target_app_unresponsive",
+            "Native command became unresponsive. An action may have been delivered; do not replay automatically."
+          ))
         return
       }
       readFragments.removeAll { $0.endOffset <= responseStart }
@@ -204,9 +227,12 @@ public actor NativeProcess {
       ))
   }
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
-  private func exited(generation current: Int) {
+  private func exited(generation current: Int, status: Int32) {
     guard current == generation else { return }
-    reportFailure(.unexpectedExit, exitStatus: process?.terminationStatus)
+    exitStatus = status
+    // A process can exit before its final stdout callbacks reach the actor.
+    guard outputClosed else { return }
+    reportFailure(.unexpectedExit, exitStatus: status)
     stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
   }
   private func reportFailure(
@@ -241,6 +267,8 @@ public actor NativeProcess {
     receivedBytes = 0
     responseStart = 0
     omittedReadsThrough = 0
+    outputClosed = false
+    exitStatus = nil
     for timeout in timeouts.values { timeout.cancel() }
     timeouts.removeAll()
     let requests = pending
