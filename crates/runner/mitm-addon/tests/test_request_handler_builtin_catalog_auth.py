@@ -1,5 +1,7 @@
 """Builtin MCP authentication follows the runner-owned catalog firewall."""
 
+import json
+
 import pytest
 
 import flow_metadata_keys as metadata_keys
@@ -218,12 +220,11 @@ async def test_builtin_catalog_auth_uses_current_catalog_destination(
                 await await_requestheaders_result(result)
         await mitm_addon.request(flow)
 
-    if requestheaders_first:
-        assert flow.response is None
-        assert flow.error is not None
-        assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "connector_not_configured"
-    else:
-        assert flow.response is not None
+    assert flow.response is not None
+    assert flow.response.status_code == 424
+    assert json.loads(flow.response.content)["error"] == "connector_not_configured"
+    assert flow.error is None
+    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "connector_not_configured"
     assert "Authorization" not in flow.request.headers
     assert endpoint.request_count == 1
     matched = endpoint.requests[0].json_body()["matchedFirewall"]

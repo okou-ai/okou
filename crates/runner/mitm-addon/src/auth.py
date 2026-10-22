@@ -1811,7 +1811,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     """Resolve header/query firewall auth before request streaming.
 
     Resolution failures retain the canonical local response and diagnostics;
-    the caller must terminate the upload instead of waiting for its body. Other
+    the caller must deliver that response without waiting for the upload. Other
     unsuccessful probes, including current-authorization rejection, restore the
     snapshot and fall back before mutation.
     """

@@ -21,6 +21,7 @@ from mitmproxy.proxy.layers.http._events import RequestHeaders
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
 from mitmproxy.proxy.server import ConnectionHandler
 
+import header_auth_response
 import managed_upload
 import managed_upload_runtime
 import model_websocket_usage
@@ -113,6 +114,7 @@ def install_runtime_compatibility() -> None:
     _install_request_end_stream_bridge()
     _install_response_inspection_bridge()
     managed_upload_runtime.install()
+    header_auth_response.install()
     websocket_framing.install_websocket_framing()
 
 
@@ -148,6 +150,10 @@ def _install_request_end_stream_bridge() -> None:
                         completion: object = yield command
                     finally:
                         setattr(command, _MANAGED_HEADERS_WAITING, False)
+                    if header_auth_response.take(command.flow) and command.flow.error is None:
+                        command_generator.close()
+                        yield from header_auth_response.send(self)
+                        return
                 else:
                     completion = yield command
                 if isinstance(command, SendHttp) and isinstance(command.event, RequestHeaders):

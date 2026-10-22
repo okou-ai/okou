@@ -209,11 +209,10 @@ async def test_authenticated_builtin_mcp_account_lease_rechecks_deleted_account(
         assert flow.error is None
         assert flow.request.headers.get("Authorization") == "Bearer selected-account"
     denied = flows[2]
-    if requestheaders_first:
-        assert denied.error is not None
-    else:
-        assert denied.response is not None
-        assert denied.response.status_code == 424
+    assert denied.error is None
+    assert denied.response is not None
+    assert denied.response.status_code == 424
+    assert json.loads(denied.response.content)["error"] == "connector_not_configured"
     assert denied.metadata[metadata_keys.FIREWALL_ERROR] == "connector_not_configured"
     assert "Authorization" not in denied.request.headers
 

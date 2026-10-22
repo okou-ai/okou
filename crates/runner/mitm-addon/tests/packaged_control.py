@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -17,7 +18,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from tests.auth_endpoint_helpers import firewall_auth_success_response
+import pytest
+
+from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
 from tests.control_helpers import (
     control_connection,
     exchange,
@@ -26,13 +29,21 @@ from tests.control_helpers import (
     registry_status_request,
     status_request,
 )
+from tests.managed_openrouter_helpers import PATHS, sandbox
 from tests.pending_helpers import result_data
 from tests.registry_builtin_helpers import write_catalog_cache
+from tests.request_handler_helpers import _write_registry
 from tests.usage_helpers import UsageWebhookServer
 
 
 @contextmanager
-def launch(root: Path, generation: str, *, api_url: str = "http://127.0.0.1:1"):
+def launch(
+    root: Path,
+    generation: str,
+    *,
+    api_url: str = "http://127.0.0.1:1",
+    mode: str = "regular",
+):
     directory = root / generation
     directory.mkdir(mode=0o700)
     addon = directory / "addon"
@@ -51,6 +62,8 @@ def launch(root: Path, generation: str, *, api_url: str = "http://127.0.0.1:1"):
                 "127.0.0.1",
                 "--listen-port",
                 str(port),
+                "--mode",
+                mode,
                 "--scripts",
                 str(addon / "mitm_addon.py"),
                 "--set",
@@ -67,6 +80,8 @@ def launch(root: Path, generation: str, *, api_url: str = "http://127.0.0.1:1"):
                 f"okou_builtin_firewall_catalog_cache_path={directory / 'catalog.json'}",
                 "--set",
                 "connection_strategy=lazy",
+                "--set",
+                "upstream_cert=false",
             ],
             env={
                 "PATH": os.defpath,
@@ -417,3 +432,60 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
         assert receipt["snapshot"]["outcomes"]["permanent_failure"] == 1
         assert receipt["snapshot"]["outcomes"]["success"] == 0
         assert receipt["snapshot"]["buffered"] == receipt["snapshot"]["reports"] == 0
+
+
+@pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
+@pytest.mark.parametrize("upload", [False, True], ids=["incomplete-upload", "large-upload"])
+def test_packaged_header_credit_error_reaches_tls_caller(tmp_path, dialect, upload):
+    api = FakeAuthEndpoint()
+    api.queue_json_response(
+        {"error": {"code": "INSUFFICIENT_CREDITS", "message": "Synthetic no credits"}},
+        status=402,
+    )
+    # Runner intercepts origin TLS without an explicit CONNECT tunnel. Reverse
+    # mode supplies a deterministic destination for the same native TLS/HTTP
+    # path without requiring host-wide transparent-proxy socket setup in CI.
+    with (
+        api.run(),
+        launch(
+            tmp_path, "generation-1", api_url=api.api_url, mode="reverse:https://openrouter.ai"
+        ) as (directory, port),
+    ):
+        info = sandbox(directory, dialect)
+        info["runId"] = str(uuid4())
+        log_path = directory / f"network-{info['runId']}.jsonl"
+        info["networkLogPath"] = str(log_path)
+        path = _write_registry(directory, client_ip="127.0.0.1", sandbox_info=info)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert (
+            result_data(exchange(directory, registry_apply_request(digest)))["state"] == "applied"
+        )
+        tls = ssl.create_default_context(
+            cafile=str(directory / "certificates" / "mitmproxy-ca-cert.pem")
+        )
+        with (
+            socket.create_connection(("127.0.0.1", port), timeout=5) as raw,
+            tls.wrap_socket(raw, server_hostname="openrouter.ai") as peer,
+        ):
+            peer.sendall(
+                (
+                    f"POST {PATHS[dialect]} HTTP/1.1\r\nHost: openrouter.ai\r\n"
+                    "Content-Type: application/json\r\nContent-Length: 8000000\r\n\r\n"
+                ).encode()
+            )
+            peer.sendall(b"x" * (8_000_000 if upload else 1000))
+            response = http.client.HTTPResponse(peer)
+            response.begin()
+            body = response.read()
+            assert response.status == 402, body
+            assert json.loads(body)["error"] == "insufficient_credits"
+            assert response.getheader("Connection") == "close"
+        assert api.request_count == 1
+        assert api.requests[0].path == "/api/webhooks/agent/firewall/auth"
+        assert (
+            result_data(exchange(directory, log_flush_request(log_path, info["runId"])))["state"]
+            == "processed"
+        )
+        [entry] = [json.loads(line) for line in log_path.read_text().splitlines()]
+        assert entry["status"] == 402
+        assert entry["firewall_error"] == "insufficient_credits"

@@ -57,6 +57,7 @@ import connector_intent
 import content_length
 import flow_metadata
 import flow_metadata_keys as metadata_keys
+import header_auth_response
 import http_header_syntax
 import http_local_responses
 import http_network_log
@@ -1379,14 +1380,13 @@ async def _try_firewall_request_stream_from_headers(
         raise
     if result is FirewallHeaderPhaseAuthResult.REJECTED:
         restore_request_state()
-        # A local response waits for body EOF. Preserve auth diagnostics, but
-        # kill before mitmproxy sends 100 Continue or consumes the rejected body.
-        flow.response = None
+        # Complete the local error through native framing before upload EOF.
+        # The compatibility owner bypasses body buffering and retires the upload.
         managed_openrouter.release_from_flow(flow)
         release_aws_sigv4_request_inspection(flow)
         request_classification.pop_cached_classification(flow)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
-        flow.kill()
+        header_auth_response.mark(flow)
         return
     if result is not FirewallHeaderPhaseAuthResult.APPLIED:
         fall_back()
@@ -2023,6 +2023,7 @@ def _release_terminal_flow_state(
     release_tracking: bool,
     release_aws_sigv4_body_admission: bool = True,
 ) -> None:
+    header_auth_response.take(flow)
     if release_tracking:
         websocket_inspection.release(flow)
         websocket_framing.log_limit_violation(flow)
