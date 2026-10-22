@@ -1183,11 +1183,13 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
-  # Deploy API application with preview database and E2E bootstrap data
+  # Deploy both API targets with one toolchain and prepared preview database.
   deploy-api:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
+      # Worker resource cleanup shares this identity. Parent PR cancellation
+      # still takes precedence; later runs reconcile the same preview resources.
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
@@ -1418,72 +1420,23 @@ jobs:
           message: |
             API preview: ${{ steps.api-alias.outputs.url || steps.api-deploy.outputs.url }}
 
-  # Independent downstream experiment; existing API/E2E consumers are unchanged.
-  deploy-api-worker:
-    needs: [prepare, deploy-api]
-    if: |
-      needs.prepare.outputs.job-ref != '' && (
-        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-        (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      )
-    # This job lock also serializes closed-PR cleanup, but cannot override Turbo's
-    # PR-run cancellation. Normal preview reconciliation is the latest run:
-    # it reuses preview/<ref> and the helper fences stale PR heads before publish.
-    concurrency:
-      group: deploy-api-worker-${{ needs.prepare.outputs.job-ref }}
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
-    permissions:
-      contents: read
-      pull-requests: read
-      id-token: write
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Captured event revision, not a moving branch or PR head.
-          ref: ${{ github.sha }}
-      - uses: ./.github/actions/toolchain-init
-
-      - name: Fetch development Doppler OAuth config
-        id: doppler-oauth
-        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
-        with:
-          auth-method: oidc
-          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
-          doppler-project: vm0
-          doppler-config: dev
-
-      - name: Resolve Worker preview runtime environment
-        id: api-env
-        uses: ./.github/actions/web-api-env
-        with:
-          app: api
-          environment: preview
-          job-ref: ${{ needs.prepare.outputs.job-ref }}
-          # Existing callback/audience URLs only; no consumer traffic is switched.
-          web-url: ${{ needs.prepare.outputs.api-preview-url }}
-          app-url: ${{ needs.prepare.outputs.app-preview-url }}
-          api-backend-url: ${{ needs.prepare.outputs.api-preview-url }}
-        env:
-          REPO_VARS_JSON: ${{ toJSON(vars) }}
-          REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
-          DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler-oauth.outputs) }}
-
+      # Reuse the captured source, installed toolchain and resolved API env.
+      # These steps extend deploy-api, so E2E waits for both API deployments.
       - name: Check Worker deployment contracts and secret handling
+        if: >-
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main')
         run: |
           node --test .github/scripts/api-worker-workflow.test.cjs .github/scripts/api-worker-preview.test.cjs
           pnpm --dir turbo/apps/api test:worker-build
 
       - name: Build and deploy API Worker using the shared preview database
+        if: >-
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main')
         env:
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
-          API_ENV_FILE: ${{ steps.api-env.outputs.file }}
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
           # Resolve the existing preview/<ref> branch; deploy-api owns DB setup.
           EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
@@ -1494,14 +1447,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/api-worker-preview.cjs deploy
 
-      - name: Remove temporary runtime environment
+      - name: Remove temporary API runtime environments
         if: always()
         env:
-          API_ENV_FILE: ${{ steps.api-env.outputs.file }}
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+          API_SEED_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}
         run: |
-          if [[ -n "${API_ENV_FILE:-}" ]]; then
-            rm -f -- "$API_ENV_FILE"
-          fi
+          set -euo pipefail
+          for file in "${API_ENV_FILE:-}" "${API_SEED_ENV_FILE:-}"; do
+            if [[ -n "$file" ]]; then
+              rm -f -- "$file"
+            fi
+          done
 
   # Build the canonical app artifact independently of Vercel, publish its
   # immutable resources to R2, and upload the small application shell with a
@@ -2954,7 +2911,6 @@ jobs:
       - test-link-approval
       - test-wechat-gateway
       - deploy-api
-      - deploy-api-worker
       - deploy-app
       - deploy-stripe-listener
       - cli-e2e-02-browser
@@ -2977,10 +2933,6 @@ jobs:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RELEASE_PRESENCE_RESULT: ${{ needs.validate-release-presence.result }}
           RELEASE_DEPLOY_APP_RESULT: ${{ needs.deploy-app.result }}
-          API_WORKER_EXPECTED: >-
-            ${{ needs.deploy-api.result == 'success' && needs.prepare.outputs.job-ref != '' &&
-                ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-                 (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
         run: |
           if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
             echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
@@ -3013,10 +2965,6 @@ jobs:
             # and environment verification run under the staging caller.
             TS_CHECK_SKIP_ALLOWED="skipped"
             FILE_SIZE_SKIP_ALLOWED="skipped"
-          fi
-          API_WORKER_SKIP_ALLOWED="true"
-          if [ "$API_WORKER_EXPECTED" = "true" ]; then
-            API_WORKER_SKIP_ALLOWED=""
           fi
           RUNNER_DEPLOY_SKIP_ALLOWED="true"
           if [ "${{ needs.prepare.outputs.turbo-runner-consumer-needed }}" = "true" ] ||
@@ -3098,7 +3046,6 @@ jobs:
           # May-skip: 'success' or 'skipped' are both acceptable
           check_result "test-migrate" "${{ needs.test-migrate.result }}" "true"
           check_result "deploy-api" "${{ needs.deploy-api.result }}" "true"
-          check_result "deploy-api-worker" "${{ needs.deploy-api-worker.result }}" "$API_WORKER_SKIP_ALLOWED"
           check_result "deploy-app" "${{ needs.deploy-app.result }}" "$CF_APP_SKIP_ALLOWED"
           check_result "deploy-stripe-listener" "${{ needs.deploy-stripe-listener.result }}" "true"
           check_result "prepare-cli" "${{ needs.prepare-cli.result }}" "$CLI_E2E_SKIP_ALLOWED"
