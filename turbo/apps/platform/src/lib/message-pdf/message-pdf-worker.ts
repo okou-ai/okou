@@ -55,9 +55,7 @@ scope.addEventListener("message", async (event) => {
     scope.postMessage({ ok: true, blob: result.value });
   } else {
     // Vendor exceptions can contain authored text or private asset URLs.
-    scope.postMessage({
-      ok: false,
-      message: "PDF generation failed. Check formulas and document content.",
-    });
+    // Send only the outcome; the owning UI already localizes its retry message.
+    scope.postMessage({ ok: false });
   }
 });

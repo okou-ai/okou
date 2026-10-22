@@ -20,8 +20,7 @@ export interface PdfWorkerRequest {
 }
 
 export type PdfWorkerResponse =
-  | { readonly ok: true; readonly blob: Blob }
-  | { readonly ok: false; readonly message: string };
+  { readonly ok: true; readonly blob: Blob } | { readonly ok: false };
 
 export interface PdfFormula {
   readonly svg: string;

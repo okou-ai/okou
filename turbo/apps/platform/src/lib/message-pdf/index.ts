@@ -44,7 +44,7 @@ export async function generateMessagePdfBlob(
     if (event.data.ok) {
       result.resolve(event.data.blob);
     } else {
-      result.reject(new Error(event.data.message));
+      result.reject(new Error("PDF export worker could not complete"));
     }
   };
   const onError = () => {

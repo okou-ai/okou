@@ -143,7 +143,7 @@ test("A generation error is visible and the PDF action can be retried", async ()
   await waitFor(() => {
     expect(button("Generating PDF…")).toHaveAttribute("aria-disabled", "true");
   });
-  first.resolve({ ok: false, message: "The PDF renderer failed" });
+  first.resolve({ ok: false });
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Could not generate PDF. Try again.",
   );
