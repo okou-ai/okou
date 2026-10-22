@@ -148,6 +148,7 @@ final class ThreadListStore {
           var result = response.threads
           try Task.checkCancellation()
           guard !closed else { return }
+          optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
           // A read started before creation cannot remove its acknowledged thread.
           guard creation == creationRevision else {
             refreshAgain = true
@@ -164,7 +165,6 @@ final class ThreadListStore {
             unreadAgentIDs = Set(
               response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
           }
-          optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
           projectThreads(result)
           error = nil
         } catch is CancellationError {
