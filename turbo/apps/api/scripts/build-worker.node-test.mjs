@@ -5,6 +5,7 @@ import process from "node:process";
 import { test } from "node:test";
 
 import { build } from "esbuild";
+import { workerRequireBanner } from "./worker-bundle-banner.mjs";
 
 const apiRoot = resolve(import.meta.dirname, "..");
 const { outputFiles } = await build({
@@ -40,6 +41,34 @@ function load(forceNative = false) {
   );
   return commonJsModule.exports;
 }
+
+test("Worker require interop initializes real Node builtins when import.meta.url is absent", async () => {
+  const result = await build({
+    stdin: {
+      contents: `${workerRequireBanner}\nexport const EventEmitter = require("node:events").EventEmitter;`,
+    },
+    platform: "node",
+    format: "cjs",
+    bundle: true,
+    write: false,
+    // Reproduce the legacy Workers module-registry input, not Node's file URL.
+    define: { "import.meta.url": "undefined" },
+  });
+  const commonJsModule = { exports: {} };
+  new Function("require", "module", "exports", result.outputFiles[0].text)(
+    runtimeRequire,
+    commonJsModule,
+    commonJsModule.exports,
+  );
+  const { EventEmitter } = commonJsModule.exports;
+  const emitter = new EventEmitter();
+  let observed;
+  emitter.on("probe", (value) => {
+    observed = value;
+  });
+  emitter.emit("probe", "worker-native-require");
+  assert.equal(observed, "worker-native-require");
+});
 
 test("Worker pg shim preserves real JS client initialization without connecting", () => {
   const { pg } = load();

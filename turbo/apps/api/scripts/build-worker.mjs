@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { build } from "esbuild";
+import { workerRequireBanner } from "./worker-bundle-banner.mjs";
 
 const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDirectory = resolve(apiRoot, "dist-worker");
@@ -39,7 +40,7 @@ try {
     // Preserve real error reporting using Sentry's Workers-native SDK.
     alias: { "@sentry/node": "@sentry/cloudflare" },
     banner: {
-      js: 'import { createRequire as __workerCreateRequire } from "node:module"; const require = __workerCreateRequire(import.meta.url);',
+      js: workerRequireBanner,
     },
     plugins: [
       {
