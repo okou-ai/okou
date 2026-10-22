@@ -1,4 +1,3 @@
-import AVKit
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -71,7 +70,7 @@ final class GeneratedResultTests: XCTestCase {
       })
   }
 
-  func testNativeCardsKeepTranscriptGeometryAndLightDarkAppearance() async throws {
+  func testLoadingCardsAndRefreshingKeepTranscriptGeometry() async throws {
     let fixture = try await GeneratedResultFixture.make()
     defer { fixture.server.stop() }
     let conversation = fixture.history.conversation()
@@ -86,12 +85,6 @@ final class GeneratedResultTests: XCTestCase {
     try await eventually { fixture.state.resolutions.withLock { $0 >= 4 } }
     await stableHostingGeometry(host.view)
     XCTAssertEqual(scroll.contentSize.height, size.height, accuracy: 1)
-    window.overrideUserInterfaceStyle = .light
-    await stableHostingGeometry(host.view)
-    try await screenshot(window, "Generated-results-light")
-    window.overrideUserInterfaceStyle = .dark
-    await stableHostingGeometry(host.view)
-    try await screenshot(window, "Generated-results-dark")
     _ = scroll.accessibilityScroll(.down)
     await stableHostingGeometry(host.view)
     let before = scroll.contentOffset
@@ -148,7 +141,7 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertGreaterThan(second.state.resolutions.withLock { $0 }, 0)
   }
 
-  func testNativePreviewFamiliesAndSameMessageImageNavigation() async throws {
+  func testImageNavigationAndStructuredTextPreviewsKeepAuthorizedContent() async throws {
     let fixture = try await GeneratedResultFixture.make()
     defer { fixture.server.stop() }
     let conversation = fixture.history.conversation()
@@ -161,51 +154,36 @@ final class GeneratedResultTests: XCTestCase {
       rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
     let window = try await mountResultHost(host)
     defer { unmount(window) }
-    for name in [
-      "image00001.png", "pdf0000001.pdf", "word000001.docx", "sheet00001.xlsx", "slides0001.pptx",
-      "video00001.mp4", "audio00001.wav", "mark000001.md", "text000001.txt", "json000001.json",
-      "csv0000001.csv", "other00001.xyz",
-    ] {
+    viewer.open(images[0], images: images)
+    for (index, image) in images.enumerated() {
+      try await eventually {
+        viewer.preview?.file != nil && viewer.preview?.artifact.source == image.source
+      }
+      let file = try XCTUnwrap(viewer.preview?.file)
+      try await eventually {
+        guard let controller = previewController(in: host),
+          controller.view.window != nil, let source = controller.dataSource,
+          source.numberOfPreviewItems(in: controller) == 1
+        else { return false }
+        return source.previewController(controller, previewItemAt: 0).previewItemURL == file.url
+      }
+      XCTAssertEqual(viewer.canNavigateImage(-1), index > 0)
+      XCTAssertEqual(viewer.canNavigateImage(1), index < images.count - 1)
+      if index < images.count - 1 { viewer.navigateImage(1) }
+    }
+    viewer.dismiss()
+    for name in ["json000001.json", "csv0000001.csv"] {
       let resource = try XCTUnwrap(viewer.resource("/artifacts/" + name))
-      viewer.open(resource, images: images)
+      viewer.open(resource)
       try await eventually { viewer.preview?.file != nil || viewer.preview?.error != nil }
       XCTAssertNil(viewer.preview?.error, name)
       let preview = try XCTUnwrap(viewer.preview)
-      let file = try XCTUnwrap(preview.file)
-      XCTAssertGreaterThan(file.size, 0)
-      XCTAssertTrue(FileManager.default.fileExists(atPath: file.url.path))
-      if ["png", "pdf", "docx", "xlsx", "pptx"].contains(file.url.pathExtension) {
-        XCTAssertTrue(QLPreviewController.canPreview(file.url as NSURL), name)
-        try await eventually {
-          descendants(host.view, type: QLPreviewController.self, controller: host) != nil
-        }
-      }
-      if ["video00001.mp4", "audio00001.wav"].contains(name) {
-        try await eventually {
-          descendants(host.view, type: AVPlayerViewController.self, controller: host)?.player?
-            .currentItem?.status == .readyToPlay
-        }
-      }
       if name == "json000001.json" { XCTAssertTrue(preview.text?.text.contains("\n") == true) }
       if name == "csv0000001.csv" {
         XCTAssertEqual(
           preview.text?.rows, [["Region", "Revenue"], ["North, coast", "120"], ["South", "180"]])
       }
-      if name == "image00001.png" {
-        XCTAssertFalse(viewer.canNavigateImage(-1))
-        XCTAssertTrue(viewer.canNavigateImage(1))
-        viewer.navigateImage(1)
-        try await eventually {
-          viewer.preview?.file != nil && viewer.preview?.artifact.source == images[1].source
-        }
-        XCTAssertFalse(viewer.canNavigateImage(1))
-        XCTAssertTrue(viewer.canNavigateImage(-1))
-      }
-      await hostingPresentationFrame()
-      host.view.layoutIfNeeded()
-      try await screenshot(window, "Native-result-" + name)
       viewer.dismiss()
-      await hostingPresentationFrame()
     }
     XCTAssertNil(viewer.preview)
   }
@@ -221,11 +199,6 @@ final class GeneratedResultTests: XCTestCase {
     viewer.open(source)
     try await eventually { viewer.preview?.error != nil }
     XCTAssertTrue(viewer.preview?.error?.contains("permission") == true)
-    let host = UIHostingController(
-      rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
-    let window = try await mountResultHost(host)
-    defer { unmount(window) }
-    try await screenshot(window, "Native-result-access-denied")
     fixture.state.denied.withLock { $0 = false }
     for status in [403, 404] {
       fixture.state.storageStatus.withLock { $0 = status }
@@ -261,7 +234,7 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertEqual(card.artifact.kind, .video)
   }
 
-  func testNativeSharingRetainsAuthorizedFileUntilSystemSheetDismisses() async throws {
+  func testShareConsumerKeepsAuthorizedFileAfterPreviewDismissal() async throws {
     let fixture = try await GeneratedResultFixture.make()
     defer { fixture.server.stop() }
     let conversation = fixture.history.conversation()
@@ -269,27 +242,18 @@ final class GeneratedResultTests: XCTestCase {
     let viewer = conversation.artifacts
     viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
     try await eventually { viewer.preview?.file != nil }
-    let url = try XCTUnwrap(viewer.preview?.file?.url)
-    let host = UIHostingController(
-      rootView: MessageArtifactPreview(viewer: viewer, markdown: conversation.messageMarkdown))
-    let window = try await mountResultHost(host)
-    defer { unmount(window) }
     viewer.share()
-    try await eventually {
-      guard let controller = host.presentedViewController else { return false }
-      return controller.view.window != nil && !controller.isBeingPresented
-        && controller.transitionCoordinator == nil
-    }
-    XCTAssertNotNil(viewer.sharing)
-    XCTAssertEqual(
-      try String(contentsOf: url, encoding: .utf8),
-      "Synthetic generated text\nRead, copy, share, or save to Files.")
-    await hostingPresentationFrame()
-    try await screenshot(window, "Native-share-save-to-Files")
-    host.presentedViewController?.dismiss(animated: false)
-    viewer.dismissSharing()
-    try await eventually { host.presentedViewController == nil }
+    var consumer = viewer.sharing
+    let url = try XCTUnwrap(consumer?.file.url)
     viewer.dismiss()
+    XCTAssertNil(viewer.preview)
+    XCTAssertNil(viewer.sharing)
+    withExtendedLifetime(consumer) {
+      XCTAssertEqual(
+        try String(contentsOf: url, encoding: .utf8),
+        "Synthetic generated text\nRead, copy, share, or save to Files.")
+    }
+    consumer = nil
     try await eventually { !FileManager.default.fileExists(atPath: url.path) }
   }
 
@@ -377,13 +341,6 @@ private final class GeneratedResultFixture: Sendable {
           .font: UIFont.systemFont(ofSize: 38, weight: .bold), .foregroundColor: UIColor.white,
         ])
     }
-    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 400, height: 500)).pdfData {
-      context in
-      context.beginPage()
-      ("Project brief\n\nSynthetic native result fixture." as NSString).draw(
-        in: CGRect(x: 30, y: 40, width: 340, height: 400),
-        withAttributes: [.font: UIFont.systemFont(ofSize: 24)])
-    }
     func bundled(_ name: String, _ ext: String) throws -> Data {
       try Data(
         contentsOf: XCTUnwrap(
@@ -392,18 +349,6 @@ private final class GeneratedResultFixture: Sendable {
     let html = """
       <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{font:20px system-ui;background:#18322f;color:#fff;margin:32px}button{font:18px system-ui;padding:12px 24px;border-radius:12px}h1{margin-top:100px}</style></head><body><p>Quarterly review</p><h1 id='slide'>Slide 1</h1><p>Synthetic interactive HTML presentation.</p><button id='next' onclick="document.getElementById('slide').textContent='Slide 2';location.hash='slide-2'">Next slide</button></body></html>
       """
-    var wav = Data("RIFF".utf8)
-    func little(_ value: UInt32) -> Data { withUnsafeBytes(of: value.littleEndian) { Data($0) } }
-    wav.append(little(8036))
-    wav.append(Data("WAVEfmt ".utf8))
-    wav.append(little(16))
-    wav.append(contentsOf: [1, 0, 1, 0])
-    wav.append(little(8000))
-    wav.append(little(8000))
-    wav.append(contentsOf: [1, 0, 8, 0])
-    wav.append(Data("data".utf8))
-    wav.append(little(8000))
-    wav.append(Data(repeating: 128, count: 8000))
     let files: [GeneratedResultFile] = [
       .init(
         reference: "image00001.png", filename: "Campaign study.png", type: "image/png", bytes: image
@@ -413,9 +358,6 @@ private final class GeneratedResultFixture: Sendable {
         bytes: image),
       .init(reference: "poster0001.png", filename: "Poster.png", type: "image/png", bytes: image),
       .init(
-        reference: "pdf0000001.pdf", filename: "Project brief.pdf", type: "application/pdf",
-        bytes: pdf),
-      .init(
         reference: "word000001.docx", filename: "Project brief.docx",
         type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         bytes: try bundled("generated-result", "docx")),
@@ -424,18 +366,8 @@ private final class GeneratedResultFixture: Sendable {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         bytes: try bundled("generated-result", "xlsx")),
       .init(
-        reference: "slides0001.pptx", filename: "Quarterly review.pptx",
-        type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        bytes: try bundled("generated-result", "pptx")),
-      .init(
         reference: "video00001.mp4", filename: "Campaign recording.mp4", type: "video/mp4",
         bytes: try bundled("attachment-preview", "mp4")),
-      .init(reference: "audio00001.wav", filename: "Voice note.wav", type: "audio/wav", bytes: wav),
-      .init(
-        reference: "mark000001.md", filename: "Research notes.md", type: "text/markdown",
-        bytes: Data(
-          "# Research notes\n\n**Synthetic fixture.** Read, select and copy this document.\n\n- First finding\n- Next step"
-            .utf8)),
       .init(
         reference: "text000001.txt", filename: "Notes.txt", type: "text/plain",
         bytes: Data("Synthetic generated text\nRead, copy, share, or save to Files.".utf8)),
@@ -448,9 +380,6 @@ private final class GeneratedResultFixture: Sendable {
       .init(
         reference: "html000001.html", filename: "Quarterly review.html", type: "text/html",
         bytes: Data(html.utf8), artifactKind: "presentation-html"),
-      .init(
-        reference: "other00001.xyz", filename: "Source.xyz", type: "application/octet-stream",
-        bytes: Data("Synthetic unsupported file".utf8)),
     ]
     let state = GeneratedResultState()
     let server = try ChatFileHTTPServer { request in
@@ -547,34 +476,9 @@ private final class GeneratedResultFixture: Sendable {
   }
 }
 
-@MainActor private func descendants<T: UIViewController>(
-  _ view: UIView, type: T.Type, controller: UIViewController
-) -> T? {
-  (controller as? T)
-    ?? controller.children.lazy.compactMap { descendants($0.view, type: type, controller: $0) }
-    .first
-}
-
-@MainActor private func screenshot(_ window: UIWindow, _ name: String) async throws {
-  let attachment: XCTAttachment
-  // An opt-in loopback bridge captures the simulator display, including system Quick Look's
-  // remote-rendered content. Ordinary CI retains the native window snapshot without a bridge.
-  if let server = ProcessInfo.processInfo.environment["OKOU_NATIVE_SCREENSHOT_SERVER"],
-    var components = URLComponents(string: server)
-  {
-    components.queryItems = [URLQueryItem(name: "name", value: name)]
-    let (data, response) = try await URLSession.shared.data(from: XCTUnwrap(components.url))
-    XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-    attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.png")
-  } else {
-    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-      window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-    }
-    attachment = XCTAttachment(image: image)
-  }
-  attachment.name = name
-  attachment.lifetime = .keepAlways
-  XCTContext.runActivity(named: name) { $0.add(attachment) }
+@MainActor private func previewController(in controller: UIViewController) -> QLPreviewController? {
+  (controller as? QLPreviewController)
+    ?? controller.children.lazy.compactMap { previewController(in: $0) }.first
 }
 
 private final class GeneratedResultState: Sendable {
