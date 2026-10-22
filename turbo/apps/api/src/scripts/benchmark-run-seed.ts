@@ -2,11 +2,46 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { billingRunLifecycleConflictSet } from "@okouai/db/operations/billing-run-lifecycle";
 import { command } from "ccstate";
-import { count, eq, sql } from "drizzle-orm";
-import { pgIntegerDecoder } from "../lib/db-structured-result";
+import { count, isNotNull, min, ne, sql } from "drizzle-orm";
+import { z } from "zod";
+import {
+  nullableDriverValueDecoder,
+  pgIntegerDecoder,
+  pgTextDecoder,
+} from "../lib/db-structured-result";
 import { safeSqlStateCode } from "../lib/pg-errors";
 import { writeDb$ } from "../signals/external/db";
 import { settle } from "../signals/utils";
+
+const identitySchema = z.object({ runId: z.uuid() });
+
+function throwBenchmarkIdentityError(error: unknown): never {
+  if (
+    safeSqlStateCode(error) === "22P02" &&
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "message" in error.cause
+  ) {
+    const message = error.cause.message;
+    if (
+      message ===
+      'invalid input syntax for type integer: "__TX0004_CONFLICT_V1__"'
+    ) {
+      throw new Error("Benchmark Run billing identity conflicts");
+    }
+    if (typeof message === "string") {
+      const invalid =
+        /^invalid input syntax for type integer: "__TX0004_INVALID_UUID_V1__([0-9a-f-]{36})"$/u.exec(
+          message,
+        )?.[1];
+      if (invalid !== undefined) {
+        identitySchema.parse({ runId: invalid });
+      }
+    }
+  }
+  throw error;
+}
 
 // These synthetic Runs deliberately have canonical, provisional billing
 // identities. Capture from the inserted rows, including their exact DB clock,
@@ -33,7 +68,9 @@ export const insertBenchmarkRunBatch$ = command(
         }),
     );
     const lifecycle = billingRunLifecycleConflictSet();
-    const identities = db.$with("benchmark_run_identities").as(sql`
+    const identities = db.$with("benchmark_run_identities", {
+      runId: sql`"runId"`.mapWith(pgTextDecoder).as("runId"),
+    }).as(sql`
           INSERT INTO ${billingRunAttribution} (
             run_id, org_id, user_id, run_started_at, source, thread_id, thread_context,
             run_terminal_status, run_completed_at, run_lifecycle_context
@@ -66,24 +103,33 @@ export const insertBenchmarkRunBatch$ = command(
             AND billing_run_attribution.source = EXCLUDED.source
           RETURNING run_id AS "runId"
         `);
-    // The nonempty carrier evaluates the guard even when every identity conflicts.
-    // Raising inside SQL rolls back both inserts before exposing the old error.
+    const summary = db.$with("benchmark_identity_summary").as(
+      db
+        .select({
+          count: count().as("identity_count"),
+          invalid: sql`${min(sql`${identities.runId}::text`)} FILTER (
+            WHERE ${identities.runId}::text !~* '^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$'
+          )`
+            .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+            .as("invalid_uuid"),
+        })
+        .from(identities),
+    );
+    // The aggregate has one row even when every identity conflicts. Validate
+    // UUIDs before cardinality, raising inside SQL so both writes roll back.
     const result = await settle(
       db
-        .with(inserted, identities)
+        .with(inserted, identities, summary)
         .select({
-          complete: sql`1 / CASE WHEN ${eq(
-            db.select({ count: count() }).from(identities),
-            rows.length,
-          )} THEN 1 ELSE 0 END`.mapWith(pgIntegerDecoder),
+          complete: sql`(CASE
+            WHEN ${isNotNull(summary.invalid)} THEN '__TX0004_INVALID_UUID_V1__' || ${summary.invalid}
+            WHEN ${ne(summary.count, rows.length)} THEN '__TX0004_CONFLICT_V1__'
+            ELSE '0' END)::integer`.mapWith(pgIntegerDecoder),
         })
-        .from(sql`(VALUES (1)) AS benchmark_run_completion(value)`),
+        .from(summary),
     );
     if (!result.ok) {
-      if (safeSqlStateCode(result.error) === "22012") {
-        throw new Error("Benchmark Run billing identity conflicts");
-      }
-      throw result.error;
+      throwBenchmarkIdentityError(result.error);
     }
   },
 );
