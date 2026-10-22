@@ -289,43 +289,6 @@ describe("okou wallet", () => {
     },
   );
 
-  it.each([
-    "payment_methods.agentic",
-    "userinfo:read",
-    "read_link_transactions",
-  ])("refuses an older server's consent URL missing %s", async (missing) => {
-    const url = new URL("https://login.link.com/auth?state=fixture");
-    url.searchParams.set(
-      "scope",
-      ["payment_methods.agentic", "userinfo:read"]
-        .filter((scope) => {
-          return scope !== missing;
-        })
-        .join(" "),
-    );
-    if (missing !== "read_link_transactions") {
-      url.searchParams.set(
-        "authorization_details",
-        JSON.stringify([
-          { type: "source", actions: ["read_link_transactions"] },
-        ]),
-      );
-    }
-    server.use(
-      http.post(`${origin}/api/wallet/connect`, () => {
-        return HttpResponse.json({
-          url: url.toString(),
-          expiresAt: spend.expiresAt,
-        });
-      }),
-    );
-    await expect(run(["connect"])).rejects.toThrow("process.exit called");
-    expect(output).not.toHaveBeenCalledWith(url.toString());
-    expect(JSON.stringify(errors.mock.calls)).toContain(
-      "does not support unified",
-    );
-  });
-
   it("passes transaction filters and cursors and prints a single JSON result", async () => {
     let query: Record<string, string> = {};
     const page = {

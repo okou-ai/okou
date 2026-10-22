@@ -7,7 +7,6 @@ import {
   type WalletCreateSpend,
   type WalletSpendListQuery,
   type WalletTransactionsQuery,
-  walletAuthorizationDetailsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 
 import { ApiRequestError, getClientConfig } from "../core/client-factory";
@@ -56,39 +55,7 @@ export async function walletConnect() {
   if (response.status !== 200) {
     walletError(response, "Could not connect the Link wallet", "connect");
   }
-  const value = walletContract.connect.responses[200].parse(response.body);
-  // An older API may still request payment-only consent. Do not advertise
-  // unified access until the server includes every required permission.
-  const url = new URL(value.url);
-  const scopes = url.searchParams.get("scope")?.split(/[ ,]+/) ?? [];
-  let details: unknown;
-  try {
-    details = JSON.parse(
-      url.searchParams.get("authorization_details") ?? "null",
-    );
-  } catch {
-    details = null;
-  }
-  const parsed = walletAuthorizationDetailsSchema.safeParse(details);
-  const hasTransactions =
-    parsed.success &&
-    parsed.data.some((detail) => {
-      return (
-        detail.type === "source" &&
-        detail.actions.includes("read_link_transactions")
-      );
-    });
-  if (
-    !hasTransactions ||
-    !scopes.includes("payment_methods.agentic") ||
-    !scopes.includes("userinfo:read")
-  ) {
-    throw new Error(
-      "The wallet server does not support unified payment, profile and transaction consent yet; update the server before reconnecting",
-    );
-  }
-
-  return value;
+  return walletContract.connect.responses[200].parse(response.body);
 }
 export async function walletDisconnect() {
   const response = await (await client()).disconnect({ body: {} });
