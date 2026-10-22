@@ -240,11 +240,17 @@ describe("thread email manager", () => {
     });
   });
 
-  it("selects every filtered email including sent mail and disables draft actions for sent-only selection", async () => {
+  it("selects every filtered email and shows draft actions only while drafts are selected", async () => {
     installMails();
     await openChat();
     const list = await openList();
+    expect(within(list).queryByText("Send")).not.toBeInTheDocument();
+    expect(within(list).queryByText("Delete")).not.toBeInTheDocument();
+    expect(
+      within(list).queryByText("Actions apply to selected drafts"),
+    ).not.toBeInTheDocument();
     await click(within(list).getByLabelText("Select email: Proposal 1"));
+    await within(list).findByText("Actions apply to selected drafts");
     expect(
       within(list).getByRole("checkbox", { name: "Select all" }),
     ).toHaveAttribute("aria-checked", "mixed");
@@ -256,11 +262,22 @@ describe("thread email manager", () => {
       within(list).getByLabelText("Select email: Proposal 12"),
     ).toHaveAttribute("aria-checked", "true");
     await click(within(list).getByRole("checkbox", { name: "Select all" }));
+    await within(list).findByText("0 selected");
+    await waitFor(() => {
+      expect(within(list).queryByText("Send")).not.toBeInTheDocument();
+      expect(within(list).queryByText("Delete")).not.toBeInTheDocument();
+      expect(
+        within(list).queryByText("Actions apply to selected drafts"),
+      ).not.toBeInTheDocument();
+    });
     await click(await button("Sent", list));
     await click(within(list).getByRole("checkbox", { name: "Select all" }));
     await within(list).findByText("10 selected");
-    await expect(button("Send", list)).resolves.toBeDisabled();
-    await expect(button("Delete", list)).resolves.toBeDisabled();
+    expect(within(list).queryByText("Send")).not.toBeInTheDocument();
+    expect(within(list).queryByText("Delete")).not.toBeInTheDocument();
+    expect(
+      within(list).queryByText("Actions apply to selected drafts"),
+    ).not.toBeInTheDocument();
   });
 
   it("preserves selection, search and scroll when returning from list details; chat details have no list navigation", async () => {
@@ -344,8 +361,11 @@ describe("thread email manager", () => {
       name: "Send selected drafts?",
     });
     await click(await button("Send", retry));
-    await screen.findByText("1 completed · 0 failed");
+    await within(list).findByText("10 selected");
     expect(fixture.sent).toStrictEqual([id(1), id(2)]);
+    await waitFor(() => {
+      expect(within(list).queryByText("Send")).not.toBeInTheDocument();
+    });
   });
 
   it("confirms bulk deletion of drafts and keeps all selected sent emails", async () => {
@@ -364,9 +384,11 @@ describe("thread email manager", () => {
       name: "Delete selected drafts?",
     });
     await click(await button("Delete", second));
-    await screen.findByText("2 completed · 0 failed");
+    await within(list).findByText("10 selected");
     expect(fixture.deleted).toStrictEqual([id(1), id(2)]);
     expect(fixture.mails.get(id(12))?.status).toBe("sent");
-    await expect(button("Delete", list)).resolves.toBeDisabled();
+    await waitFor(() => {
+      expect(within(list).queryByText("Delete")).not.toBeInTheDocument();
+    });
   });
 });

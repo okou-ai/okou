@@ -14,6 +14,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Skeleton,
   Toggle,
   ToggleGroup,
 } from "@okouai/ui";
@@ -331,18 +332,7 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
           </Button>
         </div>
       ) : filtered.state === "loading" ? (
-        <div
-          className="flex justify-center p-8"
-          role="status"
-          aria-label={t(($) => {
-            return $.chat.mail.manager.loading;
-          })}
-        >
-          <Loader2
-            size={20}
-            className="animate-spin motion-reduce:animate-none"
-          />
-        </div>
+        <ThreadMailRowsSkeleton />
       ) : rows.length === 0 ? (
         <p className="p-8 text-center text-sm text-muted-foreground">
           {query || filter !== "all"
@@ -364,6 +354,38 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
   );
 }
 
+function ThreadMailRowsSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.chat.mail.manager.loading;
+      })}
+    >
+      {[0, 1, 2].map((row) => {
+        return (
+          <div
+            key={row}
+            aria-hidden="true"
+            className="flex items-center gap-3 border-b border-border/40 px-4 last:border-b-0"
+          >
+            <Skeleton className="h-4 w-4 shrink-0 rounded-md" />
+            <div className="flex min-w-0 flex-1 items-center gap-2 px-4 py-4">
+              <div className="min-w-0 flex-1 space-y-1">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+              <Skeleton className="h-6 w-12 shrink-0 rounded-md" />
+              <Skeleton className="h-4 w-4 shrink-0" />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const drafts = useLastLoadable(thread.mail.selectedDrafts$);
@@ -373,7 +395,10 @@ function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
   const prepare = useSet(thread.mail.prepare$);
   const signal = useGet(pageSignal$);
   const draftCount = drafts.state === "hasData" ? drafts.data.length : 0;
-  const disabled = busy || pending !== null || draftCount === 0;
+  if (draftCount === 0) {
+    return null;
+  }
+  const disabled = busy || pending !== null;
   return (
     <div className="shrink-0 space-y-3 border-t border-border/60 p-4">
       <p className="text-xs text-muted-foreground" role="status">
