@@ -3,7 +3,7 @@ import { Axiom } from "@axiomhq/js";
 import { serializeError } from "@okouai/core/log-utils";
 import { delay } from "signal-timers";
 
-import { axiomFetch } from "../../lib/axiom-fetch";
+import { createAxiomFetch } from "../../lib/axiom-fetch";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
@@ -50,7 +50,7 @@ function logClientError(
 const sessionsAxiomQueryClient = singleton(() => {
   return new Axiom({
     token: env("AXIOM_TOKEN_SESSIONS"),
-    fetch: axiomFetch,
+    fetch: createAxiomFetch(),
     onError: (error) => {
       logClientError("sessions", error);
     },
@@ -60,7 +60,7 @@ const sessionsAxiomQueryClient = singleton(() => {
 const telemetryAxiomQueryClient = singleton(() => {
   return new Axiom({
     token: env("AXIOM_TOKEN_TELEMETRY"),
-    fetch: axiomFetch,
+    fetch: createAxiomFetch(),
     onError: (error) => {
       logClientError("telemetry", error);
     },
@@ -103,7 +103,7 @@ function axiomClientForDataset(dataset: string): Axiom | null {
 
   const client = new Axiom({
     token,
-    fetch: axiomFetch,
+    fetch: createAxiomFetch(),
     onError: (error) => {
       logClientError(clientName, error, dataset);
     },

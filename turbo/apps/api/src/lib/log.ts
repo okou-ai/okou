@@ -11,7 +11,7 @@ import {
   serializeError,
 } from "@okouai/core/log-utils";
 
-import { axiomFetch } from "./axiom-fetch";
+import { createAxiomFetch } from "./axiom-fetch";
 import { env } from "./env";
 import { singleton } from "./singleton";
 
@@ -157,7 +157,7 @@ const getAxiomLogger = singleton((): AxiomLogger | null => {
   const dataset = `vm0-web-logs-${env("AXIOM_DATASET_SUFFIX")}`;
   const axiom = new Axiom({
     token,
-    fetch: axiomFetch,
+    fetch: createAxiomFetch(),
     onError: (error) => {
       reportAxiomLogDeliveryError(dataset, error);
     },

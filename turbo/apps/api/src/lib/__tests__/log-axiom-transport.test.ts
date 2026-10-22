@@ -130,6 +130,9 @@ describe("Axiom logging transport", () => {
     onTestFinished(restoreConsole);
     let unavailable = true;
     let failedRequestBytes = 0;
+    let firstFailedRequestAt: number | undefined;
+    let failedRequestSpanMs = 0;
+    let failedRequestCount = 0;
     const delivered: unknown[] = [];
     server.use(
       http.post(
@@ -137,6 +140,10 @@ describe("Axiom logging transport", () => {
         async ({ request }) => {
           const bytes = Buffer.from(await request.arrayBuffer());
           if (unavailable) {
+            const failedAt = performance.now();
+            firstFailedRequestAt ??= failedAt;
+            failedRequestSpanMs = failedAt - firstFailedRequestAt;
+            failedRequestCount += 1;
             failedRequestBytes = bytes.byteLength;
             return HttpResponse.error();
           }
@@ -191,6 +198,8 @@ describe("Axiom logging transport", () => {
                   endpoint: "/v1/datasets/vm0-web-logs-dev/ingest",
                   method: "POST",
                   elapsedMs: expect.any(Number),
+                  attemptElapsedMs: expect.any(Number),
+                  attempt: failedRequestCount,
                   requestBytes: failedRequestBytes,
                   aborted: false,
                 },
@@ -204,6 +213,21 @@ describe("Axiom logging transport", () => {
             "xaat-private-transport-test-token",
           );
           expect(diagnostics).not.toContain("private-failed-log-payload");
+          const failure = z
+            .object({
+              error: z.object({
+                request: z.object({ elapsedMs: z.number() }),
+              }),
+            })
+            .parse(
+              context.mocks.console.error.mock.calls.find(([message]) => {
+                return message === "Axiom application log delivery failed";
+              })?.[1],
+            );
+          expect(failedRequestCount).toBe(2);
+          expect(failure.error.request.elapsedMs).toBeGreaterThanOrEqual(
+            failedRequestSpanMs,
+          );
 
           unavailable = false;
           log.info("logging resumed");
