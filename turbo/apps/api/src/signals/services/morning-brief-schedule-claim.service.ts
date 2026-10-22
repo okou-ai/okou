@@ -23,7 +23,13 @@ import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 
-import { advanceInFlightSchedule } from "./workflow-schedule-settlement";
+import {
+  inFlightScheduleAdvanceCondition,
+  inFlightScheduleAdvanceSelection,
+  inFlightScheduleAdvanceValues,
+  inFlightScheduleCorrection,
+  type InFlightScheduleAdvance,
+} from "./workflow-schedule-settlement";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
@@ -284,16 +290,24 @@ function officialMorningBriefSettlementPlan(
     completedAt: settledAt,
     shouldDisable: false,
   });
-  return {
-    shouldDisable,
-    consecutiveFailures,
+  const advance: InFlightScheduleAdvance = {
+    automationId: args.automationId,
+    read: {
+      scheduleType: "cron",
+      cronExpression: automation.cronExpression,
+      intervalSeconds: automation.intervalSeconds,
+      timezone: automation.timezone,
+    },
     automationValues: {
       consecutiveFailures,
       ...(shouldDisable ? { enabled: false } : {}),
       nextRunAt,
       updatedAt: settledAt,
     },
+    at: settledAt,
+    requireEmptySlot: true,
   };
+  return { shouldDisable, consecutiveFailures, advance };
 }
 
 type MorningBriefScheduleSettlementOutcome = {
@@ -353,20 +367,27 @@ const commitMorningBriefScheduleSettlement$ = command(
               args,
               settledAt,
             );
-            const advanced = plan
-              ? await advanceInFlightSchedule(tx, {
-                  automationId: args.automationId,
-                  read: {
-                    scheduleType: "cron",
-                    cronExpression: automation.cronExpression,
-                    intervalSeconds: automation.intervalSeconds,
-                    timezone: automation.timezone,
-                  },
-                  automationValues: plan.automationValues,
-                  at: settledAt,
-                  requireEmptySlot: true,
-                })
-              : "superseded";
+            let advanced = false;
+            if (plan) {
+              const [committed] = await tx
+                .update(workflowAutomations)
+                .set(inFlightScheduleAdvanceValues(plan.advance))
+                .where(inFlightScheduleAdvanceCondition(plan.advance))
+                .returning(inFlightScheduleAdvanceSelection());
+              if (committed !== undefined) {
+                const correction = inFlightScheduleCorrection(
+                  committed,
+                  plan.advance,
+                );
+                if (correction) {
+                  await tx
+                    .update(workflowAutomations)
+                    .set(correction)
+                    .where(eq(workflowAutomations.id, args.automationId));
+                }
+                advanced = true;
+              }
+            }
             const [settled] = await tx
               .update(morningBriefScheduleClaims)
               .set({
@@ -385,7 +406,7 @@ const commitMorningBriefScheduleSettlement$ = command(
               // Another settler won this occurrence; discard everything written here.
               throw new MorningBriefClaimAlreadySettled();
             }
-            return plan?.shouldDisable && advanced === "advanced"
+            return plan?.shouldDisable && advanced
               ? {
                   orgId: claim.orgId,
                   userId: claim.ownerUserId,

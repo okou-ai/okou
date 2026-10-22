@@ -1,4 +1,10 @@
-import { advanceInFlightSchedule } from "./workflow-schedule-settlement";
+import {
+  inFlightScheduleAdvanceCondition,
+  inFlightScheduleAdvanceSelection,
+  inFlightScheduleAdvanceValues,
+  inFlightScheduleCorrection,
+  type InFlightScheduleAdvance,
+} from "./workflow-schedule-settlement";
 import { command } from "ccstate";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -218,7 +224,7 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
         completedAt,
         shouldDisable: false,
       });
-      const advanced = await advanceInFlightSchedule(tx, {
+      const advance: InFlightScheduleAdvance = {
         automationId: args.automationId,
         read: automation,
         automationValues: {
@@ -237,9 +243,23 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
         // ordinary recurrence keeps its pre-existing enabled-only predicate.
         requireEmptySlot: args.lineage !== undefined,
         requireUnjournaledSlot: args.lineage !== undefined,
-      });
+      };
+      const [committed] = await tx
+        .update(workflowAutomations)
+        .set(inFlightScheduleAdvanceValues(advance))
+        .where(inFlightScheduleAdvanceCondition(advance))
+        .returning(inFlightScheduleAdvanceSelection());
+      if (committed !== undefined) {
+        const correction = inFlightScheduleCorrection(committed, advance);
+        if (correction) {
+          await tx
+            .update(workflowAutomations)
+            .set(correction)
+            .where(eq(workflowAutomations.id, args.automationId));
+        }
+      }
       signal?.throwIfAborted();
-      return advanced === "advanced"
+      return committed !== undefined
         ? ({ kind: "settled", result: { success: true } } as const)
         : skippedUnjournaledCallbackSettlement();
     });

@@ -1,12 +1,7 @@
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
-import { settle } from "../utils";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
-
-/** A newer toggle, revocation or settlement already owns the successor. */
-class InFlightScheduleSuperseded extends Error {}
 
 type ScheduleInputs = Pick<
   typeof workflowAutomations.$inferSelect,
@@ -45,85 +40,79 @@ export interface InFlightScheduleAdvance {
   readonly requireUnjournaledSlot?: boolean;
 }
 
-/** Advance once under the Official row's enabled/empty-slot fence, applying concurrent recurrence edits. */
-export async function advanceInFlightSchedule(
-  tx: Tx,
-  args: InFlightScheduleAdvance,
-): Promise<"advanced" | "superseded"> {
-  const result = await settle(
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0345; new non-billing transactions are prohibited.
-    tx.transaction(async (sp) => {
-      const ordinary = args.ordinaryFailure;
-      const nextCount = ordinary?.reset
-        ? sql`0`
-        : sql`${workflowAutomations.consecutiveFailures} + ${ordinary?.increment ?? 0}`;
-      const disable =
-        ordinary && !ordinary.reset && ordinary.increment > 0
-          ? sql`${nextCount} >= ${ordinary.disableAt}`
-          : sql`false`;
-      const [committed] = await sp
-        .update(workflowAutomations)
-        .set({
-          ...args.automationValues,
-          ...(ordinary
-            ? {
-                consecutiveFailures: nextCount,
-                ...scheduleFailurePauseValues(
-                  disable,
-                  args.automationValues.nextRunAt,
-                ),
-              }
-            : {}),
-        })
-        .where(
-          and(
-            eq(workflowAutomations.id, args.automationId),
-            eq(workflowAutomations.enabled, true),
-            args.requireEmptySlot
-              ? isNull(workflowAutomations.nextRunAt)
-              : undefined,
-            args.requireUnjournaledSlot
-              ? sql`NOT EXISTS (SELECT 1 FROM morning_brief_schedule_claims WHERE automation_id = ${args.automationId}::uuid)`
-              : undefined,
+/**
+ * Statement data only; each caller owns rollback in its existing transaction.
+ * A zero-row UPDATE may retain tuple locks until that outer transaction ends.
+ */
+export function inFlightScheduleAdvanceValues(args: InFlightScheduleAdvance) {
+  const ordinary = args.ordinaryFailure;
+  const nextCount = ordinary?.reset
+    ? sql`0`
+    : sql`${workflowAutomations.consecutiveFailures} + ${ordinary?.increment ?? 0}`;
+  const disable =
+    ordinary && !ordinary.reset && ordinary.increment > 0
+      ? sql`${nextCount} >= ${ordinary.disableAt}`
+      : sql`false`;
+  return {
+    ...args.automationValues,
+    ...(ordinary
+      ? {
+          consecutiveFailures: nextCount,
+          ...scheduleFailurePauseValues(
+            disable,
+            args.automationValues.nextRunAt,
           ),
-        )
-        .returning({
-          scheduleType: workflowAutomations.scheduleType,
-          cronExpression: workflowAutomations.cronExpression,
-          intervalSeconds: workflowAutomations.intervalSeconds,
-          timezone: workflowAutomations.timezone,
-          enabled: workflowAutomations.enabled,
-          nextRunAt: workflowAutomations.nextRunAt,
-        });
-      if (committed === undefined) {
-        throw new InFlightScheduleSuperseded();
-      }
-      if (
-        sameScheduleInputs(committed, args.read) ||
-        (committed.scheduleType !== "cron" && committed.scheduleType !== "loop")
-      ) {
-        return "advanced" as const;
-      }
-      const nextRunAt = advanceTimeAutomationAfterCompletion({
-        scheduleType: committed.scheduleType,
-        cronExpression: committed.cronExpression,
-        intervalSeconds: committed.intervalSeconds,
-        timezone: committed.timezone,
-        completedAt: args.at,
-        shouldDisable: !committed.enabled && committed.nextRunAt === null,
-      });
-      await sp
-        .update(workflowAutomations)
-        .set({ nextRunAt })
-        .where(eq(workflowAutomations.id, args.automationId));
-      return "advanced" as const;
-    }),
+        }
+      : {}),
+  };
+}
+
+export function inFlightScheduleAdvanceCondition(
+  args: InFlightScheduleAdvance,
+) {
+  return and(
+    eq(workflowAutomations.id, args.automationId),
+    eq(workflowAutomations.enabled, true),
+    args.requireEmptySlot ? isNull(workflowAutomations.nextRunAt) : undefined,
+    args.requireUnjournaledSlot
+      ? sql`NOT EXISTS (SELECT 1 FROM morning_brief_schedule_claims WHERE automation_id = ${args.automationId}::uuid)`
+      : undefined,
   );
-  if (result.ok) {
-    return result.value;
+}
+
+export function inFlightScheduleAdvanceSelection() {
+  return {
+    scheduleType: workflowAutomations.scheduleType,
+    cronExpression: workflowAutomations.cronExpression,
+    intervalSeconds: workflowAutomations.intervalSeconds,
+    timezone: workflowAutomations.timezone,
+    enabled: workflowAutomations.enabled,
+    nextRunAt: workflowAutomations.nextRunAt,
+  };
+}
+
+/** Recompute from the committed recurrence using the caller's original instant. */
+export function inFlightScheduleCorrection(
+  committed: ScheduleInputs & {
+    readonly enabled: boolean;
+    readonly nextRunAt: Date | null;
+  },
+  args: InFlightScheduleAdvance,
+) {
+  if (
+    sameScheduleInputs(committed, args.read) ||
+    (committed.scheduleType !== "cron" && committed.scheduleType !== "loop")
+  ) {
+    return undefined;
   }
-  if (result.error instanceof InFlightScheduleSuperseded) {
-    return "superseded";
-  }
-  throw result.error;
+  return {
+    nextRunAt: advanceTimeAutomationAfterCompletion({
+      scheduleType: committed.scheduleType,
+      cronExpression: committed.cronExpression,
+      intervalSeconds: committed.intervalSeconds,
+      timezone: committed.timezone,
+      completedAt: args.at,
+      shouldDisable: !committed.enabled && committed.nextRunAt === null,
+    }),
+  };
 }
