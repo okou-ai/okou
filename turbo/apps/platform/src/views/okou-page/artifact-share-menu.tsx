@@ -8,6 +8,7 @@ import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import {
   Check,
   Globe,
+  Link2,
   Loader2,
   LockKeyhole,
   Share2,
@@ -137,10 +138,14 @@ export function SharePermissionChoices({
 }
 
 /**
- * The menu's one action. A successful copy is confirmed on this button rather
- * than in a toast; `min-w-24` holds the button's width while its label swaps
- * between the two, and the status line carries the confirmation to screen
- * readers, which a changed button label does not reach.
+ * The menu's one action. Copying is repeatable and changes nothing, so it takes
+ * the neutral button rather than the filled primary a commit such as Save
+ * gets; filled, it outweighed the address the menu exists to show.
+ *
+ * A successful copy is confirmed on this button rather than in a toast;
+ * `min-w-28` holds the button's width while its label swaps between the two,
+ * and the status line carries the confirmation to screen readers, which a
+ * changed button label does not reach.
  */
 export function ShareCopyButton({
   copied,
@@ -160,14 +165,15 @@ export function ShareCopyButton({
   return (
     <>
       <Button
+        variant="neutral"
         size="sm"
-        className={cn("min-w-24", className)}
+        className={cn("min-w-28", className)}
         disabled={disabled}
         onClick={() => {
           return onCopy();
         }}
       >
-        {copied && <Check size={16} />}
+        {copied ? <Check size={16} /> : <Link2 size={16} />}
         {copied
           ? copiedLabel
           : t(($) => {
@@ -234,7 +240,7 @@ export function ShareSkeleton({
       })}
       {showCopyButton && (
         <div className="mt-1.5 flex justify-end">
-          <Skeleton className="h-8 w-24 rounded-lg" />
+          <Skeleton className="h-8 w-28 rounded-lg" />
         </div>
       )}
     </div>

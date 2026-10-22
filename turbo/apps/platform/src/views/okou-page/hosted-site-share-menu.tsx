@@ -468,7 +468,7 @@ function HostedSiteShareBody({
         // Nothing can be copied or customized until the current address is
         // known, so the footer holds its place without offering either.
         <div aria-busy="true" className="mt-4 flex justify-end">
-          <Skeleton className="h-8 w-24 rounded-lg" />
+          <Skeleton className="h-8 w-28 rounded-lg" />
         </div>
       ) : (
         <HostedSiteShareActions
