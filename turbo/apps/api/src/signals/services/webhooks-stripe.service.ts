@@ -4059,12 +4059,16 @@ const handleSubscriptionScheduleReleased$ = command(
         .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
         .returning({ orgId: orgMetadata.orgId }),
     );
-    // Both independent updates share one statement's atomic commit and snapshot.
-    const rows = await db
-      .with(usagePackChanges, organizations)
+    const changedOrganizations = db
       .select({ orgId: usagePackChanges.orgId })
       .from(usagePackChanges)
-      .unionAll(db.select({ orgId: organizations.orgId }).from(organizations));
+      .unionAll(db.select({ orgId: organizations.orgId }).from(organizations))
+      .as("released_organizations");
+    // Keep writable CTEs at the statement's top level, outside UNION branches.
+    const rows = await db
+      .with(usagePackChanges, organizations)
+      .select({ orgId: changedOrganizations.orgId })
+      .from(changedOrganizations);
     const orgIds = [
       ...new Set(
         rows.map((row) => {
