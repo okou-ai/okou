@@ -364,7 +364,9 @@ function createBatchContinueCommand(
       // Acquire the slot synchronously before any operation code can re-enter.
       await Promise.resolve();
       // Observe settlement to release execution ownership, not request feedback.
-      const [outcome] = await Promise.allSettled([set(performContinue$, signal)]);
+      const [outcome] = await Promise.allSettled([
+        set(performContinue$, signal),
+      ]);
       if (get(local.continuingInFlight$) === operation) {
         set(local.continuingInFlight$, null);
       }
