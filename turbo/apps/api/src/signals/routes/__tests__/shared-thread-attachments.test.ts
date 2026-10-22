@@ -60,7 +60,13 @@ async function fixture() {
   const storage = installSharedThreadStorage(context);
   mocks.clerk.session(actor.userId, actor.orgId);
 
-  async function upload(filename: string, contentType: string, bytes: string) {
+  async function upload(
+    filename: string,
+    contentType: string,
+    bytes: string,
+    scope: "public" | "private" = "private",
+  ) {
+    mocks.clerk.session(actor.userId, scope === "public" ? null : actor.orgId);
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -86,6 +92,7 @@ async function fixture() {
       }),
       [200],
     );
+    mocks.clerk.session(actor.userId, actor.orgId);
     return {
       id: prepared.body.id,
       uploadUrl: prepared.body.uploadUrl,
@@ -150,17 +157,19 @@ async function attachmentBytes(url: string): Promise<string> {
   return (await fetch(url)).text();
 }
 
-test("publishes independent attachment bytes", async () => {
+test("publishes independent public attachment bytes", async () => {
   const f = await fixture();
   const image = await f.upload(
     "dashboard.png",
     "image/png",
     "original image bytes",
+    "public",
   );
   const pdf = await f.upload(
     "brief.pdf",
     "application/pdf",
     "original pdf bytes",
+    "public",
   );
   const message = await f.send([
     image.part,
