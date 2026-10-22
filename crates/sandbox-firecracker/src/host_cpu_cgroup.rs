@@ -38,8 +38,13 @@ pub(crate) struct HostCpuCgroupManager {
 }
 
 pub(crate) struct GuestCpuCgroupLease {
-    leaf_path: Option<PathBuf>,
-    placement_directory: Option<File>,
+    // Close our placement descriptor before abandoning the leaf owner.
+    placement_directory: File,
+    leaf: GuestCpuCgroupLeaf,
+}
+
+struct GuestCpuCgroupLeaf {
+    path: Option<PathBuf>,
 }
 
 impl HostCpuCgroupManager {
@@ -177,8 +182,10 @@ impl HostCpuCgroupManager {
         })?;
         match configure_guest_leaf(&leaf_path, vcpu) {
             Ok(placement_directory) => Ok(GuestCpuCgroupLease {
-                leaf_path: Some(leaf_path),
-                placement_directory: Some(placement_directory),
+                placement_directory,
+                leaf: GuestCpuCgroupLeaf {
+                    path: Some(leaf_path),
+                },
             }),
             Err(error) => {
                 if let Err(cleanup_error) = fs::remove_dir(&leaf_path) {
@@ -201,34 +208,40 @@ impl HostCpuCgroupManager {
 
 impl GuestCpuCgroupLease {
     pub(crate) fn clone_placement_directory(&self) -> io::Result<File> {
-        self.placement_directory
-            .as_ref()
-            .ok_or_else(|| io::Error::other("Guest CPU cgroup lease already released"))?
-            .try_clone()
+        self.placement_directory.try_clone()
     }
 
-    pub(crate) fn release(mut self) -> io::Result<()> {
-        drop(self.placement_directory.take());
-        match self.leaf_path.take() {
-            Some(leaf_path) => fs::remove_dir(leaf_path),
-            None => Ok(()),
-        }
+    pub(crate) fn release(self) -> io::Result<()> {
+        let Self {
+            placement_directory,
+            leaf,
+        } = self;
+        drop(placement_directory);
+        leaf.release()
     }
 
     #[cfg(test)]
     pub(crate) fn from_test_file(leaf_path: PathBuf, placement_directory: File) -> Self {
         Self {
-            leaf_path: Some(leaf_path),
-            placement_directory: Some(placement_directory),
+            placement_directory,
+            leaf: GuestCpuCgroupLeaf {
+                path: Some(leaf_path),
+            },
         }
     }
 }
 
-impl Drop for GuestCpuCgroupLease {
+impl GuestCpuCgroupLeaf {
+    fn release(mut self) -> io::Result<()> {
+        // Disarm before attempting removal, including when it returns an error.
+        self.path.take().map_or(Ok(()), fs::remove_dir)
+    }
+}
+
+impl Drop for GuestCpuCgroupLeaf {
     fn drop(&mut self) {
-        drop(self.placement_directory.take());
-        if let Some(leaf_path) = self.leaf_path.take()
-            && let Err(error) = fs::remove_dir(&leaf_path)
+        if let Some(leaf_path) = &self.path
+            && let Err(error) = fs::remove_dir(leaf_path)
             && error.kind() != io::ErrorKind::NotFound
         {
             warn!(
@@ -547,6 +560,7 @@ fn configure_guest_leaf(leaf_path: &Path, vcpu: u32) -> io::Result<File> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::MetadataExt;
     use std::os::unix::fs::symlink;
 
     fn set_delegate_xattr(path: &Path) {
@@ -610,6 +624,55 @@ mod tests {
             fs::read_to_string(root.join(GUESTS_GROUP).join(CGROUP_SUBTREE_CONTROL)).unwrap(),
             "+cpu"
         );
+    }
+
+    #[test]
+    fn acquired_lease_retires_its_leaf_and_preserves_caller_owned_clone() {
+        for explicit_release in [true, false] {
+            let (_temp, proc, mount) = fake_delegated_tree();
+            let config =
+                HostCpuPlacementConfig::new(100, 9900, HostCpuPlacementMode::Required).unwrap();
+            let manager = HostCpuCgroupManager::initialize_at(config, &proc, &mount).unwrap();
+            let id = SandboxId::new_v4();
+            let lease = manager.acquire(id, 2).unwrap();
+            let leaf = manager.guests_path.join(id.to_string());
+            let placement = lease.clone_placement_directory().unwrap();
+
+            assert_eq!(fs::read_to_string(leaf.join(CPU_WEIGHT)).unwrap(), "2");
+            assert_eq!(
+                placement.metadata().unwrap().ino(),
+                fs::metadata(&leaf).unwrap().ino()
+            );
+            // Regular filesystem fixtures have real control files; cgroupfs's
+            // virtual cpu.weight does not make an otherwise empty leaf busy.
+            fs::remove_file(leaf.join(CPU_WEIGHT)).unwrap();
+
+            if explicit_release {
+                lease.release().unwrap();
+            } else {
+                drop(lease);
+            }
+
+            assert!(!leaf.exists());
+            assert!(placement.metadata().unwrap().is_dir());
+        }
+    }
+
+    #[test]
+    fn acquired_lease_release_surfaces_populated_leaf_removal_failure() {
+        let (_temp, proc, mount) = fake_delegated_tree();
+        let config =
+            HostCpuPlacementConfig::new(100, 9900, HostCpuPlacementMode::Required).unwrap();
+        let manager = HostCpuCgroupManager::initialize_at(config, &proc, &mount).unwrap();
+        let id = SandboxId::new_v4();
+        let lease = manager.acquire(id, 2).unwrap();
+        let leaf = manager.guests_path.join(id.to_string());
+
+        assert_eq!(
+            lease.release().unwrap_err().kind(),
+            io::ErrorKind::DirectoryNotEmpty
+        );
+        assert_eq!(fs::read_to_string(leaf.join(CPU_WEIGHT)).unwrap(), "2");
     }
 
     #[test]
