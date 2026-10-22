@@ -206,15 +206,6 @@ function targetPolicyMessage(error: ScrapeTargetPolicyError): string {
     case "embedded_credentials": {
       return "Scrape URL must not include credentials";
     }
-    case "internal_hostname": {
-      return "Scrape URL must target a public hostname";
-    }
-    case "unresolvable_hostname": {
-      return "Scrape URL hostname could not be resolved";
-    }
-    case "blocked_address": {
-      return "Scrape URL resolves to a blocked network address";
-    }
   }
 }
 
@@ -527,18 +518,15 @@ function successBody(args: ScrapeSuccessArgs): ScrapeResponse {
   }
 }
 
-async function validateFinalUrl(
+function validateFinalUrl(
   finalUrl: string | undefined,
-): Promise<ScrapeErrorResponse | null> {
+): ScrapeErrorResponse | null {
   if (!finalUrl) {
     return null;
   }
-  const validation = await validateScrapeTargetUrl(finalUrl);
+  const validation = validateScrapeTargetUrl(finalUrl);
   return typeof validation === "string"
-    ? badGateway(
-        "Firecrawl returned a non-public final URL",
-        "UNSAFE_FINAL_URL",
-      )
+    ? badGateway("Firecrawl returned an invalid final URL", "UNSAFE_FINAL_URL")
     : null;
 }
 
@@ -565,7 +553,7 @@ async function completeScrapeSuccess(
     return normalized;
   }
 
-  const finalUrlError = await validateFinalUrl(normalized.finalUrl);
+  const finalUrlError = validateFinalUrl(normalized.finalUrl);
   if (finalUrlError) {
     return finalUrlError;
   }
@@ -624,7 +612,7 @@ export const scrape$ = command(
     const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
     requestSignal.throwIfAborted();
 
-    const target = await validateScrapeTargetUrl(args.body.url);
+    const target = validateScrapeTargetUrl(args.body.url);
     signal.throwIfAborted();
     requestSignal.throwIfAborted();
     if (typeof target === "string") {

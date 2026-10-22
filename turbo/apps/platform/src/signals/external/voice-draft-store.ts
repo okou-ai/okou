@@ -75,6 +75,7 @@ export async function readVoiceDraftRecording(
   key: string,
 ): Promise<VoiceDraftRecordingRecord | null> {
   const database = await openVoiceDraftRecordingDatabase();
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return await withCleanup(
     runIndexedDbTransaction(
       {
@@ -101,6 +102,7 @@ export async function createVoiceDraftRecording(
   id: string,
 ): Promise<VoiceDraftRecordingRecord> {
   const database = await openVoiceDraftRecordingDatabase();
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return await withCleanup(
     runIndexedDbTransaction(
       {
@@ -135,6 +137,7 @@ export async function appendVoiceDraftSamples(
   samples: Float32Array,
 ): Promise<VoiceDraftRecordingRecord> {
   const database = await openVoiceDraftRecordingDatabase();
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return await withCleanup(
     runIndexedDbTransaction(
       {
@@ -180,6 +183,7 @@ export async function saveVoiceDraftProgress(
   progress: VoiceDraftProgress,
 ): Promise<void> {
   const database = await openVoiceDraftRecordingDatabase();
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   await withCleanup(
     runIndexedDbTransaction(
       {
@@ -214,6 +218,7 @@ export async function readVoiceDraftAudio(
   id: string,
 ): Promise<Blob> {
   const database = await openVoiceDraftRecordingDatabase();
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return await withCleanup(
     runIndexedDbTransaction(
       {
@@ -255,6 +260,7 @@ export async function deleteVoiceDraftRecording(
   id: string,
 ): Promise<void> {
   const database = await openVoiceDraftRecordingDatabase();
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   await withCleanup(
     runIndexedDbTransaction(
       {

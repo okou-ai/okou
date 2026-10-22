@@ -105,6 +105,7 @@ function createAgentConnectorAuthorizationRequestBroker(): AgentConnectorAuthori
         }
         return value;
       };
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       const sharedRequest = withCleanup(loadAndRemember(), () => {
         pendingRequests.delete(key);
         if (pendingRequests.size === 0) {

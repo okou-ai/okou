@@ -1,15 +1,9 @@
 import { Buffer } from "node:buffer";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
 
 import type { FetchLike } from "@modelcontextprotocol/client";
 
-import {
-  fetchHostHasBlockedAddress,
-  resolveFetchHostAddresses,
-  type ResolvedFetchAddress,
-} from "../../lib/blocked-fetch-host";
-import { awaitWithSignal, createDeferredPromise } from "../utils";
+import { createDeferredPromise } from "../utils";
 
 const MCP_OAUTH_FETCH_TIMEOUT_MS = 10_000;
 const MCP_OAUTH_MAX_HEADER_BYTES = 16 * 1024;
@@ -43,7 +37,7 @@ interface SerializedRequest {
   readonly body: Buffer | undefined;
 }
 
-type PinnedRequestOutcome =
+type RequestOutcome =
   | { readonly ok: true; readonly response: Response }
   | { readonly ok: false; readonly error: unknown };
 
@@ -54,68 +48,16 @@ export class McpOAuthUnsafeUrlError extends Error {
   }
 }
 
-function internalHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/\.$/u, "");
-  return (
-    normalized.length === 0 ||
-    normalized === "localhost" ||
-    normalized === "localhost.localdomain" ||
-    normalized.endsWith(".localhost") ||
-    normalized.endsWith(".local") ||
-    (isIP(normalized) === 0 && !normalized.includes("."))
-  );
-}
-
-function ipLiteralAddress(hostname: string): ResolvedFetchAddress | null {
-  const address =
-    hostname.startsWith("[") && hostname.endsWith("]")
-      ? hostname.slice(1, -1)
-      : hostname;
-  const family = isIP(address);
-  if (family === 0) {
-    return null;
-  }
-  return { address, family: family === 6 ? 6 : 4 };
-}
-
 function allowedUrl(input: string | URL): URL {
   const url = new URL(input);
-  if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    url.hash ||
-    internalHostname(url.hostname)
-  ) {
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
     throw new McpOAuthUnsafeUrlError();
   }
   return url;
 }
 
-async function resolvePublicAddress(
-  url: URL,
-  signal: AbortSignal,
-): Promise<ResolvedFetchAddress> {
-  const literal = ipLiteralAddress(url.hostname);
-  const addresses = literal
-    ? [literal]
-    : await awaitWithSignal(resolveFetchHostAddresses(url.hostname), signal);
-  signal.throwIfAborted();
-  const address = addresses[0];
-  if (!address || fetchHostHasBlockedAddress(addresses)) {
-    throw new McpOAuthUnsafeUrlError();
-  }
-  return address;
-}
-
-export async function validateMcpOAuthPublicUrl(
-  input: string | URL,
-  signal: AbortSignal,
-): Promise<string> {
-  const url = allowedUrl(input);
-  await resolvePublicAddress(url, signal);
-  signal.throwIfAborted();
-  return url.href;
+export function validateMcpOAuthUrl(input: string | URL): string {
+  return allowedUrl(input).href;
 }
 
 function requestMethod(
@@ -212,21 +154,18 @@ function outgoingRequestHeaders(headers: Headers): Record<string, string> {
   return Object.fromEntries(headers);
 }
 
-async function pinnedRequest(
+async function boundedRequest(
   url: URL,
   requestData: SerializedRequest,
   signal: AbortSignal,
 ): Promise<Response> {
-  const address = await resolvePublicAddress(url, signal);
   signal.throwIfAborted();
   // The caller owns the original abort reason (including TimeoutError).
   // Resolve that reason as an observed request outcome so the request-local
   // deferred never reports an expected timeout as an unhandled background
   // failure, while upstream classification still receives the original error.
   const deferredOwner = new AbortController();
-  const deferred = createDeferredPromise<PinnedRequestOutcome>(
-    deferredOwner.signal,
-  );
+  const deferred = createDeferredPromise<RequestOutcome>(deferredOwner.signal);
   const settleDeferredFromAbort = () => {
     if (!deferred.settled()) {
       deferred.resolve({ ok: false, error: signal.reason });
@@ -242,12 +181,8 @@ async function pinnedRequest(
       url,
       {
         agent: false,
-        family: address.family,
         method: requestData.method,
         headers: outgoingRequestHeaders(requestData.headers),
-        lookup: (_hostname, _options, callback) => {
-          callback(null, address.address, address.family);
-        },
         maxHeaderSize: MCP_OAUTH_MAX_HEADER_BYTES,
         signal,
       },
@@ -347,7 +282,7 @@ export const mcpOAuthSafeFetch: FetchLike = async (input, init) => {
   let redirectCount = 0;
 
   while (true) {
-    const response = await pinnedRequest(url, requestData, signal);
+    const response = await boundedRequest(url, requestData, signal);
     const location = redirectLocation(response);
     if (location === null) {
       return response;

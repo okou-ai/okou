@@ -55,7 +55,7 @@ function response(mailDraftId: string, mailDraft: MailDraft) {
   };
 }
 
-function installMails(count = 12, sendReady?: Promise<void>) {
+function installMails(count = 12) {
   const mails = new Map(
     Array.from({ length: count }, (_, index) => {
       return [id(index + 1), draft(index + 1, index < 2 ? "draft" : "sent")];
@@ -91,8 +91,7 @@ function installMails(count = 12, sendReady?: Promise<void>) {
     }
     return respond(200, response(params.mailDraftId, mail));
   });
-  context.mocks.api(mailContract.sendDraft, async ({ respond, params }) => {
-    await sendReady;
+  context.mocks.api(mailContract.sendDraft, ({ respond, params }) => {
     const mail = mails.get(params.mailDraftId);
     if (!mail || mail.status !== "draft" || reject.has(params.mailDraftId)) {
       return respond(409, {
@@ -307,11 +306,7 @@ describe("thread email manager", () => {
     fireEvent.scroll(scroller);
     await click(row);
     await screen.findByText("Proposal details 12");
-    const back = await button("Back to emails");
-    await waitFor(() => {
-      expect(back).toBeEnabled();
-    });
-    click(back);
+    await click(await button("Back to emails"));
     const restored = await screen.findByRole("dialog", { name: "Emails" });
     expect(
       within(restored).getByLabelText("Search by subject or sender"),
@@ -342,43 +337,22 @@ describe("thread email manager", () => {
     const list = await openList();
     await click(await button("Open email: Proposal 2", list));
     await screen.findByText("Proposal details 2");
-    const back = await button("Back to emails");
-    await waitFor(() => {
-      expect(back).toBeEnabled();
-    });
-    click(back);
+    await click(await button("Back to emails"));
     await screen.findByRole("dialog", { name: "Emails" });
     expect(transitions.startedTypes).toHaveLength(0);
   });
 
-  it("keeps pending sends confirmed, retains failures for retry, and never resends successes", async () => {
-    const sending = context.mocks.deferred<void>();
-    const fixture = installMails(12, sending.promise);
+  it("sends only drafts, retains failures for retry, and never resends successes", async () => {
+    const fixture = installMails();
     fixture.reject.add(id(2));
     await openChat();
     const list = await openList();
-    const selectAll = within(list).getByRole("checkbox", {
-      name: "Select all",
-    });
-    click(selectAll);
-    const bulkSend = await button("Send", list);
-    click(bulkSend);
+    await click(within(list).getByRole("checkbox", { name: "Select all" }));
+    await click(await button("Send", list));
     const confirmation = await screen.findByRole("dialog", {
       name: "Send selected drafts?",
     });
-    const send = await button("Send", confirmation);
-    click(send);
-    await waitFor(() => {
-      expect(send).toBeDisabled();
-    });
-    await expect(button("Cancel", confirmation)).resolves.toBeDisabled();
-    expect(bulkSend).toBeDisabled();
-    expect(selectAll).toHaveAttribute("aria-disabled", "true");
-    expect(selectAll).toBeChecked();
-    const user = userEvent.setup({ delay: null });
-    await user.keyboard("{Escape}");
-    expect(confirmation).toBeInTheDocument();
-    sending.resolve();
+    await click(await button("Send", confirmation));
     await screen.findByText("1 completed · 1 failed");
     expect(fixture.sent).toStrictEqual([id(1)]);
     fixture.reject.delete(id(2));

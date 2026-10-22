@@ -1038,6 +1038,7 @@ const authorizeConnectorForVisibleAgents$ = command(
     const visibleAgents = await get(agents$);
     signal.throwIfAborted();
     const client = get(apiClient$)(userBuiltinConnectorsContract);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       Promise.all(
         visibleAgents.map(async (agent) => {
@@ -1200,6 +1201,7 @@ export const submitBuiltinManualGrant$ = command(
     })();
     set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
         return current === operation ? null : current;
@@ -1318,6 +1320,7 @@ export const connectBuiltinConnectorNoAuth$ = command(
     })();
     set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
         return current === operation ? null : current;
@@ -1398,6 +1401,7 @@ export const runBuiltinConnectorConnectSuccess$ = command(
     }
     set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
         return current === operation ? null : current;
@@ -1596,6 +1600,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
       );
     };
     let connectorStateChanged = false;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(
       (async () => {
         const current = get(internalConnectorOAuthDeviceAuthState$);
@@ -1896,6 +1901,7 @@ const connectConnectorOAuthDeviceAuth$ = command(
     })();
     set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
         return current === operation ? null : current;
@@ -2136,6 +2142,7 @@ const connectConnectorExternalCodeCommand$ = command(
     });
     set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       set(internalConnectOperation$, (current) => {
         return current === operation ? null : current;
@@ -2213,6 +2220,7 @@ const completeConnectorExternalCode$ = command(
     });
 
     let connectorStateChanged = false;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(
       (async () => {
         const flowSignal = set(resetConnectorExternalCodeFlowSignal$, signal);
@@ -2632,6 +2640,7 @@ const openConnectorOAuthAuthCodeWindow$ = command(
 
     let navigated = false;
     let connectedWithoutAuthorization = false;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const started = await withCleanup(
       (async () => {
         if (!isBrowserAuthGrantKind(args.method.grantKind)) {
@@ -2788,6 +2797,7 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
       );
       return "connectorChanged" as const;
     })();
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const waitResult = await withCleanup(
       oauthStart.authWindow === null
         ? changedPromise
@@ -2931,6 +2941,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
     set(internalBrowserAuthOperation$, { flowId, operation });
     set(internalConnectResult$, { connectorSlug, operation });
     set(internalConnectOperation$, operation);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       signal.removeEventListener("abort", release);
       release();

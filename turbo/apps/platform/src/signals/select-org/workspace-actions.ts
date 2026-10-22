@@ -25,6 +25,7 @@ const joinWorkspace$ = command(
   ) => {
     const clerk = await get(clerk$);
     signal.throwIfAborted();
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       (async () => {
         await invitation.accept();
@@ -48,6 +49,7 @@ const performCreateWorkspace$ = command(
     const clerk = await get(clerk$);
     signal.throwIfAborted();
     const slug = `workspace-${crypto.randomUUID().slice(0, 8)}`;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       (async () => {
         const org = await clerk.createOrganization({ name: slug, slug });
@@ -84,6 +86,7 @@ export const createWorkspace$ = command(({ get, set }, signal: AbortSignal) => {
   if (existing) {
     return existing;
   }
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   const request = withCleanup(set(performCreateWorkspace$, signal), () => {
     set(workspaceCreationInFlight$, undefined);
   });
@@ -112,6 +115,7 @@ function createWorkspaceInvitationActions(invitation: WorkspaceInvitation) {
       if (current.size > 0) {
         return;
       }
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       const request = withCleanup(
         set(joinWorkspace$, invitation, signal),
         () => {

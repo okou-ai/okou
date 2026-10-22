@@ -140,6 +140,7 @@ export const waitForVisibleTabChange$ = command(
     }
     const changed = createDeferredPromise<void>(signal);
     set(visibleTabChangeState$, changed);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(changed.promise, () => {
       if (get(visibleTabChangeState$) === changed) {
         set(visibleTabChangeState$, null);
