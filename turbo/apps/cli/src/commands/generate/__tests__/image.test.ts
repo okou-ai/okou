@@ -793,7 +793,11 @@ describe("okou generate image command", () => {
       generationId: IMAGE_GENERATION_ID,
       type: "image",
       status: "queued",
-      realtime: { channelName: "user:user-1", eventName: "completed" },
+      realtime: {
+        channelName: "user:user-1",
+        eventName: "completed",
+        tokenRequest: { mac: "private-realtime-signature" },
+      },
     };
     server.use(
       http.post(IMAGE_URL, () => {
@@ -808,8 +812,13 @@ describe("okou generate image command", () => {
       "A watercolor fox",
       "--json",
     ]);
-    expect(JSON.parse(mockConsoleLog.mock.calls.flat().join("\n"))).toEqual(
-      receipt,
+    expect(JSON.parse(mockConsoleLog.mock.calls.flat().join("\n"))).toEqual({
+      generationId: IMAGE_GENERATION_ID,
+      type: "image",
+      status: "queued",
+    });
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "private-realtime-signature",
     );
   });
 

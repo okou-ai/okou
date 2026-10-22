@@ -482,7 +482,13 @@ ${formatRegistryListing(styles, "image styles")}`;
         });
         if ("generationId" in generated) {
           if (options.json) {
-            console.log(JSON.stringify(generated));
+            console.log(
+              JSON.stringify({
+                generationId: generated.generationId,
+                type: generated.type,
+                status: generated.status,
+              }),
+            );
           } else {
             console.log(
               chalk.green(`✓ Image job submitted: ${generated.generationId}`),
