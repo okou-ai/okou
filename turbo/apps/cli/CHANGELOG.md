@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.407.5](https://github.com/okou-ai/okou/compare/cli-v9.407.4...cli-v9.407.5) (2026-10-22)
+
+
+### Bug Fixes
+
+* **cli:** show account setup facts in inventory text ([#42261](https://github.com/okou-ai/okou/issues/42261)) ([f555c2f](https://github.com/okou-ai/okou/commit/f555c2fb35f25e51c4e28d3f53e804d1a67d934d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.586.3
+    * @okouai/core bumped to 8.777.4
+    * @okouai/pi-agent-runtime bumped to 1.50.47
+
 ## [9.407.4](https://github.com/okou-ai/okou/compare/cli-v9.407.3...cli-v9.407.4) (2026-10-22)
 
 
