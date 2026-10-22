@@ -6,7 +6,12 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { expect, test } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -28,6 +33,7 @@ function researchAgent() {
 function setupInstructionsPage(
   initialContent: string,
   onUpdate?: (content: string) => void | Promise<void>,
+  tab: "profile" | "instructions" = "instructions",
 ): Promise<void> {
   let savedContent = initialContent;
   context.mocks.api(agentsByIdContract.get, ({ respond }) => {
@@ -50,7 +56,7 @@ function setupInstructionsPage(
 
   return setupPage({
     context,
-    path: `/agents/${AGENT_ID}?tab=instructions`,
+    path: `/agents/${AGENT_ID}?tab=${tab}`,
   });
 }
 
@@ -61,6 +67,55 @@ async function instructionsEditor(): Promise<HTMLElement> {
   }
   return editor;
 }
+
+test.each([
+  { name: "heading", content: "# Release risks" },
+  { name: "list", content: "# Team\n\n* **Research lead**: verify sources" },
+  { name: "blockquote", content: "> Verify every source" },
+  { name: "code block", content: "```text\nReview release notes\n```" },
+])(
+  "Switching to Instructions ending in a $name leaves the content saved",
+  async ({ content }) => {
+    await setupInstructionsPage(content, undefined, "profile");
+    await screen.findByLabelText("Name");
+    const tab = queryAllByRoleFast("tab").find((candidate) => {
+      return candidate.textContent?.trim() === "Instructions";
+    });
+    if (!tab) {
+      throw new Error("Expected the Instructions tab");
+    }
+
+    click(tab);
+
+    const editor = await instructionsEditor();
+    const user = userEvent.setup({ delay: null });
+    await user.click(editor);
+    expect(editor).toHaveFocus();
+    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  "Review release notes",
+  "# Team\n\n* **Research lead**: verify sources",
+])(
+  "Undoing an instruction edit restores the saved state: %s",
+  async (content) => {
+    await setupInstructionsPage(content);
+    const editor = await instructionsEditor();
+    const savedText = editor.textContent;
+    await fill(editor, "Unsaved release draft");
+    await screen.findByTestId("unsaved-bar");
+
+    const user = userEvent.setup({ delay: null });
+    await user.keyboard("{Control>}z{/Control}");
+
+    await waitFor(() => {
+      expect(editor.textContent).toBe(savedText);
+    });
+    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+  },
+);
 
 test("Discard restores saved instructions and exits editing", async () => {
   await setupInstructionsPage("Review release notes");
