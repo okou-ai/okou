@@ -62,8 +62,9 @@ import {
   commitBuiltinConnectorTokenConnection,
   finalizeBuiltinConnectorTokenConnection$,
   prepareBuiltinConnectorTokenConnection$,
-  resolveBuiltinConnectorTokenConnectionMutation,
+  builtinConnectorTokenMutationValues,
 } from "./connector-data.service";
+import { resolveConnectorConnectionMutation } from "./connector-connection-write.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 import { normalizeDeviceAuthStartOptionsWithMethod } from "./connector-catalog-form-fields.service";
 import {
@@ -659,12 +660,26 @@ function completedDeviceAuthResponse(
   };
 }
 
+type CompleteClaimedSessionArgs = PollClaimedSessionArgs & {
+  readonly result: OAuthDeviceAuthCompleteResultBase;
+};
+
+function completedDeviceAuthClaimCondition(
+  sessionId: string,
+  claimStartedAt: Date,
+) {
+  const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
+  return and(
+    eq(sessions.id, sessionId),
+    eq(sessions.status, "polling"),
+    eq(sessions.updatedAt, claimStartedAt),
+  );
+}
+
 const completeClaimedSession$ = command(
   async (
     { set },
-    args: PollClaimedSessionArgs & {
-      readonly result: OAuthDeviceAuthCompleteResultBase;
-    },
+    args: CompleteClaimedSessionArgs,
     signal: AbortSignal,
   ): Promise<PollSuccess> => {
     const { session, claimStartedAt } = args;
@@ -690,10 +705,17 @@ const completeClaimedSession$ = command(
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
       const write = { ...prepared, db: tx };
-      const resolution = await resolveBuiltinConnectorTokenConnectionMutation(
-        write,
-        signal,
-      );
+      const mutationInput = write;
+      const mutationSignal = signal;
+      const resolution = await (async () => {
+        const { db, ...connection } = mutationInput;
+        const resolution = await resolveConnectorConnectionMutation(
+          db,
+          builtinConnectorTokenMutationValues(connection),
+        );
+        mutationSignal.throwIfAborted();
+        return resolution;
+      })();
       // Keep the exact polling claim through credential persistence and completion.
       // A replacement session or reclaimed provider poll must not publish credentials.
       const [retainedClaim] = await tx
@@ -758,13 +780,7 @@ const completeClaimedSession$ = command(
           updatedAt: completedAt,
           completedAt,
         })
-        .where(
-          and(
-            eq(sessions.id, session.id),
-            eq(sessions.status, "polling"),
-            eq(sessions.updatedAt, claimStartedAt),
-          ),
-        )
+        .where(completedDeviceAuthClaimCondition(session.id, claimStartedAt))
         .returning({ id: sessions.id });
       signal.throwIfAborted();
       if (!completedSession) {
