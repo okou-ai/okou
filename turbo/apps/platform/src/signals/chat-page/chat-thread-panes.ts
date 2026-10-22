@@ -5,6 +5,7 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { logger } from "../log.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
+import { withoutThreadMailParams } from "./thread-mail-location.ts";
 import { adoptComposerTaskHandoff$ } from "../okou-page/composer-task-handoff.ts";
 import {
   createChatPanelSignals,
@@ -113,7 +114,7 @@ const rightPane = createChatThreadPaneSignals(setCurrentRightPane$);
 const closeThreadSidebars$ = command(({ get, set }) => {
   for (const thread of [get(currentLeftThread$), get(currentRightThread$)]) {
     if (thread) {
-      set(thread.sidebar.close$);
+      set(thread.sidebar.dismiss$);
     }
   }
 });
@@ -122,10 +123,14 @@ export const unloadRightThread$ = command(({ get, set }) => {
   const currentRightThread = get(currentRightThread$);
   if (currentRightThread) {
     set(currentRightThread.resetRenderedChatGroupsIfAtBottom$);
-    set(currentRightThread.sidebar.close$);
+    set(currentRightThread.sidebar.dismiss$);
   }
   set(rightPane.clear$);
-  const next = new URLSearchParams(get(searchParams$));
+  const params = get(searchParams$);
+  const next =
+    params.get("mailThread") === currentRightThread?.threadId
+      ? withoutThreadMailParams(params)
+      : new URLSearchParams(params);
   if (!next.has(SIDEBAR_PARAM)) {
     return;
   }
@@ -212,6 +217,7 @@ const setupPaneThread$ = command(
       agentId: meta.agentId,
       draftOwner: set(ensureThreadDraft$, threadId),
     });
+    set(thread.mail.prepareLocation$);
     // A send from the start page ends here, in a composer that has never been
     // told what it is making. The selection it sent with follows it in.
     set(adoptComposerTaskHandoff$, threadId, thread.composer);
@@ -297,7 +303,12 @@ export const loadLeftThread$ = command(
     // anchored to the previous thread's messages.
     set(closeThreadSidebars$);
 
-    const next = new URLSearchParams(get(searchParams$));
+    const params = get(searchParams$);
+    const next =
+      params.get("mailThread") === threadId ||
+      params.get("mailThread") === params.get(SIDEBAR_PARAM)
+        ? new URLSearchParams(params)
+        : withoutThreadMailParams(params);
     if (next.get(SIDEBAR_PARAM) === threadId) {
       next.delete(SIDEBAR_PARAM);
     }
@@ -326,7 +337,12 @@ export const loadRightThread$ = command(
 
     set(closeThreadSidebars$);
 
-    const next = new URLSearchParams(get(searchParams$));
+    const params = get(searchParams$);
+    const next =
+      params.get("mailThread") === mainThreadId ||
+      params.get("mailThread") === threadId
+        ? new URLSearchParams(params)
+        : withoutThreadMailParams(params);
     next.set(SIDEBAR_PARAM, threadId);
     set(detachedNavigateTo$, ROUTES.chat, {
       pathParams: { threadId: mainThreadId },

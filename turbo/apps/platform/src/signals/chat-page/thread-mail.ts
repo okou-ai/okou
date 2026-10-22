@@ -14,7 +14,13 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { onRef, settle } from "../utils.ts";
+import { hash$, replaceSearchParams$, searchParams$ } from "../route.ts";
 import type { MailDraftCardSignalsRegistry } from "./mail-draft.ts";
+import {
+  closeThreadMailLocation$,
+  threadMailLocation$,
+  threadMailParams,
+} from "./thread-mail-location.ts";
 
 export type ThreadMailFilter = "all" | "draft" | "sent";
 type ThreadMailAction = "send" | "delete";
@@ -23,10 +29,15 @@ interface MailResult {
   readonly succeeded: number;
   readonly failed: number;
 }
+interface MailConfirmation {
+  readonly action: ThreadMailAction;
+  readonly mails: readonly ThreadMailSummary[];
+}
 
 function createMailSelectionSignals(
   mails$: MailSource,
   filtered$: MailSource,
+  pending$: State<MailConfirmation | null>,
   result$: State<MailResult | null>,
 ) {
   const selected$ = state<ReadonlySet<string>>(new Set());
@@ -38,6 +49,9 @@ function createMailSelectionSignals(
     });
   });
   const select$ = command(({ get, set }, id: string, checked: boolean) => {
+    if (get(pending$) !== null) {
+      return;
+    }
     const next = new Set(get(selected$));
     if (checked) {
       next.add(id);
@@ -51,6 +65,9 @@ function createMailSelectionSignals(
     async ({ get, set }, checked: boolean, signal: AbortSignal) => {
       const mails = await get(filtered$);
       signal.throwIfAborted();
+      if (get(pending$) !== null) {
+        return;
+      }
       const next = new Set(get(selected$));
       for (const mail of mails) {
         if (checked) {
@@ -70,17 +87,14 @@ function createMailBulkSignals(
   registry: MailDraftCardSignalsRegistry,
   selection: ReturnType<typeof createMailSelectionSignals>,
   refresh$: Command<void, []>,
+  pending$: State<MailConfirmation | null>,
   result$: State<MailResult | null>,
 ) {
-  const pending$ = state<{
-    readonly action: ThreadMailAction;
-    readonly mails: readonly ThreadMailSummary[];
-  } | null>(null);
   const prepare$ = command(
     async ({ get, set }, action: ThreadMailAction, signal: AbortSignal) => {
       const mails = await get(selection.selectedDrafts$);
       signal.throwIfAborted();
-      if (mails.length > 0) {
+      if (get(pending$) === null && mails.length > 0) {
         set(pending$, { action, mails });
       }
     },
@@ -152,18 +166,66 @@ function createMailListRef() {
   );
 }
 
+function createMailLocationSignals(threadId: string) {
+  const open$ = computed((get) => {
+    const location = get(threadMailLocation$);
+    return location?.threadId === threadId && location.view === "list";
+  });
+  const query$ = computed((get) => {
+    const params = get(searchParams$);
+    return params.get("mailThread") === threadId
+      ? (params.get("mailQuery") ?? "")
+      : "";
+  });
+  const filter$ = computed((get): ThreadMailFilter => {
+    const params = get(searchParams$);
+    const filter =
+      params.get("mailThread") === threadId ? params.get("mailFilter") : null;
+    return filter === "draft" || filter === "sent" ? filter : "all";
+  });
+  const setQuery$ = command(({ get, set }, query: string) => {
+    const params = threadMailParams(get(searchParams$), threadId, {
+      view: "list",
+    });
+    if (query) {
+      params.set("mailQuery", query);
+    } else {
+      params.delete("mailQuery");
+    }
+    set(replaceSearchParams$, params, {}, get(hash$));
+  });
+  const setFilter$ = command(({ get, set }, filter: ThreadMailFilter) => {
+    const params = threadMailParams(get(searchParams$), threadId, {
+      view: "list",
+    });
+    if (filter === "all") {
+      params.delete("mailFilter");
+    } else {
+      params.set("mailFilter", filter);
+    }
+    set(replaceSearchParams$, params, {}, get(hash$));
+  });
+  const close$ = command(({ get, set }) => {
+    // A delayed popup dismissal must not close the detail that replaced it.
+    if (get(open$)) {
+      set(closeThreadMailLocation$, threadId);
+    }
+  });
+  return { open$, close$, query$, setQuery$, filter$, setFilter$ };
+}
+
 export function createThreadMailSignals(
   threadId: string,
   registry: MailDraftCardSignalsRegistry,
   latestRunFinish$: Computed<Promise<string | undefined>>,
 ) {
-  const open$ = state(false);
-  const query$ = state("");
-  const filter$ = state<ThreadMailFilter>("all");
+  const location = createMailLocationSignals(threadId);
   const reloadVersion$ = state(0);
+  const pending$ = state<MailConfirmation | null>(null);
   const result$ = state<MailResult | null>(null);
   const mails$ = computed(async (get) => {
     get(reloadVersion$);
+    get(location.open$);
     // Refresh for new links and completed runs, including links outside the
     // currently rendered transcript window.
     get(registry.values$);
@@ -178,8 +240,8 @@ export function createThreadMailSignals(
   });
   const filtered$ = computed(async (get) => {
     const mails = get(mails$);
-    const filter = get(filter$);
-    const query = get(query$).trim().toLocaleLowerCase();
+    const filter = get(location.filter$);
+    const query = get(location.query$).trim().toLocaleLowerCase();
     return (await mails).filter((mail) => {
       return (
         (filter === "all" || mail.status === filter) &&
@@ -193,26 +255,35 @@ export function createThreadMailSignals(
       return version + 1;
     });
   });
-  const setOpen$ = command(({ set }, open: boolean) => {
-    set(open$, open);
-    if (open) {
-      set(refresh$);
+  const prepareLocation$ = command(({ get, set }) => {
+    const location = get(threadMailLocation$);
+    if (location?.threadId !== threadId || location.view !== "detail") {
+      return;
     }
+    const href = `/mail/drafts/${location.mailDraftId}`;
+    set(registry.register$, {
+      mailDraftId: location.mailDraftId,
+      href,
+      originalUrl: new URL(href, window.location.origin).href,
+    });
   });
-  const restore$ = command(({ set }) => {
-    set(open$, true);
-  });
-  const selection = createMailSelectionSignals(mails$, filtered$, result$);
-  const bulk = createMailBulkSignals(registry, selection, refresh$, result$);
-  return {
-    open$: computed((get) => {
-      return get(open$);
-    }),
-    setOpen$,
-    restore$,
+  const selection = createMailSelectionSignals(
+    mails$,
+    filtered$,
+    pending$,
+    result$,
+  );
+  const bulk = createMailBulkSignals(
+    registry,
+    selection,
     refresh$,
-    query$,
-    filter$,
+    pending$,
+    result$,
+  );
+  return {
+    ...location,
+    prepareLocation$,
+    refresh$,
     mails$,
     filtered$,
     ...selection,
@@ -224,6 +295,11 @@ export function createThreadMailSignals(
       return get(result$);
     }),
     listRef$: createMailListRef(),
+    backLinkRef$: onRef(
+      command((_context, element: HTMLAnchorElement, _signal: AbortSignal) => {
+        element.focus({ preventScroll: true });
+      }),
+    ),
     register$: registry.register$,
   };
 }
