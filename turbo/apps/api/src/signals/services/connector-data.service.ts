@@ -1,3 +1,14 @@
+import { builtinConnectorCredentialValuesFromRows } from "./builtin-connector-credential-runtime.service";
+import {
+  stripeAccountAutomationsReadPlan,
+  stripeAccountAutomationSelectionPlan,
+  stripeAccountCatalogReadPlan,
+  stripeAccountConnectionReadPlan,
+  stripeAccountReadiness,
+  stripeAccountLiveModeReadPlan,
+  stripeAccountProjectionReadiness,
+  stripeAccountProjectionUpdate,
+} from "./stripe-invoice-paid-workflow-automation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -1139,40 +1150,18 @@ const prepareDeletedConnectorMeetCleanup$ = command(
 
 async function deleteBuiltinConnectorAccountLocalState(
   tx: Tx,
-  args: DeleteBuiltinConnectorLocalStateArgs,
+  args: DeleteBuiltinConnectorLocalStateArgs & {
+    readonly account: { readonly connectionId: string };
+    readonly deletion: Extract<
+      Awaited<ReturnType<typeof prepareBuiltinConnectorAccountDeletion>>,
+      { kind: "ready" }
+    >;
+  },
   snapshot: ConnectorRuntimeSelection | null,
   featureSwitchContext: FeatureSwitchContext | null,
   signal: AbortSignal,
 ) {
-  // Plain resolution read: prepareBuiltinConnectorAccountDeletion's
-  // exact-identity write claims the row (missing if a concurrent delete won)
-  // and holds it until commit, so the details read afterwards are current.
-  const account = await loadBuiltinConnectorAccountForDeletion(
-    tx,
-    args,
-    signal,
-  );
-  if (account.kind !== "resolved") {
-    return {
-      kind: account.kind,
-      pendingTokenRevoke: null,
-    };
-  }
-  const deletion = await prepareBuiltinConnectorAccountDeletion(
-    tx,
-    {
-      ...args,
-      connectionId: account.connectionId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (deletion.kind !== "ready") {
-    return {
-      kind: deletion.kind,
-      pendingTokenRevoke: null,
-    };
-  }
+  const { account, deletion } = args;
   const [existing] = await tx
     .select({
       id: connectors.id,
@@ -1340,13 +1329,12 @@ const prepareDeletedConnectorWatches$ = command(
   },
 );
 
-export const deleteBuiltinConnectorLocalState$ = command(
+const prepareBuiltinConnectorLocalDeletion$ = command(
   async (
     { get, set },
     args: DeleteBuiltinConnectorLocalStateArgs,
     signal: AbortSignal,
-  ): Promise<DeleteBuiltinConnectorLocalStateResult> => {
-    const writeDb = set(writeDb$);
+  ) => {
     const snapshot = await set(readStoredBuiltinConnectorRuntimeSnapshot$, [
       args.connectorSlug,
     ]);
@@ -1381,24 +1369,28 @@ export const deleteBuiltinConnectorLocalState$ = command(
             signal,
           )
         : null;
-    let postCommitAbort: unknown = null;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0116; new non-billing transactions are prohibited.
-    const deleteResult = await writeDb.transaction(async (tx) => {
-      return await deleteBuiltinConnectorAccountLocalState(
-        tx,
-        args,
-        snapshot,
-        featureSwitchContext,
-        signal,
-      );
-    });
-    if (signal.aborted) {
-      postCommitAbort ??= signal.reason;
-    }
-    if (deleteResult.kind !== "deleted") {
-      throwCapturedAbort(postCommitAbort);
-      return deleteResult.kind;
-    }
+    return { snapshot, featureSwitchContext, automationCleanup, formsCleanup };
+  },
+);
+
+const finalizeBuiltinConnectorLocalDeletion$ = command(
+  async (
+    { set },
+    input: {
+      readonly args: DeleteBuiltinConnectorLocalStateArgs;
+      readonly deleteResult: Awaited<
+        ReturnType<typeof deleteBuiltinConnectorAccountLocalState>
+      >;
+      readonly automationCleanup: PendingConnectorAutomationCleanup;
+      readonly formsCleanup: Parameters<
+        typeof stopPendingGoogleFormsAutomationCleanup
+      >[0];
+      readonly postCommitAbort: unknown;
+    },
+    signal: AbortSignal,
+  ): Promise<DeleteBuiltinConnectorLocalStateResult> => {
+    const { args, deleteResult, automationCleanup, formsCleanup } = input;
+    let postCommitAbort = input.postCommitAbort;
     const cleanupAbort = await set(
       stopDeletedWatches$,
       automationCleanup,
@@ -1465,6 +1457,128 @@ export const deleteBuiltinConnectorLocalState$ = command(
       promotedDefaultConnectionId:
         deleteResult.deletion.promotedDefaultConnectionId,
     };
+  },
+);
+
+export const deleteBuiltinConnectorLocalState$ = command(
+  async (
+    { set },
+    args: DeleteBuiltinConnectorLocalStateArgs,
+    signal: AbortSignal,
+  ): Promise<DeleteBuiltinConnectorLocalStateResult> => {
+    const writeDb = set(writeDb$);
+    const { snapshot, featureSwitchContext, automationCleanup, formsCleanup } =
+      await set(prepareBuiltinConnectorLocalDeletion$, args, signal);
+    let postCommitAbort: unknown = null;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0116; new non-billing transactions are prohibited.
+    const deleteResult = await writeDb.transaction(async (tx) => {
+      // Plain resolution read: prepareBuiltinConnectorAccountDeletion's
+      // exact-identity write claims the row (missing if a concurrent delete won)
+      // and holds it until commit, so the details read afterwards are current.
+      const account = await loadBuiltinConnectorAccountForDeletion(
+        tx,
+        args,
+        signal,
+      );
+      if (account.kind !== "resolved") {
+        return {
+          kind: account.kind,
+          pendingTokenRevoke: null,
+        };
+      }
+      const deletion = await prepareBuiltinConnectorAccountDeletion(
+        tx,
+        {
+          ...args,
+          connectionId: account.connectionId,
+        },
+        signal,
+      );
+      if (deletion.kind !== "ready") {
+        signal.throwIfAborted();
+        return {
+          kind: deletion.kind,
+          pendingTokenRevoke: null,
+        };
+      }
+      const scope = args;
+      const projection = stripeAccountAutomationsReadPlan(scope);
+      const automations =
+        args.connectorSlug === "stripe"
+          ? await tx.select().from(projection.query)
+          : [];
+      if (args.connectorSlug === "stripe") {
+        signal.throwIfAborted();
+      }
+      for (const automation of automations) {
+        const item = stripeAccountAutomationSelectionPlan(scope, automation);
+        let [selected] = await tx.select().from(item.selected);
+        if (!selected) {
+          [selected] = await tx.select().from(item.defaultAccount);
+        }
+        signal.throwIfAborted();
+        const connectorId = selected?.connectorId ?? null;
+        let readiness =
+          connectorId === null ? undefined : projection.cache.get(connectorId);
+        if (connectorId !== null && readiness === undefined) {
+          const catalog = stripeAccountCatalogReadPlan();
+          const rows = await tx
+            .select(catalog.columns)
+            .from(catalog.from)
+            .leftJoin(catalog.joinTable, catalog.join)
+            .where(catalog.where);
+          const account = stripeAccountConnectionReadPlan(
+            scope,
+            connectorId,
+            rows,
+          );
+          signal.throwIfAborted();
+          const [connection] = await tx.select().from(account.query);
+          const ready = stripeAccountReadiness(account.input, connection);
+          signal.throwIfAborted();
+          let values: ReadonlyMap<string, string> = new Map();
+          if (ready.kind === "ok") {
+            const liveMode = stripeAccountLiveModeReadPlan(ready.connection);
+            values = await builtinConnectorCredentialValuesFromRows(
+              liveMode.input,
+              await tx.select().from(liveMode.query),
+            );
+            signal.throwIfAborted();
+          }
+          readiness = stripeAccountProjectionReadiness(ready, values);
+          projection.cache.set(connectorId, readiness);
+        }
+        const update = stripeAccountProjectionUpdate(
+          automation,
+          connectorId,
+          readiness,
+        );
+        if (update !== null) {
+          await tx.update(projection.from).set(update).where(item.target);
+        }
+        signal.throwIfAborted();
+      }
+      signal.throwIfAborted();
+      return await deleteBuiltinConnectorAccountLocalState(
+        tx,
+        { ...args, account, deletion },
+        snapshot,
+        featureSwitchContext,
+        signal,
+      );
+    });
+    if (signal.aborted) {
+      postCommitAbort ??= signal.reason;
+    }
+    if (deleteResult.kind !== "deleted") {
+      throwCapturedAbort(postCommitAbort);
+      return deleteResult.kind;
+    }
+    return await set(
+      finalizeBuiltinConnectorLocalDeletion$,
+      { args, deleteResult, automationCleanup, formsCleanup, postCommitAbort },
+      signal,
+    );
   },
 );
 
@@ -2397,7 +2511,7 @@ function authorizedExternalIdForMutation(args: {
     : undefined;
 }
 
-interface PreparedBuiltinConnectorTokenConnection {
+export interface PreparedBuiltinConnectorTokenConnection {
   readonly calendarCleanup: readonly {
     readonly connectorId: string;
     readonly externalId: string | null;
@@ -2426,7 +2540,7 @@ interface ResolvedBuiltinConnectorTokenConnectionArgs extends CommitBuiltinConne
   readonly resolution: ConnectorConnectionMutationResolution;
 }
 
-interface CommittedBuiltinConnectorTokenConnection {
+export interface CommittedBuiltinConnectorTokenConnection {
   readonly status: "connected";
   readonly connectorRow: StoredConnectorRow;
   readonly created: boolean;
@@ -2502,6 +2616,9 @@ async function reprojectConnectedWorkflowAutomations(
   },
   signal: AbortSignal,
 ): Promise<void> {
+  if (args.connectorSlug === "stripe") {
+    return;
+  }
   await reprojectWorkflowAutomationsForOwner(
     args.db,
     {
@@ -2887,10 +3004,71 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
         mutationSignal.throwIfAborted();
         return resolution;
       })();
-      return await commitBuiltinConnectorTokenConnection(
+      const connected = await commitBuiltinConnectorTokenConnection(
         { ...write, resolution },
         signal,
       );
+      const projection = stripeAccountAutomationsReadPlan(prepared);
+      const automations =
+        connected.status === "connected" &&
+        prepared.runtimeMethod.connectorSlug === "stripe"
+          ? await tx.select().from(projection.query)
+          : [];
+      if (
+        connected.status === "connected" &&
+        prepared.runtimeMethod.connectorSlug === "stripe"
+      ) {
+        signal.throwIfAborted();
+      }
+      for (const automation of automations) {
+        const item = stripeAccountAutomationSelectionPlan(prepared, automation);
+        let [selected] = await tx.select().from(item.selected);
+        if (!selected) {
+          [selected] = await tx.select().from(item.defaultAccount);
+        }
+        signal.throwIfAborted();
+        const connectorId = selected?.connectorId ?? null;
+        let readiness =
+          connectorId === null ? undefined : projection.cache.get(connectorId);
+        if (connectorId !== null && readiness === undefined) {
+          const catalog = stripeAccountCatalogReadPlan();
+          const rows = await tx
+            .select(catalog.columns)
+            .from(catalog.from)
+            .leftJoin(catalog.joinTable, catalog.join)
+            .where(catalog.where);
+          const account = stripeAccountConnectionReadPlan(
+            prepared,
+            connectorId,
+            rows,
+          );
+          signal.throwIfAborted();
+          const [connection] = await tx.select().from(account.query);
+          const ready = stripeAccountReadiness(account.input, connection);
+          signal.throwIfAborted();
+          let values: ReadonlyMap<string, string> = new Map();
+          if (ready.kind === "ok") {
+            const liveMode = stripeAccountLiveModeReadPlan(ready.connection);
+            values = await builtinConnectorCredentialValuesFromRows(
+              liveMode.input,
+              await tx.select().from(liveMode.query),
+            );
+            signal.throwIfAborted();
+          }
+          readiness = stripeAccountProjectionReadiness(ready, values);
+          projection.cache.set(connectorId, readiness);
+        }
+        const update = stripeAccountProjectionUpdate(
+          automation,
+          connectorId,
+          readiness,
+        );
+        if (update !== null) {
+          await tx.update(projection.from).set(update).where(item.target);
+        }
+        signal.throwIfAborted();
+      }
+      return connected;
     });
     if (signal.aborted) {
       postCommitAbort = signal.reason;

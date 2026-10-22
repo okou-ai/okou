@@ -1,3 +1,14 @@
+import { builtinConnectorCredentialValuesFromRows } from "./builtin-connector-credential-runtime.service";
+import {
+  stripeAccountAutomationsReadPlan,
+  stripeAccountAutomationSelectionPlan,
+  stripeAccountCatalogReadPlan,
+  stripeAccountConnectionReadPlan,
+  stripeAccountReadiness,
+  stripeAccountLiveModeReadPlan,
+  stripeAccountProjectionReadiness,
+  stripeAccountProjectionUpdate,
+} from "./stripe-invoice-paid-workflow-automation.service";
 import { Buffer } from "node:buffer";
 import { command, computed, type Computed } from "ccstate";
 
@@ -30,7 +41,7 @@ import {
   connectorAccountFieldMarkerKeys,
   connectorAccountSetupMarkerKey,
 } from "./connector-account-setup";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import {
   and,
   asc,
@@ -1360,6 +1371,32 @@ export const setDefaultGoogleFormsAccount$ = command(
   },
 );
 
+function defaultCustomConnectorDefinition(
+  args: { readonly orgId: string },
+  customConnectorId: string,
+) {
+  return new QueryBuilder()
+    .select({
+      providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+    })
+    .from(orgCustomConnectors)
+    .leftJoin(
+      orgCustomConnectorOauthConfigs,
+      and(
+        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
+        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+      ),
+    )
+    .where(
+      and(
+        eq(orgCustomConnectors.id, customConnectorId),
+        eq(orgCustomConnectors.orgId, args.orgId),
+      ),
+    )
+    .limit(1)
+    .as("default_custom_definition");
+}
+
 /** Clear/select defaults together so missing targets and index conflicts roll back. */
 export const setDefaultConnectorAccount$ = command(
   async (
@@ -1387,31 +1424,11 @@ export const setDefaultConnectorAccount$ = command(
       // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0112; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
         if (args.target.kind === "custom") {
-          const [definition] = await tx
-            .select({
-              providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-            })
-            .from(orgCustomConnectors)
-            .leftJoin(
-              orgCustomConnectorOauthConfigs,
-              and(
-                eq(
-                  orgCustomConnectorOauthConfigs.connectorId,
-                  orgCustomConnectors.id,
-                ),
-                eq(
-                  orgCustomConnectorOauthConfigs.orgId,
-                  orgCustomConnectors.orgId,
-                ),
-              ),
-            )
-            .where(
-              and(
-                eq(orgCustomConnectors.id, args.target.customConnectorId),
-                eq(orgCustomConnectors.orgId, args.orgId),
-              ),
-            )
-            .limit(1);
+          const definitionQuery = defaultCustomConnectorDefinition(
+            args,
+            args.target.customConnectorId,
+          );
+          const [definition] = await tx.select().from(definitionQuery);
           if (
             !definition ||
             isIntegrationManagedCustomConnectorProviderAdapter(
@@ -1435,7 +1452,70 @@ export const setDefaultConnectorAccount$ = command(
           throw new DefaultConnectorAccountMissing();
         }
         const updatedAt = updated.updatedAt;
-        await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+        const isStripe =
+          args.target.kind === "builtin" &&
+          args.target.connectorSlug === "stripe";
+        if (!isStripe) {
+          await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+        }
+        const scope = args;
+        const projection = stripeAccountAutomationsReadPlan(scope);
+        const automations = isStripe
+          ? await tx.select().from(projection.query)
+          : [];
+        if (isStripe) {
+          signal.throwIfAborted();
+        }
+        for (const automation of automations) {
+          const item = stripeAccountAutomationSelectionPlan(scope, automation);
+          let [selected] = await tx.select().from(item.selected);
+          if (!selected) {
+            [selected] = await tx.select().from(item.defaultAccount);
+          }
+          signal.throwIfAborted();
+          const connectorId = selected?.connectorId ?? null;
+          let readiness =
+            connectorId === null
+              ? undefined
+              : projection.cache.get(connectorId);
+          if (connectorId !== null && readiness === undefined) {
+            const catalog = stripeAccountCatalogReadPlan();
+            const rows = await tx
+              .select(catalog.columns)
+              .from(catalog.from)
+              .leftJoin(catalog.joinTable, catalog.join)
+              .where(catalog.where);
+            const account = stripeAccountConnectionReadPlan(
+              scope,
+              connectorId,
+              rows,
+            );
+            signal.throwIfAborted();
+            const [connection] = await tx.select().from(account.query);
+            const ready = stripeAccountReadiness(account.input, connection);
+            signal.throwIfAborted();
+            let values: ReadonlyMap<string, string> = new Map();
+            if (ready.kind === "ok") {
+              const liveMode = stripeAccountLiveModeReadPlan(ready.connection);
+              values = await builtinConnectorCredentialValuesFromRows(
+                liveMode.input,
+                await tx.select().from(liveMode.query),
+              );
+              signal.throwIfAborted();
+            }
+            readiness = stripeAccountProjectionReadiness(ready, values);
+            projection.cache.set(connectorId, readiness);
+          }
+          const update = stripeAccountProjectionUpdate(
+            automation,
+            connectorId,
+            readiness,
+          );
+          if (update !== null) {
+            await tx.update(projection.from).set(update).where(item.target);
+          }
+          signal.throwIfAborted();
+        }
         return updatedAt;
       }),
     );
@@ -1573,7 +1653,12 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
       })();
     })();
   }
-  await reprojectWorkflowAutomationsForOwner(db, args, signal);
+  if (
+    args.target.kind !== "builtin" ||
+    args.target.connectorSlug !== "stripe"
+  ) {
+    await reprojectWorkflowAutomationsForOwner(db, args, signal);
+  }
 
   return {
     kind: "ready",

@@ -24,7 +24,6 @@ import {
   notionAutomationProjectionValues,
   notionPendingEventsSkipWrite,
 } from "./notion-automation-account.service";
-import { reprojectStripeInvoicePaidAutomationsForOwner } from "./stripe-invoice-paid-workflow-automation.service";
 import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
 import {
   workflowAutomationDefaultAccountReadPlan,
@@ -181,8 +180,9 @@ export async function reprojectWorkflowAutomationsForOwner(
       return;
     }
     case "stripe": {
-      await reprojectStripeInvoicePaidAutomationsForOwner(db, args, signal);
-      return;
+      throw new Error(
+        "Stripe projections must execute in the owning transaction",
+      );
     }
   }
   return connectorSlug satisfies never;

@@ -1,3 +1,15 @@
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { builtinConnectorCredentialValuesFromRows } from "./builtin-connector-credential-runtime.service";
+import {
+  stripeAccountAutomationsReadPlan,
+  stripeAccountAutomationSelectionPlan,
+  stripeAccountCatalogReadPlan,
+  stripeAccountConnectionReadPlan,
+  stripeAccountReadiness,
+  stripeAccountLiveModeReadPlan,
+  stripeAccountProjectionReadiness,
+  stripeAccountProjectionUpdate,
+} from "./stripe-invoice-paid-workflow-automation.service";
 import { memberRewardWalletQuery } from "./get-started-member-reward";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -57,6 +69,8 @@ import {
   type ResolvedConnectorActionMethod,
 } from "./connector-action-resolver.service";
 import {
+  type PreparedBuiltinConnectorTokenConnection,
+  type CommittedBuiltinConnectorTokenConnection,
   readBuiltinConnectorById$,
   connectorConnectionWriteRejection,
   commitBuiltinConnectorTokenConnection,
@@ -676,22 +690,95 @@ function completedDeviceAuthClaimCondition(
   );
 }
 
-const completeClaimedSession$ = command(
+function deviceAuthRejection(
+  args: CompleteClaimedSessionArgs,
+  result: {
+    readonly status: Parameters<typeof connectorConnectionWriteRejection>[0];
+  },
+) {
+  return terminalDeviceAuthClaimMutation(
+    {
+      sessionId: args.session.id,
+      claimStartedAt: args.claimStartedAt,
+      result: {
+        status: "error",
+        error: "connector_account_rejected",
+        errorDescription: connectorConnectionWriteRejection(result.status)
+          .message,
+      },
+    },
+    nowDate(),
+  );
+}
+
+function deviceAuthSessionQuery(sessionId: string) {
+  const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
+  return new QueryBuilder()
+    .select({
+      ...deviceAuthSessionSelection,
+      accountMutation:
+        deviceAuthSessionSelection.accountMutation.as("account_mutation"),
+    })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1)
+    .as("device_auth_session");
+}
+
+const finalizeDeviceAuthConnection$ = command(
   async (
     { set },
-    args: CompleteClaimedSessionArgs,
+    args: {
+      readonly prepared: PreparedBuiltinConnectorTokenConnection;
+      readonly result: CommittedBuiltinConnectorTokenConnection | PollSuccess;
+      readonly postCommitAbort: unknown;
+    },
     signal: AbortSignal,
   ): Promise<PollSuccess> => {
-    const { session, claimStartedAt } = args;
-    const prepared = await set(
-      prepareBuiltinConnectorTokenConnection$,
-      deviceAuthTokenConnectionInput(args),
+    const { prepared, result, postCommitAbort } = args;
+    if (result.status !== "connected") {
+      signal.throwIfAborted();
+      return result;
+    }
+    const connected = await set(
+      finalizeBuiltinConnectorTokenConnection$,
+      { prepared, connectionResult: result, postCommitAbort },
       signal,
     );
-    let postCommitAbort: unknown = null;
+    return completedDeviceAuthResponse(connected.connector);
+  },
+);
+
+function deviceAuthCompletion(
+  args: CompleteClaimedSessionArgs,
+  result: CommittedBuiltinConnectorTokenConnection,
+) {
+  const completedAt = nowDate();
+  return {
+    values: {
+      status: "complete" as const,
+      completedConnectorId: result.connectorRow.id,
+      updatedAt: completedAt,
+      completedAt,
+    },
+    condition: completedDeviceAuthClaimCondition(
+      args.session.id,
+      args.claimStartedAt,
+    ),
+  };
+}
+
+type CommitDeviceAuthArgs = CompleteClaimedSessionArgs & {
+  readonly prepared: PreparedBuiltinConnectorTokenConnection;
+};
+
+const completeClaimedSession$ = command(
+  async ({ set }, args: CommitDeviceAuthArgs, signal: AbortSignal) => {
+    const { session, claimStartedAt, prepared } = args;
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0084; new non-billing transactions are prohibited.
     const result = await set(writeDb$).transaction(async (tx) => {
       const sessions = builtinConnectorOauthDeviceAuthorizationSessions;
+      const sessionQuery = deviceAuthSessionQuery(session.id);
       const [insertedWallet] = await tx
         .insert(orgMetadataCanonicalWrites)
         .values({ orgId: prepared.orgId })
@@ -704,18 +791,11 @@ const completeClaimedSession$ = command(
           .values(slackRewardWalletEntitlement(prepared.orgId))
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
-      const write = { ...prepared, db: tx };
-      const mutationInput = write;
-      const mutationSignal = signal;
-      const resolution = await (async () => {
-        const { db, ...connection } = mutationInput;
-        const resolution = await resolveConnectorConnectionMutation(
-          db,
-          builtinConnectorTokenMutationValues(connection),
-        );
-        mutationSignal.throwIfAborted();
-        return resolution;
-      })();
+      const resolution = await resolveConnectorConnectionMutation(
+        tx,
+        builtinConnectorTokenMutationValues(prepared),
+      );
+      signal.throwIfAborted();
       // Keep the exact polling claim through credential persistence and completion.
       // A replacement session or reclaimed provider poll must not publish credentials.
       const [retainedClaim] = await tx
@@ -725,34 +805,16 @@ const completeClaimedSession$ = command(
         .returning({ id: sessions.id });
       signal.throwIfAborted();
       if (!retainedClaim) {
-        const [currentSession] = await tx
-          .select(deviceAuthSessionSelection)
-          .from(sessions)
-          .where(eq(sessions.id, session.id))
-          .limit(1);
+        const [currentSession] = await tx.select().from(sessionQuery);
         signal.throwIfAborted();
         return lostDeviceAuthClaimResponse(currentSession, session);
       }
       const connectionResult = await commitBuiltinConnectorTokenConnection(
-        { ...write, resolution },
+        { ...prepared, db: tx, resolution },
         signal,
       );
       if (connectionResult.status !== "connected") {
-        const rejection = connectorConnectionWriteRejection(
-          connectionResult.status,
-        );
-        const mutation = terminalDeviceAuthClaimMutation(
-          {
-            sessionId: session.id,
-            claimStartedAt,
-            result: {
-              status: "error",
-              error: "connector_account_rejected",
-              errorDescription: rejection.message,
-            },
-          },
-          nowDate(),
-        );
+        const mutation = deviceAuthRejection(args, connectionResult);
         const [terminalSession] = await tx
           .update(sessions)
           .set(mutation.values)
@@ -763,24 +825,71 @@ const completeClaimedSession$ = command(
           const body = terminalErrorBody(terminalSession);
           return { status: 200 as const, body };
         }
-        const [currentSession] = await tx
-          .select(deviceAuthSessionSelection)
-          .from(sessions)
-          .where(eq(sessions.id, session.id))
-          .limit(1);
+        const [currentSession] = await tx.select().from(sessionQuery);
         signal.throwIfAborted();
         return lostDeviceAuthClaimResponse(currentSession, session);
       }
-      const completedAt = nowDate();
+      const projection = stripeAccountAutomationsReadPlan(prepared);
+      const automations =
+        prepared.runtimeMethod.connectorSlug === "stripe"
+          ? await tx.select().from(projection.query)
+          : [];
+      if (prepared.runtimeMethod.connectorSlug === "stripe") {
+        signal.throwIfAborted();
+      }
+      for (const automation of automations) {
+        const item = stripeAccountAutomationSelectionPlan(prepared, automation);
+        let [selected] = await tx.select().from(item.selected);
+        if (!selected) {
+          [selected] = await tx.select().from(item.defaultAccount);
+        }
+        signal.throwIfAborted();
+        const connectorId = selected?.connectorId ?? null;
+        let readiness =
+          connectorId === null ? undefined : projection.cache.get(connectorId);
+        if (connectorId !== null && readiness === undefined) {
+          const catalog = stripeAccountCatalogReadPlan();
+          const rows = await tx
+            .select(catalog.columns)
+            .from(catalog.from)
+            .leftJoin(catalog.joinTable, catalog.join)
+            .where(catalog.where);
+          const account = stripeAccountConnectionReadPlan(
+            prepared,
+            connectorId,
+            rows,
+          );
+          signal.throwIfAborted();
+          const [connection] = await tx.select().from(account.query);
+          const ready = stripeAccountReadiness(account.input, connection);
+          signal.throwIfAborted();
+          let values: ReadonlyMap<string, string> = new Map();
+          if (ready.kind === "ok") {
+            const liveMode = stripeAccountLiveModeReadPlan(ready.connection);
+            values = await builtinConnectorCredentialValuesFromRows(
+              liveMode.input,
+              await tx.select().from(liveMode.query),
+            );
+            signal.throwIfAborted();
+          }
+          readiness = stripeAccountProjectionReadiness(ready, values);
+          projection.cache.set(connectorId, readiness);
+        }
+        const update = stripeAccountProjectionUpdate(
+          automation,
+          connectorId,
+          readiness,
+        );
+        if (update !== null) {
+          await tx.update(projection.from).set(update).where(item.target);
+        }
+        signal.throwIfAborted();
+      }
+      const completed = deviceAuthCompletion(args, connectionResult);
       const [completedSession] = await tx
         .update(sessions)
-        .set({
-          status: "complete",
-          completedConnectorId: connectionResult.connectorRow.id,
-          updatedAt: completedAt,
-          completedAt,
-        })
-        .where(completedDeviceAuthClaimCondition(session.id, claimStartedAt))
+        .set(completed.values)
+        .where(completed.condition)
         .returning({ id: sessions.id });
       signal.throwIfAborted();
       if (!completedSession) {
@@ -791,18 +900,9 @@ const completeClaimedSession$ = command(
       return connectionResult;
     });
     if (signal.aborted) {
-      postCommitAbort = signal.reason;
+      return { result, postCommitAbort: signal.reason };
     }
-    if (result.status !== "connected") {
-      signal.throwIfAborted();
-      return result;
-    }
-    const connected = await set(
-      finalizeBuiltinConnectorTokenConnection$,
-      { prepared, connectionResult: result, postCommitAbort },
-      signal,
-    );
-    return completedDeviceAuthResponse(connected.connector);
+    return { result, postCommitAbort: null };
   },
 );
 
@@ -939,9 +1039,20 @@ const runClaimedSession$ = command(
       );
     }
 
-    return await set(
+    const completion = { ...args, result: pollResult };
+    const prepared = await set(
+      prepareBuiltinConnectorTokenConnection$,
+      deviceAuthTokenConnectionInput(completion),
+      signal,
+    );
+    const committed = await set(
       completeClaimedSession$,
-      { ...args, result: pollResult },
+      { ...completion, prepared },
+      signal,
+    );
+    return await set(
+      finalizeDeviceAuthConnection$,
+      { prepared, ...committed },
       signal,
     );
   },
