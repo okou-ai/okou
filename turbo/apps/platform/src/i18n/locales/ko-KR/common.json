@@ -1126,19 +1126,10 @@
     "invoices": {
       "amount": "금액",
       "date": "날짜",
-      "downloadDescription": "최대 3개월 연속 선택 가능. 해당 기간의 영수증 PDF가 ZIP 파일로 묶입니다.",
       "downloadInvoice": "{{month}} 청구서 다운로드",
-      "downloadReceipts": "영수증 다운로드",
-      "downloadZip": "ZIP 다운로드",
       "empty": "청구서가 없습니다.",
-      "from": "시작",
       "invoice": "청구서",
-      "loading": "청구서 로딩 중",
-      "monthAria": "{{label}}월",
-      "preparingReceipts": "영수증 준비 중...",
-      "rangeError": "최대 3개월 연속 범위를 선택하세요.",
-      "selectMonth": "월 선택",
-      "to": "종료"
+      "loading": "청구서 로딩 중"
     },
     "paymentMethods": {
       "description": "Stripe에서 청구에 사용되는 결제 수단을 관리합니다.",
@@ -1293,7 +1284,6 @@
       "downgradeScheduledDate": "다운그레이드가 예약되었습니다. 현재 플랜은 {{date}}까지 활성 상태입니다.",
       "downgradeScheduledPeriod": "다운그레이드가 예약되었습니다. 현재 플랜은 청구 기간 종료 시까지 활성 상태입니다.",
       "planRestored": "플랜이 복원되었습니다. 구독이 정상적으로 갱신됩니다.",
-      "receiptsDownloaded": "영수증이 다운로드되었습니다",
       "subscriptionChangeConfirmed": "구독 변경이 확인되었습니다."
     },
     "usage": {

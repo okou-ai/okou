@@ -1148,19 +1148,10 @@
     "invoices": {
       "amount": "Valor",
       "date": "Data",
-      "downloadDescription": "Escolha até 3 meses consecutivos. Os PDFs dos recibos desse período serão reunidos em um arquivo ZIP.",
       "downloadInvoice": "Baixar fatura de {{month}}",
-      "downloadReceipts": "Baixar recibos",
-      "downloadZip": "Baixar ZIP",
       "empty": "Ainda não há faturas.",
-      "from": "De",
       "invoice": "Fatura",
-      "loading": "Carregando faturas",
-      "monthAria": "Mês de {{label}}",
-      "preparingReceipts": "Preparando recibos...",
-      "rangeError": "Selecione um período de no máximo 3 meses consecutivos.",
-      "selectMonth": "Selecionar mês",
-      "to": "Até"
+      "loading": "Carregando faturas"
     },
     "paymentMethods": {
       "description": "Gerencie os métodos de pagamento usados para cobrança no Stripe.",
@@ -1315,7 +1306,6 @@
       "downgradeScheduledDate": "Downgrade agendado. Seu plano atual permanece ativo até {{date}}.",
       "downgradeScheduledPeriod": "Downgrade agendado. Seu plano atual permanece ativo até o fim do período de cobrança.",
       "planRestored": "Plano restaurado. Sua assinatura será renovada normalmente.",
-      "receiptsDownloaded": "Recibos baixados",
       "subscriptionChangeConfirmed": "Alteração da assinatura confirmada."
     },
     "usage": {

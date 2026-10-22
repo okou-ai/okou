@@ -12,16 +12,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-function buttonByText(text: string): HTMLElement {
-  const element = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.replace(/\s+/gu, " ").trim() === text;
-  });
-  if (!element) {
-    throw new Error(`Button with text "${text}" not found`);
-  }
-  return element;
-}
-
 function linkByLabel(label: string): HTMLElement {
   const link = queryAllByRoleFast("link").find((candidate) => {
     return candidate.getAttribute("aria-label") === label;
@@ -30,16 +20,6 @@ function linkByLabel(label: string): HTMLElement {
     throw new Error(`Link with label "${label}" not found`);
   }
   return link;
-}
-
-function selectOptionByText(text: string): HTMLElement {
-  const option = screen.getAllByText(text).find((candidate) => {
-    return candidate.closest('[role="option"]') !== null;
-  });
-  if (!option) {
-    throw new Error(`Select option with text "${text}" not found`);
-  }
-  return option;
 }
 
 function mockInvoicesStory(): void {
@@ -104,6 +84,9 @@ test("Open an individual invoice from invoice history", async () => {
   await openInvoicesTab();
 
   await expect(screen.findByText("INV-2026-0001")).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Paid")).toHaveLength(4);
+  expect(screen.getByText("3/15/2026")).toBeInTheDocument();
+  expect(screen.getByText("$20.00")).toBeInTheDocument();
   const invoiceLink = linkByLabel("Download March 2026 invoice");
   expect(invoiceLink).toHaveAttribute(
     "href",
@@ -111,66 +94,4 @@ test("Open an individual invoice from invoice history", async () => {
   );
   expect(invoiceLink).toHaveAttribute("target", "_blank");
   await user.click(invoiceLink);
-});
-
-test("Download receipts for a valid month range", async () => {
-  const user = userEvent.setup();
-  const browserDownload = context.mocks.browser.blobDownload();
-  let requestedRange: {
-    readonly startMonth: string;
-    readonly endMonth: string;
-  } | null = null;
-  const receiptsReady = context.mocks.deferred<void>();
-  mockInvoicesStory();
-  context.mocks.api(
-    billingInvoicesContract.downloadReceipts,
-    async ({ query, respond }) => {
-      requestedRange = query;
-      await receiptsReady.promise;
-      return respond(
-        200,
-        new Blob(["monthly receipts"], { type: "application/zip" }),
-      );
-    },
-  );
-  await openInvoicesTab();
-
-  await waitFor(() => {
-    expect(screen.getByText("INV-2026-0001")).toBeInTheDocument();
-    expect(screen.getAllByText("Paid")).toHaveLength(4);
-    expect(screen.getByText("3/15/2026")).toBeInTheDocument();
-    expect(screen.getByText("$20.00")).toBeInTheDocument();
-  });
-  expect(
-    screen.getAllByLabelText("Download March 2026 invoice")[0],
-  ).toHaveAttribute("href", "https://billing.stripe.com/invoice/test");
-
-  await user.click(buttonByText("Download receipts"));
-  expect(
-    screen.getByRole("heading", { name: "Download receipts" }),
-  ).toBeInTheDocument();
-  await user.click(screen.getByLabelText("From month"));
-  await user.click(selectOptionByText("December 2025"));
-  expect(
-    screen.getByText("Select a range of no more than 3 consecutive months."),
-  ).toBeInTheDocument();
-  expect(buttonByText("Download ZIP")).toBeDisabled();
-
-  await user.click(screen.getByLabelText("From month"));
-  await user.click(selectOptionByText("February 2026"));
-  expect(buttonByText("Download ZIP")).not.toBeDisabled();
-  await user.click(buttonByText("Download ZIP"));
-
-  receiptsReady.resolve();
-  await waitFor(() => {
-    expect(requestedRange).toStrictEqual({
-      startMonth: "2026-02",
-      endMonth: "2026-03",
-    });
-    expect(browserDownload.downloads).toHaveLength(1);
-    expect(screen.getByText("Receipts downloaded")).toBeInTheDocument();
-  });
-  expect(browserDownload.downloads[0]?.filename).toBe(
-    "receipts-2026-02-to-2026-03.zip",
-  );
 });

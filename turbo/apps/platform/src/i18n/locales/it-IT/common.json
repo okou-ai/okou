@@ -1148,19 +1148,10 @@
     "invoices": {
       "amount": "Importo",
       "date": "Data",
-      "downloadDescription": "Scegli fino a 3 mesi consecutivi. I PDF delle ricevute in tale intervallo verranno raggruppati in un unico file ZIP.",
       "downloadInvoice": "Scarica la fattura {{month}}",
-      "downloadReceipts": "Scarica ricevute",
-      "downloadZip": "Scarica ZIP",
       "empty": "Ancora nessuna fattura.",
-      "from": "Da",
       "invoice": "Fattura",
-      "loading": "Caricamento fatture",
-      "monthAria": "{{label}} mese",
-      "preparingReceipts": "Preparazione ricevute...",
-      "rangeError": "Selezionare un intervallo non superiore a 3 mesi consecutivi.",
-      "selectMonth": "Seleziona il mese",
-      "to": "A"
+      "loading": "Caricamento fatture"
     },
     "paymentMethods": {
       "description": "Gestisci i metodi di pagamento utilizzati per la fatturazione in Stripe.",
@@ -1315,7 +1306,6 @@
       "downgradeScheduledDate": "Downgrade programmato. Il tuo piano attuale rimane attivo fino al {{date}}.",
       "downgradeScheduledPeriod": "Downgrade programmato. Il tuo piano attuale rimane attivo fino al termine del periodo di fatturazione.",
       "planRestored": "Piano ripristinato. Il tuo abbonamento si rinnoverà normalmente.",
-      "receiptsDownloaded": "Ricevute scaricate",
       "subscriptionChangeConfirmed": "La modifica dell'abbonamento è stata confermata."
     },
     "usage": {

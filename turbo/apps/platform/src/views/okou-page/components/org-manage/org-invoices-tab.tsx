@@ -1,23 +1,8 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import { useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { CircleCheck, Download } from "lucide-react";
 import {
-  Button,
   cn,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -25,18 +10,7 @@ import {
   Badge,
 } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
-import type { FormEvent } from "react";
-import {
-  downloadMonthlyReceipts$,
-  initializeReceiptDownloadRange$,
-  invoicesAsync$,
-  receiptDownloadRange$,
-  receiptDownloadRangeExceedsLimit$,
-  setReceiptDownloadEndMonth$,
-  setReceiptDownloadStartMonth$,
-} from "../../../../signals/okou-page/billing.ts";
-import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import { detach, Reason } from "../../../../signals/utils.ts";
+import { invoicesAsync$ } from "../../../../signals/okou-page/billing.ts";
 import { currentLocale } from "../../../../i18n/index.ts";
 import { formatUsd } from "../../../../i18n/format.ts";
 
@@ -55,32 +29,6 @@ function formatInvoiceMonth(unixTimestamp: number): string {
     month: "long",
     year: "numeric",
   }).format(new Date(unixTimestamp * 1000));
-}
-
-interface InvoiceMonth {
-  readonly value: string;
-  readonly label: string;
-}
-
-function invoiceMonths(invoices: readonly { readonly date: number }[]) {
-  const months = new Map<string, InvoiceMonth>();
-  for (const invoice of invoices) {
-    const date = new Date(invoice.date * 1000);
-    const value = `${date.getUTCFullYear()}-${String(
-      date.getUTCMonth() + 1,
-    ).padStart(2, "0")}`;
-    months.set(value, {
-      value,
-      label: new Intl.DateTimeFormat(currentLocale(), {
-        month: "long",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(date),
-    });
-  }
-  return [...months.values()].sort((left, right) => {
-    return right.value.localeCompare(left.value);
-  });
 }
 
 function InvoiceRowsSkeleton() {
@@ -112,195 +60,6 @@ function InvoiceRowsSkeleton() {
         );
       })}
     </div>
-  );
-}
-
-function ReceiptMonthSelect({
-  id,
-  label,
-  name,
-  value,
-  months,
-  onValueChange,
-}: {
-  readonly id: string;
-  readonly label: string;
-  readonly name: string;
-  readonly value: string;
-  readonly months: readonly InvoiceMonth[];
-  readonly onValueChange: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <label className="grid gap-1.5 text-sm" htmlFor={id}>
-      <span className="font-medium text-foreground">{label}</span>
-      <Select
-        name={name}
-        items={months}
-        value={value}
-        onValueChange={(nextValue, details) => {
-          if (nextValue === null) {
-            details.cancel();
-            return;
-          }
-          onValueChange(nextValue);
-        }}
-      >
-        <SelectTrigger
-          id={id}
-          aria-label={t(
-            ($) => {
-              return $.billing.invoices.monthAria;
-            },
-            { label },
-          )}
-          className="h-9 w-full"
-        >
-          <SelectValue
-            placeholder={t(($) => {
-              return $.billing.invoices.selectMonth;
-            })}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          {months.map((month) => {
-            return (
-              <SelectItem key={month.value} value={month.value}>
-                {month.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-    </label>
-  );
-}
-
-function DownloadReceiptsDialog({
-  months,
-}: {
-  readonly months: readonly InvoiceMonth[];
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [downloadLoadable, downloadReceipts] = useLoadableSet(
-    downloadMonthlyReceipts$,
-  );
-  const range = useGet(receiptDownloadRange$);
-  const rangeExceedsLimit = useGet(receiptDownloadRangeExceedsLimit$);
-  const initializeRange = useSet(initializeReceiptDownloadRange$);
-  const setStartMonth = useSet(setReceiptDownloadStartMonth$);
-  const setEndMonth = useSet(setReceiptDownloadEndMonth$);
-  const downloading = downloadLoadable.state === "loading";
-  const defaultMonth = months[0]?.value;
-  const canSubmit =
-    !downloading &&
-    !rangeExceedsLimit &&
-    range.startMonth !== "" &&
-    range.endMonth !== "";
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canSubmit) {
-      return;
-    }
-    const [startMonth, endMonth] =
-      range.startMonth <= range.endMonth
-        ? [range.startMonth, range.endMonth]
-        : [range.endMonth, range.startMonth];
-    detach(
-      downloadReceipts({ startMonth, endMonth }, pageSignal),
-      Reason.DomCallback,
-    );
-  };
-
-  return (
-    <Dialog
-      onOpenChange={(open) => {
-        if (open && defaultMonth) {
-          initializeRange(defaultMonth);
-        }
-      }}
-    >
-      <DialogTrigger
-        render={
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            disabled={downloading}
-          >
-            <Download size={14} />
-            {downloading
-              ? t(($) => {
-                  return $.billing.invoices.preparingReceipts;
-                })
-              : t(($) => {
-                  return $.billing.invoices.downloadReceipts;
-                })}
-          </Button>
-        }
-      />
-      <DialogContent>
-        <form onSubmit={submit}>
-          <DialogHeader>
-            <DialogTitle>
-              {t(($) => {
-                return $.billing.invoices.downloadReceipts;
-              })}
-            </DialogTitle>
-            <DialogDescription>
-              {t(($) => {
-                return $.billing.invoices.downloadDescription;
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 py-5">
-            <ReceiptMonthSelect
-              id="receipt-start-month"
-              label={t(($) => {
-                return $.billing.invoices.from;
-              })}
-              name="startMonth"
-              value={range.startMonth}
-              months={months}
-              onValueChange={setStartMonth}
-            />
-            <ReceiptMonthSelect
-              id="receipt-end-month"
-              label={t(($) => {
-                return $.billing.invoices.to;
-              })}
-              name="endMonth"
-              value={range.endMonth}
-              months={months}
-              onValueChange={setEndMonth}
-            />
-          </div>
-          {rangeExceedsLimit && (
-            <p role="alert" className="-mt-2 pb-5 text-sm text-destructive">
-              {t(($) => {
-                return $.billing.invoices.rangeError;
-              })}
-            </p>
-          )}
-          <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline" />}>
-              {t(($) => {
-                return $.billing.common.cancel;
-              })}
-            </DialogClose>
-            <DialogClose
-              render={<Button type="submit" disabled={!canSubmit} />}
-            >
-              {t(($) => {
-                return $.billing.invoices.downloadZip;
-              })}
-            </DialogClose>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -343,7 +102,6 @@ export function OrgInvoicesTab() {
 
   const invoices =
     invoicesLoadable.state === "hasData" ? invoicesLoadable.data.invoices : [];
-  const months = invoiceMonths(invoices);
 
   if (!loading && invoices.length === 0) {
     return (
@@ -359,11 +117,6 @@ export function OrgInvoicesTab() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      {!loading && (
-        <div className="flex shrink-0 justify-end">
-          <DownloadReceiptsDialog months={months} />
-        </div>
-      )}
       {/* Own scrolling and confine the header's overlap to the invoice rows. */}
       <div className="isolate min-h-0 overflow-auto scroll-pt-12 rounded-[10px] bg-card border border-surface-border">
         <div className="min-w-[36rem]">

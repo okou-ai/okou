@@ -1148,19 +1148,10 @@
     "invoices": {
       "amount": "Cantidad",
       "date": "Fecha",
-      "downloadDescription": "Elige hasta 3 meses consecutivos. Los PDFs de recibo en ese rango se agruparán en un solo archivo ZIP.",
       "downloadInvoice": "Descargar factura de {{month}}",
-      "downloadReceipts": "Descargar recibos",
-      "downloadZip": "Descargar ZIP",
       "empty": "Todavía no hay facturas.",
-      "from": "De",
       "invoice": "Factura",
-      "loading": "Cargando facturas",
-      "monthAria": "{{label}} mes",
-      "preparingReceipts": "Preparando recibos...",
-      "rangeError": "Selecciona un rango de no más de 3 meses consecutivos.",
-      "selectMonth": "Seleccionar mes",
-      "to": "Para"
+      "loading": "Cargando facturas"
     },
     "paymentMethods": {
       "description": "Administra los métodos de pago utilizados para la facturación en Stripe.",
@@ -1315,7 +1306,6 @@
       "downgradeScheduledDate": "Cambio de plan programado. Tu plan actual permanecerá activo hasta {{date}}.",
       "downgradeScheduledPeriod": "Cambio de plan programado. Tu plan actual permanecerá activo hasta que termine el periodo de facturación.",
       "planRestored": "Plan restaurado. Tu suscripción se renovará normalmente.",
-      "receiptsDownloaded": "Recibos descargados",
       "subscriptionChangeConfirmed": "Se confirmó el cambio de suscripción."
     },
     "usage": {

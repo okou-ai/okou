@@ -1148,19 +1148,10 @@
     "invoices": {
       "amount": "Montant",
       "date": "Date",
-      "downloadDescription": "Choisissez jusqu'à 3 mois consécutifs. Les PDF des reçus dans cette plage seront regroupés dans un seul fichier ZIP.",
       "downloadInvoice": "Télécharger la facture de {{month}}",
-      "downloadReceipts": "Télécharger les reçus",
-      "downloadZip": "Télécharger ZIP",
       "empty": "Pas encore de factures.",
-      "from": "De",
       "invoice": "Facture",
-      "loading": "Chargement des factures",
-      "monthAria": "Mois {{label}}",
-      "preparingReceipts": "Préparation des reçus...",
-      "rangeError": "Sélectionnez une période de maximum 3 mois consécutifs.",
-      "selectMonth": "Sélectionner le mois",
-      "to": "À"
+      "loading": "Chargement des factures"
     },
     "paymentMethods": {
       "description": "Gérez les moyens de paiement utilisés pour la facturation dans Stripe.",
@@ -1315,7 +1306,6 @@
       "downgradeScheduledDate": "Rétrogradation programmée. Votre forfait actuel reste actif jusqu'au {{date}}.",
       "downgradeScheduledPeriod": "Rétrogradation programmée. Votre forfait actuel reste actif jusqu'à la fin de la période de facturation.",
       "planRestored": "Forfait restauré. Votre abonnement se renouvellera normalement.",
-      "receiptsDownloaded": "Reçus téléchargés",
       "subscriptionChangeConfirmed": "La modification de l’abonnement a été confirmée."
     },
     "usage": {

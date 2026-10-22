@@ -1127,19 +1127,10 @@
     "invoices": {
       "amount": "Amount",
       "date": "Date",
-      "downloadDescription": "Choose up to 3 consecutive months. Receipt PDFs in that range will be bundled into one ZIP file.",
       "downloadInvoice": "Download {{month}} invoice",
-      "downloadReceipts": "Download receipts",
-      "downloadZip": "Download ZIP",
       "empty": "No invoices yet.",
-      "from": "From",
       "invoice": "Invoice",
-      "loading": "Loading invoices",
-      "monthAria": "{{label}} month",
-      "preparingReceipts": "Preparing receipts...",
-      "rangeError": "Select a range of no more than 3 consecutive months.",
-      "selectMonth": "Select month",
-      "to": "To"
+      "loading": "Loading invoices"
     },
     "paymentMethods": {
       "description": "Manage the payment methods used for billing in Stripe.",
@@ -1294,7 +1285,6 @@
       "downgradeScheduledDate": "Downgrade scheduled. Your current plan stays active until {{date}}.",
       "downgradeScheduledPeriod": "Downgrade scheduled. Your current plan stays active until the billing period ends.",
       "planRestored": "Plan restored. Your subscription will renew normally.",
-      "receiptsDownloaded": "Receipts downloaded",
       "subscriptionChangeConfirmed": "Subscription change confirmed."
     },
     "usage": {
