@@ -1,6 +1,6 @@
-name: iOS Preparation Study
+name: iOS Warm Preparation Study
 
-# Temporary research branch only. Runs no build/test/publish or cache writes.
+# Temporary research branch only. Measures prepare and compile; saves no cache.
 on:
   workflow_dispatch:
 
@@ -36,15 +36,50 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  measure:
+  warm-source-state:
     needs: sources
     runs-on: xcode-27
-    timeout-minutes: 20
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_BUILD_CACHE_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure producer directories
+        run: echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: preparation-study-sources
+          path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
+      - name: Produce the same SourcePackages state for every fresh consumer
+        run: |
+          mkdir -p "$RUNNER_TEMP/okou-ios-ci"
+          python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
+          printf '\n' >> "$HOME/.gitconfig"
+          cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
+          bash ios/scripts/ci-test.sh prepare
+          tar -czf "$RUNNER_TEMP/source-packages.tar.gz" -C "$RUNNER_TEMP/okou-ios-ci" SourcePackages
+          shasum -a 256 "$RUNNER_TEMP/source-packages.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prepared-source-packages
+          path: ${{ runner.temp }}/source-packages.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  measure:
+    needs: [sources, warm-source-state]
+    runs-on: xcode-27
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        mode: [parallel, resolve-first, boot-first, resolve-only]
+        mode: [parallel, resolve-first]
         repetition: [1, 2]
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
@@ -73,10 +108,21 @@ jobs:
           python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
           printf '\n' >> "$HOME/.gitconfig"
           cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
+      - name: Receive identical warm source state
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prepared-source-packages
+          path: ${{ runner.temp }}/warm-source-state
+      - name: Restore warm checkouts without saving a repository cache
+        run: |
+          shasum -a 256 "$RUNNER_TEMP/warm-source-state/source-packages.tar.gz"
+          tar -xzf "$RUNNER_TEMP/warm-source-state/source-packages.tar.gz" -C "$RUNNER_TEMP/okou-ios-ci"
       - name: Measure preparation on a fresh runner
         env:
           STUDY_MODE: ${{ matrix.mode }}
-          STUDY_DEPENDENCY_HIT: ${{ steps.cache.outputs.dependencies-hit }}
+          STUDY_DEPENDENCY_HIT: artifact-same-sourcepackages
+          STUDY_LIGHTWEIGHT: "true"
+          STUDY_COMPILE: "true"
         run: python3 ops/ios-preparation-study.py "$STUDY_MODE"
       - name: Retain source-timed measurements and stack samples
         if: always()

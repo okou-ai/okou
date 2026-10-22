@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""One-shot hosted-Mac preparation experiment; never builds, tests or publishes.
+"""One-shot hosted-Mac preparation experiment; never runs tests or publishes.
 
 Run MODE with STUDY_DIR, RUNNER_TEMP and the normal iOS CI environment set.
 MODE is parallel, resolve-first, boot-first or resolve-only. Uses the unchanged
 production preparation and preboot scripts, recording command boundaries,
 resource snapshots, and one three-second sample for commands exceeding 60s.
+STUDY_LIGHTWEIGHT=true disables command shims and resource/stack sampling.
+STUDY_COMPILE=true also measures the unchanged production compile command.
 Artifacts belong to STUDY_DIR. Child failures propagate; owned process groups
 are terminated on cancellation. No caches are saved by this experiment.
 """
@@ -125,17 +127,20 @@ def main(mode):
     directory = Path(os.environ["STUDY_DIR"])
     directory.mkdir(parents=True, exist_ok=False)
     script = Path(__file__).resolve()
-    shim = directory / "bin"
-    shim.mkdir()
-    for tool in ("xcodebuild", "xcrun"):
-        real = shutil.which(tool)
-        if real is None:
-            raise ValueError(f"Missing {tool}")
-        path = shim / tool
-        arguments = [sys.executable, str(script), "--command", tool, real]
-        path.write_text("#!/bin/sh\nexec " + shlex.join(arguments) + ' "$@"\n')
-        path.chmod(0o700)
-    environment = {**os.environ, "PATH": str(shim) + os.pathsep + os.environ["PATH"]}
+    lightweight = os.environ.get("STUDY_LIGHTWEIGHT") == "true"
+    environment = dict(os.environ)
+    if not lightweight:
+        shim = directory / "bin"
+        shim.mkdir()
+        for tool in ("xcodebuild", "xcrun"):
+            real = shutil.which(tool)
+            if real is None:
+                raise ValueError(f"Missing {tool}")
+            path = shim / tool
+            arguments = [sys.executable, str(script), "--command", tool, real]
+            path.write_text("#!/bin/sh\nexec " + shlex.join(arguments) + ' "$@"\n')
+            path.chmod(0o700)
+        environment["PATH"] = str(shim) + os.pathsep + os.environ["PATH"]
     event(
         "metadata",
         mode=mode,
@@ -145,6 +150,7 @@ def main(mode):
         os=capture(["sw_vers"]),
         image=os.environ.get("ImageVersion"),
         dependency_hit=os.environ.get("STUDY_DEPENDENCY_HIT"),
+        lightweight=lightweight,
     )
     stop = threading.Event()
 
@@ -165,7 +171,8 @@ def main(mode):
                 stop.wait(15)
 
     monitor = threading.Thread(target=resources)
-    monitor.start()
+    if not lightweight:
+        monitor.start()
     children = []
     phase_times = {}
 
@@ -220,8 +227,13 @@ def main(mode):
             wait(prepare())
         else:
             wait(prepare())
+        prepared = time.monotonic() - started
+        event("preparation-ready", elapsed=prepared)
+        if os.environ.get("STUDY_COMPILE") == "true":
+            wait(start("compile", ["bash", "ios/scripts/ci-test.sh", "compile"]))
         summary = {
             "mode": mode,
+            "preparation_seconds": prepared,
             "total_seconds": time.monotonic() - started,
             "phases": phase_times,
         }
@@ -237,7 +249,8 @@ def main(mode):
                     os.killpg(child.pid, signal.SIGKILL)
                     child.wait()
         stop.set()
-        monitor.join(timeout=35)
+        if not lightweight:
+            monitor.join(timeout=35)
 
 
 if __name__ == "__main__":
