@@ -1116,10 +1116,18 @@ mod tests {
         );
     }
 
+    fn with_addon_python(script: &str) -> String {
+        let python =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runner/mitm-addon/.venv/bin/python");
+        let quoted_python = format!("'{}'", python.to_str().unwrap().replace('\'', "'\\''"));
+        script.replace("@ADDON_PYTHON@", &quoted_python)
+    }
+
     fn write_fake_listening_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env bash
+            with_addon_python(
+                r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "$0.args"
 printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
@@ -1138,7 +1146,7 @@ for arg in "$@"; do
   esac
   prev="$arg"
 done
-exec python3 - "$port" "$control_dir" "$usage_state_id" "$@" <<'PY'
+exec @ADDON_PYTHON@ - "$port" "$control_dir" "$usage_state_id" "$@" <<'PY'
 import socket
 import sys
 from pathlib import Path
@@ -1165,6 +1173,7 @@ while True:
     conn.close()
 PY
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();
@@ -1175,7 +1184,8 @@ PY
     fn write_forking_ready_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env bash
+            with_addon_python(
+                r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
 control_dir=""
@@ -1186,7 +1196,7 @@ for arg in "$@"; do
     okou_usage_state_id=*) usage_state_id="${arg#okou_usage_state_id=}" ;;
   esac
 done
-python3 - "$control_dir" "$usage_state_id" "$0.descendant" "$@" <<'PY' &
+@ADDON_PYTHON@ - "$control_dir" "$usage_state_id" "$0.descendant" "$@" <<'PY' &
 import os
 import signal
 import sys
@@ -1205,6 +1215,7 @@ while True:
 PY
 wait "$!"
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();
@@ -1215,7 +1226,9 @@ wait "$!"
     fn write_graceful_parent_with_descendant_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env python3
+            with_addon_python(
+                r#"#!/usr/bin/env bash
+exec @ADDON_PYTHON@ - "$0" "$@" <<'PY'
 import os
 import signal
 import socket
@@ -1223,6 +1236,7 @@ import sys
 import time
 from pathlib import Path
 
+sys.argv = sys.argv[1:]
 Path(f"{sys.argv[0]}.env").write_text(
     f"{os.environ['TMPDIR']}\n"
     f"{os.environ['OKOU_MITMDUMP_RUNTIME_DIR']}\n",
@@ -1263,7 +1277,9 @@ control.start()
 while True:
     connection, _ = sock.accept()
     connection.close()
+PY
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();
@@ -1274,11 +1290,12 @@ while True:
     fn write_forking_failing_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env bash
+            with_addon_python(
+                r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
 printf 'attempt\n' >> "$0.attempts"
-python3 - "$0.descendant" <<'PY' &
+@ADDON_PYTHON@ - "$0.descendant" <<'PY' &
 import os
 import signal
 import sys
@@ -1297,6 +1314,7 @@ done
 printf 'addon warning: address already in use\n' >&2
 exit 42
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();

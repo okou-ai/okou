@@ -28,11 +28,14 @@ async fn flush_uses_real_python_writer_and_frozen_generation() {
     let directory = private_directory();
     let run_id = RunId::new_v4();
     let path = directory.path().join(format!("network-{run_id}.jsonl"));
-    let mut child = tokio::process::Command::new("python3")
-        .arg("-u")
-        .arg("-c")
-        .arg(
-            r#"
+    let mut child = tokio::process::Command::new(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../runner/mitm-addon/.venv/bin/python"),
+    )
+    .arg("-u")
+    .arg("-c")
+    .arg(
+        r#"
 import sys
 from pathlib import Path
 import jsonl_writer
@@ -49,18 +52,18 @@ finally:
     server.stop()
     jsonl_writer.shutdown_writer(timeout=None)
 "#,
-        )
-        .arg(directory.path())
-        .arg(&path)
-        .env(
-            "PYTHONPATH",
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../runner/mitm-addon/src"),
-        )
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
+    )
+    .arg(directory.path())
+    .arg(&path)
+    .env(
+        "PYTHONPATH",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../runner/mitm-addon/src"),
+    )
+    .stdin(std::process::Stdio::piped())
+    .stdout(std::process::Stdio::piped())
+    .kill_on_drop(true)
+    .spawn()
+    .expect("run uv sync --locked in crates/runner/mitm-addon before runner tests");
     let mut lines = tokio::io::BufReader::new(child.stdout.take().unwrap()).lines();
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(5), lines.next_line())
