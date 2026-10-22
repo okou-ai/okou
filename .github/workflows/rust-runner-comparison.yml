@@ -1,0 +1,452 @@
+# Temporary paired experiment. Both machines use the same source, CLI artifact,
+# toolchain, Cargo dependency caches and R2-backed sccache. No outputs are deployed
+# or published. Remove this workflow after recording the comparison.
+name: Rust runner comparison
+on:
+  push:
+    branches: [ci/rust-standard-runner-comparison]
+    paths: [.github/workflows/rust-runner-comparison.yml]
+permissions:
+  contents: read
+  actions: read
+env:
+  npm_config_audit: "false"
+jobs:
+  compile:
+    name: CI binary (${{ matrix.id }}, ${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: x86_64
+            label: x86_64
+            target: x86_64-unknown-linux-musl
+            unameM: x86_64
+            cacheSuffix: x86_64-musl
+            assetSuffix: x86_64-linux
+            runner: ubuntu-latest
+          - id: x86_64
+            label: x86_64
+            target: x86_64-unknown-linux-musl
+            unameM: x86_64
+            cacheSuffix: x86_64-musl
+            assetSuffix: x86_64-linux
+            runner: ubuntu-latest-8-cores
+          - id: arm64
+            label: arm64
+            target: aarch64-unknown-linux-musl
+            unameM: aarch64
+            cacheSuffix: aarch64-musl
+            assetSuffix: aarch64-linux
+            runner: ubuntu-latest
+          - id: arm64
+            label: arm64
+            target: aarch64-unknown-linux-musl
+            unameM: aarch64
+            cacheSuffix: aarch64-musl
+            assetSuffix: aarch64-linux
+            runner: ubuntu-latest-8-cores
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      RUNNER_BINARY_GIT_REVISION: a013054c72f8963b64a94479969eaeb03a6fc668
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a013054c72f8963b64a94479969eaeb03a6fc668
+      - name: Record comparison inputs and hardware
+        run: |-
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
+          printf 'Source: %s\n' "$(git rev-parse HEAD)"
+          printf 'Logical CPUs: %s\n' "$(nproc)"
+          awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo
+          free -m
+          df -h "$GITHUB_WORKSPACE"
+      - name: Download private CLI build input
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: "12399845106"
+          github-token: ${{ github.token }}
+          run-id: 39716561744
+          path: runner-cli-intermediate
+      - name: Configure git safe directory
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Setup R2 sccache
+        id: sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ matrix.id }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+        id: rust-cache
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-runner-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
+      - name: Build runner binary
+        id: build
+        env:
+          RUNNER_BINARY_METADATA_PATH: runner-binary-fresh/metadata.json
+        run: .github/scripts/runner/runner-binary-build/build.sh build
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    defaults:
+      run:
+        shell: bash
+  coverage:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+      LLVM_PROFILE_FILE_NAME: crates-%b-%8m.profraw
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a013054c72f8963b64a94479969eaeb03a6fc668
+      - name: Record comparison inputs and hardware
+        run: |-
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
+          printf 'Source: %s\n' "$(git rev-parse HEAD)"
+          printf 'Logical CPUs: %s\n' "$(nproc)"
+          awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo
+          free -m
+          df -h "$GITHUB_WORKSPACE"
+      - name: Setup R2 sccache
+        id: sccache
+        if: (github.event_name != 'pull_request' || (github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository))
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: x86_64
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: coverage-line-tables-only
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+        id: rust-cache
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
+      - name: Report coverage disk usage after cache restore
+        continue-on-error: true
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          for path in crates/target crates/target/llvm-cov-target; do
+            if [ -e "$path" ]; then
+              du -sh "$path"
+            else
+              echo "$path: not present"
+            fi
+          done
+      - name: Install coverage tools
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8
+        with:
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+      - name: Sync locked addon for Rust/Python control integration
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+      - name: Run tests with coverage
+        run: |
+          cd crates
+          rm -f target/llvm-cov-target/cargo-timings/cargo-timing.html lcov.info coverage-profile-statistics.txt
+          cargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info --timings
+      - name: Validate coverage report
+        run: |
+          report=crates/lcov.info
+          source_files="${RUNNER_TEMP:-/tmp}/coverage-source-files.txt"
+          [ -s "$report" ]
+          awk -v root="${GITHUB_WORKSPACE}/" '
+            index($0, "SF:") == 1 {
+              path = substr($0, 4)
+              if (index(path, root) == 1) {
+                path = substr(path, length(root) + 1)
+              }
+              print path
+            }
+          ' "$report" | LC_ALL=C sort -u > "$source_files"
+          source_file_count=$(wc -l < "$source_files" | tr -d ' ')
+          [ "$source_file_count" -gt 0 ]
+          source_file_digest=$(sha256sum "$source_files" | cut -d ' ' -f 1)
+          echo "Coverage source files: $source_file_count"
+          echo "Coverage source file set SHA-256: $source_file_digest"
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    name: Coverage (${{ matrix.runner }})
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+          - runner: ubuntu-latest-8-cores
+  host-cpu-fairness-build:
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      TARGET_TRIPLE: x86_64-unknown-linux-musl
+      TEST_NAME: host_cpu_fairness
+      ARTIFACT_DIR: native-test-artifact
+      PRODUCER_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a013054c72f8963b64a94479969eaeb03a6fc668
+      - name: Record comparison inputs and hardware
+        run: |-
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
+          printf 'Source: %s\n' "$(git rev-parse HEAD)"
+          printf 'Logical CPUs: %s\n' "$(nproc)"
+          awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo
+          free -m
+          df -h "$GITHUB_WORKSPACE"
+      - name: Resolve compiler cache architecture
+        id: cache-target
+        run: |
+          source .github/scripts/runner/runner-image-target.sh
+          architecture=$(runner_image_sccache_architecture "$TARGET_TRIPLE")
+          echo "architecture=$architecture" >> "$GITHUB_OUTPUT"
+      - name: Setup R2 sccache
+        id: sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ steps.cache-target.outputs.architecture }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: x86_64-unknown-linux-musl-host-cpu-fairness-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+        id: rust-cache
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
+      - name: Cross-compile host CPU fairness test
+        id: build
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh build
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    name: CPU fairness (${{ matrix.runner }})
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+          - runner: ubuntu-latest-8-cores
+  build-runner-release-assets:
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      TARGET_TRIPLE: ${{ matrix.target }}
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: x86_64
+            label: x86_64
+            target: x86_64-unknown-linux-musl
+            unameM: x86_64
+            cacheSuffix: x86_64-musl
+            assetSuffix: x86_64-linux
+            runner: ubuntu-latest
+          - id: x86_64
+            label: x86_64
+            target: x86_64-unknown-linux-musl
+            unameM: x86_64
+            cacheSuffix: x86_64-musl
+            assetSuffix: x86_64-linux
+            runner: ubuntu-latest-8-cores
+          - id: arm64
+            label: arm64
+            target: aarch64-unknown-linux-musl
+            unameM: aarch64
+            cacheSuffix: aarch64-musl
+            assetSuffix: aarch64-linux
+            runner: ubuntu-latest
+          - id: arm64
+            label: arm64
+            target: aarch64-unknown-linux-musl
+            unameM: aarch64
+            cacheSuffix: aarch64-musl
+            assetSuffix: aarch64-linux
+            runner: ubuntu-latest-8-cores
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a013054c72f8963b64a94479969eaeb03a6fc668
+      - name: Record comparison inputs and hardware
+        run: |-
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
+          printf 'Source: %s\n' "$(git rev-parse HEAD)"
+          printf 'Logical CPUs: %s\n' "$(nproc)"
+          awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo
+          free -m
+          df -h "$GITHUB_WORKSPACE"
+      - name: Download private CLI build input
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: "12399845106"
+          github-token: ${{ github.token }}
+          run-id: 39716561744
+          path: runner-cli-intermediate
+      - name: Check CLI package and identity before compiling Runner
+        run: test -s runner-cli-intermediate/package.tgz && test -s runner-cli-intermediate/manifest.json
+      - name: Resolve runner target metadata
+        id: target-metadata
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          . .github/scripts/runner/runner-image-target.sh
+          runner_image_validate_target "$TARGET_TRIPLE"
+          cache_suffix=$(runner_image_cache_suffix "$TARGET_TRIPLE")
+          sccache_architecture=$(runner_image_sccache_architecture "$TARGET_TRIPLE")
+          echo "cache_suffix=$cache_suffix" >> "$GITHUB_OUTPUT"
+          echo "sccache_architecture=$sccache_architecture" >> "$GITHUB_OUTPUT"
+      - name: Setup R2 sccache
+        id: sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ steps.target-metadata.outputs.sccache_architecture }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ steps.target-metadata.outputs.cache_suffix }}-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+        id: rust-cache
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-runner-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Cross-compile guest binaries for ${{ matrix.target }}
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: |
+          . .github/scripts/runner/runner-guest-binaries.sh
+          runner_guest_binaries_load
+          guest_cargo_args=()
+          for package in "${RUNNER_GUEST_PACKAGES[@]}"; do
+            guest_cargo_args+=("-p" "$package")
+          done
+          cd crates
+          cargo build --release --target "$TARGET_TRIPLE" "${guest_cargo_args[@]}"
+      - name: Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+          GUEST_CLI_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
+          GUEST_CLI_MANIFEST_PATH: ${{ github.workspace }}/runner-cli-intermediate/manifest.json
+        run: |
+          . .github/scripts/runner/runner-guest-binaries.sh
+          runner_guest_binaries_load
+          cd crates
+          TARGET_DIR="target/${TARGET_TRIPLE}/release"
+          guest_env=()
+          for index in "${!RUNNER_GUEST_BINARIES[@]}"; do
+            guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=${TARGET_DIR}/${RUNNER_GUEST_BINARIES[$index]}")
+          done
+          env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+    name: Release binary (${{ matrix.id }}, ${{ matrix.runner }})
+    timeout-minutes: 40
