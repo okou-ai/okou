@@ -1,7 +1,7 @@
 import type { Element, Root } from "hast";
 import { visit } from "unist-util-visit";
 
-import { createDeferredPromise, withCleanup } from "../../signals/utils.ts";
+import { createDeferredPromise } from "../../signals/utils.ts";
 import { renderMermaidDiagramFile } from "../mermaid-renderer.ts";
 import { prepareSvgImage } from "./svg.ts";
 import type { PdfAssets, PdfRasterImage } from "./types.ts";
@@ -33,45 +33,43 @@ async function rasterizeImage(
   };
   image.addEventListener("load", onLoad, { once: true, signal });
   image.addEventListener("error", onError, { once: true, signal });
-  image.src = url;
-  return withCleanup(
-    (async () => {
-      await loaded.promise;
-      signal.throwIfAborted();
-      if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) {
-        throw new Error("PDF image has no usable dimensions");
-      }
-      // Preserve the original pixels except for a bounded very large image.
-      const scale = Math.min(
-        1,
-        4096 / Math.max(image.naturalWidth, image.naturalHeight),
-      );
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext("2d");
-      if (!context) {
-        throw new Error("PDF image canvas is unavailable");
-      }
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/png");
-      canvas.width = 0;
-      canvas.height = 0;
-      return {
-        dataUrl,
-        width: image.naturalWidth,
-        height: image.naturalHeight,
-      };
-    })(),
+  signal.addEventListener(
+    "abort",
     () => {
-      image.removeEventListener("load", onLoad);
-      image.removeEventListener("error", onError);
       image.removeAttribute("src");
       if (!svg) {
         URL.revokeObjectURL(url);
       }
     },
+    { once: true },
   );
+  image.src = url;
+  await loaded.promise;
+  signal.throwIfAborted();
+  if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) {
+    throw new Error("PDF image has no usable dimensions");
+  }
+  // Preserve the original pixels except for a bounded very large image.
+  const scale = Math.min(
+    1,
+    4096 / Math.max(image.naturalWidth, image.naturalHeight),
+  );
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("PDF image canvas is unavailable");
+  }
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL("image/png");
+  canvas.width = 0;
+  canvas.height = 0;
+  return {
+    dataUrl,
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  };
 }
 
 export async function preparePdfAssets(

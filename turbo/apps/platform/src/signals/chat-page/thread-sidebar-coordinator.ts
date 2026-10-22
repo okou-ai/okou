@@ -13,7 +13,6 @@ import type {
 import { pageSignal$ } from "../page-signal.ts";
 import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
 import { delay } from "signal-timers";
-import { withCleanup } from "../utils.ts";
 
 // ---------------------------------------------------------------------------
 // Page-level coordinator for the thread-owned utility sidebar. Sidebar state
@@ -50,12 +49,6 @@ export const activeThreadSidebar$ = computed(
     return null;
   },
 );
-
-export const threadMailNavigating$ = computed((get) => {
-  return [get(currentLeftThread$), get(currentRightThread$)].some((thread) => {
-    return thread !== null && get(thread.mail.navigating$);
-  });
-});
 
 export const activeThreadSidebarFullscreen$ = computed((get) => {
   const active = get(activeThreadSidebar$);
@@ -175,7 +168,7 @@ async function waitForMailLayout(signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
 }
 
-const moveThreadMail$ = command(
+export const navigateThreadMail$ = command(
   async (
     { get, set },
     thread: ChatPanelSignals,
@@ -216,46 +209,13 @@ const moveThreadMail$ = command(
       return;
     }
     await document.startViewTransition({
+      types: ["thread-mail"],
       update: async () => {
         update();
         await waitForMailLayout(signal);
       },
     }).finished;
     signal.throwIfAborted();
-  },
-);
-
-const navigateThreadMail$ = command(
-  async (
-    { get, set },
-    thread: ChatPanelSignals,
-    mail: ThreadMailSummary | null,
-    signal: AbortSignal,
-  ) => {
-    if (get(thread.mail.navigating$)) {
-      return;
-    }
-    set(thread.mail.navigating$, true);
-    await withCleanup(set(moveThreadMail$, thread, mail, signal), () => {
-      set(thread.mail.navigating$, false);
-    });
-  },
-);
-
-export const openThreadMailFromList$ = command(
-  async (
-    { set },
-    thread: ChatPanelSignals,
-    mail: ThreadMailSummary,
-    signal: AbortSignal,
-  ) => {
-    await set(navigateThreadMail$, thread, mail, signal);
-  },
-);
-
-export const backToThreadMailList$ = command(
-  async ({ set }, thread: ChatPanelSignals, signal: AbortSignal) => {
-    await set(navigateThreadMail$, thread, null, signal);
   },
 );
 

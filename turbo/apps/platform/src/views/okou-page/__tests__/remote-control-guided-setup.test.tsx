@@ -4935,83 +4935,114 @@ test.each(["tailscale", "cloudflare"] as const)(
   },
 );
 
-test("Restricting Cloudflare requires the current impact acknowledgement and retains saved connections", async () => {
-  let saved = {
-    ...cloudflareNetwork,
-    name: "Team gateway",
-    scope: "organization" as "personal" | "organization",
-    sshHosts: [
+test.each(["tailscale", "cloudflare"] as const)(
+  "Restricting %s keeps confirmation busy through conversion and the complete save",
+  async (provider) => {
+    const contract =
+      provider === "tailscale" ? tailscaleContract : cloudflareAccessContract;
+    const conversion = createDeferredPromise<void>(context.signal);
+    const update = createDeferredPromise<void>(context.signal);
+    let saved = {
+      ...(provider === "tailscale" ? network : cloudflareNetwork),
+      name: "Team gateway",
+      scope: "organization" as "personal" | "organization",
+      sshHosts: [
+        {
+          id: "c0000000-0000-4000-8000-000000000001",
+          displayName: "Owner computer",
+        },
+      ],
+    };
+    const impactSnapshot = "a".repeat(64);
+    context.mocks.api(contract.list, ({ respond }) => {
+      return respond(200, { configs: [saved] });
+    });
+    context.mocks.api(contract.impactPreview, ({ respond }) => {
+      return respond(200, {
+        expectedRevision: 1,
+        ownHostCount: 1,
+        otherHostCount: 2,
+        affectedOwners: [{ userId: "another-member", displayName: "Alex" }],
+        impactSnapshot,
+      });
+    });
+    context.mocks.api(contract.convertToPersonal, async ({ body, respond }) => {
+      expect(body).toStrictEqual({ expectedRevision: 1, impactSnapshot });
+      await conversion.promise;
+      saved = { ...saved, scope: "personal", revision: 2 };
+      return respond(200, saved);
+    });
+    context.mocks.api(contract.update, async ({ body, respond }) => {
+      expect(body.expectedRevision).toBe(2);
+      expect(body.name).toBe("Personal gateway");
+      await update.promise;
+      saved = { ...saved, name: body.name ?? saved.name, revision: 3 };
+      return respond(200, saved);
+    });
+    await page(
+      `/connectors?scope=private-network&remoteResource=${provider}:${network.id}`,
+      true,
+      "admin",
+    );
+    await screen.findByRole("heading", { name: saved.name });
+    click(getAction("button", "Edit settings"));
+    const name = await screen.findByLabelText("Network name");
+    await fill(name, "Personal gateway");
+    click(screen.getByText("Only me", { exact: true }));
+    click(getAction("button", "Save network"));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Make this network available only to you?",
+    });
+    await within(confirmation).findByText("Alex");
+    expect(getAction("button", "Make personal", confirmation)).toBeDisabled();
+    expect(saved.scope).toBe("organization");
+    click(
+      within(confirmation).getByText(
+        "I understand that affected members must select another network before using their saved connections again.",
+      ),
+    );
+    const confirm = getAction("button", "Make personal", confirmation);
+    const keepEditing = getAction("button", "Continue editing", confirmation);
+    const acknowledgement = within(confirmation).getByRole("checkbox");
+    click(confirm);
+    await waitFor(() => {
+      expect(confirm).toBeDisabled();
+      expect(keepEditing).toBeDisabled();
+      expect(acknowledgement).toHaveAttribute("aria-disabled", "true");
+    });
+    conversion.resolve();
+    await screen.findByText(
+      "Network sharing settings are saved. Other changes are not saved yet. Save them or return to network details.",
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", {
+          name: "Make this network available only to you?",
+        }),
+      ).toBeNull();
+      expect(getAction("button", "Saving...")).toBeDisabled();
+      expect(screen.getByLabelText("Network name")).toBeDisabled();
+    });
+    update.resolve();
+    await screen.findByRole("heading", { name: "Personal gateway" });
+    await screen.findByText("Only me", { selector: "dd" });
+    expect(getAction("button", "Edit settings")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", {
+          name: "Make this network available only to you?",
+        }),
+      ).toBeNull();
+    });
+    expect(saved.scope).toBe("personal");
+    expect(saved.sshHosts).toStrictEqual([
       {
         id: "c0000000-0000-4000-8000-000000000001",
         displayName: "Owner computer",
       },
-    ],
-  };
-  const impactSnapshot = "a".repeat(64);
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [saved] });
-  });
-  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-    return respond(200, {
-      expectedRevision: 1,
-      ownHostCount: 1,
-      otherHostCount: 2,
-      affectedOwners: [{ userId: "another-member", displayName: "Alex" }],
-      impactSnapshot,
-    });
-  });
-  context.mocks.api(
-    cloudflareAccessContract.convertToPersonal,
-    ({ body, respond }) => {
-      expect(body).toStrictEqual({ expectedRevision: 1, impactSnapshot });
-      saved = { ...saved, scope: "personal", revision: 2 };
-      return respond(200, saved);
-    },
-  );
-  context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
-    expect(body.expectedRevision).toBe(2);
-    saved = { ...saved, name: body.name ?? saved.name, revision: 3 };
-    return respond(200, saved);
-  });
-  await page(
-    `/connectors?scope=private-network&remoteResource=cloudflare:${network.id}`,
-    true,
-    "admin",
-  );
-  await screen.findByRole("heading", { name: saved.name });
-  click(getAction("button", "Edit settings"));
-  await screen.findByLabelText("Network name");
-  click(screen.getByText("Only me", { exact: true }));
-  click(getAction("button", "Save network"));
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Make this network available only to you?",
-  });
-  await within(confirmation).findByText("Alex");
-  expect(getAction("button", "Make personal", confirmation)).toBeDisabled();
-  expect(saved.scope).toBe("organization");
-  click(
-    within(confirmation).getByText(
-      "I understand that affected members must select another network before using their saved connections again.",
-    ),
-  );
-  click(getAction("button", "Make personal", confirmation));
-  await screen.findByText("Only me", { selector: "dd" });
-  expect(getAction("button", "Edit settings")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", {
-        name: "Make this network available only to you?",
-      }),
-    ).toBeNull();
-  });
-  expect(saved.scope).toBe("personal");
-  expect(saved.sshHosts).toStrictEqual([
-    {
-      id: "c0000000-0000-4000-8000-000000000001",
-      displayName: "Owner computer",
-    },
-  ]);
-});
+    ]);
+  },
+);
 
 test.each(
   (["tailscale", "cloudflare"] as const).flatMap((provider) => {
