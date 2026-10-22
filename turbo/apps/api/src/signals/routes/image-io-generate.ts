@@ -6,6 +6,8 @@ import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-i
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull } from "drizzle-orm";
 
@@ -13,7 +15,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
-import { settle } from "../utils";
 import { logger } from "../../lib/log";
 import type { RouteEntry } from "../route-entry";
 import { env } from "../../lib/env";
@@ -21,12 +22,10 @@ import { db$ } from "../external/db";
 import { createBuiltInGenerationRealtimeSubscription } from "../external/realtime";
 import {
   checkImageCredits$,
-  generateOpenAiImage,
   getMissingImagePricing,
   imagePricing$,
   insufficientCredits,
   parseImageOptions,
-  recordGeneratedImage$,
   serviceUnavailable,
   submitFalImageQueueGeneration,
   type ImageOptions,
@@ -35,13 +34,18 @@ import {
 } from "../services/image-generation.service";
 import {
   builtInGenerationRequestWithInternal,
-  completeBuiltInGenerationJob$,
   createImageGenerationJob$,
   failBuiltInGenerationJob$,
   markBuiltInGenerationRunning$,
   mergeBuiltInGenerationJobInternal$,
 } from "../services/built-in-generation.service";
 import { falBuiltInGenerationWebhookUrl } from "../services/built-in-generation-provider-webhooks.service";
+import {
+  openAiImageOrchestrationPricing$,
+  submitOpenAiImageJob$,
+} from "../services/openai-image-generation.service";
+import { runLegacyOpenAiImageJob$ } from "../services/openai-image-legacy.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   completeRunBuiltInAdmission$,
   isRunBuiltInAdmissionError,
@@ -75,6 +79,7 @@ interface ImageJobArgs {
   readonly admission: RunBuiltInAdmission | null;
   readonly options: ImageOptions;
   readonly pricing: ImagePricing;
+  readonly useResponses: boolean;
 }
 
 function isGenerationError(value: unknown): value is GenerationError {
@@ -125,6 +130,7 @@ function imageRequestRecord(options: ImageOptions): Record<string, unknown> {
 function acceptedImageResponse(
   generationId: string,
   realtime: BuiltInGenerationRealtimeSubscription,
+  clientReconciliation: boolean,
 ) {
   return {
     status: 202 as const,
@@ -133,6 +139,7 @@ function acceptedImageResponse(
       type: "image" as const,
       status: "queued" as const,
       realtime,
+      ...(clientReconciliation ? { clientReconciliation: true as const } : {}),
     },
   };
 }
@@ -225,121 +232,6 @@ const submitImageProviderWebhookJob$ = command(
   },
 );
 
-const executeDirectImageProviderJob$ = command(
-  async ({ set }, args: ImageJobArgs, signal: AbortSignal): Promise<void> => {
-    await set(markBuiltInGenerationRunning$, args.generationId, signal);
-    signal.throwIfAborted();
-    const apiKey = env("OPENAI_API_KEY");
-    if (!apiKey) {
-      const unavailable = serviceUnavailable(
-        "OpenAI image generation is not configured",
-        "NOT_CONFIGURED",
-      );
-      await set(
-        failBuiltInGenerationJob$,
-        { generationId: args.generationId, error: unavailable.body.error },
-        signal,
-      );
-      signal.throwIfAborted();
-      await set(completeRunBuiltInAdmission$, {
-        admission: args.admission,
-        status: "failed",
-      });
-      signal.throwIfAborted();
-      return;
-    }
-
-    const references = await set(resolveImageProviderReferences$, args, signal);
-    const generation =
-      "status" in references
-        ? references
-        : await generateOpenAiImage(args.options, references, apiKey, signal);
-    signal.throwIfAborted();
-    if (isErrorResponse(generation)) {
-      await set(
-        failBuiltInGenerationJob$,
-        { generationId: args.generationId, error: generation.body.error },
-        signal,
-      );
-      signal.throwIfAborted();
-      await set(completeRunBuiltInAdmission$, {
-        admission: args.admission,
-        status: "failed",
-      });
-      signal.throwIfAborted();
-      return;
-    }
-
-    const result = await set(
-      recordGeneratedImage$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        runId: args.runId,
-        billingRunId: args.runId ?? null,
-        billingContext: args.runId ? "run" : "runless",
-        privateArtifacts: args.privateArtifacts,
-        pricing: args.pricing,
-        generation,
-        generationId: args.generationId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    await set(
-      completeBuiltInGenerationJob$,
-      { generationId: args.generationId, result },
-      signal,
-    );
-    signal.throwIfAborted();
-    await set(completeRunBuiltInAdmission$, {
-      admission: args.admission,
-      status: "completed",
-    });
-    signal.throwIfAborted();
-  },
-);
-
-const runDirectImageProviderJob$ = command(
-  async ({ set }, args: ImageJobArgs, signal: AbortSignal): Promise<void> => {
-    const execution = await settle(
-      set(executeDirectImageProviderJob$, args, signal),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (execution.ok) {
-      return;
-    }
-
-    L.error("Image generation failed", {
-      generationId: args.generationId,
-      model: args.options.model,
-      provider: args.options.provider,
-      error:
-        execution.error instanceof Error
-          ? execution.error.message
-          : String(execution.error),
-    });
-    await set(
-      failBuiltInGenerationJob$,
-      {
-        generationId: args.generationId,
-        error: {
-          message: "Image generation failed",
-          code: "OPENAI_IMAGE_REQUEST_FAILED",
-        },
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    await set(completeRunBuiltInAdmission$, {
-      admission: args.admission,
-      status: "failed",
-    });
-    signal.throwIfAborted();
-  },
-);
-
 const startImageProviderJob$ = command(
   async (
     { set },
@@ -347,8 +239,11 @@ const startImageProviderJob$ = command(
     signal: AbortSignal,
   ): Promise<GenerationErrorResponse | null> => {
     if (args.options.provider !== "fal") {
+      if (args.useResponses) {
+        return await set(submitOpenAiImageJob$, args.generationId, signal);
+      }
       waitUntil(
-        set(runDirectImageProviderJob$, args, new AbortController().signal),
+        set(runLegacyOpenAiImageJob$, args, new AbortController().signal),
       );
       return null;
     }
@@ -460,6 +355,18 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
+  const useResponses =
+    options.provider === "openai" &&
+    isFeatureEnabled(
+      FeatureSwitchKey.DurableOpenAiImageGeneration,
+      await set(loadUserFeatureSwitchContext$, auth.orgId, auth.userId, signal),
+    );
+  signal.throwIfAborted();
+  if (useResponses) {
+    await get(openAiImageOrchestrationPricing$);
+    signal.throwIfAborted();
+  }
+
   const generationId = randomUUID();
   const realtime = await createBuiltInGenerationRealtimeSubscription(
     auth.userId,
@@ -483,7 +390,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         {
           admissionId: admission?.id,
           provider: options.provider,
-          providerTask: "image",
+          providerTask: useResponses ? "image-response" : "image",
         },
       ),
     },
@@ -501,6 +408,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       admission,
       options,
       pricing,
+      useResponses,
     },
     signal,
   );
@@ -514,7 +422,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return submitError;
   }
 
-  return acceptedImageResponse(generationId, realtime);
+  return acceptedImageResponse(generationId, realtime, useResponses);
 });
 
 export const imageIoGenerateRoutes: readonly RouteEntry[] = [

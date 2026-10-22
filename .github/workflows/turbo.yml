@@ -90,6 +90,8 @@ on:
         required: false
       OPENAI_API_KEY:
         required: false
+      OPENAI_IMAGE_WEBHOOK_SECRET:
+        required: false
       OPENROUTER_API_KEY:
         required: false
       PREVIEW_KMS_ACCESS_KEY_ID:

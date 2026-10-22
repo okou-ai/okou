@@ -1927,6 +1927,47 @@
       "useDefault": "डिफ़ॉल्ट उपयोग करें"
     },
     "documentTitle": "चैट",
+    "entrustedJobs": {
+      "archive": "Archive job",
+      "authorize": "Authorize",
+      "currentGrant": "Current access: {{scope}} · {{expiry}}",
+      "decline": "Decline",
+      "declined": "Authorization declined",
+      "details": "Job details",
+      "detailsDescription": "Review progress, reply, or view the result here.",
+      "duration": "Allow access for",
+      "durations": {
+        "1h": "1 hour",
+        "24h": "24 hours",
+        "7d": "7 days",
+        "always": "Always"
+      },
+      "empty": "No jobs in this view. Ask Okou to create a Job when you want it to keep working on something.",
+      "filters": {
+        "archived": "Archived",
+        "history": "History",
+        "home": "Current"
+      },
+      "granted": "Authorization saved",
+      "loading": "Loading Jobs",
+      "next": "Next",
+      "noExpiry": "No expiry",
+      "previous": "Previous",
+      "progress": "Progress",
+      "replies": "Your replies",
+      "reply": "Reply",
+      "result": "Result",
+      "retry": "Retry",
+      "saved": "Saved for the next evaluation",
+      "saveReply": "Save reply",
+      "states": {
+        "active": "In progress",
+        "archived": "Archived",
+        "completed": "Completed",
+        "waiting_authorization": "Waiting for authorization",
+        "waiting_decision": "Waiting for your decision"
+      }
+    },
     "errors": {
       "genericTitle": "यह रन पूरा नहीं हो सका",
       "loadMessages": "संदेश लोड करने में विफल",
@@ -2532,6 +2573,7 @@
       "tasks": {
         "document": "दस्तावेज़",
         "image": "चित्र",
+        "jobs": "Jobs",
         "presentation": "स्लाइड",
         "suggestions": "सुझाव",
         "visualization": "विज़ुअलाइज़ेशन",
@@ -5502,6 +5544,15 @@
         "retry": "फिर कोशिश करें",
         "retryMessage": "सक्रिय कार्रवाई की सेटिंग लोड या अपडेट नहीं हो सकीं। फिर कोशिश करें।",
         "title": "सक्रिय कार्रवाई"
+      },
+      "proactiveJobs": {
+        "description": "Automatically work on your jobs and notify you when your input is needed or a job is complete.",
+        "missingDefaultAgent": "Choose a usable default Agent to work on your jobs.",
+        "preparationFailed": "Jobs could not advance. If work is paused, turn this off and on to retry.",
+        "preparing": "Preparing your jobs. You can turn this off at any time.",
+        "retry": "Retry",
+        "retryMessage": "Job settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive jobs"
       },
       "proactiveSuggestions": {
         "description": "Okou हर घंटे आपके जुड़े स्रोतों की जाँच करता है और होम पेज पर उपयोगी अगले कदम सुझाता है।",

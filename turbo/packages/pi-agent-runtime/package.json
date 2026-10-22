@@ -12,10 +12,6 @@
       "types": "./dist/api.d.ts",
       "import": "./src/api.ts"
     },
-    "./phase2-memory-selection": {
-      "types": "./dist/phase2-memory-selection.d.ts",
-      "import": "./src/phase2-memory-selection.ts"
-    },
     "./node": {
       "types": "./dist/node.d.ts",
       "import": "./src/node.ts"
@@ -32,8 +28,7 @@
   "dependencies": {
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
-    "@okouai/api-contracts": "workspace:*",
-    "gpt-tokenizer": "^4.0.0"
+    "@okouai/api-contracts": "workspace:*"
   },
   "devDependencies": {
     "@okouai/core": "workspace:*",

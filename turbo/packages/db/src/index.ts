@@ -136,6 +136,7 @@ import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
 import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
+import * as openaiImageWebhookReceiptSchema from "./schema/openai-image-webhook-receipt";
 import * as socialKitDownloadJobSchema from "./schema/socialkit-download-job";
 import * as socialDataJobSchema from "./schema/social-data-job";
 import * as dataSearchJobSchema from "./schema/data-search-job";
@@ -155,10 +156,6 @@ import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
-import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
-import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
-import * as piMemoryPhase2JobSchema from "./runtime/pi-memory-phase2-job";
-import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
 import * as sshConnectionSchema from "./runtime/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
@@ -305,6 +302,7 @@ export const schema = {
   ...sharedThreadSchema,
   ...userArtifactFavoriteSchema,
   ...builtInGenerationJobSchema,
+  ...openaiImageWebhookReceiptSchema,
   ...socialKitDownloadJobSchema,
   ...socialDataJobSchema,
   ...dataSearchJobSchema,
@@ -324,10 +322,6 @@ export const schema = {
   ...presentationTemplateSchema,
   ...userTemplateSchema,
   ...piResourceVersionIndexSchema,
-  ...memorySummaryProjectionSchema,
-  ...piMemoryStage1CandidateSchema,
-  ...piMemoryPhase2JobSchema,
-  ...piMemoryPublicationProvenanceSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...vncCredentialSchema,

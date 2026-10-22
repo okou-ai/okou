@@ -69,6 +69,7 @@ import {
   type StripeSubscriptionSnapshotReconciliation,
 } from "./webhooks-stripe.service";
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
+import { canceledPlanEntitlementInsertSql } from "./subscription-deletion-projection";
 import {
   archivedSubscriptionHasSurvivingComponents,
   archivedSubscriptionHasSurvivingPlan,
@@ -717,9 +718,18 @@ const reconcileCanceledBillingCandidate$ = command(
   ): Promise<DowngradedSubscription[]> {
     const { now } = context;
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0123; new non-billing transactions are prohibited.
-    const rows = await db.transaction(async (tx) => {
-      const changed = await tx
+    const entitlementArgs: UpsertOrgPlanEntitlementArgs = {
+      orgId: candidate.orgId,
+      tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+      source: "stripe_subscription",
+      sourceMetadata: subscription.metadata ?? {},
+    };
+    const values = orgPlanEntitlementValues(
+      entitlementArgs,
+      resolveStripeSubscriptionSnapshot(entitlementArgs),
+    );
+    const changed = db.$with("reconciled_canceled_organization").as(
+      db
         .update(orgMetadata)
         .set({
           tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
@@ -733,28 +743,19 @@ const reconcileCanceledBillingCandidate$ = command(
         .returning({
           orgId: orgMetadata.orgId,
           status: orgMetadata.subscriptionStatus,
-        });
-      for (const row of changed) {
-        const entitlementArgs: UpsertOrgPlanEntitlementArgs = {
-          orgId: row.orgId,
-          tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-          source: "stripe_subscription",
-          sourceMetadata: subscription.metadata ?? {},
-        };
-        const values = orgPlanEntitlementValues(
-          entitlementArgs,
-          resolveStripeSubscriptionSnapshot(entitlementArgs),
-        );
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(values)
-          .onConflictDoUpdate({
-            target: orgPlanEntitlements.orgId,
-            set: orgPlanEntitlementUpdateValues(values),
-          });
-      }
-      return changed;
-    });
+        }),
+    );
+    // A stale candidate returns no identity, so it cannot change entitlements.
+    // The capability upsert and organization transition commit or fail together.
+    const projected = db
+      .$with("reconciled_canceled_plan", {})
+      .as(
+        canceledPlanEntitlementInsertSql(
+          db.select({ orgId: changed.orgId }).from(changed).getSQL(),
+          values,
+        ),
+      );
+    const rows = await db.with(changed, projected).select().from(changed);
     signal.throwIfAborted();
 
     return rows.map((row) => {

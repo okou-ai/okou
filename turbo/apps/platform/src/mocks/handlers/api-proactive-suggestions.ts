@@ -7,6 +7,7 @@ import {
   type ProactiveActionPreference,
 } from "@okouai/api-contracts/contracts/proactive-action";
 import { mockApi } from "../msw-contract.ts";
+import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 
 let preference: ProactiveSuggestionsPreference = {
   enabled: false,
@@ -18,11 +19,26 @@ let action: ProactiveActionPreference = {
   status: "paused",
   unavailableReason: null,
 };
+let jobs: ProactiveActionPreference = {
+  enabled: false,
+  status: "paused",
+  unavailableReason: null,
+};
 export function resetMockProactiveSuggestions(): void {
   preference = { enabled: false, status: "paused", unavailableReason: null };
   action = { enabled: false, status: "paused", unavailableReason: null };
+  jobs = { enabled: false, status: "paused", unavailableReason: null };
 }
 export const apiProactiveSuggestionsHandlers = [
+  mockApi(proactiveJobsContract.get, ({ respond }) => respond(200, jobs)),
+  mockApi(proactiveJobsContract.update, ({ body, respond }) => {
+    jobs = {
+      enabled: body.enabled,
+      status: body.enabled ? "enabled" : "paused",
+      unavailableReason: null,
+    };
+    return respond(200, jobs);
+  }),
   mockApi(proactiveSuggestionsContract.get, ({ respond }) =>
     respond(
       200,

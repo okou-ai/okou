@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   piLaunchConfigSchema,
   piLaunchPayloadSchema,
-  piMemoryPhase2MaintenanceSchema,
   piResourceSnapshotSchema,
 } from "./runners";
 
@@ -70,48 +69,5 @@ describe("Pi memory recall contracts", () => {
     expect(JSON.stringify(piLaunchPayloadSchema.parse(payload))).toBe(
       JSON.stringify(payload),
     );
-  });
-
-  it("strictly bounds the versioned private maintenance payload", () => {
-    const candidate = {
-      piSessionId: "11111111-1111-4111-8111-111111111111",
-      sourceRunId: "22222222-2222-4222-8222-222222222222",
-      sourceHistoryHash: "b".repeat(64),
-      sourceCompletedAt: "2026-09-05T02:00:00.000Z",
-      rawMemory: "private candidate",
-      rolloutSummary: "private evidence",
-      rolloutSlug: null,
-    };
-    const maintenance = {
-      schemaVersion: 1 as const,
-      memoryStorageId: "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63",
-      claimedRevision: 7,
-      claimedBaseVersionId: "a".repeat(64),
-      leaseToken: "44754115-d375-4c46-aea7-a55bd1b61ec7",
-      selectionDigest: "c".repeat(64),
-      selected: [candidate],
-    };
-
-    expect(piMemoryPhase2MaintenanceSchema.parse(maintenance)).toStrictEqual(
-      maintenance,
-    );
-    expect(
-      piLaunchConfigSchema.parse({
-        schemaVersion: 2,
-        maintenance,
-      }).maintenance,
-    ).toStrictEqual(maintenance);
-    expect(
-      piMemoryPhase2MaintenanceSchema.safeParse({
-        ...maintenance,
-        selected: [candidate, candidate],
-      }).success,
-    ).toBe(false);
-    expect(
-      piMemoryPhase2MaintenanceSchema.safeParse({
-        ...maintenance,
-        futureField: true,
-      }).success,
-    ).toBe(false);
   });
 });

@@ -58,17 +58,6 @@ pub(crate) struct SnapshotResult {
     pub(crate) version_id: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PiMemoryPhase2PublicationAttestation {
-    pub(crate) schema_version: u8,
-    pub(crate) lease_token: String,
-    pub(crate) claimed_revision: u32,
-    pub(crate) claimed_base_version_id: String,
-    pub(crate) selection_digest: String,
-    pub(crate) validated_version_id: String,
-}
-
 pub(crate) struct CreateSnapshotRequest<'a> {
     pub(crate) mount_path: &'a str,
     pub(crate) files: Vec<FileEntry>,
@@ -85,7 +74,6 @@ struct SnapshotRequest<'a> {
     run_id: &'a str,
     message: &'a str,
     parent_version_id: &'a str,
-    maintenance_attestation: Option<PiMemoryPhase2PublicationAttestation>,
 }
 
 impl<'a> From<CreateSnapshotRequest<'a>> for SnapshotRequest<'a> {
@@ -97,7 +85,6 @@ impl<'a> From<CreateSnapshotRequest<'a>> for SnapshotRequest<'a> {
             run_id: request.run_id,
             message: request.message,
             parent_version_id: request.parent_version_id,
-            maintenance_attestation: None,
         }
     }
 }
@@ -221,21 +208,11 @@ pub(crate) async fn walk_files_for_snapshot(
 /// pre-walked file list (see [`walk_files_for_snapshot`]) — this lets the
 /// finalization step share one walk between its skip-check fingerprint and the
 /// snapshot upload.
-#[cfg(test)]
 pub(crate) async fn create_snapshot(
     http: &HttpClient,
     request: CreateSnapshotRequest<'_>,
 ) -> Result<SnapshotResult, AgentError> {
-    create_snapshot_with_attestation(http, request, None).await
-}
-
-pub(crate) async fn create_snapshot_with_attestation(
-    http: &HttpClient,
-    request: CreateSnapshotRequest<'_>,
-    maintenance_attestation: Option<PiMemoryPhase2PublicationAttestation>,
-) -> Result<SnapshotResult, AgentError> {
-    let mut request = SnapshotRequest::from(request);
-    request.maintenance_attestation = maintenance_attestation;
+    let request = SnapshotRequest::from(request);
     log_info!(
         LOG_TAG,
         "Creating direct upload snapshot for Storage {}",
@@ -287,7 +264,6 @@ async fn prepare_snapshot_step(
             storage_id: request.storage_id,
             files: request.files.as_ref(),
             parent_version_id: request.parent_version_id,
-            maintenance_attestation: request.maintenance_attestation.as_ref(),
         },
     )
     .await
@@ -372,7 +348,6 @@ async fn commit_snapshot_step(
             parent_version_id: request.parent_version_id,
             files: request.files.as_ref(),
             message,
-            maintenance_attestation: request.maintenance_attestation.as_ref(),
         },
         "Failed to parse commit response",
     )

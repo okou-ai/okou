@@ -1,10 +1,10 @@
-import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
+import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
+import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
 import { command } from "ccstate";
 import {
   and,
@@ -12,7 +12,6 @@ import {
   inArray,
   isNull,
   notInArray,
-  notExists,
   or,
   type SQL,
 } from "drizzle-orm";
@@ -21,12 +20,9 @@ import { notFound, runNotCancellable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
-import { lockCancellationProtection } from "./threadless-run-protection.service";
-import { publishedPiMemoryPhase2RunProtection } from "./pi-memory-phase2-lifecycle";
-import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
-import { disconnectedPersonalAccountCleanupSql } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
+import { disconnectedPersonalAccountCleanupSql } from "./model-provider-account.service";
 
 export interface CancelRunResult {
   readonly apiStartTime: number;
@@ -52,8 +48,6 @@ interface CancelRunArgs {
   /** Cleanup retries must not turn an already-cancelled Run into a new hard request. */
   readonly preserveExistingCancellation?: true;
   readonly apiStartTime?: number;
-  /** Keep Runs claimed by a registered threadless-run protection out of generic cleanup. */
-  readonly protectThreadlessRuns?: true;
 }
 
 type LockedCancellationRun = Pick<
@@ -120,17 +114,11 @@ const cancelledRunFields = Object.freeze({
   startedAt: agentRuns.startedAt,
 });
 
-function cancellableRunConditions(
-  run: { readonly id: string; readonly status: string },
-  protectThreadlessRuns: boolean,
-): readonly [SQL, ...SQL[]] {
-  return [
-    eq(agentRuns.id, run.id),
-    eq(agentRuns.status, run.status),
-    ...(protectThreadlessRuns
-      ? [notExists(publishedPiMemoryPhase2RunProtection())]
-      : []),
-  ];
+function cancellableRunConditions(run: {
+  readonly id: string;
+  readonly status: string;
+}): readonly [SQL, ...SQL[]] {
+  return [eq(agentRuns.id, run.id), eq(agentRuns.status, run.status)];
 }
 
 function cancellationOwnerCondition(
@@ -208,18 +196,6 @@ export const cancelRun$ = command(
           `Run cannot be cancelled: current status is '${run.status}'`,
         );
       }
-      if (
-        args.protectThreadlessRuns &&
-        (await lockCancellationProtection(THREADLESS_RUN_PROTECTIONS, tx, {
-          runId: run.id,
-          orgId: run.orgId,
-          userId: run.userId,
-        }))
-      ) {
-        return runNotCancellable(
-          "Run cannot be cancelled while its owner protects it",
-        );
-      }
       const runnerCancellationMode =
         run.cancellationRecoveryCompleted === null
           ? "hard"
@@ -232,17 +208,9 @@ export const cancelRun$ = command(
           completedAt: new Date(apiStartTime),
           runnerCancellationMode,
         },
-        conditions: cancellableRunConditions(
-          run,
-          args.protectThreadlessRuns === true,
-        ),
+        conditions: cancellableRunConditions(run),
       });
       if (transitions.length === 0) {
-        if (args.protectThreadlessRuns) {
-          return runNotCancellable(
-            "Run cannot be cancelled while its owner protects it",
-          );
-        }
         throw new Error("Locked cancellable run was not updated");
       }
       await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, run.id));

@@ -22,6 +22,11 @@ import {
   reloadProactiveActionPreference$,
   updateProactiveActionPreference$,
 } from "../../../../signals/okou-page/settings/proactive-action.ts";
+import {
+  proactiveJobsPreference$,
+  reloadProactiveJobsPreference$,
+  updateProactiveJobsPreference$,
+} from "../../../../signals/okou-page/settings/proactive-jobs.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
 function preferenceStatusKey(
@@ -39,24 +44,36 @@ function preferenceStatusKey(
           : null;
 }
 
+const PREFERENCE_SIGNALS = {
+  jobs: {
+    preference$: proactiveJobsPreference$,
+    update$: updateProactiveJobsPreference$,
+    reload$: reloadProactiveJobsPreference$,
+  },
+  action: {
+    preference$: proactiveActionPreference$,
+    update$: updateProactiveActionPreference$,
+    reload$: reloadProactiveActionPreference$,
+  },
+  suggestions: {
+    preference$: proactiveSuggestionsPreference$,
+    update$: updateProactiveSuggestionsPreference$,
+    reload$: reloadProactiveSuggestionsPreference$,
+  },
+} as const;
+
 function ProactivePreference({ kind }: { kind: ProactiveWorkflowKind }) {
   const { t } = useTranslation();
-  const key = kind === "action" ? "proactiveAction" : "proactiveSuggestions";
-  const preference = useLoadable(
-    kind === "action"
-      ? proactiveActionPreference$
-      : proactiveSuggestionsPreference$,
-  );
-  const [mutation, update] = useLoadableSet(
-    kind === "action"
-      ? updateProactiveActionPreference$
-      : updateProactiveSuggestionsPreference$,
-  );
-  const reload = useSet(
-    kind === "action"
-      ? reloadProactiveActionPreference$
-      : reloadProactiveSuggestionsPreference$,
-  );
+  const key =
+    kind === "jobs"
+      ? "proactiveJobs"
+      : kind === "action"
+        ? "proactiveAction"
+        : "proactiveSuggestions";
+  const { preference$, update$, reload$ } = PREFERENCE_SIGNALS[kind];
+  const preference = useLoadable(preference$);
+  const [mutation, update] = useLoadableSet(update$);
+  const reload = useSet(reload$);
   const signal = useGet(pageSignal$);
   const value =
     mutation.state === "hasData" && mutation.data.status === "error"
@@ -145,6 +162,9 @@ export function ProactiveSuggestionsSettings() {
 
 export function ProactiveActionSettings() {
   const flags = useLoadable(featureSwitch$);
+  if (flags.state === "hasData" && flags.data[FeatureSwitchKey.ProactiveJobs]) {
+    return <ProactivePreference kind="jobs" />;
+  }
   return flags.state === "hasData" &&
     flags.data[FeatureSwitchKey.ProactiveAction] ? (
     <ProactivePreference kind="action" />

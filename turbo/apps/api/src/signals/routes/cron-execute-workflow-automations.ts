@@ -7,8 +7,12 @@ import { executeDueNotionAutomationEvents$ } from "../services/notion-automation
 import { executeDueStripeAutomationEvents$ } from "../services/stripe-automation-event.service";
 import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-poller.service";
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
-import { reconcileProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
+import {
+  reconcileProactiveWorkflows$,
+  reconcileRunnableProactiveJobs$,
+} from "../services/proactive-workflows-lifecycle.service";
 import { recoverDueOfficialWorkflowSchedules$ } from "../services/official-workflow-schedule-recovery.service";
+import { reconcilePendingProactiveJobsCompletions$ } from "../services/proactive-jobs-settlement.service";
 import { settle } from "../utils";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
@@ -39,6 +43,22 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
       log.error("Proactive workflow reconciliation failed", {
         error: proactive.error,
       });
+    }
+    const completions = await settle(
+      set(reconcilePendingProactiveJobsCompletions$, signal),
+      signal,
+    );
+    if (!completions.ok) {
+      log.error("Jobs completion reconciliation failed", {
+        error: completions.error,
+      });
+    }
+    const jobs = await settle(
+      set(reconcileRunnableProactiveJobs$, signal),
+      signal,
+    );
+    if (!jobs.ok) {
+      log.error("Runnable Jobs reconciliation failed", { error: jobs.error });
     }
     const recovery = await settle(
       set(recoverDueOfficialWorkflowSchedules$, signal),

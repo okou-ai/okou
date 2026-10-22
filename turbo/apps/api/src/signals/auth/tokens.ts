@@ -45,6 +45,8 @@ const CONDITIONAL_CAPABILITIES = [
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
+  ["job:read", FeatureSwitchKey.ProactiveJobs],
+  ["job:write", FeatureSwitchKey.ProactiveJobs],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
@@ -191,7 +193,12 @@ function isCapabilityAvailableToAgent(
   capability: Capability,
   options: OkouTokenOptions | undefined,
 ): boolean {
-  if (capability === "suggestion:read" || capability === "suggestion:write") {
+  if (
+    capability === "suggestion:read" ||
+    capability === "suggestion:write" ||
+    capability === "job:read" ||
+    capability === "job:write"
+  ) {
     return options?.isDefaultAgent === true;
   }
   if (

@@ -15,7 +15,10 @@ import { Command, InvalidArgumentError } from "commander";
 import { z } from "zod";
 import { artifactUrlSchema } from "@okouai/api-contracts/contracts/artifact-references";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
-import { generateWebImage } from "../../lib/api/domains/web";
+import {
+  generateWebImage,
+  ImageGenerationWaitError,
+} from "../../lib/api/domains/web";
 import { absoluteArtifactUrl } from "../../lib/artifact-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
@@ -151,6 +154,9 @@ async function readManifest(manifestPath: string): Promise<ImageBatchJob[]> {
 }
 
 function shouldRetry(error: unknown): boolean {
+  if (error instanceof ImageGenerationWaitError && !error.terminalFailure) {
+    return false;
+  }
   if (error instanceof ApiRequestError) {
     return error.status === 429 || error.status >= 500;
   }

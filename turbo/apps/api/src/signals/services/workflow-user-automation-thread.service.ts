@@ -1,5 +1,6 @@
 import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
 import { PROACTIVE_ACTION_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-action";
+import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 import {
   isMorningBriefDefinitionName,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
@@ -73,6 +74,8 @@ const officialWorkflowThreadPresentation$ = command(
   async (
     { set },
     args: {
+      readonly orgId: string;
+      readonly userId: string;
       readonly definitionName: string;
       readonly workflowTitle: string;
       readonly locale?: string | null;
@@ -106,7 +109,10 @@ const officialWorkflowThreadPresentation$ = command(
     }
     return {
       title,
-      hidden: args.definitionName !== PROACTIVE_ACTION_DEFINITION_NAME,
+      hidden:
+        args.definitionName !== PROACTIVE_ACTION_DEFINITION_NAME ||
+        (await set(loadProactiveWorkflowsEligibility$, args, signal)).jobs
+          .available,
     };
   },
 );
@@ -155,6 +161,8 @@ export const prepareWorkflowUserAutomationThread$ = command(
       ? await set(
           officialWorkflowThreadPresentation$,
           {
+            orgId: args.orgId,
+            userId: args.userId,
             definitionName,
             workflowTitle: args.workflowTitle,
             locale: member?.locale,

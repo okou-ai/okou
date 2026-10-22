@@ -380,7 +380,7 @@ describe("POST /api/image-io/generate", () => {
   });
 
   it.each(GPT_IMAGE_2_5_MODELS)(
-    "rejects %s before generation when pricing is missing",
+    "keeps the priced %s Images API path when Responses is disabled",
     async (model) => {
       const fixture = await publicFundedImageFixture({ credits: 1000 });
       await fixture.run(async () => {
@@ -390,7 +390,13 @@ describe("POST /api/image-io/generate", () => {
         server.use(
           http.post(OPENAI_IMAGE_GENERATIONS_URL, () => {
             providerCalls += 1;
-            return HttpResponse.json({});
+            return HttpResponse.json({
+              data: [{ b64_json: IMAGE_BYTES.toString("base64") }],
+              usage: {
+                input_tokens_details: { text_tokens: 1, image_tokens: 0 },
+                output_tokens: 1,
+              },
+            });
           }),
         );
         const app = createImageIoTestApp(fixture);
@@ -399,15 +405,23 @@ describe("POST /api/image-io/generate", () => {
           headers: authHeaders(),
           body: JSON.stringify({ prompt: "a product illustration" }),
         });
-        expect(response.status).toBe(503);
-        await expect(response.json()).resolves.toMatchObject({
-          error: {
-            code: "NOT_CONFIGURED",
-            message: "Image generation pricing is not configured",
-          },
+        expect(response.status).toBe(202);
+        const generationId = readAcceptedGenerationId(
+          await response.json(),
+          "image",
+          fixture.userId,
+        );
+        await flushWaitUntilForTest();
+        const status = await app.request(
+          `/api/built-in-generations/${generationId}`,
+          { headers: authHeaders() },
+        );
+        await expect(status.json()).resolves.toMatchObject({
+          status: "completed",
+          result: { model, provider: "openai" },
         });
-        expect(providerCalls).toBe(0);
-        await expect(orgCredits(fixture)).resolves.toBe(1000);
+        expect(providerCalls).toBe(1);
+        await expect(orgCredits(fixture)).resolves.toBeLessThan(1000);
       });
     },
   );

@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { proactiveActionContract } from "@okouai/api-contracts/contracts/proactive-action";
+import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
 import type {
   ProactivePreference,
   ProactiveWorkflowKind,
@@ -83,7 +84,11 @@ function createProactivePreferenceRoutes(
   kind: ProactiveWorkflowKind,
 ): readonly RouteEntry[] {
   const contract =
-    kind === "action" ? proactiveActionContract : proactiveSuggestionsContract;
+    kind === "jobs"
+      ? proactiveJobsContract
+      : kind === "action"
+        ? proactiveActionContract
+        : proactiveSuggestionsContract;
   const preferenceRoute$ = command(
     async ({ get, set }, update: boolean, signal: AbortSignal) => {
       const auth = get(organizationAuthContext$);
@@ -95,7 +100,7 @@ function createProactivePreferenceRoutes(
       );
       if (!eligibility[kind].available) {
         return resourceUnavailable(
-          kind === "action"
+          kind === "action" || kind === "jobs"
             ? "Proactive Action is not enabled."
             : "Agent Suggestion is not enabled.",
         );
@@ -107,7 +112,7 @@ function createProactivePreferenceRoutes(
           return body.response;
         }
         const choice =
-          kind === "action"
+          kind === "action" || kind === "jobs"
             ? { proactiveActionEnabled: body.data.enabled }
             : { proactiveSuggestionsEnabled: body.data.enabled };
         await set(writeDb$)
@@ -164,3 +169,4 @@ function createProactivePreferenceRoutes(
 export const proactiveSuggestionsRoutes =
   createProactivePreferenceRoutes("suggestions");
 export const proactiveActionRoutes = createProactivePreferenceRoutes("action");
+export const proactiveJobsRoutes = createProactivePreferenceRoutes("jobs");

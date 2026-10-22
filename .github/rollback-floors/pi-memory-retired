@@ -1,0 +1,5 @@
+The first-parent main commit adding this marker is the minimum API rollback
+target after Pi memory storage contraction. Earlier APIs still query the retired
+Job table during ordinary native Codex/Claude memory publication and cleanup.
+Recover with a compatible immutable API artifact or roll forward. Shared native
+memory Storage, versions, citations and billing history remain supported.

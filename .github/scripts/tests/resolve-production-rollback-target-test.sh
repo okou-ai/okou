@@ -91,6 +91,8 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a" ]; then
+      [ "${MOCK_PI_MEMORY_RETIRED_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "77357abdb29ce96b2caf9ee679299602757844dc" ]; then
       [ "${MOCK_PI_MEMORY_LUNA_ROUTING_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "39d60bba6aa3a317948d653b4c1d09781719b466" ]; then
@@ -240,6 +242,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_COMMIT-5151515151515151515151515151515151515151}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
+    elif [[ "$*" == *pi-memory-retired* ]]; then
+      printf '%s\n' "${MOCK_PI_MEMORY_RETIRED_COMMIT-6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
       printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -1643,10 +1647,32 @@ ruby - \
   raise "release App deployment must use the shared artifact fetcher" unless release_app_run.include?(artifact_fetch_helper)
   raise "release App deployment must not fall back to per-file artifacts" if release_app_run.include?("--recursive")
 
+  api_release_steps = release.fetch("promote-api-production").fetch("steps")
+  before = api_release_steps.index { |step| step["id"] == "production-migrations" }
+  deploy = api_release_steps.index { |step| step["id"] == "deploy" }
+  drain = api_release_steps.index { |step| step["name"] == "Drain outgoing API before Pi memory contraction" }
+  contract = api_release_steps.index { |step| step["name"] == "Contract Pi memory storage after API drain" }
+  unless before && deploy && drain && contract && before < deploy && deploy < drain && drain < contract
+    raise "Pi memory contraction must follow API deployment and outgoing invocation drain"
+  end
+  unless api_release_steps[before].fetch("run").include?("--defer 1444_retire_pi_memory.sql")
+    raise "pre-promotion migration must defer Pi memory contraction"
+  end
+  raise "outgoing API must receive its full 300-second drain" unless api_release_steps[drain].fetch("run") == "sleep 300"
+  expected_deferred_gate = "${{ steps.production-migrations.outputs.deferred_migration != \x27\x27 }}"
+  unless [drain, contract].all? { |index| api_release_steps[index].fetch("if") == expected_deferred_gate }
+    raise "post-promotion contraction must run only for a deferred migration"
+  end
+
   artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Upload canonical app artifact" }
   artifact_upload_run = artifact_upload_step.fetch("run")
   raise "deploy-app must upload the archived App artifact" unless artifact_upload_run.include?("/dist.tar.gz")
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY
+
+if run_resolver "${tmp_dir}/pi-memory-retired-floor.output" MOCK_PI_MEMORY_RETIRED_FLOOR_VALID=0; then
+  fail "APIs using retired Pi memory tables must not be rollback targets"
+fi
+[ ! -s "${tmp_dir}/pi-memory-retired-floor.output" ] || fail "incompatible Pi memory API must not publish rollback outputs"
 
 echo "resolve-production-rollback-target tests passed"

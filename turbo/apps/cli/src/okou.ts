@@ -101,10 +101,11 @@ const COMMAND_CAPABILITY_MAP: Record<
   ],
   banking: "banking:read",
   suggestion: ["suggestion:read", "suggestion:write"],
+  job: ["job:read", "job:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "job"]);
 
 // Hidden rollout aliases for older API-generated prompts; remove after 2026-11-21.
 const LEGACY_DATA_PATHS: Readonly<Record<string, readonly string[]>> = {
@@ -120,6 +121,13 @@ const LEGACY_DATA_PATHS: Readonly<Record<string, readonly string[]>> = {
 };
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "job",
+    description: "Manage work explicitly entrusted to Okou",
+    load: async () => {
+      return (await import("./commands/job/index")).jobCommand;
+    },
+  },
   {
     name: "suggestion",
     description: "Manage actionable next-step suggestions from Okou",
@@ -681,7 +689,8 @@ export function buildHelpText(
     ),
     "  Introduce Okou?       okou intro",
     "  List generators?       okou generate --help",
-    '  Generate image?        okou generate image --raw-prompt "..."',
+    '  Generate final image?  okou generate image --raw-prompt "..." --wait',
+    "  Image tasks: retrieve and deliver the final artifact before marking complete; a job receipt is not the final image. Query an existing job with okou generate get <id> --refresh; never regenerate to check progress.",
     '  Generate website?      okou generate website --prompt "..."',
     ...(canWriteHost
       ? [

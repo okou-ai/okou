@@ -3,6 +3,7 @@ import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-m
 import type { RouteEntry } from "./route-entry";
 import { agentDraftRoutes } from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
+import { jobsRoutes } from "./routes/jobs";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -71,6 +72,7 @@ import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materializ
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
+import { cronReconcileImageGenerationsRoutes } from "./routes/cron-reconcile-image-generations";
 import { cronProcessUsageEventsRoutes } from "./routes/cron-process-usage-events";
 import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-event-search";
 import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage-presigned-urls";
@@ -157,6 +159,7 @@ import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference"
 import {
   proactiveSuggestionsRoutes,
   proactiveActionRoutes,
+  proactiveJobsRoutes,
 } from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
@@ -232,6 +235,7 @@ import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-sessio
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
 import { runnersStartupRoutes } from "./routes/runners-startup";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
+import { webhooksOpenaiImagesRoutes } from "./routes/webhooks-openai-images";
 import { webhooksClerkRoutes } from "./routes/webhooks-clerk";
 import { webhooksGithubRoutes } from "./routes/webhooks-github";
 import { webhooksGmailRoutes } from "./routes/webhooks-gmail";
@@ -257,8 +261,10 @@ export const ROUTES: readonly RouteEntry[] = [
   ...githubOauthRoutes,
   ...userExportRoutes,
   ...cronProcessBackgroundJobsRoutes,
+  ...cronReconcileImageGenerationsRoutes,
   ...webhooksClerkRoutes,
   ...webhooksBuiltInGenerationRoutes,
+  ...webhooksOpenaiImagesRoutes,
   ...webhooksGithubRoutes,
   ...webhooksGmailRoutes,
   ...webhooksGoogleFormsRoutes,
@@ -309,6 +315,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
   ...suggestionsRoutes,
+  ...jobsRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,
@@ -422,6 +429,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
   ...proactiveActionRoutes,
+  ...proactiveJobsRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,

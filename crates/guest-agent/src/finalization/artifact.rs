@@ -8,7 +8,7 @@
 //! a partial remote publication. The second phase retains input indices so it
 //! can overlap remote work without changing result order or error selection.
 
-use super::{FinalizationMode, LOG_TAG};
+use super::LOG_TAG;
 use crate::artifact as vas;
 use crate::content_hash;
 use crate::env;
@@ -20,114 +20,8 @@ use api_contracts::generated::types::{
 use futures_util::stream::{self, FuturesUnordered, StreamExt};
 use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
-use serde::Deserialize;
-use std::path::Path;
 
 const ARTIFACT_SNAPSHOT_CONCURRENCY: usize = 2;
-const PI_MEMORY_PHASE2_VALIDATION_FILENAME: &str = "maintenance-validation.json";
-const PI_MEMORY_PHASE2_VALIDATION_MAX_BYTES: u64 = 4096;
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MaintenanceLaunch {
-    schema_version: u8,
-    memory_storage_id: String,
-    claimed_revision: u32,
-    claimed_base_version_id: String,
-    lease_token: String,
-    selection_digest: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct MaintenanceValidationMarker {
-    schema_version: u8,
-    run_id: String,
-    memory_storage_id: String,
-    claimed_revision: u32,
-    claimed_base_version_id: String,
-    lease_token: String,
-    selection_digest: String,
-    validated_version_id: String,
-}
-
-struct MaintenancePublicationGuard {
-    launch: MaintenanceLaunch,
-    attestation: Option<vas::PiMemoryPhase2PublicationAttestation>,
-}
-
-fn maintenance_publication_error() -> AgentError {
-    AgentError::Finalization("Pi memory maintenance publication validation failed".into())
-}
-
-fn maintenance_launch(raw: &str) -> Result<Option<MaintenanceLaunch>, AgentError> {
-    if raw.is_empty() {
-        return Ok(None);
-    }
-    let value: serde_json::Value =
-        serde_json::from_str(raw).map_err(|_| maintenance_publication_error())?;
-    let Some(maintenance) = value.get("maintenance") else {
-        return Ok(None);
-    };
-    serde_json::from_value(maintenance.clone())
-        .map(Some)
-        .map_err(|_| maintenance_publication_error())
-}
-
-fn maintenance_publication_guard(
-    raw_launch: &str,
-    launch_payload_file: &str,
-    run_id: &str,
-    mode: FinalizationMode,
-) -> Result<Option<MaintenancePublicationGuard>, AgentError> {
-    let Some(launch) = maintenance_launch(raw_launch)? else {
-        return Ok(None);
-    };
-    if launch.schema_version != 1 {
-        return Err(maintenance_publication_error());
-    }
-    if mode == FinalizationMode::Recovery {
-        return Ok(Some(MaintenancePublicationGuard {
-            launch,
-            attestation: None,
-        }));
-    }
-    let marker_path =
-        Path::new(launch_payload_file).with_file_name(PI_MEMORY_PHASE2_VALIDATION_FILENAME);
-    let metadata =
-        std::fs::symlink_metadata(&marker_path).map_err(|_| maintenance_publication_error())?;
-    if !metadata.file_type().is_file() || metadata.len() > PI_MEMORY_PHASE2_VALIDATION_MAX_BYTES {
-        return Err(maintenance_publication_error());
-    }
-    let marker: MaintenanceValidationMarker = serde_json::from_slice(
-        &std::fs::read(marker_path).map_err(|_| maintenance_publication_error())?,
-    )
-    .map_err(|_| maintenance_publication_error())?;
-    if marker.schema_version != 1
-        || marker.run_id != run_id
-        || marker.memory_storage_id != launch.memory_storage_id
-        || marker.claimed_revision != launch.claimed_revision
-        || marker.claimed_base_version_id != launch.claimed_base_version_id
-        || marker.lease_token != launch.lease_token
-        || marker.selection_digest != launch.selection_digest
-    {
-        return Err(maintenance_publication_error());
-    }
-    let attestation = vas::PiMemoryPhase2PublicationAttestation {
-        // v2 requires commit receipts; an old API rejects prepare before upload.
-        schema_version: 2,
-        lease_token: marker.lease_token,
-        claimed_revision: marker.claimed_revision,
-        claimed_base_version_id: marker.claimed_base_version_id,
-        selection_digest: marker.selection_digest,
-        validated_version_id: marker.validated_version_id,
-    };
-    Ok(Some(MaintenancePublicationGuard {
-        launch,
-        attestation: Some(attestation),
-    }))
-}
-
 /// Build a Storage output using the type generated from the canonical
 /// completion webhook contract.
 fn build_artifact_snapshot_entry(
@@ -202,7 +96,6 @@ async fn snapshot_artifact_plan(
     http: &HttpClient,
     run_id: &str,
     plan: ArtifactSnapshotPlan<'_>,
-    maintenance_attestation: Option<vas::PiMemoryPhase2PublicationAttestation>,
 ) -> Result<complete::RequestCompletionStorageOutput, AgentError> {
     let (entry, files) = match plan {
         ArtifactSnapshotPlan::Snapshot { entry, files } => (entry, files),
@@ -226,31 +119,27 @@ async fn snapshot_artifact_plan(
     // (same SHA-256 the web producer emits), so an equality check on the
     // locally-recomputed hash is sufficient — no extra metadata needed.
     // See #10967 for the ~3.9s-per-finalization motivation.
-    // Attested maintenance plans were already hash-validated before remote
-    // scheduling and must always publish for server-side settlement.
-    if maintenance_attestation.is_none() {
-        let skip_check_start = std::time::Instant::now();
-        let local_hash = compute_artifact_content_hash(entry, &files);
-        if local_hash == entry.version_id {
-            log_info!(
-                LOG_TAG,
-                "VAS artifact snapshot skipped (unchanged since mount): {}@{}",
-                entry.name,
-                entry.version_id
-            );
-            record_sandbox_op(
-                "artifact_snapshot_skipped",
-                skip_check_start.elapsed(),
-                true,
-                None,
-            );
-            return Ok(build_artifact_snapshot_entry(
-                &entry.name,
-                &entry.version_id,
-                &entry.mount_path,
-                entry.missing_root_policy,
-            ));
-        }
+    let skip_check_start = std::time::Instant::now();
+    let local_hash = compute_artifact_content_hash(entry, &files);
+    if local_hash == entry.version_id {
+        log_info!(
+            LOG_TAG,
+            "VAS artifact snapshot skipped (unchanged since mount): {}@{}",
+            entry.name,
+            entry.version_id
+        );
+        record_sandbox_op(
+            "artifact_snapshot_skipped",
+            skip_check_start.elapsed(),
+            true,
+            None,
+        );
+        return Ok(build_artifact_snapshot_entry(
+            &entry.name,
+            &entry.version_id,
+            &entry.mount_path,
+            entry.missing_root_policy,
+        ));
     }
 
     log_info!(
@@ -259,7 +148,7 @@ async fn snapshot_artifact_plan(
         entry.name
     );
     let message = format!("Artifact snapshot from run {run_id}");
-    let snapshot = vas::create_snapshot_with_attestation(
+    let snapshot = vas::create_snapshot(
         http,
         vas::CreateSnapshotRequest {
             mount_path: &entry.mount_path,
@@ -269,7 +158,6 @@ async fn snapshot_artifact_plan(
             message: &message,
             parent_version_id: &entry.version_id,
         },
-        maintenance_attestation,
     )
     .await?;
     log_info!(
@@ -317,9 +205,6 @@ pub(super) async fn snapshot_artifact_entries(
     http: &HttpClient,
     run_id: &str,
     entries: &[env::ArtifactEnv],
-    mode: FinalizationMode,
-    pi_launch_config: &str,
-    pi_launch_payload_file: &str,
 ) -> Result<Option<Vec<complete::RequestCompletionStorageOutput>>, AgentError> {
     if entries.is_empty() {
         log_info!(
@@ -327,28 +212,6 @@ pub(super) async fn snapshot_artifact_entries(
             "No artifact configured, creating finalization without artifact snapshot"
         );
         return Ok(None);
-    }
-
-    let maintenance =
-        maintenance_publication_guard(pi_launch_config, pi_launch_payload_file, run_id, mode)?;
-    if let Some(guard) = maintenance.as_ref() {
-        let [entry] = entries else {
-            return Err(maintenance_publication_error());
-        };
-        if entry.name != "memory"
-            || entry.storage_id != guard.launch.memory_storage_id
-            || entry.version_id != guard.launch.claimed_base_version_id
-        {
-            return Err(maintenance_publication_error());
-        }
-        if mode == FinalizationMode::Recovery {
-            return Ok(Some(vec![build_artifact_snapshot_entry(
-                &entry.name,
-                &entry.version_id,
-                &entry.mount_path,
-                entry.missing_root_policy,
-            )]));
-        }
     }
 
     let mut indexed_plans = stream::iter(entries.iter().enumerate())
@@ -362,31 +225,9 @@ pub(super) async fn snapshot_artifact_entries(
         .map(|(_, result)| result.map_err(vas::WalkFilesError::into_agent_error))
         .collect::<Result<Vec<_>, _>>()?;
 
-    if let Some(guard) = maintenance.as_ref() {
-        let Some(attestation) = guard.attestation.as_ref() else {
-            return Err(maintenance_publication_error());
-        };
-        let [ArtifactSnapshotPlan::Snapshot { entry, files }] = plans.as_slice() else {
-            return Err(maintenance_publication_error());
-        };
-        let local_hash = compute_artifact_content_hash(entry, files);
-        if local_hash != attestation.validated_version_id {
-            return Err(maintenance_publication_error());
-        }
-    }
-
     let mut pending = plans.into_iter().enumerate();
-    let snapshot = |(index, plan)| {
-        let attestation = maintenance
-            .as_ref()
-            .and_then(|guard| guard.attestation.clone());
-        async move {
-            (
-                index,
-                snapshot_artifact_plan(http, run_id, plan, attestation).await,
-            )
-        }
-    };
+    let snapshot =
+        |(index, plan)| async move { (index, snapshot_artifact_plan(http, run_id, plan).await) };
     let mut in_flight = FuturesUnordered::new();
     for _ in 0..ARTIFACT_SNAPSHOT_CONCURRENCY {
         if let Some(plan) = pending.next() {
@@ -435,7 +276,7 @@ async fn snapshot_artifact_entries_for_test(
     run_id: &str,
     entries: &[env::ArtifactEnv],
 ) -> Result<Option<Vec<complete::RequestCompletionStorageOutput>>, AgentError> {
-    snapshot_artifact_entries(http, run_id, entries, FinalizationMode::Success, "", "").await
+    snapshot_artifact_entries(http, run_id, entries).await
 }
 
 #[cfg(test)]
@@ -444,7 +285,6 @@ mod tests {
     use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
     use httpmock::prelude::*;
     use serde_json::json;
-    use sha2::{Digest, Sha256};
     #[cfg(target_os = "linux")]
     use std::ffi::CString;
     #[cfg(target_os = "linux")]
@@ -635,217 +475,6 @@ mod tests {
         socket.write_all(headers.as_bytes()).await.unwrap();
         socket.write_all(&body).await.unwrap();
         socket.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn maintenance_recovery_preserves_parent_before_any_storage_publication() {
-        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
-        let server = MockServer::start();
-        let prepare = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/prepare");
-            then.status(200).json_body(json!({"unreachable": true}));
-        });
-        let commit = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/commit");
-            then.status(200).json_body(json!({"unreachable": true}));
-        });
-        let http = HttpClient::with_api_config(
-            server.base_url(),
-            "test-token",
-            "",
-            "maintenance-run",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let memory_root = dir.path().join("memory");
-        std::fs::create_dir_all(&memory_root).unwrap();
-        // Model a process killed halfway through a multi-file writeback. The
-        // recovery branch must not walk or publish this partial tree.
-        std::fs::write(memory_root.join("MEMORY.md"), "partial").unwrap();
-        let storage_id = "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63";
-        let base_version = "a".repeat(64);
-        let launch = json!({
-            "schemaVersion": 2,
-            "maintenance": {
-                "schemaVersion": 1,
-                "memoryStorageId": storage_id,
-                "claimedRevision": 7,
-                "claimedBaseVersionId": base_version,
-                "leaseToken": "44754115-d375-4c46-aea7-a55bd1b61ec7",
-                "selectionDigest": "b".repeat(64),
-                "selected": [],
-            }
-        });
-        let entries = vec![env::ArtifactEnv {
-            name: "memory".to_string(),
-            mount_path: memory_root.to_string_lossy().into_owned(),
-            storage_id: storage_id.to_string(),
-            version_id: base_version.clone(),
-            missing_root_policy: Some(ArtifactEntryMissingRootPolicy::Fail),
-        }];
-        let launch_payload_file = dir.path().join("pi-launch-payload/payload.json");
-
-        let snapshots = snapshot_artifact_entries(
-            &http,
-            "maintenance-run",
-            &entries,
-            FinalizationMode::Recovery,
-            &launch.to_string(),
-            &launch_payload_file.to_string_lossy(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-
-        assert_eq!(snapshots.len(), 1);
-        assert_eq!(snapshots[0].version, base_version);
-        prepare.assert_calls(0);
-        commit.assert_calls(0);
-    }
-
-    #[tokio::test]
-    async fn maintenance_success_computes_hash_once_and_forwards_exact_validation_attestation() {
-        let telemetry_dir = tempfile::tempdir().unwrap();
-        let telemetry_path = telemetry_dir.path().join("sandbox-ops.jsonl");
-        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::with_override(&telemetry_path).await;
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let storage_id = "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63";
-        let base_version = "a".repeat(64);
-        let selection_digest = "b".repeat(64);
-        let lease_token = "44754115-d375-4c46-aea7-a55bd1b61ec7";
-        let content = b"# Task Group: validated\n";
-        let secondary_content = b"Validated maintenance details\n";
-        let file_hash = hex::encode(Sha256::digest(content));
-        let secondary_file_hash = hex::encode(Sha256::digest(secondary_content));
-        let validated_version = content_hash::compute_content_hash(
-            storage_id,
-            [
-                ("MEMORY.md", file_hash.as_str()),
-                ("details.md", secondary_file_hash.as_str()),
-            ],
-        );
-        let expected_attestation = json!({
-            "schemaVersion": 2,
-            "leaseToken": lease_token,
-            "claimedRevision": 7,
-            "claimedBaseVersionId": base_version,
-            "selectionDigest": selection_digest,
-            "validatedVersionId": validated_version,
-        });
-        let server_version = validated_version.clone();
-        let server_attestation = expected_attestation.clone();
-        let server = tokio::spawn(async move {
-            let (mut prepare_socket, _) = listener.accept().await.unwrap();
-            let (prepare_path, prepare_body) = read_test_json_request(&mut prepare_socket).await;
-            assert_eq!(prepare_path, "/api/webhooks/agent/storages/prepare");
-            assert_eq!(prepare_body["maintenanceAttestation"], server_attestation);
-            write_test_json_response(
-                &mut prepare_socket,
-                &json!({
-                    "versionId": server_version,
-                    "existing": true,
-                }),
-            )
-            .await;
-
-            let (mut commit_socket, _) = listener.accept().await.unwrap();
-            let (commit_path, commit_body) = read_test_json_request(&mut commit_socket).await;
-            assert_eq!(commit_path, "/api/webhooks/agent/storages/commit");
-            assert_eq!(commit_body["maintenanceAttestation"], server_attestation);
-            assert_eq!(commit_body["versionId"], server_version);
-            write_test_json_response(
-                &mut commit_socket,
-                &json!({
-                    "success": true,
-                    "versionId": server_version,
-                    "storageName": "memory",
-                    "size": content.len() + secondary_content.len(),
-                    "fileCount": 2,
-                }),
-            )
-            .await;
-        });
-
-        let http = HttpClient::with_api_config(
-            format!("http://{address}"),
-            "test-token",
-            "",
-            "maintenance-run-success",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let memory_root = dir.path().join("memory");
-        std::fs::create_dir_all(&memory_root).unwrap();
-        std::fs::write(memory_root.join("MEMORY.md"), content).unwrap();
-        std::fs::write(memory_root.join("details.md"), secondary_content).unwrap();
-        let launch_payload_file = dir.path().join("pi-launch-payload/payload.json");
-        std::fs::create_dir_all(launch_payload_file.parent().unwrap()).unwrap();
-        std::fs::write(
-            launch_payload_file.with_file_name(PI_MEMORY_PHASE2_VALIDATION_FILENAME),
-            serde_json::to_vec(&json!({
-                "schemaVersion": 1,
-                "runId": "maintenance-run-success",
-                "memoryStorageId": storage_id,
-                "claimedRevision": 7,
-                "claimedBaseVersionId": base_version,
-                "leaseToken": lease_token,
-                "selectionDigest": selection_digest,
-                "validatedVersionId": validated_version,
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        let launch = json!({
-            "schemaVersion": 2,
-            "maintenance": {
-                "schemaVersion": 1,
-                "memoryStorageId": storage_id,
-                "claimedRevision": 7,
-                "claimedBaseVersionId": base_version,
-                "leaseToken": lease_token,
-                "selectionDigest": selection_digest,
-                "selected": [],
-            }
-        });
-        let entries = vec![env::ArtifactEnv {
-            name: "memory".to_string(),
-            mount_path: memory_root.to_string_lossy().into_owned(),
-            storage_id: storage_id.to_string(),
-            version_id: base_version,
-            missing_root_policy: Some(ArtifactEntryMissingRootPolicy::Fail),
-        }];
-
-        let snapshots = snapshot_artifact_entries(
-            &http,
-            "maintenance-run-success",
-            &entries,
-            FinalizationMode::Success,
-            &launch.to_string(),
-            &launch_payload_file.to_string_lossy(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-
-        assert_eq!(snapshots.len(), 1);
-        assert_eq!(snapshots[0].version, validated_version);
-        server.await.unwrap();
-
-        let content_hash_compute_count = std::fs::read_to_string(telemetry_path)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .filter(|entry| {
-                entry.get("action_type").and_then(serde_json::Value::as_str)
-                    == Some("artifact_content_hash_compute")
-            })
-            .count();
-        assert_eq!(content_hash_compute_count, 1);
     }
 
     #[test]

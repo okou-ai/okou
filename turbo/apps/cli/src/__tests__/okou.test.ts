@@ -51,6 +51,7 @@ describe("Okou CLI program", () => {
   it("should register all expected Okou commands", () => {
     const expectedCommands = [
       "suggestion",
+      "job",
       "model",
       "agent",
       "connector",

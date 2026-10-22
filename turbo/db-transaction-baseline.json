@@ -157,11 +157,6 @@
       "owner": "setDefaultConnectorAccount$"
     },
     {
-      "id": "TX-0115",
-      "file": "turbo/apps/api/src/signals/services/connector-credential-storage-write.service.ts",
-      "owner": "deleteConnectorCredentialStorageConnectionsWhere"
-    },
-    {
       "id": "TX-0116",
       "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
       "owner": "deleteBuiltinConnectorLocalState$"
@@ -180,11 +175,6 @@
       "id": "TX-0119",
       "file": "turbo/apps/api/src/signals/services/connector-data.service.ts",
       "owner": "upsertBuiltinConnectorTokenConnection$"
-    },
-    {
-      "id": "TX-0123",
-      "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
-      "owner": "reconcileCanceledBillingCandidate"
     },
     {
       "id": "TX-0124",

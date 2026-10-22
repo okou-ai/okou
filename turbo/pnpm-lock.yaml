@@ -1253,9 +1253,6 @@ importers:
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
-      gpt-tokenizer:
-        specifier: ^4.0.0
-        version: 4.0.3
     devDependencies:
       '@okouai/core':
         specifier: workspace:*
@@ -6752,9 +6749,6 @@ packages:
   got@11.8.6:
     resolution: {integrity: sha512-6tfZ91bOr7bOXnK7PRDCGBLa1H4U080YHNaAQ2KsMGlLEzRbk44nsZF2E1IeRc3vtJHPVbKCYgdFbaGO2ljd8g==}
     engines: {node: '>=10.19.0'}
-
-  gpt-tokenizer@4.0.3:
-    resolution: {integrity: sha512-GrrPDreSy2c3ZgM/u+5JN+lnHTLrJKm7QAFfTD5J+vgcSP69C+fFIUaJWiey/QQ8lS5u79OvluKuEmGBAbOS4A==}
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
@@ -15049,8 +15043,6 @@ snapshots:
       lowercase-keys: 2.0.0
       p-cancelable: 2.1.1
       responselike: 2.0.1
-
-  gpt-tokenizer@4.0.3: {}
 
   graceful-fs@4.2.11: {}
 

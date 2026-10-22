@@ -73,9 +73,13 @@ import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { proactiveActionContract } from "@okouai/api-contracts/contracts/proactive-action";
+import { proactiveJobsContract } from "@okouai/api-contracts/contracts/proactive-jobs";
+import { jobsContract } from "@okouai/api-contracts/contracts/jobs";
+import { jobsRoutes } from "../jobs";
 import {
   proactiveSuggestionsRoutes,
   proactiveActionRoutes,
+  proactiveJobsRoutes,
 } from "../proactive-preferences";
 import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
 import { suggestionsRoutes } from "../suggestions";
@@ -160,7 +164,7 @@ function catalog(
     definitions: [
       ...definitions,
       ...(catalogPublication.hasProactiveDefinition()
-        ? ["agent-suggestions", "proactive-action"]
+        ? ["agent-suggestions", "proactive-action", "proactive-jobs"]
             .filter((name) => {
               return !definitions.some((definition) => {
                 return definition.name === name;
@@ -479,6 +483,388 @@ async function ordinaryDelegationScenario() {
 beforeEach(() => {
   catalogPublication.reset();
   mockEnv("CRON_SECRET", CRON_SECRET);
+});
+
+describe("Proactive jobs", () => {
+  const jobs = () => {
+    return setupApp({ context, routes: jobsRoutes })(jobsContract);
+  };
+  const preference = () => {
+    return setupApp({ context, routes: proactiveJobsRoutes })(
+      proactiveJobsContract,
+    );
+  };
+  async function schedule(actor: ApiTestUser) {
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    const installation = listed.body.find((item) => {
+      return item.official?.definitionName === "proactive-jobs";
+    });
+    if (!installation) {
+      throw new Error("Expected a Jobs installation");
+    }
+    const detail = await accept(
+      workflowClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: installation.id },
+      }),
+      [200],
+    );
+    const automation = detail.body.automations[0];
+    if (!automation) {
+      throw new Error("Expected a Jobs loop");
+    }
+    return { installation: detail.body, automation };
+  }
+  async function entrustedJob() {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.ProactiveJobs]: true,
+        [FeatureSwitchKey.AgentSuggestion]: true,
+      },
+    );
+    const enabled = await accept(
+      preference().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    const suggestions = setupApp({
+      context,
+      routes: proactiveSuggestionsRoutes,
+    })(proactiveSuggestionsContract);
+    await accept(
+      suggestions.update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(suggestions.get({ headers: authHeaders(actor) }), [200]))
+        .body,
+    ).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      unavailableReason: null,
+    });
+    const installed = await schedule(actor);
+    expect(installed.automation).toMatchObject({
+      enabled: true,
+      nextRunAt: null,
+      schedule: { type: "loop", intervalSeconds: 300 },
+    });
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.grantProEntitlement(actor);
+    await selectPersonalDefaultModel(actor);
+    await runs.heartbeatRunner(runnerGroup);
+    const delegated = await runs.createThreadRun(actor, {
+      agentId: installed.installation.agentId,
+      model: "claude-fable-5-1",
+      prompt: "Create an Okou Job to research prospects",
+    });
+    const claim = await runs.claimRunnerJob(delegated.runId);
+    const job = (
+      await accept(
+        jobs().create({
+          headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+          body: {
+            id: randomUUID(),
+            title: "Research prospects",
+            objective: "Deliver a verified shortlist",
+          },
+        }),
+        [200],
+      )
+    ).body;
+    await webhooks.requestAgentComplete(
+      { runId: delegated.runId, exitCode: 0 },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    return { actor, job, runnerGroup };
+  }
+
+  it("admits one hidden tick, sleeps while waiting, wakes on a reply, and waits five minutes after completion", async () => {
+    const f = await entrustedJob();
+    const firstSchedule = (await schedule(f.actor)).automation;
+    expect(firstSchedule.nextRunAt).toBe(new Date(now()).toISOString());
+    await Promise.all([executeAutomationCron(), executeAutomationCron()]);
+    await flushWaitUntilForTest();
+    const inFlight = (await schedule(f.actor)).automation;
+    if (!inFlight.chatThreadId) {
+      throw new Error("Expected a hidden Jobs thread");
+    }
+    const runId = await launchedAutomationRunId(f.actor, inFlight.chatThreadId);
+    if (!runId) {
+      throw new Error("Expected a Jobs run");
+    }
+    const inputs = (
+      await allThreadEventRows(f.actor, inFlight.chatThreadId)
+    ).filter((event) => {
+      return event.eventType === "input.prompt" && event.runId;
+    });
+    expect(inputs).toHaveLength(1);
+    const metadata = await accept(
+      setupApp({ context, routes: chatThreadGetRoutes })(
+        chatThreadMetadataContract,
+      ).get({
+        headers: authHeaders(f.actor),
+        params: { id: inFlight.chatThreadId },
+      }),
+      [200],
+    );
+    expect(metadata.body.hidden).toBeTruthy();
+    const claim = await runs.claimRunnerJob(runId);
+    expect(
+      capturedOfficialSkill(claim.storageManifest, "proactive-jobs"),
+    ).toContain("okou job list --runnable --json");
+    const waiting = (
+      await accept(
+        jobs().update({
+          headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+          params: { id: f.job.id },
+          body: {
+            expected: { status: f.job.status, work: f.job.work },
+            status: "waiting_decision",
+            work: { ...f.job.work, explanation: "Which region?" },
+          },
+        }),
+        [200],
+      )
+    ).body;
+    mockNow(now() + 1000);
+    await webhooks.requestAgentComplete(
+      { runId, exitCode: 0 },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await schedule(f.actor)).automation.nextRunAt).toBeNull();
+    mockNow(now() + 60_000);
+    await executeAutomationCron();
+    await flushWaitUntilForTest();
+    expect(
+      (await allThreadEventRows(f.actor, inFlight.chatThreadId)).filter(
+        (event) => {
+          return event.eventType === "input.prompt" && event.runId;
+        },
+      ),
+    ).toHaveLength(1);
+    const response = (
+      await accept(
+        jobs().input({
+          headers: authHeaders(f.actor),
+          params: { id: f.job.id },
+          body: { id: randomUUID(), kind: "reply", text: "Europe" },
+        }),
+        [200],
+      )
+    ).body;
+    expect(response.status).toBe("waiting_decision");
+    const awake = (await schedule(f.actor)).automation;
+    expect(awake.nextRunAt).toBe(new Date(now()).toISOString());
+    await runs.heartbeatRunner(f.runnerGroup);
+    const second = await fireOfficialSchedule(f.actor, awake);
+    expect(second.chatThreadId).toBe(inFlight.chatThreadId);
+    const secondClaim = await runs.claimRunnerJob(second.runId);
+    await accept(
+      jobs().update({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(secondClaim)}` },
+        params: { id: f.job.id },
+        body: {
+          expected: { status: waiting.status, work: waiting.work },
+          status: "active",
+          work: {
+            ...waiting.work,
+            explanation: "",
+            processedInputIds: response.inputs.map((input) => {
+              return input.id;
+            }),
+          },
+        },
+      }),
+      [200],
+    );
+    const completedAt = now() + 1000;
+    mockNow(completedAt);
+    await webhooks.requestAgentComplete(
+      { runId: second.runId, exitCode: 0 },
+      { authorization: `Bearer ${secondClaim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await schedule(f.actor)).automation.nextRunAt).toBe(
+      new Date(completedAt + 300_000).toISOString(),
+    );
+    await accept(
+      jobs().archive({
+        headers: authHeaders(f.actor),
+        params: { id: f.job.id },
+        body: {},
+      }),
+      [200],
+    );
+    mockNow(completedAt + 300_000);
+    await executeAutomationCron();
+    await flushWaitUntilForTest();
+    expect(
+      (await allThreadEventRows(f.actor, inFlight.chatThreadId)).filter(
+        (event) => {
+          return event.eventType === "input.prompt" && event.runId;
+        },
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("recovers persisted input racing with idle completion through the existing cron", async () => {
+    const f = await entrustedJob();
+    const initial = (await schedule(f.actor)).automation;
+    const started = await fireOfficialSchedule(f.actor, initial);
+    const claim = await runs.claimRunnerJob(started.runId);
+    await accept(
+      jobs().update({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+        params: { id: f.job.id },
+        body: {
+          expected: { status: f.job.status, work: f.job.work },
+          status: "waiting_decision",
+          work: { ...f.job.work, explanation: "Which region?" },
+        },
+      }),
+      [200],
+    );
+    const at = now() + 1000;
+    mockNow(at);
+    await Promise.all([
+      accept(
+        jobs().input({
+          headers: authHeaders(f.actor),
+          params: { id: f.job.id },
+          body: { id: randomUUID(), kind: "reply", text: "Europe" },
+        }),
+        [200],
+      ),
+      webhooks.requestAgentComplete(
+        { runId: started.runId, exitCode: 0 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      ),
+    ]);
+    await flushWaitUntilForTest();
+    mockNow(at + 300_000);
+    await runs.heartbeatRunner(f.runnerGroup);
+    await executeAutomationCron();
+    await flushWaitUntilForTest();
+    const rows = (
+      await allThreadEventRows(f.actor, started.chatThreadId)
+    ).filter((event) => {
+      return event.eventType === "input.prompt" && event.runId;
+    });
+    expect(rows).toHaveLength(2);
+    const resumed = await launchedAutomationRunId(
+      f.actor,
+      started.chatThreadId,
+    );
+    if (!resumed || resumed === started.runId) {
+      throw new Error("Expected a resumed Jobs run");
+    }
+    const resumedClaim = await runs.claimRunnerJob(resumed);
+    const current = await accept(
+      jobs().get({ headers: authHeaders(f.actor), params: { id: f.job.id } }),
+      [200],
+    );
+    expect(current.body).toMatchObject({
+      status: "waiting_decision",
+      hasPendingInput: true,
+    });
+    await accept(
+      jobs().archive({
+        headers: authHeaders(f.actor),
+        params: { id: f.job.id },
+        body: {},
+      }),
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      { runId: resumed, exitCode: 0 },
+      { authorization: `Bearer ${resumedClaim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await schedule(f.actor)).automation.nextRunAt).toBeNull();
+  });
+  it("preserves in-flight and idle Jobs anchors during catalog reconfiguration", async () => {
+    const f = await entrustedJob();
+    const initial = (await schedule(f.actor)).automation;
+    const started = await fireOfficialSchedule(f.actor, initial);
+    const claim = await runs.claimRunnerJob(started.runId);
+    const reconfigure = async (budget: number) => {
+      await syncCatalog(
+        catalog([
+          activeDefinition("proactive-jobs", [
+            {
+              key: "jobs-loop",
+              parameters: [],
+              desiredState: {
+                kind: "schedule",
+                schedule: { type: "loop", intervalSeconds: 300 },
+                autonomyBudget: budget,
+              },
+            },
+          ]),
+        ]),
+      );
+      await executeAutomationCron();
+      await flushWaitUntilForTest();
+    };
+    await reconfigure(31);
+    expect((await schedule(f.actor)).automation.nextRunAt).toBeNull();
+    await accept(
+      jobs().update({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+        params: { id: f.job.id },
+        body: {
+          expected: { status: f.job.status, work: f.job.work },
+          status: "waiting_decision",
+          work: { ...f.job.work, explanation: "Which region?" },
+        },
+      }),
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      { runId: started.runId, exitCode: 0 },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await reconfigure(30);
+    expect((await schedule(f.actor)).automation.nextRunAt).toBeNull();
+    expect(
+      (await allThreadEventRows(f.actor, started.chatThreadId)).filter(
+        (event) => {
+          return event.eventType === "input.prompt" && event.runId;
+        },
+      ),
+    ).toHaveLength(1);
+  });
 });
 
 describe("Proactive Action preference", () => {

@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DurableOpenAiImageGeneration]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Durable OpenAI image generation",
+    description:
+      "Use background Responses image jobs with durable recovery. Preview validation only until image-tool accounting is verified.",
+    enabled: false,
+  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",
@@ -174,6 +181,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Let Okou take useful next steps hourly in a visible chat instead of generating proactive suggestions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ProactiveJobs]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Proactive jobs",
+    description:
+      "Automatically advance explicitly entrusted Jobs and show their progress and Results.",
+    enabled: false,
   },
   [FeatureSwitchKey.BuiltinDocumentTemplates]: {
     maintainer: "bingjie@okou.ai",

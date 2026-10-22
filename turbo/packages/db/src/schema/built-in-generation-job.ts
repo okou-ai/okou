@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   jsonb,
@@ -74,6 +75,11 @@ export const builtInGenerationJobs = pgTable(
         table.status,
       ),
       index("idx_built_in_generation_jobs_run").on(table.runId),
+      // Exact raw-usage identity membership for the bounded compaction seed.
+      index("idx_built_in_generation_jobs_image_usage_keys").using(
+        "gin",
+        sql`(${table.request}->'__openAiImageSettlement'->'usageKeys')`,
+      ),
     ];
   },
 );

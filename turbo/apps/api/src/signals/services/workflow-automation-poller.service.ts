@@ -1,4 +1,5 @@
 import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
+import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -617,9 +618,11 @@ export const executeDueWorkflowAutomations$ = command(
         row = { ...row, ...selected };
       }
 
-      const claimed = journaled
-        ? row.automation
-        : await set(claimAutomation$, row.automation, currentTime, signal);
+      const claimed =
+        journaled ||
+        row.automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY
+          ? row.automation
+          : await set(claimAutomation$, row.automation, currentTime, signal);
       signal.throwIfAborted();
       if (!claimed) {
         if (!(await set(skipExpiredDueRow$, row, counters, signal))) {
