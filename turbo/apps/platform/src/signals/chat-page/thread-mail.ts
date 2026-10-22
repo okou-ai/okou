@@ -13,7 +13,7 @@ import {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { onRef, settle, withCleanup } from "../utils.ts";
+import { onRef, settle } from "../utils.ts";
 import type { MailDraftCardSignalsRegistry } from "./mail-draft.ts";
 
 export type ThreadMailFilter = "all" | "draft" | "sent";
@@ -27,7 +27,6 @@ interface MailResult {
 function createMailSelectionSignals(
   mails$: MailSource,
   filtered$: MailSource,
-  busy$: State<boolean>,
   result$: State<MailResult | null>,
 ) {
   const selected$ = state<ReadonlySet<string>>(new Set());
@@ -39,9 +38,6 @@ function createMailSelectionSignals(
     });
   });
   const select$ = command(({ get, set }, id: string, checked: boolean) => {
-    if (get(busy$)) {
-      return;
-    }
     const next = new Set(get(selected$));
     if (checked) {
       next.add(id);
@@ -55,9 +51,6 @@ function createMailSelectionSignals(
     async ({ get, set }, checked: boolean, signal: AbortSignal) => {
       const mails = await get(filtered$);
       signal.throwIfAborted();
-      if (get(busy$)) {
-        return;
-      }
       const next = new Set(get(selected$));
       for (const mail of mails) {
         if (checked) {
@@ -77,7 +70,6 @@ function createMailBulkSignals(
   registry: MailDraftCardSignalsRegistry,
   selection: ReturnType<typeof createMailSelectionSignals>,
   refresh$: Command<void, []>,
-  busy$: State<boolean>,
   result$: State<MailResult | null>,
 ) {
   const pending$ = state<{
@@ -88,22 +80,19 @@ function createMailBulkSignals(
     async ({ get, set }, action: ThreadMailAction, signal: AbortSignal) => {
       const mails = await get(selection.selectedDrafts$);
       signal.throwIfAborted();
-      if (!get(busy$) && mails.length > 0) {
+      if (mails.length > 0) {
         set(pending$, { action, mails });
       }
     },
   );
-  const cancel$ = command(({ get, set }) => {
-    if (!get(busy$)) {
-      set(pending$, null);
-    }
+  const cancel$ = command(({ set }) => {
+    set(pending$, null);
   });
-  const execute$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const confirm$ = command(async ({ get, set }, signal: AbortSignal) => {
     const pending = get(pending$);
-    if (!pending || get(busy$)) {
+    if (!pending) {
       return;
     }
-    set(busy$, true);
     set(result$, null);
     // Keep failed drafts selected; a retry never includes earlier successes.
     let succeeded = 0;
@@ -137,14 +126,6 @@ function createMailBulkSignals(
     set(pending$, null);
     set(refresh$);
   });
-  const confirm$ = command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(busy$)) {
-      return;
-    }
-    await withCleanup(set(execute$, signal), () => {
-      set(busy$, false);
-    });
-  });
   return {
     prepare$,
     cancel$,
@@ -177,11 +158,9 @@ export function createThreadMailSignals(
   latestRunFinish$: Computed<Promise<string | undefined>>,
 ) {
   const open$ = state(false);
-  const navigating$ = state(false);
   const query$ = state("");
   const filter$ = state<ThreadMailFilter>("all");
   const reloadVersion$ = state(0);
-  const busy$ = state(false);
   const result$ = state<MailResult | null>(null);
   const mails$ = computed(async (get) => {
     get(reloadVersion$);
@@ -223,26 +202,14 @@ export function createThreadMailSignals(
   const restore$ = command(({ set }) => {
     set(open$, true);
   });
-  const selection = createMailSelectionSignals(
-    mails$,
-    filtered$,
-    busy$,
-    result$,
-  );
-  const bulk = createMailBulkSignals(
-    registry,
-    selection,
-    refresh$,
-    busy$,
-    result$,
-  );
+  const selection = createMailSelectionSignals(mails$, filtered$, result$);
+  const bulk = createMailBulkSignals(registry, selection, refresh$, result$);
   return {
     open$: computed((get) => {
       return get(open$);
     }),
     setOpen$,
     restore$,
-    navigating$,
     refresh$,
     query$,
     filter$,
@@ -253,9 +220,6 @@ export function createThreadMailSignals(
       return get(selection.selected$);
     }),
     ...bulk,
-    busy$: computed((get) => {
-      return get(busy$);
-    }),
     result$: computed((get) => {
       return get(result$);
     }),

@@ -22,11 +22,14 @@ use guest_control_proto::{
 use tokio::sync::oneshot;
 use tokio::time::{self, Instant};
 
+use crate::connection::FrameWriteDecision;
 use crate::{
     CompositeNormalOperation, FrameWriteObserver, RequestTimeoutError, RequestTimeoutStage, Shared,
 };
 
-use super::frame::{admit_exec_cancel_frame, write_exec_start_frame, write_frame};
+use super::frame::{
+    ExecStartWriteAdmission, admit_exec_cancel_frame, write_exec_start_frame, write_frame,
+};
 use super::handle::{
     ExecControlHandle, ExecOperationCancelOnDropGuard, ExecOperationHandle,
     ExecOperationWaitOutcome, ExecWaitCore, SupervisedExecHandle,
@@ -198,7 +201,7 @@ async fn start_exec_operation_on_shared_with_tracking_and_admission(
             tracking,
         },
     )?;
-    time::timeout_at(
+    let decision = time::timeout_at(
         deadline,
         write_exec_start_frame(
             shared,
@@ -206,12 +209,18 @@ async fn start_exec_operation_on_shared_with_tracking_and_admission(
             &payload,
             &diagnostic,
             tracks_normal_operation,
-            write_admission,
+            ExecStartWriteAdmission {
+                deadline,
+                observer: write_admission,
+            },
             write_observer,
         ),
     )
     .await
     .map_err(|_| exec_start_timeout_error())??;
+    if decision == FrameWriteDecision::Skip {
+        return Err(exec_start_timeout_error());
+    }
     registration_guard.disarm();
 
     Ok((
@@ -388,7 +397,10 @@ where
             &payload,
             &diagnostic,
             tracks_normal_operation,
-            FrameWriteObserver::default(),
+            ExecStartWriteAdmission {
+                deadline,
+                observer: FrameWriteObserver::default(),
+            },
             FrameWriteObserver::new(move || {
                 write_progress.mark_frame_write();
                 start_write_observer.record_write_start()
@@ -399,7 +411,14 @@ where
     .map_err(|_| {
         supervised_start_timeout_error(start_progress.timeout_stage(), request.start_timeout)
     })
-    .and_then(|result| result);
+    .and_then(|result| result)
+    .and_then(|decision| match decision {
+        FrameWriteDecision::Write => Ok(()),
+        FrameWriteDecision::Skip => Err(supervised_start_timeout_error(
+            RequestTimeoutStage::BeforeFrameWrite,
+            request.start_timeout,
+        )),
+    });
     if let Err(error) = start_write_result {
         start_cancel_on_drop.disarm();
         return Err(error);

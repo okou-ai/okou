@@ -1,4 +1,5 @@
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,6 +15,7 @@ import {
   buttonNamed,
   hostedSiteArtifactDetail,
   mockArtifactConversation,
+  NAVIGATION_ARTIFACT_AGENT_ID,
   NAVIGATION_ARTIFACT_RUN_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
@@ -39,7 +41,11 @@ async function setupHostedSite(
   let currentSlug = initialSlug;
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  context.mocks.data.userPreferences({
+    timezone: "Etc/UTC",
+    locale: "en-US",
+    chatResourcesEnabledByDefault: false,
+  });
   const summary = {
     ...artifactSummary(artifactId, "hosted-site", siteTitle),
     sourceUrl: deploymentUrl,
@@ -97,6 +103,29 @@ async function setupHostedSite(
         seqId: 2,
       },
     ],
+  });
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    if (params.id !== NAVIGATION_ARTIFACT_THREAD_ID) {
+      return respond(404, {
+        error: {
+          code: "CHAT_THREAD_NOT_FOUND",
+          message: "Chat thread not found",
+        },
+      });
+    }
+    return respond(200, {
+      id: NAVIGATION_ARTIFACT_THREAD_ID,
+      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+      title: "Artifact navigation",
+      selectedModel: null,
+      modelSettings: {},
+      serviceTier: null,
+      pinnedAt: null,
+      archived: false,
+      muted: false,
+      computerUseHostId: null,
+      cloudBrowserEnabled: false,
+    });
   });
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, {

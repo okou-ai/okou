@@ -7,13 +7,14 @@ import { voiceIoQuotaErrorSchema } from "./voice-io-quota";
 const c = initContract();
 
 export const VOICE_IO_POLISH_MAX_TEXT_CHARS = 262_144;
+export const VOICE_IO_POLISH_MAX_SEGMENTS = 128;
 
 export const voiceIoPolishSegmentsRequestSchema = z
   .object({
     segments: z
       .array(z.string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS))
       .min(1)
-      .max(128)
+      .max(VOICE_IO_POLISH_MAX_SEGMENTS)
       .refine((segments) => {
         return (
           segments.reduce(

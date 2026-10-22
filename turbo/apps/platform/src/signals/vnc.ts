@@ -1070,6 +1070,7 @@ export const importVncKerberos$ = command(
         : null;
     let bytes: Uint8Array | undefined;
     const result = await settle(
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       withCleanup(
         (async () => {
           bytes = new Uint8Array(await file.arrayBuffer());

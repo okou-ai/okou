@@ -112,6 +112,7 @@ const readPrivateKeyFile$ = command(
       return "size";
     }
     const aborted = createDeferredPromise<never>(signal);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const result = await withCleanup(
       settle(Promise.race([file.text(), aborted.promise]), signal),
       () => {

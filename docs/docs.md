@@ -102,6 +102,8 @@ owning surface.
 - [ResizeObserver](app/resize-observer.md): CSS layout and measurement ownership.
 - [onRejection](app/signals/onRejection.md): error-callback misuse, loadable-owned
   request state, and reviewed infrastructure exceptions.
+- [withCleanup](app/signals/withCleanup.md): cleanup anti-patterns, derived request
+  state, resource ownership, and the reduction-only legacy-use lint boundary.
 - [Platform testing](app/app-testing.md): real page setup and user-visible assertions.
 
 ## Desktop

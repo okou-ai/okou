@@ -1,4 +1,4 @@
-import type { AuthTokenProvider } from "../lib/auth-diagnostics.ts";
+import type { AuthTokenProvider } from "../lib/auth-token-provider.ts";
 import type {
   SharedDatabaseDataKey,
   SharedDatabaseQuery,

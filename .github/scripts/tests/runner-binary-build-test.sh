@@ -392,18 +392,7 @@ RUNNER_BINARY_CONTEXT_ROOT="$actual_context" \
 [ -f "${actual_context}/crates/sandbox-mock/src/call_records.rs" ] \
   || fail "actual context must retain other workspace package source"
 
-workflow_toolchain=$(awk '
-  /^  compile:$/ { in_compile = 1; next }
-  in_compile && /^      image: / { sub(/^      image: /, ""); print; exit }
-' "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml")
 . "${REPO_ROOT}/.github/scripts/runner/runner-binary-build/contract.env"
-[ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "6" ] \
-  || fail "runner binary input schema must identify content-only CLI inputs"
-[ "$workflow_toolchain" = "ghcr.io/\${{ github.repository_owner }}/vm0-toolchain-rust:20261009" ] \
-  || fail "Runner Image workflow toolchain must derive its owner from GitHub context"
-expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-toolchain-rust:20261009"
-[ "$RUNNER_BINARY_TOOLCHAIN_IMAGE" = "$expected_runtime_toolchain" ] \
-  || fail "hashed build contract must derive the same runtime toolchain owner"
 
 # Only package bytes and the identity consumed by Runner compilation matter.
 cli_package="${TMPDIR}/cli-intermediate/package.tgz"

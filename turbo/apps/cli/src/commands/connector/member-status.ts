@@ -1,4 +1,5 @@
 import {
+  connectorAccountSetupIsComplete,
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
   builtinConnectorAccountFacts,
@@ -53,7 +54,7 @@ function memberAccountSummary(
     attentionCount: accounts.connections.filter((account) => {
       return (
         account.connectionStatus === "reconnect-required" ||
-        account.setupStatus !== "complete"
+        !connectorAccountSetupIsComplete(account)
       );
     }).length,
     defaultConnection: accounts.defaultConnection,
@@ -73,7 +74,7 @@ function memberAccountStatus(
   if (account.connectionStatus === "reconnect-required") {
     return "reconnect-required";
   }
-  if (account.setupStatus !== "complete") return "setup-required";
+  if (!connectorAccountSetupIsComplete(account)) return "setup-required";
   return "connected";
 }
 

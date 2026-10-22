@@ -18,7 +18,15 @@ def yaml(path):
 
 
 def compare_literals(expression):
+    expression = expression.replace("&&", " and ").replace("||", " or ")
     comparison = ast.parse(expression, mode="eval").body
+    if isinstance(comparison, ast.BoolOp):
+        values = [compare_literals(ast.unparse(value)) for value in comparison.values]
+        if isinstance(comparison.op, ast.And):
+            return all(values)
+        if isinstance(comparison.op, ast.Or):
+            return any(values)
+        raise ValueError("Unsupported cache-routing boolean operator")
     if not isinstance(comparison, ast.Compare) or len(comparison.ops) != 1:
         raise ValueError("Expected one literal cache-routing comparison")
     left = ast.literal_eval(comparison.left)
@@ -126,26 +134,66 @@ class BuildCacheTests(unittest.TestCase):
                 )
                 del self.env[key]
 
-    def test_only_main_warms_and_exact_hits_skip_compilation(self):
+    def test_only_selected_main_jobs_can_write_caches(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
-        for job in workflow["jobs"].values():
+        source = yaml(ROOT / ".github/workflows/ios.yml")
+        self.assertIn(source["name"], workflow["on"]["workflow_run"]["workflows"])
+        self.assertEqual(
+            source["jobs"]["build-test"].get("name", "build-test"), "build-test"
+        )
+        for role, job in workflow["jobs"].items():
             for ref in (
                 "refs/heads/main",
                 "refs/pull/1/merge",
                 "refs/heads/gh-readonly-queue/main/pr-1",
             ):
-                condition = job["if"].replace("github.ref", repr(ref))
-                self.assertEqual(compare_literals(condition), ref == "refs/heads/main")
-            for step in job["steps"]:
-                if "if" not in step:
-                    continue
-                for hit in ("true", "false", ""):
+                for needed in ("true", "false", ""):
+                    condition = (
+                        job["if"]
+                        .replace("github.ref", repr(ref))
+                        .replace("needs.detect.outputs.needed", repr(needed))
+                    )
+                    self.assertEqual(
+                        compare_literals(condition),
+                        ref == "refs/heads/main"
+                        and (role == "detect" or needed == "true"),
+                    )
+        warm = workflow["jobs"]["warm"]
+        self.assertFalse(warm["concurrency"]["cancel-in-progress"])
+        checkout = next(
+            step
+            for step in warm["steps"]
+            if step.get("uses", "").startswith("actions/checkout@")
+        )
+        self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
+        self.assertFalse(checkout["with"]["persist-credentials"])
+
+    def test_exact_hits_skip_only_the_work_already_cached(self):
+        workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
+        steps = {
+            step["id"]: step
+            for step in workflow["jobs"]["warm"]["steps"]
+            if "if" in step
+        }
+        for dependencies in ("true", "false", ""):
+            for compilation in ("true", "false", ""):
+                needed = {
+                    "prepare": dependencies != "true" or compilation != "true",
+                    "save-dependencies": dependencies != "true",
+                    "compile": compilation != "true",
+                    "save-compilation": compilation != "true",
+                }
+                for role, step in steps.items():
                     condition = (
                         step["if"]
-                        .replace("steps.cache.outputs.dependencies-hit", repr(hit))
-                        .replace("steps.cache.outputs.compilation-hit", repr(hit))
+                        .replace(
+                            "steps.cache.outputs.dependencies-hit", repr(dependencies)
+                        )
+                        .replace(
+                            "steps.cache.outputs.compilation-hit", repr(compilation)
+                        )
                     )
-                    self.assertEqual(compare_literals(condition), hit != "true")
+                    self.assertEqual(compare_literals(condition), needed[role])
 
     def test_producer_and_restore_paths_and_keys_match(self):
         workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
@@ -154,11 +202,11 @@ class BuildCacheTests(unittest.TestCase):
             for step in self.action["runs"]["steps"]
             if step.get("id") in ("dependencies", "compilation")
         }
-        for role, job in workflow["jobs"].items():
+        for role in ("dependencies", "compilation"):
             save = next(
                 step
-                for step in job["steps"]
-                if step.get("uses", "").startswith("actions/cache/save@")
+                for step in workflow["jobs"]["warm"]["steps"]
+                if step.get("id") == f"save-{role}"
             )
             self.assertEqual(save["with"]["path"], restores[role]["with"]["path"])
             self.assertEqual(
@@ -167,6 +215,104 @@ class BuildCacheTests(unittest.TestCase):
                 ),
                 restores[role]["with"]["key"],
             )
+
+    def warm_decision(self, event, jobs, source="okou-ai/okou", api_status=0):
+        workflow = yaml(ROOT / ".github/workflows/ios-build-cache.yml")
+        script = workflow["jobs"]["detect"]["steps"][0]["run"]
+        response = self.root / "jobs.json"
+        response.write_text(json.dumps({"jobs": jobs}))
+        request = self.root / "request"
+        output = Path(self.env["GITHUB_OUTPUT"])
+        request.unlink(missing_ok=True)
+        output.write_text("")
+        gh = self.root / "bin/gh"
+        gh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, subprocess, sys\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['TEST_REQUEST']).write_text(json.dumps(sys.argv[1:]))\n"
+            "if int(os.environ['TEST_API_STATUS']):\n"
+            "    sys.exit(int(os.environ['TEST_API_STATUS']))\n"
+            "query = sys.argv[sys.argv.index('--jq') + 1]\n"
+            "subprocess.run(['jq', '-r', query, os.environ['TEST_RESPONSE']], check=True)\n"
+        )
+        gh.chmod(0o755)
+        result = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", script],
+            cwd=self.repo,
+            env=self.env
+            | {
+                "EVENT_NAME": event,
+                "SOURCE_REPOSITORY": source,
+                "SOURCE_RUN_ID": "123",
+                "GITHUB_REPOSITORY": "okou-ai/okou",
+                "GH_TOKEN": "fixture",
+                "TEST_REQUEST": str(request),
+                "TEST_RESPONSE": str(response),
+                "TEST_API_STATUS": str(api_status),
+            },
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return result, output.read_text(), request.exists()
+
+    def test_native_completion_heals_cache_but_skipped_jobs_and_forks_do_not(self):
+        for outcome in ("success", "failure", "cancelled", "skipped"):
+            with self.subTest(outcome=outcome):
+                result, output, requested = self.warm_decision(
+                    "workflow_run",
+                    [
+                        {
+                            "name": "build-test",
+                            "conclusion": outcome,
+                            "runner_id": 1234,
+                        }
+                    ],
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    output, f"needed={str(outcome != 'skipped').lower()}\n"
+                )
+                self.assertTrue(requested)
+        result, output, _ = self.warm_decision(
+            "workflow_run", [{"name": "script-checks", "conclusion": "success"}]
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output, "needed=false\n")
+        result, output, _ = self.warm_decision(
+            "workflow_run",
+            [
+                {
+                    "name": "build-test",
+                    "conclusion": "cancelled",
+                    "runner_id": None,
+                }
+            ],
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output, "needed=false\n")
+        result, output, requested = self.warm_decision(
+            "workflow_run",
+            [{"name": "build-test", "conclusion": "success", "runner_id": 1234}],
+            source="someone/fork",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output, "needed=false\n")
+        self.assertFalse(requested)
+
+    def test_main_push_and_manual_dispatch_warm_without_reading_pr_jobs(self):
+        for event in ("push", "workflow_dispatch"):
+            result, output, requested = self.warm_decision(event, [])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output, "needed=true\n")
+            self.assertFalse(requested)
+
+    def test_failed_source_job_lookup_fails_instead_of_skipping_recovery(self):
+        result, output, requested = self.warm_decision("workflow_run", [], api_status=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(output, "")
+        self.assertTrue(requested)
 
 
 if __name__ == "__main__":

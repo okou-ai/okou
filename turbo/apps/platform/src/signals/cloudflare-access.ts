@@ -1,6 +1,5 @@
 import {
   applyRemoteNetworkScope$,
-  remoteNetworkScopeOperation$,
   resetRemoteNetworkScope$,
 } from "./remote-network-scope.ts";
 import type {
@@ -402,9 +401,6 @@ const finishCloudflareAccessCreate$ = command(
 
 export const saveCloudflareAccess$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
-    if (get(remoteNetworkScopeOperation$)) {
-      return;
-    }
     const signal = set(resetFormSave$, parentSignal);
     let dialog = await get(cloudflareAccessDialog$);
     signal.throwIfAborted();

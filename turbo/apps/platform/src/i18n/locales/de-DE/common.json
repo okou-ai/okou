@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Zurück zu {{brandName}}",
+      "continue": "Weiter",
       "description": "Es ist möglicherweise privat oder nicht mehr verfügbar.",
       "help": "Bitte die Person, die diesen Link geteilt hat, den Zugriff zu prüfen.",
+      "sessionExpiredDescription": "Deine Website-Sitzung ist abgelaufen. Fahre fort, um deinen Zugriff zu bestätigen.",
+      "sessionExpiredTitle": "Bestätige deinen Zugriff erneut",
       "signedInAs": "Angemeldet als {{email}}",
       "signedInDescription": "Es existiert möglicherweise nicht oder wurde für ein anderes Konto oder eine andere Organisation freigegeben.",
       "signIn": "Anmelden",
@@ -439,7 +442,10 @@
       "switchAccount": "Konto wechseln",
       "switchAccountFailed": "Die Kontoauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
       "title": "Du kannst dieses Artefakt nicht ansehen",
-      "tryAgain": "Erneut versuchen"
+      "tryAgain": "Erneut versuchen",
+      "websiteTitle": "Du kannst diese Website nicht ansehen",
+      "websiteUnavailableDescription": "Versuche es gleich noch einmal.",
+      "websiteUnavailableTitle": "Diese Website ist vorübergehend nicht verfügbar"
     },
     "actions": {
       "backToAll": "Zurück zu allen Artefakten",
@@ -596,7 +602,6 @@
         "text": "Text",
         "video": "Video"
       },
-      "siteLabel": "Site-Vorschau für {{title}}",
       "slideTitle": "Folie {{number}}",
       "unavailable": "{{kind}}-Vorschau nicht verfügbar.",
       "videoLabel": "Videovorschau für {{filename}}"
@@ -1022,6 +1027,25 @@
       "saving": "Speichern...",
       "userFallback": "Dort",
       "wouldLike": "Würde gerne"
+    },
+    "permissionBatch": {
+      "allowAll_one": "{{count}} Berechtigung erlauben",
+      "allowAll_other": "Alle {{count}} Berechtigungen erlauben",
+      "allowed": "Berechtigungen erlaubt",
+      "allowedCount": "{{allowed}} von {{total}} Berechtigungen erlaubt",
+      "alwaysNote": "Diese Berechtigungen bleiben erlaubt, bis du sie änderst oder widerrufst.",
+      "continue": "Fortfahren",
+      "continued": "Die Unterhaltung wurde fortgesetzt.",
+      "continueFailed": "Die Berechtigungen wurden erlaubt, aber die Unterhaltung konnte nicht fortgesetzt werden. Versuche erneut, fortzufahren.",
+      "continuing": "Wird fortgesetzt…",
+      "details": "Berechtigungsdetails anzeigen",
+      "dismissed": "Es wurden keine Berechtigungen geändert.",
+      "invalid": "Dieser Berechtigungslink ist ungültig oder nicht verfügbar.",
+      "loadFailed": "Nicht alle angeforderten Berechtigungen konnten überprüft werden. Es können keine Berechtigungen geändert werden.",
+      "loading": "Berechtigungen werden geladen",
+      "notNow": "Nicht jetzt",
+      "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
+      "title": "Folgende Berechtigungen erlauben"
     }
   },
   "billing": {

@@ -11,8 +11,8 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
-  backToThreadMailList$,
   openThreadArtifacts$,
+  navigateThreadMail$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
@@ -470,8 +470,8 @@ function ThreadMailDraftPanel({
   readonly fromMailList?: true;
 }) {
   const close = useSet(thread.sidebar.close$);
-  const back = useSet(backToThreadMailList$);
-  const pageSignal = useGet(pageSignal$);
+  const [navigation, navigate] = useLoadableSet(navigateThreadMail$);
+  const signal = useGet(pageSignal$);
   const listOpen = useGet(thread.mail.open$);
   const { t } = useTranslation();
   if (!fromMailList) {
@@ -489,8 +489,9 @@ function ThreadMailDraftPanel({
           variant="quiet"
           size="sm"
           autoFocus
+          disabled={navigation.state === "loading"}
           onClick={() => {
-            detach(back(thread, pageSignal), Reason.DomCallback);
+            detach(navigate(thread, null, signal), Reason.DomCallback);
           }}
         >
           <ArrowLeft size={16} />

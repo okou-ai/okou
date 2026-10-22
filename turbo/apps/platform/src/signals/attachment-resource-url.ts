@@ -43,9 +43,9 @@ export interface ArtifactShareIdentity {
 interface AttachmentPresignedToken {
   /** The temporary URL that authorizes this browser to load the resource. */
   readonly token: string;
-  readonly expiresAt: string;
+  readonly expiresAt: string | null;
   readonly contentType?: string;
-  /** Stable reference to the independent screenshot or video poster. */
+  /** Independent screenshot or video poster, resolved separately from HTML. */
   readonly previewImageUrl?: string | null;
   /** Stable resource identity returned while resolving an artifact reference. */
   readonly artifactShareIdentity?: ArtifactShareIdentity;
@@ -139,14 +139,15 @@ function createAttachmentPresignedToken$(
       : "";
     if (/^[a-z0-9][a-z0-9-]*$/u.test(label) && !/^(?:pv|ps|sh)-/u.test(label)) {
       const currentSource$ = computed((get) => {
-        return currentHostedSiteUrl(source.href, get(hostedSiteUrlChanges$));
+        return currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
       });
       const revision$ = computed((get) => {
         return get(hostedSiteVisibilityChanges$)[source.origin] ?? null;
       });
       return computed(async (get) => {
         get(revision$);
-        const currentSource = new URL(get(currentSource$));
+        const currentSourceUrl = get(currentSource$);
+        const currentSource = new URL(currentSourceUrl);
         if (!(await get(clerk$)).user) {
           return null;
         }
@@ -158,17 +159,16 @@ function createAttachmentPresignedToken$(
           }),
           [200],
         );
-        if (response.body.expiresAt === null) {
-          return null;
-        }
         const resource = new URL(response.body.url);
         resource.pathname = currentSource.pathname;
         resource.search = currentSource.search;
         resource.hash = currentSource.hash;
         return {
-          token: resource.href,
+          token:
+            response.body.expiresAt === null ? currentSourceUrl : resource.href,
           expiresAt: response.body.expiresAt,
-          publicUrl: currentSource.href,
+          previewImageUrl: response.body.previewImageUrl,
+          publicUrl: currentSourceUrl,
         };
       });
     }

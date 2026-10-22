@@ -1,6 +1,5 @@
 import {
   applyRemoteNetworkScope$,
-  remoteNetworkScopeOperation$,
   resetRemoteNetworkScope$,
 } from "./remote-network-scope.ts";
 import { command, computed, state } from "ccstate";
@@ -716,9 +715,6 @@ function tailscaleSaveNeedsAdmin(
 
 export const saveTailscale$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
-    if (get(remoteNetworkScopeOperation$)) {
-      return;
-    }
     const signal = set(resetSave$, parentSignal);
     let dialog = await get(tailscaleDialog$);
     signal.throwIfAborted();

@@ -444,8 +444,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Voltar para {{brandName}}",
+      "continue": "Continuar",
       "description": "Ele pode ser privado ou não estar mais disponível.",
       "help": "Peça à pessoa que compartilhou este link para verificar o acesso.",
+      "sessionExpiredDescription": "Sua sessão no site expirou. Continue para verificar seu acesso.",
+      "sessionExpiredTitle": "Verifique seu acesso novamente",
       "signedInAs": "Conectado como {{email}}",
       "signedInDescription": "Ele pode não existir ou ter sido compartilhado com outra conta ou organização.",
       "signIn": "Entrar",
@@ -453,7 +456,10 @@
       "switchAccount": "Trocar de conta",
       "switchAccountFailed": "Não foi possível abrir o seletor de contas. Tente novamente.",
       "title": "Você não pode visualizar este artefato",
-      "tryAgain": "Tentar novamente"
+      "tryAgain": "Tentar novamente",
+      "websiteTitle": "Você não pode visualizar este site",
+      "websiteUnavailableDescription": "Tente novamente em instantes.",
+      "websiteUnavailableTitle": "Este site está temporariamente indisponível"
     },
     "actions": {
       "backToAll": "Voltar para todos os artefatos",
@@ -612,7 +618,6 @@
         "text": "texto",
         "video": "vídeo"
       },
-      "siteLabel": "Visualização do site {{title}}",
       "slideTitle": "Slide {{number}}",
       "unavailable": "Visualização de {{kind}} indisponível.",
       "videoLabel": "Visualização de vídeo de {{filename}}"
@@ -1041,6 +1046,26 @@
       "saving": "Salvando...",
       "userFallback": "você",
       "wouldLike": "Gostaria de"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Conceder {{count}} permissão",
+      "allowAll_many": "Conceder todas as {{count}} permissões",
+      "allowAll_other": "Conceder todas as {{count}} permissões",
+      "allowed": "Permissões concedidas",
+      "allowedCount": "{{allowed}} de {{total}} permissões concedidas",
+      "alwaysNote": "Estas permissões continuam concedidas até que você as altere ou revogue.",
+      "continue": "Continuar",
+      "continued": "A conversa foi retomada.",
+      "continueFailed": "As permissões foram concedidas, mas não foi possível retomar a conversa. Tente continuar novamente.",
+      "continuing": "Continuando…",
+      "details": "Ver detalhes das permissões",
+      "dismissed": "Nenhuma permissão foi alterada.",
+      "invalid": "Este link de permissão é inválido ou está indisponível.",
+      "loadFailed": "Não foi possível verificar todas as permissões solicitadas. Nenhuma permissão pode ser alterada.",
+      "loading": "Carregando permissões",
+      "notNow": "Agora não",
+      "scopeNote": "Aplica-se a este agente, não apenas à tarefa atual.",
+      "title": "Conceder as seguintes permissões"
     }
   },
   "billing": {

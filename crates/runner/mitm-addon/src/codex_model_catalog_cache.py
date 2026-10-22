@@ -56,6 +56,9 @@ the bounded capture. A successful response to an authenticated Codex Responses r
 separately carry ``x-models-etag``; that signal is scoped to the same credential digest,
 renews matching entries, removes mismatches, and prevents an in-flight catalog response with
 a conflicting ETag from being stored.
+Signal acquisition checks the 8,192-field and 8 KiB raw singleton-value budgets
+before conversion and stops at a duplicate. Exhaustion ignores only the optional
+signal, preserving entries, in-flight observations, and response forwarding.
 
 Keep this contract synchronized with the owning ``mitm_addon`` hooks and these focused test
 modules:
@@ -87,6 +90,7 @@ import body_decoding
 import content_encoding
 import content_length
 import flow_metadata
+import http_header_syntax
 from runtime_url_parsing import split_runtime_url
 
 FRESH_SECONDS = 60.0
@@ -117,6 +121,8 @@ _RAW_ACCEPT_ENCODING = b"accept-encoding"
 _MAX_ACCEPT_ENCODING_VALUE_BYTES = 64 * 1024
 _MAX_RESPONSE_CACHE_POLICY_FIELDS = 8 * 1024
 _MAX_RESPONSE_CACHE_POLICY_VALUE_BYTES = 8 * 1024
+_MAX_MODELS_ETAG_FIELDS = 8 * 1024
+_MAX_MODELS_ETAG_VALUE_BYTES = 8 * 1024
 _MAX_ETAG_BYTES = 512
 _MAX_CONTENT_TYPE_BYTES = 256
 _MAX_JSON_NESTING = 128
@@ -1200,10 +1206,15 @@ def observe_authenticated_models_etag(flow: http.HTTPFlow) -> None:
         or not _is_responses_path(flow_metadata.original_url(flow.metadata))
     ):
         return
-    values = flow.response.headers.get_all("x-models-etag")
-    if len(values) != 1:
+    raw_value = http_header_syntax.single_header_value(
+        flow.response.headers.fields,
+        b"x-models-etag",
+        max_fields=_MAX_MODELS_ETAG_FIELDS,
+        max_value_bytes=_MAX_MODELS_ETAG_VALUE_BYTES,
+    )
+    if raw_value is None:
         return
-    signal_etag = _usable_etag_value(values[0])
+    signal_etag = _usable_etag_value(raw_value.decode("utf-8", "surrogateescape"))
     if signal_etag is None:
         return
     credential_digest = _credential_digest(flow)

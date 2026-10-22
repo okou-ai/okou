@@ -2,7 +2,7 @@ import { PI_MEMORY_PHASE2_MAX_ATTEMPTS } from "@okouai/db/columns/pi-memory-phas
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/memory-selection";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/phase2-memory-selection";
 import { command } from "ccstate";
 import {
   and,

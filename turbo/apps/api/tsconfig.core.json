@@ -317,7 +317,6 @@
     "src/signals/services/workflow-user-automation-thread.service.ts",
     "src/signals/services/workflow-volume.service.ts",
     "src/signals/usage-underbilling.ts",
-    "src/lib/blocked-fetch-host.ts",
     "src/lib/connector-oauth-state.ts",
     "src/lib/oauth-origin.ts",
     "src/signals/external/feishu-client.ts",

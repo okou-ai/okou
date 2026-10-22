@@ -324,6 +324,8 @@ const sendAgentPhoneVerificationText$ = command(
     },
     signal: AbortSignal,
   ) => {
+    // The post-insert reads need fresh snapshots and both cooldown scopes must
+    // reserve together; the provider send remains outside this rollback boundary.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0019; new non-billing transactions are prohibited.
     const cooldownResult = await set(writeDb$).transaction(async (tx) => {
       const attemptedAt = new Date(now());
@@ -362,14 +364,23 @@ const sendAgentPhoneVerificationText$ = command(
         }
       }
 
-      for (const key of params.cooldownKeys) {
+      // Both scopes are already locked in the existing sorted order. Reserve
+      // the same timestamp together, after every scope passed its cooldown.
+      if (params.cooldownKeys.length > 0) {
         await tx
           .update(agentphoneVerificationSendCooldowns)
           .set({ lastSentAt: attemptedAt, updatedAt: attemptedAt })
           .where(
-            and(
-              eq(agentphoneVerificationSendCooldowns.scope, key.scope),
-              eq(agentphoneVerificationSendCooldowns.scopeKey, key.scopeKey),
+            or(
+              ...params.cooldownKeys.map((key) => {
+                return and(
+                  eq(agentphoneVerificationSendCooldowns.scope, key.scope),
+                  eq(
+                    agentphoneVerificationSendCooldowns.scopeKey,
+                    key.scopeKey,
+                  ),
+                );
+              }),
             ),
           );
       }

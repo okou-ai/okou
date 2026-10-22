@@ -57,7 +57,7 @@ test("Keep recording after an incremental segment fails and finish in order", as
   });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
-  emit(new Float32Array(60 * 16_000).fill(0.1));
+  emit(new Float32Array(15 * 16_000).fill(0.1));
   await unavailable.promise;
   await expect(findEnabledButton("Stop recording")).resolves.toBeVisible();
   emit(new Float32Array(5 * 16_000).fill(0.2));

@@ -1,10 +1,4 @@
-import {
-  observeClerkToken,
-  recordAuthDiagnostic,
-  type AuthDiagnosticContext,
-} from "../lib/auth-diagnostics.ts";
 import { createDeferredPromise, withCleanup } from "./utils.ts";
-import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
 
 interface ClerkTokenSession {
   getToken(options?: { readonly skipCache?: boolean }): Promise<string | null>;
@@ -60,6 +54,7 @@ export function waitForClerkSession(
 function waitForToken<T>(token: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
   const aborted = createDeferredPromise<never>(signal);
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return withCleanup(Promise.race([token, aborted.promise]), () => {
     if (!aborted.settled()) {
       aborted.reject(new DOMException("Token read settled", "AbortError"));
@@ -70,52 +65,25 @@ function waitForToken<T>(token: Promise<T>, signal: AbortSignal): Promise<T> {
 export async function readClerkToken(
   clerk: ClerkTokenSource,
   signal?: AbortSignal,
-  options: {
-    readonly skipCache?: true;
-    readonly diagnostic?: AuthDiagnosticContext;
-  } = {},
+  options: { readonly skipCache?: true } = {},
 ): Promise<string | null> {
-  const diagnostic = createBrowserAuthDiagnosticContext(options.diagnostic);
   if (!signal) {
     const session = clerk.session;
     if (!session) {
-      recordAuthDiagnostic({
-        stage: "clerk_no_session",
-        context: diagnostic,
-      });
       return null;
     }
-    return await observeClerkToken(
-      () => {
-        return session.getToken(
-          options.skipCache ? { skipCache: true } : undefined,
-        );
-      },
-      diagnostic,
-      options.skipCache === true,
+    return await session.getToken(
+      options.skipCache ? { skipCache: true } : undefined,
     );
   }
 
   const session = await waitForClerkSession(clerk, signal);
   signal.throwIfAborted();
   if (session === null) {
-    recordAuthDiagnostic({
-      stage: "clerk_no_session",
-      context: diagnostic,
-    });
     return null;
   }
   return await waitForToken(
-    observeClerkToken(
-      () => {
-        return session.getToken(
-          options.skipCache ? { skipCache: true } : undefined,
-        );
-      },
-      diagnostic,
-      options.skipCache === true,
-      signal,
-    ),
+    session.getToken(options.skipCache ? { skipCache: true } : undefined),
     signal,
   );
 }

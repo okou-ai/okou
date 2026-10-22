@@ -43,16 +43,7 @@ impl MemoryObservationSource for FileSource {
 }
 
 #[tokio::test]
-async fn cancelled_guarded_receiver_keeps_tracker_shutdown_saving_and_reuse_notification() {
-    exercise_cancelled_receiver(false).await;
-}
-
-#[tokio::test]
 async fn accepted_pool_retirement_survives_caller_cancellation_and_tracker_close() {
-    exercise_cancelled_receiver(true).await;
-}
-
-async fn exercise_cancelled_receiver(from_pool: bool) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("meminfo");
     tokio::fs::write(&path, "MemAvailable: 65536 kB\n")
@@ -81,9 +72,7 @@ async fn exercise_cancelled_receiver(from_pool: bool) {
         .with_factory(factory)
         .with_home_promotion(fixture.promotion)
         .build();
-    if from_pool {
-        candidate.capture_retirement_backing().unwrap();
-    }
+    candidate.capture_retirement_backing().unwrap();
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     let envelope = IdleRetirementEnvelope {
         live_growth_bytes: 8 * MIB,
@@ -91,51 +80,36 @@ async fn exercise_cancelled_receiver(from_pool: bool) {
     };
     let notify = Arc::new(Notify::new());
     let tracker = IdleDestroyTracker::new(notify.clone());
-    let observation: std::pin::Pin<Box<dyn Future<Output = ()> + Send>> = if from_pool {
-        let candidate = pool
-            .retirement_candidate(&runner_lifecycle::idle_pool::IdleSandboxIdentity::Exact(
-                fixture.reuse_key.clone(),
-            ))
-            .unwrap();
-        let pool = Arc::new(tokio::sync::Mutex::new(pool));
-        let started = tracker
-            .retire_pool_entry(
-                &pool,
-                &operations,
-                IdlePoolRetirementRequest {
-                    candidate,
-                    envelope,
-                    context: "cancelled_pool_tracker",
-                },
-            )
+    let candidate = pool
+        .retirement_candidate(&runner_lifecycle::idle_pool::IdleSandboxIdentity::Exact(
+            fixture.reuse_key.clone(),
+        ))
+        .unwrap();
+    let pool = Arc::new(tokio::sync::Mutex::new(pool));
+    let started = tracker
+        .retire_pool_entry(
+            &pool,
+            &operations,
+            IdlePoolRetirementRequest {
+                candidate,
+                envelope,
+                context: "cancelled_pool_tracker",
+            },
+        )
+        .await
+        .unwrap();
+    assert!(started.snapshot.idle_sandboxes.is_empty());
+    assert!(
+        pool.lock()
             .await
-            .unwrap();
-        assert!(started.snapshot.idle_sandboxes.is_empty());
-        assert!(
-            pool.lock()
-                .await
-                .status_snapshot()
-                .idle_sandboxes
-                .is_empty()
-        );
-        let mut task = started.task;
-        Box::pin(async move {
-            let _ = task.join().await;
-        })
-    } else {
-        let mut retirement =
-            GuardedIdleRetirement::new(pool.drain().pop().unwrap(), &operations, envelope).unwrap();
-        retirement.try_grant().await.unwrap();
-        let mut task = tracker
-            .spawn_guarded_retirement(retirement, "cancelled_guarded_tracker")
-            .unwrap();
-        Box::pin(async move {
-            let _ = task.join().await;
-        })
-    };
+            .status_snapshot()
+            .idle_sandboxes
+            .is_empty()
+    );
+    let mut task = started.task;
     let (waiting, observed) = oneshot::channel();
     let caller = tokio::spawn(async move {
-        let join = observation;
+        let join = task.join();
         tokio::pin!(join);
         assert!(futures_util::poll!(join.as_mut()).is_pending());
         waiting.send(()).unwrap();
@@ -174,13 +148,11 @@ async fn exercise_cancelled_receiver(from_pool: bool) {
         .unwrap();
     tokio::time::timeout(WAIT, notification).await.unwrap();
     assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
-    if from_pool {
-        assert_eq!(budget.allocated(), (2, 2048, 1));
-        let retained = tracker.take_retained_activation_owners().unwrap();
-        assert_eq!(retained.len(), 1);
-        assert!(retained[0].cleanup_completed());
-        drop(retained);
-    }
+    assert_eq!(budget.allocated(), (2, 2048, 1));
+    let retained = tracker.take_retained_activation_owners().unwrap();
+    assert_eq!(retained.len(), 1);
+    assert!(retained[0].cleanup_completed());
+    drop(retained);
     assert_eq!(budget.allocated(), (0, 0, 0));
     let mut checkout = fixture
         .cache

@@ -293,6 +293,15 @@ Standalone package tests run on a separate macOS runner from the App build and
 simulator suite, so package compilation does not consume the simulator job's
 30-minute budget. Both jobs are required by the gate.
 
+`ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
+after a same-repository iOS workflow actually starts its native `build-test`
+job, including failed or cancelled builds. A Linux check filters out workflows
+whose native job was skipped. Cache writers always check out the trusted main
+revision; they do not use PR code or artifacts. One Mac restores both caches,
+prepares dependencies before starting the simulator, and saves only missing
+entries. Exact hits skip rebuilding. Active writers finish before a newer
+request starts. Manual dispatch on main remains available for recovery.
+
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or
 after change detection confirms they are unnecessary. Detection failures,
 cancelled jobs, and unexpectedly skipped jobs fail the gate. Register this
@@ -313,13 +322,20 @@ cancelled jobs remain failures. Desktop and Rust retain their own input filters.
 
 Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.
+Root-view tests pass a fixture-owned HTTP session and service origin; unconfigured
+startup API requests fail with their method and URL. Fixture sessions reject
+unknown HTTP origins locally instead of falling through to DNS, while preserving
+the loopback HTTP servers used by attachment integration tests.
 Production services, PR preview provisioning, and deployed end-to-end tests are
 outside this scope. These tests do not constitute page-level UI acceptance or
 server contract verification. CI starts its configured simulator while resolving
 locked dependencies, then waits for system boot readiness before asset and App
 compilation. This keeps cold system-service startup out of asset-tool discovery.
 After `build-for-testing` succeeds, CI executes every native test with
-`test-without-building`. Failed or
+`test-without-building`. Test results and attachments remain in `Tests.xcresult`;
+automatic simulator sysdiagnose collection is disabled so it cannot delay the
+failure verdict. Native prerequisite waits throw after recording a failed
+assertion, stopping dependent actions. Failed or
 cancelled preparation still blocks the required gate. The standalone command
 builds and runs every suite sequentially with an explicit local simulator:
 

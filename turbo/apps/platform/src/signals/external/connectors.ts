@@ -6,6 +6,7 @@ import {
   type PublicConnectorCatalogConnectItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
+  connectorAccountSetupIsComplete,
   builtinConnectorAccountFacts,
   connectorAccountsContract,
   type ConnectorAccountConnection,
@@ -69,7 +70,7 @@ export function withMemberAccount<T extends PublicConnectorCatalogConnectItem>(
     ...item,
     connected:
       account?.connectionStatus === "connected" &&
-      account.setupStatus === "complete" &&
+      connectorAccountSetupIsComplete(account) &&
       connectionStatus !== undefined &&
       (account.tokenExpiresAt === null || facts?.supportsRefresh !== undefined),
     connectionStatus,
