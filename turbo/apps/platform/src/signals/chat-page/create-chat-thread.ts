@@ -2075,12 +2075,14 @@ function createMarkThreadReadIfNeeded({
 
 function createEventChangeEffects({
   threadId,
+  mailDraftCardSignals,
   chatEvents,
   projections,
   scroll,
   syncVisibleEventTrees$,
 }: {
   readonly threadId: string;
+  readonly mailDraftCardSignals: MailDraftCardSignalsRegistry;
   readonly chatEvents: ChatEventSignals;
   readonly projections: Pick<
     ReturnType<typeof createPagedEventProjections>,
@@ -2092,7 +2094,7 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const sidebar = createThreadSidebarSignals(threadId);
+  const sidebar = createThreadSidebarSignals(threadId, mailDraftCardSignals);
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,
@@ -2300,6 +2302,7 @@ function createChatThreadMessagePipeline({
   );
   const effects = createEventChangeEffects({
     threadId,
+    mailDraftCardSignals: resources.publicSignals.mailDraftCardSignals,
     chatEvents,
     projections,
     scroll,

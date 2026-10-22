@@ -70,6 +70,7 @@ import { setupDesktopShellAuthorizationPage$ } from "./desktop-shell-authorizati
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
 import { setupBrowserSessionPage$ } from "./browser-session/browser-session-page-setup.ts";
 import { setupMailDraftPage$ } from "./mail-draft/mail-draft-page-setup.ts";
+import { THREAD_MAIL_SEARCH_PARAMS } from "./chat-page/thread-mail-location.ts";
 import { setupSubscriptionResetPage$ } from "./subscription-reset/subscription-reset-page-setup.ts";
 import { setupBrowserUserActionPage$ } from "./browser-user-action/browser-user-action-page-setup.ts";
 import { setupDirectedConnectPage$ } from "./connectors-page/directed-connect-page-setup.ts";
@@ -225,6 +226,7 @@ const ROUTE_CONFIG = [
   // --- New routes ---
   {
     path: ROUTES.chat,
+    inPlaceSearchParams: THREAD_MAIL_SEARCH_PARAMS,
     setup: setupAuthSidebarPageWrapper(setupChatPage$),
   },
   {
