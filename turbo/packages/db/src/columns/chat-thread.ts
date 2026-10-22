@@ -31,10 +31,14 @@ export function chatThreadColumns() {
      * context, so the prompt is only applied once.
      */
     sourceScheduleRunId: uuid("source_schedule_run_id"),
-    /** Native identity for the retained files; no remote history ownership. */
+    /** Confirmed native identity; cleared when the next Run starts execution. */
     framework: varchar("framework", { length: 64 }),
     frameworkSessionId: varchar("framework_session_id", { length: 255 }),
-    /** Producer identity for generation-bound native files, without a Run FK. */
+    /**
+     * Latest started Run, without a Run FK. Framework/session remain null until
+     * that Run confirms native identity; together they identify its native files.
+     * Historical readers remain authoritative until older Threads are backfilled.
+     */
     frameworkSessionRunId: uuid("framework_session_run_id"),
     /**
      * Slack-style watermark: the last timestamp up to which the user has read
