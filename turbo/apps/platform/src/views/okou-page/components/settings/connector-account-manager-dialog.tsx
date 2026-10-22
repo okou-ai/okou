@@ -4,6 +4,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical, Search } from "lucide-react";
 import {
+  connectorAccountSetupIsComplete,
   connectorAccountExternalIdentity,
   type ConnectorAccountConnection,
   type ConnectorAccountTarget,
@@ -81,7 +82,7 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
   const { t } = useTranslation();
   const needsReconnect = account.connectionStatus === "reconnect-required";
   const needsScopeReview = account.scopeMismatch === true;
-  const needsSetup = account.setupStatus !== "complete";
+  const needsSetup = !connectorAccountSetupIsComplete(account);
   const needsAttention = needsReconnect || needsScopeReview || needsSetup;
   return (
     <span className="flex min-w-0 items-center gap-2">

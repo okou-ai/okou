@@ -10,11 +10,15 @@ public struct ChatConnectorAccount: Decodable, Equatable, Sendable, Identifiable
   public let externalId: String?
   public let connectionStatus: String
   public let reconnectReason: String?
-  public let setupStatus: String
+  // API retains this field until #42323; the prepared reader also accepts the
+  // canonical response. Remove the legacy check after the old API is retired.
+  public let setupStatus: String?
   public var label: String {
     displayName ?? externalEmail ?? externalUsername ?? externalId ?? "Account"
   }
-  public var ready: Bool { connectionStatus == "connected" && setupStatus == "complete" }
+  public var ready: Bool {
+    connectionStatus == "connected" && (setupStatus == nil || setupStatus == "complete")
+  }
 }
 
 public struct ChatConnectorMethod: Decodable, Equatable, Sendable, Identifiable {
