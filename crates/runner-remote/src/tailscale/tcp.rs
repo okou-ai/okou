@@ -2,6 +2,9 @@
 //! This owner is polled by the native resource domain; SDK sockets/channels never
 //! escape into the caller runtime. Retiring it destroys all its private queues.
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     collections::VecDeque,
     future::Future,
@@ -190,12 +193,7 @@ impl Connection {
             self.retire();
             return Err(Failure::Cancelled);
         }
-        let packets: Vec<PacketMut> = self
-            .device
-            .outgoing
-            .drain(..)
-            .map(|bytes| PacketMut::from(bytes.as_slice()))
-            .collect();
+        let packets: Vec<PacketMut> = self.device.outgoing.drain(..).collect();
         if self.trace.enabled() {
             for packet in &packets {
                 self.trace.tcp_packet(packet.as_ref(), false);
@@ -343,10 +341,10 @@ fn closed() -> io::Error {
 #[derive(Default)]
 struct Device {
     incoming: VecDeque<PacketMut>,
-    outgoing: VecDeque<Vec<u8>>,
+    outgoing: VecDeque<PacketMut>,
 }
 struct Receive(PacketMut);
-struct Transmit<'a>(&'a mut VecDeque<Vec<u8>>);
+struct Transmit<'a>(&'a mut VecDeque<PacketMut>);
 
 impl smoltcp::phy::RxToken for Receive {
     fn consume<R, F: FnOnce(&[u8]) -> R>(self, function: F) -> R {
@@ -361,9 +359,9 @@ impl smoltcp::phy::TxToken for Transmit<'_> {
             length <= MTU && self.0.len() < FRAME_CAPACITY,
             "native frame bound"
         );
-        let mut bytes = vec![0; length];
-        let result = function(&mut bytes);
-        self.0.push_back(bytes);
+        let mut packet = PacketMut::new(length);
+        let result = function(packet.as_mut());
+        self.0.push_back(packet);
         result
     }
 }

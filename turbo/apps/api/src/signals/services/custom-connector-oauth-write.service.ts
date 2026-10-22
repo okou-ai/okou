@@ -2,7 +2,81 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
-import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, exists, or, sql, type SQL } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+
+export interface CustomConnectorOAuthConnectionReadIdentity {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly customConnectorId: string;
+  readonly memberConnectorId: string;
+  readonly storageVersion: number;
+  readonly definitionAuthMode: "oauth" | "automatic";
+}
+
+export function customConnectorOAuthConnectionReadPlan(
+  args: CustomConnectorOAuthConnectionReadIdentity,
+) {
+  return {
+    columns: {
+      id: connectors.id,
+      tokenExpiresAt: connectors.tokenExpiresAt,
+      needsReconnect: connectors.needsReconnect,
+      oauthScopes: connectors.oauthScopes,
+      externalId: connectors.externalId,
+      externalUsername: connectors.externalUsername,
+      externalEmail: connectors.externalEmail,
+    },
+    condition: and(
+      eq(connectors.id, args.memberConnectorId),
+      eq(connectors.customConnectorId, args.customConnectorId),
+      eq(connectors.orgId, args.orgId),
+      eq(connectors.userId, args.userId),
+      eq(connectors.authMethod, "oauth"),
+      eq(connectors.storageVersion, args.storageVersion),
+      exists(
+        new QueryBuilder()
+          .select({ id: orgCustomConnectors.id })
+          .from(orgCustomConnectors)
+          .where(
+            and(
+              eq(orgCustomConnectors.id, args.customConnectorId),
+              eq(orgCustomConnectors.orgId, args.orgId),
+              eq(orgCustomConnectors.authMode, args.definitionAuthMode),
+              eq(orgCustomConnectors.storageVersion, args.storageVersion),
+            ),
+          ),
+      ),
+    ),
+  };
+}
+
+export function customConnectorOAuthConnectionTokenReadPlan(
+  args: CustomConnectorOAuthConnectionReadIdentity,
+  connectionId: string,
+) {
+  return {
+    columns: {
+      secretName: secrets.name,
+      encryptedValue: secrets.encryptedValue,
+    },
+    accountJoin: eq(connectors.id, secrets.connectorId),
+    definitionJoin: and(
+      eq(orgCustomConnectors.id, connectors.customConnectorId),
+      eq(orgCustomConnectors.orgId, connectors.orgId),
+      eq(orgCustomConnectors.authMode, args.definitionAuthMode),
+      eq(orgCustomConnectors.storageVersion, args.storageVersion),
+    ),
+    condition: and(
+      eq(connectors.id, connectionId),
+      eq(connectors.customConnectorId, args.customConnectorId),
+      eq(connectors.orgId, args.orgId),
+      eq(connectors.userId, args.userId),
+      eq(connectors.authMethod, "oauth"),
+      eq(connectors.storageVersion, args.storageVersion),
+    ),
+  };
+}
 
 interface ConnectorIdentity {
   readonly connectorId: string;

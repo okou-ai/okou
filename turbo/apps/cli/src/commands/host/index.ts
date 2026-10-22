@@ -14,6 +14,15 @@ import { versionsHostedSiteCommand } from "./versions";
 import { screenshotHostedSiteCommand } from "./screenshot";
 import { completeHostedSiteCommand } from "./complete";
 import { titleHostedSiteCommand } from "./title";
+import {
+  createArtifactVisibilityOption,
+  type ArtifactVisibility,
+} from "../shared/artifact-visibility";
+import {
+  assertHostedSiteVisibilityEnabled,
+  hostedSiteVisibilityEnabled,
+  hostedSiteVisibilityInstructions,
+} from "../../lib/host/visibility";
 
 interface HostOptions {
   readonly site?: string;
@@ -23,6 +32,7 @@ interface HostOptions {
   readonly spa?: boolean;
   readonly json?: boolean;
   readonly preview?: string;
+  readonly visibility?: ArtifactVisibility;
 }
 
 function parseArtifactKind(value: string): HostedArtifactKind {
@@ -35,41 +45,44 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const hostCommand = new Command()
-  .name("host")
-  .description(
-    "Publish, redeploy, inspect, clone, and delete static hosted sites",
-  )
-  .argument("<dir>", "Static build directory, for example ./dist")
-  .option(
-    "--site <slug>",
-    "Preferred site slug; collisions get an automatic suffix",
-  )
-  .option("--slug-suffix <suffix>", "Site URL suffix for legacy API servers")
-  .option(
-    "--title <text>",
-    "Initial display title (required); redeploys keep the saved title",
-  )
-  .option(
-    "--artifact-kind <kind>",
-    "Artifact kind to record for this hosted deployment",
-    parseArtifactKind,
-  )
-  .option("--spa", "Serve unknown HTML navigation paths from index.html")
-  .option(
-    "--preview <image>",
-    "PNG/JPEG artifact cover outside the hosted directory (up to 5 MiB)",
-  )
-  .option("--json", "Output the result and Markdown return forms as JSON")
-  .addCommand(cloneHostedSiteCommand)
-  .addCommand(versionsHostedSiteCommand)
-  .addCommand(deleteHostedSiteCommand)
-  .addCommand(screenshotHostedSiteCommand)
-  .addCommand(completeHostedSiteCommand)
-  .addCommand(titleHostedSiteCommand)
-  .addHelpText(
-    "after",
-    `
+export function createHostCommand(): Command {
+  return new Command()
+    .name("host")
+    .description(
+      "Publish, redeploy, inspect, clone, and delete static hosted sites",
+    )
+    .argument("<dir>", "Static build directory, for example ./dist")
+    .option(
+      "--site <slug>",
+      "Preferred site slug; collisions get an automatic suffix",
+    )
+    .option("--slug-suffix <suffix>", "Site URL suffix for legacy API servers")
+    .option(
+      "--title <text>",
+      "Initial display title (required); redeploys keep the saved title",
+    )
+    .option(
+      "--artifact-kind <kind>",
+      "Artifact kind to record for this hosted deployment",
+      parseArtifactKind,
+    )
+    .option("--spa", "Serve unknown HTML navigation paths from index.html")
+    .option(
+      "--preview <image>",
+      "PNG/JPEG artifact cover outside the hosted directory (up to 5 MiB)",
+    )
+    .option("--json", "Output the result and Markdown return forms as JSON")
+    .addOption(
+      createArtifactVisibilityOption().hideHelp(!hostedSiteVisibilityEnabled()),
+    )
+    .addCommand(cloneHostedSiteCommand)
+    .addCommand(versionsHostedSiteCommand)
+    .addCommand(deleteHostedSiteCommand)
+    .addCommand(screenshotHostedSiteCommand)
+    .addCommand(completeHostedSiteCommand)
+    .addCommand(titleHostedSiteCommand)
+    .addHelpText("after", () => {
+      return `
 Examples:
   Capture a cover:      okou host screenshot ./dist --out ./preview.png --spa
   Publish with cover:   okou host ./dist --site my-product-demo --title "Product demo" --spa --preview ./preview.png
@@ -91,7 +104,7 @@ Notes:
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
-  - Hosted sites are public: anyone with the returned URL can open them
+  - ${hostedSiteVisibilityInstructions()}
   - Reusing --site redeploys that site when you created it: the hosted URL stays the same and serves the new version
   - okou host delete takes a site and all of its versions offline; redeploying the same --site restores it as a new version
   - A name owned by another chat or another user is rejected; choose a different --site value
@@ -99,73 +112,83 @@ Notes:
   - A published non-HTML path keeps its bytes forever. Rename a changed asset with its new content hash instead of republishing the same name
   - Use the returned Site slug with versions or clone to inspect a publication
   - The directory must include index.html
-  - Local HTML/CSS asset references must point at files inside the directory`,
-  )
-  .action(
-    withErrorHandler(async (dir: string, options: HostOptions) => {
-      if (!options.site) {
-        throw new Error("--site is required when publishing a hosted site");
-      }
-      if (!options.title?.trim()) {
-        throw new Error(
-          "--title is required when publishing a hosted site; use a human-readable display name",
+  - Local HTML/CSS asset references must point at files inside the directory`;
+    })
+    .action(
+      withErrorHandler(async (dir: string, options: HostOptions) => {
+        if (options.visibility !== undefined) {
+          assertHostedSiteVisibilityEnabled();
+        }
+        if (!options.site) {
+          throw new Error("--site is required when publishing a hosted site");
+        }
+        if (!options.title?.trim()) {
+          throw new Error(
+            "--title is required when publishing a hosted site; use a human-readable display name",
+          );
+        }
+        const title = hostedSiteTitleSchema.parse(options.title);
+        const result = await publishStaticSite({
+          dir,
+          site: options.site,
+          title,
+          slugSuffix: options.slugSuffix,
+          artifactKind: options.artifactKind,
+          spaFallback: Boolean(options.spa),
+          preview: options.preview,
+          visibility: options.visibility,
+          onProgress: options.json
+            ? undefined
+            : (progress) => {
+                if (progress.phase === "preparing") {
+                  console.log(
+                    chalk.dim(`Preparing ${progress.fileCount} files...`),
+                  );
+                  return;
+                }
+                console.log(chalk.dim(`Uploading ${progress.path}`));
+              },
+        });
+
+        const presentation = createArtifactPresentation(
+          result.title,
+          result.aliasUrl ?? result.url,
         );
-      }
-      const title = hostedSiteTitleSchema.parse(options.title);
-      const result = await publishStaticSite({
-        dir,
-        site: options.site,
-        title,
-        slugSuffix: options.slugSuffix,
-        artifactKind: options.artifactKind,
-        spaFallback: Boolean(options.spa),
-        preview: options.preview,
-        onProgress: options.json
-          ? undefined
-          : (progress) => {
-              if (progress.phase === "preparing") {
-                console.log(
-                  chalk.dim(`Preparing ${progress.fileCount} files...`),
-                );
-                return;
-              }
-              console.log(chalk.dim(`Uploading ${progress.path}`));
-            },
-      });
+        if (options.json) {
+          console.log(JSON.stringify({ ...result, ...presentation.json }));
+          return;
+        }
 
-      const presentation = createArtifactPresentation(
-        result.title,
-        result.aliasUrl ?? result.url,
-      );
-      if (options.json) {
-        console.log(JSON.stringify({ ...result, ...presentation.json }));
-        return;
-      }
+        console.log(chalk.green("✓ Hosted site deployed"));
+        console.log(chalk.dim(`  Title: ${result.title}`));
+        console.log(chalk.dim(`  Site: ${result.publicSlug}`));
+        if (result.visibility) {
+          console.log(chalk.dim(`  Visibility: ${result.visibility}`));
+        }
+        if (result.deploymentVersion !== undefined) {
+          console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
+        }
+        if (result.artifactUrl) {
+          console.log(`  Artifact: ${result.artifactUrl}`);
+        }
+        if (result.aliasUrl) {
+          const target =
+            result.isActive === false &&
+            result.activeDeploymentVersion !== undefined
+              ? `remains on v${result.activeDeploymentVersion}`
+              : `v${result.deploymentVersion ?? "?"}`;
+          console.log(`  Alias: ${result.aliasUrl} → ${target}`);
+        }
+        console.log(chalk.dim(`  Deployment: ${result.deploymentId}`));
+        console.log(chalk.dim(`  Files: ${result.fileCount.toLocaleString()}`));
+        console.log(chalk.dim(`  Size: ${formatBytes(result.size)}`));
+        if (!result.aliasUrl) {
+          console.log(`  URL: ${result.url}`);
+        }
+        console.log("");
+        console.log(presentation.text);
+      }),
+    );
+}
 
-      console.log(chalk.green("✓ Hosted site deployed"));
-      console.log(chalk.dim(`  Title: ${result.title}`));
-      console.log(chalk.dim(`  Site: ${result.publicSlug}`));
-      if (result.deploymentVersion !== undefined) {
-        console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
-      }
-      if (result.artifactUrl) {
-        console.log(`  Artifact: ${result.artifactUrl}`);
-      }
-      if (result.aliasUrl) {
-        const target =
-          result.isActive === false &&
-          result.activeDeploymentVersion !== undefined
-            ? `remains on v${result.activeDeploymentVersion}`
-            : `v${result.deploymentVersion ?? "?"}`;
-        console.log(`  Alias: ${result.aliasUrl} → ${target}`);
-      }
-      console.log(chalk.dim(`  Deployment: ${result.deploymentId}`));
-      console.log(chalk.dim(`  Files: ${result.fileCount.toLocaleString()}`));
-      console.log(chalk.dim(`  Size: ${formatBytes(result.size)}`));
-      if (!result.aliasUrl) {
-        console.log(`  URL: ${result.url}`);
-      }
-      console.log("");
-      console.log(presentation.text);
-    }),
-  );
+export const hostCommand = createHostCommand();

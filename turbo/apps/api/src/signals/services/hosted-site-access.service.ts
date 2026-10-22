@@ -4,6 +4,7 @@ import { and, eq, exists, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type {
   HostedSiteAccessDecision,
+  HostedSiteVisibility,
   hostedSiteVisibilitySchema,
 } from "@okouai/api-contracts/contracts/hosted-site-access";
 import {
@@ -20,6 +21,8 @@ type Owner = {
   readonly userId: string;
   readonly orgId: string;
   readonly siteId: string;
+  /** Publication preparation establishes the policy before serving any bytes. */
+  readonly preparing?: boolean;
 };
 
 export const readHostedSitePolicy$ = command(
@@ -122,12 +125,14 @@ export const getHostedSiteVisibility$ = command(
       .where(
         and(
           manageableSiteCondition(owner),
-          exists(
-            get(db$)
-              .select({ id: hostedDeployments.id })
-              .from(hostedDeployments)
-              .where(publishedDeployment()),
-          ),
+          owner.preparing
+            ? undefined
+            : exists(
+                get(db$)
+                  .select({ id: hostedDeployments.id })
+                  .from(hostedDeployments)
+                  .where(publishedDeployment()),
+              ),
         ),
       )
       .limit(1);
@@ -177,12 +182,14 @@ export const updateHostedSiteVisibility$ = command(
           .where(
             and(
               manageableSiteCondition(args),
-              exists(
-                database
-                  .select({ id: hostedDeployments.id })
-                  .from(hostedDeployments)
-                  .where(publishedDeployment()),
-              ),
+              args.preparing
+                ? undefined
+                : exists(
+                    database
+                      .select({ id: hostedDeployments.id })
+                      .from(hostedDeployments)
+                      .where(publishedDeployment()),
+                  ),
               args.expectedRevision === null
                 ? undefined
                 : exists(
@@ -215,5 +222,45 @@ export const updateHostedSiteVisibility$ = command(
     return changed
       ? { status: "ok" as const, body: changed }
       : { status: "conflict" as const };
+  },
+);
+
+export const prepareHostedSiteVisibility$ = command(
+  async (
+    { set },
+    args: Owner & {
+      readonly visibility?: HostedSiteVisibility;
+      readonly unpublished: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    const owner = { ...args, preparing: true };
+    const current = await set(getHostedSiteVisibility$, owner, signal);
+    if (!current) {
+      throw new Error("Allocated hosted site is no longer available");
+    }
+    if (
+      args.visibility === undefined &&
+      (!args.unpublished || current.revision !== null)
+    ) {
+      return { status: "ok" as const, visibility: current.visibility };
+    }
+    const updated = await set(
+      updateHostedSiteVisibility$,
+      {
+        ...owner,
+        visibility: args.visibility ?? "private",
+        expectedRevision: current.revision,
+      },
+      signal,
+    );
+    if (updated.status !== "ok") {
+      return {
+        status: "conflict" as const,
+        message:
+          "Website visibility changed; retry publishing after checking its current policy",
+      };
+    }
+    return { status: "ok" as const, visibility: updated.body.visibility };
   },
 );

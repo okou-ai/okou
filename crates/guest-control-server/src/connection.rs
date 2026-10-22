@@ -965,6 +965,29 @@ pub fn handle_connection_with_test_dns_readiness_program(
     )
 }
 
+/// Handles a test DNS readiness executable with a gate before its timeout.
+///
+/// Use a zero-capacity channel. Receiving the owned child's PID starts the timer;
+/// receive or drop the receiver before joining the connection so assertion-failure
+/// cleanup can proceed.
+#[doc(hidden)]
+pub fn handle_connection_with_test_dns_readiness_timeout_gate(
+    stream: UnixStream,
+    program: std::path::PathBuf,
+    timeout_gate: std::sync::mpsc::SyncSender<u32>,
+) -> io::Result<()> {
+    handle_connection_with_mode_and_program(
+        stream,
+        ProcessContainmentMode::TestNoop,
+        EXEC_OUTPUT_DRAIN_DEADLINE,
+        ConnectionPrograms {
+            guest_dns_readiness: GuestDnsReadinessProgram::for_test_timeout(program, timeout_gate),
+            ..ConnectionPrograms::production()
+        },
+        MeminfoSource::production(),
+    )
+}
+
 /// Handles a host-side test connection with a test storage helper executable.
 #[doc(hidden)]
 pub fn handle_connection_with_test_storage_manifest_program(

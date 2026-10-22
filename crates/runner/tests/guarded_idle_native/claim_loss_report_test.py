@@ -52,7 +52,7 @@ class ClaimLossReportTests(unittest.TestCase):
                     "send_joined":True, "completed_ns":at(end)}
             request = {"path":f"/api/runners/jobs/{run}/claim", "received_ns":at(6),
                 "body":{"runnerIdentity":{"runnerId":runner, "heartbeatGeneration":1},
-                    "capabilities":{"piModelConfigGenerations":[1,2,3]}, "nativeContinuationSupported":True,
+                    "capabilities":{"piModelConfigGenerations":[1,2,3]},
                     "telemetry":{"jobDiscoveredToClaimRequestMs":1}}}
             zero = dict.fromkeys(cleanup.COUNTS,0) | {"closed":False}
             active = zero | {"registered_operations":1, "started":1, "tracked_tasks":1,

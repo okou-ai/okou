@@ -564,6 +564,8 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 20
     env:
+      # Match nested cargo build mock fixtures to the enclosing test build.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
       # Merge concurrent cases into a bounded pool per executable build ID.
       LLVM_PROFILE_FILE_NAME: crates-%b-%8m.profraw

@@ -13,9 +13,10 @@ import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { and, eq, isNull } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import { command } from "ccstate";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   builtinConnectorCredentialConnectionReadPlan,
   builtinConnectorCredentialConnectionFromRow,
@@ -161,7 +162,7 @@ interface StripeAutomationProjectionArgs {
 }
 
 function stripeAutomationProjectionTarget(
-  args: StripeAutomationProjectionArgs,
+  args: Pick<StripeAutomationProjectionArgs, "automation" | "onlyIfUnbound">,
 ) {
   return and(
     eq(workflowAutomations.id, args.automation.id),
@@ -171,7 +172,9 @@ function stripeAutomationProjectionTarget(
   );
 }
 
-function stripeAutomationConnectorInput(args: StripeAutomationProjectionArgs) {
+function stripeAutomationConnectorInput(
+  args: Pick<StripeAutomationProjectionArgs, "orgId" | "userId" | "automation">,
+) {
   return {
     orgId: args.orgId,
     userId: args.userId,
@@ -462,135 +465,151 @@ function stripeLiveReadyResult(
   return { kind: "ok", connection, stripeAccountId };
 }
 
-export async function reprojectStripeInvoicePaidAutomationsForOwner(
-  db: Db,
+/** Pure subqueries retain Drizzle column decoders; owners execute every read. */
+export function stripeAccountAutomationsReadPlan(
   args: StripeAutomationOwnerArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const automations = await db
-    .select(stripeAutomationOwnerColumns())
-    .from(workflowAutomations)
-    .where(stripeAutomationOwnerCondition(args));
-  signal.throwIfAborted();
-  const readinessByConnectorId = new Map<
-    string,
-    StripeInvoicePaidAutomationReadinessResult
-  >();
-  for (const automation of automations) {
-    const itemDb = db;
-    const item = { ...args, automation, readinessByConnectorId };
-    const itemSignal = signal;
-    await (async (): Promise<void> => {
-      const target = stripeAutomationProjectionTarget(item);
-      const selectionDb = itemDb;
-      const selectionInput = stripeAutomationConnectorInput(item);
-      const connectorId = await (async (): Promise<string | null> => {
-        const [selection] = await selectionDb
-          .select({ connectorId: chatThreadConnectorSelections.connectorId })
-          .from(workflowUserAutomationThreads)
-          .innerJoin(
-            chatThreadConnectorSelections,
-            stripeAutomationSelectionJoin(selectionInput),
-          )
-          .where(stripeAutomationSelectionThreadCondition(selectionInput))
-          .limit(1);
-        if (selection) {
-          return selection.connectorId;
-        }
-        const [defaultAccount] = await selectionDb
-          .select({ connectorId: connectors.id })
-          .from(connectors)
-          .where(stripeAutomationDefaultAccountCondition(selectionInput))
-          .limit(1);
-        return defaultAccount?.connectorId ?? null;
-      })();
-      itemSignal.throwIfAborted();
+) {
+  return {
+    from: workflowAutomations,
+    cache: new Map<string, StripeInvoicePaidAutomationReadinessResult>(),
+    query: new QueryBuilder()
+      .select(stripeAutomationOwnerColumns())
+      .from(workflowAutomations)
+      .where(stripeAutomationOwnerCondition(args))
+      .as("stripe_owner_automations"),
+  };
+}
 
-      if (connectorId === null) {
-        if (item.automation.eventConnectorId !== null) {
-          await itemDb
-            .update(workflowAutomations)
-            .set({ eventConnectorId: null })
-            .where(target);
-        }
-        return;
-      }
+export function stripeAccountAutomationSelectionPlan(
+  args: StripeAutomationOwnerArgs,
+  automation: StripeAutomationProjectionRow,
+) {
+  const item = { ...args, automation };
+  const input = stripeAutomationConnectorInput(item);
+  return {
+    selected: new QueryBuilder()
+      .select({ connectorId: chatThreadConnectorSelections.connectorId })
+      .from(workflowUserAutomationThreads)
+      .innerJoin(
+        chatThreadConnectorSelections,
+        stripeAutomationSelectionJoin(input),
+      )
+      .where(stripeAutomationSelectionThreadCondition(input))
+      .limit(1)
+      .as("stripe_selection"),
+    defaultAccount: new QueryBuilder()
+      .select({ connectorId: connectors.id })
+      .from(connectors)
+      .where(stripeAutomationDefaultAccountCondition(input))
+      .limit(1)
+      .as("stripe_default"),
+    target: stripeAutomationProjectionTarget(item),
+  };
+}
 
-      let readiness = item.readinessByConnectorId.get(connectorId);
-      if (readiness === undefined) {
-        const ready = await (async (
-          readSignal: AbortSignal,
-        ): Promise<ReadyStripeConnectionResult> => {
-          const catalogDb = itemDb;
-          const input = stripeReadinessInput(item, connectorId);
-          const catalogPlan = stripeAutomationCatalogPlan();
-          const snapshot = connectorRuntimeAuthSelectionFromRows(
-            await catalogDb
-              .select(catalogPlan.columns)
-              .from(connectorCatalog)
-              .leftJoin(connectorCatalogEntries, catalogPlan.join)
-              .where(connectorCatalogCurrentWhere()),
-            catalogPlan.requestedConnectorSlugs,
-            catalogPlan.firewallConnectorSlugs,
-          );
-          readSignal.throwIfAborted();
-          const connectionInput = stripeConnectionInput(snapshot, input);
-          const connectionPlan =
-            builtinConnectorCredentialConnectionReadPlan(connectionInput);
-          const loaded = builtinConnectorCredentialConnectionFromRow(
-            connectionInput,
-            (
-              await catalogDb
-                .select(connectionPlan.columns)
-                .from(connectors)
-                .where(connectionPlan.condition)
-                .limit(1)
-            )[0],
-          );
-          readSignal.throwIfAborted();
-          const ready = stripeConnectionReadiness(loaded, input.missingMessage);
-          if (ready.kind === "bad_request") {
-            return ready;
-          }
-          const { connection, stripeAccountId } = ready;
-          const valuesInput = stripeValuesInput(connection);
-          const valuesPlan =
-            builtinConnectorCredentialValuesReadPlan(valuesInput);
-          const values =
-            valuesPlan === null
-              ? new Map<string, string>()
-              : await builtinConnectorCredentialValuesFromRows(
-                  valuesInput,
-                  await catalogDb
-                    .select(valuesPlan.secretColumns)
-                    .from(secrets)
-                    .where(valuesPlan.secretCondition)
-                    .unionAll(
-                      catalogDb
-                        .select(valuesPlan.variableColumns)
-                        .from(variables)
-                        .where(valuesPlan.variableCondition),
-                    ),
-                );
-          readSignal.throwIfAborted();
-          const livemode = values.get(STRIPE_LIVEMODE_VALUE_REF);
-          return stripeLiveReadyResult(livemode, connection, stripeAccountId);
-        })(itemSignal);
-        readiness = stripeAutomationReadinessFromConnection(ready);
-        item.readinessByConnectorId.set(connectorId, readiness);
-      }
+export function stripeAccountCatalogReadPlan() {
+  return {
+    ...stripeAutomationCatalogPlan(),
+    from: connectorCatalog,
+    joinTable: connectorCatalogEntries,
+    where: connectorCatalogCurrentWhere(),
+  };
+}
 
-      const update = stripeAutomationProjectionUpdate(
-        item.automation,
-        connectorId,
-        readiness,
-      );
-      if (update !== null) {
-        await itemDb.update(workflowAutomations).set(update).where(target);
-      }
-    })();
-    signal.throwIfAborted();
+export function stripeAccountConnectionReadPlan(
+  args: StripeAutomationOwnerArgs,
+  connectorId: string,
+  rows: Parameters<typeof connectorRuntimeAuthSelectionFromRows>[0],
+) {
+  const catalogPlan = stripeAutomationCatalogPlan();
+  const snapshot = connectorRuntimeAuthSelectionFromRows(
+    rows,
+    catalogPlan.requestedConnectorSlugs,
+    catalogPlan.firewallConnectorSlugs,
+  );
+  const input = stripeConnectionInput(
+    snapshot,
+    stripeReadinessInput(args, connectorId),
+  );
+  const plan = builtinConnectorCredentialConnectionReadPlan(input);
+  return {
+    input,
+    query: new QueryBuilder()
+      .select({
+        ...plan.columns,
+        stateRevision: plan.columns.stateRevision.as("state_revision"),
+      })
+      .from(connectors)
+      .where(plan.condition)
+      .limit(1)
+      .as("stripe_connection"),
+  };
+}
+
+export function stripeAccountReadiness(
+  input: ReturnType<typeof stripeAccountConnectionReadPlan>["input"],
+  row: Parameters<typeof builtinConnectorCredentialConnectionFromRow>[1],
+) {
+  return stripeConnectionReadiness(
+    builtinConnectorCredentialConnectionFromRow(input, row),
+    STRIPE_SELECTION_CHANGED_MESSAGE,
+  );
+}
+
+export function stripeAccountLiveModeReadPlan(
+  connection: BuiltinConnectorCredentialConnection,
+) {
+  const input = stripeValuesInput(connection);
+  const plan = builtinConnectorCredentialValuesReadPlan(input);
+  // This plan always requests the one named Live-mode variable, so it is nonempty.
+  if (plan === null) {
+    throw new Error("Expected Stripe Live-mode variable query");
   }
+  return {
+    input,
+    query: new QueryBuilder()
+      .select(plan.secretColumns)
+      .from(secrets)
+      .where(plan.secretCondition)
+      .unionAll(
+        new QueryBuilder()
+          .select(plan.variableColumns)
+          .from(variables)
+          .where(plan.variableCondition),
+      )
+      .as("stripe_live_mode"),
+  };
+}
+
+export function stripeAccountProjectionUpdate(
+  automation: StripeAutomationProjectionRow,
+  connectorId: string | null,
+  readiness: StripeInvoicePaidAutomationReadinessResult | undefined,
+) {
+  if (connectorId === null) {
+    return automation.eventConnectorId === null
+      ? null
+      : { eventConnectorId: null };
+  }
+  if (readiness === undefined) {
+    throw new Error("Expected Stripe account readiness before projection");
+  }
+  return stripeAutomationProjectionUpdate(automation, connectorId, readiness);
+}
+
+export function stripeAccountProjectionReadiness(
+  ready: ReadyStripeConnectionResult,
+  values: ReadonlyMap<string, string>,
+): StripeInvoicePaidAutomationReadinessResult {
+  return stripeAutomationReadinessFromConnection(
+    ready.kind === "bad_request"
+      ? ready
+      : stripeLiveReadyResult(
+          values.get(STRIPE_LIVEMODE_VALUE_REF),
+          ready.connection,
+          ready.stripeAccountId,
+        ),
+  );
 }
 
 export const repairMissingStripeInvoicePaidAutomationProjection$ = command(

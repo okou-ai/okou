@@ -6,6 +6,11 @@ import { completeHostedSite, prepareHostedSite } from "../api/domains/host";
 import { ApiRequestError } from "../api/core/client-factory";
 import { readStaticSiteFile, scanStaticSite } from "./static-site";
 import { bundleFingerprint, readHostedPreview } from "./preview";
+import {
+  hostedSiteAudiences,
+  acknowledgeHostedSiteVisibility,
+  type HostedSiteCliVisibility,
+} from "./visibility";
 
 interface PublishStaticSiteProgress {
   readonly phase: "preparing" | "uploading";
@@ -14,6 +19,7 @@ interface PublishStaticSiteProgress {
 }
 
 interface PublishStaticSiteResult {
+  readonly visibility?: HostedSiteCliVisibility;
   readonly title: string;
   readonly siteId: string;
   readonly deploymentId: string;
@@ -30,6 +36,7 @@ interface PublishStaticSiteResult {
 }
 
 interface PublishStaticSiteOptions {
+  readonly visibility?: HostedSiteCliVisibility;
   readonly dir: string;
   readonly site: string;
   readonly title: string;
@@ -83,6 +90,9 @@ export async function publishStaticSite(
   const prepared = await prepareHostedSite({
     site: options.site,
     title: options.title,
+    ...(options.visibility === undefined
+      ? {}
+      : { visibility: hostedSiteAudiences[options.visibility] }),
     ...(options.slugSuffix !== undefined && { slugSuffix: options.slugSuffix }),
     artifactKind,
     spaFallback: Boolean(options.spaFallback),
@@ -109,6 +119,11 @@ export async function publishStaticSite(
       "The API did not acknowledge the supplied preview; no files were uploaded or activated",
     );
   }
+
+  const visibility = acknowledgeHostedSiteVisibility(
+    options.visibility,
+    prepared.visibility,
+  );
 
   const uploadByPath = new Map(
     prepared.uploads.map((upload) => {
@@ -156,6 +171,7 @@ export async function publishStaticSite(
   return {
     ...publicationResult(completed, scan.files.length, totalSize),
     title: prepared.title,
+    ...visibility,
   };
 }
 

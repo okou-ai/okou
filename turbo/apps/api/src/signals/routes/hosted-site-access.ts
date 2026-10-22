@@ -47,9 +47,12 @@ const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
     auth.userId,
     signal,
   );
-  return isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)
-    ? null
-    : resourceUnavailable("Website visibility management is not available");
+  if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)) {
+    return resourceUnavailable(
+      "Website visibility management is not available",
+    );
+  }
+  return null;
 });
 
 const read$ = command(async ({ get, set }, signal: AbortSignal) => {

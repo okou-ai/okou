@@ -202,10 +202,6 @@ impl GuestPaths {
         &self.pi_launch_payload_file
     }
 
-    /// Return the private `pi-deferred-handoff/payload.json` path.
-    ///
-    /// The guest writes authenticated handoff bytes here before spawning a
-    /// deferred Pi CLI. The accessor only returns the captured path.
     /// Return the `logs/system.log` path.
     ///
     /// This stream contains structured guest system-log text, one line per

@@ -8,6 +8,17 @@ explicit allow/deny and retirement controls for isolated test producers. Its
 qualification does not establish actual Guest/helper execution or any native
 transition, saving, lease or cleanup-IO acceptance below.
 
+Explicit `directory=True` / probe-and-reader `--directory` additionally controls
+the exact original directory inode using mark mask FAN_OPEN_PERM|FAN_ONDIR,
+without child or mount marks. Returned classic FD events remain exactly
+FAN_OPEN_PERM, with directory type/inode verified on the actual descriptors.
+Its distinct strict record binds configured mark and original directory/child data,
+actual process results and completed retirement. Existing file defaults and
+records remain unchanged. This Host capability does not establish Guest support
+or canonical final preparation: that helper requires a sole exec operation,
+while the current ordinary-exec controller occupies another operation. Genuine
+compatible control ownership and all semantic Runner matrices remain required.
+
 [Cancellation-independent Guest control](GUEST_PERMISSION_CONTROL.md) adds a
 dedicated test vsock owner and an opt-in canonical-helper allow/deny fixture.
 It qualifies actual Guest capability and joined wire/controller completion;

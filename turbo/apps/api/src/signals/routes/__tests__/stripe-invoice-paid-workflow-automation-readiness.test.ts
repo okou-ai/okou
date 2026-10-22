@@ -466,6 +466,23 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
       initial.connector.id,
     );
 
+    authenticate(scenario);
+    const projected = await accept(
+      automationsClient().get({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(projected.body).toMatchObject({
+      enabled: false,
+      eventConfig: {
+        connectorId: replacement.id,
+        stripeAccountId: "acct_different_workflow",
+        mode: "live",
+      },
+    });
+
     const enabled = await accept(
       enableStripeAutomationRequest(scenario, created.body.id),
       [200],

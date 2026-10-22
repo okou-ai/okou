@@ -1,3 +1,15 @@
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { builtinConnectorCredentialValuesFromRows } from "./builtin-connector-credential-runtime.service";
+import {
+  stripeAccountAutomationsReadPlan,
+  stripeAccountAutomationSelectionPlan,
+  stripeAccountCatalogReadPlan,
+  stripeAccountConnectionReadPlan,
+  stripeAccountReadiness,
+  stripeAccountLiveModeReadPlan,
+  stripeAccountProjectionReadiness,
+  stripeAccountProjectionUpdate,
+} from "./stripe-invoice-paid-workflow-automation.service";
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
@@ -443,14 +455,73 @@ export function selectionParentMissing(
   }
 }
 
-export const updateChatThreadConnectorSelection$ = command(
+function updatedThreadSelectionPlan(
+  chatThreadId: string,
+  selection: PreparedChatThreadConnectorSelection,
+) {
+  const query = new QueryBuilder();
+  const account = query
+    .$with("selected_connector_account")
+    .as(
+      query
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(eq(connectors.id, selection.connectionId)),
+    );
+  const target = targetColumns(selection.target);
+  return {
+    account,
+    source: sql`SELECT ${chatThreadId}::uuid, ${account.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid FROM ${account}`,
+    conflict: {
+      target:
+        selection.target.kind === "builtin"
+          ? [
+              chatThreadConnectorSelections.chatThreadId,
+              chatThreadConnectorSelections.connectorSlug,
+            ]
+          : [
+              chatThreadConnectorSelections.chatThreadId,
+              chatThreadConnectorSelections.customConnectorId,
+            ],
+      targetWhere: isNotNull(
+        selection.target.kind === "builtin"
+          ? chatThreadConnectorSelections.connectorSlug
+          : chatThreadConnectorSelections.customConnectorId,
+      ),
+      set: { connectorId: selection.connectionId },
+    },
+  };
+}
+
+function failedThreadSelectionUpdate(
+  error: unknown,
+): UpdateChatThreadConnectorSelectionResult {
+  // Wait for the whole transaction to roll back before reporting a lost
+  // parent, including its selection change.
+  switch (selectionParentMissing(error)) {
+    case "thread": {
+      return { kind: "not_found" };
+    }
+    case "account": {
+      return {
+        kind: "invalid",
+        message: "Connector account does not match the requested target",
+      };
+    }
+    default: {
+      throw error;
+    }
+  }
+}
+
+const prepareUpdatedThreadSelection$ = command(
   async (
     { set },
     args: ChatThreadConnectorSelectionScope & {
       readonly selection: ConnectorAccountSelection;
     },
     signal: AbortSignal,
-  ): Promise<UpdateChatThreadConnectorSelectionResult> => {
+  ) => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const [thread] = await db
@@ -469,7 +540,7 @@ export const updateChatThreadConnectorSelection$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!thread?.agentId) {
-      return { kind: "not_found" };
+      return { kind: "not_found" as const };
     }
     const prepared = await set(
       prepareChatThreadConnectorSelections$,
@@ -481,7 +552,21 @@ export const updateChatThreadConnectorSelection$ = command(
       },
       signal,
     );
-    if (prepared.kind === "invalid") {
+    return prepared;
+  },
+);
+
+export const updateChatThreadConnectorSelection$ = command(
+  async (
+    { set },
+    args: ChatThreadConnectorSelectionScope & {
+      readonly selection: ConnectorAccountSelection;
+    },
+    signal: AbortSignal,
+  ): Promise<UpdateChatThreadConnectorSelectionResult> => {
+    const db = set(writeDb$);
+    const prepared = await set(prepareUpdatedThreadSelection$, args, signal);
+    if (prepared.kind === "invalid" || prepared.kind === "not_found") {
       return prepared;
     }
     const result = await settle(
@@ -495,67 +580,99 @@ export const updateChatThreadConnectorSelection$ = command(
           if (!selection) {
             throw new Error("Expected one prepared connector selection");
           }
-          const chatThreadId = args.chatThreadId;
-          const updated = await (async () => {
-            /**
-             * Insert only from an existing account. The ordinary foreign-key check either
-             * protects that reference until commit or rejects a concurrent parent delete;
-             * selectionParentMissing maps that rejection to an unavailable-account result.
-             * No empty account UPDATE is used to serialize the two requests.
-             */
-            const account = tx
-              .$with("selected_connector_account")
-              .as(
-                tx
-                  .select({ id: connectors.id })
-                  .from(connectors)
-                  .where(eq(connectors.id, selection.connectionId)),
-              );
-            const target = targetColumns(selection.target);
-            const insert = tx
-              .with(account)
-              .insert(chatThreadConnectorSelections)
-              .select(
-                sql`SELECT ${chatThreadId}::uuid, ${account.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid FROM ${account}`,
-              );
-            const [row] = await (
-              selection.target.kind === "builtin"
-                ? insert.onConflictDoUpdate({
-                    target: [
-                      chatThreadConnectorSelections.chatThreadId,
-                      chatThreadConnectorSelections.connectorSlug,
-                    ],
-                    targetWhere: isNotNull(
-                      chatThreadConnectorSelections.connectorSlug,
-                    ),
-                    set: { connectorId: selection.connectionId },
-                  })
-                : insert.onConflictDoUpdate({
-                    target: [
-                      chatThreadConnectorSelections.chatThreadId,
-                      chatThreadConnectorSelections.customConnectorId,
-                    ],
-                    targetWhere: isNotNull(
-                      chatThreadConnectorSelections.customConnectorId,
-                    ),
-                    set: { connectorId: selection.connectionId },
-                  })
-            ).returning({
+          // The account CTE and FK keep a concurrent account deletion outside this insert.
+          const insert = updatedThreadSelectionPlan(
+            args.chatThreadId,
+            selection,
+          );
+          const [row] = await tx
+            .with(insert.account)
+            .insert(chatThreadConnectorSelections)
+            .select(insert.source)
+            .onConflictDoUpdate(insert.conflict)
+            .returning({
               connectorId: chatThreadConnectorSelections.connectorId,
             });
-            return row ? selection : undefined;
-          })();
+          const updated = row ? selection : undefined;
           if (!updated) {
             return {
               kind: "invalid",
               message: "Connector account does not match the requested target",
             };
           }
-          await reprojectWorkflowAutomationsForOwner(
-            tx,
-            { ...args, target: selection.target },
-            signal,
-          );
+          const isStripe =
+            selection.target.kind === "builtin" &&
+            selection.target.connectorSlug === "stripe";
+          if (!isStripe) {
+            await reprojectWorkflowAutomationsForOwner(
+              tx,
+              { ...args, target: selection.target },
+              signal,
+            );
+          }
+          const scope = args;
+          const projection = stripeAccountAutomationsReadPlan(scope);
+          const automations = isStripe
+            ? await tx.select().from(projection.query)
+            : [];
+          if (isStripe) {
+            signal.throwIfAborted();
+          }
+          for (const automation of automations) {
+            const item = stripeAccountAutomationSelectionPlan(
+              scope,
+              automation,
+            );
+            let [selected] = await tx.select().from(item.selected);
+            if (!selected) {
+              [selected] = await tx.select().from(item.defaultAccount);
+            }
+            signal.throwIfAborted();
+            const connectorId = selected?.connectorId ?? null;
+            let readiness =
+              connectorId === null
+                ? undefined
+                : projection.cache.get(connectorId);
+            if (connectorId !== null && readiness === undefined) {
+              const catalog = stripeAccountCatalogReadPlan();
+              const rows = await tx
+                .select(catalog.columns)
+                .from(catalog.from)
+                .leftJoin(catalog.joinTable, catalog.join)
+                .where(catalog.where);
+              const account = stripeAccountConnectionReadPlan(
+                scope,
+                connectorId,
+                rows,
+              );
+              signal.throwIfAborted();
+              const [connection] = await tx.select().from(account.query);
+              const ready = stripeAccountReadiness(account.input, connection);
+              signal.throwIfAborted();
+              let values: ReadonlyMap<string, string> = new Map();
+              if (ready.kind === "ok") {
+                const liveMode = stripeAccountLiveModeReadPlan(
+                  ready.connection,
+                );
+                values = await builtinConnectorCredentialValuesFromRows(
+                  liveMode.input,
+                  await tx.select().from(liveMode.query),
+                );
+                signal.throwIfAborted();
+              }
+              readiness = stripeAccountProjectionReadiness(ready, values);
+              projection.cache.set(connectorId, readiness);
+            }
+            const update = stripeAccountProjectionUpdate(
+              automation,
+              connectorId,
+              readiness,
+            );
+            if (update !== null) {
+              await tx.update(projection.from).set(update).where(item.target);
+            }
+            signal.throwIfAborted();
+          }
           return {
             kind: "updated",
             selection: updated,
@@ -567,22 +684,7 @@ export const updateChatThreadConnectorSelection$ = command(
     if (result.ok) {
       return result.value;
     }
-    // Wait for the whole transaction to roll back before reporting a lost
-    // parent, including its selection change.
-    switch (selectionParentMissing(result.error)) {
-      case "thread": {
-        return { kind: "not_found" };
-      }
-      case "account": {
-        return {
-          kind: "invalid",
-          message: "Connector account does not match the requested target",
-        };
-      }
-      default: {
-        throw result.error;
-      }
-    }
+    return failedThreadSelectionUpdate(result.error);
   },
 );
 
@@ -635,7 +737,68 @@ export const clearChatThreadConnectorSelection$ = command(
                 ),
           ),
         );
-      await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+      const isStripe =
+        args.target.kind === "builtin" &&
+        args.target.connectorSlug === "stripe";
+      if (!isStripe) {
+        await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+      }
+      const scope = args;
+      const projection = stripeAccountAutomationsReadPlan(scope);
+      const automations = isStripe
+        ? await tx.select().from(projection.query)
+        : [];
+      if (isStripe) {
+        signal.throwIfAborted();
+      }
+      for (const automation of automations) {
+        const item = stripeAccountAutomationSelectionPlan(scope, automation);
+        let [selected] = await tx.select().from(item.selected);
+        if (!selected) {
+          [selected] = await tx.select().from(item.defaultAccount);
+        }
+        signal.throwIfAborted();
+        const connectorId = selected?.connectorId ?? null;
+        let readiness =
+          connectorId === null ? undefined : projection.cache.get(connectorId);
+        if (connectorId !== null && readiness === undefined) {
+          const catalog = stripeAccountCatalogReadPlan();
+          const rows = await tx
+            .select(catalog.columns)
+            .from(catalog.from)
+            .leftJoin(catalog.joinTable, catalog.join)
+            .where(catalog.where);
+          const account = stripeAccountConnectionReadPlan(
+            scope,
+            connectorId,
+            rows,
+          );
+          signal.throwIfAborted();
+          const [connection] = await tx.select().from(account.query);
+          const ready = stripeAccountReadiness(account.input, connection);
+          signal.throwIfAborted();
+          let values: ReadonlyMap<string, string> = new Map();
+          if (ready.kind === "ok") {
+            const liveMode = stripeAccountLiveModeReadPlan(ready.connection);
+            values = await builtinConnectorCredentialValuesFromRows(
+              liveMode.input,
+              await tx.select().from(liveMode.query),
+            );
+            signal.throwIfAborted();
+          }
+          readiness = stripeAccountProjectionReadiness(ready, values);
+          projection.cache.set(connectorId, readiness);
+        }
+        const update = stripeAccountProjectionUpdate(
+          automation,
+          connectorId,
+          readiness,
+        );
+        if (update !== null) {
+          await tx.update(projection.from).set(update).where(item.target);
+        }
+        signal.throwIfAborted();
+      }
       return { kind: "cleared" };
     });
   },

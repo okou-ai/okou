@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/okou-ai/okou/compare/ios-v0.18.1...ios-v0.18.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **ios:** let follow-up cards scroll to screen edges ([#42239](https://github.com/okou-ai/okou/issues/42239)) ([1a8432e](https://github.com/okou-ai/okou/commit/1a8432ea748fae22401cafedd30cd0c0dc8057dd))
+
 ## [0.18.1](https://github.com/okou-ai/okou/compare/ios-v0.18.0...ios-v0.18.1) (2026-10-22)
 
 
