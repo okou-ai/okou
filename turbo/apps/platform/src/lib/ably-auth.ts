@@ -12,13 +12,6 @@ import {
   throwIfAbort,
 } from "../signals/utils.ts";
 import { accept } from "./accept.ts";
-import type { AblyAuthDiagnosticScope } from "./ably-auth-diagnostics.ts";
-import {
-  createAuthDiagnosticId,
-  recordAuthDiagnostic,
-  startAuthDiagnosticMeasurement,
-  type AuthDiagnosticContext,
-} from "./auth-diagnostics.ts";
 
 type RealtimeTokenClient = InitClientReturn<
   typeof platformRealtimeTokenContract,
@@ -49,30 +42,17 @@ type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
  * never invoke its callback after the connection's root signal aborts.
  */
 export function createAblyAuthCallback(
-  createClient: (diagnostic: AuthDiagnosticContext) => RealtimeTokenClient,
-  scope: AblyAuthDiagnosticScope,
+  createClient: () => RealtimeTokenClient,
   rootSignal: AbortSignal,
 ): AuthCallback {
   return (_params, callback) => {
     const signal = abortAfter(5000, rootSignal);
-    const invocation: AuthDiagnosticContext = {
-      ...scope.context,
-      ablyAuthId: createAuthDiagnosticId(),
-    };
-    const measurement = startAuthDiagnosticMeasurement();
-    recordAuthDiagnostic({
-      stage: "ably_auth_started",
-      context: invocation,
-      outcome: "started",
-    });
     detach(
       (async () => {
-        let previousContext: AuthDiagnosticContext | undefined;
-        let enteredCallback = false;
         // eslint-disable-next-line no-restricted-syntax -- bridging Ably's node-style auth callback into our promise-based `accept()` helper; justified per eslint.config.js "If genuinely needed (JSON.parse, clipboard, polling), add an inline eslint-disable with justification"
         try {
           signal.throwIfAborted();
-          const client = createClient(invocation);
+          const client = createClient();
           // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: distinguish an authentication timeout from root cancellation.
           const res = await onRejection(
             async () => {
@@ -93,45 +73,17 @@ export function createAblyAuthCallback(
               }
             },
           );
-          recordAuthDiagnostic({
-            stage: "ably_auth_api_finished",
-            context: invocation,
-            measurement,
-            status: res.status,
-            ownerAborted: signal.aborted,
-          });
           signal.throwIfAborted();
-          recordAuthDiagnostic({
-            stage: "ably_auth_callback",
-            context: invocation,
-          });
-          // The SDK enters its exchange plugin synchronously inside callback.
-          // Restore this scope even if the SDK callback throws or re-enters;
-          // each request captures its own context before awaiting any I/O.
-          previousContext = scope.callbackContext;
-          scope.callbackContext = invocation;
-          enteredCallback = true;
           callback(null, res.body);
         } catch (error) {
           throwIfAbort(error);
           // Connection teardown suppresses callbacks; a per-invocation
           // deadline must instead finish Ably's pending authentication.
           rootSignal.throwIfAborted();
-          recordAuthDiagnostic({
-            stage: "ably_auth_callback",
-            context: invocation,
-            measurement,
-            ownerAborted: signal.aborted,
-            outcome: signal.aborted ? "aborted" : "error",
-          });
           callback(
             error instanceof Error ? error.message : String(error),
             null,
           );
-        } finally {
-          if (enteredCallback) {
-            scope.callbackContext = previousContext;
-          }
         }
       })(),
       Reason.DomCallback,

@@ -10,7 +10,6 @@ import { initializeAppVersion$ } from "./app-version.ts";
 import { initLocale$, syncLocalePreference$ } from "./locale.ts";
 import { setRootSignal$ } from "./root-signal.ts";
 import { setApiClientRuntime$ } from "./api-client-runtime.ts";
-import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
 import { readClerkToken } from "./clerk-token.ts";
 import { setupSharedDatabaseBridge$ } from "./shared-database-browser.ts";
 import { listenSharedWorkerFailure$ } from "./shared-worker-failure.ts";
@@ -636,13 +635,10 @@ export const bootstrap$ = command(
       getCapturedPreviewBypassForTarget(apiBaseUrl);
     const clerk = get(clerk$);
     set(setApiClientRuntime$, {
-      authDiagnosticContext: createBrowserAuthDiagnosticContext(),
-      getToken: async (diagnostic, requestSignal) => {
+      getToken: async (requestSignal) => {
         const resolvedClerk = await clerk;
         requestSignal?.throwIfAborted();
-        return await readClerkToken(resolvedClerk, requestSignal, {
-          diagnostic,
-        });
+        return await readClerkToken(resolvedClerk, requestSignal);
       },
       apiBaseUrl,
       oauthApiBaseUrl: resolveOAuthApiBase(),
