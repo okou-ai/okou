@@ -70,6 +70,7 @@ import {
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
+import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import {
   pwaChatListVisible$,
@@ -293,6 +294,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
+      <ThreadMailButton thread={thread} />
       <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>

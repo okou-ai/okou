@@ -10,7 +10,10 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { openThreadArtifacts$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import {
+  backToThreadMailList$,
+  openThreadArtifacts$,
+} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ThreadSidebarArtifactSource,
@@ -460,12 +463,47 @@ function ThreadArtifactDetail({
 function ThreadMailDraftPanel({
   thread,
   signals,
+  fromMailList,
 }: {
   readonly thread: ChatPanelSignals;
   readonly signals: MailDraftSignals;
+  readonly fromMailList?: true;
 }) {
   const close = useSet(thread.sidebar.close$);
-  return <MailDraftPanel signals={signals} onClose={close} />;
+  const back = useSet(backToThreadMailList$);
+  const pageSignal = useGet(pageSignal$);
+  const listOpen = useGet(thread.mail.open$);
+  const { t } = useTranslation();
+  if (!fromMailList) {
+    return <MailDraftPanel signals={signals} onClose={close} />;
+  }
+  return (
+    <div
+      className={cn(
+        "flex h-full w-full min-h-0 min-w-0 flex-col bg-background",
+        !listOpen && "[view-transition-name:thread-email-panel]",
+      )}
+    >
+      <div className="shrink-0 border-b border-border/60 px-4 py-3">
+        <Button
+          variant="quiet"
+          size="sm"
+          autoFocus
+          onClick={() => {
+            detach(back(thread, pageSignal), Reason.DomCallback);
+          }}
+        >
+          <ArrowLeft size={16} />
+          {t(($) => {
+            return $.chat.mail.manager.back;
+          })}
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1">
+        <MailDraftPanel signals={signals} onClose={close} />
+      </div>
+    </div>
+  );
 }
 
 function ThreadBrowserSessionPanel({
@@ -502,7 +540,13 @@ export function ThreadSidebarSlot({
       return null;
     }
     case "email-draft": {
-      return <ThreadMailDraftPanel thread={thread} signals={target.signals} />;
+      return (
+        <ThreadMailDraftPanel
+          thread={thread}
+          signals={target.signals}
+          fromMailList={target.fromMailList}
+        />
+      );
     }
     case "browser": {
       return <ThreadBrowserSessionPanel thread={thread} />;

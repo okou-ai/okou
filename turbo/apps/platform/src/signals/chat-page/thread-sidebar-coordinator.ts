@@ -11,6 +11,9 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
+import { delay } from "signal-timers";
+import { withCleanup } from "../utils.ts";
 
 // ---------------------------------------------------------------------------
 // Page-level coordinator for the thread-owned utility sidebar. Sidebar state
@@ -47,6 +50,12 @@ export const activeThreadSidebar$ = computed(
     return null;
   },
 );
+
+export const threadMailNavigating$ = computed((get) => {
+  return [get(currentLeftThread$), get(currentRightThread$)].some((thread) => {
+    return thread !== null && get(thread.mail.navigating$);
+  });
+});
 
 export const activeThreadSidebarFullscreen$ = computed((get) => {
   const active = get(activeThreadSidebar$);
@@ -152,6 +161,101 @@ export const openThreadMailDraft$ = command(
       { type: "email-draft", signals },
       get(pageSignal$),
     );
+  },
+);
+
+// Named browser snapshots morph the anchored list into the existing detail
+// panel, and reverse the same path on Back. Reduced motion moves immediately.
+async function waitForMailLayout(signal: AbortSignal): Promise<void> {
+  // Let React and Floating UI finish their queued layout work. Rendering is
+  // paused inside a view-transition update, so animation frames cannot run.
+  await delay(0, { signal });
+  signal.throwIfAborted();
+  await delay(0, { signal });
+  signal.throwIfAborted();
+}
+
+const moveThreadMail$ = command(
+  async (
+    { get, set },
+    thread: ChatPanelSignals,
+    mail: ThreadMailSummary | null,
+    signal: AbortSignal,
+  ) => {
+    if (!mail) {
+      set(thread.mail.refresh$);
+      await get(thread.mail.filtered$);
+      signal.throwIfAborted();
+    }
+    const update = () => {
+      signal.throwIfAborted();
+      if (mail) {
+        const href = `/mail/drafts/${mail.mailDraftId}`;
+        const signals = set(thread.mail.register$, {
+          mailDraftId: mail.mailDraftId,
+          href,
+          originalUrl: new URL(href, window.location.origin).href,
+        });
+        set(thread.mail.setOpen$, false);
+        set(
+          openOnThread$,
+          thread,
+          { type: "email-draft", signals, fromMailList: true },
+          signal,
+        );
+      } else {
+        set(thread.sidebar.close$);
+        set(thread.mail.restore$);
+      }
+    };
+    if (
+      !("startViewTransition" in document) ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      update();
+      return;
+    }
+    await document.startViewTransition({
+      update: async () => {
+        update();
+        await waitForMailLayout(signal);
+      },
+    }).finished;
+    signal.throwIfAborted();
+  },
+);
+
+const navigateThreadMail$ = command(
+  async (
+    { get, set },
+    thread: ChatPanelSignals,
+    mail: ThreadMailSummary | null,
+    signal: AbortSignal,
+  ) => {
+    if (get(thread.mail.navigating$)) {
+      return;
+    }
+    set(thread.mail.navigating$, true);
+    await withCleanup(set(moveThreadMail$, thread, mail, signal), () => {
+      set(thread.mail.navigating$, false);
+    });
+  },
+);
+
+export const openThreadMailFromList$ = command(
+  async (
+    { set },
+    thread: ChatPanelSignals,
+    mail: ThreadMailSummary,
+    signal: AbortSignal,
+  ) => {
+    await set(navigateThreadMail$, thread, mail, signal);
+  },
+);
+
+export const backToThreadMailList$ = command(
+  async ({ set }, thread: ChatPanelSignals, signal: AbortSignal) => {
+    await set(navigateThreadMail$, thread, null, signal);
   },
 );
 

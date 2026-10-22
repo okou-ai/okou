@@ -128,6 +128,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ThreadEmailManager]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Thread email manager",
+    description: "Browse thread emails and send or delete selected drafts.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.TailscaleAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Tailscale setup",

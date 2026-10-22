@@ -1,4 +1,4 @@
-import { command, state, type Command } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 
 /**
  * A thread-owned registry giving every card a stable signal identity across
@@ -8,6 +8,7 @@ import { command, state, type Command } from "ccstate";
  * hands the returned signals to whatever renders them.
  */
 export interface CardSignalsRegistry<Descriptor, Signals> {
+  readonly values$: Computed<readonly Signals[]>;
   /** Get-or-create by the descriptor's key; idempotent per key. */
   readonly register$: Command<Signals, [Descriptor]>;
   /** Start each prepared card's subscription once per owning lifetime. */
@@ -63,5 +64,8 @@ export function createCardSignalsRegistry<Descriptor, Signals>(
     }
   });
 
-  return { register$, subscribe$ };
+  const values$ = computed((get) => {
+    return [...get(internalSignalsByKey$).values()];
+  });
+  return { register$, subscribe$, values$ };
 }

@@ -33,6 +33,7 @@ import {
 } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { createChatResourceSignals } from "./chat-resources.ts";
+import { createThreadMailSignals } from "./thread-mail.ts";
 import { createArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { createChatRelationSignals } from "./chat-relations.ts";
 import {
@@ -1930,6 +1931,7 @@ function createPagedEventResources({
     diagramCodesForEvents$,
     mermaidDiagrams,
     publicSignals: {
+      mailDraftCardSignals,
       browserSessionSignals,
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
     },
@@ -3783,6 +3785,11 @@ export function createChatPanelSignals(
     sharing,
     pin: createChatThreadPinSignals(threadId, threadMeta$),
     locator,
+    mail: createThreadMailSignals(
+      threadId,
+      messagePipeline.mailDraftCardSignals,
+      messagePipeline.latestRunFinishCreatedAt$,
+    ),
     resources: createChatResourceSignals(
       artifact.resourceCatalog,
       messagePipeline.initialEventsReady$,

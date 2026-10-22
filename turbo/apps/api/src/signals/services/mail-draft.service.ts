@@ -1,10 +1,12 @@
 import {
+  threadMailSummarySchema,
   mailDraftSchema,
   mailDraftStatusSchema,
   type MailAttachment,
   type MailDraft,
   type MailDraftStatus,
   type MailInlineImage,
+  type ThreadMailSummary,
 } from "@okouai/api-contracts/contracts/mail";
 import {
   connectorCatalog,
@@ -18,7 +20,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { convert } from "html-to-text";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
@@ -443,6 +445,47 @@ const loadOwnedMailDraft$ = command(
       )
       .limit(1);
     return mailDraftRow(row);
+  },
+);
+
+export const listThreadMail$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ThreadMailSummary[] | null> => {
+    const thread = await set(loadOwnedMailThreadContext$, args);
+    signal.throwIfAborted();
+    if (!thread) {
+      return null;
+    }
+    const rows = await set(writeDb$)
+      .select({
+        mailDraftId: mailDrafts.id,
+        status: mailDrafts.status,
+        subject: mailDrafts.subject,
+        from: mailDrafts.senderAddress,
+        createdAt: mailDrafts.createdAt,
+      })
+      .from(mailDrafts)
+      .where(
+        and(
+          eq(mailDrafts.chatThreadId, args.threadId),
+          inArray(mailDrafts.status, ["draft", "sent"]),
+        ),
+      )
+      .orderBy(desc(mailDrafts.createdAt), desc(mailDrafts.id));
+    signal.throwIfAborted();
+    return rows.map((row) => {
+      return threadMailSummarySchema.parse({
+        ...row,
+        createdAt: row.createdAt.toISOString(),
+      });
+    });
   },
 );
 
@@ -1923,8 +1966,21 @@ export const deleteMailDraft$ = command(
     if (deletion.kind === "error") {
       throw deletion.error;
     }
+    const updatedAt = nowDate();
+    const [deleted] = await set(writeDb$)
+      .update(mailDrafts)
+      .set({ status: "deleted", updatedAt })
+      .where(and(eq(mailDrafts.id, row.id), eq(mailDrafts.status, "draft")))
+      .returning({ id: mailDrafts.id });
+    signal.throwIfAborted();
+    if (!deleted) {
+      return {
+        kind: "conflict",
+        message: "Only an active draft can be deleted",
+      };
+    }
     const deletedDraft = responseDraft({
-      row: { ...row, status: "deleted" },
+      row: { ...row, status: "deleted", updatedAt },
       details: null,
       detailAvailable: false,
     });

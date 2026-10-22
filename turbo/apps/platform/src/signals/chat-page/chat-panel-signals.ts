@@ -33,6 +33,7 @@ import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
 import type { ChatResourceSignals } from "./chat-resources.ts";
+import type { ThreadMailSignals } from "./thread-mail.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -131,6 +132,7 @@ export interface QueueMessageOptions {
 }
 
 export interface ChatPanelSignals {
+  readonly mail: ThreadMailSignals;
   readonly threadId: string;
   readonly agentId: string;
   // -- Data signals ----------------------------------------------------------
