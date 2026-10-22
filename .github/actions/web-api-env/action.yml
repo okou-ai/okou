@@ -415,8 +415,17 @@ runs:
           add_secret "OKOU_${suffix}" "OKOU_${suffix}"
         done
         if [[ "$INPUT_APP" == "api" ]]; then
-          # Optional explicit Firecrawl credit valuation; missing values fail closed.
-          add_var OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT
+          firecrawl_credit_rate="$(repo_var OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT)"
+          if [[ -z "$firecrawl_credit_rate" && "$INPUT_ENVIRONMENT" == "preview" && "$INPUT_JOB_REF" =~ ^pr-[0-9]+$ ]]; then
+            # Synthetic PR seed: $0.001 (1,000 micro-USD) per Firecrawl credit,
+            # matching the mocked provider tests, NOT a verified procurement rate.
+            # Alexandria credits are not Okou credits. The seeded usage_pricing
+            # rows separately convert USD micros at 1,250 Okou credits per USD.
+            # Never default staging/production; those require reviewed procurement.
+            firecrawl_credit_rate="1000"
+            echo "::notice::Using synthetic Firecrawl credit valuation for PR testing only; not production procurement pricing."
+          fi
+          add_env OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT "$firecrawl_credit_rate"
           add_secret OKOU_SOCIAL_MONID_API_KEY OKOU_SOCIAL_MONID_API_KEY
           add_secret OKOU_SOCIAL_SOCIALKIT_TOKEN OKOU_SOCIAL_SOCIALKIT_TOKEN
           add_secret OKOU_SEO_DATAFORSEO_LOGIN OKOU_SEO_DATAFORSEO_LOGIN

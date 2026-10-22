@@ -358,6 +358,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.DataSearch]: {
     maintainer: "ethan@okou.ai",
+    description:
+      "Enable managed data discovery, budgeted research, and public professional enrichment.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

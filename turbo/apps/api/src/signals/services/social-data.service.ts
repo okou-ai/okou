@@ -277,12 +277,16 @@ const checkSocialDataAdmission$ = command(
   },
 );
 
-const reserveSocialDataJob$ = command(
+export const createSocialDataJob$ = command(
   async (
     { set },
     args: SocialAdmissionArgs,
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
+    const existing = await set(checkSocialDataAdmission$, args, signal);
+    if (existing) {
+      return existing;
+    }
     const db = set(writeDb$);
     const result = await settle(
       (async () => {
@@ -364,14 +368,7 @@ const reserveSocialDataJob$ = command(
               .where(eq(orgPlanEntitlements.orgId, orgId))
               .limit(1);
             if (!capabilities) {
-              const [org] = await tx
-                .select({ orgId: orgMetadata.orgId })
-                .from(orgMetadata)
-                .where(eq(orgMetadata.orgId, orgId))
-                .limit(1);
-              if (org) {
-                throw new Error(`Missing org plan entitlement for ${orgId}`);
-              }
+              throw new Error(`Missing org plan entitlement for ${orgId}`);
             }
             const access = snapshotAccess(required.row, capabilities, orgId);
             signal.throwIfAborted();
@@ -407,17 +404,6 @@ const reserveSocialDataJob$ = command(
       signal,
     );
     return result.ok ? result.value : providerErrorResponse(result.error);
-  },
-);
-
-export const createSocialDataJob$ = command(
-  async (
-    { set },
-    args: SocialAdmissionArgs,
-    signal: AbortSignal,
-  ): Promise<CreatedResponse | ErrorResponse> => {
-    const existing = await set(checkSocialDataAdmission$, args, signal);
-    return existing ?? (await set(reserveSocialDataJob$, args, signal));
   },
 );
 

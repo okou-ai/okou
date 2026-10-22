@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
-  it("should have exactly 63 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(63);
+  it("should have exactly 65 capabilities", () => {
+    expect(CAPABILITIES).toHaveLength(65);
     expect(CAPABILITIES).toContain("commerce:read");
     expect(CAPABILITIES).toContain("wechat:read");
     expect(CAPABILITIES).toContain("wechat:write");
