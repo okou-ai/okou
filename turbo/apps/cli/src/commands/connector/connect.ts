@@ -1,3 +1,4 @@
+import { connectorAccountSetupIsComplete } from "@okouai/api-contracts/contracts/connector-accounts";
 import { z } from "zod";
 import { Command, Option } from "commander";
 import chalk from "chalk";
@@ -111,7 +112,7 @@ async function connectCustom(
   });
   if (
     connectedAccount.connectionStatus !== "connected" ||
-    connectedAccount.setupStatus !== "complete"
+    !connectorAccountSetupIsComplete(connectedAccount)
   )
     throw new Error(
       "Connector account setup is incomplete or unavailable; inspect connector account show.",
@@ -201,7 +202,7 @@ Examples:
       });
       if (
         connectedAccount.connectionStatus !== "connected" ||
-        connectedAccount.setupStatus !== "complete"
+        !connectorAccountSetupIsComplete(connectedAccount)
       )
         throw new Error(
           "Connector account setup is incomplete or unavailable; inspect connector account show.",

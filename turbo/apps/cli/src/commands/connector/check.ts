@@ -1,3 +1,4 @@
+import { connectorAccountSetupIsComplete } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Command, Option } from "commander";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -173,7 +174,9 @@ function printRunConnectionStatus(
   }
   console.log(`Account used by this run: ${runAccount.label}`);
   console.log(`Connection ID: ${runAccount.connectionId}`);
-  console.log(`Setup status: ${runAccount.metadata.setupStatus}`);
+  if (runAccount.metadata.setupStatus !== undefined) {
+    console.log(`Setup status: ${runAccount.metadata.setupStatus}`);
+  }
   if (runAccount.metadata.missingRequiredFields.length > 0) {
     console.log(
       `Missing required configuration: ${runAccount.metadata.missingRequiredFields.join(", ")}`,
@@ -189,7 +192,7 @@ function printRunConnectionStatus(
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
     printCallbackActionUrlExample(url, ctx.agentId);
     console.log("After reconnecting, start a new run.");
-  } else if (runAccount.metadata.setupStatus !== "complete") {
+  } else if (!connectorAccountSetupIsComplete(runAccount.metadata)) {
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: "/connectors",
@@ -331,7 +334,7 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
             isConnected: runAccount.state === "available",
             isSetupComplete:
               runAccount.state === "available" &&
-              runAccount.metadata.setupStatus === "complete",
+              connectorAccountSetupIsComplete(runAccount.metadata),
             needsReconnect:
               runAccount.state === "available" &&
               runAccount.metadata.connectionStatus === "reconnect-required",
@@ -348,9 +351,9 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
               facts.memberStatus === "connected" ||
               facts.memberStatus === "reconnect-required",
             needsReconnect: facts.memberStatus === "reconnect-required",
-            isSetupComplete:
-              facts.accountSummary?.defaultConnection?.setupStatus ===
-              "complete",
+            isSetupComplete: connectorAccountSetupIsComplete(
+              facts.accountSummary?.defaultConnection,
+            ),
             runAccount: null,
             memberFacts: facts,
           } satisfies ConnectorConfigurationStatus;

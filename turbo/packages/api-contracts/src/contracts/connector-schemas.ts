@@ -17,10 +17,21 @@ export type ConnectorResponseConnectionStatus = z.infer<
   typeof connectorResponseConnectionStatusSchema
 >;
 
-export const connectorReconnectReasonSchema = z.enum([
+export const connectorCredentialReconnectReasonSchema = z.enum([
   "provider_session_expired",
   "authorization_expired_or_revoked",
   "credential_expired",
+]);
+
+export type ConnectorCredentialReconnectReason = z.infer<
+  typeof connectorCredentialReconnectReasonSchema
+>;
+
+export const connectorReconnectReasonSchema = z.enum([
+  ...connectorCredentialReconnectReasonSchema.options,
+  "configuration_incomplete",
+  "configuration_invalid",
+  "account_unavailable",
 ]);
 
 export type ConnectorReconnectReason = z.infer<

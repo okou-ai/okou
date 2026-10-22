@@ -16,11 +16,11 @@ import {
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
-  connectorReconnectReasonSchema,
+  connectorCredentialReconnectReasonSchema,
   type BuiltinConnectorListResponse,
   type BuiltinConnectorResponse,
   type ConnectorProvidedBinding,
-  type ConnectorReconnectReason,
+  type ConnectorCredentialReconnectReason,
   type ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
@@ -388,11 +388,11 @@ function parseOauthScopes(value: string | null): string[] | null {
 
 function parseStoredReconnectReason(
   value: string | null,
-): ConnectorReconnectReason | null {
+): ConnectorCredentialReconnectReason | null {
   if (value === null) {
     return null;
   }
-  const parsed = connectorReconnectReasonSchema.safeParse(value);
+  const parsed = connectorCredentialReconnectReasonSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 

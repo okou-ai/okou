@@ -15,7 +15,10 @@ import {
   type ConnectorAuthMethodId,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorAccountSetupIsComplete,
+  connectorAccountsContract,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
@@ -2504,7 +2507,7 @@ const defaultConnectorProjectionMatchesAuthMethod$ = command(
       account?.id === connectionId &&
       account.authMethod === authMethod &&
       account.connectionStatus === "connected" &&
-      account.setupStatus === "complete"
+      connectorAccountSetupIsComplete(account)
     );
   },
 );

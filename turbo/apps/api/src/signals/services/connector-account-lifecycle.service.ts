@@ -21,8 +21,8 @@ import {
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
-  connectorReconnectReasonSchema,
-  type ConnectorReconnectReason,
+  connectorCredentialReconnectReasonSchema,
+  type ConnectorCredentialReconnectReason,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   INTEGRATION_MANAGED_CUSTOM_CONNECTOR_PROVIDER_ADAPTERS,
@@ -174,11 +174,11 @@ function targetCondition(target: ConnectorAccountTarget): SQL {
 
 function parseReconnectReason(
   value: string | null,
-): ConnectorReconnectReason | null {
+): ConnectorCredentialReconnectReason | null {
   if (value === null) {
     return null;
   }
-  const parsed = connectorReconnectReasonSchema.safeParse(value);
+  const parsed = connectorCredentialReconnectReasonSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 

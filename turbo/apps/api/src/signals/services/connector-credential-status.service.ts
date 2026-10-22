@@ -1,5 +1,5 @@
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
-import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { ConnectorCredentialReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
 
 export type ConnectorCredentialStatus = "available" | "reconnect-required";
 
@@ -67,7 +67,7 @@ export function builtinConnectorCredentialReconnectReasonWithMethod(args: {
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
-}): ConnectorReconnectReason | null {
+}): ConnectorCredentialReconnectReason | null {
   if (builtinConnectorMethodNeedsNoCredentials(args)) {
     return null;
   }

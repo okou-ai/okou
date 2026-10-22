@@ -28,7 +28,7 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { ConnectorCredentialReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   getModelProviderEnvBindings,
   getSecretNameForType,
@@ -1042,7 +1042,7 @@ function isRetryableOAuthRefreshResponse(error: unknown): boolean {
 function connectorReconnectReasonFromRefreshFailure(
   error: unknown,
   failureReason: FirewallAuthFailureReason | undefined,
-): ConnectorReconnectReason | null {
+): ConnectorCredentialReconnectReason | null {
   if (
     failureReason !== "reconnect_required" ||
     !isOAuthProviderHttpError(error) ||
@@ -2334,7 +2334,7 @@ async function markRefreshFailure(
   failure: {
     readonly errorCode: string | null;
     readonly failureReason: FirewallAuthFailureReason | undefined;
-    readonly connectorReconnectReason: ConnectorReconnectReason | null;
+    readonly connectorReconnectReason: ConnectorCredentialReconnectReason | null;
   },
 ): Promise<void> {
   const { errorCode, failureReason, connectorReconnectReason } = failure;

@@ -481,86 +481,90 @@ function getButtonByText(text: string, container?: ParentNode): HTMLElement {
   return button;
 }
 
-test("Connect and authorize a manual MCP connector", async () => {
-  const connectionId = crypto.randomUUID();
-  let connected = false;
-  let grants: AgentCustomConnectorGrant[] = [];
-  let submittedValues: readonly {
-    readonly key: string;
-    readonly kind: "secret" | "variable";
-    readonly value: string;
-  }[] = [];
-  const connector = mcpCustomConnector();
-  mockAccounts(() => {
-    return connected
-      ? [
-          customConnectorAccount(connector.id, {
-            id: connectionId,
-            configuredFieldKeys: ["secret"],
-          }),
-        ]
-      : [];
-  });
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      connectors: [connector],
-    });
-  });
-  context.mocks.api(
-    customConnectorValuesContract.set,
-    ({ body, params, respond }) => {
-      expect(params.id).toBe(connector.id);
-      submittedValues = body.values;
-      connected = true;
-      return respond(
-        200,
-        customConnectorCompletionFixture(
-          mcpConnectorFixture({
-            ...connector,
-            account: {
+test.each([true, false])(
+  "Connect and authorize a manual MCP connector with legacy setup %s",
+  async (legacySetup) => {
+    const connectionId = crypto.randomUUID();
+    let connected = false;
+    let grants: AgentCustomConnectorGrant[] = [];
+    let submittedValues: readonly {
+      readonly key: string;
+      readonly kind: "secret" | "variable";
+      readonly value: string;
+    }[] = [];
+    const connector = mcpCustomConnector();
+    mockAccounts(() => {
+      return connected
+        ? [
+            customConnectorAccount(connector.id, {
               id: connectionId,
-              missingRequiredFields: [],
               configuredFieldKeys: ["secret"],
-              setupStatus: "complete",
-            },
-          }),
-        ),
-      );
-    },
-  );
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, params, respond }) => {
-      expect(params.id).toBe(AGENT_ID);
-      grants = body.grants;
-      return respond(200, { grants });
-    },
-  );
+              setupStatus: legacySetup ? "complete" : undefined,
+            }),
+          ]
+        : [];
+    });
+    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+      return respond(200, {
+        connectors: [connector],
+      });
+    });
+    context.mocks.api(
+      customConnectorValuesContract.set,
+      ({ body, params, respond }) => {
+        expect(params.id).toBe(connector.id);
+        submittedValues = body.values;
+        connected = true;
+        return respond(
+          200,
+          customConnectorCompletionFixture(
+            mcpConnectorFixture({
+              ...connector,
+              account: {
+                id: connectionId,
+                missingRequiredFields: [],
+                configuredFieldKeys: ["secret"],
+                setupStatus: "complete",
+              },
+            }),
+          ),
+        );
+      },
+    );
+    context.mocks.api(
+      agentCustomConnectorsContract.update,
+      ({ body, params, respond }) => {
+        expect(params.id).toBe(AGENT_ID);
+        grants = body.grants;
+        return respond(200, { grants });
+      },
+    );
 
-  await setupPage({
-    context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
-  });
+    await setupPage({
+      context,
+      path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    });
 
-  const heading = await screen.findByText("Okou needs DeepWiki to proceed");
-  expect(heading).toBeInTheDocument();
-  click(getButtonByText("Connect"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Connect DeepWiki",
-  });
-  await fill(within(dialog).getByLabelText("Secret"), "acme-secret");
-  click(getButtonByText("Save"));
+    const heading = await screen.findByText("Okou needs DeepWiki to proceed");
+    expect(heading).toBeInTheDocument();
+    click(getButtonByText("Connect"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Connect DeepWiki",
+    });
+    await fill(within(dialog).getByLabelText("Secret"), "acme-secret");
+    click(getButtonByText("Save"));
 
-  await waitFor(() => {
-    expect(submittedValues).toStrictEqual([
-      { key: "secret", kind: "secret", value: "acme-secret" },
-    ]);
-    expect(grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
-    expect(screen.getByText("DeepWiki connected")).toBeInTheDocument();
-  });
-});
+    await waitFor(() => {
+      expect(submittedValues).toStrictEqual([
+        { key: "secret", kind: "secret", value: "acme-secret" },
+      ]);
+      expect(grants).toStrictEqual([
+        { customConnectorId: connector.id, permissionNames: [] },
+      ]);
+      expect(screen.getByText("DeepWiki connected")).toBeInTheDocument();
+    });
+  },
+);
 
 test("Let an MCP server discover authentication from a directed connection", async () => {
   const completedAttempts = mockOAuthCompletions(context);
