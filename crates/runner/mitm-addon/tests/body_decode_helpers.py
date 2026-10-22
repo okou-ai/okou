@@ -98,14 +98,21 @@ def track_zstd_decompressor(monkeypatch, max_output: int) -> dict[str, int]:
         def __init__(self):
             stats["objects"] += 1
             self._wrapped = real_factory()
+            # Strict consumers decode the body again in a separate validation
+            # pass; aggregate output is not one decoder's remaining allowance.
+            self._output_bytes = 0
 
         def decompress(self, data, max_length=-1):
-            assert 0 < max_length <= max_output, "zstd output allocation must be bounded"
+            assert 0 < max_length <= max_output - self._output_bytes, (
+                "zstd decompress exceeds the remaining output budget"
+            )
+            assert max_length <= 64 * 1024, "zstd decompress exceeds the 64 KiB per-call limit"
             stats["input_bytes"] += len(data)
             stats["max_input"] = max(stats["max_input"], len(data))
             stats["max_output_request"] = max(stats["max_output_request"], max_length)
             output = self._wrapped.decompress(data, max_length=max_length)
             assert len(output) <= max_length
+            self._output_bytes += len(output)
             stats["output_bytes"] += len(output)
             return output
 

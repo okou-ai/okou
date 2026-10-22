@@ -669,7 +669,7 @@ class TestDecompressBody:
 
         assert result == compressed
 
-    @pytest.mark.parametrize("max_output", [1, 64 * 1024])
+    @pytest.mark.parametrize("max_output", [1, 64 * 1024, 3 * 64 * 1024 + 123])
     def test_zstd_respects_max_output(self, headers, monkeypatch, max_output):
         # Bug #10128: before the fix the zstd branch used
         # ``decompressobj.decompress(data)`` which fully materialised
@@ -681,7 +681,7 @@ class TestDecompressBody:
         hdrs = headers(("Content-Encoding", "zstd"))
         result = decompress_body(compressed, hdrs, max_output=max_output)
         assert result == plaintext[:max_output]
-        assert 0 < stats["max_output_request"] <= max_output
+        assert 0 < stats["max_output_request"] <= min(max_output, 64 * 1024)
         assert stats["output_bytes"] == max_output
 
     def test_zstd_short_payload_returns_full_body(self, headers):
@@ -1220,15 +1220,19 @@ class TestDecompressJsonUsageBody:
 
         assert error == "incomplete compressed body"
 
-    def test_zstd_decoded_limit_exceeded_returns_error(self, headers):
-        body = b"x" * 1024
+    @pytest.mark.parametrize("max_output", [128, 3 * 64 * 1024 + 123])
+    def test_zstd_decoded_limit_exceeded_returns_error(self, headers, monkeypatch, max_output):
+        body = b"x" * (max_output + 1)
         compressed = zstandard.ZstdCompressor().compress(body)
         hdrs = headers(("Content-Encoding", "zstd"))
+        stats = track_zstd_decompressor(monkeypatch, max_output=max_output + 1)
 
-        decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=128)
+        decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=max_output)
 
-        assert decoded == body[:128]
+        assert decoded == body[:max_output]
         assert error == "decoded body limit exceeded"
+        assert stats["output_bytes"] == max_output + 1
+        assert 0 < stats["max_output_request"] <= min(max_output + 1, 64 * 1024)
 
     def test_zstd_without_content_size_returns_decoded_body(self, headers):
         body = b'{"usage":{"input_tokens":1}}'
@@ -1242,7 +1246,7 @@ class TestDecompressJsonUsageBody:
 
     @pytest.mark.parametrize("truncated_tail", [False, True])
     def test_zstd_drains_buffered_output_across_frames_and_preserves_completion_policy(
-        self, headers, truncated_tail
+        self, headers, monkeypatch, truncated_tail
     ):
         first = b"a" * (3 * STREAM_DECODE_CHUNK_LIMIT)
         second = b"b" * (2 * STREAM_DECODE_CHUNK_LIMIT)
@@ -1257,6 +1261,7 @@ class TestDecompressJsonUsageBody:
         body = first + second
         hdrs = headers(("Content-Encoding", "zstd"))
         max_output = len(body) + 1
+        stats = track_zstd_decompressor(monkeypatch, max_output=max_output + 1)
 
         decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=max_output)
 
@@ -1272,6 +1277,7 @@ class TestDecompressJsonUsageBody:
             decode_response_body_for_network_log_capture(compressed, hdrs, max_output=max_output)
             == expected_capture
         )
+        assert stats["max_output_request"] == 64 * 1024
 
     @pytest.mark.parametrize("skippable_count", [63, 64])
     def test_zstd_skippable_frames_consume_strict_frame_budget(self, headers, skippable_count):
