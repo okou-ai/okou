@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use guest_contracts::disk_cleanup::{DiskCleanupFilesystem, DiskCleanupReport};
+use guest_contracts::guest_binary::AGENT_PATH;
 use sandbox::{
     EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox, SandboxError, SandboxOperation,
     SandboxOperationReason,
@@ -55,14 +56,11 @@ pub(super) async fn recover(
             };
         }
     };
-    let command = match filesystem {
-        DiskCleanupFilesystem::Home => "/usr/local/bin/guest-agent recover-disk-space home",
-        DiskCleanupFilesystem::Rootfs => "/usr/local/bin/guest-agent recover-disk-space rootfs",
-    };
+    let command = format!("{AGENT_PATH} recover-disk-space {}", filesystem.as_str());
     let started = Instant::now();
     let result = sandbox
         .exec(&ExecRequest {
-            cmd: command,
+            cmd: &command,
             timeout: Duration::from_secs(30),
             env: &[],
             sudo: true,
