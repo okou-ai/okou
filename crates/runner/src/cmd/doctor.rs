@@ -3964,16 +3964,13 @@ printf '%s\n' \
 
     #[tokio::test]
     async fn build_runner_reports_allows_api_cold_starts() {
-        let server = MockServer::start_async().await;
-        let api = server
-            .mock_async(|when, then| {
-                when.method("HEAD")
-                    .path("/api")
-                    .header("authorization", "Bearer test-token");
-                then.status(200).delay(Duration::from_secs(6));
-            })
-            .await;
-        let api_url = server.url("/api");
+        let (release, response) = oneshot::channel();
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+            release: response,
+            response: http_response("200 OK", b""),
+        }])
+        .await;
+        let api_url = format!("{}/api", server.url());
         let fixture = doctor_report_fixture_with_server(
             "running",
             None,
@@ -3987,12 +3984,23 @@ printf '%s\n' \
         );
         let client = build_api_client();
 
-        let reports =
-            build_runner_reports(&[runner], None, client.as_ref(), &empty_discovered(), &[]).await;
+        let runners = [runner];
+        let discovered = empty_discovered();
+        let reports = build_runner_reports(&runners, None, client.as_ref(), &discovered, &[]);
+        tokio::pin!(reports);
+        let request = tokio::select! {
+            request = server.next_request("cold-start doctor probe") => request,
+            _ = &mut reports => panic!("doctor probe completed before its response was released"),
+        };
+        assert!(request.starts_with("HEAD /api HTTP/1.1\r\n"));
+        assert!(request.contains("authorization: Bearer test-token\r\n"));
+        raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(6)).await;
+        release.send(()).unwrap();
+        let reports = reports.await;
 
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].api_ok, Some(true));
-        api.assert_calls_async(1).await;
+        server.assert_finished().await;
     }
 
     #[tokio::test]

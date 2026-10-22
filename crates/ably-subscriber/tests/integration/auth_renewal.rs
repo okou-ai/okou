@@ -7,6 +7,7 @@ use std::time::Duration;
 use ably_subscriber::protocol::{ErrorInfo, ProtocolMessage, action, encode_msg, error_code};
 use ably_subscriber::{Event, Subscription, TimingConfig, subscribe};
 use futures_util::SinkExt;
+use raw_http_test_support::clock::advance_timer_phase;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -151,6 +152,10 @@ impl RenewalHarness {
         expect_named_message(&mut sub, "baseline").await;
         if matches!(trigger, Trigger::ServerAuth) {
             request_auth(&mut conn).await;
+        } else {
+            // The real handshake and baseline delivery prove the proactive
+            // timer is armed. Resume before it begins callback/HTTP work.
+            advance_timer_phase(Duration::from_secs(4)).await;
         }
         wait_for_test_observation(entered_rx, "held token phase entered").await;
 

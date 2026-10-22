@@ -9,3 +9,7 @@
 /// Scripted loopback HTTP servers, request capture and bounded task cleanup.
 #[cfg(any(test, feature = "test-support"))]
 pub mod raw_http;
+
+/// Timer phases that resume real time before scheduling transport work.
+#[cfg(any(test, feature = "test-support"))]
+pub mod clock;

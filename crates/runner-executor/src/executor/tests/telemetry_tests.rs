@@ -28,7 +28,7 @@ use super::super::{
 };
 use super::support::{
     context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
-    test_budget_lease, test_executor_config,
+    test_budget_lease, test_executor_config, test_executor_config_with_startup_api,
 };
 use crate::guest_timezone::GuestTimezoneAssumption;
 use crate::home_mount::ensure_home_drive_mounted;
@@ -1659,7 +1659,7 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 #[tokio::test]
 async fn execution_entries_preserve_start_telemetry_on_session_rejection() {
     let dir = tempfile::tempdir().unwrap();
-    let mut config = test_executor_config(dir.path()).await;
+    let (mut config, _seed_api) = test_executor_config_with_startup_api(dir.path()).await;
     let factory = MockSandboxFactory::new();
     let (mut seed, seed_telemetry) = execute_job(
         &factory,

@@ -544,6 +544,10 @@ When a timer case also uses real sockets, complete the peer's observable I/O on
 running time before pausing just the timer phase. Keep a deliberately unpolled
 future owned, advance to its unchanged deadline, and resume before polling it or
 performing socket cleanup. Do not auto-advance through real I/O setup.
+For a spawned timer owner, the test-support
+[`advance_timer_phase`](../../crates/raw-http-test-support/src/clock.rs) helper
+resumes the clock before Tokio's advance yield can schedule awakened I/O. Observe
+request or retry admission first; keep real transport and cleanup on running time.
 For external processes and kernel I/O, wait for the observable completion under
 a bounded deadline; a paused Tokio clock does not control those systems. A
 completed `dd` followed by `sync` already supplies that completion boundary in

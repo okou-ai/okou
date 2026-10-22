@@ -2435,33 +2435,36 @@ mod tests {
 
     #[tokio::test]
     async fn heartbeat_and_connector_sync_allow_api_cold_starts() {
-        let server = MockServer::start_async().await;
-        let heartbeat = server
-            .mock_async(|when, then| {
-                when.method(POST)
-                    .path("/api/runners/heartbeat")
-                    .header("authorization", "Bearer runner-token");
-                then.status(200).delay(Duration::from_secs(6));
-            })
-            .await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (entered, mut requests) = tokio::sync::mpsc::channel(2);
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let peer_release = Arc::clone(&release);
+        let server = tokio::spawn(async move {
+            let response = json_response(
+                "200 OK",
+                &serde_json::json!({
+                    "results": [{
+                        "target": {"kind": "builtin", "connectorSlug": "slack"},
+                        "state": "unresolved",
+                        "reason": "connector-unavailable",
+                    }],
+                })
+                .to_string(),
+            );
+            let serve = || async {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                entered
+                    .send(read_http_request(&mut socket).await.unwrap())
+                    .await
+                    .unwrap();
+                let _permit = peer_release.acquire().await.unwrap();
+                socket.write_all(&response).await.unwrap();
+            };
+            tokio::join!(serve(), serve());
+        });
         let run_id = RunId::from(uuid::Uuid::nil());
-        let sync = server
-            .mock_async(|when, then| {
-                when.method(POST)
-                    .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"))
-                    .header("authorization", "Bearer runner-token");
-                then.status(200)
-                    .delay(Duration::from_secs(6))
-                    .json_body(serde_json::json!({
-                        "results": [{
-                            "target": {"kind": "builtin", "connectorSlug": "slack"},
-                            "state": "unresolved",
-                            "reason": "connector-unavailable",
-                        }],
-                    }));
-            })
-            .await;
-        let api = api_client_for_server(&server);
+        let api = api_client_for_url(url);
         let state = heartbeat_state_for_test();
         let targets = [ConnectorRuntimeTargetRegistration::Builtin {
             connector_slug: "slack".to_string(),
@@ -2469,18 +2472,42 @@ mod tests {
             source_id: None,
         }];
 
-        let (heartbeat_result, sync_result) = tokio::join!(
-            api.heartbeat(&state),
-            api.sync_connector_runtime(run_id, &targets),
+        let calls = async {
+            tokio::join!(
+                api.heartbeat(&state),
+                api.sync_connector_runtime(run_id, &targets)
+            )
+        };
+        tokio::pin!(calls);
+        let mut paths = Vec::new();
+        for _ in 0..2 {
+            let request = tokio::select! {
+                request = tokio::time::timeout(Duration::from_secs(5), requests.recv()) => {
+                    request.unwrap().unwrap()
+                },
+                _ = &mut calls => panic!("cold-start calls completed before their responses were released"),
+            };
+            assert!(request.contains("authorization: Bearer runner-token\r\n"));
+            paths.push(request.lines().next().unwrap().to_owned());
+        }
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                "POST /api/runners/heartbeat HTTP/1.1".to_owned(),
+                format!("POST /api/runners/runs/{run_id}/connector-runtime/sync HTTP/1.1"),
+            ]
         );
+        raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(6)).await;
+        release.add_permits(2);
+        let (heartbeat_result, sync_result) = calls.await;
 
         heartbeat_result.expect("heartbeat should survive an API cold start");
         assert!(matches!(
             sync_result.expect("connector sync should survive an API cold start"),
             ConnectorRuntimeSyncOutcome::Synced(response) if response.results.len() == 1
         ));
-        heartbeat.assert_calls_async(1).await;
-        sync.assert_calls_async(1).await;
+        join_raw_http_task(server, "cold-start API peers").await;
     }
 
     async fn claim_decode_error(
