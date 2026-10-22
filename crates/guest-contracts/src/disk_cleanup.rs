@@ -2,6 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Minimum free home bytes needed for bootstrap and reusable home admission.
+pub const MIN_HOME_AVAILABLE_BYTES: u64 = 64 * 1024 * 1024;
+/// Minimum free home inodes needed for bootstrap and reusable home admission.
+pub const MIN_HOME_AVAILABLE_INODES: u64 = 128;
+
 /// Guest filesystem whose disposable caches may be reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,8 +50,8 @@ impl DiskCleanupReport {
     /// Whether measured improvement leaves a bounded bootstrap retry reserve.
     #[must_use]
     pub const fn permits_retry(&self) -> bool {
-        self.available_bytes_after >= 64 * 1024 * 1024
-            && self.available_inodes_after >= 128
+        self.available_bytes_after >= MIN_HOME_AVAILABLE_BYTES
+            && self.available_inodes_after >= MIN_HOME_AVAILABLE_INODES
             && (self.available_bytes_after > self.available_bytes_before
                 || self.available_inodes_after > self.available_inodes_before)
     }

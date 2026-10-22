@@ -660,7 +660,7 @@ async fn cleanup_phases(
         .await
         .map_err(|e| e.error.to_string())?;
         revalidate!();
-        prepare_terminal_cache_runtime(
+        let home_ready = prepare_terminal_cache_runtime(
             owner
                 .sandbox
                 .as_deref()
@@ -672,6 +672,9 @@ async fn cleanup_phases(
         )
         .await
         .map_err(|e| e.to_string())?;
+        if !home_ready {
+            return Err("required home publication rejected below reuse reserve".into());
+        }
         revalidate!();
         owner.state = IdleActivationState::Uncertain;
         freeze_home_drive(

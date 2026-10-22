@@ -343,6 +343,7 @@ impl Fixture {
                     }, context, &this.config, &params,
                     runner_provider::RunCancellationSignals::from_hard_token(CancellationToken::new()),
                     executor::ExecutionHooks {
+                        sandbox_recovery: None,
                         sandbox_prepared: None, active_input_source: None, pre_spawn_timing: None,
                     },
                 ).await
@@ -351,6 +352,7 @@ impl Fixture {
                 &this.config, &params,
                 runner_provider::RunCancellationSignals::from_hard_token(CancellationToken::new()),
                 executor::ExecutionHooks {
+                    sandbox_recovery: None,
                     sandbox_prepared: None, active_input_source: None, pre_spawn_timing: None,
                 },
             ).await };

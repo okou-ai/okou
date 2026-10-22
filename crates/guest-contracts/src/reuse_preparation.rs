@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub const REUSE_PREPARATION_EXIT_SUCCESS: i32 = 0;
 /// The helper request was missing or invalid.
 pub const REUSE_PREPARATION_EXIT_INVALID_REQUEST: i32 = 2;
-/// Root filesystem capacity could not be inspected.
+/// Guest root or home filesystem capacity could not be inspected.
 pub const REUSE_PREPARATION_EXIT_INSPECTION_FAILED: i32 = 3;
 /// Stale runner-owned runtime state could not be safely removed.
 pub const REUSE_PREPARATION_EXIT_CLEANUP_FAILED: i32 = 4;
@@ -29,14 +29,31 @@ pub struct ReusePreparationRequest {
     pub retained_runtime_dir: Option<String>,
 }
 
-/// User-available capacity on the guest root filesystem.
+/// User-available capacity on one guest filesystem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RootFilesystemCapacity {
+pub struct FilesystemCapacity {
     /// Bytes available to an unprivileged guest process.
     pub available_bytes: u64,
     /// Inodes available to an unprivileged guest process.
     pub available_inodes: u64,
+}
+
+impl FilesystemCapacity {
+    /// Stable admission reason when the home lacks bootstrap working capacity.
+    #[must_use]
+    pub const fn home_rejection_reason(self) -> Option<&'static str> {
+        use crate::disk_cleanup::{MIN_HOME_AVAILABLE_BYTES, MIN_HOME_AVAILABLE_INODES};
+        match (
+            self.available_bytes < MIN_HOME_AVAILABLE_BYTES,
+            self.available_inodes < MIN_HOME_AVAILABLE_INODES,
+        ) {
+            (true, true) => Some("home_low_bytes_and_inodes"),
+            (true, false) => Some("home_low_bytes"),
+            (false, true) => Some("home_low_inodes"),
+            (false, false) => None,
+        }
+    }
 }
 
 /// Result emitted after stale runner-owned runtime state is reclaimed.
@@ -44,9 +61,11 @@ pub struct RootFilesystemCapacity {
 #[serde(rename_all = "camelCase")]
 pub struct ReusePreparationReport {
     /// Rootfs capacity observed before cleanup.
-    pub before: RootFilesystemCapacity,
+    pub before: FilesystemCapacity,
     /// Rootfs capacity observed after cleanup.
-    pub after: RootFilesystemCapacity,
+    pub after: FilesystemCapacity,
+    /// Home capacity observed after cleanup, independent of rootfs capacity.
+    pub home: FilesystemCapacity,
     /// Number of unprotected entries removed directly below the runtime parent.
     pub removed_entries: u64,
 }

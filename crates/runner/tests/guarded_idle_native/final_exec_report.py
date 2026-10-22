@@ -9,9 +9,9 @@ import pressure_report as pressure
 
 PHASES = preparation.PHASES
 LEASE = preparation.LEASE
-COMMAND = ('set -e\n/usr/local/bin/guest-agent prepare-for-reuse\nset +e\n(\nset -eu\n'
-           '/sbin/guest-home-mount\n) >/dev/null\nmount_status=$?\nset -e\n'
-           'if [ "$mount_status" -ne 0 ]; then\n  exit 6\nfi')
+COMMAND = ('set +e\n(\nset -eu\n'
+           '/sbin/guest-home-mount\n) </dev/null >/dev/null\nmount_status=$?\nset -e\n'
+           'if [ "$mount_status" -ne 0 ]; then\n  exit 6\nfi\n/usr/local/bin/guest-agent prepare-for-reuse')
 LABEL = b"idle-reuse-preparation-and-park"
 
 
@@ -72,14 +72,15 @@ def wire(value, kind, sequence=None, unix_window=None, history=None):
         if len(stdout)>65536 or len(stderr)>65536:
             raise ValueError("final-exec bounded output contract changed")
         result = json.loads(stdout, object_pairs_hook=pressure.unique_object)
-        if not isinstance(result,dict) or set(result)!={"before","after","removedEntries"}:
+        if not isinstance(result,dict) or set(result)!={"before","after","home","removedEntries"}:
             raise ValueError("original final preparation report is missing or malformed")
-        for capacity in (result["before"],result["after"]):
+        for capacity in (result["before"],result["after"],result["home"]):
             if (not isinstance(capacity,dict) or set(capacity)!={"availableBytes","availableInodes"}
                     or any(type(v) is not int or not 0<=v<=2**64-1 for v in capacity.values())):
                 raise ValueError("original final preparation capacity report changed")
         if (type(result["removedEntries"]) is not int or not 0<=result["removedEntries"]<=2**64-1
-                or result["after"]["availableBytes"]<128*1024**2 or result["after"]["availableInodes"]<1024):
+                or result["after"]["availableBytes"]<128*1024**2 or result["after"]["availableInodes"]<1024
+                or result["home"]["availableBytes"]<64*1024**2 or result["home"]["availableInodes"]<128):
             raise ValueError("actual final preparation did not pass owner capacity requirements")
     else:
         raise ValueError("unexpected final-exec wire authority")

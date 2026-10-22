@@ -19,6 +19,50 @@ fn startup_http(api_url: String) -> HttpClient {
 }
 
 #[tokio::test]
+async fn startup_source_waits_for_bootstrap_and_authenticated_agent_ready() {
+    let dir = tempfile::tempdir().unwrap();
+    let api = MockServer::start_async().await;
+    let mut config = test_executor_config(dir.path()).await;
+    config.http = startup_http(api.base_url());
+    let report = api.mock(|when, then| {
+        when.method(PUT)
+            .path_matches("/api/runners/runs/[^/]+/startup")
+            .json_body(serde_json::json!({"sandboxStartupPath":"cold"}));
+        then.status(204);
+    });
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let files = MockLifecycleGate::new();
+    let agent = MockLifecycleGate::new();
+    overrides.set_private_write_file_lifecycle_gate(files.clone());
+    overrides.set_start_process_lifecycle_gate(agent.clone());
+    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let task = AbortOnDropHandle::new(tokio::spawn(async move {
+        execute_job(
+            &factory,
+            minimal_context(),
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::PoolMiss,
+            },
+            &config,
+            &default_params(),
+            CancellationToken::new(),
+        )
+        .await
+    }));
+    files.wait_entered(1, WAIT).await.unwrap();
+    report.assert_calls_async(0).await;
+    files.release_one();
+    agent.wait_entered(1, WAIT).await.unwrap();
+    report.assert_calls_async(0).await;
+    agent.release_one();
+    let (mut outcome, _) = tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
+    assert_eq!(outcome.exit_code(), 0);
+    outcome.startup_report.take().unwrap().finish().await;
+    report.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn startup_upload_does_not_gate_guest_execution_or_execution_result() {
     let dir = tempfile::tempdir().unwrap();
     let (release, released) = tokio::sync::oneshot::channel();
@@ -29,26 +73,30 @@ async fn startup_upload_does_not_gate_guest_execution_or_execution_result() {
     }])
     .await;
     let mut config = test_executor_config(dir.path()).await;
+    let context = minimal_context();
+    let mut telemetry = test_telemetry(&config, &context);
     config.http = startup_http(api.url());
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let wait = MockLifecycleGate::new();
     overrides.set_wait_process_lifecycle_gate(wait.clone());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
-    let context = minimal_context();
     let run_id = context.run_id;
     let task = AbortOnDropHandle::new(tokio::spawn(async move {
-        execute_job(
+        let outcome = execute_new_sandbox(
             &factory,
-            context,
+            &context,
             NewSandboxDispatch {
                 id: SandboxId::new_v4(),
                 reuse_result: SandboxReuseResult::PoolMiss,
             },
             &config,
             &default_params(),
+            &mut telemetry,
             CancellationToken::new(),
         )
         .await
+        .unwrap();
+        (outcome, telemetry)
     }));
 
     let request = api.next_request("settled cold startup report").await;

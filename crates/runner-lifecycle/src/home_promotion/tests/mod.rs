@@ -18,6 +18,34 @@ fn terminal_report() -> TerminalHomeCachePreparationReport {
 }
 
 #[tokio::test]
+async fn successful_run_with_full_home_is_not_frozen_published_or_advertised() {
+    for (bytes, inodes) in [(0, 2048), (256 * 1024 * 1024, 0), (0, 0)] {
+        let fixture = HomePromotionFixture::new("thread:full-home").await;
+        let mut report = terminal_report();
+        report.cleanup.home.available_bytes = bytes;
+        report.cleanup.home.available_inodes = inodes;
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        overrides.add_exec_result_matcher(
+            "prepare-for-cache",
+            ExecResult::new(0, serde_json::to_vec(&report).unwrap(), Vec::new()),
+        );
+        let sandbox =
+            MockSandbox::with_overrides(fixture.sandbox_id.to_string(), overrides.clone());
+        assert!(
+            prepare_home_image_from_active_sandbox(&sandbox, Some(fixture.promotion), "test")
+                .await
+                .is_none()
+        );
+        assert_eq!(
+            overrides.exec_calls().len(),
+            1,
+            "unusable home must not be frozen"
+        );
+        assert!(fixture.cache.held_home_states().await.is_empty());
+    }
+}
+
+#[tokio::test]
 async fn changed_terminal_home_mount_rejects_before_cleanup_freeze_or_publication() {
     let fixture = HomePromotionFixture::new("thread:terminal-mount-rejected").await;
     let cache = fixture.cache.clone();

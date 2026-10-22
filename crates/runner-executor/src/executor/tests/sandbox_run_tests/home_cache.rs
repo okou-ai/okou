@@ -25,17 +25,14 @@ fn consumption_facts(recorded: &JobTelemetry) -> Vec<HomeObservation> {
 
 fn assert_home_fallback(recorded: &JobTelemetry, run_id: RunId, reason: &str) {
     let facts = consumption_facts(recorded);
-    assert_eq!(facts.len(), 3, "{facts:#?}");
-    assert_eq!(facts[0].outcome, HomeOutcome::Selected);
-    assert_eq!(facts[0].reason.as_deref(), Some("cache_hit"));
-    assert_eq!(facts[1].outcome, HomeOutcome::Failed);
-    assert_eq!(facts[1].reason.as_deref(), Some("sandbox_prepare_failed"));
-    assert_eq!(facts[2].outcome, HomeOutcome::Fallback);
-    assert_eq!(facts[2].reason.as_deref(), Some(reason));
+    assert_eq!(facts.len(), 2, "{facts:#?}");
+    assert_eq!(facts[0].outcome, HomeOutcome::Failed);
+    assert_eq!(facts[0].reason.as_deref(), Some("sandbox_prepare_failed"));
+    assert_eq!(facts[1].outcome, HomeOutcome::Fallback);
+    assert_eq!(facts[1].reason.as_deref(), Some(reason));
     assert!(facts.iter().all(|fact| fact.run_id == Some(run_id)));
     assert!(facts[0].image_generation.is_some());
     assert_eq!(facts[0].image_generation, facts[1].image_generation);
-    assert_eq!(facts[0].image_generation, facts[2].image_generation);
 }
 
 fn assert_api_to_spawn_path(
@@ -585,11 +582,6 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
     );
 
     assert_telemetry_action(&telemetry, "runner_fresh_home_image_prepare", true, None);
-    assert!(
-        consumption_facts(&telemetry)
-            .iter()
-            .any(|fact| fact.outcome == HomeOutcome::Selected)
-    );
     assert_home_fallback(&telemetry, ctx.run_id, "home_preparation_failed");
     let factory_create_outcomes =
         telemetry_action_outcomes(&telemetry, "runner_fresh_sandbox_factory_create");
@@ -752,12 +744,11 @@ async fn process_timeout_invalidates_consumed_home_cache_without_fallback() {
     assert!(!expected_seed.exists());
     assert_no_telemetry_action(&telemetry, "runner_fresh_sandbox_dns_readiness_retry");
     let consumption = consumption_facts(&telemetry);
-    assert_eq!(consumption[0].outcome, HomeOutcome::Selected);
-    assert_eq!(consumption.len(), 2);
-    assert_eq!(consumption[1].outcome, HomeOutcome::Failed);
-    assert_eq!(consumption[1].run_id, Some(ctx.run_id));
+    assert_eq!(consumption.len(), 1);
+    assert_eq!(consumption[0].outcome, HomeOutcome::Failed);
+    assert_eq!(consumption[0].run_id, Some(ctx.run_id));
     assert_eq!(
-        consumption[1].reason.as_deref(),
+        consumption[0].reason.as_deref(),
         Some("sandbox_prepare_failed")
     );
 
@@ -904,15 +895,14 @@ async fn execute_inner_cache_hit_retry_requires_completed_cleanup() {
         .into_iter()
         .filter(|fact| fact.kind == runner_host::home_observation::HomeObservationKind::Consumption)
         .collect();
-    assert_eq!(consumption.len(), 2);
-    assert_eq!(consumption[0].outcome, HomeOutcome::Selected);
+    assert_eq!(consumption.len(), 1);
     assert_eq!(
-        consumption[1].outcome,
+        consumption[0].outcome,
         runner_host::home_observation::HomeObservationOutcome::Failed,
     );
-    assert_eq!(consumption[1].run_id, Some(ctx.run_id));
-    assert!(consumption[1].image_generation.is_some());
-    assert_eq!(consumption[1].reason.as_deref(), Some("cleanup_uncertain"));
+    assert_eq!(consumption[0].run_id, Some(ctx.run_id));
+    assert!(consumption[0].image_generation.is_some());
+    assert_eq!(consumption[0].reason.as_deref(), Some("cleanup_uncertain"));
 }
 
 #[tokio::test]
@@ -996,11 +986,6 @@ async fn execute_inner_waits_for_transient_home_cache_lock() {
     );
 
     assert_telemetry_action(&telemetry, "runner_fresh_home_image_prepare", true, None);
-    assert!(
-        consumption_facts(&telemetry)
-            .iter()
-            .any(|fact| fact.outcome == HomeOutcome::Selected)
-    );
     assert_telemetry_action(
         &telemetry,
         "runner_fresh_sandbox_factory_create",
@@ -1172,11 +1157,6 @@ async fn execute_inner_immediate_lock_policy_still_consumes_available_cache() {
             size_mb: 16,
             seed_image: Some(sandbox::HomeDriveSeedImage::Move(seeded_cache)),
         })
-    );
-    assert!(
-        consumption_facts(&telemetry)
-            .iter()
-            .any(|fact| fact.outcome == HomeOutcome::Selected)
     );
 }
 

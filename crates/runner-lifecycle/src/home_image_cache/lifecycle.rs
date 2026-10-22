@@ -1273,11 +1273,10 @@ impl HomeImageLease {
         })
     }
 
-    /// Candidate evidence, omitted if its lock detail is unknown. Only the
-    /// later settled startup proves use; missing telemetry never affects it.
+    /// Non-reuse diagnostics. A hit is reported only at actual Agent startup.
     pub fn checkout_observation(&self) -> Option<HomeObservation> {
         let (outcome, reason) = match self.result {
-            HomeCacheCheckoutResult::Hit => (HomeObservationOutcome::Selected, Some("cache_hit")),
+            HomeCacheCheckoutResult::Hit => return None,
             HomeCacheCheckoutResult::Miss => (HomeObservationOutcome::Fallback, Some("cache_miss")),
             HomeCacheCheckoutResult::NoReuseKey => {
                 (HomeObservationOutcome::Skipped, Some("no_reuse_key"))

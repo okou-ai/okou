@@ -254,6 +254,7 @@ pub struct JobTelemetry {
     sandbox_startup_path: Option<RunnerStartupPath>,
     is_first_run: Option<bool>,
     home_startup_source: Option<HomeStartupSource>,
+    home_non_reuse_reason: Option<&'static str>,
     runner_pre_spawn_attribution: Option<RunnerPreSpawnAttribution>,
     pending: PendingOperations,
     in_flight_flushes: Vec<JoinHandle<()>>,
@@ -486,6 +487,7 @@ impl JobTelemetry {
             sandbox_startup_path: None,
             is_first_run: None,
             home_startup_source: None,
+            home_non_reuse_reason: None,
             runner_pre_spawn_attribution: None,
             pending: PendingOperations::default(),
             in_flight_flushes: Vec::new(),
@@ -516,6 +518,10 @@ impl JobTelemetry {
         });
     }
 
+    pub(crate) fn set_home_non_reuse_reason(&mut self, reason: &'static str) {
+        self.home_non_reuse_reason = Some(reason);
+    }
+
     pub fn new_runner(
         http: HttpClient,
         token: String,
@@ -529,6 +535,7 @@ impl JobTelemetry {
             sandbox_startup_path: None,
             is_first_run: None,
             home_startup_source: None,
+            home_non_reuse_reason: None,
             runner_pre_spawn_attribution: None,
             pending: PendingOperations::default(),
             in_flight_flushes: Vec::new(),
@@ -564,6 +571,13 @@ impl JobTelemetry {
         op.runner_startup_path = Some(path);
         op.sandbox_reuse_result = Some(sandbox_reuse_result);
         op.home_reuse_result = Some(home_reuse_result);
+        if home_reuse_result != HomeReuseResult::Reused {
+            op.reason = Some(
+                self.home_non_reuse_reason
+                    .unwrap_or(home_reuse_result.as_wire())
+                    .to_owned(),
+            );
+        }
         op.reuse_key = reuse_key.map(str::to_owned);
         if path == RunnerStartupPath::Home
             && let Some(source) = &self.home_startup_source
@@ -591,6 +605,7 @@ impl JobTelemetry {
             sandbox_startup_path: self.sandbox_startup_path,
             is_first_run: self.is_first_run,
             home_startup_source: self.home_startup_source.clone(),
+            home_non_reuse_reason: self.home_non_reuse_reason,
             runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
             pending: PendingOperations::default(),
             in_flight_flushes: Vec::new(),

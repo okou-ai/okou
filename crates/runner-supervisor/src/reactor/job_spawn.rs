@@ -16,6 +16,7 @@ use tokio::task::JoinSet;
 use tracing::{error, warn};
 
 use super::job_terminal_log::log_terminal_job_outcome;
+use super::sandbox_recovery::{self, ActiveSandboxIdentity};
 #[cfg(test)]
 use super::{
     OuterJobPanicPoint, StartLoopTestObserver, finalization_test_hooks, maybe_panic_outer_job,
@@ -117,6 +118,7 @@ pub(super) struct SpawnJobRequest {
 }
 
 struct ExecutorInvocation {
+    sandbox_recovery: Option<executor::SandboxRecoveryHooks>,
     run_id: RunId,
     sandbox_id: SandboxId,
     context: ExecutionContext,
@@ -142,6 +144,7 @@ struct ExecutorPhaseOutcome {
 impl ExecutorInvocation {
     async fn execute(self) -> ExecutorPhaseOutcome {
         let Self {
+            sandbox_recovery,
             run_id,
             sandbox_id,
             context,
@@ -175,6 +178,7 @@ impl ExecutorInvocation {
                     &params,
                     cancellation_for_executor,
                     executor::ExecutionHooks {
+                        sandbox_recovery,
                         sandbox_prepared: None,
                         active_input_source,
                         pre_spawn_timing: Some(pre_spawn_timing),
@@ -193,6 +197,7 @@ impl ExecutorInvocation {
                     &params,
                     cancellation_for_executor,
                     executor::ExecutionHooks {
+                        sandbox_recovery,
                         sandbox_prepared,
                         active_input_source,
                         pre_spawn_timing: Some(pre_spawn_timing),
@@ -256,8 +261,9 @@ impl ExecutorInvocation {
 }
 
 struct FinalizationPhase {
+    active_sandbox: ActiveSandboxIdentity,
+    orphaned_active_runs: OrphanedActiveRuns,
     run_id: RunId,
-    sandbox_id: SandboxId,
     runner_id: String,
     active_lease: BudgetLease,
     reuse_result: SandboxReuseResult,
@@ -289,8 +295,9 @@ struct FinalizationPhase {
 impl FinalizationPhase {
     async fn finalize(self, executor_result: ExecutorPhaseOutcome) -> FinalizedJob {
         let Self {
+            active_sandbox,
+            orphaned_active_runs,
             run_id,
-            sandbox_id,
             runner_id,
             active_lease,
             reuse_result,
@@ -324,6 +331,18 @@ impl FinalizationPhase {
             err: _,
             mut telemetry,
         } = executor_result;
+        if active_sandbox.is_unresolved() {
+            let id = active_sandbox.current();
+            if !orphaned_active_runs.has_retained_budget(run_id, id) {
+                orphaned_active_runs.insert_retaining_budget(run_id, id, active_lease);
+            }
+            return FinalizedJob {
+                finalization_ready: crate::job_lifecycle::FinalizationReady::new(
+                    crate::job_lifecycle::BudgetOwnership::orphan_owned(),
+                ),
+                telemetry,
+            };
+        }
         let executor::ExecuteOutcome {
             failure: _,
             sandbox_reuse_disposition,
@@ -340,7 +359,7 @@ impl FinalizationPhase {
         // `sandbox.park()` is in flight. Pass the live handle to the supervisor.
         let finalization_context = FinalizeContext {
             run_id,
-            sandbox_id,
+            sandbox_id: active_sandbox.current(),
             runner_id,
             reuse_result,
             profile_name,
@@ -540,6 +559,8 @@ pub(super) async fn run_job(
     let usage_flush_tx = ctx.usage_flush_tx.clone();
     let parking_gate = ctx.parking_gate.clone();
     let cleanup_state = RunCleanupState::new();
+    let active_sandbox = ActiveSandboxIdentity::new(sandbox_id);
+    let active_sandbox_for_panic = active_sandbox.clone();
     let cleanup_state_for_body = cleanup_state.clone();
     let cleanup_state_for_panic = cleanup_state.clone();
     let status_for_panic = Arc::clone(&status);
@@ -581,6 +602,12 @@ pub(super) async fn run_job(
         ))
     };
     let mut executor = ExecutorInvocation {
+        sandbox_recovery: Some(sandbox_recovery::source(
+            &ctx,
+            &params,
+            factory.clone(),
+            active_sandbox.clone(),
+        )),
         run_id,
         sandbox_id,
         context,
@@ -596,8 +623,9 @@ pub(super) async fn run_job(
         active_input_source,
     };
     let finalization = FinalizationPhase {
+        active_sandbox: active_sandbox.clone(),
+        orphaned_active_runs: ctx.orphaned_active_runs.clone(),
         run_id,
-        sandbox_id,
         runner_id,
         active_lease,
         reuse_result,
@@ -665,7 +693,7 @@ pub(super) async fn run_job(
             executor_result.exit_code,
             failure_reason,
             executor_result.err.take(),
-            sandbox_id,
+            active_sandbox.current(),
             completion_auth,
         );
         // Structural guarantee: claim (in provider) is always paired with complete.
@@ -694,7 +722,7 @@ pub(super) async fn run_job(
         Err(payload) => {
             let cleanup = cleanup_panicked_job(
                 run_id,
-                sandbox_id,
+                active_sandbox_for_panic.current(),
                 cancellation,
                 status_for_panic,
                 idle_pool_for_panic,
@@ -891,8 +919,9 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(active_run_guard);
             FinalizationPhase {
+                active_sandbox: ActiveSandboxIdentity::new(sandbox_id),
+                orphaned_active_runs: OrphanedActiveRuns::new(),
                 run_id,
-                sandbox_id,
                 runner_id: "runner-test".into(),
                 active_lease,
                 reuse_result: SandboxReuseResult::PoolMiss,

@@ -54,13 +54,20 @@ pub async fn prepare_home_image_from_active_sandbox(
         ensure_home_drive_mounted(sandbox, promotion.run_id())
             .await
             .map_err(|failure| failure.error)?;
-        prepare_terminal_cache_runtime(sandbox, &mut promotion).await?;
-        freeze_home_drive(sandbox, promotion.run_id()).await
+        if !prepare_terminal_cache_runtime(sandbox, &mut promotion).await? {
+            return Ok(false);
+        }
+        freeze_home_drive(sandbox, promotion.run_id()).await?;
+        Ok(true)
     })
     .catch_unwind()
     .await;
     match result {
-        Ok(Ok(())) => Some(PreparedHomeImagePromotion { promotion, reason }),
+        Ok(Ok(true)) => Some(PreparedHomeImagePromotion { promotion, reason }),
+        Ok(Ok(false)) => {
+            abandon_unpublished_home_promotion(Some(promotion), reason).await;
+            None
+        }
         Ok(Err(error)) => {
             log_guest_operation_failure(&promotion, reason, &error);
             abandon_unpublished_home_promotion(Some(promotion), reason).await;
@@ -112,7 +119,7 @@ fn log_guest_operation_failure(
 pub(crate) async fn prepare_terminal_cache_runtime(
     sandbox: &dyn Sandbox,
     promotion: &mut HomeImagePromotionContext,
-) -> crate::error::LifecycleResult<()> {
+) -> crate::error::LifecycleResult<bool> {
     let current_runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(
         CANONICAL_GUEST_HOME_DIR,
         &promotion.run_id().to_string(),
@@ -163,6 +170,14 @@ pub(crate) async fn prepare_terminal_cache_runtime(
     }
     let report: TerminalHomeCachePreparationReport = serde_json::from_slice(&result.stdout)
         .map_err(|_| LifecycleError::Internal("invalid terminal home cleanup report".into()))?;
+    if let Some(reason) = report.cleanup.home.home_rejection_reason() {
+        tracing::info!(run_id = %promotion.run_id(), sandbox_id = %promotion.sandbox_id(),
+            reason, home_available_bytes = report.cleanup.home.available_bytes,
+            home_available_inodes = report.cleanup.home.available_inodes,
+            "home image rejected below reuse reserve");
+        promotion.observe_publication(HomeObservationOutcome::Skipped, reason);
+        return Ok(false);
+    }
     if let Some(binding) = &report.history_proof {
         binding
             .validate()
@@ -182,7 +197,7 @@ pub(crate) async fn prepare_terminal_cache_runtime(
     // Clear a previous candidate even on an ordinary history miss. This setter
     // validates the publication generation before storing optional evidence.
     promotion.set_home_history_proof(report.history_proof)?;
-    Ok(())
+    Ok(true)
 }
 
 impl PreparedHomeImagePromotion {

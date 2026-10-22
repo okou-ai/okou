@@ -850,6 +850,10 @@ pub(super) struct PreparedRunPayload {
 }
 
 impl PreparedRunPayload {
+    pub(super) fn from_captured(payload: guest_contracts::env::RunPayload) -> Self {
+        Self { payload }
+    }
+
     pub(super) fn into_run_payload(
         mut self,
         context: &ExecutionContext,

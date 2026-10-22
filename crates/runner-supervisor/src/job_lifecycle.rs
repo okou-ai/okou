@@ -165,6 +165,8 @@ pub enum BudgetOwnership {
     IdleOwned,
     /// A claimed exact successor owns the sandbox and lease directly.
     HandoffOwned,
+    /// Orphan reconciliation retains capacity until physical absence is proven.
+    OrphanOwned,
 }
 
 impl BudgetOwnership {
@@ -180,10 +182,14 @@ impl BudgetOwnership {
         Self::HandoffOwned
     }
 
+    pub fn orphan_owned() -> Self {
+        Self::OrphanOwned
+    }
+
     fn release(self) {
         match self {
             Self::Active(lease) => drop(lease),
-            Self::IdleOwned | Self::HandoffOwned => {}
+            Self::IdleOwned | Self::HandoffOwned | Self::OrphanOwned => {}
         }
     }
 }
@@ -362,6 +368,9 @@ impl FinalizationReady {
         ownership: &OwnershipTransitions<'_>,
         cleanup_state: &RunCleanupState,
     ) {
+        if matches!(self.budget, BudgetOwnership::OrphanOwned) {
+            return;
+        }
         ownership.active_completed(completed_run).await;
         cleanup_state.mark_status_removed();
         self.budget.release();

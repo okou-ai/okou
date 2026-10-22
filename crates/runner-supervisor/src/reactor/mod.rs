@@ -85,6 +85,7 @@ mod maintenance;
 mod peer_home_claim;
 mod pending_candidate;
 mod prune_idle;
+mod sandbox_recovery;
 pub(crate) mod signals;
 mod soft_drain;
 mod startup;

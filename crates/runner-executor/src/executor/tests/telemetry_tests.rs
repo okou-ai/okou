@@ -981,6 +981,7 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
@@ -1133,6 +1134,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
             &default_params(),
             RunCancellationSignals::from_hard_token(cancel),
             ExecutionHooks {
+                sandbox_recovery: None,
                 sandbox_prepared: None,
                 active_input_source: None,
                 pre_spawn_timing: Some(pre_spawn_timing_with_phases_and_concurrency(&concurrency)),
@@ -1168,6 +1170,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases_and_concurrency(&concurrency)),
@@ -1212,6 +1215,7 @@ async fn execute_job_attributes_resource_budget_occupancy_until_agent_ready() {
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing),
@@ -1254,6 +1258,7 @@ async fn execute_job_records_exact_reuse_speculation_timing() {
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_exact_reuse_speculation()),
@@ -1597,6 +1602,7 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
@@ -1705,6 +1711,7 @@ async fn execution_entries_preserve_start_telemetry_on_session_rejection() {
             context
         };
         let hooks = || ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: with_hooks.then(pre_spawn_timing_with_phases),
@@ -1990,6 +1997,7 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
         &params,
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing),
@@ -2064,6 +2072,7 @@ async fn assert_reused_private_write_timeout_telemetry(
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
@@ -2120,6 +2129,7 @@ async fn assert_reused_required_private_batch_failure(
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
@@ -2269,6 +2279,7 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(RunnerPreSpawnTiming::start_at(
@@ -2309,6 +2320,7 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
         &default_params(),
         RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases_and_concurrency(&concurrency)),

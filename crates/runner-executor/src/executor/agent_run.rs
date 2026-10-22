@@ -187,6 +187,7 @@ pub(super) struct ProcessCancelTimeouts {
 }
 
 pub(super) struct AgentExecutionResult {
+    pub(super) pre_agent_retry: Option<Box<PreparedRunInputs>>,
     pub(super) failure: Option<ExecutionFailure>,
     pub(super) sandbox_reuse_disposition: SandboxReuseDisposition,
     pub(super) stdout_stream_diagnostics: AgentStdoutStreamDiagnostics,
@@ -200,6 +201,7 @@ impl AgentExecutionResult {
         diagnostic: Option<FailureDiagnostic>,
     ) -> Self {
         Self {
+            pre_agent_retry: None,
             failure: Some(ExecutionFailure::new(exit_code, error, diagnostic)),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
@@ -213,6 +215,7 @@ impl AgentExecutionResult {
 
     pub(super) fn cancelled() -> Self {
         Self {
+            pre_agent_retry: None,
             failure: Some(ExecutionFailure::cancelled()),
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
@@ -831,6 +834,8 @@ pub(super) struct RunStart<'a> {
 }
 
 pub(super) struct RunControls {
+    pub(super) sandbox_recovery: Option<super::SandboxRecoveryHooks>,
+    pub(super) disk_recovery: bool,
     pub(super) cancel: CancellationToken,
     pub(super) cooperative_user_cancel: CancellationToken,
     pub(super) hard_cancel: CancellationToken,
@@ -1023,6 +1028,8 @@ impl RunControls {
     ) -> Self {
         Self {
             cancel: cancellation.any(),
+            sandbox_recovery: None,
+            disk_recovery: false,
             cooperative_user_cancel: cancellation.cooperative_user(),
             hard_cancel: cancellation.hard(),
             active_input_source,
@@ -1037,6 +1044,14 @@ impl RunControls {
 
     pub(super) fn with_spawn_timing(mut self, spawn_timing: RunnerSpawnTiming) -> Self {
         self.spawn_timing = Some(spawn_timing);
+        self
+    }
+
+    pub(super) fn with_sandbox_recovery(
+        mut self,
+        source: Option<super::SandboxRecoveryHooks>,
+    ) -> Self {
+        self.sandbox_recovery = source;
         self
     }
 
@@ -1060,10 +1075,12 @@ struct AgentBootstrapInputs {
     user_env_map: HashMap<String, String>,
     env_map: HashMap<String, String>,
     run_payload: guest_contracts::env::RunPayload,
+    original_native_continuation: Option<String>,
 }
 
 struct BootstrapFileFailure {
     error: RunnerError,
+    replace: bool,
     resource_diagnostics: Option<Box<ResourceFailureDiagnostics>>,
 }
 
@@ -1114,6 +1131,7 @@ impl AgentBootstrapInputs {
                 None => {
                     return Err(BootstrapFileFailure {
                         error: RunnerError::Cancelled,
+                        replace: false,
                         resource_diagnostics,
                     });
                 }
@@ -1127,6 +1145,7 @@ impl AgentBootstrapInputs {
             );
             if recovery_attempted || !super::disk_cleanup::is_disk_write_error(&error) {
                 return Err(BootstrapFileFailure {
+                    replace: recovery_attempted && super::disk_cleanup::is_disk_write_error(&error),
                     error,
                     resource_diagnostics,
                 });
@@ -1151,6 +1170,7 @@ impl AgentBootstrapInputs {
                 _ => {
                     return Err(BootstrapFileFailure {
                         error: RunnerError::Cancelled,
+                        replace: false,
                         resource_diagnostics,
                     });
                 }
@@ -1159,6 +1179,10 @@ impl AgentBootstrapInputs {
             if !recovered.retry {
                 return Err(BootstrapFileFailure {
                     error,
+                    // Helper failure prohibits an in-place replay. A new VM
+                    // still requires confirmed retirement of this entire VM,
+                    // including any helper whose terminal result was unknown.
+                    replace: true,
                     resource_diagnostics,
                 });
             }
@@ -1465,9 +1489,52 @@ pub(super) async fn run_in_sandbox(
         start,
         telemetry,
         PreparedRunInputs::new(controls, prepared_run_payload),
-        super::PROCESS_CANCEL_TIMEOUTS,
+        &mut AgentRunLifecycle::new(super::PROCESS_CANCEL_TIMEOUTS),
     )
     .await
+}
+
+/// Owned startup delivery and cancellation policy for one Agent attempt.
+pub(super) struct AgentRunLifecycle {
+    pub(super) startup_report: Option<super::StartupReport>,
+    process_cancel_timeouts: ProcessCancelTimeouts,
+}
+
+fn confirmed_guest_failure(error: &RunnerError) -> bool {
+    matches!(
+        error,
+        RunnerError::Sandbox(sandbox::SandboxError::Operation {
+            reason: sandbox::SandboxOperationReason::Guest,
+            ..
+        })
+    )
+}
+
+fn pre_agent_preparation_failure(
+    error: RunnerError,
+    mut controls: RunControls,
+    payload: PreparedRunPayload,
+) -> RunnerResult<AgentExecutionResult> {
+    if !controls.disk_recovery || controls.cancel.is_cancelled() || !confirmed_guest_failure(&error)
+    {
+        return Err(error);
+    }
+    controls.home_history_proof = None;
+    controls.prepared_storage = None;
+    controls.prepared_guest_runtime = None;
+    controls.guest_state_prepared = false;
+    let mut result = AgentExecutionResult::failure_from_error(error.to_string());
+    result.pre_agent_retry = Some(Box::new(PreparedRunInputs::new(controls, payload)));
+    Ok(result)
+}
+
+impl AgentRunLifecycle {
+    pub(super) fn new(process_cancel_timeouts: ProcessCancelTimeouts) -> Self {
+        Self {
+            startup_report: None,
+            process_cancel_timeouts,
+        }
+    }
 }
 
 /// Runs the inner guest-agent lifecycle with configurable cancellation timeouts.
@@ -1497,36 +1564,25 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     start: RunStart<'_>,
     telemetry: &mut JobTelemetry,
     inputs: PreparedRunInputs,
-    process_cancel_timeouts: ProcessCancelTimeouts,
+    lifecycle: &mut AgentRunLifecycle,
 ) -> RunnerResult<AgentExecutionResult> {
+    let process_cancel_timeouts = lifecycle.process_cancel_timeouts;
     let PreparedRunInputs {
-        controls,
+        mut controls,
         run_payload: prepared_run_payload,
     } = inputs;
-    let RunControls {
-        cancel,
-        cooperative_user_cancel,
-        hard_cancel,
-        active_input_source,
-        spawn_timing,
-        home_history_proof,
-        mut prepared_storage,
-        prepared_guest_runtime,
-        mut pre_spawn_admission_lease,
-        guest_state_prepared,
-    } = controls;
     let pre_spawn_started = Instant::now();
 
     // Complete cancellation-aware guest runtime and storage preparation while
     // taking ownership of model-catalog prefetch supervision.
-    let prepared_guest_runtime = match prepared_guest_runtime {
+    let prepared_guest_runtime = match controls.prepared_guest_runtime.take() {
         Some(prepared) => prepared,
-        None if guest_state_prepared => {
+        None if controls.guest_state_prepared => {
             PreparedGuestRuntime::start_codex_model_catalog_prefetch(
                 sandbox,
                 context,
                 start.reuse_result,
-                &cancel,
+                &controls.cancel,
                 telemetry,
             )
             .await
@@ -1537,7 +1593,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 start.restore_guest_state,
                 start.reuse_result,
-                &cancel,
+                &controls.cancel,
                 telemetry,
             )
             .await
@@ -1554,11 +1610,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let mut model_catalog_prefetch = match guest_preparation {
         Ok(prefetch) => prefetch.supervise(sandbox),
         Err(error) => {
-            if let Some(prepared) = prepared_storage.as_mut() {
+            if let Some(prepared) = controls.prepared_storage.as_mut() {
                 prepared.delivery.cancel_and_drain(telemetry).await;
             }
             let result = match error {
-                Some(error) => Err(error),
+                Some(error) => pre_agent_preparation_failure(error, controls, prepared_run_payload),
                 None => {
                     let result = pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
                     Ok(result)
@@ -1571,7 +1627,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let deferred_background_fill = {
         let storage_result = model_catalog_prefetch
             .race(run_pre_spawn_phase(
-                &cancel,
+                &controls.cancel,
                 &OperationCancellationContext::new(
                     &context.run_id.to_string(),
                     sandbox.id(),
@@ -1583,7 +1639,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     config,
                     &start,
                     telemetry,
-                    &mut prepared_storage,
+                    &mut controls.prepared_storage,
                 ),
             ))
             .await;
@@ -1596,12 +1652,14 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         match storage_preparation {
             Ok(deferred) => deferred,
             Err(error) => {
-                if let Some(prepared) = prepared_storage.as_mut() {
+                if let Some(prepared) = controls.prepared_storage.as_mut() {
                     prepared.delivery.cancel_and_drain(telemetry).await;
                 }
                 model_catalog_prefetch.finish(telemetry).await;
                 let result = match error {
-                    Some(error) => Err(error),
+                    Some(error) => {
+                        pre_agent_preparation_failure(error, controls, prepared_run_payload)
+                    }
                     None => {
                         let result =
                             pre_spawn_cancelled(context.run_id, pre_spawn_started, telemetry);
@@ -1612,9 +1670,24 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             }
         }
     };
+    let RunControls {
+        sandbox_recovery,
+        disk_recovery,
+        cancel,
+        cooperative_user_cancel,
+        hard_cancel,
+        active_input_source,
+        spawn_timing,
+        home_history_proof,
+        prepared_storage: _prepared_storage,
+        prepared_guest_runtime: _,
+        mut pre_spawn_admission_lease,
+        guest_state_prepared: _,
+    } = controls;
     let pre_spawn_cancel = cancel.clone();
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
+    let startup_report_cancel = cancel.clone();
     let pre_spawn_owner = OperationCancellationContext::new(
         &context.run_id.to_string(),
         sandbox.id(),
@@ -1670,17 +1743,22 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     return Err(error);
                 }
             };
-            if native_home_proof_failed {
+            let original_native_continuation = if native_home_proof_failed {
                 let mut native = context.native_continuation.clone().ok_or_else(|| {
                     RunnerError::Internal("native home proof lost its intent".into())
                 })?;
                 native.session_id = None;
                 native.generation_run_id = None;
-                run_payload.native_continuation =
-                    serde_json::to_string(&native).map_err(|error| {
-                        RunnerError::Internal(format!("serialize fresh native intent: {error}"))
-                    })?;
-            }
+                let fresh_native = serde_json::to_string(&native).map_err(|error| {
+                    RunnerError::Internal(format!("serialize fresh native intent: {error}"))
+                })?;
+                Some(std::mem::replace(
+                    &mut run_payload.native_continuation,
+                    fresh_native,
+                ))
+            } else {
+                None
+            };
             info!(
                 run_id = %context.run_id,
                 prompt_bytes = run_payload.prompt.len(),
@@ -1720,6 +1798,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 user_env_map,
                 env_map,
                 run_payload,
+                original_native_continuation,
             })
         }))
         .await;
@@ -1754,6 +1833,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         Ok(files) => files,
         Err(BootstrapFileFailure {
             error,
+            replace,
             resource_diagnostics,
         }) => {
             model_catalog_prefetch.finish(telemetry).await;
@@ -1764,9 +1844,38 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     pre_spawn_started,
                     telemetry,
                 )),
-                error if resource_diagnostics.is_some() => {
-                    Ok(AgentExecutionResult::failure_from_error(error.to_string())
-                        .with_resource_diagnostics(resource_diagnostics))
+                error
+                    if replace
+                        || resource_diagnostics.is_some()
+                        || disk_recovery && confirmed_guest_failure(&error) =>
+                {
+                    let mut result = AgentExecutionResult::failure_from_error(error.to_string())
+                        .with_resource_diagnostics(resource_diagnostics);
+                    if (replace || disk_recovery && confirmed_guest_failure(&error))
+                        && !cancel.is_cancelled()
+                    {
+                        if let Some(original) = bootstrap.original_native_continuation.take() {
+                            bootstrap.run_payload.native_continuation = original;
+                        }
+                        result.pre_agent_retry = Some(Box::new(PreparedRunInputs::new(
+                            RunControls {
+                                sandbox_recovery,
+                                disk_recovery,
+                                cancel,
+                                cooperative_user_cancel,
+                                hard_cancel,
+                                active_input_source,
+                                spawn_timing,
+                                home_history_proof: None,
+                                prepared_storage: None,
+                                prepared_guest_runtime: None,
+                                pre_spawn_admission_lease,
+                                guest_state_prepared: false,
+                            },
+                            PreparedRunPayload::from_captured(bootstrap.run_payload),
+                        )));
+                    }
+                    Ok(result)
                 }
                 error => Err(error),
             };
@@ -1824,6 +1933,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
 
             let agent_handle = match handle {
                 Ok(h) => {
+                    telemetry.set_sandbox_startup_path(start.sandbox_startup_path);
                     let timing = h.start_timing();
                     telemetry.record(
                         "runner_agent_start_process",
@@ -1882,6 +1992,10 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         start.home_reuse_result,
                         context.reuse_key(),
                     );
+                    lifecycle.startup_report = Some(super::StartupReport::spawn(
+                        config.http.clone(), context.run_id, context.sandbox_token.clone(),
+                        start.sandbox_startup_path, startup_report_cancel,
+                    ));
                     info!(
                         run_id = %context.run_id,
                         sandbox_reuse = ?start.reuse_result,
@@ -2087,6 +2201,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             telemetry.record("agent_execute", t.elapsed(), false, Some(&error));
             if wait_process_timed_out(&e) {
                 return Ok(AgentExecutionResult {
+                    pre_agent_retry: None,
                     failure: Some(ExecutionFailure::runner_job_timeout(
                         JOB_TIMEOUT_EXIT_CODE,
                         error,
@@ -2334,12 +2449,14 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         sandbox_reuse_disposition_for_process_exit(&exit, cancellation, failure.as_ref());
     let agent_result = match failure {
         Some(failure) => AgentExecutionResult {
+            pre_agent_retry: None,
             failure: Some(failure),
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
             reusable_session_identity: None,
         },
         None => AgentExecutionResult {
+            pre_agent_retry: None,
             failure: None,
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
