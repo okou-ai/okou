@@ -34,7 +34,7 @@ import type {
 } from "../../signals/attachment-resource-url.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-function PermissionChoices({
+export function SharePermissionChoices({
   selected,
   organizationName,
   saving,
@@ -181,7 +181,7 @@ export function ShareCopyButton({
   );
 }
 
-function ShareRetryRow({ onRetry }: { readonly onRetry: () => void }) {
+export function ShareRetryRow({ onRetry }: { readonly onRetry: () => void }) {
   const { t } = useTranslation();
   return (
     <div className="mt-1.5 flex items-center justify-between gap-3 px-2 py-1">
@@ -205,7 +205,11 @@ function ShareRetryRow({ onRetry }: { readonly onRetry: () => void }) {
   );
 }
 
-function ShareSkeleton() {
+export function ShareSkeleton({
+  showCopyButton = true,
+}: {
+  readonly showCopyButton?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div
@@ -228,9 +232,11 @@ function ShareSkeleton() {
           </div>
         );
       })}
-      <div className="mt-1.5 flex justify-end">
-        <Skeleton className="h-8 w-24 rounded-lg" />
-      </div>
+      {showCopyButton && (
+        <div className="mt-1.5 flex justify-end">
+          <Skeleton className="h-8 w-24 rounded-lg" />
+        </div>
+      )}
     </div>
   );
 }
@@ -332,7 +338,7 @@ function ShareSessionMenu({
         ) : (
           <>
             {details?.status ? (
-              <PermissionChoices
+              <SharePermissionChoices
                 selected={details.audience}
                 organizationName={details.status.organization.name}
                 saving={audienceOperation.state === "loading"}
@@ -345,7 +351,7 @@ function ShareSessionMenu({
                  the choices in place, inert and unselected, holds the menu's
                  shape and shows what Retry will restore. */
               failed && (
-                <PermissionChoices
+                <SharePermissionChoices
                   selected={undefined}
                   organizationName={null}
                   saving={false}

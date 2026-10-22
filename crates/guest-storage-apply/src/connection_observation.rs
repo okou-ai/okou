@@ -346,7 +346,7 @@ impl Transport for ObservedTransport {
         self.inner.transmit_output(amount, timeout)
     }
 
-    // In pinned ureq 3.4.2 every default transport uses the trait's default
+    // In pinned ureq 3.5.0 every default transport uses the trait's default
     // maybe_await_input: buffered input skips await_input. Retaining that default
     // here avoids attributing buffered-input checks as attempted transport IO.
     fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {

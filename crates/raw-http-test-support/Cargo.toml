@@ -6,13 +6,13 @@ description = "Domain-neutral raw HTTP transport fixtures for Rust tests"
 publish = false
 
 [features]
-test-support = ["dep:tokio"]
+test-support = ["dep:tokio", "tokio/test-util"]
 
 [dependencies]
 tokio = { workspace = true, optional = true, features = ["io-util", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "test-util", "time"] }
 
 [lints]
 workspace = true

@@ -2,9 +2,7 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command, computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
-import { db$, type Db } from "../external/db";
-
-type ReadDb = Pick<Db, "select">;
+import { db$ } from "../external/db";
 
 export interface OrgPlanCapabilities {
   readonly planKey: string;
@@ -21,21 +19,25 @@ export interface OrgPlanCapabilities {
   readonly audioDailyDurationSeconds: number;
 }
 
-export const ORG_PLAN_CAPABILITY_SELECTION = {
-  planKey: orgPlanEntitlements.planKey,
-  status: orgPlanEntitlements.status,
-  baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-  canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
-  canBuyCredits: orgPlanEntitlements.canBuyCredits,
-  showUsagePack: orgPlanEntitlements.showUsagePack,
-  autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
-  restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
-  workflowWebhookAutomationAllowed:
-    orgPlanEntitlements.workflowWebhookTriggerAllowed,
-  audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
-  audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
-  audioDailyDurationSeconds: orgPlanEntitlements.audioDailyDurationSeconds,
-} as const;
+export function orgPlanCapabilitySelection() {
+  return {
+    planKey: orgPlanEntitlements.planKey,
+    status: orgPlanEntitlements.status,
+    baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+    canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+    canBuyCredits: orgPlanEntitlements.canBuyCredits,
+    showUsagePack: orgPlanEntitlements.showUsagePack,
+    autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+    restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+    workflowWebhookAutomationAllowed:
+      orgPlanEntitlements.workflowWebhookTriggerAllowed,
+    audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+    audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+    audioDailyDurationSeconds: orgPlanEntitlements.audioDailyDurationSeconds,
+  } as const;
+}
+
+export const ORG_PLAN_CAPABILITY_SELECTION = orgPlanCapabilitySelection();
 
 export function runtimeStatusForEntitlement(
   status: string,
@@ -53,37 +55,6 @@ export function runtimeStatusForEntitlement(
       return "suspended";
     }
   }
-}
-
-export async function loadOrgPlanCapabilities(
-  db: ReadDb,
-  orgId: string,
-  options?: { readonly forUpdate?: boolean },
-): Promise<OrgPlanCapabilities | null> {
-  const query = db
-    .select(ORG_PLAN_CAPABILITY_SELECTION)
-    .from(orgPlanEntitlements)
-    .where(eq(orgPlanEntitlements.orgId, orgId))
-    .limit(1);
-  const [capabilities] = options?.forUpdate
-    ? await query.for("update")
-    : await query;
-  if (!capabilities) {
-    const orgQuery = db
-      .select({ orgId: orgMetadata.orgId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1);
-    const [org] = options?.forUpdate
-      ? await orgQuery.for("update")
-      : await orgQuery;
-    if (!org) {
-      return null;
-    }
-    throw new Error(`Missing org plan entitlement for ${orgId}`);
-  }
-
-  return orgPlanCapabilitiesFromRow(capabilities, orgId);
 }
 
 export function orgPlanCapabilitiesFromRow(

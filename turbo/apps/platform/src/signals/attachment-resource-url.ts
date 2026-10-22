@@ -16,6 +16,7 @@ import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifa
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
+import { hostedSiteVisibilityChanges$ } from "./hosted-site-visibility-changes.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
@@ -137,14 +138,22 @@ function createAttachmentPresignedToken$(
       ? source.hostname.slice(0, -domain.length - 1)
       : "";
     if (/^[a-z0-9][a-z0-9-]*$/u.test(label) && !/^(?:pv|ps|sh)-/u.test(label)) {
+      const currentSource$ = computed((get) => {
+        return currentHostedSiteUrl(source.href, get(hostedSiteUrlChanges$));
+      });
+      const revision$ = computed((get) => {
+        return get(hostedSiteVisibilityChanges$).get(source.origin) ?? null;
+      });
       return computed(async (get) => {
+        get(revision$);
+        const currentSource = new URL(get(currentSource$));
         if (!(await get(clerk$)).user) {
           return null;
         }
         const response = await accept(
           get(apiClient$)(hostContract).sitePreview({
-            params: { publicSlug: label },
-            query: { hostname: source.hostname },
+            params: { publicSlug: currentSource.hostname.split(".")[0]! },
+            query: { hostname: currentSource.hostname },
             fetchOptions: { cache: "no-store" },
           }),
           [200],
@@ -153,13 +162,13 @@ function createAttachmentPresignedToken$(
           return null;
         }
         const resource = new URL(response.body.url);
-        resource.pathname = source.pathname;
-        resource.search = source.search;
-        resource.hash = source.hash;
+        resource.pathname = currentSource.pathname;
+        resource.search = currentSource.search;
+        resource.hash = currentSource.hash;
         return {
           token: resource.href,
           expiresAt: response.body.expiresAt,
-          publicUrl: source.href,
+          publicUrl: currentSource.href,
         };
       });
     }

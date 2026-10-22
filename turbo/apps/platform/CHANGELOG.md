@@ -12,6 +12,51 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1051.3](https://github.com/okou-ai/okou/compare/app-v0.1051.2...app-v0.1051.3) (2026-10-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.2
+    * @okouai/core bumped to 8.777.3
+
+## [0.1051.2](https://github.com/okou-ai/okou/compare/app-v0.1051.1...app-v0.1051.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **api:** return validation errors for rejected invitation emails ([#42227](https://github.com/okou-ai/okou/issues/42227)) ([58742c6](https://github.com/okou-ai/okou/commit/58742c6e410ece4e76dc6261826ddbb2a886c6d1))
+
+
+### Refactoring
+
+* remove social data expansion and commerce feature switches ([#42229](https://github.com/okou-ai/okou/issues/42229)) ([84b93c3](https://github.com/okou-ai/okou/commit/84b93c3e918dcaa700dc21d8b97f15317a499c0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.777.2
+
+## [0.1051.1](https://github.com/okou-ai/okou/compare/app-v0.1051.0...app-v0.1051.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **app:** keep unchanged instructions clean on tab switch ([#42220](https://github.com/okou-ai/okou/issues/42220)) ([81380f3](https://github.com/okou-ai/okou/commit/81380f32a49f737b9b3636c7b30b84f31c97b3a1))
+* **app:** simplify email list and detail controls ([#42211](https://github.com/okou-ai/okou/issues/42211)) ([ef2bac7](https://github.com/okou-ai/okou/commit/ef2bac7bdec3780ede65298f61652b45abdc078b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.1
+    * @okouai/core bumped to 8.777.1
+
 ## [0.1051.0](https://github.com/okou-ai/okou/compare/app-v0.1050.0...app-v0.1051.0) (2026-10-22)
 
 

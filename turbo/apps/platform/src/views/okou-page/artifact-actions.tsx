@@ -48,10 +48,7 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
-import {
-  builtinConnectors$,
-  connectorCatalogItemBySlug,
-} from "../../signals/external/connectors.ts";
+import { connectorCatalogItemBySlug } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { connectorConnectionPending$ } from "../../signals/connector-connection-progress.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -65,7 +62,6 @@ import {
   connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
   getOnlyAvailableCatalogBrowserAuthMethodDetail,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
 import type { ZoomableImageControls } from "./zoomable-image-canvas.tsx";
 
@@ -216,7 +212,8 @@ export function ArtifactShareButton({
     return null;
   }
   if (
-    switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
+    (switches[FeatureSwitchKey.HostedSiteUrlEditing] ||
+      switches[FeatureSwitchKey.HostedSiteVisibility]) &&
     isHostedSiteUrl(shareUrl)
   ) {
     return (
@@ -267,29 +264,14 @@ function useGoogleDriveCompletedOperation(
 function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
 ) {
-  const connectorListLoadable = useLoadable(builtinConnectors$);
-  const lastConnectorList = useLastResolved(builtinConnectors$);
   const catalogItemLoadable = useLoadable(googleDriveCatalogItem$);
   const lastCatalogItem = useLastResolved(googleDriveCatalogItem$);
-  const builtinConnectorList =
-    connectorListLoadable.state === "hasData"
-      ? connectorListLoadable.data
-      : connectorListLoadable.state === "loading"
-        ? lastConnectorList
-        : undefined;
   const catalogItem =
     catalogItemLoadable.state === "hasData"
       ? catalogItemLoadable.data
       : catalogItemLoadable.state === "loading"
         ? lastCatalogItem
         : undefined;
-  const googleDriveConnected =
-    builtinConnectorList?.connectors.some((connector) => {
-      return (
-        connector.slug === GOOGLE_DRIVE_CONNECTOR_SLUG &&
-        connector.connectionStatus === "connected"
-      );
-    }) ?? false;
   const googleDriveConnector = catalogItem ?? null;
   const googleDriveAuthMethod =
     googleDriveConnector === null
@@ -303,14 +285,10 @@ function useGoogleDriveAvailability(
     selectedAccount !== undefined || syncTarget?.accountReady === true;
 
   return {
-    connectorListLoaded:
-      accountReady ||
-      (builtinConnectorList !== undefined &&
-        (googleDriveConnected || catalogItem !== undefined)),
     googleDriveAuthMethod,
-    googleDriveConnected,
     googleDriveConnector,
     googleDriveReady: accountReady,
+    pendingAction: resolveGoogleDrivePendingAction(syncTarget?.recovery),
     googleImport: completedOperation?.googleImport,
     googleDriveConnectionId: selectedAccount
       ? selectedAccount.connectionId
@@ -389,19 +367,14 @@ type GoogleDrivePendingAction =
   | {
       readonly kind: "connect";
       readonly account: PlatformConnectorAccountMutationIntent;
-      readonly useDefaultConnectorProjection: boolean;
     }
   | { readonly kind: "unavailable" };
 
-function resolveGoogleDrivePendingAction(args: {
-  readonly recovery: ChatThreadArtifactGoogleDriveRecovery | undefined;
-  readonly connected: boolean;
-  readonly legacyAccountOptions: ReturnType<
-    typeof defaultBuiltinConnectorAccountOptions
-  >;
-}): GoogleDrivePendingAction {
-  if (args.recovery) {
-    switch (args.recovery.action) {
+function resolveGoogleDrivePendingAction(
+  recovery: ChatThreadArtifactGoogleDriveRecovery | undefined,
+): GoogleDrivePendingAction {
+  if (recovery) {
+    switch (recovery.action) {
       case "authorize": {
         return { kind: "authorize" };
       }
@@ -409,7 +382,6 @@ function resolveGoogleDrivePendingAction(args: {
         return {
           kind: "connect",
           account: { intent: "add" },
-          useDefaultConnectorProjection: false,
         };
       }
       case "reconnect": {
@@ -417,9 +389,8 @@ function resolveGoogleDrivePendingAction(args: {
           kind: "connect",
           account: {
             intent: "reconnect",
-            connectionId: args.recovery.connectionId,
+            connectionId: recovery.connectionId,
           },
-          useDefaultConnectorProjection: false,
         };
       }
       case "unavailable": {
@@ -427,12 +398,7 @@ function resolveGoogleDrivePendingAction(args: {
       }
     }
   }
-  if (args.connected) {
-    return { kind: "authorize" };
-  }
-  return args.legacyAccountOptions
-    ? { kind: "connect", ...args.legacyAccountOptions }
-    : { kind: "unavailable" };
+  return { kind: "unavailable" };
 }
 
 function useGoogleDriveMenuAction(
@@ -479,13 +445,7 @@ function useGoogleDriveMenuAction(
       );
       return;
     }
-    const action = resolveGoogleDrivePendingAction({
-      recovery: syncTarget.recovery,
-      connected: availability.googleDriveConnected,
-      legacyAccountOptions: defaultBuiltinConnectorAccountOptions(
-        availability.googleDriveConnector ?? undefined,
-      ),
-    });
+    const action = availability.pendingAction;
     if (action.kind === "unavailable") {
       return;
     }
@@ -525,9 +485,6 @@ function useGoogleDriveMenuAction(
             agentId,
             connectorIcon: availability.googleDriveConnector.icon,
             connectorLabel: availability.googleDriveConnector.label,
-            ...(action.useDefaultConnectorProjection
-              ? { useDefaultConnectorProjection: true }
-              : {}),
           },
         },
         pageSignal,
@@ -592,18 +549,16 @@ function GoogleDriveCompletedMenuItem({
 }
 
 function GoogleDriveConnectMenuItem({
-  syncTarget,
   availability,
   onClick,
   uploadLabel,
 }: {
-  syncTarget: ArtifactDownloadSyncTarget;
   availability: ReturnType<typeof useGoogleDriveAvailability>;
   onClick: () => void;
   uploadLabel: string | undefined;
 }) {
   const { t } = useTranslation();
-  const { googleDriveAuthMethod, googleDriveConnected, googleDriveConnector } =
+  const { googleDriveAuthMethod, googleDriveConnector, pendingAction } =
     availability;
   return (
     <TooltipProvider delay={200}>
@@ -612,12 +567,8 @@ function GoogleDriveConnectMenuItem({
           render={
             <DropdownMenuItem
               disabled={
-                syncTarget.recovery?.action === "unavailable" ||
-                ((syncTarget.recovery?.action === "connect" ||
-                  syncTarget.recovery?.action === "reconnect") &&
-                  (!googleDriveConnector || !googleDriveAuthMethod)) ||
-                (syncTarget.recovery === undefined &&
-                  !googleDriveConnected &&
+                pendingAction.kind === "unavailable" ||
+                (pendingAction.kind === "connect" &&
                   (!googleDriveConnector || !googleDriveAuthMethod))
               }
               onClick={onClick}
@@ -673,7 +624,7 @@ function GoogleDriveMenuItem({
   );
   const syncOperation = useGoogleDriveSyncOperation(syncTarget, mode);
   const labels = useGoogleDriveMenuLabels(target);
-  const { connectorListLoaded, googleDriveReady } = availability;
+  const { googleDriveReady } = availability;
 
   if (!syncTarget) {
     return (
@@ -712,7 +663,7 @@ function GoogleDriveMenuItem({
     );
   }
 
-  if (!connectorListLoaded || connectionPending) {
+  if (connectionPending) {
     return (
       <GoogleDriveDisabledMenuItem
         kind={syncTarget.disconnected ? "connect" : "upload"}
@@ -749,7 +700,6 @@ function GoogleDriveMenuItem({
 
   return (
     <GoogleDriveConnectMenuItem
-      syncTarget={syncTarget}
       availability={availability}
       onClick={syncOrConnect}
       uploadLabel={target || original ? labels.upload : undefined}

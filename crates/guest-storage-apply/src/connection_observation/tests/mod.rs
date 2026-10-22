@@ -8,6 +8,7 @@ fn timeout() -> NextTimeout {
     NextTimeout {
         after: time::Duration::from_secs(7),
         reason: ureq::Timeout::Connect,
+        ..NextTimeout::default()
     }
 }
 
@@ -88,6 +89,7 @@ fn connect_with_resolver(
                 .connect(details, None)
                 .map(|transport| transport.expect("leaf supplies a transport"))
         }),
+        register_shutdown: Arc::new(|_| Ok(())),
     };
     ObservedConnector(behavior).connect(&details, None)
 }

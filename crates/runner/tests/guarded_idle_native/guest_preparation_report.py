@@ -41,7 +41,7 @@ class Contract:
     def cases(self):
         if self.name == "RunningRestore":
             return {f"RunningRestore-{decision}-{fault}-{mode}" for decision in ("allow", "deny")
-                    for fault in ("drop", "observer-unwind") for mode in ("fresh", "snapshot")}
+                    for fault in ("drop", "observer-unwind", "producer-unwind") for mode in ("fresh", "snapshot")}
         return {f"{self.name}-{boundary}-{fault}-{mode}" for boundary in ("capture", "terminal")
                 for fault in ("drop", "observer-unwind", "producer-unwind") for mode in ("fresh", "snapshot")}
 
@@ -225,6 +225,12 @@ def validate(directory, contract):
         exact(joined["response"],waiting["response"],"fixed late terminal was substituted")
     delivered = batch.clock(joined.get("delivery_requested_ns"),events[5]["monotonic_ns"],events[6]["monotonic_ns"])
     finished = batch.clock(joined.get("joined_ns"),delivered,events[6]["monotonic_ns"])
+    if is_running and unwound:
+        controller_joined = batch.clock(joined.get("running_controller_joined_before_delivery_ns"),
+                                        events[5]["monotonic_ns"],delivered)
+        if controller_joined >= delivered:
+            raise ValueError("running controller was not joined before transport delivery/unwind")
+        control_fields[2]["running_controller_joined_before_delivery_ns"] = controller_joined
     exact(joined, {"request":captured["request"],"response":joined["response"],"delivery_requested_ns":delivered,"joined_ns":finished,
                    contract.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero", "canonical_quiesce_acknowledged"):allow,
                    contract.field("helper_stdin_stderr_joined", "exec_stdin_stdout_stderr_joined", "guest_dispatcher_completed"):True,"exchange_joined":not unwound,

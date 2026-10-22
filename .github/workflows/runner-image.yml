@@ -335,7 +335,7 @@ jobs:
   # misses already save their own cache. No image consumer waits for this job.
   prewarm-rust-cache:
     name: Prewarm runner dependency cache (${{ matrix.label }})
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:

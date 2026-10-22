@@ -1,5 +1,47 @@
 # Changelog
 
+## [9.407.4](https://github.com/okou-ai/okou/compare/cli-v9.407.3...cli-v9.407.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* **cli:** use context-correct connector check diagnostics ([#42248](https://github.com/okou-ai/okou/issues/42248)) ([02a9839](https://github.com/okou-ai/okou/commit/02a9839bd120e9767aa2899c3ea539195e01c675))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.586.2
+    * @okouai/core bumped to 8.777.3
+    * @okouai/pi-agent-runtime bumped to 1.50.46
+
+## [9.407.3](https://github.com/okou-ai/okou/compare/cli-v9.407.2...cli-v9.407.3) (2026-10-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.777.2
+    * @okouai/pi-agent-runtime bumped to 1.50.45
+
+## [9.407.2](https://github.com/okou-ai/okou/compare/cli-v9.407.1...cli-v9.407.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **cli:** honor setup state for run connector diagnostics ([#42208](https://github.com/okou-ai/okou/issues/42208)) ([2bb7132](https://github.com/okou-ai/okou/commit/2bb7132acc24f159393f8097a27c7c0fed718377))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.586.1
+    * @okouai/core bumped to 8.777.1
+    * @okouai/pi-agent-runtime bumped to 1.50.44
+
 ## [9.407.1](https://github.com/okou-ai/okou/compare/cli-v9.407.0...cli-v9.407.1) (2026-10-22)
 
 

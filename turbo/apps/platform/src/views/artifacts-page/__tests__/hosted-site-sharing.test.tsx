@@ -1,8 +1,10 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import type { z } from "zod";
 import {
   click,
   fill,
@@ -27,7 +29,11 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite(enabled = true) {
+async function openSite({
+  urlEditing = true,
+  visibility = false,
+  sidebar = false,
+} = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -54,12 +60,15 @@ async function openSite(enabled = true) {
     path: "/artifacts",
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.HostedSiteUrlEditing]: enabled,
-      [FeatureSwitchKey.HostedSiteVisibility]: false,
+      [FeatureSwitchKey.HostedSiteUrlEditing]: urlEditing,
+      [FeatureSwitchKey.HostedSiteVisibility]: visibility,
+      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
   click(await findArtifactAction("Weekly report"));
-  await screen.findByTestId("artifact-dialog-site-frame");
+  await screen.findByTestId(
+    sidebar ? "artifact-sidebar" : "artifact-dialog-site-frame",
+  );
 }
 
 // The published address is the share menu's title link.
@@ -69,11 +78,11 @@ function siteAddress(address: string): HTMLElement | undefined {
   });
 }
 
-async function openShare() {
+async function openShare(label = "Share") {
   await waitFor(() => {
-    expect(queryButtonByName("Share")).toBeDefined();
+    expect(queryButtonByName(label)).toBeDefined();
   });
-  click(getButtonByName("Share"));
+  click(getButtonByName(label));
   await screen.findByText("Published");
 }
 
@@ -359,7 +368,7 @@ test("other people's sites offer Published and copying without URL editing", asy
 });
 
 test("the disabled switch retains the existing share link", async () => {
-  await openSite(false);
+  await openSite({ urlEditing: false });
   const share = queryAllByRoleFast("link").find((element) => {
     return element.getAttribute("aria-label") === "Share";
   });
@@ -385,6 +394,8 @@ test("restricted Site previews work with visibility settings disabled and share 
     ).toHaveAttribute("src", temporary);
   });
   await openShare();
+  expect(queryAllByRoleFast("radio")).toHaveLength(0);
+  expect(screen.queryByText("Anyone with the link")).not.toBeInTheDocument();
   click(getButtonByName("Copy link"));
   await waitFor(() => {
     return expect(clipboard.writes).toStrictEqual([site.url]);
@@ -407,4 +418,337 @@ test("Public Site previews continue rendering the anonymous URL with visibility 
       screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
     ).toHaveAttribute("src", site.url);
   });
+});
+
+type SiteVisibilityStatus = z.infer<typeof hostedSiteVisibilityStatusSchema>;
+
+function mockSiteAlias() {
+  context.mocks.api(hostContract.resolveAlias, ({ respond }) => {
+    return respond(200, {
+      pointer: {
+        version: 1,
+        publicBrand: "okou",
+        publicSlug: site.publicSlug,
+        siteId,
+        deploymentId: "00000000-0000-4000-8000-000000000009",
+        prefix: "sites/weekly-report/1",
+        manifestKey: "sites/weekly-report/1/manifest.json",
+        spaFallback: false,
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    });
+  });
+}
+
+function permission(name: string): HTMLElement {
+  const row = queryAllByRoleFast("radio").find((element) => {
+    return element.textContent?.trim() === name;
+  });
+  if (!row) {
+    throw new Error(`Expected permission named "${name}"`);
+  }
+  return row;
+}
+
+async function expectPermission(name: string) {
+  await waitFor(() => {
+    expect(permission(name)).toHaveAttribute("aria-checked", "true");
+    expect(permission(name)).toHaveAttribute("aria-busy", "false");
+  });
+}
+
+test.each([
+  { sidebar: false, urlEditing: false },
+  { sidebar: true, urlEditing: false },
+  { sidebar: false, urlEditing: true },
+])(
+  "owners change website visibility in the preview ($sidebar sidebar, $urlEditing URL editing)",
+  async ({ sidebar, urlEditing }) => {
+    mockSiteAlias();
+    if (urlEditing) {
+      context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+        return respond(200, site);
+      });
+    }
+    let status: SiteVisibilityStatus = {
+      siteId,
+      visibility: "private",
+      revision: null,
+    };
+    const temporary = `https://pv-${"c".repeat(48)}.okou.app/`;
+    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+      return respond(
+        200,
+        status.visibility === "public"
+          ? { url: site.url, expiresAt: null }
+          : { url: temporary, expiresAt: "2099-01-01T00:00:00Z" },
+      );
+    });
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+      return respond(200, status);
+    });
+    context.mocks.api(
+      hostContract.updateSiteVisibility,
+      ({ body, respond }) => {
+        if (body.expectedRevision !== status.revision) {
+          return respond(409, {
+            error: { code: "CONFLICT", message: "Website visibility changed" },
+          });
+        }
+        status = {
+          siteId,
+          visibility: body.visibility,
+          revision: crypto.randomUUID(),
+        };
+        return respond(200, status);
+      },
+    );
+    await openSite({ urlEditing, visibility: true, sidebar });
+    await openShare(sidebar ? "Share artifact" : "Share");
+    await expectPermission("Only me");
+    const menu = await screen.findByRole("dialog", {
+      name: sidebar ? "Share artifact" : "Share",
+    });
+    expect(!!queryButtonByName("Customize URL", menu)).toBe(urlEditing);
+    expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
+    expect(clipboard.writes).toStrictEqual([]);
+    click(getButtonByName("Copy link", menu));
+    await waitFor(() => {
+      expect(queryButtonByName("Copied", menu)).toBeDefined();
+    });
+
+    for (const name of [
+      "Anyone at Default Org",
+      "Anyone with the link",
+      "Only me",
+    ]) {
+      click(permission(name));
+      await expectPermission(name);
+      await waitFor(() => {
+        expect(
+          screen
+            .getByTestId(
+              sidebar ? "artifact-sidebar" : "artifact-dialog-site-frame",
+            )
+            .querySelector("iframe"),
+        ).toHaveAttribute(
+          "src",
+          name === "Anyone with the link" ? site.url : temporary,
+        );
+      });
+      expect(getButtonByName("Copy link", menu)).toBeEnabled();
+    }
+    expect(clipboard.writes).toStrictEqual([site.url]);
+    click(getButtonByName("Copy link", menu));
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([site.url, site.url]);
+    });
+  },
+);
+
+test("permissions preload without claiming public access while their read is pending", async () => {
+  mockSiteAlias();
+  const requested = createDeferredPromise<void>(context.signal);
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
+    requested.resolve();
+    await response.promise;
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
+  await openSite({ urlEditing: false, visibility: true });
+  await requested.promise;
+  await openShare();
+  try {
+    await screen.findByRole("status", { name: "Loading permissions" });
+    expect(queryAllByRoleFast("radio")).toHaveLength(0);
+    expect(screen.queryByText("Anyone with the link")).not.toBeInTheDocument();
+  } finally {
+    response.resolve();
+  }
+  await expectPermission("Only me");
+});
+
+test("unavailable visibility settings can be retried", async () => {
+  mockSiteAlias();
+  let unavailable = true;
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return unavailable
+      ? respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Website visibility management is not available",
+          },
+        })
+      : respond(200, {
+          siteId,
+          visibility: "organization",
+          revision: crypto.randomUUID(),
+        });
+  });
+  await openSite({ urlEditing: false, visibility: true });
+  await openShare();
+  await screen.findByText("Unable to load permissions");
+  for (const row of queryAllByRoleFast("radio")) {
+    expect(row).toHaveAttribute("aria-checked", "false");
+    expect(row).toBeDisabled();
+  }
+  expect(getButtonByName("Copy link")).toBeEnabled();
+  unavailable = false;
+  click(getButtonByName("Retry"));
+  await expectPermission("Anyone at Default Org");
+});
+
+test("a conflicting change reloads the current revision before the owner retries", async () => {
+  mockSiteAlias();
+  let status: SiteVisibilityStatus = {
+    siteId,
+    visibility: "public",
+    revision: null,
+  };
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(hostContract.updateSiteVisibility, ({ body, respond }) => {
+    if (body.expectedRevision !== status.revision) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Website visibility changed" },
+      });
+    }
+    status = {
+      siteId,
+      visibility: body.visibility,
+      revision: crypto.randomUUID(),
+    };
+    return respond(200, status);
+  });
+  await openSite({ urlEditing: false, visibility: true });
+  await openShare();
+  await expectPermission("Anyone with the link");
+  status = {
+    siteId,
+    visibility: "organization",
+    revision: crypto.randomUUID(),
+  };
+  click(permission("Only me"));
+  await screen.findByText("Website visibility changed");
+  await expectPermission("Anyone at Default Org");
+  click(permission("Only me"));
+  await expectPermission("Only me");
+  await expect(
+    screen.findByText("Access updated"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("a failed visibility save restores the server audience and can be retried", async () => {
+  mockSiteAlias();
+  let unavailable = true;
+  let status: SiteVisibilityStatus = {
+    siteId,
+    visibility: "private",
+    revision: null,
+  };
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(hostContract.updateSiteVisibility, ({ body, respond }) => {
+    if (unavailable) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Website visibility save unavailable",
+        },
+      });
+    }
+    status = {
+      siteId,
+      visibility: body.visibility,
+      revision: crypto.randomUUID(),
+    };
+    return respond(200, status);
+  });
+  await openSite({ urlEditing: false, visibility: true });
+  await openShare();
+  await expectPermission("Only me");
+  click(permission("Anyone with the link"));
+  await screen.findByText("Website visibility save unavailable");
+  await expectPermission("Only me");
+  unavailable = false;
+  click(permission("Anyone with the link"));
+  await expectPermission("Anyone with the link");
+  await expect(
+    screen.findByText("Access updated"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("non-owners can copy a website link without permission controls", async () => {
+  mockSiteAlias();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Published website not found" },
+    });
+  });
+  await openSite({ urlEditing: false, visibility: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share" });
+  await waitFor(() => {
+    expect(within(menu).queryByText("Who can access")).not.toBeInTheDocument();
+  });
+  expect(queryAllByRoleFast("radio", menu)).toHaveLength(0);
+  click(getButtonByName("Copy link", menu));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
+});
+
+test("rapid permission choices settle on the latest audience using the refreshed revision", async () => {
+  mockSiteAlias();
+  const requested = createDeferredPromise<void>(context.signal);
+  const response = createDeferredPromise<void>(context.signal);
+  let status: SiteVisibilityStatus = {
+    siteId,
+    visibility: "private",
+    revision: null,
+  };
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(
+    hostContract.updateSiteVisibility,
+    async ({ body, respond }) => {
+      if (!requested.settled()) {
+        requested.resolve();
+        await response.promise;
+      }
+      if (body.expectedRevision !== status.revision) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Website visibility changed" },
+        });
+      }
+      status = {
+        siteId,
+        visibility: body.visibility,
+        revision: crypto.randomUUID(),
+      };
+      return respond(200, status);
+    },
+  );
+  await openSite({ urlEditing: false, visibility: true });
+  await openShare();
+  await expectPermission("Only me");
+  click(permission("Anyone at Default Org"));
+  await requested.promise;
+  try {
+    await waitFor(() => {
+      expect(permission("Only me")).toHaveAttribute("aria-busy", "true");
+    });
+    click(permission("Anyone with the link"));
+    click(permission("Only me"));
+    expect(permission("Only me")).toHaveAttribute("aria-checked", "false");
+  } finally {
+    response.resolve();
+  }
+  await expectPermission("Only me");
+  await screen.findByText("Access updated");
 });

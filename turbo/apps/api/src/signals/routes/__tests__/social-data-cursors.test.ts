@@ -5,7 +5,6 @@ import {
   socialDataContract,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -13,12 +12,10 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { billingStatusRoutes } from "../billing-status";
 import { socialDataRoutes } from "../social-data";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createPublicBillingScenario } from "./helpers/public-billing-scenario";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -40,8 +37,7 @@ function authenticate(actor: ApiTestUser) {
 }
 
 async function scenario() {
-  const orgId = createUniqueStaffOrgIdFixture();
-  const actor = createBddApi(context).user({ orgId });
+  const actor = createBddApi(context).user();
   const billing = createPublicBillingScenario(context);
   let restoreSetup: (() => void) | undefined;
   billing.releaseBeforeDrain(() => {
@@ -58,15 +54,6 @@ async function scenario() {
   });
   restoreSetup = undefined;
   mockEnv("OKOU_SOCIAL_MONID_API_KEY", "social-cursors-test-key");
-  await billing.run(() => {
-    return updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.SocialDataExpansion]: true,
-      },
-    );
-  });
   const app = setupApp({ context, routes: ROUTES });
   const social = app(socialDataContract);
   return {

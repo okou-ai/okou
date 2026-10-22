@@ -414,13 +414,28 @@ export function isClerkResourceNotFound(error: unknown): boolean {
   return isClerkAPIResponseError(error) && error.status === 404;
 }
 
+export function isClerkInvitationEmailFormatError(error: unknown): boolean {
+  return (
+    isClerkAPIResponseError(error) &&
+    error.status === 422 &&
+    error.errors.length > 0 &&
+    // The format code is shared by other parameters; handle only the email refusal.
+    error.errors.every(({ code, longMessage }) => {
+      return (
+        code === "form_param_format_invalid" &&
+        longMessage === "Email address must be a valid email address."
+      );
+    })
+  );
+}
+
 export type ClerkOrganizationInvitationConflict =
   "already_member" | "already_invited";
 
 /**
  * Clerk rejects an invitation when the address is already a member or still
  * has an active invitation. Keep this narrower than a general Clerk 4xx so
- * configuration, authorization, and validation failures remain server errors.
+ * configuration, authorization, and unrecognized validation failures remain server errors.
  */
 export function clerkOrganizationInvitationConflict(
   error: unknown,

@@ -3,6 +3,7 @@ import ChatDataTestSupport
 import ChatDomain
 import Foundation
 import Synchronization
+import UIKit
 import XCTest
 
 @testable import Okou
@@ -81,6 +82,89 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertEqual(messages.count, 1)
     XCTAssertFalse(messages.first?.hasTextContent ?? true)
     XCTAssertEqual(messages.first?.userMessage.parts.first?.fileId, AttachmentFlowFixture.fileID)
+  }
+
+  func testNewImageChatStaysSelectedWhenAnOlderListRefreshFinishesAfterSending() async throws {
+    let oldListReady = expectation(description: "The pre-creation list is awaiting indicators")
+    let freshListReady = expectation(description: "The replacement list is awaiting indicators")
+    let (oldList, releaseOldList) = AsyncStream<Void>.makeStream()
+    let (freshList, releaseFreshList) = AsyncStream<Void>.makeStream()
+    defer {
+      releaseOldList.finish()
+      releaseFreshList.finish()
+    }
+    let reads = Mutex((snapshots: 0, indicators: 0))
+    let deleted = Mutex(false)
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 60)).pngData { context in
+      UIColor.systemTeal.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
+    }
+    let fixture = AttachmentFlowFixture(
+      attachment: ChatAttachment(
+        id: AttachmentFlowFixture.fileID, filename: "Screenshot.png", contentType: "image/png",
+        size: image.count, url: "artifact://\(AttachmentFlowFixture.fileID)"),
+      threadList: { request in
+        switch request.url?.path {
+        case "/api/chat-threads/snapshot":
+          let first = reads.withLock {
+            $0.snapshots += 1
+            return $0.snapshots == 1
+          }
+          let threads =
+            first || deleted.withLock { $0 }
+            ? ""
+            : """
+            {"id":"\(AttachmentFlowFixture.threadID)","agentId":"\(AttachmentFlowFixture.agentID)","title":"Screenshot conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
+            """
+          return ChatHTTPResponse(
+            body:
+              "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+        case "/api/indicators":
+          let count = reads.withLock {
+            $0.indicators += 1
+            return $0.indicators
+          }
+          if count == 1 {
+            oldListReady.fulfill()
+            for await _ in oldList { break }
+          } else if count == 2 {
+            freshListReady.fulfill()
+            for await _ in freshList { break }
+          }
+          return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        default: throw URLError(.unsupportedURL)
+        }
+      })
+    let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { store.close() }
+    let source = try makeFile(filename: "Screenshot.png", content: image)
+    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+    store.newAttachmentDraft.importFiles([source])
+    try await eventually {
+      store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
+    }
+    let refresh = Task { await store.refresh([.threadList]) }
+    await fulfillment(of: [oldListReady], timeout: 3)
+
+    await store.sendNewChat()
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    releaseOldList.yield(())
+    await fulfillment(of: [freshListReady], timeout: 3)
+
+    XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
+    XCTAssertTrue(store.selectedConversation === conversation)
+    XCTAssertEqual(conversation.messages.first?.attachments.first?.contentType, "image/png")
+    releaseFreshList.yield(())
+    await refresh.value
+    XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
+    XCTAssertEqual(store.selectedConversation?.thread.title, "Screenshot conversation")
+
+    deleted.withLock { $0 = true }
+    await store.list.refresh(waitForCurrent: true)
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertNil(store.selectedConversation)
   }
 
   func testClosingWorkspaceCancelsInFlightUploadAndCleansItsPrivateCopy() async throws {
@@ -229,11 +313,13 @@ final class AttachmentDraftTests: XCTestCase {
     reopened.newComposer.clear()
   }
 
-  private func makeFile() throws -> URL {
+  private func makeFile(filename: String = "notes.txt", content: Data = Data("notes".utf8)) throws
+    -> URL
+  {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let file = directory.appendingPathComponent("notes.txt")
-    try Data("notes".utf8).write(to: file)
+    let file = directory.appendingPathComponent(filename)
+    try content.write(to: file)
     return file
   }
 
@@ -294,13 +380,19 @@ final class AttachmentFlowFixture: Sendable {
     storage: @escaping @Sendable () async -> Void = {},
     creation: @escaping @Sendable () async -> Bool = { true },
     draftRead: @escaping @Sendable () async -> Void = {},
-    workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil
+    workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil,
+    attachment: ChatAttachment? = nil,
+    threadList: ChatHTTPFixture.Handler? = nil
   ) {
     let state = self.state
     http = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
-      let metadata =
-        "{\"id\":\"\(Self.fileID)\",\"filename\":\"notes.txt\",\"contentType\":\"text/plain\",\"size\":5,\"url\":\"artifact://\(Self.fileID)\"}"
+      let file =
+        attachment
+        ?? ChatAttachment(
+          id: Self.fileID, filename: "notes.txt", contentType: "text/plain", size: 5,
+          url: "artifact://\(Self.fileID)")
+      let metadata = String(decoding: try JSONEncoder().encode(file), as: UTF8.self)
       if path.hasPrefix("/api/agents/") && path.hasSuffix("/draft") {
         if request.httpMethod == "PATCH" {
           let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
@@ -312,6 +404,9 @@ final class AttachmentFlowFixture: Sendable {
           body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
       }
       switch path {
+      case "/api/chat-threads/snapshot", "/api/chat-threads/events", "/api/indicators":
+        guard let threadList else { throw URLError(.unsupportedURL) }
+        return try await threadList(request)
       case "/api/workflows/for-composer":
         guard let workflows else { throw URLError(.unsupportedURL) }
         return try await workflows(request)

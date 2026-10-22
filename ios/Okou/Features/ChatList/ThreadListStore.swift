@@ -25,6 +25,7 @@ final class ThreadListStore {
   private let didRefresh: @MainActor ([ChatThread]) -> Void
   private let didFail: @MainActor (Error) -> Void
   private var refreshAgain = false
+  private var creationRevision = 0
   private var refreshTask: Task<Void, Never>?
   private var navigationTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
@@ -57,8 +58,9 @@ final class ThreadListStore {
 
   func restoreCached() async {
     guard !closed, !Task.isCancelled else { return }
+    let revision = creationRevision
     if let cached = await sync.cachedThreads() {
-      guard !closed, !Task.isCancelled else { return }
+      guard !closed, !Task.isCancelled, revision == creationRevision else { return }
       projectThreads(cached)
     }
   }
@@ -141,10 +143,17 @@ final class ThreadListStore {
         refreshAgain = false
         do {
           let revision = readRevision
+          let creation = creationRevision
           let response = try await sync.threadsWithIndicators()
           var result = response.threads
           try Task.checkCancellation()
           guard !closed else { return }
+          optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
+          // A read started before creation cannot remove its acknowledged thread.
+          guard creation == creationRevision else {
+            refreshAgain = true
+            continue
+          }
           if revision != readRevision {
             for index in result.indices {
               let held = threads.first { $0.id == result[index].id }
@@ -156,7 +165,6 @@ final class ThreadListStore {
             unreadAgentIDs = Set(
               response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
           }
-          optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
           projectThreads(result)
           error = nil
         } catch is CancellationError {
@@ -169,6 +177,7 @@ final class ThreadListStore {
   }
 
   func insertCreated(_ thread: ChatThread) {
+    creationRevision += 1
     // Realtime can publish a committed thread before its POST response arrives.
     if !threads.contains(where: { $0.id == thread.id }) { threads.insert(thread, at: 0) }
   }

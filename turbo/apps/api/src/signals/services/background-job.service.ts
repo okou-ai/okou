@@ -201,29 +201,3 @@ export const retryBackgroundJob$ = command(
     );
   },
 );
-
-/** Complete a leased job; related publication belongs to its owning command. */
-export const completeBackgroundJob$ = command(
-  async (
-    { set },
-    args: {
-      readonly job: ClaimedBackgroundJob;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    return await set(
-      updateLeasedJob$,
-      {
-        job: args.job,
-        values: {
-          status: "completed",
-          leaseId: null,
-          leaseExpiresAt: null,
-          lastError: null,
-          completedAt: backgroundJobDatabaseNow,
-        },
-      },
-      signal,
-    );
-  },
-);

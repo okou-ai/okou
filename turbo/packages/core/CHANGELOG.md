@@ -1,5 +1,30 @@
 # Changelog
 
+## [8.777.3](https://github.com/okou-ai/okou/compare/core-v8.777.2...core-v8.777.3) (2026-10-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.2
+
+## [8.777.2](https://github.com/okou-ai/okou/compare/core-v8.777.1...core-v8.777.2) (2026-10-22)
+
+
+### Refactoring
+
+* remove social data expansion and commerce feature switches ([#42229](https://github.com/okou-ai/okou/issues/42229)) ([84b93c3](https://github.com/okou-ai/okou/commit/84b93c3e918dcaa700dc21d8b97f15317a499c0b))
+
+## [8.777.1](https://github.com/okou-ai/okou/compare/core-v8.777.0...core-v8.777.1) (2026-10-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.1
+
 ## [8.777.0](https://github.com/okou-ai/okou/compare/core-v8.776.0...core-v8.777.0) (2026-10-22)
 
 

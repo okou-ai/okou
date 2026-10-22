@@ -44,7 +44,7 @@ import {
   stripeInvoicePaidFeatureEnabledFromRows,
 } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
 import {
-  repairMissingStripeInvoicePaidAutomationProjection,
+  repairMissingStripeInvoicePaidAutomationProjection$,
   stripeBindingConnectionReadiness,
   stripeLiveBindingMatches,
   stripeLiveModeValuesPlan,
@@ -996,8 +996,8 @@ export const dispatchStripeAutomationEvent$ = command(
         // No row lock: the repair publishes only while the automation is still
         // unbound (conditional UPDATE). A reprojection that binds it first wins;
         // one that commits afterward recomputes from current rows and overwrites.
-        await repairMissingStripeInvoicePaidAutomationProjection(
-          db,
+        await set(
+          repairMissingStripeInvoicePaidAutomationProjection$,
           owner,
           signal,
         );
@@ -1523,8 +1523,8 @@ const processClaimedDelivery$ = command(
       }
       // No row lock: the repair publishes only while the automation is still
       // unbound (conditional UPDATE); see dispatchStripeAutomationEvent$.
-      await repairMissingStripeInvoicePaidAutomationProjection(
-        db,
+      await set(
+        repairMissingStripeInvoicePaidAutomationProjection$,
         {
           automationId: delivery.automationId,
           orgId: owner.orgId,

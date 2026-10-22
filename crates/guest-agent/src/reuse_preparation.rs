@@ -399,7 +399,7 @@ struct ProcessContainmentPaths {
     require_cgroup2_filesystem: bool,
 }
 
-fn verify_process_containment() -> io::Result<()> {
+pub(crate) fn verify_process_containment() -> io::Result<()> {
     let paths = process_containment_paths();
     let current_operation = current_process_cgroup_name()?;
     if paths.require_cgroup2_filesystem && !is_cgroup2_filesystem(&paths.mount)? {

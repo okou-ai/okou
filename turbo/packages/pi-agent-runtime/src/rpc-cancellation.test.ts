@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -18,6 +19,15 @@ const FIXTURE = fileURLToPath(
 // the fixture tool's cooperative boundary; official commands still use stdin.
 const EXTENSION = `import { writeFile } from "node:fs/promises";
 export default function (pi) {
+  if (process.argv[3]?.startsWith("wire-tool-")) pi.on("turn_end", (event) => {
+    if (event.toolResults.length > 0) process.send({
+      type: "native-tool-details",
+      detailsBytes: event.toolResults[0].details.data.length
+    });
+  });
+  if (process.argv[3]?.startsWith("wire-tool-details")) pi.on("tool_result", () => ({
+    isError: process.argv[3].endsWith("-error")
+  }));
   if (process.argv[3] === "wire-boundaries") pi.on("turn_end", (event) => {
     if (event.toolResults.length > 0) process.send({
       type: "native-turn-end",
@@ -26,7 +36,7 @@ export default function (pi) {
       toolResultBytes: event.toolResults.reduce((bytes, result) => bytes + result.content[0].text.length, 0)
     });
   });
-  if (process.argv[3] !== "http" && process.argv[3] !== "wire-boundaries") pi.on("agent_settled", async (_event, ctx) => {
+  if (process.argv[3] !== "http" && !process.argv[3]?.startsWith("wire-")) pi.on("agent_settled", async (_event, ctx) => {
     await new Promise((resolve) => {
       const release = (message) => {
         if (message === "release-settlement" || message === "release-settlement-abort") {
@@ -55,7 +65,14 @@ export default function (pi) {
   pi.registerTool({
     name: "controlled", label: "controlled", description: "Cooperative fixture",
     parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
-    async execute(_id, args, signal) {
+    async execute(_id, args, signal, onUpdate) {
+      if (process.argv[3]?.startsWith("wire-tool-")) {
+        const details = { data: "d".repeat(17 * 1024 * 1024) };
+        const content = [{ type: "text", text: process.argv[3] === "wire-tool-content"
+          ? "x".repeat(17 * 1024 * 1024) : "tool output" }];
+        onUpdate({ content, details });
+        return { content, details };
+      }
       if (process.argv[3] === "wire-boundaries") return {
         content: [{ type: "text", text: "x".repeat(1024 * 1024) }], details: {}
       };
@@ -271,6 +288,129 @@ describe("Pi RPC duplicate boundary payloads", () => {
     }
   }, 30_000);
 });
+
+describe("Pi RPC tool result metadata", () => {
+  it.each([false, true])(
+    "completes with large native details and bounded RPC records (isError=%s)",
+    async (isError) => {
+      const rpc = await rpcFixture(
+        isError ? "wire-tool-details-error" : "wire-tool-details",
+      );
+      rpc.send({
+        id: "large-details",
+        type: "prompt",
+        message: "run the tool",
+      });
+      expect(await rpc.response("large-details")).toMatchObject({
+        success: true,
+      });
+      await rpc.settled();
+
+      expect(await rpc.notification("native-tool-details")).toMatchObject({
+        detailsBytes: 17 * 1024 * 1024,
+      });
+      for (const record of rpc.records) {
+        expect(Buffer.byteLength(JSON.stringify(record))).toBeLessThan(
+          16 * 1024 * 1024,
+        );
+      }
+      const content = [{ type: "text", text: "tool output" }];
+      expect(
+        rpc.records.filter((record) => {
+          return record.type === "tool_execution_update";
+        }),
+      ).toEqual([
+        expect.objectContaining({
+          toolCallId: "call-0|call-0",
+          toolName: "controlled",
+          partialResult: { content },
+        }),
+      ]);
+      expect(
+        rpc.records.filter((record) => {
+          return record.type === "tool_execution_end";
+        }),
+      ).toEqual([
+        expect.objectContaining({
+          toolCallId: "call-0|call-0",
+          toolName: "controlled",
+          isError,
+          result: { content },
+        }),
+      ]);
+      for (const type of ["message_start", "message_end"]) {
+        expect(
+          rpc.records.filter((record) => {
+            const message = record.message;
+            return (
+              record.type === type &&
+              typeof message === "object" &&
+              message !== null &&
+              "role" in message &&
+              message.role === "toolResult"
+            );
+          }),
+        ).toEqual([
+          expect.objectContaining({
+            message: expect.objectContaining({
+              role: "toolResult",
+              toolCallId: "call-0|call-0",
+              toolName: "controlled",
+              content,
+              isError,
+            }),
+          }),
+        ]);
+      }
+      expect(assistantEnds(rpc.records).at(-1)).toMatchObject({
+        message: { content: [{ type: "text", text: "complete" }] },
+      });
+      const persisted = await rpc.reopen();
+      const results = persisted
+        .buildSessionContext()
+        .messages.filter((message) => {
+          return message.role === "toolResult";
+        });
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        content,
+        isError,
+      });
+      expect(jsonDigest(results[0]?.details)).toBe(
+        jsonDigest({ data: "d".repeat(17 * 1024 * 1024) }),
+      );
+    },
+    30_000,
+  );
+
+  it("retains required tool content even when it exceeds the Guest line limit", async () => {
+    const rpc = await rpcFixture("wire-tool-content");
+    rpc.send({ id: "large-content", type: "prompt", message: "run the tool" });
+    expect(await rpc.response("large-content")).toMatchObject({
+      success: true,
+    });
+    await rpc.settled();
+
+    const toolEnd = rpc.records.find((record) => {
+      return record.type === "tool_execution_end";
+    });
+    expect(toolEnd?.toolCallId).toBe("call-0|call-0");
+    expect(toolEnd?.isError).toBe(false);
+    expect(jsonDigest(toolEnd?.result)).toBe(
+      jsonDigest({
+        content: [{ type: "text", text: "x".repeat(17 * 1024 * 1024) }],
+      }),
+    );
+    expect(Buffer.byteLength(JSON.stringify(toolEnd))).toBeGreaterThan(
+      16 * 1024 * 1024,
+    );
+  }, 30_000);
+});
+
+// Keep failures bounded even when a fixture carries multi-MiB payloads.
+function jsonDigest(value: unknown) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
 
 function assistantEnds(records: Array<Record<string, unknown>>) {
   return records.filter((record) => {

@@ -543,10 +543,10 @@ index 640d2259a2c6ffb78e67e389e4819b5785637eaf..c7629c97d239d676a9742b90ae18716f
      }
  }
 diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
-index d4f306ea3918aa07a981f948c8a3cb4f687f5708..f2daabe2d23b7cb13a47cb94d9027e8e34f96007 100644
+index d4f306ea3918aa07a981f948c8a3cb4f687f5708..f07bd95d70c7e25b634963ae696a13436d8be5f6 100644
 --- a/dist/modes/json-event.d.ts
 +++ b/dist/modes/json-event.d.ts
-@@ -18,15 +18,35 @@ type JsonMessageUpdateEvent = {
+@@ -18,15 +18,39 @@ type JsonMessageUpdateEvent = {
      usage: Usage;
      assistantMessageEvent: ToJsonAssistantMessageEvent<MessageUpdateEvent["assistantMessageEvent"]>;
  };
@@ -580,16 +580,27 @@ index d4f306ea3918aa07a981f948c8a3cb4f687f5708..f2daabe2d23b7cb13a47cb94d9027e8e
 + * a loop boundary, with `willRetry` intact.
 + * `turn_end` similarly drops `message` and `toolResults` on the wire only;
 + * native extension events retain the complete payload.
++ * Tool execution updates/results and tool-result message boundaries omit
++ * `details`, which is unbounded UI metadata unused by Guest. Required content,
++ * call identity and error fields remain intact. Native events and persisted
++ * session messages retain their details; only wire copies omit them.
   */
  export declare function toJsonEvent(event: MessageUpdateEvent): JsonMessageUpdateEvent;
  export declare function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent;
 diff --git a/dist/modes/json-event.js b/dist/modes/json-event.js
-index b2671b8e69be943b5c2918a972082eac84b38948..505c44b3c49bf4b9e771a005da8b4192357082fb 100644
+index b2671b8e69be943b5c2918a972082eac84b38948..097ebe01f7bbe24f498a4730dbaecf91f54ec927 100644
 --- a/dist/modes/json-event.js
 +++ b/dist/modes/json-event.js
-@@ -14,6 +14,16 @@ function toJsonAssistantMessageEvent(event) {
+@@ -13,7 +13,32 @@ function toJsonAssistantMessageEvent(event) {
+     const { partial: _partial, ...deltaEvent } = event;
      return deltaEvent;
  }
++function withoutToolDetails(result) {
++    // Details are for native tools, extensions and session storage. Guest consumes
++    // content, not this unbounded UI metadata. Copy rather than mutate the result.
++    const { details: _details, ...wireResult } = result;
++    return wireResult;
++}
  export function toJsonEvent(event) {
 +    if (event.type === "agent_end") {
 +        const { messages: _messages, ...boundaryEvent } = event;
@@ -600,6 +611,15 @@ index b2671b8e69be943b5c2918a972082eac84b38948..505c44b3c49bf4b9e771a005da8b4192
 +        // Keep native extension events intact; only the JSON wire omits duplicates.
 +        const { message: _message, toolResults: _toolResults, ...boundaryEvent } = event;
 +        return boundaryEvent;
++    }
++    if (event.type === "tool_execution_update") {
++        return { ...event, partialResult: withoutToolDetails(event.partialResult) };
++    }
++    if (event.type === "tool_execution_end") {
++        return { ...event, result: withoutToolDetails(event.result) };
++    }
++    if ((event.type === "message_start" || event.type === "message_end") && event.message.role === "toolResult") {
++        return { ...event, message: withoutToolDetails(event.message) };
 +    }
      if (event.type !== "message_update") {
          return event;

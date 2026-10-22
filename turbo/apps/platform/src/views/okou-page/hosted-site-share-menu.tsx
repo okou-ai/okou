@@ -1,5 +1,6 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Check, Globe, Loader2, Pencil, Share2 } from "lucide-react";
 import {
   Button,
@@ -12,12 +13,19 @@ import {
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
+import { currentOrgInfo$ } from "../../signals/auth.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   getHostedSiteShareScope,
   type HostedSiteShareSession,
 } from "../../signals/hosted-site-sharing.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ShareCopyButton } from "./artifact-share-menu.tsx";
+import {
+  ShareCopyButton,
+  SharePermissionChoices,
+  ShareRetryRow,
+  ShareSkeleton,
+} from "./artifact-share-menu.tsx";
 
 interface ShareButtonProps {
   readonly ariaLabel: string;
@@ -76,14 +84,63 @@ function SiteStatus({
               return $.artifacts.siteUrl.published;
             })}
           </span>
-          {" · "}
-          <span>
-            {t(($) => {
-              return $.artifacts.sharing.publicOption;
-            })}
-          </span>
         </p>
       </div>
+    </div>
+  );
+}
+
+function HostedSitePermissions({
+  session,
+}: {
+  readonly session: HostedSiteShareSession;
+}) {
+  const { t } = useTranslation();
+  const loadable = useLoadable(session.visibility$);
+  const operation = useLoadable(session.visibilityOperation$);
+  const organization = useLastResolved(currentOrgInfo$);
+  const signal = useGet(session.signal$);
+  const change = useSet(session.changeVisibility$);
+  const refresh = useSet(session.refreshVisibility$);
+  if (!signal || (loadable.state === "hasData" && !loadable.data)) {
+    return null;
+  }
+  const saving = operation.state === "loading";
+  const failed = loadable.state === "hasError";
+  return (
+    <div className="-mx-2 mt-3">
+      <div className="flex items-center gap-2 px-2 pb-1 text-xs font-medium text-muted-foreground">
+        {t(($) => {
+          return $.artifacts.sharing.accessLabel;
+        })}
+        {saving && <Loader2 size={14} className="animate-spin" />}
+      </div>
+      {loadable.state === "loading" && !saving ? (
+        <ShareSkeleton showCopyButton={false} />
+      ) : (
+        <>
+          <SharePermissionChoices
+            selected={
+              loadable.state === "hasData"
+                ? loadable.data?.visibility
+                : undefined
+            }
+            organizationName={organization?.name ?? null}
+            saving={saving}
+            unavailable={failed}
+            onChange={(visibility) => {
+              detach(change(visibility, signal), Reason.DomCallback);
+            }}
+          />
+          {failed && (
+            <ShareRetryRow
+              onRetry={() => {
+                detach(refresh(signal), Reason.DomCallback);
+              }}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -392,9 +449,14 @@ function HostedSiteShareBody({
   // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
   const editing = useGet(session.editing$);
+  const switches = useGet(featureSwitch$);
+  const visibilityEnabled = switches[FeatureSwitchKey.HostedSiteVisibility];
   return (
     <>
       <SiteStatus link={link} loading={loading} />
+      {visibilityEnabled && !editing && (
+        <HostedSitePermissions session={session} />
+      )}
       {editing ? (
         <WebsiteUrlEditor
           session={session}
@@ -413,6 +475,7 @@ function HostedSiteShareBody({
           session={session}
           link={link}
           customizable={
+            switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
             details.state === "hasData" &&
             details.data?.isActive === true &&
             new URL(details.data.url).hostname.endsWith(
@@ -434,6 +497,8 @@ function HostedSiteShareSessionMenu({
 }: ShareButtonProps & { readonly session: HostedSiteShareSession }) {
   // The preview mounts this menu before its popover, so preload the current URL here.
   const link = useLoadable(session.copyUrl$);
+  // Preload permissions alongside the current address before Share opens.
+  useLoadable(session.visibility$);
   const signal = useGet(session.signal$);
   const open = useGet(session.open$);
   const setOpen = useSet(session.setOpen$);

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.20.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.9...runner-supervisor-v0.20.10) (2026-10-22)
+
+## [0.20.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.8...runner-supervisor-v0.20.9) (2026-10-22)
+
+## [0.20.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.7...runner-supervisor-v0.20.8) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** retain codex unsupported-model reason ([#42205](https://github.com/okou-ai/okou/issues/42205)) ([31e9926](https://github.com/okou-ai/okou/commit/31e9926e700a6e96a2f6f50839f8ab9fe3fd4fff))
+
 ## [0.20.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.6...runner-supervisor-v0.20.7) (2026-10-22)
 
 ## [0.20.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.5...runner-supervisor-v0.20.6) (2026-10-22)

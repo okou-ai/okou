@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.29.16](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.15...runner-remote-v0.29.16) (2026-10-22)
+
+## [0.29.15](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.14...runner-remote-v0.29.15) (2026-10-22)
+
+## [0.29.14](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.13...runner-remote-v0.29.14) (2026-10-22)
+
+
+### Bug Fixes
+
+* **tailscale:** preserve shared nodes after peer retirement ([#42210](https://github.com/okou-ai/okou/issues/42210)) ([9d5d3f2](https://github.com/okou-ai/okou/commit/9d5d3f2a1d1b647efb7b29d45f90a1139f34d1a7))
+
 ## [0.29.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.12...runner-remote-v0.29.13) (2026-10-22)
 
 ## [0.29.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.11...runner-remote-v0.29.12) (2026-10-22)

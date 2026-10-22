@@ -1,8 +1,10 @@
 use super::*;
 use httpmock::prelude::*;
+use raw_http_test_support::clock::advance_timer_phase;
 use runner_provider::http::{HttpClient, HttpClientConfig};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
+use tracing_test_support::CapturedEvents;
 
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
 
@@ -73,6 +75,9 @@ async fn startup_upload_does_not_gate_guest_execution_or_execution_result() {
 #[tokio::test]
 async fn startup_upload_failure_does_not_fail_the_run() {
     for (status, expected_requests) in [(404, 1), (503, 3)] {
+        let captured = CapturedEvents::default();
+        let _subscriber =
+            tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
         let dir = tempfile::tempdir().unwrap();
         let api = MockServer::start_async().await;
         let mut config = test_executor_config(dir.path()).await;
@@ -97,7 +102,29 @@ async fn startup_upload_failure_does_not_fail_the_run() {
         )
         .await;
         assert_eq!(outcome.exit_code(), 0);
-        outcome.startup_report.take().unwrap().finish().await;
+        let finished = outcome.startup_report.take().unwrap().finish();
+        tokio::pin!(finished);
+        for attempt in 1..expected_requests {
+            let attempt = attempt.to_string();
+            tokio::time::timeout(WAIT, async {
+                loop {
+                    assert!(futures_util::poll!(&mut finished).is_pending());
+                    if captured.entries().iter().any(|event| {
+                        event.fields.get("message").map(String::as_str)
+                            == Some("sandbox startup report failed, retrying")
+                            && event.fields.get("attempt") == Some(&attempt)
+                            && event.fields.get("will_retry").map(String::as_str) == Some("true")
+                    }) {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("startup upload must arm its retry before advancing time");
+            advance_timer_phase(Duration::from_secs(2)).await;
+        }
+        finished.await;
         report.assert_calls_async(expected_requests).await;
     }
 }

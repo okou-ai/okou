@@ -56,7 +56,7 @@ import {
   type PromptAndSkillVolumes,
   PromptAndSkillVolumesError,
 } from "./thread-run-prompt/prompt-and-skill-volumes";
-import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
+import { createChatRunPreparationSnapshot } from "./chat-run-preparation-snapshot.signals";
 
 import {
   parseRawRows,
@@ -264,10 +264,7 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 
-import {
-  chatEventRunlessInputPredicate,
-  chatEvents,
-} from "@okouai/db/schema/chat-event";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
@@ -278,17 +275,14 @@ import type { PersistedStorageMount } from "@okouai/db/types";
 import { command, type Command, computed, type Computed, state } from "ccstate";
 import {
   and,
-  asc,
   eq,
-  inArray,
   isNotNull,
-  notExists,
   sql,
   type SQL,
   type SQLWrapper,
   type WithSubquery,
 } from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -296,15 +290,9 @@ import {
   normalizeRunMetadata,
   type RunMetadataValues,
 } from "./agent-run-metadata-write.service";
-import {
-  type ChatThreadRequestFacts,
-  chatThreadRequestSelection,
-} from "./chat-thread-request-facts";
+import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import { previousChatRunId } from "./previous-chat-run";
-import {
-  OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
-  officialWorkflowThreadCondition,
-} from "./official-workflow-policy.service";
+import { OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-policy.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
@@ -1120,6 +1108,7 @@ interface RejectedQueueHead {
 /** The Thread child's public surface: input readiness and run start. */
 export interface ThreadClaimRunObjects {
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
+  readonly orgHasCapacity$: Computed<Promise<boolean>>;
   readonly startRun$: Command<Promise<string | null>, [signal: AbortSignal]>;
 }
 
@@ -1208,95 +1197,17 @@ export function createThreadClaimRunObjects(
     },
   );
 
-  const threadRow$ = computed(async (get) => {
-    if (requestFacts) {
-      return requestFacts.thread;
-    }
-    const [row] = await get(db$)
-      .select(chatThreadRequestSelection())
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, claim.chatThreadId),
-          eq(chatThreads.userId, bootstrap.userId),
-          eq(chatThreads.agentId, bootstrap.agentId),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  });
-  const pickedEvent$ = computed(
-    async (get): Promise<PickedThreadInputEvent | null> => {
-      const revoker = alias(chatEvents, "picked_input_revoker");
-      const [thread, [row]] = await Promise.all([
-        get(threadRow$),
-        get(db$)
-          .select({
-            id: chatEvents.id,
-            chatThreadId: chatEvents.chatThreadId,
-            createdAt: chatEvents.createdAt,
-            seqId: chatEvents.seqId,
-            eventType: chatEvents.eventType,
-            contextType: chatEvents.contextType,
-            contextId: chatEvents.contextId,
-            userMessage: canonicalChatEventUserMessage(),
-            requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-            modelSelection: chatEvents.modelSelection,
-            canonicalModelSelection: canonicalChatInputModelSelection(),
-            sourceAutonomyBudget: agentRuns.autonomyBudget,
-          })
-          .from(chatEvents)
-          .leftJoin(
-            agentRuns,
-            and(
-              eq(chatEvents.contextType, "agent_run"),
-              eq(agentRuns.id, chatEvents.contextId),
-            ),
-          )
-          .where(
-            and(
-              eq(chatEvents.chatThreadId, claim.chatThreadId),
-              chatEventRunlessInputPredicate(
-                chatEvents.runId,
-                chatEvents.eventType,
-              ),
-              inArray(chatEvents.eventType, [
-                "input.prompt",
-                "input.automation",
-              ]),
-              notExists(
-                new QueryBuilder()
-                  .select({ id: revoker.id })
-                  .from(revoker)
-                  .where(eq(revoker.revokesEventId, chatEvents.id)),
-              ),
-            ),
-          )
-          .orderBy(asc(chatEvents.seqId))
-          .limit(1),
-      ]);
-      if (!thread || !row) {
-        return null;
-      }
-      const owned =
-        requestFacts?.input.id === row.id ? requestFacts.input : undefined;
-      return {
-        ...row,
-        ...(owned
-          ? {
-              userMessage: owned.userMessage,
-              modelSelection: owned.modelSelection,
-              canonicalModelSelection: owned.modelSelection,
-              requiredOfficialWorkflowIds:
-                owned.requiredOfficialWorkflowIds ?? null,
-            }
-          : {}),
-        userId: thread.userId,
-        agentId: thread.agentId,
-        thread,
-      };
-    },
+  const preparation$ = createChatRunPreparationSnapshot(
+    claim,
+    bootstrap,
+    requestFacts,
   );
+  const orgHasCapacity$ = computed(async (get) => {
+    return (await get(preparation$)).hasCapacity;
+  });
+  const pickedEvent$ = computed(async (get) => {
+    return (await get(preparation$)).pickedEvent;
+  });
   const threadContext = createThreadContext(bootstrap, pickedEvent$);
   const okouTokenInput$ = createOkouTokenInputSignals(
     bootstrap,
@@ -1409,21 +1320,7 @@ export function createThreadClaimRunObjects(
     if (!event) {
       return false;
     }
-    const [row] = await get(db$)
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, event.chatThreadId),
-          officialWorkflowThreadCondition({
-            threadId: event.chatThreadId,
-            orgId: bootstrap.orgId,
-            userId: bootstrap.userId,
-          }),
-        ),
-      )
-      .limit(1);
-    return row !== undefined;
+    return event.preparation.isOfficialWorkflowThread;
   });
   const promptQueuedMessageQueuedMessage$ = computed(
     async (get): Promise<QueuedUserMessage | null> => {
@@ -4395,7 +4292,7 @@ export function createThreadClaimRunObjects(
       return pending.runId;
     },
   );
-  return { hasFirstPickableChatEvent$, startRun$ };
+  return { hasFirstPickableChatEvent$, orgHasCapacity$, startRun$ };
 }
 
 // --- Thread-private implementation: storage manifest ---
@@ -5411,9 +5308,6 @@ function buildStoredExecutionContextDraft(
   }
   return {
     context: {
-      ...(args.resolved.agentId === null
-        ? {}
-        : { agentInstructionsSource: "agent" as const }),
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,

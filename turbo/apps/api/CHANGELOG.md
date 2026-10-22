@@ -9,6 +9,76 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.763.3](https://github.com/okou-ai/okou/compare/api-v1.763.2...api-v1.763.3) (2026-10-22)
+
+
+### Refactoring
+
+* retire storage cleanup worker and instruction marker ([#42250](https://github.com/okou-ai/okou/issues/42250)) ([43e8295](https://github.com/okou-ai/okou/commit/43e8295d49fc025a0172d9336185ad7839ba9eea))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.2
+    * @okouai/core bumped to 8.777.3
+    * @okouai/db bumped to 1.355.4
+    * @okouai/pi-agent-runtime bumped to 1.50.46
+
+## [1.763.2](https://github.com/okou-ai/okou/compare/api-v1.763.1...api-v1.763.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **api:** parse actual douyin and weibo search results ([#42231](https://github.com/okou-ai/okou/issues/42231)) ([b7822bf](https://github.com/okou-ai/okou/commit/b7822bfcc5bd0dfad3536efcefd240f10fcb7d83))
+* **api:** return validation errors for rejected invitation emails ([#42227](https://github.com/okou-ai/okou/issues/42227)) ([58742c6](https://github.com/okou-ai/okou/commit/58742c6e410ece4e76dc6261826ddbb2a886c6d1))
+
+
+### Refactoring
+
+* remove social data expansion and commerce feature switches ([#42229](https://github.com/okou-ai/okou/issues/42229)) ([84b93c3](https://github.com/okou-ai/okou/commit/84b93c3e918dcaa700dc21d8b97f15317a499c0b))
+
+
+### Performance Improvements
+
+* **api:** consolidate dispatch preparation reads ([#42217](https://github.com/okou-ai/okou/issues/42217)) ([96be893](https://github.com/okou-ai/okou/commit/96be893b4ac31ef8bc0bc54baf19cb14efd24cdd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.777.2
+    * @okouai/db bumped to 1.355.3
+    * @okouai/pi-agent-runtime bumped to 1.50.45
+
+## [1.763.1](https://github.com/okou-ai/okou/compare/api-v1.763.0...api-v1.763.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **api:** retain axiom sdk request diagnostics ([#42199](https://github.com/okou-ai/okou/issues/42199)) ([bc738bd](https://github.com/okou-ai/okou/commit/bc738bd58ec8f9ba45e999b1d0d87400bec10ac7))
+* **api:** retain bounded axiom ingest error details ([#42202](https://github.com/okou-ai/okou/issues/42202)) ([79befdb](https://github.com/okou-ai/okou/commit/79befdb07d6296180ab63596d2bee78380b4af67))
+
+
+### Refactoring
+
+* **api:** localize subscription entitlement and grant ownership ([#42224](https://github.com/okou-ai/okou/issues/42224)) ([59b1bd3](https://github.com/okou-ai/okou/commit/59b1bd3291b54c948357074c42bae0b8bbfc891b))
+* **api:** localize usage pack invoice fulfillment ownership ([#42197](https://github.com/okou-ai/okou/issues/42197)) ([a25ce7a](https://github.com/okou-ai/okou/commit/a25ce7a742f97f4b57cf8b6f7a3671a3ec09f5bd))
+* **api:** localize usage pack removal and refund ownership ([#42213](https://github.com/okou-ai/okou/issues/42213)) ([a013054](https://github.com/okou-ai/okou/commit/a013054c72f8963b64a94479969eaeb03a6fc668))
+* **api:** own custom oauth refresh reconnect writes ([#42223](https://github.com/okou-ai/okou/issues/42223)) ([3193169](https://github.com/okou-ai/okou/commit/319316902857ac9f03af5a10927e815a647de567))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.1
+    * @okouai/core bumped to 8.777.1
+    * @okouai/db bumped to 1.355.2
+    * @okouai/pi-agent-runtime bumped to 1.50.44
+
 ## [1.763.0](https://github.com/okou-ai/okou/compare/api-v1.762.0...api-v1.763.0) (2026-10-22)
 
 

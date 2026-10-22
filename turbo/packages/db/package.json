@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.355.1",
+  "version": "1.355.4",
   "private": true,
   "type": "module",
   "exports": {
@@ -93,7 +93,7 @@
     "pg": "^8.23.0",
     "tsx": "^4.21.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.3",
+    "vitest": "^5.0.5",
     "zod": "^4.5.4"
   }
 }

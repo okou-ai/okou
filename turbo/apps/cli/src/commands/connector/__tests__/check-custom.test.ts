@@ -128,6 +128,17 @@ describe("custom connector URL diagnostics", () => {
     return log.mock.calls.flat().join("\n");
   }
 
+  function stubCurrentMemberDiagnostic(): void {
+    vi.stubEnv("OKOU_AGENT_ID", "");
+    stubDiagnostic({
+      ...resolvedCustom({
+        kind: "unknown-endpoint",
+        policy: { outcome: "unavailable", basis: "not-run-scoped" },
+      }),
+      run: { status: "not-scoped" },
+    });
+  }
+
   async function check(...extraArgs: string[]): Promise<void> {
     await checkConnectorCommand.parseAsync([
       "node",
@@ -261,23 +272,29 @@ describe("custom connector URL diagnostics", () => {
       stubConnectorAccounts([
         connectorAccount(
           { kind: "custom", customConnectorId: CUSTOM_ID },
-          { id: DEFAULT_ACCOUNT_ID },
+          {
+            id: DEFAULT_ACCOUNT_ID,
+            authMethod: "manual",
+            displayName: "Current default",
+            configuredFieldKeys: ["apiKey"],
+          },
         ),
       ]),
     );
-    vi.stubEnv("OKOU_AGENT_ID", "");
-    stubDiagnostic({
-      ...resolvedCustom({
-        kind: "unknown-endpoint",
-        policy: { outcome: "unavailable", basis: "not-run-scoped" },
-      }),
-      run: { status: "not-scoped" },
-    });
+    stubCurrentMemberDiagnostic();
     server.use(
       http.get(`${ORIGIN}/api/custom-connectors/${CUSTOM_ID}`, () => {
         return HttpResponse.json(customConnector({}));
       }),
     );
+    await check();
+    expect(output()).toContain("Current account status: connected.");
+    expect(output()).toContain("Current default account: Current default");
+    expect(output()).toContain(`Default connection ID: ${DEFAULT_ACCOUNT_ID}`);
+    expect(output()).toContain("Setup status: complete");
+    expect(output()).not.toContain(ACCOUNT_ID);
+
+    log.mockClear();
     await check("--json");
     const json: unknown = JSON.parse(output());
     expect(json).toMatchObject({
@@ -293,6 +310,168 @@ describe("custom connector URL diagnostics", () => {
       diagnostic: { run: { status: "not-scoped" } },
     });
     expect(output()).not.toContain(ACCOUNT_ID);
+  });
+
+  it.each([
+    { scenario: "empty", status: "not-connected", text: "not connected" },
+    {
+      scenario: "missing-default",
+      status: "default-required",
+      text: "default account required",
+    },
+    {
+      scenario: "unavailable",
+      status: "unavailable",
+      text: "account status unavailable",
+    },
+    {
+      scenario: "reconnect",
+      status: "reconnect-required",
+      text: "reconnect needed",
+    },
+    {
+      scenario: "incomplete",
+      status: "setup-required",
+      text: "missing apiKey",
+    },
+    {
+      scenario: "invalid",
+      status: "reconnect-required",
+      text: "reconnect needed",
+    },
+  ] as const)(
+    "explains $scenario current-member accounts in text and JSON",
+    async ({ scenario, status, text }) => {
+      stubCurrentMemberDiagnostic();
+      const currentAccount = connectorAccount(TARGET, {
+        id: DEFAULT_ACCOUNT_ID,
+        authMethod: "manual",
+        displayName: "Current default",
+        configuredFieldKeys: scenario === "incomplete" ? [] : ["apiKey"],
+        isDefault: scenario !== "missing-default",
+        connectionStatus:
+          scenario === "reconnect" || scenario === "invalid"
+            ? "reconnect-required"
+            : "connected",
+        setupStatus:
+          scenario === "invalid"
+            ? "invalid"
+            : scenario === "incomplete"
+              ? "incomplete"
+              : "complete",
+        missingRequiredFields: scenario === "incomplete" ? ["apiKey"] : [],
+      });
+      server.use(
+        scenario === "unavailable"
+          ? http.get(`${ORIGIN}/api/connector-accounts/connections`, () => {
+              return HttpResponse.json(
+                { error: { code: "NOT_FOUND", message: "Unavailable" } },
+                { status: 404 },
+              );
+            })
+          : stubConnectorAccounts(scenario === "empty" ? [] : [currentAccount]),
+      );
+
+      await check();
+      expect(output()).toContain(`Current account status: ${text}.`);
+      expect(output()).toContain(
+        "[Connectors](http://localhost:3000/connectors)",
+      );
+      const hasDefault =
+        scenario !== "empty" &&
+        scenario !== "unavailable" &&
+        scenario !== "missing-default";
+      if (hasDefault) {
+        expect(output()).toContain(
+          `Default connection ID: ${DEFAULT_ACCOUNT_ID}`,
+        );
+        expect(output()).toContain(
+          `Setup status: ${currentAccount.setupStatus}`,
+        );
+      }
+      if (scenario === "incomplete") {
+        expect(output()).toContain("Missing required configuration: apiKey");
+      }
+
+      log.mockClear();
+      await check("--json");
+      expect(JSON.parse(output())).toMatchObject({
+        context: "current",
+        account: null,
+        memberStatus: status,
+        accountSummary:
+          scenario === "empty" || scenario === "unavailable"
+            ? null
+            : {
+                accountCount: 1,
+                defaultConnection: hasDefault
+                  ? {
+                      id: DEFAULT_ACCOUNT_ID,
+                      setupStatus: currentAccount.setupStatus,
+                    }
+                  : null,
+              },
+      });
+    },
+  );
+
+  it("reports a removed current-member definition and account inventory as unavailable", async () => {
+    stubCurrentMemberDiagnostic();
+    server.use(
+      http.get(`${ORIGIN}/api/custom-connectors/${CUSTOM_ID}`, () => {
+        return HttpResponse.json(
+          { error: { code: "NOT_FOUND", message: "Not found" } },
+          { status: 404 },
+        );
+      }),
+      http.get(`${ORIGIN}/api/connector-accounts/connections`, () => {
+        return HttpResponse.json(
+          { error: { code: "NOT_FOUND", message: "Not found" } },
+          { status: 404 },
+        );
+      }),
+    );
+    await check();
+    expect(output()).toContain(
+      "Current custom connector metadata is unavailable or deleted.",
+    );
+    expect(output()).toContain(
+      "Current account status: account status unavailable.",
+    );
+    expect(output()).toContain(
+      "[Connectors](http://localhost:3000/connectors)",
+    );
+
+    log.mockClear();
+    await check("--json");
+    expect(JSON.parse(output())).toMatchObject({
+      context: "current",
+      connector: { definitionAvailable: false },
+      account: null,
+      accountSummary: null,
+      memberStatus: "unavailable",
+    });
+  });
+
+  it("surfaces failed current-member inventory reads as command errors", async () => {
+    stubCurrentMemberDiagnostic();
+    server.use(
+      http.get(`${ORIGIN}/api/connector-accounts/connections`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Inventory failed",
+            },
+          },
+          { status: 500 },
+        );
+      }),
+    );
+    await expect(check()).rejects.toThrow("process.exit called");
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "500: Inventory failed",
+    );
   });
 
   it.each([
@@ -335,9 +514,34 @@ describe("custom connector URL diagnostics", () => {
         }),
       );
       if (!runBound) {
-        vi.stubEnv("OKOU_AGENT_ID", "");
-        stubDiagnostic({ ...resolvedCustom(), run: { status: "not-scoped" } });
+        stubCurrentMemberDiagnostic();
       }
+      await check();
+      if (runBound) {
+        expect(output()).toContain(`Connection ID: ${ACCOUNT_ID}`);
+        expect(output()).toContain(
+          "The account selected for this run is connected.",
+        );
+      } else {
+        expect(output()).toContain(
+          `Current integration status: ${connected ? "connected" : "not connected"}.`,
+        );
+        if (connected) {
+          expect(output()).toContain(
+            `Integration connection ID: ${DEFAULT_ACCOUNT_ID}`,
+          );
+        } else {
+          expect(output()).toContain(
+            "Missing required configuration: clientSecret",
+          );
+          expect(output()).toContain(
+            "[Connectors](http://localhost:3000/connectors)",
+          );
+        }
+      }
+      expect(output()).not.toContain("managed-client-must-not-appear");
+
+      log.mockClear();
       await check("--json");
       const json: unknown = JSON.parse(output());
       expect(json).toMatchObject({

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/okou-ai/okou/compare/ios-v0.18.0...ios-v0.18.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **ios:** preserve new chat navigation during stale refreshes ([#42249](https://github.com/okou-ai/okou/issues/42249)) ([f9bffde](https://github.com/okou-ai/okou/commit/f9bffde77ae98f9cf08a63aac943b1c621712d3d))
+
 ## [0.18.0](https://github.com/okou-ai/okou/compare/ios-v0.17.1...ios-v0.18.0) (2026-10-22)
 
 

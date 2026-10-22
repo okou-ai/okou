@@ -26,7 +26,11 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { requestSignal$ } from "../context/hono";
-import { clerk$, clerkOrganizationInvitationConflict } from "../external/clerk";
+import {
+  clerk$,
+  clerkOrganizationInvitationConflict,
+  isClerkInvitationEmailFormatError,
+} from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
@@ -284,6 +288,9 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (conflictReason) {
       return invitationConflictError(conflictReason);
+    }
+    if (isClerkInvitationEmailFormatError(invitationResult.error)) {
+      return badRequestMessage("Enter a valid email address.");
     }
     throw invitationResult.error;
   }

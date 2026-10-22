@@ -44,7 +44,9 @@ function printTable(connections: readonly ConnectorAccountConnection[]): void {
   const headers = [
     "ACCOUNT",
     "DEFAULT",
-    "STATUS",
+    "CONNECTION",
+    "SETUP",
+    "MISSING FIELDS",
     "AUTH METHOD",
     "CONNECTION ID",
   ];
@@ -56,6 +58,8 @@ function printTable(connections: readonly ConnectorAccountConnection[]): void {
       }),
       connection.isDefault ? "yes" : "-",
       connection.connectionStatus,
+      connection.setupStatus,
+      connection.missingRequiredFields.join(", ") || "-",
       connection.authMethod,
       connection.id,
     ];

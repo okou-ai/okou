@@ -19,6 +19,7 @@ const {
   bdd,
   api,
   chat,
+  misc,
   webhooks,
   entitledNativeChatActor,
   sendChatRun,
@@ -47,6 +48,11 @@ describe("batched identity preload through chat entry", () => {
 
   it("keeps independent member preferences and paid-tool snapshots in one organization with no slot subscriptions or expired credits", async () => {
     const owner = await entitledNativeChatActor();
+    await misc.updatePreferences(
+      owner.actor,
+      { cloudBrowserEnabledByDefault: false },
+      [200],
+    );
     await accept(
       setupApp({ context, routes: paidToolsRoutes })(paidToolsContract).update({
         headers,
@@ -80,8 +86,13 @@ describe("batched identity preload through chat entry", () => {
       model: "claude-fable-5-1",
     });
     for (const entry of [
-      { actor: owner.actor, agentId: owner.agentId, disabled: ["social"] },
-      { actor: member, agentId, disabled: [] },
+      {
+        actor: owner.actor,
+        agentId: owner.agentId,
+        disabled: ["social"],
+        cloudBrowserEnabled: false,
+      },
+      { actor: member, agentId, disabled: [], cloudBrowserEnabled: true },
     ]) {
       const run = await sendChatRun(entry.actor, {
         agentId: entry.agentId,
@@ -99,7 +110,7 @@ describe("batched identity preload through chat entry", () => {
         chat.readThreadMetadata(entry.actor, run.threadId),
       ).resolves.toMatchObject({
         modelSettings: {},
-        cloudBrowserEnabled: true,
+        cloudBrowserEnabled: entry.cloudBrowserEnabled,
       });
       await cancelChatRun(entry.actor, run.runId, claimed.sandboxHeaders);
     }

@@ -7,6 +7,7 @@ struct RecommendedFollowupList: View {
   let select: (String) -> Void
 
   var body: some View {
+    let contentInsets = UIEdgeInsets(top: 0, left: 26, bottom: 0, right: 20)
     VStack(alignment: .leading, spacing: 12) {
       HStack {
         if let finishedAt {
@@ -19,7 +20,9 @@ struct RecommendedFollowupList: View {
         Rectangle().frame(height: 1).accessibilityHidden(true)
       }
       .font(.caption).foregroundStyle(.secondary)
-      RecommendedFollowupRail(source: source, select: select)
+      .padding(.leading, contentInsets.left)
+      .padding(.trailing, contentInsets.right)
+      RecommendedFollowupRail(source: source, contentInsets: contentInsets, select: select)
     }
   }
 
@@ -27,13 +30,14 @@ struct RecommendedFollowupList: View {
 
 private struct RecommendedFollowupRail: UIViewRepresentable {
   let source: ChatRecommendedFollowupSource
+  let contentInsets: UIEdgeInsets
   let select: (String) -> Void
   @ScaledMetric(relativeTo: .subheadline) private var fontSize: CGFloat = 15
   @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 18
   @ScaledMetric(relativeTo: .subheadline) private var maximumCardWidth: CGFloat = 272
 
   func makeUIView(context: Context) -> RecommendedFollowupRailView {
-    RecommendedFollowupRailView()
+    RecommendedFollowupRailView(contentInsets: contentInsets)
   }
 
   func updateUIView(_ view: RecommendedFollowupRailView, context: Context) {
@@ -61,10 +65,12 @@ final class RecommendedFollowupRailView: UIScrollView {
   private var fontSize: CGFloat?
   private var maximumCardWidth: CGFloat = 272
 
-  init() {
+  init(contentInsets: UIEdgeInsets) {
     super.init(frame: .zero)
     showsHorizontalScrollIndicator = false
     alwaysBounceHorizontal = false
+    contentInsetAdjustmentBehavior = .never
+    contentInset = contentInsets
     accessibilityIdentifier = "recommended-followups"
     accessibilityLabel = "Keep going"
   }
@@ -95,7 +101,7 @@ final class RecommendedFollowupRailView: UIScrollView {
         addSubview(button)
         return button
       }
-      contentOffset = .zero
+      contentOffset = CGPoint(x: -contentInset.left, y: 0)
     }
     for (button, followup) in zip(buttons, source.followups) {
       button.configure(
@@ -111,7 +117,8 @@ final class RecommendedFollowupRailView: UIScrollView {
   }
 
   private func sizes(width: CGFloat) -> [CGSize] {
-    let maximum = min(maximumCardWidth, width * 0.72)
+    let contentWidth = max(0, width - contentInset.left - contentInset.right)
+    let maximum = min(maximumCardWidth, contentWidth * 0.72)
     return buttons.map { button in
       let natural = button.sizeThatFits(
         CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))

@@ -256,7 +256,7 @@ const chatThreadArtifactGoogleDriveSyncSchema = z.discriminatedUnion("status", [
   }),
   z.object({
     status: z.literal("disconnected"),
-    recovery: chatThreadArtifactGoogleDriveRecoverySchema.optional(),
+    recovery: chatThreadArtifactGoogleDriveRecoverySchema,
   }),
   z.object({
     status: z.literal("unknown"),
