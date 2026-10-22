@@ -36,7 +36,7 @@ function DesktopDownload({ downloadUrl }: { readonly downloadUrl: string }) {
   const { t } = useTranslation();
   const support = useLoadable(desktopDownloadSupportStatus$);
   return (
-    <div className="grid w-full min-w-0 flex-1 justify-items-start gap-3">
+    <div className="grid w-full min-w-0 justify-items-start gap-3 sm:flex-1">
       {support.state !== "hasData" ? (
         <Button disabled>
           {t(($) => {
@@ -91,7 +91,7 @@ function DesktopSetupVisual({
           alt=""
           width={144}
           height={144}
-          className="size-36 object-contain"
+          className="size-28 object-contain sm:size-36"
         />
       </figure>
       {step === "install" && <DesktopDownload downloadUrl={downloadUrl} />}
@@ -188,7 +188,7 @@ export function ComputerUseDownloadDialog({
           </div>
           <SetupProgress currentStep={copy.number} />
         </DialogHeader>
-        <DialogBody className="grid content-start gap-4 px-6 pb-6">
+        <DialogBody className="grid auto-rows-min content-start gap-4 px-6 pb-6">
           <DialogDescription className="min-h-12 leading-6">
             {copy.description}
           </DialogDescription>
