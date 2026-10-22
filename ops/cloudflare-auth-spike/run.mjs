@@ -155,10 +155,9 @@ async function build() {
     bundle: true,
     format: "esm",
     platform: "browser",
+    // Leave third-party packages for Wrangler's native Node compatibility pass.
+    packages: "external",
     external: [...builtinModules, "node:*", "cloudflare:workers"],
-    banner: {
-      js: 'import { createRequire as createWorkerRequire } from "node:module"; const require = createWorkerRequire("/");',
-    },
     nodePaths: [
       path.join(root, "turbo/apps/api/node_modules"),
       path.join(root, "turbo/node_modules"),
@@ -184,6 +183,12 @@ async function build() {
       },
     ],
   });
+  report.dependencies = Object.fromEntries(
+    ["@aws-sdk/client-kms", "google-auth-library", "zod"].map((name) => [
+      name,
+      apiRequire(`${name}/package.json`).version,
+    ]),
+  );
   const config = path.join(output, "wrangler.json");
   await writeFile(
     config,
@@ -194,6 +199,16 @@ async function build() {
       compatibility_flags: ["nodejs_compat"],
       workers_dev: false,
       preview_urls: false,
+      alias: Object.fromEntries(
+        ["@aws-sdk/client-kms", "google-auth-library", "zod"].map((name) => [
+          name,
+          path.resolve(
+            path.dirname(apiRequire.resolve(`${name}/package.json`)),
+            apiRequire(`${name}/package.json`).module ??
+              apiRequire(`${name}/package.json`).main,
+          ),
+        ]),
+      ),
     }),
   );
   const wrangler = path.join(
