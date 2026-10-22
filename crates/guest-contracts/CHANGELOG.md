@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.9](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.8...guest-contracts-v0.26.9) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** reclaim disposable caches after bootstrap disk exhaustion ([#42225](https://github.com/okou-ai/okou/issues/42225)) ([cbe68e7](https://github.com/okou-ai/okou/commit/cbe68e780c1565d43e2fa32491e1350d47355229))
+
 ## [0.26.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.7...guest-contracts-v0.26.8) (2026-10-21)
 
 ## [0.26.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.6...guest-contracts-v0.26.7) (2026-10-21)

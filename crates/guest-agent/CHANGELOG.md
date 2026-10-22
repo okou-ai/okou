@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.30](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.29...guest-agent-v0.107.30) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** reclaim disposable caches after bootstrap disk exhaustion ([#42225](https://github.com/okou-ai/okou/issues/42225)) ([cbe68e7](https://github.com/okou-ai/okou/commit/cbe68e780c1565d43e2fa32491e1350d47355229))
+
 ## [0.107.29](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.28...guest-agent-v0.107.29) (2026-10-22)
 
 ## [0.107.28](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.27...guest-agent-v0.107.28) (2026-10-22)
