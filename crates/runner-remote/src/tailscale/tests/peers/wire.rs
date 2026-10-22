@@ -280,8 +280,11 @@ impl DerpSide {
         assert_eq!(self.lost_syns, 0);
         self.lose_syn = true;
     }
+    pub(in crate::tailscale::tests) fn can_receive(&self) -> bool {
+        self.incoming.len() < 64
+    }
     pub(in crate::tailscale::tests) fn receive(&mut self, packet: PacketMut) {
-        assert!(self.incoming.len() < 64 && packet.len() <= 2048);
+        assert!(self.can_receive() && packet.len() <= 2048);
         self.incoming.push(packet);
     }
     #[expect(clippy::mutable_key_type)]
