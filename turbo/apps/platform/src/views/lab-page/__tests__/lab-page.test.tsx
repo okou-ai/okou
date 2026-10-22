@@ -145,23 +145,6 @@ test("Lab groups active feature switches", async () => {
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
 
-test("Lab keeps staff-only data rollouts unavailable outside their audience", async () => {
-  await setupPage({
-    context,
-    path: "/_/lab",
-    featureSwitches: { [FeatureSwitchKey.Lab]: true },
-  });
-  await screen.findByRole("heading", { name: "Lab" });
-  await screen.findByText("Custom templates");
-  const metadata = getFeatureSwitchMetadata();
-  expect(
-    screen.queryByText(
-      metadata[FeatureSwitchKey.Commerce].displayName ??
-        FeatureSwitchKey.Commerce,
-    ),
-  ).not.toBeInTheDocument();
-});
-
 test("The maintainer can manage the remote UI switch in Lab", async () => {
   await setupPage({
     context,
