@@ -5,6 +5,10 @@
   "installCommand": "cd ../.. && pnpm install",
   "crons": [
     {
+      "path": "/api/cron/reconcile-image-generations",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-background-jobs",
       "schedule": "* * * * *"
     },

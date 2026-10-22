@@ -1,6 +1,6 @@
 import { Command, InvalidArgumentError } from "commander";
 import chalk from "chalk";
-import { generateWebImage } from "../../lib/api/domains/web";
+import { generateWebImage, submitWebImage } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { createArtifactPresentation } from "./artifact-return";
@@ -45,6 +45,7 @@ interface ImageOptions {
   compile?: boolean;
   all?: boolean;
   json?: boolean;
+  wait?: boolean;
   visibility?: ArtifactVisibility;
 }
 
@@ -160,9 +161,12 @@ function hasImagePromptModeRequest(options: ImageOptions): boolean {
 
 function imageExecutionOnlyOption(
   options: ImageOptions,
-): "--visibility" | "--json" | undefined {
+): "--visibility" | "--json" | "--wait" | undefined {
   if (options.visibility) {
     return "--visibility";
+  }
+  if (options.wait) {
+    return "--wait";
   }
   return options.json ? "--json" : undefined;
 }
@@ -202,10 +206,50 @@ function resolveImagePromptMode(options: ImageOptions): ImagePromptMode {
   return "raw";
 }
 
+function printImageCompilation(options: ImageOptions, prompt: string): void {
+  if (options.visibility) {
+    throw new Error(
+      "--visibility is only available for direct built-in generation; pass it with --compiled-prompt or --raw-prompt",
+    );
+  }
+  if (options.wait) {
+    throw new Error("--wait is only available for direct built-in generation");
+  }
+  if (options.json) {
+    throw new Error("--json is only available for direct built-in generation");
+  }
+  const styleId = options.style;
+  if (!styleId) {
+    throw new Error("--compile requires --style <id>");
+  }
+  const style = findImageStyle(styleId);
+  if (!style) {
+    throw unknownStyleError(styleId);
+  }
+  console.log(
+    createStyledImageCompilationInstructions({
+      prompt,
+      style,
+      sourceMode: options.styleSource,
+      details: [
+        IMAGE_MODEL_DETAIL,
+        requestedSizeDetail(options.size),
+        `Requested quality: ${options.quality}`,
+        `Requested background: ${options.background}`,
+        `Requested format: ${options.format}`,
+        `Source image URLs: ${options.imageUrl.length > 0 ? options.imageUrl.join(", ") : "none"}`,
+        `Mask image URL: ${options.maskImageUrl ?? "none"}`,
+      ],
+    }),
+  );
+}
+
 export function createImageGenerateCommand(): Command {
   return new Command()
     .name("image")
-    .description("Generate a billed image file from a prompt")
+    .description(
+      "Submit a billed image job; query it with okou generate get <id>",
+    )
     .option(
       "--prompt <text>",
       "User prompt to compile with --style and --compile; can also be piped via stdin",
@@ -226,7 +270,11 @@ export function createImageGenerateCommand(): Command {
       "--all",
       "When listing providers (no --prompt given), include unavailable or not-yet-authorized connectors",
     )
-    .option("--json", "Print the complete generation result as JSON")
+    .option("--json", "Print the job receipt or completed result as JSON")
+    .option(
+      "--wait",
+      "Wait for completion instead of returning the job receipt",
+    )
     .addOption(createArtifactVisibilityOption())
     .option(
       "--size <size>",
@@ -294,12 +342,23 @@ Examples:
   Pipe compile prompt:   cat prompt.txt | okou generate image --style image-style:notion-illustration --compile
   Size and quality:      okou generate image --compiled-prompt "A poster" --size 1024x1536 --quality high
   Image-to-image:        okou generate image --compiled-prompt "Turn this mockup into a polished product shot" --image-url https://example.com/mockup.png
+  Query a job:           okou generate get <generation-id> --json
+  Refresh a job once:    okou generate get <generation-id> --refresh --json
+  Download a result:     okou generate get <generation-id> --out image.png
+  Wait explicitly:       okou generate image --raw-prompt "A watercolor fox" --wait
   List providers:        okou generate image
   Use a connector:       okou generate image --provider replicate
 
 Output:
-  Prints the generated /f/ image file URL and metadata with --compiled-prompt
-  or --raw-prompt. Use --json for the complete result object. With
+  Returns the generation ID and status immediately with --compiled-prompt
+  or --raw-prompt. Query with okou generate get <generation-id>; do not submit
+  another job to check progress. --wait explicitly waits for the completed
+  image URL and metadata, advancing the same job while waiting. For natural-language
+  tasks requesting a final image, use image --wait explicitly. A queued/running
+  receipt is not a completed image: retrieve and deliver the final artifact before
+  marking the task complete. After a timeout, use get --refresh for the same ID;
+  never regenerate to check progress. --visibility requires --wait. Older APIs that return
+  a completed image directly are also supported. Use --json for JSON. With
   --style <id> --prompt "..." --compile, prints a prompt-compilation packet
   for the current agent.
 
@@ -390,49 +449,16 @@ ${formatRegistryListing(styles, "image styles")}`;
         const mode = resolveImagePromptMode(options);
 
         if (mode === "compile") {
-          if (options.visibility) {
-            throw new Error(
-              "--visibility is only available for direct built-in generation; pass it with --compiled-prompt or --raw-prompt",
-            );
-          }
-          if (options.json) {
-            throw new Error(
-              "--json is only available for direct built-in generation",
-            );
-          }
-          const styleId = options.style;
-          if (!styleId) {
-            throw new Error("--compile requires --style <id>");
-          }
-          const style = findImageStyle(styleId);
-          if (!style) {
-            throw unknownStyleError(styleId);
-          }
-
-          const instructions = createStyledImageCompilationInstructions({
-            prompt: resolvedPrompt,
-            style,
-            sourceMode: options.styleSource,
-            details: [
-              IMAGE_MODEL_DETAIL,
-              requestedSizeDetail(options.size),
-              `Requested quality: ${options.quality}`,
-              `Requested background: ${options.background}`,
-              `Requested format: ${options.format}`,
-              `Source image URLs: ${
-                options.imageUrl.length > 0
-                  ? options.imageUrl.join(", ")
-                  : "none"
-              }`,
-              `Mask image URL: ${options.maskImageUrl ?? "none"}`,
-            ],
-          });
-
-          console.log(instructions);
+          printImageCompilation(options, resolvedPrompt);
           return;
         }
 
         await assertPaidToolEnabled("image-generation");
+        if (options.visibility && !options.wait) {
+          throw new Error(
+            "--visibility requires --wait so sharing is applied after completion",
+          );
+        }
         const compression = parseCompression(options.compression);
         const inputFidelity = parseInputFidelity(options.inputFidelity);
         const imagePromptStrength = parseImagePromptStrength(
@@ -441,7 +467,8 @@ ${formatRegistryListing(styles, "image styles")}`;
         const requirePrivateArtifact = await prepareArtifactVisibility(
           options.visibility,
         );
-        const generated = await generateWebImage({
+        const generate = options.wait ? generateWebImage : submitWebImage;
+        const generated = await generate({
           prompt: resolvedPrompt,
           size: options.size,
           quality: options.quality,
@@ -458,6 +485,26 @@ ${formatRegistryListing(styles, "image styles")}`;
           imagePromptStrength,
           requirePrivateArtifact,
         });
+        if ("generationId" in generated) {
+          if (options.json) {
+            console.log(
+              JSON.stringify({
+                generationId: generated.generationId,
+                type: generated.type,
+                status: generated.status,
+              }),
+            );
+          } else {
+            console.log(
+              chalk.green(`✓ Image job submitted: ${generated.generationId}`),
+            );
+            console.log(`  Status: ${generated.status}`);
+            console.log(
+              `  Query: okou generate get ${generated.generationId} --json`,
+            );
+          }
+          return;
+        }
         const result = await applyArtifactVisibility(
           generated,
           { kind: "file", id: generated.id },

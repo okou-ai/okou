@@ -229,11 +229,15 @@ function privateGenerationResult(result: unknown): Record<string, unknown> {
 function serializeBuiltInGenerationJob(
   job: BuiltInGenerationJobRow,
 ): BuiltInGenerationResponse {
+  const task = readBuiltInGenerationRequestInternal(job.request).providerTask;
+  const unsettledImage =
+    (task === "image-response" || task === "image-response-cleaned") &&
+    job.status !== "completed";
   return {
     generationId: job.id,
     type: job.type,
     status: job.status,
-    ...(isRecord(job.result)
+    ...(!unsettledImage && isRecord(job.result)
       ? {
           result: builtInGenerationIsPrivate(job.request)
             ? privateGenerationResult(job.result)
@@ -272,6 +276,14 @@ function isStuckBuiltInGenerationJob(
   referenceTime: Date,
 ): boolean {
   if (!isActiveBuiltInGenerationStatus(job.status)) {
+    return false;
+  }
+  // Responses jobs are recovered by their provider identity and durable cron;
+  // reading status must not turn an interrupted settlement into a lost result.
+  if (
+    readBuiltInGenerationRequestInternal(job.request).providerTask ===
+    "image-response"
+  ) {
     return false;
   }
   return (
