@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.778.0](https://github.com/okou-ai/okou/compare/core-v8.777.7...core-v8.778.0) (2026-10-22)
+
+
+### Features
+
+* add hourly proactive action workflow ([#42325](https://github.com/okou-ai/okou/issues/42325)) ([584988e](https://github.com/okou-ai/okou/commit/584988edb99d1d6cff61b67ee7fb67cbff1282e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.0
+
 ## [8.777.7](https://github.com/okou-ai/okou/compare/core-v8.777.6...core-v8.777.7) (2026-10-22)
 
 
