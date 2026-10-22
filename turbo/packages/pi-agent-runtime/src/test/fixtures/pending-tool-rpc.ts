@@ -86,7 +86,7 @@ const server = setupServer(
       }
       return HttpResponse.text(
         [
-          ...(boundary === "wire-boundaries"
+          ...(boundary?.startsWith("wire-")
             ? [
                 {
                   type: "response.output_item.added",
