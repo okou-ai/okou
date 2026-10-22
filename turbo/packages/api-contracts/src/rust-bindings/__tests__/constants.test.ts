@@ -14,6 +14,10 @@ import {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
 } from "../../contracts/model-providers";
 import {
+  ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "../../contracts/paid-tools";
+import {
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
@@ -200,6 +204,18 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
+  {
+    rustModulePath: ["paid_tools"],
+    rustConstName: "ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR",
+    value: rustString(ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR),
+    rustDoc: ["Trusted environment opt-in for Codex-native image generation."],
+  },
+  {
+    rustModulePath: ["paid_tools"],
+    rustConstName: "ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR",
+    value: rustString(ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR),
+    rustDoc: ["Trusted environment opt-in for framework-native Web Search."],
+  },
   {
     rustModulePath: ["runners"],
     rustConstName: "OFFICIAL_RUNNER_TOKEN_PREFIX",
@@ -650,6 +666,7 @@ describe("Rust constant bindings", () => {
     expect(firstRender).toContain("pub mod codex_oauth_token {");
     expect(firstRender).toContain("pub mod model_provider_env {");
     expect(firstRender).toContain("pub mod client {");
+    expect(firstRender).toContain("pub mod paid_tools {");
     expect(firstRender).toContain("pub mod runners {");
     expect(firstRender).toContain("pub mod storages {");
     expect(firstRender).toContain("pub mod placeholders {");
@@ -776,6 +793,12 @@ describe("Rust constant bindings", () => {
     );
     expect(firstRender).toContain(
       `pub const CLIENT_TYPE_RUNNER: &str = "${CLIENT_TYPE_RUNNER}";`,
+    );
+    expect(firstRender).toContain(
+      `pub const ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR: &str =\n        "${ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR}";`,
+    );
+    expect(firstRender).toContain(
+      `pub const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR: &str = "${ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR}";`,
     );
     expect(firstRender).toContain(
       `pub const CHATGPT_ACCOUNT_ID: &str = "${codexOauthPlaceholders.CHATGPT_ACCOUNT_ID}";`,

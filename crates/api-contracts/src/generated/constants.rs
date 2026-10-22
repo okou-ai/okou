@@ -90,6 +90,16 @@ pub mod model_provider_env {
     }
 }
 
+/// Paid-tool environment contract constants shared by TypeScript and Rust.
+pub mod paid_tools {
+    /// Trusted environment opt-in for Codex-native image generation.
+    pub const ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR: &str =
+        "OKOU_ENABLE_FRAMEWORK_IMAGE_GENERATION";
+
+    /// Trusted environment opt-in for framework-native Web Search.
+    pub const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR: &str = "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
+}
+
 /// Runner contract constants shared by TypeScript and Rust.
 pub mod runners {
     /// Maximum serialized active-input control payload accepted by runner and guest process control.

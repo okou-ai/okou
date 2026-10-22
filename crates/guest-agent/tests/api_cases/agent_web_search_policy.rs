@@ -2,6 +2,9 @@
 
 use crate::common;
 
+use api_contracts::generated::constants::paid_tools::{
+    ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+};
 use guest_agent::active_input::ActiveInputRuntime;
 use guest_agent::masker::SecretMasker;
 use guest_agent::run_context::GuestRuntime;
@@ -154,10 +157,10 @@ fn build_runtime(
         ),
     ]);
     if let Some(value) = framework_web_search {
-        user_env.insert("OKOU_ENABLE_FRAMEWORK_WEB_SEARCH", value);
+        user_env.insert(ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR, value);
     }
     if let Some(value) = framework_image_generation {
-        user_env.insert("OKOU_ENABLE_FRAMEWORK_IMAGE_GENERATION", value);
+        user_env.insert(ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, value);
     }
     let user_env_file = write_user_env_file(&runtime_dir, &user_env)?;
     let is_claude = framework == "claude-code";
