@@ -257,7 +257,7 @@ async def test_failed_header_auth_responds_before_body_eof(
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("initial_window", [0, 1])
-@pytest.mark.parametrize("ending", ["complete", "reset", "disconnect"])
+@pytest.mark.parametrize("ending", ["complete", "reset", "disconnect", "protocol-error"])
 async def test_h2_auth_error_waits_for_response_credit_without_blocking_siblings(
     tmp_path, dialect, initial_window, ending
 ):
@@ -362,6 +362,11 @@ async def test_h2_auth_error_waits_for_response_credit_without_blocking_siblings
         elif ending == "reset":
             guest.reset_stream(1)
             await drive()
+        elif ending == "protocol-error":
+            # A PING frame must have an eight-byte payload. Native protocol
+            # rejection closes this connection while the local DATA is queued.
+            await drive(events.DataReceived(client, b"\x00\x00\x00\x06\x00\x00\x00\x00\x00"))
+            assert any(isinstance(event, h2_events.ConnectionTerminated) for event in received)
         else:
             await drive(events.ConnectionClosed(client))
 
@@ -369,11 +374,11 @@ async def test_h2_auth_error_waits_for_response_credit_without_blocking_siblings
         assert isinstance(server, Http2Server)
         assert not server.streams
         assert not server.h2_conn.stream_buffers
+        assert not server.h2_conn.stream_trailers
         assert not native.streams
-        assert (
-            not any(isinstance(command, commands.CloseConnection) for command in history)
-            or ending == "disconnect"
-        )
+        assert not any(
+            isinstance(command, commands.CloseConnection) for command in history
+        ) or ending in ("disconnect", "protocol-error")
         flows = [command.flow for command in history if isinstance(command, HttpRequestHeadersHook)]
         assert len(flows) == 2
         for flow in flows:

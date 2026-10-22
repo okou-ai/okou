@@ -84,6 +84,10 @@ def install() -> None:
             return
         for stream_id in tuple(pending.streams):
             if self.is_closed(stream_id):
+                # Native protocol-error closure switches directly to done, so
+                # a later ConnectionClosed event cannot release queued DATA.
+                self.h2_conn.stream_buffers.pop(stream_id, None)
+                self.h2_conn.stream_trailers.pop(stream_id, None)
                 pending.streams.remove(stream_id)
                 self.streams.pop(stream_id, None)
             elif not self.is_open_for_us(stream_id):

@@ -155,10 +155,10 @@ production proxy RSS.
 Header-auth failures must deliver their existing status/body before upload EOF
 without forwarding credentials or retaining the rejected body. Exercise native
 H1 write-half closure and incomplete/blocked socket writers, plus H2 zero and
-partial response credit, sibling progress, reset and disconnect. Verify response
-bytes and terminal cleanup rather than only the presence of a local response
-object; a premature full close or stream reset can still hide that error from
-the caller.
+partial response credit, sibling progress, reset, disconnect and protocol-error
+closure. Verify response bytes and terminal cleanup rather than only the presence
+of a local response object; a premature full close or stream reset can still hide
+that error from the caller.
 
 When removing managed upload admissions, isolate count, individual size and
 aggregate bytes in separate native cases. Generate bounded input and hash
