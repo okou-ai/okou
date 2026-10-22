@@ -49,14 +49,15 @@ function response(
 function job(
   status: CommerceJob["status"],
   operation: CommerceJob["operation"] = "search",
+  marketplace: AmazonMarketplace = "amazon.com",
 ): CommerceJob {
   return {
     id: jobId,
     status,
     operation,
     provider: "dataforseo",
-    marketplace: "amazon.com",
-    result: status === "completed" ? response(operation) : null,
+    marketplace,
+    result: status === "completed" ? response(operation, marketplace) : null,
     error:
       status === "failed"
         ? { code: "COMMERCE_PROVIDER_ERROR", message: "Provider task failed" }
@@ -133,7 +134,12 @@ describe("managed Commerce commands", () => {
     server.use(
       http.post(`${api}/search`, async ({ request }) => {
         body = await request.json();
-        return HttpResponse.json(response("search", "amazon.co.uk"));
+        return HttpResponse.json(job("running", "search", "amazon.co.uk"), {
+          status: 202,
+        });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed", "search", "amazon.co.uk"));
       }),
     );
     await commerceCommand.parseAsync([
@@ -173,7 +179,18 @@ describe("managed Commerce commands", () => {
         http.post(`${api}/inspect`, async ({ request }) => {
           body = await request.json();
           return HttpResponse.json(
-            response(
+            job(
+              "running",
+              "inspect",
+              target.startsWith("https:") ? "amazon.de" : "amazon.com",
+            ),
+            { status: 202 },
+          );
+        }),
+        http.get(`${api}/jobs/${jobId}`, () => {
+          return HttpResponse.json(
+            job(
+              "completed",
               "inspect",
               target.startsWith("https:") ? "amazon.de" : "amazon.com",
             ),
@@ -205,7 +222,10 @@ describe("managed Commerce commands", () => {
   it("writes selected product rows to a local CSV and leaves billing in the stdout receipt", async () => {
     server.use(
       http.post(`${api}/search`, () => {
-        return HttpResponse.json(response("search"));
+        return HttpResponse.json(job("running"), { status: 202 });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed"));
       }),
     );
     const destination = join(directory, "products.csv");
@@ -242,7 +262,10 @@ describe("managed Commerce commands", () => {
   it("saves a full inspect JSON envelope with source and billing intact", async () => {
     server.use(
       http.post(`${api}/inspect`, () => {
-        return HttpResponse.json(response("inspect"));
+        return HttpResponse.json(job("running", "inspect"), { status: 202 });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed", "inspect"));
       }),
     );
     const destination = join(directory, "product.json");

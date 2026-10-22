@@ -24,11 +24,9 @@ export async function peerFinalizingFixture(
   const clock = now();
   mockNow(clock);
   onTestFinished(clearMockNow);
-  // Heartbeats prune stale Runner rows across groups, including with this clock.
-  // Bind before actor setup; the returned client drives the actual peer polls.
-  const pollClient = (
-    await setupApp({ context, routes: runnersRoutes, isolatePg: true })
-  )(runnersPollContract);
+  const pollClient = setupApp({ context, routes: runnersRoutes })(
+    runnersPollContract,
+  );
   const owned = await publicChatActor(context, {
     clockTime: now,
   });

@@ -1,3 +1,4 @@
+import { connectorAccountSetupIsComplete } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
@@ -92,7 +93,9 @@ function printCurrentCustomConnectorStatus(
       `Current default account: ${connectorAccountCliInventoryLabel({ ...account, connectionId: account.id })}`,
     );
     console.log(`Default connection ID: ${account.id}`);
-    console.log(`Setup status: ${account.setupStatus}`);
+    if (account.setupStatus !== undefined) {
+      console.log(`Setup status: ${account.setupStatus}`);
+    }
     if (account.missingRequiredFields.length > 0) {
       console.log(
         `Missing required configuration: ${account.missingRequiredFields.join(", ")}`,
@@ -122,7 +125,9 @@ function printRunCustomConnectorStatus(
     case "available":
       console.log(`Account used by this run: ${account.label}`);
       console.log(`Connection ID: ${account.connectionId}`);
-      console.log(`Setup status: ${account.metadata.setupStatus}`);
+      if (account.metadata.setupStatus !== undefined) {
+        console.log(`Setup status: ${account.metadata.setupStatus}`);
+      }
       if (account.metadata.missingRequiredFields.length > 0) {
         console.log(
           `Missing required configuration: ${account.metadata.missingRequiredFields.join(", ")}`,
@@ -133,7 +138,7 @@ function printRunCustomConnectorStatus(
           "The account selected for this run needs to be reconnected.",
         );
         console.log("After reconnecting, start a new run.");
-      } else if (account.metadata.setupStatus !== "complete") {
+      } else if (!connectorAccountSetupIsComplete(account.metadata)) {
         console.log(
           "The account selected for this run requires configuration review.",
         );
@@ -146,7 +151,7 @@ function printRunCustomConnectorStatus(
   return (
     account.state !== "available" ||
     account.metadata.connectionStatus === "reconnect-required" ||
-    account.metadata.setupStatus !== "complete"
+    !connectorAccountSetupIsComplete(account.metadata)
   );
 }
 

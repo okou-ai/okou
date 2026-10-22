@@ -164,6 +164,7 @@ export function withConnectorConnectionProgress<T, Args extends unknown[]>(
       };
       attemptSignal.addEventListener("abort", release, { once: true });
 
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       return await withCleanup(
         (async () => {
           // Invoke synchronously so window.open retains the click's user activation.

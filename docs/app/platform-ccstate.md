@@ -32,6 +32,12 @@ general rules; ESLint owns the custom lifecycle and import boundaries.
 
 ## Asynchronous ownership
 
+`ccstate/no-with-cleanup` prohibits new `withCleanup` usages. Existing references
+have next-line waivers dated `20261022`; remove the waiver with the reference and
+do not copy it to new work. See [withCleanup](signals/withCleanup.md) for the
+anti-patterns and alternatives. A local `finally` is not a migration if it merely
+moves duplicated loading/error state or redundant cancellation bookkeeping.
+
 `readImageDimensions` inherits the workspace dialog signal. Load, decode error,
 and cancellation all release the image listeners and object URL. Browser event
 adaptation uses `createDeferredPromise`; it does not justify a file exemption.

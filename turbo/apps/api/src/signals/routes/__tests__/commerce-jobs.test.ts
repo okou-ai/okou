@@ -1,7 +1,10 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import {
+  billingAutoRechargeContract,
+  billingStatusContract,
+} from "@okouai/api-contracts/contracts/billing";
 import {
   commerceContract,
   type CommerceJob,
@@ -15,6 +18,8 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise } from "../../utils";
+import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
 import { billingStatusRoutes } from "../billing-status";
 import { commerceRoutes } from "../commerce";
 import { cronReconcileCommerceJobRoutes } from "../cron-reconcile-commerce-jobs";
@@ -29,6 +34,7 @@ const context = testContext();
 const BASE = "https://api.dataforseo.com/v3/merchant/amazon";
 const ROUTES = Object.freeze([
   ...commerceRoutes,
+  ...billingAutoRechargeRoutes,
   ...cronReconcileCommerceJobRoutes,
   ...billingStatusRoutes,
   ...usageRecordRoutes,
@@ -440,7 +446,8 @@ describe("Commerce async jobs", () => {
   });
 
   it("completes and settles through independent cron requests without user polling", async () => {
-    const user = await fundedActor();
+    const user = createBddApi(context).user();
+    await createRunsApi(context).grantProEntitlement(user, { isolatePg: true });
     configureProvider();
     mockEnv("CRON_SECRET", "commerce-jobs-cron-secret");
     const beforeCredits = await credits(user);
@@ -503,6 +510,101 @@ describe("Commerce async jobs", () => {
     await expect(credits(user)).resolves.toBe(settledCredits);
   });
 
+  it("settles a zero-cost provider result without a usage debit", async () => {
+    const user = await fundedActor();
+    configureProvider();
+    const beforeCredits = await credits(user);
+    const beforeUsage = await personalUsage(user);
+    const providerId = randomUUID();
+    server.use(
+      http.post(`${BASE}/products/task_post`, () => {
+        return HttpResponse.json(providerResponse(providerId, 20_100, 0, null));
+      }),
+      http.get(`${BASE}/products/task_get/advanced/${providerId}`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_000, 0, [
+            {
+              type: "products",
+              items: [{ type: "amazon_serp", title: "Coffee Maker" }],
+            },
+          ]),
+        );
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).search({
+        headers: authenticate(user),
+        body: { query: "coffee maker", async: true },
+      }),
+      [202],
+    );
+    const completed = await completeJob(user, created.body);
+    expect(completed.result).toMatchObject({
+      billingQuantity: 0,
+      creditsCharged: 0,
+    });
+    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
+      completed.job,
+    );
+    await expect(credits(user)).resolves.toBe(beforeCredits);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits,
+    );
+  });
+
+  it("settles once when user GET overlaps the global recovery cron", async () => {
+    const user = createBddApi(context).user();
+    await createRunsApi(context).grantProEntitlement(user, { isolatePg: true });
+    configureProvider();
+    mockEnv("CRON_SECRET", "commerce-jobs-cron-secret");
+    const beforeCredits = await credits(user);
+    const providerId = randomUUID();
+    server.use(
+      http.post(`${BASE}/products/task_post`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_100, 0.0024, null),
+        );
+      }),
+      http.get(`${BASE}/products/task_get/advanced/${providerId}`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_000, 0, [
+            {
+              type: "products",
+              items: [{ type: "amazon_serp", title: "Coffee Maker" }],
+            },
+          ]),
+        );
+      }),
+    );
+    const created = await accept(
+      client()(commerceContract).search({
+        headers: authenticate(user),
+        body: { query: "coffee maker", async: true },
+      }),
+      [202],
+    );
+    const checkpoint = await getJob(user, created.body.id);
+    expect(checkpoint.status).toBe("running");
+    await Promise.all([
+      getJob(user, created.body.id),
+      accept(
+        client()(cronReconcileCommerceJobsContract).reconcile({
+          headers: { authorization: "Bearer commerce-jobs-cron-secret" },
+        }),
+        [200],
+      ),
+    ]);
+    const completed = await getJob(user, created.body.id);
+    expect(completed.status).toBe("completed");
+    const charged = completed.result?.creditsCharged;
+    expect(charged).toBeGreaterThan(0);
+    if (charged === null || charged === undefined) {
+      throw new Error("Expected one Commerce charge");
+    }
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(charged);
+  });
+
   it("bills the accepted submission fee when provider results have expired", async () => {
     const user = await fundedActor();
     configureProvider();
@@ -554,6 +656,108 @@ describe("Commerce async jobs", () => {
     await expect(credits(user)).resolves.toBe(beforeCredits - charged);
     await expect(getJob(user, created.body.id)).resolves.toStrictEqual(failed);
     await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+  });
+
+  it("publishes its durable receipt before postcommit recharge fails", async () => {
+    const user = createBddApi(context).user();
+    await createRunsApi(context).grantProEntitlement(user);
+    configureProvider();
+    const beforeCredits = await credits(user);
+    const beforeUsage = await personalUsage(user);
+    await accept(
+      client()(billingAutoRechargeContract).update({
+        headers: authenticate(user),
+        body: {
+          enabled: true,
+          threshold: beforeCredits - 1,
+          amount: beforeCredits + 5000,
+        },
+      }),
+      [200],
+    );
+    const providerId = randomUUID();
+    const requestId = randomUUID();
+    let submissions = 0;
+    server.use(
+      http.post(`${BASE}/products/task_post`, () => {
+        submissions++;
+        return HttpResponse.json(
+          providerResponse(providerId, 20_100, 0.0024, null),
+        );
+      }),
+      http.get(`${BASE}/products/task_get/advanced/${providerId}`, () => {
+        return HttpResponse.json(
+          providerResponse(providerId, 20_000, 0, [
+            {
+              type: "products",
+              items: [{ type: "amazon_serp", title: "Coffee Maker" }],
+            },
+          ]),
+        );
+      }),
+    );
+    const body = { query: "coffee maker", async: true, requestId };
+    const created = await accept(
+      client()(commerceContract).search({
+        headers: authenticate(user),
+        body,
+      }),
+      [202],
+    );
+    const checkpoint = await getJob(user, created.body.id);
+    expect(checkpoint.status).toBe("running");
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.stripe.customers.retrieve.mockImplementationOnce(async () => {
+      started.resolve();
+      await release.promise;
+      throw new Error("Stripe temporarily unavailable after settlement");
+    });
+    const settling = getJob(user, created.body.id);
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+      await Promise.allSettled([settling]);
+    });
+    await started.promise;
+    // Replay is a read-only path: unlike GET it cannot repair an unpublished
+    // receipt. It must see completion while the original request is held.
+    const observed = await accept(
+      client()(commerceContract).search({
+        headers: authenticate(user),
+        body,
+      }),
+      [202],
+    );
+    expect(observed.body.status).toBe("completed");
+    const completed = await getJob(user, created.body.id);
+    expect(completed).toStrictEqual(observed.body);
+    expect(completed.status).toBe("completed");
+    const charged = completed.result?.creditsCharged;
+    expect(charged).toBeGreaterThan(0);
+    if (charged === null || charged === undefined) {
+      throw new Error("Expected durable Commerce financial receipt");
+    }
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect((await personalUsage(user)).totalCredits).toBe(
+      beforeUsage.totalCredits + charged,
+    );
+    release.resolve();
+    await expect(settling).resolves.toStrictEqual(completed);
+    const replay = await accept(
+      client()(commerceContract).search({
+        headers: authenticate(user),
+        body,
+      }),
+      [202],
+    );
+    expect(replay.body).toStrictEqual(completed);
+    await expect(getJob(user, created.body.id)).resolves.toStrictEqual(
+      completed,
+    );
+    await expect(credits(user)).resolves.toBe(beforeCredits - charged);
+    expect(submissions).toBe(1);
   });
 
   it("settles once when repeated user GET requests overlap", async () => {

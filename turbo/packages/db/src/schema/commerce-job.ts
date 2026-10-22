@@ -24,6 +24,11 @@ export const commerceJobs = pgTable(
     userId: text("user_id").notNull(),
     // Billing attribution survives the originating run's completion or deletion.
     runId: uuid("run_id"),
+    // Financial identity is independent of the caller-controlled request ID.
+    usageIdempotencyKey: uuid("usage_idempotency_key")
+      .defaultRandom()
+      .notNull()
+      .unique(),
     operation: text("operation").$type<CommerceJobOperation>().notNull(),
     marketplace: text("marketplace").$type<CommerceJobMarketplace>().notNull(),
     // Pending is submission-only; persist the provider task ID before running.

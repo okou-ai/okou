@@ -89,7 +89,7 @@ final class ChatConnectorTests: XCTestCase {
     XCTAssertEqual(status?.account?.id, F.accountID)
     XCTAssertFalse(try XCTUnwrap(status).connected)
   }
-  func testWrongAccountIdentityAndUnknownSetupNeverGrantReadiness() async throws {
+  func testWrongAccountIdentityNeverGrantsReadiness() async throws {
     for body in [
       F.account(id: F.siblingID), F.account().replacingOccurrences(of: "slack", with: "github"),
     ] {
@@ -100,6 +100,20 @@ final class ChatConnectorTests: XCTestCase {
         XCTFail("Expected account identity rejection")
       } catch APIClientError.invalidResponse {}
     }
+  }
+  func testPreparedAccountReaderPreservesLegacySetupAndAcceptsCanonicalStatus() async throws {
+    for (body, expectedReady) in [
+      (F.account(), true), (F.account(setup: false), true),
+      (F.account().replacingOccurrences(of: "\"complete\"", with: "\"incomplete\""), false),
+      (F.account().replacingOccurrences(of: "\"complete\"", with: "\"invalid\""), false),
+      (F.account().replacingOccurrences(of: "\"complete\"", with: "\"unknown\""), false),
+      (F.account(connected: false, setup: false), false),
+    ] {
+      let fixture = ChatHTTPFixture { _ in ChatHTTPResponse(body: body) }
+      let account = try await ChatConnectorService(client: fixture.client).account(
+        id: F.accountID, target: .builtin("slack"))
+      XCTAssertEqual(account.ready, expectedReady)
+    }
     let fixture = ChatHTTPFixture { request in
       if request.url?.path == "/api/connector-accounts/connections" {
         return ChatHTTPResponse(
@@ -109,10 +123,8 @@ final class ChatConnectorTests: XCTestCase {
       }
       return try XCTUnwrap(F.response(request))
     }
-    do {
-      _ = try await ChatConnectorService(client: fixture.client).status(action())
-      XCTFail("Expected unknown setup failure")
-    } catch APIClientError.incompatibleData {}
+    let status = try await ChatConnectorService(client: fixture.client).status(action())
+    XCTAssertTrue(try XCTUnwrap(status).connected)
   }
   func testTargetAccountPagePreservesAnOffPageDefault() async throws {
     for custom in [false, true] {

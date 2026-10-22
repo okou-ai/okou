@@ -3,7 +3,6 @@ import { command, computed, state } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { withCleanup } from "../utils.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import {
@@ -33,7 +32,6 @@ function createBrowserAuthorizationSignals(
 ) {
   const revision$ = state(0);
   const phase$ = state<"authorize" | "continue" | "done">("authorize");
-  const running$ = state<Promise<void> | null>(null);
   const request$ = computed(async (get) => {
     get(revision$);
     const result = await accept(
@@ -52,58 +50,46 @@ function createBrowserAuthorizationSignals(
       return value + 1;
     });
   });
-  const allowAndContinue$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      if (get(phase$) === "done") {
-        return;
-      }
-      const request = await get(request$);
-      signal.throwIfAborted();
-      if (!request) {
-        throw new Error(
-          "Cloud browser authorization is unavailable in this chat",
-        );
-      }
-      if (get(phase$) === "authorize") {
-        await accept(
-          get(apiClient$)(browserAuthorizationRequestsContract).apply({
-            params: { requestToken: descriptor.requestToken },
-            body: {},
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-        set(phase$, "continue");
-      }
-      await set(
-        runChatActionCallback$,
-        {
-          ...context,
-          callbackPrompt: i18n.t(($) => {
-            return $.authorization.browser.callbackPrompt;
-          }),
-          // The request owns one continuation, including retries and other tabs.
-          callbackIds: {
-            clientEventId: request.id,
-            chatThreadSortEventId: request.id,
-          },
-        },
+  const allow$ = command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(phase$) === "done") {
+      return;
+    }
+    const request = await get(request$);
+    signal.throwIfAborted();
+    if (!request) {
+      throw new Error(
+        "Cloud browser authorization is unavailable in this chat",
+      );
+    }
+    if (get(phase$) === "authorize") {
+      await accept(
+        get(apiClient$)(browserAuthorizationRequestsContract).apply({
+          params: { requestToken: descriptor.requestToken },
+          body: {},
+          fetchOptions: { signal },
+        }),
+        [200],
         signal,
       );
-      set(phase$, "done");
-    },
-  );
-  const allow$ = command(({ get, set }, signal: AbortSignal) => {
-    const running = get(running$);
-    if (running) {
-      return running;
+      signal.throwIfAborted();
+      set(phase$, "continue");
     }
-    const operation = withCleanup(set(allowAndContinue$, signal), () => {
-      set(running$, null);
-    });
-    set(running$, operation);
-    return operation;
+    await set(
+      runChatActionCallback$,
+      {
+        ...context,
+        callbackPrompt: i18n.t(($) => {
+          return $.authorization.browser.callbackPrompt;
+        }),
+        // The request owns one continuation, including retries and other tabs.
+        callbackIds: {
+          clientEventId: request.id,
+          chatThreadSortEventId: request.id,
+        },
+      },
+      signal,
+    );
+    set(phase$, "done");
   });
   return { ...descriptor, request$, phase$, refresh$, allow$ };
 }

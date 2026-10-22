@@ -59,6 +59,7 @@ const savePreference$ = command(
       signal.throwIfAborted();
     })();
     set(preferenceSaves$, save);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(save, () => {
       // A later press owns the shown value until its own save settles.
       if (get(optimisticPreference$)?.write === write) {

@@ -2553,8 +2553,15 @@
     {
       "idx": 1442,
       "version": "7",
-      "when": 1792663928007,
-      "tag": "1442_commerce_async_jobs",
+      "when": 1792663848071,
+      "tag": "1442_free_voice_daily_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 1443,
+      "version": "7",
+      "when": 1792667145028,
+      "tag": "1443_commerce_async_jobs",
       "breakpoints": true
     }
   ]

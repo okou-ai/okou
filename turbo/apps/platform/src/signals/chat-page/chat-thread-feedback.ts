@@ -418,6 +418,7 @@ function createSelectionState(threadId: string) {
     set(pendingCopyCount$, (count) => {
       return count + 1;
     });
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const copied = await withCleanup(writeToClipboard(selection.text), () => {
       set(pendingCopyCount$, (count) => {
         return count - 1;

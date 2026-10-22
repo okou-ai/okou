@@ -16,10 +16,7 @@ import {
   chatThreadSidebarWidth$,
   chatThreadSidebarResizeHandleRef$,
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
-import {
-  syncActiveBrowserFitAction$,
-  threadMailNavigating$,
-} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { syncActiveBrowserFitAction$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 
 function chatThreadSidebarLayout(
   width: number | null,
@@ -35,7 +32,7 @@ function chatThreadSidebarLayout(
     transition:
       resizing || !animateEntry
         ? ""
-        : "transition-[flex-basis,width] duration-[240ms] motion-reduce:transition-none",
+        : "transition-[flex-basis,width] duration-[240ms] motion-reduce:transition-none [html:active-view-transition-type(thread-mail)_&]:transition-none",
   };
 }
 
@@ -64,7 +61,7 @@ function ChatThreadSidebarResizeHandle() {
 export function ChatThreadSidebarShell({
   children,
   layout,
-  animateEntry: requestedAnimateEntry,
+  animateEntry,
   onSidebarLayoutCommit,
   open,
   sidebar,
@@ -88,8 +85,6 @@ export function ChatThreadSidebarShell({
   const syncActiveBrowserFitAction = useSet(syncActiveBrowserFitAction$);
   const width = useGet(chatThreadSidebarWidth$);
   const resizing = useGet(chatThreadSidebarResizing$);
-  const mailNavigating = useGet(threadMailNavigating$);
-  const animateEntry = requestedAnimateEntry && !mailNavigating;
   const { style, transition } = chatThreadSidebarLayout(
     width,
     resizing,

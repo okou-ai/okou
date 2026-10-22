@@ -115,6 +115,7 @@ export function throttleCommand<T, Args extends unknown[]>(
     ): Promise<Awaited<T>> => {
       // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: propagate execution failure to the shared completion.
       const result = await onRejection(
+        // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
         withCleanup(
           set(executeScheduled$, completion, args, previous, signal),
           () => {

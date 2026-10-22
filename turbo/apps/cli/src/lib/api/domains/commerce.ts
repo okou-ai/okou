@@ -5,7 +5,6 @@ import {
   type CommerceInspectRequest,
   type CommerceJob,
   type CommerceSearchRequest,
-  type CommerceResponse,
 } from "@okouai/api-contracts/contracts/commerce";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
@@ -15,7 +14,7 @@ import {
   handleError,
 } from "../core/client-factory";
 
-// Also allow older API deployments to finish a synchronous submission.
+// Bound each HTTP request; the durable job owns provider execution.
 const REQUEST_TIMEOUT_MS = 90_000;
 
 function uncertainSubmission(id: string, cause: unknown): ApiRequestError {
@@ -38,7 +37,7 @@ function rejectedSubmission(error: { code: string; message: string }): never {
 
 export async function searchCommerce(
   body: CommerceSearchRequest,
-): Promise<CommerceResponse | CommerceJob> {
+): Promise<CommerceJob> {
   const client = initClient(commerceContract, {
     ...(await getClientConfig()),
     validateResponse: true,
@@ -54,14 +53,14 @@ export async function searchCommerce(
   } catch (error) {
     throw uncertainSubmission(requestId, error);
   }
-  if (result.status === 200 || result.status === 202) return result.body;
+  if (result.status === 202) return result.body;
   if (result.status === 400) rejectedSubmission(result.body.error);
   handleError(result, "Okou Commerce could not search these products");
 }
 
 export async function inspectCommerce(
   body: CommerceInspectRequest,
-): Promise<CommerceResponse | CommerceJob> {
+): Promise<CommerceJob> {
   const client = initClient(commerceContract, {
     ...(await getClientConfig()),
     validateResponse: true,
@@ -77,7 +76,7 @@ export async function inspectCommerce(
   } catch (error) {
     throw uncertainSubmission(requestId, error);
   }
-  if (result.status === 200 || result.status === 202) return result.body;
+  if (result.status === 202) return result.body;
   if (result.status === 400) rejectedSubmission(result.body.error);
   handleError(result, "Okou Commerce could not inspect this product");
 }

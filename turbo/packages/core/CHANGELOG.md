@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.779.0](https://github.com/okou-ai/okou/compare/core-v8.778.0...core-v8.779.0) (2026-10-22)
+
+
+### Features
+
+* **platform:** add assistant message pdf export ([#42319](https://github.com/okou-ai/okou/issues/42319)) ([776b0ea](https://github.com/okou-ai/okou/commit/776b0ea3aef54676ed0a918bb6e5db1b79cf3e5e))
+
 ## [8.778.0](https://github.com/okou-ai/okou/compare/core-v8.777.7...core-v8.778.0) (2026-10-22)
 
 

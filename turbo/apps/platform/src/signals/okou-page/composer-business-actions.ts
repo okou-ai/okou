@@ -94,6 +94,7 @@ export function createComposerDraftActions(
     ): Promise<void> => {
       // Insert the placeholders immediately, then persist the reconciled result.
       // In particular, never leave an unavailable pasted attachment in storage.
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       await withCleanup(
         set(draft.restoreAttachments$, attachments, signal),
         () => {
@@ -118,6 +119,7 @@ export function createComposerDraftActions(
       // Persist the marks and their derivative together after a successful
       // upload. On failure, still save the marks as a missing-copy draft while
       // preserving the actual rejection for the caller and the attachment chip.
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       await withCleanup(
         set(attachment.confirmAnnotations$, annotations, signal),
         () => {
@@ -135,6 +137,7 @@ export function createComposerDraftActions(
       attachment: ChatAttachment,
       signal: AbortSignal,
     ): Promise<void> => {
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       await withCleanup(set(attachment.retryAnnotationUpload$, signal), () => {
         if (!signal.aborted) {
           return set(saveDraft$, signal);

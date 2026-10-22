@@ -1,3 +1,4 @@
+import type { CommerceSettlementJob } from "./commerce-job-settlement";
 import type { PreparedSocialSettlement } from "./social-data-settlement-plan";
 import {
   priceUsageEvents,
@@ -113,6 +114,7 @@ export function reportCommittedSettlementPricing(
 }
 
 export interface PreparedUsageBatch {
+  readonly commerce: readonly CommerceSettlementJob[];
   readonly social?: PreparedSocialSettlement;
   readonly freeOfficialRunOwners: ReadonlyMap<string, string>;
   readonly events: PendingUsageSnapshot[];

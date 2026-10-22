@@ -22,7 +22,10 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
+import {
+  connectorAccountSetupIsComplete,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import type { FormEvent, ReactElement } from "react";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
@@ -117,7 +120,7 @@ function connectedStatusText(
       return $.connectors.accounts.setupUnavailable;
     });
   }
-  if (setupStatus !== "complete") {
+  if (!connectorAccountSetupIsComplete({ setupStatus })) {
     return i18n.t(($) => {
       return $.connectors.accounts.setupIncomplete;
     });

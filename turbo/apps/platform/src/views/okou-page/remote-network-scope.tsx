@@ -30,7 +30,6 @@ import {
   remoteNetworkScopeChange$,
   remoteNetworkScopeImpact$,
   remoteNetworkScopeStatus$,
-  remoteNetworkScopeOperation$,
   cancelRemoteNetworkScope$,
   acknowledgeRemoteNetworkScope$,
   approveRemoteNetworkScope$,
@@ -178,12 +177,10 @@ export function RemoteNetworkAccessSummary({
     </>
   );
 }
-function useScopeReview() {
+function useScopeReview(busy: boolean) {
   const pending = useGet(remoteNetworkScopeChange$);
   const impact = useLoadable(remoteNetworkScopeImpact$);
   const status = useGet(remoteNetworkScopeStatus$);
-  const operation = useLoadable(remoteNetworkScopeOperation$);
-  const busy = operation.state === "loading";
   const restricting = pending?.scope === "personal";
   const preview = impact.state === "hasData" ? impact.data : null;
   const needsAck = restricting && (preview?.otherHostCount ?? 0) > 0;
@@ -232,12 +229,12 @@ function ScopeChangeError({
   ) : null;
 }
 
-function ScopeImpactContent() {
+function ScopeImpactContent({ busy }: { readonly busy: boolean }) {
   const { t } = useTranslation();
   const organization = useRemoteNetworkOrganization();
   const acknowledge = useSet(acknowledgeRemoteNetworkScope$);
-  const { pending, status, preview, needsAck, error, impact, busy } =
-    useScopeReview();
+  const { pending, status, preview, needsAck, error, impact } =
+    useScopeReview(busy);
   if (!pending) {
     return null;
   }
@@ -309,13 +306,15 @@ function ScopeImpactContent() {
 export function RemoteNetworkScopeConfirmation({
   provider,
   configId,
+  busy,
 }: {
   readonly provider: RemoteNetworkProvider;
   readonly configId?: string;
+  readonly busy: boolean;
 }) {
   const { t } = useTranslation();
-  const review = useScopeReview();
-  const { pending, status, restricting, blocked, busy } = review;
+  const review = useScopeReview(busy);
+  const { pending, status, restricting, blocked } = review;
   const draft = useGet(remoteNetworkScopeDraft$);
   const cancel = useSet(cancelRemoteNetworkScope$);
   const approve = useSet(approveRemoteNetworkScope$);
@@ -342,7 +341,7 @@ export function RemoteNetworkScopeConfirmation({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) {
+        if (!open && !busy) {
           cancel();
         }
       }}
@@ -355,7 +354,7 @@ export function RemoteNetworkScopeConfirmation({
             })}
           </DialogTitle>
         </DialogHeader>
-        <ScopeImpactContent />
+        <ScopeImpactContent busy={busy} />
         <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-4">
           <Button
             type="button"

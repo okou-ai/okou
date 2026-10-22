@@ -65,6 +65,7 @@ export const linkTelegramAccount$ = command(
         set(resetLink$);
       }
     });
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const result = await withCleanup(
       accept(
         owner.client.link({ headers: {}, body, fetchOptions: { signal } }),
@@ -179,8 +180,10 @@ const connectTelegramInTab$ = command(
         owner.assertCurrent();
         return result;
       };
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       return await withCleanup(bind(), operation.dispose);
     };
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(connect(), unsubscribe);
   },
 );
@@ -196,6 +199,7 @@ export const authorizeTelegramBot$ = command(
     signal.throwIfAborted();
     const tab = openTelegramLoginTab();
     let handedOff = false;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(
       set(
         connectTelegramInTab$,

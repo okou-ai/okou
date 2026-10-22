@@ -83,6 +83,7 @@ export const startDiscordAuthorization$ = command(
     let resultNotifier:
       ReturnType<typeof createDiscordOauthResultNotifier> | undefined;
     flowSignal.addEventListener("abort", closePopup, { once: true });
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(
       (async () => {
         const client = get(apiClient$)(discordOauthContract);

@@ -76,6 +76,7 @@ export const toggleAgentCustomConnector$ = command(
       throw new Error("No agent detail loaded");
     }
     const client = get(apiClient$)(agentCustomConnectorsContract);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       accept(
         client.update({

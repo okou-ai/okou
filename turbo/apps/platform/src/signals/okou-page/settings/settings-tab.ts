@@ -218,6 +218,7 @@ export const deleteAgent$ = command(
       ...session,
       phase: copyWorkflow && rescues.length > 0 ? "copying" : "deleting",
     });
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const result = withCleanup(
       (async () => {
         // Never start a rescue from an unavailable source-workflow list.

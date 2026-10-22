@@ -9,7 +9,6 @@ import {
 import { commerceJobs } from "@okouai/db/schema/commerce-job";
 import { command } from "ccstate";
 import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
-import { v5 as uuidv5 } from "uuid";
 
 import { nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
@@ -21,17 +20,14 @@ import {
   submitCommerceTask,
 } from "./commerce-job-provider";
 import { projectCommerceItems, type CommerceRequest } from "./commerce.service";
-import { recordManagedUsage$ } from "./managed-usage.service";
+import { settleOrgUsage$ } from "./credit-usage-settlement.service";
+import { completeProcessedOrgUsage$ } from "./credit-usage.service";
+import { COMMERCE_RESOURCE as RESOURCE } from "./commerce-job-settlement";
 import { checkCommerceCredits$ } from "./commerce-credit-admission.service";
 import { creditPolicyRunId } from "./official-workflow-policy.service";
 
 type Actor = AuthContext & { readonly orgId: string };
 type Job = typeof commerceJobs.$inferSelect;
-const RESOURCE = {
-  kind: "commerce",
-  provider: "dataforseo",
-  category: "provider_cost_usd_micros",
-} as const;
 // Both priority-2 endpoints cost $0.003 per bounded task. Admission includes
 // outstanding task liabilities; settlement uses task_post's actual cost, never
 // a zero-cost GET. This preflight remains an estimate, not an atomic hard cap.
@@ -248,37 +244,44 @@ export const advanceCommerceJob$ = command(
     const db = set(writeDb$);
     if (job.result) {
       const quantity = job.result.billingQuantity;
-      // The durable job identity deduplicates usage even if GET and cron race or
-      // the process exits after settlement but before publishing completion.
-      const creditsCharged =
-        quantity === 0
-          ? 0
-          : await set(
-              recordManagedUsage$,
-              {
-                actor: {
-                  orgId: job.orgId,
-                  userId: job.userId,
-                  ...(job.runId ? { runId: job.runId } : {}),
-                },
-                resource: { ...RESOURCE, quantity },
-                idempotencyKey: uuidv5(`commerce-job:${job.id}`, uuidv5.URL),
-                label: "Commerce DataForSEO",
-              },
-              signal,
-            );
-      signal.throwIfAborted();
-      await db
-        .update(commerceJobs)
-        .set({
-          result: { ...job.result, creditsCharged },
-          status: job.error ? "failed" : "completed",
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(eq(commerceJobs.id, job.id), eq(commerceJobs.status, "running")),
+      if (quantity === 0) {
+        // No usage/debit exists: the zero-cost receipt is one atomic update.
+        await db
+          .update(commerceJobs)
+          .set({
+            result: { ...job.result, creditsCharged: 0 },
+            status: job.error ? "failed" : "completed",
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(commerceJobs.id, job.id),
+              eq(commerceJobs.usageIdempotencyKey, job.usageIdempotencyKey),
+              eq(commerceJobs.status, "running"),
+              eq(commerceJobs.result, job.result),
+            ),
+          );
+        signal.throwIfAborted();
+        return;
+      }
+      // Publication, debit and durable terminal receipt share the existing
+      // billing transaction. Never publish completion from this stale snapshot
+      // or depend on a raw usage receipt surviving compaction.
+      const result = await set(
+        settleOrgUsage$,
+        {
+          orgId: job.orgId,
+          commerceJobId: job.id,
+        },
+        signal,
+      );
+      if (result) {
+        await set(
+          completeProcessedOrgUsage$,
+          { orgId: job.orgId, result },
+          signal,
         );
-      signal.throwIfAborted();
+      }
       return;
     }
     if (

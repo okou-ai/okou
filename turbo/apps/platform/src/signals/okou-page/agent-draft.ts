@@ -196,6 +196,7 @@ function createAgentDraftHandoffSync(
       }
       // Finishing consumes and applies the handoff before its first await.
       // Persist that domain change even if attachment reconciliation rejects.
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       await withCleanup(
         set(draft.finishComposerDraftHandoff$, restored, signal),
         () => {
@@ -279,6 +280,7 @@ function createAgentDraftLoad(
     }
 
     const attachments = restoredDraft.attachments.map(createRestoredAttachment);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       set(
         draft.seed$,

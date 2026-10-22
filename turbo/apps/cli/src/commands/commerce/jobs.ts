@@ -105,7 +105,7 @@ async function withJobInterruption(
 
 export async function printCommerceResult(
   options: CommerceJobOptions,
-  submit: () => Promise<CommerceResponse | CommerceJob>,
+  submit: () => Promise<CommerceJob>,
 ): Promise<void> {
   if (
     options.async &&
@@ -127,11 +127,6 @@ export async function printCommerceResult(
         const { result, ...metadata } = response;
         await write({ kind: "result", ...metadata, data: result });
       };
-      // Older API deployments can still finish the operation synchronously.
-      if (!("id" in submitted)) {
-        await writeResult(submitted);
-        return;
-      }
       if (options.async) {
         if (submitted.status === "failed") process.exitCode = 1;
         printJob(submitted, options.json === true);
