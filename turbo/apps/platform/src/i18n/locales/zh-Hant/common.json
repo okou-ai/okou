@@ -2004,7 +2004,6 @@
         "noSubject": "（無主旨）",
         "open": "管理郵件",
         "openEmail": "開啟郵件：{{subject}}",
-        "refresh": "重新整理郵件",
         "result": "{{succeeded}} 封已完成 · {{failed}} 封失敗",
         "retry": "重試",
         "search": "搜尋主旨或寄件者",

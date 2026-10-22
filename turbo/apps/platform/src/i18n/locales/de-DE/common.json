@@ -2010,7 +2010,6 @@
         "noSubject": "(Kein Betreff)",
         "open": "E-Mails verwalten",
         "openEmail": "E-Mail öffnen: {{subject}}",
-        "refresh": "E-Mails aktualisieren",
         "result": "{{succeeded}} abgeschlossen · {{failed}} fehlgeschlagen",
         "retry": "Erneut versuchen",
         "search": "Nach Betreff oder Absender suchen",

@@ -2004,7 +2004,6 @@
         "noSubject": "(Tanpa subjek)",
         "open": "Kelola email",
         "openEmail": "Buka email: {{subject}}",
-        "refresh": "Muat ulang email",
         "result": "{{succeeded}} selesai · {{failed}} gagal",
         "retry": "Coba lagi",
         "search": "Cari berdasarkan subjek atau pengirim",

@@ -484,7 +484,7 @@ function ThreadMailDraftPanel({
         !listOpen && "[view-transition-name:thread-email-panel]",
       )}
     >
-      <div className="shrink-0 border-b border-border/60 px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3">
         <Button
           variant="quiet"
           size="sm"
@@ -498,9 +498,25 @@ function ThreadMailDraftPanel({
             return $.chat.mail.manager.back;
           })}
         </Button>
+        <Button
+          showTooltip
+          type="button"
+          onClick={close}
+          aria-label={t(($) => {
+            return $.chat.mail.closeDetails;
+          })}
+          variant="quiet"
+          size="icon-sm"
+        >
+          <X size={16} />
+        </Button>
       </div>
       <div className="min-h-0 flex-1">
-        <MailDraftPanel signals={signals} onClose={close} />
+        <MailDraftPanel
+          signals={signals}
+          onClose={close}
+          showCloseButton={false}
+        />
       </div>
     </div>
   );

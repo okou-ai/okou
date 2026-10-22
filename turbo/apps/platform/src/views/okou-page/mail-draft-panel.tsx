@@ -49,6 +49,7 @@ const STANDALONE_ACTION_CLASS_NAME =
 interface MailDraftPanelProps {
   readonly signals: MailDraftSignals;
   readonly onClose?: () => void;
+  readonly showCloseButton?: boolean;
 }
 
 function SidebarCloseButton({
@@ -78,8 +79,10 @@ function SidebarCloseButton({
 
 function MailDraftSidebarSkeleton({
   close,
+  showCloseButton,
 }: {
   readonly close: (() => void) | undefined;
+  readonly showCloseButton: boolean;
 }) {
   const { t } = useTranslation();
   const Container = close ? "aside" : "section";
@@ -101,7 +104,7 @@ function MailDraftSidebarSkeleton({
               <div className="h-6 w-52 max-w-full rounded bg-muted/60" />
               <div className="relative top-0.5 h-5 w-12 shrink-0 rounded-full bg-muted/50" />
             </div>
-            <SidebarCloseButton close={close} />
+            {showCloseButton ? <SidebarCloseButton close={close} /> : null}
           </div>
           <div className="mt-4 flex items-center gap-3">
             <div className="size-9 shrink-0 rounded-full bg-muted/60" />
@@ -129,10 +132,12 @@ function UnavailableMailDraftSidebar({
   action,
   close,
   message,
+  showCloseButton,
 }: {
   readonly action?: ReactNode;
   readonly close: (() => void) | undefined;
   readonly message: string;
+  readonly showCloseButton: boolean;
 }) {
   const { t } = useTranslation();
   const Container = close ? "aside" : "section";
@@ -152,7 +157,7 @@ function UnavailableMailDraftSidebar({
             return $.chat.mail.email;
           })}
         </span>
-        <SidebarCloseButton close={close} />
+        {showCloseButton ? <SidebarCloseButton close={close} /> : null}
       </div>
       <div className="flex flex-1 items-center justify-center px-6 text-center">
         <div className="grid max-w-sm justify-items-center gap-4">
@@ -1075,10 +1080,12 @@ function MailDraftDetail({
   draft,
   signals,
   close,
+  showCloseButton,
 }: {
   readonly draft: MailDraft;
   readonly signals: MailDraftSignals;
   readonly close: (() => void) | undefined;
+  readonly showCloseButton: boolean;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -1124,7 +1131,11 @@ function MailDraftDetail({
         close && "border-l border-border/60 xl:border-l-0",
       )}
     >
-      <MailDraftDetails close={close} draft={draft} signals={signals} />
+      <MailDraftDetails
+        close={showCloseButton ? close : undefined}
+        draft={draft}
+        signals={signals}
+      />
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
         {active ? (
           <Button
@@ -1183,16 +1194,26 @@ function MailDraftDetail({
   );
 }
 
-export function MailDraftPanel({ signals, onClose }: MailDraftPanelProps) {
+export function MailDraftPanel({
+  signals,
+  onClose,
+  showCloseButton = true,
+}: MailDraftPanelProps) {
   const { t } = useTranslation();
   const draftLoadable = useLastLoadable(signals.sidebarDraft$);
   if (draftLoadable.state === "loading") {
-    return <MailDraftSidebarSkeleton close={onClose} />;
+    return (
+      <MailDraftSidebarSkeleton
+        close={onClose}
+        showCloseButton={showCloseButton}
+      />
+    );
   }
   if (draftLoadable.state === "hasError" || draftLoadable.data === null) {
     return (
       <UnavailableMailDraftSidebar
         close={onClose}
+        showCloseButton={showCloseButton}
         message={t(($) => {
           return $.chat.mail.unavailable;
         })}
@@ -1203,6 +1224,7 @@ export function MailDraftPanel({ signals, onClose }: MailDraftPanelProps) {
     return (
       <UnavailableMailDraftSidebar
         close={onClose}
+        showCloseButton={showCloseButton}
         message={t(($) => {
           return $.chat.mail.reconnectDescription;
         })}
@@ -1220,6 +1242,7 @@ export function MailDraftPanel({ signals, onClose }: MailDraftPanelProps) {
     return (
       <UnavailableMailDraftSidebar
         close={onClose}
+        showCloseButton={showCloseButton}
         message={t(($) => {
           return $.chat.mail.deleted;
         })}
@@ -1231,6 +1254,7 @@ export function MailDraftPanel({ signals, onClose }: MailDraftPanelProps) {
       draft={draftLoadable.data}
       signals={signals}
       close={onClose}
+      showCloseButton={showCloseButton}
     />
   );
 }

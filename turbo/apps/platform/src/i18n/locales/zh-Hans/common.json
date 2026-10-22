@@ -2004,7 +2004,6 @@
         "noSubject": "（无主题）",
         "open": "管理邮件",
         "openEmail": "打开邮件：{{subject}}",
-        "refresh": "刷新邮件",
         "result": "{{succeeded}} 封已完成 · {{failed}} 封失败",
         "retry": "重试",
         "search": "搜索主题或发件人",

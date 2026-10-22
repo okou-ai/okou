@@ -2043,7 +2043,6 @@
         "noSubject": "(Sin asunto)",
         "open": "Gestionar correos",
         "openEmail": "Abrir correo: {{subject}}",
-        "refresh": "Actualizar correos",
         "result": "{{succeeded}} completados · {{failed}} fallidos",
         "retry": "Reintentar",
         "search": "Buscar por asunto o remitente",
