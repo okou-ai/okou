@@ -25,7 +25,7 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test, describe, beforeEach, it } from "vitest";
+import { expect, test, describe, it } from "vitest";
 
 import {
   click,
@@ -89,6 +89,7 @@ interface DriveMockControl {
 }
 
 interface DriveMockOptions {
+  readonly driveMetadata?: "omitted" | "unavailable";
   readonly filename?: string;
   readonly contentType?: string;
   readonly existingMimeType?: string;
@@ -155,32 +156,38 @@ function installDriveMocks(
     ArtifactDetail,
     "googleDriveConnectionId" | "googleDriveSync"
   > => {
+    if (options.driveMetadata === "omitted") {
+      return {};
+    }
     return {
       googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
-      googleDriveSync: artifactSynced
-        ? {
-            status: "synced",
-            accountReady: true,
-            id: "drive-file-1",
-            name: filename,
-            ...(mimeType ? { mimeType } : {}),
-            originalUploaded,
-            webViewLink: "https://drive.google.test/file/drive-file-1",
-          }
-        : selectedAccountReady
-          ? { status: "not_synced", accountReady: true }
-          : {
-              status: "disconnected",
-              recovery:
-                artifactConnectionState === "not-connected"
-                  ? { action: "connect" }
-                  : artifactConnectionState === "reconnect-required"
-                    ? {
-                        action: "reconnect",
-                        connectionId: SELECTED_DRIVE_CONNECTION_ID,
-                      }
-                    : { action: "authorize" },
-            },
+      googleDriveSync:
+        options.driveMetadata === "unavailable"
+          ? { status: "disconnected", recovery: { action: "unavailable" } }
+          : artifactSynced
+            ? {
+                status: "synced",
+                accountReady: true,
+                id: "drive-file-1",
+                name: filename,
+                ...(mimeType ? { mimeType } : {}),
+                originalUploaded,
+                webViewLink: "https://drive.google.test/file/drive-file-1",
+              }
+            : selectedAccountReady
+              ? { status: "not_synced", accountReady: true }
+              : {
+                  status: "disconnected",
+                  recovery:
+                    artifactConnectionState === "not-connected"
+                      ? { action: "connect" }
+                      : artifactConnectionState === "reconnect-required"
+                        ? {
+                            action: "reconnect",
+                            connectionId: SELECTED_DRIVE_CONNECTION_ID,
+                          }
+                        : { action: "authorize" },
+                },
     };
   };
   mockArtifactConversation(targetContext, {
@@ -215,7 +222,6 @@ function installDriveMocks(
       return [
         artifactRun({
           artifactId: DRIVE_ARTIFACT_ID,
-          googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
           contentType,
           fileId: DRIVE_FILE_ID,
           filename,
@@ -417,8 +423,7 @@ function artifactPreview(): HTMLElement {
   return screen.getByTestId("artifact-sidebar");
 }
 
-async function openDriveArtifactMenu(
-  actionName = "Connect Google Drive",
+async function openDriveArtifactDownloadMenu(
   filename = "Drive report.pdf",
 ): Promise<void> {
   await waitFor(() => {
@@ -433,6 +438,13 @@ async function openDriveArtifactMenu(
     expect(buttonNamed("Download artifact", artifactPreview())).toBeEnabled();
   });
   click(buttonNamed("Download artifact", artifactPreview()));
+}
+
+async function openDriveArtifactMenu(
+  actionName = "Connect Google Drive",
+  filename = "Drive report.pdf",
+): Promise<void> {
+  await openDriveArtifactDownloadMenu(filename);
   await waitFor(() => {
     expect(roleItemNamed("menuitem", actionName)).not.toHaveAttribute(
       "aria-disabled",
@@ -500,11 +512,30 @@ async function openDriveMessageMenu(actionName = "Connect Google Drive") {
   return { preview, downloadButton };
 }
 
-describe("with a Drive artifact menu", () => {
-  async function prepareScenario() {
+test.each(["available", "unavailable"] as const)(
+  "Authorize and sync an artifact when unrelated Drive metadata is %s",
+  async (metadata) => {
     mockWideScreen();
     const drive = installDriveMocks(context, "connected");
     const browser = context.mocks.browser.blobDownload();
+    if (metadata === "unavailable") {
+      context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Drive member inventory unavailable",
+          },
+        });
+      });
+      context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Drive catalog unavailable",
+          },
+        });
+      });
+    }
 
     await setupPage({
       context,
@@ -513,14 +544,6 @@ describe("with a Drive artifact menu", () => {
     });
 
     await openDriveArtifactMenu();
-    return { drive, browser };
-  }
-  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-  beforeEach(async () => {
-    preparedScenario = await prepareScenario();
-  });
-  it("authorize the agent and sync an artifact to connected Google Drive", async () => {
-    const { drive, browser } = preparedScenario;
     click(roleItemNamed("menuitem", "Connect Google Drive"));
 
     await waitFor(() => {
@@ -549,8 +572,37 @@ describe("with a Drive artifact menu", () => {
     });
     expect(browser.downloads.at(-1)?.blob).toBeInstanceOf(Blob);
     expect(artifactPreview()).toBeInTheDocument();
-  });
-});
+  },
+);
+
+test.each(["omitted", "unavailable"] as const)(
+  "Keep artifact download available when Drive metadata is %s",
+  async (driveMetadata) => {
+    mockWideScreen();
+    installDriveMocks(context, "connected", { driveMetadata });
+    const browser = context.mocks.browser.blobDownload();
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+
+    await openDriveArtifactDownloadMenu();
+    await waitFor(() => {
+      expect(roleItemNamed("menuitem", "Connect Google Drive")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+    click(roleItemNamed("menuitem", "Download"));
+    await waitFor(() => {
+      expect(browser.downloads.at(-1)).toMatchObject({
+        filename: "drive-report.pdf",
+      });
+    });
+    expect(browser.downloads.at(-1)?.blob).toBeInstanceOf(Blob);
+  },
+);
 
 test.each(["original", "google"] as const)(
   "Recheck Drive authorization after leaving and reopening the chat page (%s)",

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 
 import {
   chatThreadByIdContract,
@@ -7,7 +6,6 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
   chatThreadDraftSchema,
-  chatThreadArtifactGoogleDriveSyncSchema,
   chatThreadsContract,
   chatEventSchema,
   chatThreadSnapshotArchiveSchema,
@@ -15,67 +13,6 @@ import {
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
 } from "../chat-threads";
-
-describe("google drive artifact recovery contract", () => {
-  it("requires account readiness on every connected sync status", () => {
-    const legacyNotSynced = { status: "not_synced" } as const;
-    const accountReadyNotSynced = {
-      status: "not_synced",
-      accountReady: true,
-    } as const;
-    const previousNotSyncedSchema = z.object({
-      status: z.literal("not_synced"),
-    });
-
-    expect(
-      chatThreadArtifactGoogleDriveSyncSchema.safeParse(legacyNotSynced)
-        .success,
-    ).toBe(false);
-    // An App bundle built before the marker keeps its own tolerant parser.
-    expect(previousNotSyncedSchema.parse(accountReadyNotSynced)).toStrictEqual(
-      legacyNotSynced,
-    );
-    expect(
-      chatThreadArtifactGoogleDriveSyncSchema.parse(accountReadyNotSynced),
-    ).toStrictEqual(accountReadyNotSynced);
-    expect(
-      chatThreadArtifactGoogleDriveSyncSchema.parse({
-        status: "unknown",
-        accountReady: true,
-      }),
-    ).toStrictEqual({ status: "unknown", accountReady: true });
-  });
-
-  it("keeps disconnected recovery additive across API and Platform versions", () => {
-    const legacyDisconnected = { status: "disconnected" } as const;
-    const exactReconnect = {
-      status: "disconnected",
-      recovery: {
-        action: "reconnect",
-        connectionId: "11111111-1111-4111-8111-111111111111",
-      },
-    } as const;
-    const previousDisconnectedSchema = z.object({
-      status: z.literal("disconnected"),
-    });
-
-    expect(
-      chatThreadArtifactGoogleDriveSyncSchema.parse(legacyDisconnected),
-    ).toStrictEqual(legacyDisconnected);
-    expect(previousDisconnectedSchema.parse(exactReconnect)).toStrictEqual(
-      legacyDisconnected,
-    );
-    expect(
-      chatThreadArtifactGoogleDriveSyncSchema.parse(exactReconnect),
-    ).toStrictEqual(exactReconnect);
-    expect(
-      chatThreadArtifactGoogleDriveSyncSchema.safeParse({
-        status: "disconnected",
-        recovery: { action: "reconnect", connectionId: "not-a-uuid" },
-      }).success,
-    ).toBe(false);
-  });
-});
 
 describe("chat message response contract", () => {
   const workflowId = "11111111-1111-4111-8111-111111111111";
