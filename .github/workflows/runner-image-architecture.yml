@@ -56,7 +56,7 @@ on:
 jobs:
   compile:
     name: Compile runner binary (${{ matrix.label }})
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     permissions:
