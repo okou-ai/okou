@@ -7,7 +7,7 @@ import { executeDueNotionAutomationEvents$ } from "../services/notion-automation
 import { executeDueStripeAutomationEvents$ } from "../services/stripe-automation-event.service";
 import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-poller.service";
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
-import { reconcileProactiveSuggestions$ } from "../services/proactive-suggestions-lifecycle.service";
+import { reconcileProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
 import { recoverDueOfficialWorkflowSchedules$ } from "../services/official-workflow-schedule-recovery.service";
 import { settle } from "../utils";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
@@ -32,11 +32,11 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
       });
     }
     const proactive = await settle(
-      set(reconcileProactiveSuggestions$, signal),
+      set(reconcileProactiveWorkflows$, signal),
       signal,
     );
     if (!proactive.ok) {
-      log.error("Proactive Suggestions reconciliation failed", {
+      log.error("Proactive workflow reconciliation failed", {
         error: proactive.error,
       });
     }

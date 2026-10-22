@@ -1,4 +1,8 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type {
+  ProactivePreference as ProactivePreferenceValue,
+  ProactiveWorkflowKind,
+} from "@okouai/api-contracts/contracts/proactive";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -13,15 +17,46 @@ import {
   reloadProactiveSuggestionsPreference$,
   updateProactiveSuggestionsPreference$,
 } from "../../../../signals/okou-page/settings/proactive-suggestions.ts";
+import {
+  proactiveActionPreference$,
+  reloadProactiveActionPreference$,
+  updateProactiveActionPreference$,
+} from "../../../../signals/okou-page/settings/proactive-action.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
-function ProactiveSuggestionsPreference() {
+function preferenceStatusKey(
+  value: ProactivePreferenceValue | undefined,
+  failed: boolean,
+) {
+  return failed
+    ? "retryMessage"
+    : value?.unavailableReason === "missing-default-agent"
+      ? "missingDefaultAgent"
+      : value?.status === "preparing"
+        ? "preparing"
+        : value?.status === "error"
+          ? "preparationFailed"
+          : null;
+}
+
+function ProactivePreference({ kind }: { kind: ProactiveWorkflowKind }) {
   const { t } = useTranslation();
-  const preference = useLoadable(proactiveSuggestionsPreference$);
-  const [mutation, update] = useLoadableSet(
-    updateProactiveSuggestionsPreference$,
+  const key = kind === "action" ? "proactiveAction" : "proactiveSuggestions";
+  const preference = useLoadable(
+    kind === "action"
+      ? proactiveActionPreference$
+      : proactiveSuggestionsPreference$,
   );
-  const reload = useSet(reloadProactiveSuggestionsPreference$);
+  const [mutation, update] = useLoadableSet(
+    kind === "action"
+      ? updateProactiveActionPreference$
+      : updateProactiveSuggestionsPreference$,
+  );
+  const reload = useSet(
+    kind === "action"
+      ? reloadProactiveActionPreference$
+      : reloadProactiveSuggestionsPreference$,
+  );
   const signal = useGet(pageSignal$);
   const value =
     mutation.state === "hasData" && mutation.data.status === "error"
@@ -33,37 +68,34 @@ function ProactiveSuggestionsPreference() {
     preference.state === "hasError" || mutation.state === "hasError";
   const busy = preference.state === "loading" || mutation.state === "loading";
   const hasPreferenceError = value?.status === "error";
-  const statusKey = failed
-    ? "retryMessage"
-    : value?.unavailableReason
-      ? "missingDefaultAgent"
-      : value?.status === "preparing"
-        ? "preparing"
-        : hasPreferenceError
-          ? "preparationFailed"
-          : null;
+  const statusKey = preferenceStatusKey(value, failed);
 
   return (
     <div
       className="border-t border-t-gray-400"
-      data-testid="proactive-suggestions-preference"
+      data-testid={`proactive-${kind}-preference`}
     >
       <PreferenceCardRow
         icon={Sparkles}
         grouped
         iconContainerClassName="h-10 w-10 rounded-xl bg-primary/10 text-brand-text"
         title={t(($) => {
-          return $.settings.preferences.proactiveSuggestions.title;
+          return $.settings.preferences[key].title;
         })}
         description={t(($) => {
-          return $.settings.preferences.proactiveSuggestions.description;
+          return $.settings.preferences[key].description;
         })}
         status={
           <div aria-live="polite" className="text-xs text-muted-foreground">
-            {statusKey !== null &&
-              t(($) => {
-                return $.settings.preferences.proactiveSuggestions[statusKey];
-              })}
+            {value?.unavailableReason === "proactive-action-enabled"
+              ? t(($) => {
+                  return $.settings.preferences.proactiveSuggestions
+                    .pausedForAction;
+                })
+              : statusKey !== null &&
+                t(($) => {
+                  return $.settings.preferences[key][statusKey];
+                })}
           </div>
         }
       >
@@ -83,13 +115,13 @@ function ProactiveSuggestionsPreference() {
               }}
             >
               {t(($) => {
-                return $.settings.preferences.proactiveSuggestions.retry;
+                return $.settings.preferences[key].retry;
               })}
             </Button>
           )}
           <Switch
             aria-label={t(($) => {
-              return $.settings.preferences.proactiveSuggestions.title;
+              return $.settings.preferences[key].title;
             })}
             checked={value?.enabled ?? false}
             disabled={busy || value === undefined}
@@ -107,6 +139,14 @@ export function ProactiveSuggestionsSettings() {
   const flags = useLoadable(featureSwitch$);
   return flags.state === "hasData" &&
     flags.data[FeatureSwitchKey.AgentSuggestion] ? (
-    <ProactiveSuggestionsPreference />
+    <ProactivePreference kind="suggestions" />
+  ) : null;
+}
+
+export function ProactiveActionSettings() {
+  const flags = useLoadable(featureSwitch$);
+  return flags.state === "hasData" &&
+    flags.data[FeatureSwitchKey.ProactiveAction] ? (
+    <ProactivePreference kind="action" />
   ) : null;
 }

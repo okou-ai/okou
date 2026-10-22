@@ -1,10 +1,7 @@
 import { command } from "ccstate";
 import { and, asc, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
-  PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/proactive-suggestions";
+import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -16,9 +13,10 @@ import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import {
-  loadProactiveSuggestionsEligibility$,
-  type ProactiveSuggestionsOwner,
-} from "./proactive-suggestions-eligibility.service";
+  loadProactiveWorkflowsEligibility$,
+  type ProactiveWorkflowOwner,
+} from "./proactive-workflows-eligibility.service";
+import { PROACTIVE_WORKFLOW_DEFINITIONS } from "./proactive-workflow-definitions";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
@@ -27,34 +25,47 @@ import { resolveBlueprint } from "./official-workflow-installation.service";
 import { calculateNextRun } from "./time-automation";
 import { officialScheduleOwnerHash } from "./official-workflow-owner-schedule";
 
-const log = logger("ProactiveSuggestions");
+const log = logger("ProactiveWorkflows");
 const installedSchema = z.object({ id: z.uuid() });
 
-function ownerMinute(owner: ProactiveSuggestionsOwner): number {
+function ownerMinute(owner: ProactiveWorkflowOwner): number {
   return officialScheduleOwnerHash(owner) % 60;
 }
 
 /** The source preference is business intent, never a worker claim or lease. */
-export function proactiveSuggestionsOwnerEnabledSql(
-  owner: ProactiveSuggestionsOwner,
+export function proactiveWorkflowOwnerEnabledSql(
+  owner: ProactiveWorkflowOwner,
   agentId: string,
+  kind: ProactiveWorkflowKind,
+  actionAvailable: boolean,
 ) {
+  const preference =
+    kind === "action"
+      ? sql`preference.proactive_action_enabled = true`
+      : sql`preference.proactive_suggestions_enabled = true
+          AND (${!actionAvailable} OR preference.proactive_action_enabled IS DISTINCT FROM true)`;
   return sql`EXISTS (
     SELECT 1 FROM org_members_metadata AS preference
     JOIN org_metadata AS organization ON organization.org_id = preference.org_id
     JOIN agents AS primary_agent ON primary_agent.id = organization.default_agent_id AND primary_agent.org_id = organization.org_id
     WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
-      AND preference.proactive_suggestions_enabled = true
+      AND ${preference}
       AND primary_agent.id = ${agentId}::uuid
       AND (primary_agent.visibility = 'public' OR primary_agent.owner = ${owner.userId})
   )`;
 }
 
-const loadProactiveSuggestionsSchedule$ = command(
-  async ({ set }, owner: ProactiveSuggestionsOwner, signal: AbortSignal) => {
+const loadProactiveSchedule$ = command(
+  async (
+    { set },
+    owner: ProactiveWorkflowOwner,
+    kind: ProactiveWorkflowKind,
+    signal: AbortSignal,
+  ) => {
+    const source = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
     const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
     const definition = catalog?.payload.definitions.find((item) => {
-      return item.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME;
+      return item.name === source.name;
     });
     if (!catalog || !definition || definition.lifecycle !== "active") {
       return;
@@ -65,13 +76,17 @@ const loadProactiveSuggestionsSchedule$ = command(
       signal,
     );
     if (!revision) {
-      throw new Error("Accepted Proactive Suggestions revision is missing");
+      throw new Error(
+        `Accepted proactive workflow revision is missing: ${source.name}`,
+      );
     }
     const blueprint = revision.definition.blueprints.find((item) => {
-      return item.key === PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY;
+      return item.key === source.blueprintKey;
     });
     if (!blueprint) {
-      throw new Error("Proactive Suggestions hourly Blueprint is missing");
+      throw new Error(
+        `Proactive workflow hourly Blueprint is missing: ${source.name}`,
+      );
     }
     const bindings = [{ key: "cron", value: `${ownerMinute(owner)} * * * *` }];
     const resolved = resolveBlueprint(
@@ -85,7 +100,7 @@ const loadProactiveSuggestionsSchedule$ = command(
       resolved.blueprint.createRequest.schedule.type !== "cron"
     ) {
       throw new Error(
-        "Proactive Suggestions requires its hourly cron Blueprint",
+        "Proactive workflows require their hourly cron Blueprint",
       );
     }
     const cron = resolved.blueprint.createRequest.schedule.cronExpression;
@@ -94,28 +109,24 @@ const loadProactiveSuggestionsSchedule$ = command(
 );
 
 /** Materialize this fixed Official schedule atomically, without legacy installer transactions. */
-export const ensureProactiveSuggestionsWorkflow$ = command(
-  async (
-    { get, set },
-    owner: ProactiveSuggestionsOwner,
-    signal: AbortSignal,
-  ) => {
+export const ensureProactiveWorkflows$ = command(
+  async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
     const eligibility = await set(
-      loadProactiveSuggestionsEligibility$,
+      loadProactiveWorkflowsEligibility$,
       owner,
       signal,
     );
+    const kind = eligibility.action.active
+      ? "action"
+      : eligibility.suggestions.active
+        ? "suggestions"
+        : null;
     const member =
-      eligibility.available &&
-      eligibility.enabled &&
-      eligibility.agentId !== null
+      kind !== null && eligibility.agentId !== null
         ? await loadCurrentMembershipId(get(clerk$), owner, signal)
         : null;
     const eligible =
-      eligibility.available &&
-      eligibility.enabled &&
-      member !== null &&
-      eligibility.agentId !== null;
+      kind !== null && member !== null && eligibility.agentId !== null;
     const database = set(writeDb$);
     const ownedWorkflows = database
       .select({ id: workflows.id })
@@ -124,12 +135,20 @@ export const ensureProactiveSuggestionsWorkflow$ = command(
         and(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
-          eq(
+          inArray(
             workflows.officialDefinitionName,
-            PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
+            Object.values(PROACTIVE_WORKFLOW_DEFINITIONS).map((item) => {
+              return item.name;
+            }),
           ),
-          eligible && eligibility.agentId !== null
-            ? ne(workflows.agentId, eligibility.agentId)
+          eligible && eligibility.agentId !== null && kind !== null
+            ? or(
+                ne(workflows.agentId, eligibility.agentId),
+                ne(
+                  workflows.officialDefinitionName,
+                  PROACTIVE_WORKFLOW_DEFINITIONS[kind].name,
+                ),
+              )
             : undefined,
         ),
       );
@@ -151,15 +170,11 @@ export const ensureProactiveSuggestionsWorkflow$ = command(
         ),
       );
     signal.throwIfAborted();
-    if (!eligible || eligibility.agentId === null) {
+    if (!eligible || eligibility.agentId === null || kind === null) {
       return;
     }
 
-    const schedule = await set(
-      loadProactiveSuggestionsSchedule$,
-      owner,
-      signal,
-    );
+    const schedule = await set(loadProactiveSchedule$, owner, kind, signal);
     if (!schedule) {
       return;
     }
@@ -174,7 +189,7 @@ export const ensureProactiveSuggestionsWorkflow$ = command(
           official_definition_name, official_installation_state, created_by, updated_by, created_at, updated_at)
         SELECT ${owner.orgId}, ${eligibility.agentId}::uuid, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
           ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
-        WHERE ${proactiveSuggestionsOwnerEnabledSql(owner, eligibility.agentId)}
+        WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId, kind, eligibility.action.available)}
           AND EXISTS (SELECT 1 FROM official_workflow_catalog_state WHERE accepted_release_id = ${catalog.releaseId})
         ON CONFLICT (org_id, agent_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
         DO UPDATE SET updated_at = EXCLUDED.updated_at
@@ -212,7 +227,12 @@ export const ensureProactiveSuggestionsWorkflow$ = command(
           eq(workflowAutomations.workflowId, installed.id),
           eq(workflowAutomations.officialBlueprintKey, blueprint.key),
           eq(workflowAutomations.officialIntendedEnabled, false),
-          proactiveSuggestionsOwnerEnabledSql(owner, eligibility.agentId),
+          proactiveWorkflowOwnerEnabledSql(
+            owner,
+            eligibility.agentId,
+            kind,
+            eligibility.action.available,
+          ),
         ),
       );
     signal.throwIfAborted();
@@ -220,10 +240,10 @@ export const ensureProactiveSuggestionsWorkflow$ = command(
 );
 
 /** Each owner has one stable minute shard; keyset pages do not require a second progress store. */
-export const reconcileProactiveSuggestions$ = command(
+export const reconcileProactiveWorkflows$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const minute = nowDate().getUTCMinutes();
-    let cursor: ProactiveSuggestionsOwner | undefined;
+    let cursor: ProactiveWorkflowOwner | undefined;
     while (true) {
       const candidates = await get(db$)
         .select({
@@ -233,10 +253,10 @@ export const reconcileProactiveSuggestions$ = command(
         .from(orgMembersMetadata)
         .where(
           and(
-            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR EXISTS (
+            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveActionEnabled} = true OR EXISTS (
               SELECT 1 FROM workflows AS proactive_workflow WHERE proactive_workflow.org_id = ${orgMembersMetadata.orgId}
                 AND proactive_workflow.owner_user_id = ${orgMembersMetadata.userId}
-                AND proactive_workflow.official_definition_name = ${PROACTIVE_SUGGESTIONS_DEFINITION_NAME}
+                AND proactive_workflow.official_definition_name IN (${PROACTIVE_WORKFLOW_DEFINITIONS.suggestions.name}, ${PROACTIVE_WORKFLOW_DEFINITIONS.action.name})
             ))`,
             sql`(('x' || substr(encode(sha256(convert_to(${orgMembersMetadata.orgId} || '/' || ${orgMembersMetadata.userId}, 'UTF8')), 'hex'), 1, 8))::bit(32)::bigint % 60) = ${minute}`,
             cursor
@@ -255,11 +275,11 @@ export const reconcileProactiveSuggestions$ = command(
       signal.throwIfAborted();
       for (const owner of candidates) {
         const result = await settle(
-          set(ensureProactiveSuggestionsWorkflow$, owner, signal),
+          set(ensureProactiveWorkflows$, owner, signal),
           signal,
         );
         if (!result.ok) {
-          log.error("Could not reconcile proactive suggestions", {
+          log.error("Could not reconcile proactive workflows", {
             ...owner,
             error: result.error,
           });

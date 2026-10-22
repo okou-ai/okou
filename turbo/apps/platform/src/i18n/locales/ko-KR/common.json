@@ -5446,9 +5446,19 @@
         "retryMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다. 계속하려면 다시 시도하세요.",
         "title": "모닝 브리프"
       },
+      "proactiveAction": {
+        "description": "Okou가 매시간 다음 작업을 진행하고 채팅에 결과를 표시합니다. 활성화된 동안 선제적 제안은 일시 중지됩니다.",
+        "missingDefaultAgent": "선제적 작업을 활성화하려면 사용 가능한 기본 에이전트를 선택하세요.",
+        "preparationFailed": "일시적으로 사용할 수 없습니다. Okou가 자동으로 다시 시도합니다.",
+        "preparing": "매시간 실행할 작업을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
+        "retry": "다시 시도",
+        "retryMessage": "선제적 작업 설정을 불러오거나 업데이트하지 못했습니다. 다시 시도하세요.",
+        "title": "선제적 작업"
+      },
       "proactiveSuggestions": {
         "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
         "missingDefaultAgent": "선제적 제안을 받으려면 사용 가능한 기본 Agent를 선택하세요.",
+        "pausedForAction": "선제적 작업이 켜져 있어 제안이 일시 중지되었습니다. 설정은 저장되어 있습니다.",
         "preparationFailed": "일시적으로 사용할 수 없습니다. Okou가 자동으로 다시 시도합니다.",
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
         "retry": "다시 시도",

@@ -8,21 +8,20 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
-export interface ProactiveSuggestionsOwner {
+export interface ProactiveWorkflowOwner {
   readonly orgId: string;
   readonly userId: string;
 }
 
-export const loadProactiveSuggestionsEligibility$ = command(
-  async (
-    { get, set },
-    owner: ProactiveSuggestionsOwner,
-    signal: AbortSignal,
-  ) => {
+export const loadProactiveWorkflowsEligibility$ = command(
+  async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
     const [features, [preference], [agent]] = await Promise.all([
       set(loadUserFeatureSwitchContext$, owner.orgId, owner.userId, signal),
       get(db$)
-        .select({ enabled: orgMembersMetadata.proactiveSuggestionsEnabled })
+        .select({
+          suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
+          actionEnabled: orgMembersMetadata.proactiveActionEnabled,
+        })
         .from(orgMembersMetadata)
         .where(
           and(
@@ -50,9 +49,28 @@ export const loadProactiveSuggestionsEligibility$ = command(
         .limit(1),
     ]);
     signal.throwIfAborted();
+    const actionAvailable = isFeatureEnabled(
+      FeatureSwitchKey.ProactiveAction,
+      features,
+    );
+    const actionEnabled = preference?.actionEnabled ?? false;
+    const actionActive = actionAvailable && actionEnabled;
+    const suggestionsAvailable = isFeatureEnabled(
+      FeatureSwitchKey.AgentSuggestion,
+      features,
+    );
+    const suggestionsEnabled = preference?.suggestionsEnabled ?? false;
     return {
-      available: isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features),
-      enabled: preference?.enabled ?? false,
+      action: {
+        available: actionAvailable,
+        enabled: actionEnabled,
+        active: actionActive,
+      },
+      suggestions: {
+        available: suggestionsAvailable,
+        enabled: suggestionsEnabled,
+        active: suggestionsAvailable && suggestionsEnabled && !actionActive,
+      },
       agentId: agent?.id ?? null,
     };
   },

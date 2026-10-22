@@ -5446,9 +5446,19 @@
         "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
         "title": "モーニングブリーフ"
       },
+      "proactiveAction": {
+        "description": "Okou が毎時間、次の作業を進め、チャットに結果を表示します。有効な間は自発的な提案を一時停止します。",
+        "missingDefaultAgent": "自発的なアクションを有効にするには、利用可能な既定のエージェントを選択してください。",
+        "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
+        "preparing": "毎時間のアクションを準備しています。いつでもオフにできます。",
+        "retry": "再試行",
+        "retryMessage": "自発的なアクションの設定を読み込めないか、更新できませんでした。再試行してください。",
+        "title": "自発的なアクション"
+      },
       "proactiveSuggestions": {
         "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
         "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
+        "pausedForAction": "自発的なアクションが有効なため、提案を一時停止しています。設定は保存されています。",
         "preparationFailed": "一時的に利用できません。Okou が自動的に再試行します。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
         "retry": "再試行",

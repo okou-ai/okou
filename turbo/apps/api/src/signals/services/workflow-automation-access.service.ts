@@ -5,9 +5,12 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { command } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { loadProactiveSuggestionsEligibility$ } from "./proactive-suggestions-eligibility.service";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import {
+  PROACTIVE_WORKFLOW_DEFINITIONS,
+  proactiveWorkflowKind,
+} from "./proactive-workflow-definitions";
 
 import { writeDb$ } from "../external/db";
 import {
@@ -85,21 +88,23 @@ export const workflowAutomationCanFire$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (visible?.definitionName === PROACTIVE_SUGGESTIONS_DEFINITION_NAME) {
+    const proactiveKind = proactiveWorkflowKind(
+      visible?.definitionName ?? null,
+    );
+    if (proactiveKind !== null) {
       const eligibility = await set(
-        loadProactiveSuggestionsEligibility$,
+        loadProactiveWorkflowsEligibility$,
         { orgId: automation.orgId, userId: automation.ownerUserId },
         signal,
       );
       if (
-        !eligibility.available ||
-        !eligibility.enabled ||
+        !eligibility[proactiveKind].active ||
         eligibility.agentId !== args.agentId
       ) {
         return false;
       }
-      // A primary-Agent replacement must wait for the previous installation's
-      // check. The current schedule already serializes its own occurrences.
+      // Agent and mode changes wait for the previous proactive check.
+      // The current schedule already serializes its own occurrences.
       const [otherCheck] = await db
         .select({ id: agentRuns.id })
         .from(activeAgentRuns)
@@ -110,7 +115,13 @@ export const workflowAutomationCanFire$ = command(
             eq(activeAgentRuns.userId, automation.ownerUserId),
             inArray(agentRuns.status, ["pending", "running"]),
             sql`${agentRuns.workflowAutomationId} IS DISTINCT FROM ${automation.id}::uuid`,
-            sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: PROACTIVE_SUGGESTIONS_DEFINITION_NAME }] })}::jsonb`,
+            or(
+              ...Object.values(PROACTIVE_WORKFLOW_DEFINITIONS).map(
+                (definition) => {
+                  return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
+                },
+              ),
+            ),
           ),
         )
         .limit(1);

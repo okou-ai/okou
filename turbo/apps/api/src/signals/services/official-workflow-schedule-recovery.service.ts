@@ -1,7 +1,8 @@
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
-import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { and, asc, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { logger } from "../../lib/log";
@@ -14,7 +15,9 @@ import {
   type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
 import { acceptedDefinitionForName } from "./official-workflow-run.service";
-import { proactiveSuggestionsOwnerEnabledSql } from "./proactive-suggestions-lifecycle.service";
+import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflows-lifecycle.service";
+import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import {
@@ -66,6 +69,19 @@ const recoverOfficialSchedule$ = command(
     );
     const at = nowDate();
     const resume = fireable && automation.nextRunAt !== null;
+    const proactiveKind = proactiveWorkflowKind(definitionName);
+    const actionAvailable =
+      resume && proactiveKind === "suggestions"
+        ? isFeatureEnabled(
+            FeatureSwitchKey.ProactiveAction,
+            await set(
+              loadUserFeatureSwitchContext$,
+              automation.orgId,
+              automation.ownerUserId,
+              signal,
+            ),
+          )
+        : false;
     if (
       automation.scheduleType !== "cron" &&
       automation.scheduleType !== "loop"
@@ -93,10 +109,12 @@ const recoverOfficialSchedule$ = command(
           eq(workflowAutomations.officialIntendedEnabled, true),
           // A catalog retirement or replacement wins over this recovery attempt.
           eq(officialWorkflowCatalogState.acceptedReleaseId, catalog.releaseId),
-          resume && definitionName === PROACTIVE_SUGGESTIONS_DEFINITION_NAME
-            ? proactiveSuggestionsOwnerEnabledSql(
+          resume && proactiveKind !== null
+            ? proactiveWorkflowOwnerEnabledSql(
                 { orgId: automation.orgId, userId: automation.ownerUserId },
                 agentId,
+                proactiveKind,
+                actionAvailable,
               )
             : undefined,
         ),
