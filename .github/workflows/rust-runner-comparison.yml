@@ -1,6 +1,7 @@
 # Temporary paired experiment. Both machines use the same source, CLI artifact,
 # toolchain, Cargo dependency caches and R2-backed sccache. No outputs are deployed
 # or published. Remove this workflow after recording the comparison.
+# Repeat after the first paired run has populated remaining compiler entries.
 name: Rust runner comparison
 on:
   push:
