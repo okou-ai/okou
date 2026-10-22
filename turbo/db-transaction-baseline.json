@@ -77,11 +77,6 @@
       "owner": "syncFileArtifact$"
     },
     {
-      "id": "TX-0060",
-      "file": "turbo/apps/api/src/signals/services/banking-connect.service.ts",
-      "owner": "syncCustomerAccounts"
-    },
-    {
       "id": "TX-0063",
       "file": "turbo/apps/api/src/signals/services/billing-downgrade.service.ts",
       "owner": "publishDowngrade$"

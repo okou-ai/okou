@@ -461,6 +461,161 @@ describe("Finicity webhook outcomes", () => {
     );
   });
 
+  it("clears an empty provider directory and restores the same account identity", async () => {
+    const fixture = await pendingConnect();
+    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    const initial = await fixture.status();
+    const original = initial.body.connection?.accounts[0];
+    if (!original) {
+      throw new Error("Expected a publicly connected account");
+    }
+    server.use(
+      http.get(fixture.accountsUrl, () => {
+        return HttpResponse.json({ accounts: [] });
+      }),
+    );
+    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    const empty = await fixture.status();
+    expect(empty.body.connection).toMatchObject({
+      status: "active",
+      accounts: [],
+    });
+    expect(empty.body.session?.status).toBe("pending");
+    server.use(
+      http.get(fixture.accountsUrl, () => {
+        return HttpResponse.json({ accounts: [account("bank")] });
+      }),
+    );
+    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    expect((await fixture.status()).body.connection?.accounts).toStrictEqual([
+      expect.objectContaining({ id: original.id, repairRequired: false }),
+    ]);
+  });
+
+  it.each([false, true])(
+    "uses the last duplicate account with repairRequired=%s",
+    async (repairRequired) => {
+      const fixture = await pendingConnect();
+      server.use(
+        http.get(fixture.accountsUrl, () => {
+          return HttpResponse.json({
+            accounts: [
+              account("bank", !repairRequired),
+              {
+                ...account("bank", repairRequired),
+                name: "Latest savings",
+                type: "savings",
+              },
+            ],
+          });
+        }),
+      );
+      expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+      const status = await fixture.status();
+      expect(status.body.connection?.status).toBe(
+        repairRequired ? "repair_required" : "active",
+      );
+      expect(status.body.connection?.accounts).toStrictEqual([
+        expect.objectContaining({
+          name: "Latest savings",
+          type: "savings",
+          repairRequired,
+        }),
+      ]);
+    },
+  );
+
+  it("rejects an invalid overwritten provider account without consuming the event", async () => {
+    const fixture = await pendingConnect();
+    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    const initial = await fixture.status();
+    const added = fixture.event("added");
+    server.use(
+      http.get(fixture.accountsUrl, () => {
+        return HttpResponse.json({
+          accounts: [
+            account("other"),
+            { ...account("bank", true), name: "x".repeat(257) },
+            { ...account("bank"), name: "Latest checking" },
+          ],
+        });
+      }),
+    );
+    expect((await postWebhook(added)).status).toBe(500);
+    expect((await fixture.status()).body).toStrictEqual(initial.body);
+    server.use(
+      http.get(fixture.accountsUrl, () => {
+        return HttpResponse.json({
+          accounts: [{ ...account("bank"), name: "Latest checking" }],
+        });
+      }),
+    );
+    expect((await postWebhook(added)).status).toBe(200);
+    expect((await fixture.status()).body.connection?.accounts).toStrictEqual([
+      expect.objectContaining({
+        id: initial.body.connection?.accounts[0]?.id,
+        name: "Latest checking",
+        repairRequired: false,
+      }),
+    ]);
+  });
+
+  it("keeps a grant revoked when an already captured account refresh finishes", async () => {
+    const fixture = await pendingConnect();
+    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    const initial = await fixture.status();
+    const accountId = initial.body.connection?.accounts[0]?.id;
+    if (!accountId) {
+      throw new Error("Expected a publicly connected account");
+    }
+    await accept(
+      fixture.client.saveAgentGrant({
+        headers,
+        body: {
+          agentId: fixture.agentId,
+          accountIds: [accountId],
+          duration: "7d",
+          purpose: "Review checking account",
+        },
+      }),
+      [200],
+    );
+    const requested = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.get(fixture.accountsUrl, async () => {
+        requested.resolve();
+        await response.promise;
+        return HttpResponse.json({
+          accounts: [{ ...account("bank"), name: "Refreshed checking" }],
+        });
+      }),
+    );
+    const refresh = postWebhook(fixture.event("added"));
+    onTestFinished(async () => {
+      if (!response.settled()) {
+        response.resolve();
+      }
+      await refresh;
+    });
+    await requested.promise;
+    const revoked = await accept(
+      fixture.client.revokeAgentGrant({
+        headers,
+        body: { agentId: fixture.agentId },
+      }),
+      [200],
+    );
+    expect(revoked.body.grant?.status).toBe("revoked");
+    response.resolve();
+    expect((await refresh).status).toBe(200);
+    const refreshed = await fixture.status();
+    expect(refreshed.body.grant).toStrictEqual(revoked.body.grant);
+    expect(refreshed.body.connection?.accounts).toStrictEqual([
+      expect.objectContaining({ id: accountId, name: "Refreshed checking" }),
+    ]);
+  });
+
   it("cancels connect when added and done return only unhealthy accounts", async () => {
     const fixture = await pendingConnect();
     server.use(

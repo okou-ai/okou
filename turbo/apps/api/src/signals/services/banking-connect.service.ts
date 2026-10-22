@@ -21,10 +21,13 @@ import {
 import { command } from "ccstate";
 import {
   and,
+  count,
   eq,
+  getTableColumns,
   inArray,
   isNotNull,
   isNull,
+  notExists,
   sql,
   type InferSelectModel,
 } from "drizzle-orm";
@@ -641,88 +644,99 @@ const syncCustomerAccounts = command(
     providerAccounts: readonly ProviderAccount[],
   ): Promise<void> => {
     const db = set(writeDb$);
-    const providerIds = new Set(
+    const input = JSON.stringify(
       providerAccounts.map((account) => {
-        return account.providerAccountId;
+        return {
+          provider_account_id: account.providerAccountId,
+          display_name: account.displayName,
+          institution_name: account.institutionName,
+          institution_login_id: account.institutionLoginId,
+          account_type: account.accountType,
+          account_number_last4: account.accountNumberLast4,
+          repair_required_at: account.repairRequired
+            ? nowDate().toISOString()
+            : null,
+        };
       }),
     );
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0060; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      for (const account of providerAccounts) {
-        const repairRequiredAt = account.repairRequired ? nowDate() : null;
-        await tx
-          .insert(bankingAccounts)
-          .values({
-            connectionId: connection.id,
-            orgId: owner.orgId,
-            userId: owner.userId,
-            providerAccountId: account.providerAccountId,
-            displayName: account.displayName,
-            institutionName: account.institutionName,
-            institutionLoginId: account.institutionLoginId,
-            accountType: account.accountType,
-            accountNumberLast4: account.accountNumberLast4,
-            enabled: true,
-            repairRequiredAt,
-          })
-          .onConflictDoUpdate({
-            target: [
-              bankingAccounts.connectionId,
-              bankingAccounts.providerAccountId,
-            ],
-            set: {
-              displayName: account.displayName,
-              institutionName: account.institutionName,
-              institutionLoginId: account.institutionLoginId,
-              accountType: account.accountType,
-              accountNumberLast4: account.accountNumberLast4,
-              enabled: true,
-              repairRequiredAt,
-              updatedAt: nowDate(),
-            },
-          });
-      }
-
-      const existing = await tx
-        .select({
-          id: bankingAccounts.id,
-          providerAccountId: bankingAccounts.providerAccountId,
-        })
-        .from(bankingAccounts)
+    // Populate the real row type before deduplication so an invalid overwritten
+    // account still fails the whole statement. The last duplicate supplies data.
+    const incoming = db.$with(
+      "provider_banking_accounts",
+      getTableColumns(bankingAccounts),
+    ).as(sql`
+        SELECT *
+        FROM jsonb_populate_recordset(NULL::banking_accounts, ${input}::jsonb)
+          WITH ORDINALITY AS account
+      `);
+    const upserted = db.$with("synced_banking_accounts", {
+      id: bankingAccounts.id,
+    }).as(sql`
+      INSERT INTO ${bankingAccounts}
+        (connection_id, org_id, user_id, provider_account_id, display_name,
+         institution_name, institution_login_id, account_type,
+         account_number_last4, enabled, repair_required_at)
+      SELECT ${connection.id}, ${owner.orgId}, ${owner.userId},
+        latest.provider_account_id, latest.display_name, latest.institution_name,
+        latest.institution_login_id, latest.account_type,
+        latest.account_number_last4, true, latest.repair_required_at
+      FROM (
+        SELECT DISTINCT ON (provider_account_id) *
+        FROM ${incoming}
+        ORDER BY provider_account_id, ordinality DESC
+      ) AS latest
+      ON CONFLICT (connection_id, provider_account_id) DO UPDATE SET
+        display_name = excluded.display_name,
+        institution_name = excluded.institution_name,
+        institution_login_id = excluded.institution_login_id,
+        account_type = excluded.account_type,
+        account_number_last4 = excluded.account_number_last4,
+        enabled = true, repair_required_at = excluded.repair_required_at,
+        updated_at = ${sql.param(nowDate(), bankingAccounts.updatedAt)}
+      RETURNING id
+    `);
+    const disabled = db.$with("disabled_banking_accounts").as(
+      db
+        .update(bankingAccounts)
+        .set({ enabled: false, updatedAt: nowDate() })
+        .from(sql`(SELECT ${count()} FROM ${upserted}) AS sync_completed`)
         .where(
           and(
             eq(bankingAccounts.connectionId, connection.id),
             eq(bankingAccounts.orgId, owner.orgId),
             eq(bankingAccounts.userId, owner.userId),
             eq(bankingAccounts.enabled, true),
+            notExists(
+              db
+                .select({ id: incoming.providerAccountId })
+                .from(incoming)
+                .where(
+                  eq(
+                    incoming.providerAccountId,
+                    bankingAccounts.providerAccountId,
+                  ),
+                ),
+            ),
           ),
-        );
-      const removedIds = existing
-        .filter((account) => {
-          return !providerIds.has(account.providerAccountId);
-        })
-        .map((account) => {
-          return account.id;
-        });
-      if (removedIds.length > 0) {
-        await tx
-          .update(bankingAccounts)
-          .set({ enabled: false, updatedAt: nowDate() })
-          .where(inArray(bankingAccounts.id, removedIds));
-      }
-
-      const hasRepairRequired = providerAccounts.some((account) => {
-        return account.repairRequired;
-      });
-      await tx
-        .update(bankingConnections)
-        .set({
-          status: hasRepairRequired ? "repair_required" : "active",
-          repairRequiredAt: hasRepairRequired ? nowDate() : null,
-          updatedAt: nowDate(),
-        })
-        .where(eq(bankingConnections.id, connection.id));
+        )
+        .returning({ id: bankingAccounts.id }),
+    );
+    const hasRepairRequired = providerAccounts.some((account) => {
+      return account.repairRequired;
     });
+    // Application clocks are sampled before the single statement's wire/lock
+    // wait. New-row timestamps keep their database defaults. Concurrent syncs
+    // reconcile one snapshot; grants and their revocation are never modified.
+    await db
+      .with(incoming, upserted, disabled)
+      .update(bankingConnections)
+      .set({
+        status: hasRepairRequired ? "repair_required" : "active",
+        repairRequiredAt: hasRepairRequired ? nowDate() : null,
+        updatedAt: nowDate(),
+      })
+      .from(sql`(SELECT ${count()} FROM ${disabled}) AS disable_completed`)
+      .where(eq(bankingConnections.id, connection.id));
   },
 );
 
