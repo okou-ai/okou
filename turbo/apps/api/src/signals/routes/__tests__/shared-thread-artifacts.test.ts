@@ -109,7 +109,7 @@ async function fixture() {
   const copies: { source: string; destination: string }[] = [];
 
   context.mocks.s3.getSignedUrl.mockImplementation(
-    (client: unknown, command: unknown) => {
+    (client: unknown, command: unknown, options: unknown) => {
       if (!(
         command instanceof PutObjectCommand ||
         command instanceof GetObjectCommand
@@ -130,14 +130,15 @@ async function fixture() {
         "X-Amz-Credential",
         configured.config.credentials.accessKeyId,
       );
-      if (
-        command instanceof GetObjectCommand &&
-        command.input.ResponseContentDisposition
-      ) {
-        url.searchParams.set(
-          "response-content-disposition",
-          command.input.ResponseContentDisposition,
-        );
+      const { expiresIn } = z.object({ expiresIn: z.number() }).parse(options);
+      url.searchParams.set("X-Amz-Expires", String(expiresIn));
+      if (command instanceof GetObjectCommand) {
+        if (command.input.ResponseContentDisposition) {
+          url.searchParams.set(
+            "response-content-disposition",
+            command.input.ResponseContentDisposition,
+          );
+        }
         if (command.input.ResponseCacheControl) {
           url.searchParams.set(
             "response-cache-control",

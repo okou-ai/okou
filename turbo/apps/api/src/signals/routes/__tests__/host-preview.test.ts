@@ -207,9 +207,7 @@ describe("sandbox hosted previews", () => {
         actor,
         prepared.deploymentId,
       );
-      expect(completed.previewImageUrl).toMatch(
-        new RegExp(`\\.${extension}$`, "u"),
-      );
+      expect(completed.previewImageUrl?.endsWith(`.${extension}`)).toBeTruthy();
       expect([...objects.values()]).toStrictEqual([bytes]);
       expect(context.mocks.s3.send).toHaveBeenCalledWith(
         expect.objectContaining({

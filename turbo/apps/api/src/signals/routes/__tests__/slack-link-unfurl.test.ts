@@ -541,7 +541,10 @@ describe("Slack link previews", () => {
                   : []),
                 {
                   type: "image",
-                  image_url: signedImageUrl(field.image),
+                  image_url:
+                    field.image === ARTIFACT_OG_BRAND.imageUrl
+                      ? `${new URL(field.image).origin}/cdn-cgi/image/width=320,height=112,fit=scale-down,format=auto,quality=85,metadata=none${new URL(field.image).pathname}`
+                      : signedImageUrl(field.image),
                   alt_text: title,
                 },
               ],

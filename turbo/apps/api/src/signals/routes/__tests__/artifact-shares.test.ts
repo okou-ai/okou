@@ -2021,6 +2021,30 @@ test("canonical file links disclose public previews only while explicitly public
 
 test("oG checks anonymous sharing again for old image URLs after a public share becomes organization-only or revoked", async () => {
   fixture();
+  const baseSign = context.mocks.s3.getSignedUrl.getMockImplementation()!;
+  context.mocks.s3.getSignedUrl.mockImplementation(
+    (client, command, options) => {
+      if (!(command instanceof GetObjectCommand)) {
+        return baseSign(client, command, options);
+      }
+      const { Bucket, Key } = z
+        .object({ Bucket: z.string(), Key: z.string() })
+        .parse(command.input);
+      const { expiresIn } = z.object({ expiresIn: z.number() }).parse(options);
+      const url = new URL(
+        `https://private-r2.example/${encodeURIComponent(Bucket)}/${Key.split("/").map(encodeURIComponent).join("/")}`,
+      );
+      url.searchParams.set("X-Amz-Signature", "fixture");
+      url.searchParams.set("X-Amz-Expires", String(expiresIn));
+      if (command.input.ResponseCacheControl) {
+        url.searchParams.set(
+          "response-cache-control",
+          command.input.ResponseCacheControl,
+        );
+      }
+      return Promise.resolve(url.href);
+    },
+  );
   const bytes = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
     "base64",

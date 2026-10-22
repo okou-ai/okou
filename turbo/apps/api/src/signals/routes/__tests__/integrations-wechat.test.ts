@@ -1888,8 +1888,16 @@ test("receives an owner DM once, resumes its native session and delivers the can
       second.sandboxToken,
       second.runId,
     );
-    expect(imageInput?.prompt).toContain(
+    if (!imageInput) {
+      throw new Error("Expected a WeChat image input");
+    }
+    expect(imageInput.prompt).toContain(
       `[Web file] image (${image.contentType})`,
+    );
+    await runs.declareSteeredInput(
+      second.sandboxToken,
+      second.runId,
+      imageInput.eventId,
     );
     expect(objectStore.puts).toContainEqual(
       expect.objectContaining({ contentType: image.contentType }),
