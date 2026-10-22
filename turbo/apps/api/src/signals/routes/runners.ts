@@ -1547,7 +1547,6 @@ function claimResponseBody(args: {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     storageMounts: _storedStorageMounts,
-    agentInstructionsSource: _agentInstructionsSource,
     ...runnerStoredContext
   } = args.storedContext;
   return {

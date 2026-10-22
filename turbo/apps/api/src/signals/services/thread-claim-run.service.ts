@@ -5308,9 +5308,6 @@ function buildStoredExecutionContextDraft(
   }
   return {
     context: {
-      ...(args.resolved.agentId === null
-        ? {}
-        : { agentInstructionsSource: "agent" as const }),
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,

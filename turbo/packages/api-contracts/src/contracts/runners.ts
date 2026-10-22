@@ -1071,9 +1071,6 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
-  // Keep emitting this marker for supported DB-reader API rollback artifacts.
-  // Current claims select instructions through the Run's Agent association.
-  agentInstructionsSource: z.literal("agent").optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
     .superRefine(uniqueStorageMountPaths),
