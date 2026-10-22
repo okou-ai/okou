@@ -238,9 +238,13 @@ test("Restore completed transcripts after reload and retry only polish", async (
   });
 });
 
-test.each([128, 129, 277])(
-  "Restore %i completed segments and retry polish without reuploading audio",
-  async (segmentCount) => {
+test.each([
+  [128, 1],
+  [129, 2],
+  [277, 3],
+])(
+  "Restore %i completed segments with %i transcripts per polish item",
+  async (segmentCount, groupSize) => {
     const resetFirstPage$ = resetSignal();
     const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
     context.mocks.browser.voiceInput({ rms: 0.12 });
@@ -256,23 +260,12 @@ test.each([128, 129, 277])(
     const fullText = transcripts.join(" ");
     let restored = false;
     let available = false;
-    let packed: string[] | undefined;
+    const requests: unknown[] = [];
     context.mocks.http.post(
       "*/api/voice-io/polish/segments",
       async ({ request }) => {
         if (restored) {
-          const json = await request.json();
-          const body = voiceIoPolishSegmentsRequestSchema.parse(json);
-          expect(json).toStrictEqual(body);
-          expect(body.segments.length).toBeLessThanOrEqual(128);
-          expect(body.segments.join(" ")).toBe(fullText);
-          if (segmentCount <= 128) {
-            expect(body.segments).toStrictEqual(transcripts);
-          }
-          if (packed) {
-            expect(body.segments).toStrictEqual(packed);
-          }
-          packed = body.segments;
+          requests.push(await request.json());
         }
         return available
           ? HttpResponse.json({ text: fullText })
@@ -343,6 +336,24 @@ test.each([128, 129, 277])(
         fullText,
       );
     });
+    const bodies = requests.map((body) => {
+      return voiceIoPolishSegmentsRequestSchema.parse(body);
+    });
+    const expectedSegments = Array.from(
+      { length: Math.ceil(segmentCount / groupSize) },
+      (_, index) => {
+        return transcripts
+          .slice(index * groupSize, (index + 1) * groupSize)
+          .join(" ");
+      },
+    );
+    expect(requests).toStrictEqual(bodies);
+    expect(bodies).toStrictEqual([
+      { segments: expectedSegments },
+      { segments: expectedSegments },
+    ]);
+    expect(expectedSegments.length).toBeLessThanOrEqual(128);
+    expect(expectedSegments.join(" ")).toBe(fullText);
     expect(uploads).toBe(1);
   },
 );

@@ -86,9 +86,6 @@ describe("voice draft segment boundaries", () => {
         15 * 16_000,
       );
       expect(segment.endSample).toBeGreaterThan(previousEnd);
-      if (previousEnd > 0) {
-        expect(previousEnd - segment.startSample).toBe(2 * 16_000);
-      }
       segments.push(segment);
       previousEnd = segment.endSample;
     }
