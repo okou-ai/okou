@@ -447,16 +447,6 @@
       "owner": "commitVerifiedStorageVersion$"
     },
     {
-      "id": "TX-0255",
-      "file": "turbo/apps/api/src/signals/services/stripe-automation-event.service.ts",
-      "owner": "recordStripeInvoiceFanout$"
-    },
-    {
-      "id": "TX-0257",
-      "file": "turbo/apps/api/src/signals/services/stripe-automation-event.service.ts",
-      "owner": "finishDelivery$"
-    },
-    {
       "id": "TX-0261",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
