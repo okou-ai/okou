@@ -33,10 +33,6 @@ function metadataClient(baseUrl = "http://api.test") {
   })(mcpOAuthContract);
 }
 
-function allowPublicHost(hostname: string, address = "8.8.8.8"): void {
-  context.mocks.dns.lookupOverrides.set(hostname, [{ address, family: 4 }]);
-}
-
 describe("MCP OAuth foundations", () => {
   const oauthCleanups: (() => Promise<void>)[] = [];
 
@@ -50,8 +46,6 @@ describe("MCP OAuth foundations", () => {
       registration: "cimd",
       ...options,
     });
-    allowPublicHost(new URL(provider.endpoint).hostname, "8.8.4.4");
-    allowPublicHost(new URL(provider.issuer).hostname, "1.1.1.1");
     const bdd = createBddApi(context);
     const connectors = createConnectorBddApi(context);
     bdd.acceptAgentStorageWrites();
@@ -278,11 +272,8 @@ describe("MCP OAuth foundations", () => {
     "http://oauth.example.com/metadata",
     "https://user:password@oauth.example.com/metadata",
     "https://oauth.example.com/metadata#fragment",
-    "https://localhost/metadata",
-    "https://internal/metadata",
   ])("rejects unsafe OAuth URL %s", async (url) => {
     const oauth = await automaticOAuthFixture();
-    allowPublicHost("oauth.example.com");
 
     const response = await oauth.start(url, [400]);
 
@@ -294,42 +285,20 @@ describe("MCP OAuth foundations", () => {
           : CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL,
       ),
     );
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-    ]);
     expect(oauth.provider.tokenBodies).toStrictEqual([]);
   });
 
-  it("rejects the whole DNS answer set when one address is private", async () => {
-    const oauth = await automaticOAuthFixture();
-    context.mocks.dns.lookupOverrides.set("mixed.example.com", [
-      { address: "8.8.8.8", family: 4 },
-      { address: "10.0.0.1", family: 4 },
-    ]);
-
-    const response = await oauth.start(
-      "https://mixed.example.com/metadata",
-      [400],
-    );
-
-    expect(response.status).toBe(400);
-    expect(response.body).toStrictEqual(
-      automaticOAuthFailure(
-        CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL,
-      ),
-    );
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-    ]);
-    expect(oauth.provider.tokenBodies).toStrictEqual([]);
-  });
-
-  it("follows three metadata redirects and pins every hop", async () => {
+  it.each([
+    "https://oauth.example.com",
+    "https://localhost",
+    "https://10.0.0.1",
+    "https://[fd00::1]",
+  ])("follows three metadata redirects from %s", async (origin) => {
     const oauth = await automaticOAuthFixture();
     const metadataSteps: number[] = [];
-    allowPublicHost("oauth.example.com");
     server.use(
-      http.get("https://oauth.example.com/redirect/:step", ({ params }) => {
+      http.get("*/redirect/:step", ({ params, request }) => {
+        expect(new URL(request.url).origin).toBe(origin);
         const step = Number(params.step);
         metadataSteps.push(step);
         return step < 3
@@ -341,10 +310,7 @@ describe("MCP OAuth foundations", () => {
       }),
     );
 
-    const response = await oauth.start(
-      "https://oauth.example.com/redirect/0",
-      [200],
-    );
+    const response = await oauth.start(`${origin}/redirect/0`, [200]);
 
     expect(response.status).toBe(200);
     expect(response.body).toStrictEqual({
@@ -356,21 +322,12 @@ describe("MCP OAuth foundations", () => {
       oauthAttemptId: expect.any(String),
     });
     expect(metadataSteps).toStrictEqual([0, 1, 2, 3]);
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-      "8.8.8.8",
-      "8.8.8.8",
-      "8.8.8.8",
-      "8.8.8.8",
-      "1.1.1.1",
-    ]);
     expect(oauth.provider.tokenBodies).toStrictEqual([]);
   });
 
   it("rejects a fourth metadata redirect", async () => {
     const oauth = await automaticOAuthFixture();
     const metadataSteps: number[] = [];
-    allowPublicHost("oauth.example.com");
     server.use(
       http.get("https://oauth.example.com/redirect/:step", ({ params }) => {
         const step = Number(params.step);
@@ -396,32 +353,21 @@ describe("MCP OAuth foundations", () => {
       ),
     );
     expect(metadataSteps).toStrictEqual([0, 1, 2, 3]);
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-      "8.8.8.8",
-      "8.8.8.8",
-      "8.8.8.8",
-      "8.8.8.8",
-    ]);
     expect(oauth.provider.tokenBodies).toStrictEqual([]);
   });
 
   it("revalidates a metadata redirect target before fetching it", async () => {
     const oauth = await automaticOAuthFixture();
-    let privateRequests = 0;
-    allowPublicHost("oauth.example.com");
-    context.mocks.dns.lookupOverrides.set("private.example.com", [
-      { address: "10.0.0.1", family: 4 },
-    ]);
+    let downgradedRequests = 0;
     server.use(
       http.get("https://oauth.example.com/redirect", () => {
         return new HttpResponse(null, {
           status: 302,
-          headers: { location: "https://private.example.com/metadata" },
+          headers: { location: "http://oauth.example.com/metadata" },
         });
       }),
-      http.get("https://private.example.com/metadata", () => {
-        privateRequests += 1;
+      http.get("http://oauth.example.com/metadata", () => {
+        downgradedRequests += 1;
         return HttpResponse.json(oauth.resourceMetadata);
       }),
     );
@@ -437,11 +383,7 @@ describe("MCP OAuth foundations", () => {
         CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL,
       ),
     );
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-      "8.8.8.8",
-    ]);
-    expect(privateRequests).toBe(0);
+    expect(downgradedRequests).toBe(0);
     expect(oauth.provider.tokenBodies).toStrictEqual([]);
   });
 
@@ -454,8 +396,6 @@ describe("MCP OAuth foundations", () => {
         tokenUsername: "id-token-only-name",
       },
     });
-    allowPublicHost("oauth.example.com");
-    allowPublicHost("metadata.example.com", "1.1.1.1");
     const authorizations: (string | null)[] = [];
     server.use(
       http.get("https://oauth.example.com/redirect", ({ request }) => {
@@ -511,16 +451,6 @@ describe("MCP OAuth foundations", () => {
       externalUsername: "redirect-userinfo-name",
       externalEmail: null,
     });
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-      "8.8.4.4",
-      "1.1.1.1",
-      "1.1.1.1",
-      "1.1.1.1",
-      "1.1.1.1",
-      "8.8.8.8",
-      "1.1.1.1",
-    ]);
   });
 
   it("rejects token and DCR POST redirects without replay", async () => {
@@ -548,7 +478,6 @@ describe("MCP OAuth foundations", () => {
     oauthCleanups.push(async () => {
       await bdd.deleteAgent(actor, agent.agentId);
     });
-    allowPublicHost("oauth.example.com");
     const tokenRequests: {
       readonly body: string;
       readonly authorization: string | null;
@@ -680,7 +609,6 @@ describe("MCP OAuth foundations", () => {
     });
     await flushWaitUntilForTest();
     tokenRequests.length = 0;
-    context.mocks.nodeRequest.pinnedAddresses.length = 0;
     const internalName = `custom_connector_${connector.id.replaceAll("-", "")}`;
     const secretKey = `CUSTOM_${connector.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
     const response = await firewall.requestFirewallAuth(
@@ -717,14 +645,10 @@ describe("MCP OAuth foundations", () => {
       },
     ]);
     expect(redirectedRequests).toBe(0);
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.8.8",
-    ]);
   });
 
   it("enforces header and response body size limits", async () => {
     const oauth = await automaticOAuthFixture();
-    allowPublicHost("oauth.example.com");
     const emptyMetadata = { ...oauth.resourceMetadata, resource_name: "" };
     const oversizedMetadata = JSON.stringify({
       ...emptyMetadata,
@@ -750,10 +674,6 @@ describe("MCP OAuth foundations", () => {
       "https://oauth.example.com/large-header",
       [400],
     );
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-      "8.8.8.8",
-    ]);
     const body = await oauth.start(
       "https://oauth.example.com/large-body",
       [400],
@@ -771,12 +691,6 @@ describe("MCP OAuth foundations", () => {
         CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
       ),
     );
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.4.4",
-      "8.8.8.8",
-      "8.8.4.4",
-      "8.8.8.8",
-    ]);
     expect(oauth.provider.tokenBodies).toStrictEqual([]);
   });
 });

@@ -176,6 +176,20 @@ describe("Slack preview image URLs", () => {
     expect(response.headers.get("location")).toBe(original);
   });
 
+  it("preserves HTTP, IPv6 and internal-host image sources for Cloudflare delivery", async () => {
+    const f = await fixture();
+    const sources = [
+      "http://10.0.0.1/cover.png",
+      "http://[fd00::1]/cover.png",
+      "https://internal.local/cover.png",
+    ];
+    const urls = await previewUrls(f.teamId, sources);
+    for (const [index, url] of urls.entries()) {
+      const response = await accept(readImage(signedSource(url)), [302]);
+      expect(response.headers.get("location")).toBe(sources[index]);
+    }
+  });
+
   it("keeps already-issued literal-URL HMAC capabilities resolving to originals", async () => {
     const original = "https://images.example.com/legacy.png?token=a%2Fb";
     const source = `https://a.okou.io/cdn-cgi/image/height=112/${original}`;
@@ -213,7 +227,7 @@ describe("Slack preview image URLs", () => {
         adapter.href,
         `https://a.okou.io/cdn-cgi/image/width=500/${url!.href}`,
         `https://images.example.com/${"x".repeat(2048)}.png`,
-        "http://127.0.0.1/cover.png",
+        "https://images.example.com:4444/cover.png",
         `${env("APP_URL")}/artifacts/example.png`,
       ]),
     ).resolves.toStrictEqual([null, null, null, null, null]);

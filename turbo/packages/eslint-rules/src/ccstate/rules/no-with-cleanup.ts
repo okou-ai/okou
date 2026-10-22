@@ -1,0 +1,148 @@
+import path from "node:path";
+import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
+import { createRule } from "../utils.ts";
+
+function propertyName(node: TSESTree.Node): string | null {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name;
+  }
+  return node.type === AST_NODE_TYPES.Literal && typeof node.value === "string"
+    ? node.value
+    : null;
+}
+
+function isTypeQuery(node: TSESTree.Node): boolean {
+  let parent = node.parent;
+  while (parent?.type === AST_NODE_TYPES.TSQualifiedName) {
+    parent = parent.parent;
+  }
+  return parent?.type === AST_NODE_TYPES.TSTypeQuery;
+}
+
+export default createRule({
+  name: "no-with-cleanup",
+  defaultOptions: [],
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Disallow new Platform withCleanup usages",
+      recommended: true,
+      requiresTypeChecking: false,
+    },
+    schema: [],
+    messages: {
+      noWithCleanup:
+        "Do not add withCleanup usages or legacy waivers. Existing usages may only be removed. Derive request state from loadables and preserve resource ownership. See docs/app/signals/withCleanup.md.",
+    },
+  },
+  create(context) {
+    function isSignalsUtils(source: string): boolean {
+      const resolved = source.startsWith(".")
+        ? path.resolve(path.dirname(context.filename), source)
+        : source;
+      return /(?:^|\/)signals\/utils(?:\.[cm]?[jt]s)?$/u.test(resolved);
+    }
+
+    function report(node: TSESTree.Node): void {
+      context.report({ node, messageId: "noWithCleanup" });
+    }
+
+    return {
+      "ImportDeclaration:exit"(node: TSESTree.ImportDeclaration): void {
+        if (node.importKind === "type" || !isSignalsUtils(node.source.value)) {
+          return;
+        }
+        for (const variable of context.sourceCode.getDeclaredVariables(node)) {
+          const specifier = variable.defs[0]?.node;
+          if (specifier?.type === AST_NODE_TYPES.ImportSpecifier) {
+            if (
+              specifier.importKind !== "type" &&
+              propertyName(specifier.imported) === "withCleanup"
+            ) {
+              for (const reference of variable.references) {
+                if (
+                  reference.isValueReference &&
+                  reference.isRead() &&
+                  !isTypeQuery(reference.identifier)
+                ) {
+                  report(reference.identifier);
+                }
+              }
+            }
+          } else if (
+            specifier?.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+          ) {
+            for (const reference of variable.references) {
+              if (
+                !reference.isValueReference ||
+                !reference.isRead() ||
+                isTypeQuery(reference.identifier)
+              ) {
+                continue;
+              }
+              const parent = reference.identifier.parent;
+              if (
+                parent.type === AST_NODE_TYPES.MemberExpression &&
+                parent.object === reference.identifier &&
+                (!parent.computed ||
+                  parent.property.type === AST_NODE_TYPES.Literal) &&
+                propertyName(parent.property) === "withCleanup"
+              ) {
+                report(parent);
+              } else if (
+                parent.type === AST_NODE_TYPES.MemberExpression &&
+                parent.object === reference.identifier &&
+                (!parent.computed ||
+                  parent.property.type === AST_NODE_TYPES.Literal)
+              ) {
+                // Selecting another helper does not expose withCleanup.
+                continue;
+              } else if (
+                parent.type === AST_NODE_TYPES.VariableDeclarator &&
+                parent.init === reference.identifier &&
+                parent.id.type === AST_NODE_TYPES.ObjectPattern
+              ) {
+                for (const property of parent.id.properties) {
+                  if (
+                    property.type === AST_NODE_TYPES.RestElement ||
+                    (property.type === AST_NODE_TYPES.Property &&
+                      ((property.computed &&
+                        property.key.type !== AST_NODE_TYPES.Literal) ||
+                        propertyName(property.key) === "withCleanup"))
+                  ) {
+                    report(property);
+                  }
+                }
+              } else {
+                // Namespace escapes and dynamic keys can hide this helper.
+                report(reference.identifier);
+              }
+            }
+          }
+        }
+      },
+      ExportNamedDeclaration(node: TSESTree.ExportNamedDeclaration): void {
+        if (
+          node.exportKind === "type" ||
+          !node.source ||
+          !isSignalsUtils(node.source.value)
+        ) {
+          return;
+        }
+        for (const specifier of node.specifiers) {
+          if (
+            specifier.exportKind !== "type" &&
+            propertyName(specifier.local) === "withCleanup"
+          ) {
+            report(specifier);
+          }
+        }
+      },
+      ExportAllDeclaration(node: TSESTree.ExportAllDeclaration): void {
+        if (node.exportKind !== "type" && isSignalsUtils(node.source.value)) {
+          report(node);
+        }
+      },
+    };
+  },
+});

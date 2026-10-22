@@ -3,6 +3,7 @@ import { onRef } from "../../utils.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
 import {
+  connectorAccountSetupIsComplete,
   connectorAccountsContract,
   connectorAccountConnectionSchema,
   type ConnectorAccountConnection,
@@ -71,7 +72,7 @@ export async function requireCustomConnectorAccountReady(
   signal.throwIfAborted();
   if (
     page.defaultConnection?.connectionStatus !== "connected" ||
-    page.defaultConnection.setupStatus !== "complete"
+    !connectorAccountSetupIsComplete(page.defaultConnection)
   ) {
     throw new Error(
       "This connector needs a connected, fully configured default account. Review its accounts in Connectors settings and try again.",
@@ -111,7 +112,7 @@ export async function readConnectorAccountCompletion(
     );
   }
   const account = parsed.data;
-  if (account.setupStatus !== "complete") {
+  if (!connectorAccountSetupIsComplete(account)) {
     throw new ConnectorConnectionError(
       "This account needs additional setup. Review its connector settings and try again.",
     );

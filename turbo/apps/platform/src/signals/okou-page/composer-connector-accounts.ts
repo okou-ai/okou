@@ -249,6 +249,7 @@ export function createComposerConnectorAccountSignals(
         : set(mutations.useDefault$, target, signal);
       set(activeSave$, pending);
       set(saveOperation$, pending);
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       await withCleanup(pending, () => {
         // A dismissed request must not reset a newer menu session's save.
         if (get(activeSave$) === pending) {

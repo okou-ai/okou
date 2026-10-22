@@ -70,6 +70,7 @@ function readLimitedText(response: Response): Promise<TextPreviewContent> {
       createTextPreviewContent("", response.status === 206),
     );
   }
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return withCleanup(
     (async () => {
       const chunks: Uint8Array[] = [];

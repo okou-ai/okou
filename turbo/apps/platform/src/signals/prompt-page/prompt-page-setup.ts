@@ -186,6 +186,7 @@ export const setupPromptPage$ = command(
     cleaned.delete("template");
     cleaned.delete("connector");
     const rootSignal = get(rootSignal$);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       set(
         sendNewThread$,

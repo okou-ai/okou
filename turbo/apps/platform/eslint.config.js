@@ -113,6 +113,7 @@ export default [
       "ccstate/command-async-signal": "error",
       "ccstate/no-command-in-command": "error",
       "ccstate/no-on-rejection": "error",
+      "ccstate/no-with-cleanup": "error",
       "ccstate/no-computed-signal": "error",
       "ccstate/no-getter-setter-params": "error",
       "ccstate/no-accessor-escape": "error",

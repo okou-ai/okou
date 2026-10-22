@@ -12,6 +12,25 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1055.0](https://github.com/okou-ai/okou/compare/app-v0.1054.0...app-v0.1055.0) (2026-10-22)
+
+
+### Features
+
+* **platform:** add assistant message pdf export ([#42319](https://github.com/okou-ai/okou/issues/42319)) ([776b0ea](https://github.com/okou-ai/okou/commit/776b0ea3aef54676ed0a918bb6e5db1b79cf3e5e))
+
+
+### Bug Fixes
+
+* **app:** keep suggestion task chips on one row ([#42342](https://github.com/okou-ai/okou/issues/42342)) ([d330618](https://github.com/okou-ai/okou/commit/d330618222f6ccbe3d829f565ef6fd670379ce86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.779.0
+
 ## [0.1054.0](https://github.com/okou-ai/okou/compare/app-v0.1053.0...app-v0.1054.0) (2026-10-22)
 
 

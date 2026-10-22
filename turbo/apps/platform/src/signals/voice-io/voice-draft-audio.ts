@@ -4,7 +4,7 @@ import {
   VOICE_DRAFT_PCM_SAMPLE_RATE,
 } from "./voice-draft-pcm";
 
-const SEGMENT_SECONDS = 60;
+const SEGMENT_SECONDS = 15;
 const OVERLAP_SECONDS = 2;
 
 async function recordingSamples(

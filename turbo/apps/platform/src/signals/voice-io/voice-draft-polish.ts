@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import {
   voiceIoPolishSegmentsContract,
+  VOICE_IO_POLISH_MAX_SEGMENTS,
   type VoiceIoPolishSegmentsRequest,
 } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { accept } from "../../lib/accept.ts";
@@ -60,10 +61,25 @@ export const polishVoiceDraft$ = command(
     }
     let text = "";
     if (segments.length > 0) {
+      // Group only the request, leaving stored transcript checkpoints intact.
+      const groupSize = Math.ceil(
+        segments.length / VOICE_IO_POLISH_MAX_SEGMENTS,
+      );
+      const packedSegments =
+        groupSize === 1
+          ? segments
+          : Array.from(
+              { length: Math.ceil(segments.length / groupSize) },
+              (_, index) => {
+                return segments
+                  .slice(index * groupSize, (index + 1) * groupSize)
+                  .join(" ");
+              },
+            );
       const response = await set(
         requestPolish$,
         {
-          segments,
+          segments: packedSegments,
         },
         signal,
       );

@@ -1,9 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { isIP } from "node:net";
 import { command } from "ccstate";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { apiBackendUrl } from "../../lib/api-backend-url";
-import { fetchHostHasBlockedAddress } from "../../lib/blocked-fetch-host";
 import { env } from "../../lib/env";
 import { publicArtifactsBaseUrl } from "../../lib/file-url";
 import {
@@ -16,21 +14,6 @@ function signature(url: string): Buffer {
     .update("slack-preview-image:v1\0")
     .update(url)
     .digest();
-}
-
-function blockedImageHostname(value: string): boolean {
-  const hostname = value.replace(/^\[|\]$/gu, "").replace(/\.$/u, "");
-  const family = isIP(hostname);
-  return (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    (!family && !hostname.includes(".")) ||
-    (family !== 0 &&
-      fetchHostHasBlockedAddress([
-        { address: hostname, family: family === 6 ? 6 : 4 },
-      ]))
-  );
 }
 
 /** Unwrap native CF chains, never republishing another signed adapter. */
@@ -48,7 +31,6 @@ function originalImageSource(source: string): string | null {
       url.username ||
       url.password ||
       url.port ||
-      blockedImageHostname(url.hostname) ||
       url.pathname === "/api/artifact-og/slack.png" ||
       url.pathname.startsWith("/api/artifact-references/") ||
       url.pathname.startsWith("/artifacts/") ||

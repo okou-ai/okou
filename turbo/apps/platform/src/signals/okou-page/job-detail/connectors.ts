@@ -103,6 +103,7 @@ export const toggleAgentConnector$ = command(
 
     const operation = enabled ? "add" : "remove";
     const client = get(apiClient$)(userBuiltinConnectorsContract);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       (async () => {
         await set(setAgentConnectorDraft$, { name, operation }, signal);

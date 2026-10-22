@@ -142,6 +142,7 @@ export const consumeAgentSuggestion$ = command(
       return [...ids, item.id];
     });
     let consumed = false;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const result = await withCleanup(
       (async () => {
         const response = await accept(
@@ -427,6 +428,7 @@ export const startAgentSuggestion$ = command(
     // not to the card that navigation can unmount. Keep the terminal Promise
     // observable while separately releasing exclusion and runner resources.
     const signal = set(resetSuggestionExecution$, get(rootSignal$));
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const operation = withCleanup(
       set(runAgentSuggestion$, item, signal),
       () => {

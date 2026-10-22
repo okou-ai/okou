@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import {
+  connectorAccountSetupIsComplete,
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -124,7 +125,7 @@ export const directedConnectCustomConnected$ = computed(async (get) => {
   const account = (await get(directedConnectAccounts$)).defaultConnection;
   return (
     account?.connectionStatus === "connected" &&
-    account.setupStatus === "complete"
+    connectorAccountSetupIsComplete(account)
   );
 });
 
