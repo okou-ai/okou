@@ -148,7 +148,10 @@ function createInstructionsEditorExtensions() {
  * parsing the initial content.  This "baseline" lets onUpdate distinguish
  * Tiptap's own round-trip normalisation from genuine user edits.
  */
-function createBaselineExtension(onChange: (markdown: string) => void) {
+function createBaselineExtension(
+  initialContent: string,
+  onChange: (markdown: string) => void,
+) {
   return Extension.create<Record<string, never>, { baseline: string | null }>({
     name: "baselineMarkdown",
     addStorage() {
@@ -159,10 +162,12 @@ function createBaselineExtension(onChange: (markdown: string) => void) {
     },
     onUpdate() {
       const md = this.editor.getMarkdown();
-      if (md === this.storage.baseline) {
+      if (!this.editor.isInitialized) {
+        // TrailingNode can normalize the document before onCreate completes.
+        this.storage.baseline = md;
         return;
       }
-      onChange(md);
+      onChange(md === this.storage.baseline ? initialContent : md);
     },
   });
 }
@@ -234,7 +239,7 @@ export function TiptapInstructionsEditor({
   const editor = useEditor({
     extensions: [
       ...createInstructionsEditorExtensions(),
-      createBaselineExtension(onChange),
+      createBaselineExtension(initialContent, onChange),
     ],
     content: initialContent,
     contentType: "markdown",

@@ -47,6 +47,46 @@ test.each([
     label: "Workflow file content",
   },
 ])(
+  "Opening $name and undoing an edit leave the content saved",
+  async ({ query, label }) => {
+    const content = "# Release risks\n\n* Verify **every source**";
+    context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
+      return respond(200, {
+        ...workflow(),
+        instruction: content,
+        fileContents: [{ path: "notes.md", content }],
+      });
+    });
+    await setupPage({
+      context,
+      path: `/workflows/${WORKFLOW_ID}/instructions${query}`,
+    });
+    const editor = await screen.findByLabelText(label);
+    const user = userEvent.setup({ delay: null });
+    await user.click(editor);
+    expect(editor).toHaveFocus();
+    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+    const savedText = editor.textContent;
+
+    await fill(editor, "Unsaved release draft");
+    await screen.findByTestId("unsaved-bar");
+    await user.keyboard("{Control>}z{/Control}");
+
+    await waitFor(() => {
+      expect(editor.textContent).toBe(savedText);
+    });
+    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  { name: "instructions", query: "", label: "Workflow instruction" },
+  {
+    name: "Markdown file",
+    query: "?file=notes.md",
+    label: "Workflow file content",
+  },
+])(
   "Retain the $name draft on failure and clear it only after a successful save",
   async ({ query, label }) => {
     let detail = workflow();
