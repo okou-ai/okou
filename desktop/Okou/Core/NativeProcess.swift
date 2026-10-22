@@ -29,6 +29,9 @@ public actor NativeProcess {
   private var standardError = NativeHelperStandardError()
   private var timeouts: [Int: Task<Void, Never>] = [:]
   private var buffer = Data()
+  private var nextReadSequence = 1
+  private var queuedReads: [Int: Data] = [:]
+  private var queuedReadBytes = 0
   private var readFragments: [NativeHelperReadFragment] = []
   private var receivedBytes = 0
   private var responseStart = 0
@@ -62,6 +65,7 @@ public actor NativeProcess {
     child.standardError = stderr
     stdout.fileHandleForReading.readabilityHandler = { handle in
       let read = reader.read(handle)
+      if read.data.isEmpty { handle.readabilityHandler = nil }
       Task { await self.receive(read.data, sequence: read.sequence, generation: current) }
     }
     stderr.fileHandleForReading.readabilityHandler = { handle in
@@ -108,6 +112,23 @@ public actor NativeProcess {
   }
   private func receive(_ data: Data, sequence: Int, generation current: Int) {
     guard current == generation else { return }
+    // Tasks created by readability callbacks can reach the actor out of read order.
+    queuedReads[sequence] = data
+    queuedReadBytes += data.count
+    if queuedReadBytes + buffer.count > 32 * 1024 * 1024 {
+      reportFailure(.responseLimit, responseBytes: queuedReadBytes + buffer.count)
+      stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
+      return
+    }
+    while let next = queuedReads.removeValue(forKey: nextReadSequence) {
+      let readSequence = nextReadSequence
+      nextReadSequence += 1
+      queuedReadBytes -= next.count
+      consume(next, sequence: readSequence)
+      guard current == generation else { return }
+    }
+  }
+  private func consume(_ data: Data, sequence: Int) {
     if data.isEmpty {
       output?.readabilityHandler = nil
       return
@@ -142,10 +163,6 @@ public actor NativeProcess {
       readFragments.removeAll { $0.endOffset <= responseStart }
       timeouts.removeValue(forKey: responseId)?.cancel()
       pending.removeValue(forKey: responseId)?.resume(returning: response)
-    }
-    if buffer.count > 32 * 1024 * 1024 {
-      reportFailure(.responseLimit, responseBytes: buffer.count)
-      stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
     }
   }
   private func protocolFailure(
@@ -214,6 +231,9 @@ public actor NativeProcess {
     errors = nil
     standardError = NativeHelperStandardError()
     buffer.removeAll()
+    queuedReads.removeAll()
+    queuedReadBytes = 0
+    nextReadSequence = 1
     readFragments.removeAll()
     receivedBytes = 0
     responseStart = 0

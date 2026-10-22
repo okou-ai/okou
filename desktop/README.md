@@ -39,7 +39,9 @@ preserves the exact bytes passed to the decoder, excluding the terminating
 newline, up to 4 MiB. The report includes the original byte count and SHA-256,
 explicit truncation flags, the decoder error, decode duration, and up to 256
 read fragments with their read sequence and offsets in parser order. This can
-expose reordered reads without treating them as the established cause.
+identify framing boundaries without treating them as the established cause.
+The transport sequences reads before parsing and bounds queued plus partial
+output to 32 MiB before decoding, including when a read contains a newline.
 
 These attachments can contain screenshots, page content, and decoder excerpts.
 They inherit Sentry's project and attachment access controls and retention;

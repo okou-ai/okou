@@ -26,13 +26,13 @@ final class NativeProcessTests: XCTestCase {
     return (CommandExecutor(helper: helper), directory)
   }
 
-  private func listApps(_ executor: CommandExecutor) async -> JSONValue {
+  private func listApps(_ executor: CommandExecutor, timeoutMs: Int = 5000) async -> JSONValue {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let timestamp = formatter.string(from: Date())
     let command = ComputerUseCommandClaim.Command(
       id: UUID().uuidString, kind: .appsList, status: .running, hostId: "computer", hostName: "Mac",
-      payload: [:], result: nil, error: nil, timeoutMs: 5000, createdAt: timestamp,
+      payload: [:], result: nil, error: nil, timeoutMs: timeoutMs, createdAt: timestamp,
       claimedAt: timestamp, completedAt: nil)
     return await executor.execute(command, claimStarted: .now)
   }
@@ -154,7 +154,7 @@ final class NativeProcessTests: XCTestCase {
           else:
               payload = (b'{"id":' + str(request['id']).encode() +
                          b',"status":"succeeded","result":{"content":"' +
-                         b'x' * 1610565 + b'\xff"}')
+                         (b'0123456789abcdefghijklmnopqrstuvwxyz' * 44738)[:1610565] + b'\xff"}')
               (root / 'malformed-response.bin').write_bytes(payload)
               sys.stdout.buffer.write(payload + b'\n')
               sys.stdout.buffer.flush()
@@ -166,7 +166,7 @@ final class NativeProcessTests: XCTestCase {
     let attachments = try collector.attachments(for: event)
     let expected = try Data(contentsOf: directory.appendingPathComponent("malformed-response.bin"))
     let received = try XCTUnwrap(attachments["native-helper-response.bin"])
-    XCTAssertFalse(event.formatted.contains("content"))
+    XCTAssertFalse(event.formatted.contains("0123456789abcdefghijklmnopqrstuvwxyz"))
     let details = String(
       decoding: try XCTUnwrap(attachments["native-helper-diagnostics.txt"]), as: UTF8.self)
     let mismatch = zip(received, expected).enumerated().first { $0.element.0 != $0.element.1 }?.offset
@@ -234,6 +234,29 @@ final class NativeProcessTests: XCTestCase {
     }
     XCTAssertEqual(attached, 3)
     XCTAssertEqual(limited, 1)
+  }
+
+  func testOversizedOutputIsRetiredBeforeDecoding() async throws {
+    let collector = try telemetry()
+    let (executor, _) = try fixture(
+      #"""
+      #!/usr/bin/python3
+      import json, sys
+      for line in sys.stdin:
+          request = json.loads(line)
+          if request['kind'] == 'permissions.state':
+              print(json.dumps({'id': request['id'], 'status': 'succeeded',
+                                'result': {'accessibility': True, 'screenRecording': True}}), flush=True)
+          else:
+              sys.stdout.buffer.write(b'x' * (33 * 1024 * 1024) + b'\n')
+              sys.stdout.buffer.flush()
+      """#)
+
+    let failed = await listApps(executor, timeoutMs: 30_000)
+    XCTAssertEqual(failed["error"]["code"].string, "result_too_large")
+    let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "response_limit")
+    XCTAssertTrue(try collector.attachments(for: event).isEmpty)
   }
 
   func testUnexpectedHelperExitIsDeliveredToSentry() async throws {
