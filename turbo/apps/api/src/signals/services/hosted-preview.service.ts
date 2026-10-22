@@ -48,7 +48,11 @@ export function hostedPreviewLegacyArtifactId(
   );
 }
 
-/** Readers must check readiness and owner/org for each candidate they use. */
+/**
+ * Both immutable cover generations remain supported while their published
+ * records/references are retained; API drain alone cannot retire normalized IDs.
+ * Readers must check readiness and owner/org for each candidate they use.
+ */
 export function hostedPreviewArtifactIds(
   deploymentId: string,
   preview: HostedSitePreview,
