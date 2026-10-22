@@ -1,9 +1,4 @@
-import {
-  recordAuthDiagnostic,
-  type AuthDiagnosticContext,
-} from "../lib/auth-diagnostics.ts";
 import { createDeferredPromise, withCleanup } from "./utils.ts";
-import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
 
 interface ClerkTokenSession {
   getToken(options?: { readonly skipCache?: boolean }): Promise<string | null>;
@@ -70,19 +65,11 @@ function waitForToken<T>(token: Promise<T>, signal: AbortSignal): Promise<T> {
 export async function readClerkToken(
   clerk: ClerkTokenSource,
   signal?: AbortSignal,
-  options: {
-    readonly skipCache?: true;
-    readonly diagnostic?: AuthDiagnosticContext;
-  } = {},
+  options: { readonly skipCache?: true } = {},
 ): Promise<string | null> {
-  const diagnostic = createBrowserAuthDiagnosticContext(options.diagnostic);
   if (!signal) {
     const session = clerk.session;
     if (!session) {
-      recordAuthDiagnostic({
-        stage: "clerk_no_session",
-        context: diagnostic,
-      });
       return null;
     }
     return await session.getToken(
@@ -93,10 +80,6 @@ export async function readClerkToken(
   const session = await waitForClerkSession(clerk, signal);
   signal.throwIfAborted();
   if (session === null) {
-    recordAuthDiagnostic({
-      stage: "clerk_no_session",
-      context: diagnostic,
-    });
     return null;
   }
   return await waitForToken(

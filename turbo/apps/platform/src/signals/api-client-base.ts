@@ -9,19 +9,13 @@ import {
 } from "@okouai/api-contracts/contracts/trpc-contract";
 
 import { IN_VITEST } from "../env.ts";
-import {
-  createAuthDiagnosticId,
-  type AuthDiagnosticContext,
-  type AuthTokenProvider,
-} from "../lib/auth-diagnostics.ts";
+import type { AuthTokenProvider } from "../lib/auth-token-provider.ts";
 import {
   clientTelemetryOutcomeForError,
   type ClientTelemetryOperation,
-  recordClientAuthFailure,
   recordClientTelemetry,
   startClientTelemetryMeasurement,
 } from "../lib/client-telemetry.ts";
-import { now } from "../lib/time.ts";
 import { addClientHeaders } from "./client-headers.ts";
 import { reportForceUpgradeResponse } from "./force-upgrade.ts";
 import { onRejection } from "./utils.ts";
@@ -30,7 +24,6 @@ interface AuthedClientOptions {
   readonly baseUrl: string;
   readonly clientVersion: string;
   readonly getToken: AuthTokenProvider;
-  readonly authDiagnosticContext?: AuthDiagnosticContext;
   readonly getTokenGuard?: () => () => void;
   readonly getVercelProtectionBypass: () => string | undefined;
   readonly onForceUpgrade?: () => void;
@@ -130,8 +123,7 @@ export function createAuthedContractClient<T extends AppRouter>(
         if (vercelProtectionBypass) {
           headers.set("X-Vercel-Protection-Bypass", vercelProtectionBypass);
         }
-        const startedAt = now();
-        const response = await trpcRestFetchApi({
+        return await trpcRestFetchApi({
           ...args,
           fetchOptions: {
             ...args.fetchOptions,
@@ -140,15 +132,6 @@ export function createAuthedContractClient<T extends AppRouter>(
           headers,
           path,
         });
-        if (response.status === 401) {
-          recordClientAuthFailure({
-            headers,
-            method: args.route.method,
-            route: args.route.path,
-            startedAt,
-          });
-        }
-        return response;
       };
 
       const bootstrapResponse = takeBootstrapResponse(
@@ -163,11 +146,7 @@ export function createAuthedContractClient<T extends AppRouter>(
           const request = async () => {
             signal?.throwIfAborted();
             validateToken?.();
-            const diagnostic: AuthDiagnosticContext = {
-              ...options.authDiagnosticContext,
-              operationId: createAuthDiagnosticId(),
-            };
-            const token = await options.getToken(diagnostic, signal);
+            const token = await options.getToken(signal);
             signal?.throwIfAborted();
             validateToken?.();
             const measurement = startClientTelemetryMeasurement();
