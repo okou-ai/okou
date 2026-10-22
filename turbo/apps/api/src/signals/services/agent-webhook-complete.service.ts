@@ -1,47 +1,46 @@
-import { command, computed } from "ccstate";
-import type { z } from "zod";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runStatusSchema,
   type RunResult,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { command, computed } from "ccstate";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import type { z } from "zod";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
-import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
 } from "../external/realtime";
+import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { tapError } from "../utils";
-import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
-import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
+import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import {
+  logAgentRunFailure,
+  type AgentRunFailureLogSnapshot,
+} from "./agent-run-failure-log.service";
+import {
+  persistAgentRunOutputsInTransaction,
   type AgentRunOutputErrorResponse,
   type AgentRunOutputInput,
-  persistAgentRunOutputsInTransaction,
 } from "./agent-run-output.service";
-import { lockPiMemoryPhase2CompletionStorage } from "./pi-memory-phase2-maintenance.service";
 import {
   releaseRunSlots,
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
-import {
-  logAgentRunFailure,
-  type AgentRunFailureLogSnapshot,
-} from "./agent-run-failure-log.service";
+import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
+import { processOrgUsageEvents$ } from "./credit-usage.service";
 
 type WebhookCompleteBody = z.infer<
   typeof webhookCompleteContract.complete.body
@@ -192,7 +191,6 @@ function runOutputInputForCompletion(
   }
   return {
     auth: input.auth,
-    recovery: input.body.exitCode !== 0,
     body: {
       ...completion,
       runId: input.body.runId,
@@ -395,15 +393,6 @@ async function completeActiveAgentRunTransition(
   };
 }
 
-async function lockCompletionPiMemoryStorage(
-  tx: Tx,
-  run: RunRecord,
-): Promise<void> {
-  if (run.chatThreadId === null && run.launchSnapshot?.framework === "pi") {
-    await lockPiMemoryPhase2CompletionStorage(tx, run);
-  }
-}
-
 function persistedTerminalError(
   run: RunRecord,
 ): { readonly transitionError: string } | Record<string, never> {
@@ -442,8 +431,6 @@ async function completeAgentRunTransition(
       },
     };
   }
-  await lockCompletionPiMemoryStorage(tx, run);
-  signal.throwIfAborted();
   let runResult: RunResult | undefined;
   if (outputInput) {
     const outputResult = await persistAgentRunOutputsInTransaction(

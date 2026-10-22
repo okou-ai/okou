@@ -1,4 +1,6 @@
 #!/usr/bin/env tsx
+
+import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 /**
  * Migration Consistency Test - Schema Comparison
@@ -28,40 +30,39 @@ import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
  * If this test fails, follow the fix instructions in the error message.
  */
 
-import { execSync } from "node:child_process";
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
-import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
+import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
-import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
-import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
+import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
+import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
-import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
+import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
+import { validateChatRelations } from "./test-chat-relations-permanent";
+import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
+import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
+import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
+import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
 import { validatePermanentDiscordGrants } from "./test-discord-grants-permanent";
-import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
+import { validatePermanentMemberMetadata } from "./test-member-metadata-permanent";
 import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-permanent";
 import { validateModelCatalogSeed } from "./test-model-catalog-seed";
-import { validateXResourceUsageSchema } from "./test-x-resource-usage";
-import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
-import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
-import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
-import { validatePermanentMemberMetadata } from "./test-member-metadata-permanent";
-import { validatePermanentPiMemoryJobs } from "./test-pi-memory-job-permanent";
-import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
+import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
+import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
-import { validateChatRelations } from "./test-chat-relations-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
+import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
-import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
-import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
-import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
+import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
+import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2822,6 +2823,7 @@ async function main(): Promise<void> {
     await validateBillingRunLifecycle(dbUrl1);
     await validatePermanentArtifactThreadCatalog(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
+    await validatePiMemoryRetirement(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
@@ -2834,7 +2836,6 @@ async function main(): Promise<void> {
     await validatePermanentStorageLineage(dbUrl1);
     await validatePermanentAgentInstructions(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
-    await validatePermanentPiMemoryJobs(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
     await validatePermanentNativeVncStorage(dbUrl1);
@@ -2879,7 +2880,6 @@ async function main(): Promise<void> {
     await validateBillingRunLifecycle(dbUrl2);
     await validatePermanentArtifactThreadCatalog(dbUrl2);
     await validatePermanentMemberMetadata(dbUrl2);
-    await validatePermanentPiMemoryJobs(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
     await validatePermanentNativeVncStorage(dbUrl2);
@@ -2929,7 +2929,7 @@ async function main(): Promise<void> {
         "   ✅ Usage-pack pending guards retain uniqueness and count constraints",
       );
       console.log(
-        "   ✅ Permanent inventory matches API-owned Pi candidate accounting",
+        "   ✅ Native memory and historical billing survive Pi-only retirement",
       );
       console.log("   ✅ Draining API avatar writes receive preset defaults");
       console.log("   ✅ Consecutive database resets replay all migrations");

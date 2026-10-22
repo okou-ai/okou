@@ -1,10 +1,10 @@
-import { zstdDecompressSync } from "node:zlib";
 import { once } from "node:events";
 import { createServer, type IncomingHttpHeaders } from "node:http";
+import { zstdDecompressSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
 
-import { normalizeContext, Type } from "@earendil-works/pi-ai";
 import type { Message, Tool } from "@earendil-works/pi-ai";
+import { normalizeContext, Type } from "@earendil-works/pi-ai";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { materializePiAgentModelConfig } from "./credential";
@@ -353,7 +353,6 @@ describe("Pi agent model adapter", () => {
     { catalogModel: "okou-1.0", runtimeModel: "@preset/okou-1-0" },
     { catalogModel: "auto", runtimeModel: "@preset/okou-experimental" },
     { catalogModel: undefined, runtimeModel: "@preset/okou-1-0-dsf" },
-    { catalogModel: "okou-memory", runtimeModel: "@preset/memory" },
   ])(
     "sends captured $catalogModel / $runtimeModel to Gen5 Chat Completions with Preset-owned policy",
     async ({ catalogModel, runtimeModel }) => {
@@ -404,18 +403,6 @@ describe("Pi agent model adapter", () => {
           {
             apiKey: config.apiKey,
             sessionId: "pi-session",
-            ...(runtimeModel === "@preset/memory"
-              ? {
-                  temperature: 0.8,
-                  maxTokens: 100,
-                  samplingParams: {
-                    top_p: 0.7,
-                    reasoning: { effort: "high" },
-                    service_tier: "priority",
-                    response_format: { type: "json_object" },
-                  },
-                }
-              : {}),
           },
         ).result();
 
@@ -454,14 +441,6 @@ describe("Pi agent model adapter", () => {
             ],
           },
         });
-        if (runtimeModel === "@preset/memory") {
-          expect(Object.keys(request?.body ?? {}).sort()).toStrictEqual([
-            "messages",
-            "model",
-            "stream",
-            "stream_options",
-          ]);
-        }
         expect(request?.body).not.toHaveProperty("reasoning");
         expect(request?.body).not.toHaveProperty("reasoning_effort");
         expect(request?.body).not.toHaveProperty("input");

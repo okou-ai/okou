@@ -2563,6 +2563,13 @@
       "when": 1792667145028,
       "tag": "1443_commerce_async_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 1444,
+      "version": "7",
+      "when": 1792670070149,
+      "tag": "1444_retire_pi_memory",
+      "breakpoints": true
     }
   ]
 }

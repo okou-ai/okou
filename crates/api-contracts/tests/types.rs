@@ -1,8 +1,7 @@
 use api_contracts::generated::types::{
     runners::{
         runs::{
-            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfigV2,
-            PiModelConfigV3, cancellation,
+            CodexRuntimeConfig, PiLaunchConfig, PiModelConfigV2, PiModelConfigV3, cancellation,
         },
         storage as runner_storage,
     },
@@ -181,47 +180,13 @@ fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null()
 
 #[test]
 fn generated_pi_launch_config_round_trips_minimal_shape() {
-    let launch = PiLaunchConfig {
-        schema_version: 2,
-        memory_recall: None,
-        maintenance: None,
-    };
+    let launch = PiLaunchConfig { schema_version: 2 };
     let launch_value = serde_json::to_value(&launch).unwrap();
     assert_eq!(launch_value, json!({ "schemaVersion": 2 }));
     assert_eq!(
         serde_json::from_value::<PiLaunchConfig>(launch_value).unwrap(),
         launch
     );
-}
-
-#[test]
-fn generated_pi_launch_config_round_trips_frozen_memory() {
-    let value = json!({
-        "schemaVersion": 2,
-        "memoryRecall": {
-            "status": "ready",
-            "memoryStorageId": "memory-storage",
-            "storageVersionId": "memory-version-a",
-            "content": "bounded memory",
-            "sourceHash": "b".repeat(64),
-            "sourceSize": 14,
-            "tokenCount": 2,
-        },
-    });
-
-    let launch: PiLaunchConfig = serde_json::from_value(value.clone()).unwrap();
-    assert!(matches!(
-        launch.memory_recall.as_ref(),
-        Some(PiLaunchConfigMemoryRecall::Ready {
-            memory_storage_id,
-            storage_version_id,
-            content,
-            ..
-        }) if memory_storage_id == "memory-storage"
-            && storage_version_id == "memory-version-a"
-            && content == "bounded memory"
-    ));
-    assert_eq!(serde_json::to_value(launch).unwrap(), value);
 }
 
 #[test]
@@ -345,7 +310,6 @@ fn generated_prepare_request_serializes_wire_shape() {
         force: None,
         base_version: None,
         changes: None,
-        maintenance_attestation: None,
     };
 
     let value = serde_json::to_value(request).unwrap();
@@ -381,7 +345,6 @@ fn generated_prepare_request_serializes_optional_fields() {
             modified: vec!["changed.txt".to_string()],
             deleted: vec!["old.txt".to_string()],
         }),
-        maintenance_attestation: None,
     };
 
     let value = serde_json::to_value(request).unwrap();
@@ -450,7 +413,6 @@ fn generated_commit_request_serializes_wire_shape() {
             size: 34,
         }],
         message: Some("artifact save".to_string()),
-        maintenance_attestation: None,
     };
 
     let value = serde_json::to_value(request).unwrap();
@@ -480,7 +442,6 @@ fn generated_commit_request_preserves_empty_message() {
         parent_version_id: None,
         files: vec![],
         message: Some(String::new()),
-        maintenance_attestation: None,
     };
 
     let value = serde_json::to_value(request).unwrap();

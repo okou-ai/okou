@@ -179,16 +179,6 @@ impl CapturedSessionMetadata {
 pub struct SessionMetadataStore(Arc<OnceLock<CapturedSessionMetadata>>);
 
 impl SessionMetadataStore {
-    /// A private maintenance launch has no public CLI session event or history.
-    /// Its authenticated launch ID is sufficient for Run completion;
-    /// artifact validation remains an independent prerequisite.
-    pub(crate) fn capture_maintenance_launch(&self, session_id: &str) -> bool {
-        let Some(metadata) = SessionHistoryLaunchSource::Pi.capture(session_id, None) else {
-            return false;
-        };
-        self.capture(metadata)
-    }
-
     /// Return the captured metadata, if a valid identity event was observed.
     pub fn captured(&self) -> Option<&CapturedSessionMetadata> {
         self.0.get()

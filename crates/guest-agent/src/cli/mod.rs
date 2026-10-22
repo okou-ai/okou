@@ -562,17 +562,6 @@ fn build_pi_command_for_runtime(runtime: &CliRuntimeConfig<'_>) -> Result<Vec<St
     ])
 }
 
-fn is_pi_memory_maintenance(runtime: &CliRuntimeConfig<'_>) -> Result<bool, AgentError> {
-    if !matches!(runtime.framework, env::Framework::Pi) {
-        return Ok(false);
-    }
-    let launch_config: serde_json::Value = serde_json::from_str(runtime.pi_launch_config.as_ref())
-        .map_err(|_| AgentError::Execution("Pi launch config is invalid".to_string()))?;
-    Ok(launch_config
-        .get("maintenance")
-        .is_some_and(|value| !value.is_null()))
-}
-
 /// Write the private launch payload the Pi CLI child reads at startup.
 ///
 /// Prompt-sized launch inputs travel through this file so the child's argv and
@@ -1088,15 +1077,6 @@ async fn execute_cli_inner(
         session_metadata,
     } = controls;
 
-    let maintenance_execution = is_pi_memory_maintenance(runtime)?;
-    if maintenance_execution
-        && !session_metadata.capture_maintenance_launch(runtime.pi_session_id.as_ref())
-    {
-        return Err(AgentError::Execution(
-            "Invalid private maintenance session identity".into(),
-        ));
-    }
-
     let replay_user_messages =
         active_input.is_enabled() && matches!(runtime.framework, env::Framework::ClaudeCode);
     log_info!(
@@ -1242,7 +1222,7 @@ async fn execute_cli_inner(
             .await
     });
 
-    let pi_rpc_execution = pi_execution && !maintenance_execution;
+    let pi_rpc_execution = pi_execution;
     let (pi_rpc_response_tx, pi_rpc_response_rx) = pi_rpc::response_channel();
     let (pi_rpc_startup_tx, pi_rpc_startup_rx) = tokio::sync::oneshot::channel();
     let mut pi_rpc_startup_tx = pi_rpc_execution.then_some(pi_rpc_startup_tx);
@@ -2673,30 +2653,6 @@ mod tests {
                 Some(expected)
             );
         }
-    }
-
-    #[test]
-    fn pi_child_env_omits_launch_config_value() {
-        let user_env = HashMap::new();
-        let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
-        runtime.pi_launch_config = Cow::Borrowed(
-            r#"{"schemaVersion":2,"maintenance":{"rawMemory":"PRIVATE_MAINTENANCE_CANDIDATE_31891"}}"#,
-        );
-        let mut values = child_env::values_for_runtime(&runtime);
-        values.extend(pi_child_env_values(&runtime));
-        let values = child_env::normalize_values(values);
-
-        assert!(
-            !values
-                .iter()
-                .any(|(key, _)| key == guest_contracts::env::PI_LAUNCH_CONFIG_ENV)
-        );
-        assert!(
-            !values
-                .iter()
-                .any(|(_, value)| value.contains("schemaVersion")
-                    || value.contains("PRIVATE_MAINTENANCE_CANDIDATE_31891"))
-        );
     }
 
     #[test]

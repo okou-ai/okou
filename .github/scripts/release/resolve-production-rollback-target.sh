@@ -102,6 +102,7 @@ readonly CONNECTOR_RESOURCE_SPLIT_PATH=.github/rollback-floors/connector-resourc
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
+readonly PI_MEMORY_RETIRED_PATH=.github/rollback-floors/pi-memory-retired
 # Completion now accepts only storageOutputs. The selected Runner must embed
 # #41742's Guest writer even when its paired API still accepts the old field.
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_WRITER_COMMIT=2eff576ad75d328676834643c1380ff35c2297e2
@@ -730,6 +731,17 @@ if [[ ! "$storage_debug_contracts_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$storage_debug_contracts_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Storage debug contract cleanup: ${storage_debug_contracts_commit}."
+fi
+
+# Pi memory's private tables no longer exist. Earlier APIs still name them
+# during ordinary native memory writes, even though producers were retired.
+pi_memory_retired_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PI_MEMORY_RETIRED_PATH" | sed -n '1p')
+if [[ ! "$pi_memory_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Pi memory storage retirement on main."
+fi
+if ! git merge-base --is-ancestor "$pi_memory_retired_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Pi memory storage retirement: ${pi_memory_retired_commit}."
 fi
 
 # PR1 introduced /api/connectors/connected and /api/remotes/overview before

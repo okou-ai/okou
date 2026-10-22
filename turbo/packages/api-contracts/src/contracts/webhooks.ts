@@ -1,21 +1,17 @@
-import { oomEvidenceSchema } from "./oom-evidence";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
-import { runFailureReasonTokenSchema } from "./run-failure-reasons";
+import { oomEvidenceSchema } from "./oom-evidence";
 import { piMemoryCitationSchema } from "./pi-memory-citations";
+import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import {
-  X_RESOURCE_USAGE_MAX_IDS,
-  xResourceUsageEventSchema,
-} from "./x-resource-usage";
-import {
+  homeReuseResultSchema,
   runnerHostnameSchema,
   runnerVersionSchema,
   sandboxReuseResultSchema,
-  secretConnectorMetadataMapSchema,
-  homeReuseResultSchema,
   sandboxStartupPathSchema,
+  secretConnectorMetadataMapSchema,
 } from "./runners";
 import {
   eventSequenceNumberSchema,
@@ -27,6 +23,10 @@ import {
   storageChangesSchema,
   storageManifestFilesSchema,
 } from "./storages";
+import {
+  X_RESOURCE_USAGE_MAX_IDS,
+  xResourceUsageEventSchema,
+} from "./x-resource-usage";
 
 export {
   homeReuseResultSchema,
@@ -36,25 +36,6 @@ export {
 } from "./runners";
 
 const c = initContract();
-
-// Memory publication identities use lowercase SHA-256 hex.
-const sha256HexSchema = z
-  .string()
-  .regex(
-    /^[a-f0-9]{64}$/,
-    "hash must be a lowercase 64-character SHA-256 hex string",
-  );
-
-const piMemoryPhase2PublicationAttestationSchema = z
-  .object({
-    schemaVersion: z.literal(2),
-    leaseToken: z.uuid(),
-    claimedRevision: z.number().int().positive(),
-    claimedBaseVersionId: sha256HexSchema,
-    selectionDigest: sha256HexSchema,
-    validatedVersionId: sha256HexSchema,
-  })
-  .strict();
 
 const thirdPartyWebhookErrorSchema = z.object({ error: z.string() });
 const thirdPartyWebhookOkSchema = z.union([
@@ -1006,9 +987,6 @@ export const webhookStoragesPrepareContract = c.router({
       force: z.boolean().optional(),
       baseVersion: z.string().optional(),
       changes: storageChangesSchema.optional(),
-      /** Private proof emitted only after sandbox-local Phase 2 validation. */
-      maintenanceAttestation:
-        piMemoryPhase2PublicationAttestationSchema.optional(),
     }),
     responses: {
       200: z.object({
@@ -1053,9 +1031,6 @@ export const webhookStoragesCommitContract = c.router({
       parentVersionId: z.string().optional(),
       files: storageManifestFilesSchema,
       message: z.string().optional(),
-      /** Private proof emitted only after sandbox-local Phase 2 validation. */
-      maintenanceAttestation:
-        piMemoryPhase2PublicationAttestationSchema.optional(),
     }),
     responses: {
       200: z.object({
