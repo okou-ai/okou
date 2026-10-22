@@ -680,9 +680,18 @@ it("handles a real alias's authorization callback before reading hosted HTML", a
     env,
   );
   expect(initial.status).toBe(302);
-  const bridge = new URL(initial.headers.get("Location")!);
+  expect(new URL(initial.headers.get("Location")!).pathname).toBe(
+    "/hosted-site-access",
+  );
+  const resumed = await fetchWorker(
+    new Request("https://demo.okou.app/.okou/auth/start?returnTo=%2F", {
+      headers: { Accept: "text/html" },
+    }),
+    env,
+  );
+  const bridge = new URL(resumed.headers.get("Location")!);
   expect(bridge.searchParams.get("siteId")).toBe(siteId);
-  const pending = initial.headers.getSetCookie()[0]!.split(";")[0]!;
+  const pending = resumed.headers.getSetCookie()[0]!.split(";")[0]!;
   server.use(
     http.post(
       `https://authority.test/api/host/sites/${siteId}/sessions`,

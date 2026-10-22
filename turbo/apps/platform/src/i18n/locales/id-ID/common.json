@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Kembali ke {{brandName}}",
+      "continue": "Lanjutkan",
       "description": "Artefak ini mungkin bersifat pribadi atau sudah tidak tersedia.",
       "help": "Minta orang yang membagikan tautan ini untuk memeriksa akses.",
+      "sessionExpiredDescription": "Sesi situs web Anda telah berakhir. Lanjutkan untuk memverifikasi akses Anda.",
+      "sessionExpiredTitle": "Verifikasi akses Anda lagi",
       "signedInAs": "Masuk sebagai {{email}}",
       "signedInDescription": "Artefak ini mungkin tidak ada atau dibagikan ke akun atau organisasi lain.",
       "signIn": "Masuk",
@@ -439,7 +442,10 @@
       "switchAccount": "Ganti akun",
       "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",
       "title": "Anda tidak dapat melihat artefak ini",
-      "tryAgain": "Coba lagi"
+      "tryAgain": "Coba lagi",
+      "websiteTitle": "Anda tidak dapat melihat situs web ini",
+      "websiteUnavailableDescription": "Coba lagi sebentar lagi.",
+      "websiteUnavailableTitle": "Situs web ini sementara tidak tersedia"
     },
     "actions": {
       "backToAll": "Kembali ke semua artefak",
@@ -595,7 +601,6 @@
         "text": "text",
         "video": "video"
       },
-      "siteLabel": "Pratinjau situs untuk {{title}}",
       "slideTitle": "Slide {{number}}",
       "unavailable": "Pratinjau {{kind}} tidak tersedia.",
       "videoLabel": "Pratinjau video untuk {{filename}}"

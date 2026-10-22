@@ -1,6 +1,7 @@
 import {
   authorizeSiteRequest,
   hostedSiteAuthCallback,
+  hostedSiteRecoveryResponse,
   withSiteAuthHeaders,
   withHostedSiteAccess,
   type SiteAuthEnv,
@@ -1577,7 +1578,10 @@ export default {
         });
       })
       .then((response) => {
-        return corsResponse(response, request);
+        return corsResponse(
+          hostedSiteRecoveryResponse(request, env, response),
+          request,
+        );
       });
   },
 };

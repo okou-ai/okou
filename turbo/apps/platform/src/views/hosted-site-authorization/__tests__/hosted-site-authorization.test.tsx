@@ -1,8 +1,8 @@
-import { screen, waitFor } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { startPage } from "../../../__tests__/page-helper.ts";
 
 const context = testContext();
 const siteId = "00000000-0000-4000-8000-000000000001";
@@ -31,7 +31,7 @@ test("the trusted App returns only a one-use authorization code to the exact sit
   });
 });
 
-test("a denied website shows an error instead of navigating to hosted content", async () => {
+test("a denied website navigates to the dedicated access page", async () => {
   const redirect = vi
     .spyOn(window.location, "replace")
     .mockImplementation(() => {});
@@ -40,10 +40,40 @@ test("a denied website shows an error instead of navigating to hosted content", 
       error: { code: "FORBIDDEN", message: "Website access is unavailable" },
     });
   });
-  await setupPage({ context, host: "app.okou.ai", path });
-  await expect(screen.findByRole("alert")).resolves.toBeInTheDocument();
-  expect(redirect).not.toHaveBeenCalled();
+  await startPage({ context, host: "app.okou.ai", path });
+  await waitFor(() => {
+    expect(redirect).toHaveBeenCalledWith(
+      `https://app.okou.ai/hosted-site-access?${new URLSearchParams({ url: `${origin}/`, reason: "denied" })}`,
+    );
+  });
 });
+
+test.each([401, 500] as const)(
+  "authorization status %s preserves the website destination for recovery",
+  async (status) => {
+    const redirect = vi
+      .spyOn(window.location, "replace")
+      .mockImplementation(() => {});
+    context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
+      return respond(status, {
+        error: {
+          code: status === 401 ? "UNAUTHORIZED" : "INTERNAL_SERVER_ERROR",
+          message: "Authorization is unavailable",
+        },
+      });
+    });
+    await startPage({
+      context,
+      host: "app.okou.ai",
+      path: `${path}&returnTo=${encodeURIComponent("/report?view=summary")}`,
+    });
+    await waitFor(() => {
+      expect(redirect).toHaveBeenCalledWith(
+        `https://app.okou.ai/hosted-site-access?${new URLSearchParams({ url: `${origin}/report?view=summary`, reason: status === 401 ? "authenticate" : "unavailable" })}`,
+      );
+    });
+  },
+);
 
 test("sign-in returns to the trusted App bridge with the complete browser state", async () => {
   await startPage({ context, host: "app.okou.ai", path, auth: null });

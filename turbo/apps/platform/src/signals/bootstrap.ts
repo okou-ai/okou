@@ -85,6 +85,7 @@ import {
 } from "./auth-v1-page-setup.ts";
 import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
 import { setupHostedSiteAuthorizationPage$ } from "./hosted-site-authorization-page-setup.ts";
+import { setupHostedSiteAccessPage$ } from "./hosted-site-access-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
@@ -219,6 +220,11 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.hostedSiteAuthorize,
     setup: setupAuthPageWrapper(setupHostedSiteAuthorizationPage$),
+    analytics: false,
+  },
+  {
+    path: ROUTES.hostedSiteAccess,
+    setup: setupPageWrapper(setupHostedSiteAccessPage$),
     analytics: false,
   },
 
