@@ -449,7 +449,8 @@ async def test_singleflight_rechecks_entry_after_etag_invalidation(real_flow):
     catalog_cache.handle_error(follower)
 
 
-async def test_etag_signal_supersedes_in_flight_owner_and_releases_follower(real_flow):
+@pytest.mark.parametrize("status", [200, 101])
+async def test_etag_signal_supersedes_in_flight_owner_and_releases_follower(real_flow, status):
     superseded_owner = catalog_flow(real_flow, version="superseded-owner")
     matching_owner = catalog_flow(real_flow, version="matching-owner")
     isolated_owner = catalog_flow(
@@ -467,7 +468,7 @@ async def test_etag_signal_supersedes_in_flight_owner_and_releases_follower(real
     await asyncio.sleep(0)
     assert not follower_prepare.done()
 
-    signal = responses_flow(real_flow, etag='"catalog-v2"')
+    signal = responses_flow(real_flow, etag='"catalog-v2"', status=status)
     mitm_addon.responseheaders(signal)
 
     matching_body = b'{"models":[{"slug":"matching"}]}'
