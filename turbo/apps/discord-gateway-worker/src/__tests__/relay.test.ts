@@ -582,15 +582,18 @@ describe("Discord Gateway relay", () => {
     // the application ID. The new Worker route necessarily selects another DO,
     // so address the existing DO through its real HTTP interface to observe the
     // infrastructure-created case without inspecting or writing its storage.
-    expect(
-      await relay.durableObjectHealth(`test:${APPLICATION_ID}:0`),
-    ).toMatchObject({
+    // The two objects are independent, so read them together after redeployment.
+    const [currentHealth, previousHealth] = await Promise.all([
+      relay.health(),
+      relay.durableObjectHealth(`test:${APPLICATION_ID}:0`),
+    ]);
+    expect(previousHealth).toMatchObject({
       running: false,
       connected: false,
       pending: 1,
       fatal: "configuration-scope-changed",
     });
-    expect(await relay.health()).toMatchObject({
+    expect(currentHealth).toMatchObject({
       running: false,
       connected: false,
       pending: 0,
