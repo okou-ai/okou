@@ -4,7 +4,13 @@ import {
   mailContract,
   type MailDraft,
 } from "@okouai/api-contracts/contracts/mail";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -14,10 +20,12 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000801";
+const RIGHT_THREAD_ID = "b0000000-0000-4000-a000-000000000802";
 const RUN_ID = "d0000000-0000-4000-a000-000000000811";
 
 function draft(index: number, status: "draft" | "sent" = "draft"): MailDraft {
@@ -64,7 +72,18 @@ function installMails(count = 12) {
   const sent: string[] = [];
   const deleted: string[] = [];
   const reject = new Set<string>();
-  context.mocks.api(mailContract.listThreadMail, ({ respond }) => {
+  const listing: { fail: boolean; wait: Promise<void> | null } = {
+    fail: false,
+    wait: null,
+  };
+  const sending: { wait: Promise<void> | null } = { wait: null };
+  context.mocks.api(mailContract.listThreadMail, async ({ respond }) => {
+    await listing.wait;
+    if (listing.fail) {
+      return respond(403, {
+        error: { code: "FORBIDDEN", message: "Temporary email list failure" },
+      });
+    }
     return respond(200, {
       mails: [...mails]
         .filter(([, mail]) => {
@@ -91,7 +110,8 @@ function installMails(count = 12) {
     }
     return respond(200, response(params.mailDraftId, mail));
   });
-  context.mocks.api(mailContract.sendDraft, ({ respond, params }) => {
+  context.mocks.api(mailContract.sendDraft, async ({ respond, params }) => {
+    await sending.wait;
     const mail = mails.get(params.mailDraftId);
     if (!mail || mail.status !== "draft" || reject.has(params.mailDraftId)) {
       return respond(409, {
@@ -114,7 +134,7 @@ function installMails(count = 12) {
     deleted.push(params.mailDraftId);
     return respond(204);
   });
-  return { mails, sent, deleted, reject };
+  return { mails, sent, deleted, reject, listing, sending };
 }
 
 async function button(name: string, container: ParentNode = document.body) {
@@ -132,7 +152,27 @@ async function button(name: string, container: ParentNode = document.body) {
   });
 }
 
-async function openChat(enabled = true, withCard = true) {
+async function link(name: string, container: ParentNode = document.body) {
+  return await waitFor(() => {
+    const found = queryAllByRoleFast("link", container).find((element) => {
+      return (
+        element.getAttribute("aria-label") === name ||
+        element.textContent?.trim() === name
+      );
+    });
+    if (!found) {
+      throw new Error(`Missing link: ${name}`);
+    }
+    return found;
+  });
+}
+
+async function openChat(
+  enabled = true,
+  withCard = true,
+  path = `/chats/${THREAD_ID}`,
+  sidebarThreadId?: string,
+) {
   context.mocks.data.agents([
     {
       agentId: "c0000000-0000-4000-a000-000000000001",
@@ -144,53 +184,85 @@ async function openChat(enabled = true, withCard = true) {
       error: { code: "BROWSER_NOT_FOUND", message: "No managed browser" },
     });
   });
-  mockChatLifecycle(context, {
+  const lifecycle = mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Email review",
     selectedModel: "claude-sonnet-5",
-    chatEvents: [
-      {
-        id: "mail-user-message",
-        role: "user",
-        content: "Prepare the proposals",
-        runId: RUN_ID,
-        seqId: 1,
-        createdAt: "2026-10-20T10:00:00.000Z",
-      },
-      {
-        id: "mail-assistant-message",
-        role: "assistant",
-        content: withCard
-          ? `[Review proposal](https://app.okou.ai/mail/drafts/${id(1)})`
-          : "Prepare the proposals",
-        runId: RUN_ID,
-        seqId: 2,
-        createdAt: "2026-10-20T10:00:01.000Z",
-      },
-    ],
+    chatEvents: sidebarThreadId
+      ? []
+      : [
+          {
+            id: "mail-user-message",
+            role: "user",
+            content: "Prepare the proposals",
+            runId: RUN_ID,
+            seqId: 1,
+            createdAt: "2026-10-20T10:00:00.000Z",
+          },
+          {
+            id: "mail-assistant-message",
+            role: "assistant",
+            content: withCard
+              ? `[Review proposal](https://app.okou.ai/mail/drafts/${id(1)})`
+              : "Prepare the proposals",
+            runId: RUN_ID,
+            seqId: 2,
+            createdAt: "2026-10-20T10:00:01.000Z",
+          },
+        ],
   });
+  if (sidebarThreadId) {
+    lifecycle.setThreadList(
+      [THREAD_ID, sidebarThreadId].map((threadId) => {
+        return {
+          id: threadId,
+          title: "Email review",
+          agent: {
+            id: "c0000000-0000-4000-a000-000000000001",
+            avatarUrl: null,
+          },
+          createdAt: "2026-10-20T10:00:00.000Z",
+          updatedAt: "2026-10-20T10:00:00.000Z",
+          selectedModel: "claude-sonnet-5",
+        };
+      }),
+    );
+  }
   await setupPage({
     context,
-    path: `/chats/${THREAD_ID}`,
+    path,
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.ThreadEmailManager]: enabled },
   });
-  await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(screen.getAllByRole("textbox", { name: "Message" })).toHaveLength(
+      sidebarThreadId ? 2 : 1,
+    );
+  });
 }
 
 async function openList() {
-  await click(await button("Manage emails"));
+  click(await button("Manage emails"));
   return await screen.findByRole("dialog", { name: "Emails" });
 }
 
 describe("thread email manager", () => {
-  it("shows the entry only when enabled and the thread has emails", async () => {
+  it("keeps draft details available without manager navigation when the switch is disabled", async () => {
     installMails();
-    await openChat(false);
-    await screen.findByText("Proposal 1");
+    await openChat(
+      false,
+      false,
+      `/chats/${THREAD_ID}?mailThread=${THREAD_ID}&mailView=detail&mailId=${id(1)}&mailFrom=list`,
+    );
+    await screen.findByText("Proposal details 1");
     expect(
       queryAllByRoleFast("button").some((element) => {
         return element.getAttribute("aria-label") === "Manage emails";
+      }),
+    ).toBeFalsy();
+    expect(
+      queryAllByRoleFast("link").some((element) => {
+        return element.textContent?.trim() === "Back to emails";
       }),
     ).toBeFalsy();
   });
@@ -249,19 +321,19 @@ describe("thread email manager", () => {
     expect(
       within(list).queryByText("Actions apply to selected drafts"),
     ).not.toBeInTheDocument();
-    await click(within(list).getByLabelText("Select email: Proposal 1"));
+    click(within(list).getByLabelText("Select email: Proposal 1"));
     await within(list).findByText("Actions apply to selected drafts");
     expect(
       within(list).getByRole("checkbox", { name: "Select all" }),
     ).toHaveAttribute("aria-checked", "mixed");
-    await click(within(list).getByRole("checkbox", { name: "Select all" }));
+    click(within(list).getByRole("checkbox", { name: "Select all" }));
     await within(list).findByText("12 selected");
     await expect(button("Send", list)).resolves.toBeEnabled();
     await expect(button("Delete", list)).resolves.toBeEnabled();
     expect(
       within(list).getByLabelText("Select email: Proposal 12"),
     ).toHaveAttribute("aria-checked", "true");
-    await click(within(list).getByRole("checkbox", { name: "Select all" }));
+    click(within(list).getByRole("checkbox", { name: "Select all" }));
     await within(list).findByText("0 selected");
     await waitFor(() => {
       expect(within(list).queryByText("Send")).not.toBeInTheDocument();
@@ -270,8 +342,8 @@ describe("thread email manager", () => {
         within(list).queryByText("Actions apply to selected drafts"),
       ).not.toBeInTheDocument();
     });
-    await click(await button("Sent", list));
-    await click(within(list).getByRole("checkbox", { name: "Select all" }));
+    click(await button("Sent", list));
+    click(within(list).getByRole("checkbox", { name: "Select all" }));
     await within(list).findByText("10 selected");
     expect(within(list).queryByText("Send")).not.toBeInTheDocument();
     expect(within(list).queryByText("Delete")).not.toBeInTheDocument();
@@ -284,29 +356,43 @@ describe("thread email manager", () => {
     installMails();
     const transitions = context.mocks.browser.viewTransition();
     await openChat();
-    await click(await button("Open draft email: Proposal 1"));
+    click(await button("Open draft email: Proposal 1"));
     await screen.findByText("Proposal details 1");
     expect(
-      queryAllByRoleFast("button").some((element) => {
+      queryAllByRoleFast("link").some((element) => {
         return element.textContent?.trim() === "Back to emails";
       }),
     ).toBeFalsy();
-    await click(await button("Close email details"));
+    click(await button("Close email details"));
     const list = await openList();
     const search = within(list).getByLabelText("Search by subject or sender");
     fireEvent.change(search, { target: { value: "Proposal" } });
-    await click(within(list).getByLabelText("Select email: Proposal 1"));
-    await click(await button("Sent", list));
-    const row = await button("Open email: Proposal 12", list);
+    click(within(list).getByLabelText("Select email: Proposal 1"));
+    click(await button("Sent", list));
+    const row = await link("Open email: Proposal 12", list);
+    const destination = new URL(
+      row.getAttribute("href")!,
+      window.location.href,
+    );
+    expect(destination.searchParams.get("mailThread")).toBe(THREAD_ID);
+    expect(destination.searchParams.get("mailView")).toBe("detail");
+    expect(destination.searchParams.get("mailId")).toBe(id(12));
+    expect(destination.searchParams.get("mailFilter")).toBe("sent");
+    expect(destination.searchParams.get("mailQuery")).toBe("Proposal");
     const scroller = row.parentElement?.parentElement;
     if (!scroller) {
       throw new Error("Missing email scroll viewport");
     }
     scroller.scrollTop = 180;
     fireEvent.scroll(scroller);
-    await click(row);
+    click(row);
     await screen.findByText("Proposal details 12");
-    await click(await button("Back to emails"));
+    expect(window.location.search).toBe(destination.search);
+    const back = await link("Back to emails");
+    await waitFor(() => {
+      expect(back).toHaveFocus();
+    });
+    click(await link("Back to emails"));
     const restored = await screen.findByRole("dialog", { name: "Emails" });
     expect(
       within(restored).getByLabelText("Search by subject or sender"),
@@ -315,9 +401,9 @@ describe("thread email manager", () => {
       "aria-pressed",
       "true",
     );
-    const restoredRow = await button("Open email: Proposal 12", restored);
+    const restoredRow = await link("Open email: Proposal 12", restored);
     expect(restoredRow.parentElement?.parentElement?.scrollTop).toBe(180);
-    await click(await button("All", restored));
+    click(await button("All", restored));
     await expect(
       within(restored).findByLabelText("Select email: Proposal 1"),
     ).resolves.toHaveAttribute("aria-checked", "true");
@@ -335,32 +421,265 @@ describe("thread email manager", () => {
     });
     await openChat();
     const list = await openList();
-    await click(await button("Open email: Proposal 2", list));
+    click(await link("Open email: Proposal 2", list));
     await screen.findByText("Proposal details 2");
-    await click(await button("Back to emails"));
+    click(await link("Back to emails"));
     await screen.findByRole("dialog", { name: "Emails" });
     expect(transitions.startedTypes).toHaveLength(0);
+  });
+
+  it("restores a detail and its list filters from a direct URL without a transcript card", async () => {
+    installMails();
+    const params = new URLSearchParams({
+      mailThread: THREAD_ID,
+      mailView: "detail",
+      mailId: id(12),
+      mailFrom: "list",
+      mailFilter: "sent",
+      mailQuery: "Proposal 12",
+      unrelated: "keep",
+    });
+    await openChat(true, false, `/chats/${THREAD_ID}?${params}#note`);
+    await screen.findByText("Proposal details 12");
+    const back = await link("Back to emails");
+    click(back);
+    const list = await screen.findByRole("dialog", { name: "Emails" });
+    await link("Open email: Proposal 12", list);
+    expect(
+      within(list).getByLabelText("Search by subject or sender"),
+    ).toHaveValue("Proposal 12");
+    await expect(
+      link("Open email: Proposal 12", list),
+    ).resolves.toHaveAttribute(
+      "href",
+      expect.stringContaining("mailFilter=sent"),
+    );
+    expect(new URLSearchParams(window.location.search).get("unrelated")).toBe(
+      "keep",
+    );
+    expect(window.location.hash).toBe("#note");
+  });
+
+  it("uses browser Back and Forward to restore list and detail navigation", async () => {
+    installMails();
+    await openChat();
+    const list = await openList();
+    click(within(list).getByLabelText("Select email: Proposal 1"));
+    click(await button("Sent", list));
+    click(await link("Open email: Proposal 12", list));
+    await screen.findByText("Proposal details 12");
+    act(() => {
+      window.history.back();
+    });
+    const restored = await screen.findByRole("dialog", { name: "Emails" });
+    await expect(button("Sent", restored)).resolves.toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await within(restored).findByText("1 selected");
+    act(() => {
+      window.history.forward();
+    });
+    await screen.findByText("Proposal details 12");
+    expect(new URLSearchParams(window.location.search).get("mailId")).toBe(
+      id(12),
+    );
+    await link("Back to emails");
+  });
+
+  it("leaves modified email-link activation to the browser", async () => {
+    installMails(2);
+    const transitions = context.mocks.browser.viewTransition();
+    await openChat();
+    const list = await openList();
+    const row = await link("Open email: Proposal 2", list);
+    const modifiedClick = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+    });
+    act(() => {
+      row.dispatchEvent(modifiedClick);
+    });
+    expect(modifiedClick.defaultPrevented).toBeFalsy();
+    expect(list).toBeInTheDocument();
+    expect(row).toHaveAttribute(
+      "href",
+      expect.stringContaining(`mailId=${id(2)}`),
+    );
+    expect(transitions.startedTypes).toHaveLength(0);
+  });
+
+  it("restores the owning pane and clears its filters when opening another pane's manager", async () => {
+    installMails();
+    const params = new URLSearchParams({
+      sidebar: RIGHT_THREAD_ID,
+      mailThread: RIGHT_THREAD_ID,
+      mailView: "detail",
+      mailId: id(12),
+      mailFrom: "list",
+      mailFilter: "sent",
+      mailQuery: "Proposal 12",
+    });
+    await openChat(
+      true,
+      false,
+      `/chats/${THREAD_ID}?${params}`,
+      RIGHT_THREAD_ID,
+    );
+    await screen.findByText("Proposal details 12");
+    const back = await link("Back to emails");
+    expect(back).toHaveAttribute(
+      "href",
+      expect.stringContaining(`mailThread=${RIGHT_THREAD_ID}`),
+    );
+    click(back);
+    const rightList = await screen.findByRole("dialog", { name: "Emails" });
+    await link("Open email: Proposal 12", rightList);
+    expect(
+      within(rightList).getByLabelText("Search by subject or sender"),
+    ).toHaveValue("Proposal 12");
+    const leftPane = document.querySelector(
+      `[data-chat-thread-container-id="${THREAD_ID}"]`,
+    );
+    if (!leftPane) {
+      throw new Error("Missing left chat pane");
+    }
+    click(await button("Manage emails", leftPane));
+    const leftList = await screen.findByRole("dialog", { name: "Emails" });
+    await link("Open email: Proposal 1", leftList);
+    expect(
+      within(leftList).getByLabelText("Search by subject or sender"),
+    ).toHaveValue("");
+    await expect(button("All", leftList)).resolves.toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const location = new URLSearchParams(window.location.search);
+    expect(location.get("sidebar")).toBe(RIGHT_THREAD_ID);
+    expect(location.get("mailThread")).toBe(THREAD_ID);
+    expect(location.has("mailFilter")).toBeFalsy();
+    expect(location.has("mailQuery")).toBeFalsy();
+  });
+
+  it("restores mail history ahead of another pane's utility sidebar", async () => {
+    installMails();
+    const params = new URLSearchParams({
+      sidebar: RIGHT_THREAD_ID,
+      mailThread: RIGHT_THREAD_ID,
+      mailView: "list",
+    });
+    await openChat(
+      true,
+      false,
+      `/chats/${THREAD_ID}?${params}`,
+      RIGHT_THREAD_ID,
+    );
+    const list = await screen.findByRole("dialog", { name: "Emails" });
+    click(await link("Open email: Proposal 12", list));
+    await screen.findByText("Proposal details 12");
+    const leftPane = document.querySelector(
+      `[data-chat-thread-container-id="${THREAD_ID}"]`,
+    );
+    if (!leftPane) {
+      throw new Error("Missing left chat pane");
+    }
+    click(await button("Open artifacts", leftPane));
+    await screen.findByTestId("thread-sidebar-artifacts");
+    act(() => {
+      window.history.back();
+    });
+    await screen.findByText("Proposal details 12");
+    act(() => {
+      window.history.back();
+    });
+    await screen.findByRole("dialog", { name: "Emails" });
+    expect(
+      screen.queryByTestId("thread-sidebar-artifacts"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed initial list read accessible and retries from the manager", async () => {
+    const fixture = installMails();
+    fixture.listing.fail = true;
+    await openChat(true, false);
+    await screen.findAllByText("Temporary email list failure");
+    const list = await openList();
+    await within(list).findByRole("alert");
+    expect(within(list).getByText("Unable to load emails")).toBeInTheDocument();
+    fixture.listing.fail = false;
+    click(await button("Try again", list));
+    await within(list).findByLabelText("Select email: Proposal 1");
+  });
+
+  it("returns to the list while its read is pending and exposes failure recovery", async () => {
+    const fixture = installMails(2);
+    await openChat();
+    const list = await openList();
+    click(await link("Open email: Proposal 2", list));
+    await screen.findByText("Proposal details 2");
+    const releaseList = createDeferredPromise<void>(context.signal);
+    fixture.listing.wait = releaseList.promise;
+    fixture.listing.fail = true;
+    click(await link("Back to emails"));
+    const returned = await screen.findByRole("dialog", { name: "Emails" });
+    await within(returned).findByRole("status", { name: "Loading emails" });
+    expect(new URLSearchParams(window.location.search).get("mailView")).toBe(
+      "list",
+    );
+    releaseList.resolve();
+    await within(returned).findByRole("alert");
+    fixture.listing.fail = false;
+    fixture.listing.wait = null;
+    click(await button("Try again", returned));
+    await within(returned).findByLabelText("Select email: Proposal 2");
   });
 
   it("sends only drafts, retains failures for retry, and never resends successes", async () => {
     const fixture = installMails();
     fixture.reject.add(id(2));
+    const releaseSend = createDeferredPromise<void>(context.signal);
+    fixture.sending.wait = releaseSend.promise;
     await openChat();
-    const list = await openList();
-    await click(within(list).getByRole("checkbox", { name: "Select all" }));
-    await click(await button("Send", list));
+    let list = await openList();
+    click(within(list).getByRole("checkbox", { name: "Select all" }));
+    click(await button("Send", list));
     const confirmation = await screen.findByRole("dialog", {
       name: "Send selected drafts?",
     });
-    await click(await button("Send", confirmation));
+    click(await button("Send", confirmation));
+    await expect(button("Send", confirmation)).resolves.toBeDisabled();
+    await expect(button("Cancel", confirmation)).resolves.toBeDisabled();
+    const user = userEvent.setup({ delay: null });
+    await user.keyboard("{Escape}");
+    expect(confirmation).toBeInTheDocument();
+    act(() => {
+      window.history.back();
+    });
+    await waitFor(() => {
+      expect(
+        new URLSearchParams(window.location.search).has("mailView"),
+      ).toBeFalsy();
+    });
+    await expect(button("Send", confirmation)).resolves.toBeDisabled();
+    act(() => {
+      window.history.forward();
+    });
+    await waitFor(() => {
+      expect(new URLSearchParams(window.location.search).get("mailView")).toBe(
+        "list",
+      );
+    });
+    releaseSend.resolve();
     await screen.findByText("1 completed · 1 failed");
+    list = await screen.findByRole("dialog", { name: "Emails" });
     expect(fixture.sent).toStrictEqual([id(1)]);
     fixture.reject.delete(id(2));
-    await click(await button("Send", list));
+    click(await button("Send", list));
     const retry = await screen.findByRole("dialog", {
       name: "Send selected drafts?",
     });
-    await click(await button("Send", retry));
+    click(await button("Send", retry));
     await within(list).findByText("10 selected");
     expect(fixture.sent).toStrictEqual([id(1), id(2)]);
     await waitFor(() => {
@@ -372,18 +691,18 @@ describe("thread email manager", () => {
     const fixture = installMails();
     await openChat();
     const list = await openList();
-    await click(within(list).getByRole("checkbox", { name: "Select all" }));
-    await click(await button("Delete", list));
+    click(within(list).getByRole("checkbox", { name: "Select all" }));
+    click(await button("Delete", list));
     const confirmation = await screen.findByRole("dialog", {
       name: "Delete selected drafts?",
     });
-    await click(await button("Cancel", confirmation));
+    click(await button("Cancel", confirmation));
     expect(fixture.deleted).toStrictEqual([]);
-    await click(await button("Delete", list));
+    click(await button("Delete", list));
     const second = await screen.findByRole("dialog", {
       name: "Delete selected drafts?",
     });
-    await click(await button("Delete", second));
+    click(await button("Delete", second));
     await within(list).findByText("10 selected");
     expect(fixture.deleted).toStrictEqual([id(1), id(2)]);
     expect(fixture.mails.get(id(12))?.status).toBe("sent");

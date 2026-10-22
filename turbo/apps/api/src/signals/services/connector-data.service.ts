@@ -121,6 +121,8 @@ import {
   deleteConnectorCredentialStorageConnection,
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
+  manualGrantUserSecretDeletion,
+  manualGrantUserVariableDeletion,
 } from "./connector-credential-storage-write.service";
 import {
   decryptStoredSecretValue,
@@ -1551,54 +1553,6 @@ export const deleteBuiltinConnectorLocalState$ = command(
   },
 );
 
-async function deleteUserSecretNames(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly names: readonly string[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  for (const name of args.names) {
-    await db
-      .delete(secrets)
-      .where(
-        and(
-          eq(secrets.orgId, args.orgId),
-          eq(secrets.userId, args.userId),
-          eq(secrets.name, name),
-          eq(secrets.type, "user"),
-        ),
-      );
-    signal.throwIfAborted();
-  }
-}
-
-async function deleteVariableNames(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly names: readonly string[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  for (const name of args.names) {
-    await db
-      .delete(variables)
-      .where(
-        and(
-          eq(variables.orgId, args.orgId),
-          eq(variables.userId, args.userId),
-          eq(variables.type, "user"),
-          eq(variables.name, name),
-        ),
-      );
-    signal.throwIfAborted();
-  }
-}
-
 async function loadPendingConnectorTokenRevokeForLocalConnect(
   db: Db,
   args: {
@@ -1738,18 +1692,20 @@ async function writeManualGrantCredentials(
   }
 }
 
+interface CommitManualGrantConnectorArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly snapshot: ConnectorRuntimeSelection;
+  readonly account: ConnectorAccountMutationIntent;
+  readonly prepared: PreparedManualGrantConnect;
+  readonly encryptedSecrets: readonly EncryptedManualGrantSecret[];
+  readonly featureSwitchContext: FeatureSwitchContext;
+}
+
 async function commitManualGrantConnector(
   db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly runtimeMethod: ConnectorRuntimeMethod;
-    readonly snapshot: ConnectorRuntimeSelection;
-    readonly account: ConnectorAccountMutationIntent;
-    readonly prepared: PreparedManualGrantConnect;
-    readonly encryptedSecrets: readonly EncryptedManualGrantSecret[];
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
+  args: CommitManualGrantConnectorArgs,
   signal: AbortSignal,
 ): Promise<
   | {
@@ -1828,24 +1784,40 @@ async function commitManualGrantConnector(
     return connectorConnectionMutationFailure(written);
   }
   const connectorRow = written.row;
-  await deleteUserSecretNames(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      names: args.prepared.configuredSecretNames,
-    },
-    signal,
-  );
-  await deleteVariableNames(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      names: args.prepared.configuredVariableNames,
-    },
-    signal,
-  );
+  const secretCleanup = {
+    orgId: args.orgId,
+    userId: args.userId,
+    names: args.prepared.configuredSecretNames,
+  };
+  const secretCleanupSignal = signal;
+  await (async (): Promise<void> => {
+    for (const name of secretCleanup.names) {
+      const deletion = manualGrantUserSecretDeletion({
+        orgId: secretCleanup.orgId,
+        userId: secretCleanup.userId,
+        name,
+      });
+      await db.delete(deletion.from).where(deletion.where);
+      secretCleanupSignal.throwIfAborted();
+    }
+  })();
+  const variableCleanup = {
+    orgId: args.orgId,
+    userId: args.userId,
+    names: args.prepared.configuredVariableNames,
+  };
+  const variableCleanupSignal = signal;
+  await (async (): Promise<void> => {
+    for (const name of variableCleanup.names) {
+      const deletion = manualGrantUserVariableDeletion({
+        orgId: variableCleanup.orgId,
+        userId: variableCleanup.userId,
+        name,
+      });
+      await db.delete(deletion.from).where(deletion.where);
+      variableCleanupSignal.throwIfAborted();
+    }
+  })();
   return { status: "connected", connectorRow, pendingTokenRevoke };
 }
 

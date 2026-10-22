@@ -27,6 +27,40 @@ interface ConnectorOwnedCredentialDescription {
   readonly updatedDescription?: string | null;
 }
 
+interface ManualGrantUserCredentialDeletion {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly name: string;
+}
+
+export function manualGrantUserSecretDeletion(
+  args: ManualGrantUserCredentialDeletion,
+) {
+  return {
+    from: secrets,
+    where: and(
+      eq(secrets.orgId, args.orgId),
+      eq(secrets.userId, args.userId),
+      eq(secrets.name, args.name),
+      eq(secrets.type, "user"),
+    ),
+  };
+}
+
+export function manualGrantUserVariableDeletion(
+  args: ManualGrantUserCredentialDeletion,
+) {
+  return {
+    from: variables,
+    where: and(
+      eq(variables.orgId, args.orgId),
+      eq(variables.userId, args.userId),
+      eq(variables.type, "user"),
+      eq(variables.name, args.name),
+    ),
+  };
+}
+
 function requireDeclaredStorageName(args: {
   readonly kind: "secret" | "variable";
   readonly storage: ConnectorCredentialStorageDeclaration;
