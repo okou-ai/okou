@@ -158,7 +158,7 @@ describe("Chat Completions upstream stream failures", () => {
         error: { code: 502, message: "Specific upstream generation failure" },
         native_finish_reason: "upstream_failed",
       });
-      expect(errors[0]).toBe(result);
+      expect(errors[0]).toMatchObject(upstreamStreamError);
       expect(piModelFailureReason(result)).toBe("provider_server_error");
       expect(result.diagnostics).toMatchObject([
         {
