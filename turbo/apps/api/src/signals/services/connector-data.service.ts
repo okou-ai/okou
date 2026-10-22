@@ -1,3 +1,6 @@
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { builtinConnectorCredentialValuesFromRows } from "./builtin-connector-credential-runtime.service";
 import {
   stripeAccountAutomationsReadPlan,
@@ -54,7 +57,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   completedGetStartedQuestSql,
@@ -118,7 +121,6 @@ import {
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
 import {
-  deleteConnectorCredentialStorageConnection,
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
 } from "./connector-credential-storage-write.service";
@@ -1089,106 +1091,14 @@ const prepareDeletedConnectorMeetCleanup$ = command(
   },
 );
 
-async function deleteBuiltinConnectorAccountLocalState(
-  tx: Tx,
-  args: DeleteBuiltinConnectorLocalStateArgs & {
-    readonly account: { readonly connectionId: string };
-    readonly deletion: Extract<
-      Awaited<ReturnType<typeof prepareBuiltinConnectorAccountDeletion>>,
-      { kind: "ready" }
-    >;
-  },
-  snapshot: ConnectorRuntimeSelection | null,
-  featureSwitchContext: FeatureSwitchContext | null,
-  signal: AbortSignal,
-) {
-  const { account, deletion } = args;
-  const [existing] = await tx
-    .select({
-      id: connectors.id,
-      authMethod: connectors.authMethod,
-      storageVersion: connectors.storageVersion,
-    })
-    .from(connectors)
-    .where(eq(connectors.id, account.connectionId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!existing) {
-    throw new Error("Claimed connector account disappeared before deletion");
-  }
-
-  let pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null = null;
-  if (snapshot !== null && featureSwitchContext !== null) {
-    const accessResult = resolveBuiltinConnectorCredentialAccess({
-      snapshot,
-      stored: {
-        authMethodId: existing.authMethod,
-        connectorId: existing.id,
-        connectorSlug: args.connectorSlug,
-        orgId: args.orgId,
-        storageVersion: existing.storageVersion,
-        userId: args.userId,
-      },
-    });
-    if (
-      accessResult.kind === "ok" &&
-      accessResult.access.runtimeMethod.method.revoke.kind === "token-revoke"
-    ) {
-      const revokeArgs = {
-        access: accessResult.access,
-        featureSwitchContext,
-      };
-      const revokeSignal = signal;
-      pendingTokenRevoke =
-        await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
-          const read = builtinConnectorTokenRevokeReadPlan(revokeArgs.access);
-          if (read.kind === "none") {
-            return null;
-          }
-          if (read.kind === "empty") {
-            return {
-              runtimeMethod: revokeArgs.access.runtimeMethod,
-              encryptedInputs: {},
-              featureSwitchContext: revokeArgs.featureSwitchContext,
-            };
-          }
-          const secretRows = await tx
-            .select(read.columns)
-            .from(read.from)
-            .where(read.where);
-          revokeSignal.throwIfAborted();
-          const encryptedInputs = builtinConnectorTokenRevokeInputsFromRows(
-            read.inputEntries,
-            secretRows,
-          );
-          if (encryptedInputs === null) {
-            return null;
-          }
-          return {
-            runtimeMethod: revokeArgs.access.runtimeMethod,
-            encryptedInputs,
-            featureSwitchContext: revokeArgs.featureSwitchContext,
-          };
-        })();
-    }
-  }
-  signal.throwIfAborted();
-
-  const lateSelectionCount = await deleteConnectorCredentialStorageConnection(
-    tx,
-    { connectorId: existing.id },
-    signal,
-  );
-  return {
-    kind: "deleted" as const,
-    pendingTokenRevoke,
-    deletion: {
-      ...deletion,
-      resolvedSelectionCount:
-        deletion.resolvedSelectionCount + lateSelectionCount,
-    },
-  };
-}
+type DeletedBuiltinConnectorAccountLocalState = {
+  readonly kind: "deleted";
+  readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+  readonly deletion: Extract<
+    Awaited<ReturnType<typeof prepareBuiltinConnectorAccountDeletion>>,
+    { kind: "ready" }
+  >;
+};
 
 const stopDeletedWatches$ = command(
   async (
@@ -1347,9 +1257,7 @@ const finalizeBuiltinConnectorLocalDeletion$ = command(
     { set },
     input: {
       readonly args: DeleteBuiltinConnectorLocalStateArgs;
-      readonly deleteResult: Awaited<
-        ReturnType<typeof deleteBuiltinConnectorAccountLocalState>
-      >;
+      readonly deleteResult: DeletedBuiltinConnectorAccountLocalState;
       readonly automationCleanup: PendingConnectorAutomationCleanup;
       readonly formsCleanup: Parameters<
         typeof stopPendingGoogleFormsAutomationCleanup
@@ -1528,13 +1436,168 @@ export const deleteBuiltinConnectorLocalState$ = command(
         signal.throwIfAborted();
       }
       signal.throwIfAborted();
-      return await deleteBuiltinConnectorAccountLocalState(
-        tx,
-        { ...args, account, deletion },
-        snapshot,
-        featureSwitchContext,
-        signal,
-      );
+      const accountDeletionArgs = { ...args, account, deletion };
+      const accountDeletionSnapshot = snapshot;
+      const accountDeletionFeatureSwitchContext = featureSwitchContext;
+      const accountDeletionSignal = signal;
+      return await (async (): Promise<DeletedBuiltinConnectorAccountLocalState> => {
+        const args = accountDeletionArgs;
+        const snapshot = accountDeletionSnapshot;
+        const featureSwitchContext = accountDeletionFeatureSwitchContext;
+        const signal = accountDeletionSignal;
+        const { account, deletion } = args;
+        const [existing] = await tx
+          .select({
+            id: connectors.id,
+            authMethod: connectors.authMethod,
+            storageVersion: connectors.storageVersion,
+          })
+          .from(connectors)
+          .where(eq(connectors.id, account.connectionId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (!existing) {
+          throw new Error(
+            "Claimed connector account disappeared before deletion",
+          );
+        }
+
+        let pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null =
+          null;
+        if (snapshot !== null && featureSwitchContext !== null) {
+          const accessResult = resolveBuiltinConnectorCredentialAccess({
+            snapshot,
+            stored: {
+              authMethodId: existing.authMethod,
+              connectorId: existing.id,
+              connectorSlug: args.connectorSlug,
+              orgId: args.orgId,
+              storageVersion: existing.storageVersion,
+              userId: args.userId,
+            },
+          });
+          if (
+            accessResult.kind === "ok" &&
+            accessResult.access.runtimeMethod.method.revoke.kind ===
+              "token-revoke"
+          ) {
+            const revokeArgs = {
+              access: accessResult.access,
+              featureSwitchContext,
+            };
+            const revokeSignal = signal;
+            pendingTokenRevoke =
+              await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
+                const read = builtinConnectorTokenRevokeReadPlan(
+                  revokeArgs.access,
+                );
+                if (read.kind === "none") {
+                  return null;
+                }
+                if (read.kind === "empty") {
+                  return {
+                    runtimeMethod: revokeArgs.access.runtimeMethod,
+                    encryptedInputs: {},
+                    featureSwitchContext: revokeArgs.featureSwitchContext,
+                  };
+                }
+                const secretRows = await tx
+                  .select(read.columns)
+                  .from(read.from)
+                  .where(read.where);
+                revokeSignal.throwIfAborted();
+                const encryptedInputs =
+                  builtinConnectorTokenRevokeInputsFromRows(
+                    read.inputEntries,
+                    secretRows,
+                  );
+                if (encryptedInputs === null) {
+                  return null;
+                }
+                return {
+                  runtimeMethod: revokeArgs.access.runtimeMethod,
+                  encryptedInputs,
+                  featureSwitchContext: revokeArgs.featureSwitchContext,
+                };
+              })();
+          }
+        }
+        signal.throwIfAborted();
+
+        // Keep later statements' reference visibility and rollback in this owner.
+        const storageDeletionArgs = { connectorId: existing.id };
+        await tx
+          .delete(secrets)
+          .where(eq(secrets.connectorId, storageDeletionArgs.connectorId));
+        signal.throwIfAborted();
+        await tx
+          .delete(variables)
+          .where(eq(variables.connectorId, storageDeletionArgs.connectorId));
+        signal.throwIfAborted();
+        await tx.execute(
+          sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
+        );
+        const deleted = await tx
+          .delete(connectors)
+          .where(eq(connectors.id, storageDeletionArgs.connectorId))
+          .returning({ id: connectors.id });
+        const selections =
+          deleted.length === 0
+            ? []
+            : await tx
+                .delete(chatThreadConnectorSelections)
+                .where(
+                  inArray(
+                    chatThreadConnectorSelections.connectorId,
+                    deleted.map((row) => {
+                      return row.id;
+                    }),
+                  ),
+                )
+                .returning({
+                  connectorId: chatThreadConnectorSelections.connectorId,
+                });
+        await tx.execute(
+          sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector IMMEDIATE`,
+        );
+        if (deleted.length > 0) {
+          // FK deletion has already cleared event_connector_id. Use the retained
+          // source config to invalidate only cursors belonging to deleted accounts.
+          // A subsequent projection onto a new account is a different source.
+          await tx.delete(googleFormsAutomationCursors).where(
+            inArray(
+              googleFormsAutomationCursors.automationId,
+              tx
+                .select({ id: workflowAutomations.id })
+                .from(workflowAutomations)
+                .where(
+                  and(
+                    eq(
+                      workflowAutomations.eventType,
+                      "google-forms-response-submitted",
+                    ),
+                    sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
+                      deleted.map((row) => {
+                        return row.id;
+                      }),
+                    )}::text[])`,
+                  ),
+                ),
+            ),
+          );
+        }
+        signal.throwIfAborted();
+        const lateSelectionCount = selections.length;
+        return {
+          kind: "deleted" as const,
+          pendingTokenRevoke,
+          deletion: {
+            ...deletion,
+            resolvedSelectionCount:
+              deletion.resolvedSelectionCount + lateSelectionCount,
+          },
+        };
+      })();
     });
     if (signal.aborted) {
       postCommitAbort ??= signal.reason;

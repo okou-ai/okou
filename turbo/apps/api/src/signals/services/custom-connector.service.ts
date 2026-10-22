@@ -1,3 +1,6 @@
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { connectors } from "@okouai/db/schema/connector";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
@@ -89,7 +92,6 @@ import {
 import {
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
-  deleteConnectorCredentialStorageConnection,
 } from "./connector-credential-storage-write.service";
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import {
@@ -3374,12 +3376,72 @@ export const deleteCustomConnectorAccount$ = command(
           if (deletion.kind !== "ready") {
             return deletion;
           }
-          const lateSelectionCount =
-            await deleteConnectorCredentialStorageConnection(
-              memberDeletionDb,
-              { connectorId: memberDeletionArgs.memberConnectorId },
-              signal,
+          // Keep later statements' reference visibility and rollback in this owner.
+          const storageDeletionArgs = {
+            connectorId: memberDeletionArgs.memberConnectorId,
+          };
+          await tx
+            .delete(secrets)
+            .where(eq(secrets.connectorId, storageDeletionArgs.connectorId));
+          signal.throwIfAborted();
+          await tx
+            .delete(variables)
+            .where(eq(variables.connectorId, storageDeletionArgs.connectorId));
+          signal.throwIfAborted();
+          await tx.execute(
+            sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
+          );
+          const deleted = await tx
+            .delete(connectors)
+            .where(eq(connectors.id, storageDeletionArgs.connectorId))
+            .returning({ id: connectors.id });
+          const selections =
+            deleted.length === 0
+              ? []
+              : await tx
+                  .delete(chatThreadConnectorSelections)
+                  .where(
+                    inArray(
+                      chatThreadConnectorSelections.connectorId,
+                      deleted.map((row) => {
+                        return row.id;
+                      }),
+                    ),
+                  )
+                  .returning({
+                    connectorId: chatThreadConnectorSelections.connectorId,
+                  });
+          await tx.execute(
+            sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector IMMEDIATE`,
+          );
+          if (deleted.length > 0) {
+            // FK deletion has already cleared event_connector_id. Use the retained
+            // source config to invalidate only cursors belonging to deleted accounts.
+            // A subsequent projection onto a new account is a different source.
+            await tx.delete(googleFormsAutomationCursors).where(
+              inArray(
+                googleFormsAutomationCursors.automationId,
+                tx
+                  .select({ id: workflowAutomations.id })
+                  .from(workflowAutomations)
+                  .where(
+                    and(
+                      eq(
+                        workflowAutomations.eventType,
+                        "google-forms-response-submitted",
+                      ),
+                      sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
+                        deleted.map((row) => {
+                          return row.id;
+                        }),
+                      )}::text[])`,
+                    ),
+                  ),
+              ),
             );
+          }
+          signal.throwIfAborted();
+          const lateSelectionCount = selections.length;
           return {
             kind: "deleted",
             resolvedSelectionCount:
