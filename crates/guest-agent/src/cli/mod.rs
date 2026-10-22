@@ -70,6 +70,9 @@ use crate::masker::SecretMasker;
 use crate::paths;
 use crate::session_metadata::{SessionHistoryLaunchSource, SessionMetadataStore};
 use crate::timing;
+use api_contracts::generated::constants::paid_tools::{
+    ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+};
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
 use event_delivery::{EventDeliveryReport, EventDeliveryRuntime, EventDeliverySender};
 use guest_contracts::diagnostics::{
@@ -98,16 +101,14 @@ const LOG_TAG: &str = "sandbox:guest-agent";
 const AGENT_LOG_BUFFER_BYTES: usize = 8 * 1024;
 const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
-const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY: &str = "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
 const WEB_SEARCH_TOOL_NAME: &str = "WebSearch";
 const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
-const CODEX_FIXED_STARTUP_CONFIGS: [&str; 5] = [
+const CODEX_FIXED_STARTUP_CONFIGS: [&str; 4] = [
     "analytics.enabled=false",
     "features.plugins=false",
     "features.apps=false",
     "features.goals=false",
-    "features.image_generation=false",
 ];
 const CODEX_FAST_MODE_STARTUP_CONFIGS: [&str; 2] =
     ["features.fast_mode=true", r#"service_tier="fast""#];
@@ -410,7 +411,7 @@ impl<'a> CliRuntimeConfig<'a> {
             None
         };
         let disable_builtin_web_search = config.user_env.contains_key(OKOU_AGENT_ID_ENV_KEY)
-            && user_env_value(&config.user_env, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY) != "true";
+            && user_env_value(&config.user_env, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR) != "true";
         let disallowed_tools = disallowed_tools_with_builtin_web_search_disabled(
             &config.disallowed_tools,
             disable_builtin_web_search,
@@ -496,6 +497,10 @@ impl<'a> CliRuntimeConfig<'a> {
             overrides.push(CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string());
         }
         overrides.extend(CODEX_FIXED_STARTUP_CONFIGS.map(str::to_string));
+        overrides.push(format!(
+            "features.image_generation={}",
+            user_env_value(self.user_env, ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR) == "true"
+        ));
         if self.codex_fast_mode {
             overrides.extend(CODEX_FAST_MODE_STARTUP_CONFIGS.map(str::to_string));
         }
@@ -2734,7 +2739,7 @@ mod tests {
                     "agent-test".to_string(),
                 ),
                 (
-                    super::ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY.to_string(),
+                    super::ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR.to_string(),
                     value.to_string(),
                 ),
             ]));
@@ -2743,6 +2748,29 @@ mod tests {
             let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
 
             assert_eq!(runtime.disable_builtin_web_search, expected_disabled);
+        }
+    }
+
+    #[test]
+    fn codex_image_generation_requires_exact_positive_opt_in() {
+        for (value, expected_enabled) in [
+            ("true", true),
+            ("false", false),
+            ("TRUE", false),
+            ("1", false),
+            ("", false),
+        ] {
+            let user_env = HashMap::from([(
+                super::ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR.to_string(),
+                value.to_string(),
+            )]);
+            let runtime = runtime_for_command_test(env::Framework::Codex, "prompt", "", &user_env);
+
+            assert!(
+                runtime
+                    .codex_startup_config_overrides()
+                    .contains(&format!("features.image_generation={expected_enabled}"))
+            );
         }
     }
 

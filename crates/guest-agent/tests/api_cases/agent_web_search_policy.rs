@@ -1,7 +1,10 @@
-//! Agent runs use managed search unless the API explicitly opts into built-in web search.
+//! Agent runs use managed tools unless the API explicitly opts into native tools.
 
 use crate::common;
 
+use api_contracts::generated::constants::paid_tools::{
+    ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+};
 use guest_agent::active_input::ActiveInputRuntime;
 use guest_agent::masker::SecretMasker;
 use guest_agent::run_context::GuestRuntime;
@@ -13,17 +16,29 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::test]
 async fn okou_agent_id_disables_builtin_web_search_for_claude_and_codex() -> TestResult {
-    assert_web_search_policy(None, true).await
+    assert_native_tool_policy(None, None, true, false).await
 }
 
 #[tokio::test]
 async fn positive_opt_in_enables_builtin_web_search_for_claude_and_codex() -> TestResult {
-    assert_web_search_policy(Some("true"), false).await
+    assert_native_tool_policy(Some("true"), None, false, false).await
 }
 
-async fn assert_web_search_policy(
+#[tokio::test]
+async fn image_generation_opt_in_keeps_builtin_web_search_disabled() -> TestResult {
+    assert_native_tool_policy(None, Some("true"), true, true).await
+}
+
+#[tokio::test]
+async fn native_image_generation_and_web_search_can_both_be_enabled() -> TestResult {
+    assert_native_tool_policy(Some("true"), Some("true"), false, true).await
+}
+
+async fn assert_native_tool_policy(
     framework_web_search: Option<&str>,
-    expect_disabled: bool,
+    framework_image_generation: Option<&str>,
+    expect_search_disabled: bool,
+    expect_image_generation_enabled: bool,
 ) -> TestResult {
     common::ensure_canonical_workspace_for_test()?;
     let root = tempfile::tempdir()?;
@@ -36,7 +51,7 @@ async fn assert_web_search_policy(
     ] {
         let case_root = root.path().join(format!(
             "{framework}-{}",
-            if expect_disabled {
+            if expect_search_disabled {
                 "disabled"
             } else {
                 "enabled"
@@ -52,6 +67,7 @@ async fn assert_web_search_policy(
             real_mock,
             &args_path,
             framework_web_search,
+            framework_image_generation,
         )?;
 
         let result = execute(&runtime).await?;
@@ -69,7 +85,7 @@ async fn assert_web_search_policy(
             assert_eq!(first_disallowed_tool, "CronCreate");
             assert_eq!(
                 args.iter().any(|arg| arg == "WebSearch"),
-                expect_disabled,
+                expect_search_disabled,
                 "unexpected Claude web-search policy: {args:?}"
             );
         } else {
@@ -81,8 +97,26 @@ async fn assert_web_search_policy(
                             if flag == "-c" && value == r#"web_search="disabled""#
                     )
                 }),
-                expect_disabled,
+                expect_search_disabled,
                 "unexpected Codex web-search policy: {args:?}"
+            );
+            let image_configs = args
+                .windows(2)
+                .filter_map(|window| match window {
+                    [flag, value]
+                        if flag == "-c" && value.starts_with("features.image_generation=") =>
+                    {
+                        Some(value.as_str())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                image_configs,
+                [format!(
+                    "features.image_generation={expect_image_generation_enabled}"
+                )],
+                "unexpected Codex image-generation policy: {args:?}"
             );
         }
     }
@@ -97,6 +131,7 @@ fn build_runtime(
     real_mock: &Path,
     args_path: &Path,
     framework_web_search: Option<&str>,
+    framework_image_generation: Option<&str>,
 ) -> TestResult<GuestRuntime> {
     let run_id = format!("agent-web-search-{framework}");
     let home = root.join("home");
@@ -122,7 +157,10 @@ fn build_runtime(
         ),
     ]);
     if let Some(value) = framework_web_search {
-        user_env.insert("OKOU_ENABLE_FRAMEWORK_WEB_SEARCH", value);
+        user_env.insert(ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR, value);
+    }
+    if let Some(value) = framework_image_generation {
+        user_env.insert(ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, value);
     }
     let user_env_file = write_user_env_file(&runtime_dir, &user_env)?;
     let is_claude = framework == "claude-code";
