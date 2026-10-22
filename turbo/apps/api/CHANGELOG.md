@@ -9,6 +9,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.763.0](https://github.com/okou-ai/okou/compare/api-v1.762.0...api-v1.763.0) (2026-10-22)
+
+
+### Features
+
+* **platform:** add a thread email manager behind a feature switch ([#42100](https://github.com/okou-ai/okou/issues/42100)) ([e566491](https://github.com/okou-ai/okou/commit/e566491c5b8dd39d16cd1b5a69f344b658b8082b))
+
+
+### Refactoring
+
+* **api:** localize usage pack migration database ownership ([#42176](https://github.com/okou-ai/okou/issues/42176)) ([cfe5dd1](https://github.com/okou-ai/okou/commit/cfe5dd1b25b0c0d52d8d73f56a4fc7bd88b40456))
+* **api:** localize usage pack plan change database ownership ([#42195](https://github.com/okou-ai/okou/issues/42195)) ([13812a9](https://github.com/okou-ai/okou/commit/13812a9b804f6d72643bed0a8480802dce22f9ef))
+* **platform:** read skill imports by session and invalidate over ably ([#42115](https://github.com/okou-ai/okou/issues/42115)) ([6d1488a](https://github.com/okou-ai/okou/commit/6d1488abf92ef2ae0def91226e3002f185f2eca4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.0
+    * @okouai/core bumped to 8.777.0
+    * @okouai/db bumped to 1.355.1
+    * @okouai/pi-agent-runtime bumped to 1.50.43
+
 ## [1.762.0](https://github.com/okou-ai/okou/compare/api-v1.761.1...api-v1.762.0) (2026-10-22)
 
 

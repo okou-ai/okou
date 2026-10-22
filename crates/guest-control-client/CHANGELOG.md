@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.38](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.37...guest-control-client-v0.23.38) (2026-10-22)
+
+
+### Refactoring
+
+* **guest-control:** encode mandatory composite token custody ([#42193](https://github.com/okou-ai/okou/issues/42193)) ([830584f](https://github.com/okou-ai/okou/commit/830584fd4990ece2f339e544c82d28fed55c075e))
+
 ## [0.23.37](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.36...guest-control-client-v0.23.37) (2026-10-22)
 
 
