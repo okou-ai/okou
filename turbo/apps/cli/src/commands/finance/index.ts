@@ -171,6 +171,6 @@ Examples:
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires finance:read capability) or a CLI token
-  - Each successful command consumes 1 credit
-  - Data is returned from APIDojo's Yahoo Finance API on RapidAPI without Okou-side caching`,
+  - Monid Yahoo Finance has a $0.05/call provider base cost; credits are charged under configured pricing
+  - Data is returned as native Monid output (provider: monid/yahoo-finance) without Okou-side caching`,
   );

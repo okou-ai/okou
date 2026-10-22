@@ -146,9 +146,8 @@ OKOU_SCRAPE_FIRECRAWL_TOKEN=op://Development/Firecrawl/FIRECRAWL_API_TOKEN
 # Optional: Okou Web Search provider (Perplexity)
 OKOU_WEB_SEARCH_PERPLEXITY_TOKEN=op://Development/Perplexity/PERPLEXITY_API_TOKEN
 
-# Optional: Okou Finance provider (APIDojo via RapidAPI)
-# 1Password: Development vault > APIDojo item > RAPIDAPI_KEY concealed field
-OKOU_FINANCE_APIDOJO_TOKEN=op://Development/APIDojo/RAPIDAPI_KEY
+# Optional: Okou Finance provider (Monid); may reuse the Social Monid API key
+OKOU_FINANCE_MONID_API_KEY=
 
 # Optional: Okou SEO provider (DataForSEO)
 OKOU_SEO_DATAFORSEO_LOGIN=op://Development/DataForSEO/LOGIN

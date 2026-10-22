@@ -622,6 +622,11 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // APIDojo Yahoo Finance — https://rapidapi.com/apidojo/api/yahoo-finance1/pricing
   // Pro is $10 per 10,000 requests, so one successful request costs 1 credit.
   ...usageGroup("finance", "apidojo", [["request", usd(0.001), 1]]),
+  // Monid Yahoo Finance tools cost $0.05 per call. Settle provider USD micros
+  // at the same 25% markup as other managed Monid data tools.
+  ...usageGroup("finance", "monid/yahoo-finance", [
+    ["provider_cost_usd_micros", 1250, 1_000_000],
+  ]),
 
   // Managed SEO provider costs with a 25% markup. DataForSEO reports the
   // actual USD cost per response.

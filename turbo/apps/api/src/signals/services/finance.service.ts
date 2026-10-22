@@ -8,24 +8,51 @@ import type {
   FinanceSearchRequest,
 } from "@okouai/api-contracts/contracts/finance";
 import { command } from "ccstate";
+import { delay } from "signal-timers";
+import { z } from "zod";
 
 import { env } from "../../lib/env";
 import type { AuthContext } from "../../types/auth";
 import { requestSignal$ } from "../context/hono";
-import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
+import {
+  readBoundedResponseText,
+  safeJsonParse,
+  settleIncludingAbort,
+} from "../utils";
 import {
   checkManagedCredits$,
   recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
-const PROVIDER = "apidojo";
+const PROVIDER = "monid/yahoo-finance";
 const USAGE_KIND = "finance";
-const BILLING_CATEGORY = "request";
-const APIDOJO_HOST = "apidojo-yahoo-finance-v1.p.rapidapi.com";
-const APIDOJO_BASE_URL = `https://${APIDOJO_HOST}`;
-const APIDOJO_TIMEOUT_MS = 20_000;
-const MAX_APIDOJO_RESPONSE_BYTES = 8 * 1024 * 1024;
+const BILLING_CATEGORY = "provider_cost_usd_micros";
+// Each Yahoo Finance tool costs $0.05 per call in Monid's catalog.
+const BILLING_QUANTITY = 50_000;
+const MONID_BASE_URL = "https://api.monid.ai/v1";
+const MONID_TIMEOUT_MS = 120_000;
+const MAX_MONID_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+const monidRunSchema = z.object({
+  runId: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/),
+  provider: z.literal("yahoo-finance"),
+  endpoint: z.string(),
+  status: z.enum([
+    "READY",
+    "RUNNING",
+    "STOPPING",
+    "COMPLETED",
+    "FAILED",
+    "BLOCKED",
+    "STOPPED",
+    "TIMED_OUT",
+  ]),
+  output: z.unknown().optional(),
+  providerResponse: z
+    .object({ httpStatus: z.number().int(), error: z.unknown().optional() })
+    .optional(),
+});
 
 type FinanceRequest =
   | {
@@ -81,7 +108,7 @@ function errorBody(message: string, code: string) {
 
 function badGateway(
   message: string,
-  code = "APIDOJO_ERROR",
+  code = "MONID_ERROR",
 ): FinanceErrorResponse {
   return { status: 502, body: errorBody(message, code) };
 }
@@ -97,98 +124,199 @@ function errorResult(error: FinanceErrorResponse): FinanceErrorResult {
   return { kind: "error", error };
 }
 
-function financeUrl(request: FinanceRequest): URL {
-  let url: URL;
+function financePlan(request: FinanceRequest) {
   switch (request.operation) {
     case "search": {
-      url = new URL("/auto-complete", APIDOJO_BASE_URL);
-      url.searchParams.set("q", request.body.query);
-      url.searchParams.set("region", "US");
-      return url;
+      return {
+        endpoint: "/search_tickers",
+        input: { queryParams: { query: request.body.query } },
+      };
     }
     case "profile": {
-      url = new URL("/stock/v3/get-profile", APIDOJO_BASE_URL);
-      url.searchParams.set("symbol", request.body.symbol);
-      url.searchParams.set("region", "US");
-      return url;
+      return {
+        endpoint: "/get_company_profile",
+        input: { queryParams: { symbol: request.body.symbol } },
+      };
     }
     case "quote": {
-      url = new URL("/market/v2/get-quotes", APIDOJO_BASE_URL);
-      url.searchParams.set("symbols", request.body.symbol);
-      url.searchParams.set("region", "US");
-      return url;
+      return {
+        endpoint: "/get_quote",
+        input: { queryParams: { symbols: request.body.symbol } },
+      };
     }
     case "chart": {
-      url = new URL("/stock/v3/get-chart", APIDOJO_BASE_URL);
-      url.searchParams.set("symbol", request.body.symbol);
-      url.searchParams.set("range", request.body.range);
-      url.searchParams.set("interval", request.body.interval);
-      return url;
+      return {
+        endpoint: "/get_historical_data",
+        input: {
+          queryParams: {
+            symbol: request.body.symbol,
+            range: request.body.range,
+            interval: request.body.interval,
+          },
+        },
+      };
     }
   }
 }
 
-async function fetchApidojo(
+async function readMonidRun(
+  response: Response,
+  endpoint: string,
+  upstreamRunId?: string,
+): Promise<
+  | FinanceErrorResult
+  | { readonly kind: "run"; readonly run: z.infer<typeof monidRunSchema> }
+> {
+  const textResult = await readBoundedResponseText(
+    response,
+    MAX_MONID_RESPONSE_BYTES,
+  );
+  if (textResult.kind === "too_large") {
+    return errorResult(
+      badGateway(
+        "Monid finance response is too large",
+        "FINANCE_OUTPUT_TOO_LARGE",
+      ),
+    );
+  }
+  if (response.status === 429) {
+    return errorResult(
+      badGateway(
+        "Monid finance is temporarily rate limited",
+        "MONID_RATE_LIMITED",
+      ),
+    );
+  }
+  if ([401, 402, 403, 503].includes(response.status)) {
+    return errorResult(
+      serviceUnavailable(
+        "Monid finance provider is unavailable",
+        "MONID_UNAVAILABLE",
+      ),
+    );
+  }
+  if (response.status !== 200 && response.status !== 202) {
+    return errorResult(badGateway("Monid finance request failed"));
+  }
+  const parsed = monidRunSchema.safeParse(safeJsonParse(textResult.text));
+  if (
+    !parsed.success ||
+    parsed.data.endpoint !== endpoint ||
+    (upstreamRunId !== undefined && parsed.data.runId !== upstreamRunId)
+  ) {
+    return errorResult(
+      badGateway(
+        "Monid finance returned an invalid run response",
+        "MONID_INVALID_RESPONSE",
+      ),
+    );
+  }
+  return { kind: "run", run: parsed.data };
+}
+
+function completedMonidResult(
+  run: z.infer<typeof monidRunSchema>,
+  httpStatus: number,
+): FinanceProviderResult {
+  if (
+    httpStatus !== 200 ||
+    !run.providerResponse ||
+    run.providerResponse.httpStatus < 200 ||
+    run.providerResponse.httpStatus >= 300 ||
+    (run.providerResponse.error !== undefined &&
+      run.providerResponse.error !== null) ||
+    run.output === undefined
+  ) {
+    return errorResult(
+      badGateway("Monid finance source did not return a valid result"),
+    );
+  }
+  return { kind: "body", body: run.output };
+}
+
+async function fetchMonid(
   apiKey: string,
   request: FinanceRequest,
   signal: AbortSignal,
 ): Promise<FinanceProviderResult> {
-  const result = await settle(
-    (async () => {
-      const response = await fetch(financeUrl(request), {
-        headers: {
-          "X-RapidAPI-Key": apiKey,
-          "X-RapidAPI-Host": APIDOJO_HOST,
-        },
-        signal: AbortSignal.any([
-          signal,
-          AbortSignal.timeout(APIDOJO_TIMEOUT_MS),
-        ]),
-      });
-      const textResult = await readBoundedResponseText(
-        response,
-        MAX_APIDOJO_RESPONSE_BYTES,
-      );
-      if (textResult.kind === "too_large") {
-        return errorResult(
-          badGateway(
-            "APIDojo finance response is too large",
-            "FINANCE_OUTPUT_TOO_LARGE",
-          ),
+  const plan = financePlan(request);
+  const providerSignal = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(MONID_TIMEOUT_MS),
+  ]);
+  let upstreamRunId: string | undefined;
+  // Capture the provider deadline even when a polling timer rejects with
+  // AbortError. Caller cancellation is rethrown after joining this paid work.
+  const result = await settleIncludingAbort(
+    (async (): Promise<FinanceProviderResult> => {
+      // Execute once. Async responses are observed through the same run, never
+      // retried as a new paid execution when the outcome is uncertain.
+      let url = `${MONID_BASE_URL}/run`;
+      let init: RequestInit = {
+        method: "POST",
+        body: JSON.stringify({ provider: "yahoo-finance", ...plan }),
+      };
+      for (;;) {
+        const response = await fetch(url, {
+          ...init,
+          redirect: "error",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          signal: providerSignal,
+        });
+        const parsed = await readMonidRun(
+          response,
+          plan.endpoint,
+          upstreamRunId,
         );
+        if (parsed.kind === "error") {
+          return parsed;
+        }
+        const run = parsed.run;
+        upstreamRunId = run.runId;
+        switch (run.status) {
+          case "COMPLETED": {
+            return completedMonidResult(run, response.status);
+          }
+          case "FAILED":
+          case "BLOCKED":
+          case "STOPPED":
+          case "TIMED_OUT": {
+            return errorResult(
+              badGateway(
+                "Monid finance execution did not complete successfully",
+              ),
+            );
+          }
+          case "READY":
+          case "RUNNING":
+          case "STOPPING": {
+            if (init.method === "GET") {
+              await delay(5000, { signal: providerSignal });
+            }
+            url = `${MONID_BASE_URL}/runs/${encodeURIComponent(upstreamRunId)}`;
+            init = { method: "GET" };
+            break;
+          }
+        }
       }
-
-      if (response.status === 429) {
-        return errorResult(
-          badGateway(
-            "APIDojo finance is temporarily rate limited",
-            "APIDOJO_RATE_LIMITED",
-          ),
-        );
-      }
-      if (response.status !== 200) {
-        return errorResult(badGateway("APIDojo finance request failed"));
-      }
-      const body = textResult.text ? safeJsonParse(textResult.text) : null;
-      if (body === undefined) {
-        return errorResult(
-          badGateway(
-            "APIDojo finance returned an invalid JSON response",
-            "APIDOJO_INVALID_RESPONSE",
-          ),
-        );
-      }
-      return { kind: "body" as const, body };
     })(),
   );
+  signal.throwIfAborted();
 
   if (!result.ok) {
-    if (result.error instanceof Error && result.error.name === "TimeoutError") {
-      return errorResult(
-        badGateway("APIDojo finance request timed out", "FINANCE_TIMEOUT"),
-      );
-    }
-    return errorResult(badGateway("APIDojo finance request failed"));
+    const timedOut =
+      providerSignal.aborted &&
+      providerSignal.reason instanceof Error &&
+      providerSignal.reason.name === "TimeoutError";
+    return errorResult(
+      badGateway(
+        `Monid finance execution outcome is unknown${upstreamRunId ? ` (run ${upstreamRunId})` : ""}. Do not automatically retry.`,
+        timedOut ? "FINANCE_TIMEOUT" : "MONID_EXECUTION_UNKNOWN",
+      ),
+    );
   }
   return result.value;
 }
@@ -208,7 +336,7 @@ function successBody(
     operation,
     provider: PROVIDER,
     billingCategory: BILLING_CATEGORY,
-    billingQuantity: 1,
+    billingQuantity: BILLING_QUANTITY,
     creditsCharged,
     result,
   };
@@ -220,10 +348,10 @@ export const finance$ = command(
     args: AuthedFinanceArgs,
     signal: AbortSignal,
   ): Promise<FinanceCommandResponse> => {
-    const apiKey = env("OKOU_FINANCE_APIDOJO_TOKEN");
+    const apiKey = env("OKOU_FINANCE_MONID_API_KEY");
     if (!apiKey) {
       return serviceUnavailable(
-        "Okou Finance APIDojo provider is not configured",
+        "Okou Finance Monid provider is not configured",
         "NOT_CONFIGURED",
       );
     }
@@ -240,6 +368,7 @@ export const finance$ = command(
           kind: USAGE_KIND,
           provider: PROVIDER,
           category: BILLING_CATEGORY,
+          quantity: BILLING_QUANTITY,
         },
         label: "Okou Finance",
       },
@@ -251,7 +380,7 @@ export const finance$ = command(
       return creditError;
     }
 
-    const providerResult = await fetchApidojo(
+    const providerResult = await fetchMonid(
       apiKey,
       args.request,
       providerSignal,
@@ -274,6 +403,7 @@ export const finance$ = command(
           kind: USAGE_KIND,
           provider: PROVIDER,
           category: BILLING_CATEGORY,
+          quantity: BILLING_QUANTITY,
         },
         label: "finance",
       },

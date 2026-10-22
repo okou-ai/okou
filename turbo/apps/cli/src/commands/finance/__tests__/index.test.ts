@@ -16,10 +16,10 @@ import { financeCommand } from "../index";
 function financeResponse(operation: string, result: unknown) {
   return {
     operation,
-    provider: "apidojo",
-    billingCategory: "request",
-    billingQuantity: 1,
-    creditsCharged: 1,
+    provider: "monid/yahoo-finance",
+    billingCategory: "provider_cost_usd_micros",
+    billingQuantity: 50_000,
+    creditsCharged: 63,
     result,
   };
 }
@@ -71,19 +71,45 @@ describe("okou finance command", () => {
       operation: "search",
       argument: "Tencent",
       request: { query: "Tencent" },
-      result: { quotes: [{ symbol: "0700.HK" }] },
+      result: {
+        quotes: [
+          {
+            symbol: "0700.HK",
+            shortname: "TENCENT",
+            exchange: "HKG",
+            quoteType: "EQUITY",
+          },
+        ],
+      },
     },
     {
       operation: "profile",
       argument: "AAPL",
       request: { symbol: "AAPL" },
-      result: { assetProfile: { industry: "Consumer Electronics" } },
+      result: {
+        assetProfile: {
+          sector: "Technology",
+          industry: "Consumer Electronics",
+          website: "https://www.apple.com",
+        },
+        financialData: { financialCurrency: "USD", currentPrice: 230.5 },
+      },
     },
     {
       operation: "quote",
       argument: "0700.HK",
       request: { symbol: "0700.HK" },
-      result: { quoteResponse: { result: [{ symbol: "0700.HK" }] } },
+      result: {
+        quotes: [
+          {
+            symbol: "0700.HK",
+            currency: "HKD",
+            regularMarketPrice: 425.6,
+            regularMarketVolume: 18342000,
+            marketState: "CLOSED",
+          },
+        ],
+      },
     },
   ])("posts $operation requests and prints JSON", async (example) => {
     let requestBody: unknown;
@@ -113,7 +139,19 @@ describe("okou finance command", () => {
   it("posts chart range and interval and renders raw provider data", async () => {
     let requestBody: unknown;
     const result = {
-      chart: { result: [{ meta: { symbol: "AAPL" }, timestamp: [1, 2] }] },
+      symbol: "AAPL",
+      range: "5y",
+      interval: "1wk",
+      prices: [
+        {
+          timestamp: 1725235200,
+          open: 228.55,
+          high: 229,
+          low: 217.48,
+          close: 220.82,
+          volume: 204951200,
+        },
+      ],
     };
     server.use(
       http.post(
@@ -143,9 +181,33 @@ describe("okou finance command", () => {
     });
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("Finance chart completed");
-    expect(output).toContain('"symbol": "AAPL"');
-    expect(output).toContain("Provider: apidojo");
-    expect(output).toContain("Credits charged: 1");
+    expect(mockConsoleLog).toHaveBeenCalledWith(
+      JSON.stringify(result, null, 2),
+    );
+    expect(output).toContain("Provider: monid/yahoo-finance");
+    expect(output).toContain("Credits charged: 63");
+  });
+
+  it("documents Monid provider costs and configured credit pricing in help", () => {
+    let help = "";
+    const writeOut = financeCommand.configureOutput().writeOut;
+    financeCommand.configureOutput({
+      writeOut: (text: string) => {
+        help += text;
+      },
+    });
+    try {
+      financeCommand.outputHelp();
+    } finally {
+      financeCommand.configureOutput({ writeOut });
+    }
+
+    expect(help).toContain("$0.05/call provider base cost");
+    expect(help).toContain("credits are charged under configured pricing");
+    expect(help).toContain(
+      "native Monid output (provider: monid/yahoo-finance)",
+    );
+    expect(help).toContain("okou finance chart AAPL --range 1y --interval 1d");
   });
 
   it("rejects invalid chart intervals before calling the API", async () => {

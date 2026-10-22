@@ -64,8 +64,6 @@ on:
         required: false
       OKOU_BROWSER_USE_API_KEY:
         required: false
-      OKOU_FINANCE_APIDOJO_TOKEN:
-        required: false
       OKOU_GITHUB_APP_CLIENT_SECRET:
         required: false
       OKOU_GITHUB_APP_PRIVATE_KEY:

@@ -400,13 +400,13 @@ test("Credit usage formats unknown image-provider names for people to read", asy
   expect(screen.getByText("Acme Vision Pro")).toBeInTheDocument();
 });
 
-test("Credit usage merges Social and Product Data by kind while preserving model and legacy rows", async () => {
+test("Credit usage merges managed data providers by kind while preserving model and legacy rows", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000805",
     "a0000000-0000-4000-a000-000000000805",
     {
       version: 1,
-      totalCredits: 137,
+      totalCredits: 200,
       settledAt: "2026-08-14T12:00:02.000Z",
       breakdown: [
         {
@@ -472,11 +472,16 @@ test("Credit usage merges Social and Product Data by kind while preserving model
           credits: 4,
           providers: [{ provider: "apidojo", credits: 4 }],
         },
+        {
+          kind: "finance/monid/yahoo-finance/provider_cost_usd_micros",
+          credits: 63,
+          providers: [{ provider: "monid/yahoo-finance", credits: 63 }],
+        },
       ],
     },
   );
 
-  await openUsage("137");
+  await openUsage("200");
 
   const details = screen.getByRole("dialog");
   for (const [label, credits] of [
@@ -485,7 +490,7 @@ test("Credit usage merges Social and Product Data by kind while preserving model
     ["Social Data", "80"],
     ["Product Data", "18"],
     ["Legacy Data", "8"],
-    ["Finance", "4"],
+    ["Finance", "67"],
     ["GPT 5.6 Sol", "6"],
     ["GPT 5.6 Luna", "9"],
   ]) {
@@ -493,7 +498,7 @@ test("Credit usage merges Social and Product Data by kind while preserving model
       `${label}${credits}`,
     );
   }
-  expect(within(details).getByText("137")).toBeInTheDocument();
+  expect(within(details).getByText("200")).toBeInTheDocument();
   expect(within(details).queryByText(/dataforseo/iu)).not.toBeInTheDocument();
   expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
   expect(within(details).queryByText(/socialkit/iu)).not.toBeInTheDocument();

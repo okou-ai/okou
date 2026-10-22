@@ -2542,6 +2542,13 @@
       "when": 1792631121162,
       "tag": "1440_skill_import_session_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 1441,
+      "version": "7",
+      "when": 1792652152156,
+      "tag": "1441_finance_monid_pricing",
+      "breakpoints": true
     }
   ]
 }

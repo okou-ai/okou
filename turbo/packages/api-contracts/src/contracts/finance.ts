@@ -69,9 +69,9 @@ export const financeOperationSchema = z.enum([
 
 export const financeResponseSchema = z.object({
   operation: financeOperationSchema,
-  provider: z.literal("apidojo"),
-  billingCategory: z.literal("request"),
-  billingQuantity: z.literal(1),
+  provider: z.enum(["apidojo", "monid/yahoo-finance"]),
+  billingCategory: z.enum(["request", "provider_cost_usd_micros"]),
+  billingQuantity: z.number().int().positive(),
   creditsCharged: z.number().int().nonnegative().nullable(),
   result: z.unknown(),
 });

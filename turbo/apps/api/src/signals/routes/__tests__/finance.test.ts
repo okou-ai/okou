@@ -23,7 +23,7 @@ const FINANCE_ROUTES = Object.freeze([
   ...billingStatusRoutes,
   ...financeRoutes,
 ]);
-const APIDOJO_BASE_URL = "https://apidojo-yahoo-finance-v1.p.rapidapi.com";
+const MONID_BASE_URL = "https://api.monid.ai/v1";
 
 function authenticate(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -53,45 +53,47 @@ async function credits(actor: ApiTestUser): Promise<number> {
 }
 
 function configureProvider(): void {
-  mockEnv("OKOU_FINANCE_APIDOJO_TOKEN", "test-rapidapi-token");
+  mockEnv("OKOU_FINANCE_MONID_API_KEY", "test-monid-token");
+}
+
+function completedRun(endpoint: string, output: unknown) {
+  return {
+    runId: "finance-run-123",
+    provider: "yahoo-finance",
+    endpoint,
+    status: "COMPLETED",
+    providerResponse: { httpStatus: 200 },
+    output,
+  };
 }
 
 describe("okou finance routes", () => {
-  it("maps all operations to APIDojo and charges one credit each", async () => {
+  it("maps all operations to Monid and charges configured request pricing", async () => {
     const actor = createBddApi(context).user();
     await fundActor(actor);
     configureProvider();
     const beforeCredits = await credits(actor);
-    const observed: string[] = [];
+    const observed: unknown[] = [];
+    const outputs: Record<string, unknown> = {
+      "/search_tickers": { tickers: [{ symbol: "0700.HK" }] },
+      "/get_company_profile": { assetProfile: { industry: "Technology" } },
+      "/get_quote": { quotes: [{ symbol: "AAPL", price: 200 }] },
+      "/get_historical_data": { prices: [{ date: "2026-10-21", close: 200 }] },
+    };
     server.use(
-      http.get(`${APIDOJO_BASE_URL}/auto-complete`, ({ request }) => {
-        const url = new URL(request.url);
-        observed.push(`search:${url.searchParams.toString()}`);
-        expect(request.headers.get("x-rapidapi-key")).toBe(
-          "test-rapidapi-token",
+      http.post(`${MONID_BASE_URL}/run`, async ({ request }) => {
+        const body = await request.json();
+        observed.push(body);
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer test-monid-token",
         );
-        expect(request.headers.get("x-rapidapi-host")).toBe(
-          "apidojo-yahoo-finance-v1.p.rapidapi.com",
-        );
-        return HttpResponse.json({ quotes: [{ symbol: "0700.HK" }] });
-      }),
-      http.get(`${APIDOJO_BASE_URL}/stock/v3/get-profile`, ({ request }) => {
-        observed.push(
-          `profile:${new URL(request.url).searchParams.toString()}`,
-        );
-        return HttpResponse.json({ assetProfile: { industry: "Technology" } });
-      }),
-      http.get(`${APIDOJO_BASE_URL}/market/v2/get-quotes`, ({ request }) => {
-        observed.push(`quote:${new URL(request.url).searchParams.toString()}`);
-        return HttpResponse.json({
-          quoteResponse: { result: [{ symbol: "AAPL" }] },
-        });
-      }),
-      http.get(`${APIDOJO_BASE_URL}/stock/v3/get-chart`, ({ request }) => {
-        observed.push(`chart:${new URL(request.url).searchParams.toString()}`);
-        return HttpResponse.json({
-          chart: { result: [{ timestamp: [1, 2] }] },
-        });
+        expect(body).toMatchObject({ provider: "yahoo-finance" });
+        const endpoint =
+          body && typeof body === "object" && "endpoint" in body
+            ? String(body.endpoint)
+            : "";
+        expect(outputs).toHaveProperty(endpoint);
+        return HttpResponse.json(completedRun(endpoint, outputs[endpoint]));
       }),
     );
 
@@ -124,38 +126,114 @@ describe("okou finance routes", () => {
       [200],
     );
 
-    expect(search.body).toMatchObject({
-      operation: "search",
-      provider: "apidojo",
-      creditsCharged: 1,
-      result: { quotes: [{ symbol: "0700.HK" }] },
-    });
-    expect(profile.body.operation).toBe("profile");
-    expect(quote.body.operation).toBe("quote");
-    expect(chart.body).toMatchObject({
-      operation: "chart",
-      result: { chart: { result: [{ timestamp: [1, 2] }] } },
-    });
+    for (const [response, operation, endpoint] of [
+      [search, "search", "/search_tickers"],
+      [profile, "profile", "/get_company_profile"],
+      [quote, "quote", "/get_quote"],
+      [chart, "chart", "/get_historical_data"],
+    ] as const) {
+      expect(response.body).toStrictEqual({
+        operation,
+        provider: "monid/yahoo-finance",
+        billingCategory: "provider_cost_usd_micros",
+        billingQuantity: 50_000,
+        creditsCharged: 63,
+        result: outputs[endpoint],
+      });
+    }
     expect(observed).toStrictEqual([
-      "search:q=Tencent&region=US",
-      "profile:symbol=AAPL&region=US",
-      "quote:symbols=AAPL&region=US",
-      "chart:symbol=AAPL&range=5y&interval=1wk",
+      {
+        provider: "yahoo-finance",
+        endpoint: "/search_tickers",
+        input: { queryParams: { query: "Tencent" } },
+      },
+      {
+        provider: "yahoo-finance",
+        endpoint: "/get_company_profile",
+        input: { queryParams: { symbol: "AAPL" } },
+      },
+      {
+        provider: "yahoo-finance",
+        endpoint: "/get_quote",
+        input: { queryParams: { symbols: "AAPL" } },
+      },
+      {
+        provider: "yahoo-finance",
+        endpoint: "/get_historical_data",
+        input: {
+          queryParams: { symbol: "AAPL", range: "5y", interval: "1wk" },
+        },
+      },
     ]);
-    expect(beforeCredits - (await credits(actor))).toBe(4);
+    expect(beforeCredits - (await credits(actor))).toBe(252);
   });
 
-  it("does not charge credits when APIDojo fails", async () => {
+  it("follows an accepted run to completion and charges once", async () => {
+    const actor = createBddApi(context).user();
+    await fundActor(actor);
+    configureProvider();
+    const beforeCredits = await credits(actor);
+    const output = { quotes: [{ symbol: "000001.SS", price: 4000 }] };
+    server.use(
+      http.post(`${MONID_BASE_URL}/run`, () => {
+        return HttpResponse.json(
+          {
+            runId: "finance-run-123",
+            provider: "yahoo-finance",
+            endpoint: "/get_quote",
+            status: "RUNNING",
+          },
+          { status: 202 },
+        );
+      }),
+      http.get(`${MONID_BASE_URL}/runs/finance-run-123`, ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer test-monid-token",
+        );
+        return HttpResponse.json(completedRun("/get_quote", output));
+      }),
+    );
+
+    const response = await accept(
+      client()(financeContract).quote({
+        headers: authenticate(actor),
+        body: { symbol: "000001.SS" },
+      }),
+      [200],
+    );
+
+    expect(response.body.result).toStrictEqual(output);
+    expect(response.body.creditsCharged).toBe(63);
+    expect(beforeCredits - (await credits(actor))).toBe(63);
+  });
+
+  it.each([
+    {
+      name: "provider HTTP failure",
+      status: 502,
+      body: { message: "upstream unavailable" },
+    },
+    {
+      name: "blocked execution",
+      status: 200,
+      body: { ...completedRun("/get_quote", null), status: "BLOCKED" },
+    },
+    {
+      name: "failed source behind a completed run",
+      status: 200,
+      body: {
+        ...completedRun("/get_quote", null),
+        providerResponse: { httpStatus: 500, error: "source unavailable" },
+      },
+    },
+  ])("does not charge credits for $name", async ({ status, body }) => {
     const actor = createBddApi(context).user();
     await fundActor(actor);
     configureProvider();
     const beforeCredits = await credits(actor);
     server.use(
-      http.get(`${APIDOJO_BASE_URL}/market/v2/get-quotes`, () => {
-        return HttpResponse.json(
-          { message: "upstream unavailable" },
-          { status: 503 },
-        );
+      http.post(`${MONID_BASE_URL}/run`, () => {
+        return HttpResponse.json(body, { status });
       }),
     );
 
@@ -168,20 +246,41 @@ describe("okou finance routes", () => {
     );
 
     expectApiError(response.body);
-    expect(response.body.error.code).toBe("APIDOJO_ERROR");
+    expect(response.body.error.code).toBe("MONID_ERROR");
     await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
 
-  it("returns not configured without calling APIDojo", async () => {
+  it("reports an uncertain execution without replaying the paid request", async () => {
     const actor = createBddApi(context).user();
-    let providerRequests = 0;
-    mockEnv("OKOU_FINANCE_APIDOJO_TOKEN", undefined);
+    await fundActor(actor);
+    configureProvider();
+    const beforeCredits = await credits(actor);
+    let starts = 0;
     server.use(
-      http.get(`${APIDOJO_BASE_URL}/stock/v3/get-profile`, () => {
-        providerRequests += 1;
-        return HttpResponse.json({});
+      http.post(`${MONID_BASE_URL}/run`, () => {
+        starts += 1;
+        return HttpResponse.error();
       }),
     );
+
+    const response = await accept(
+      client()(financeContract).quote({
+        headers: authenticate(actor),
+        body: { symbol: "AAPL" },
+      }),
+      [502],
+    );
+
+    expectApiError(response.body);
+    expect(response.body.error.code).toBe("MONID_EXECUTION_UNKNOWN");
+    expect(response.body.error.message).toContain("Do not automatically retry");
+    expect(starts).toBe(1);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
+  });
+
+  it("returns not configured when the Monid key is missing", async () => {
+    const actor = createBddApi(context).user();
+    mockEnv("OKOU_FINANCE_MONID_API_KEY", undefined);
 
     const response = await accept(
       client()(financeContract).profile({
@@ -193,6 +292,5 @@ describe("okou finance routes", () => {
 
     expectApiError(response.body);
     expect(response.body.error.code).toBe("NOT_CONFIGURED");
-    expect(providerRequests).toBe(0);
   });
 });
