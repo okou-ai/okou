@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.4](https://github.com/okou-ai/okou/compare/desktop-v0.54.3...desktop-v0.54.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* **desktop:** preserve helper response order and attach failure diagnostics ([#42235](https://github.com/okou-ai/okou/issues/42235)) ([6db087c](https://github.com/okou-ai/okou/commit/6db087c4f364ba033a246cf84a4747730f414598))
+
 ## [0.54.3](https://github.com/okou-ai/okou/compare/desktop-v0.54.2...desktop-v0.54.3) (2026-10-22)
 
 

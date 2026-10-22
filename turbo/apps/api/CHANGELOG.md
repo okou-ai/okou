@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.764.2](https://github.com/okou-ai/okou/compare/api-v1.764.1...api-v1.764.2) (2026-10-22)
+
+
+### Refactoring
+
+* retire pi memory producers before storage contraction ([#42316](https://github.com/okou-ai/okou/issues/42316)) ([d7b32fb](https://github.com/okou-ai/okou/commit/d7b32fb46d53ee8648e1a825d1533d887b16dbec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.2
+    * @okouai/core bumped to 8.777.7
+    * @okouai/db bumped to 1.356.2
+    * @okouai/pi-agent-runtime bumped to 1.50.50
+
 ## [1.764.1](https://github.com/okou-ai/okou/compare/api-v1.764.0...api-v1.764.1) (2026-10-22)
 
 

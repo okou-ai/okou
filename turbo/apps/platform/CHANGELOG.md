@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1053.0](https://github.com/okou-ai/okou/compare/app-v0.1052.2...app-v0.1053.0) (2026-10-22)
+
+
+### Features
+
+* add computer use setup and refine remote connection flows ([#42299](https://github.com/okou-ai/okou/issues/42299)) ([ba30186](https://github.com/okou-ai/okou/commit/ba30186e8be26a4ac297b9f32f5b4382bc7cde23))
+
+
+### Refactoring
+
+* retire pi memory producers before storage contraction ([#42316](https://github.com/okou-ai/okou/issues/42316)) ([d7b32fb](https://github.com/okou-ai/okou/commit/d7b32fb46d53ee8648e1a825d1533d887b16dbec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.2
+    * @okouai/core bumped to 8.777.7
+    * @okouai/ui bumped to 1.17.0
+
 ## [0.1052.2](https://github.com/okou-ai/okou/compare/app-v0.1052.1...app-v0.1052.2) (2026-10-22)
 
 
