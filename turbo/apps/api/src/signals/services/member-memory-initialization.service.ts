@@ -6,9 +6,7 @@ import { isNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { memorySummaryProjectionValues } from "./memory-summary-projection.service";
 import { piResourceProjectionValues } from "./pi-resource-version-index.service";
-import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
@@ -32,17 +30,6 @@ export const initializeMemberMemory$ = command(
       0,
       nowDate(),
     );
-    const summary = memorySummaryProjectionValues({
-      storage: {
-        id: location.storageId,
-        ...identity,
-        name: MEMORY_ARTIFACT_NAME,
-      },
-      storageVersionId: candidateVersionId,
-    });
-    if (!summary) {
-      throw new Error("Member memory has no summary projection identity");
-    }
     const updatedAt = nowDate();
     // The conflict branch hashes the incumbent UUID and retains its prefix.
     // A published HEAD accepts no row, so every dependent write is a no-op.
@@ -74,7 +61,7 @@ export const initializeMemberMemory$ = command(
       })
       .getSQL();
     // Drizzle INSERT SELECT requires every table column; these dependent partial
-    // inserts keep omitted fields on their database defaults. Index and summary
+    // inserts keep omitted fields on their database defaults. Index rows
     // depend on accepted initialization even when the immutable version exists.
     const statement = sql`WITH initialized AS (${initialized}), registered AS (
       INSERT INTO ${storageVersions}
@@ -87,8 +74,7 @@ export const initializeMemberMemory$ = command(
         ${sql.param("Initial empty artifact", storageVersions.message)},
         ${sql.param(identity.userId, storageVersions.createdBy)} FROM initialized
       ON CONFLICT DO NOTHING
-    ), indexed AS (
-      INSERT INTO ${piResourceVersionIndexes}
+    ) INSERT INTO ${piResourceVersionIndexes}
         (storage_version_id, extractor_version, status, projection,
          projection_hash, source_archive_size, lease_id, lease_expires_at, updated_at)
       SELECT initialized.head_version_id,
@@ -106,12 +92,7 @@ export const initializeMemberMemory$ = command(
         source_archive_size = EXCLUDED.source_archive_size,
         lease_id = EXCLUDED.lease_id, lease_expires_at = EXCLUDED.lease_expires_at,
         updated_at = EXCLUDED.updated_at
-    ) INSERT INTO ${memorySummaryProjections}
-      (memory_storage_id, storage_version_id, org_id, user_id)
-    SELECT initialized.id, initialized.head_version_id,
-      ${sql.param(summary.orgId, memorySummaryProjections.orgId)},
-      ${sql.param(summary.userId, memorySummaryProjections.userId)} FROM initialized
-    ON CONFLICT DO NOTHING`;
+`;
     signal.throwIfAborted();
     await db.execute(statement);
     // A completed statement can remain committed when cancellation skips the

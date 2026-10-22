@@ -391,13 +391,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
-  [FeatureSwitchKey.PiMemory]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Extract, consolidate, and recall memory for Pi threads in the staff organization.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:

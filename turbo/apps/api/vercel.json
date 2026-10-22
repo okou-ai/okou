@@ -4,7 +4,10 @@
   "framework": null,
   "installCommand": "cd ../.. && pnpm install",
   "crons": [
-    { "path": "/api/cron/process-background-jobs", "schedule": "* * * * *" },
+    {
+      "path": "/api/cron/process-background-jobs",
+      "schedule": "* * * * *"
+    },
     {
       "path": "/api/cron/cleanup-sandboxes",
       "schedule": "* * * * *"
@@ -103,18 +106,6 @@
     },
     {
       "path": "/api/cron/materialize-pi-resource-indexes",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/materialize-memory-summaries",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/extract-pi-memory-stage1",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/consolidate-pi-memory-phase2",
       "schedule": "* * * * *"
     },
     {

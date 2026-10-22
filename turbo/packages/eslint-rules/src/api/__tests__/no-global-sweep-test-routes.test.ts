@@ -12,10 +12,7 @@ const harness =
   "/app/src/signals/routes/__tests__/global-sweep-contracts.test.ts";
 const behaviorTest =
   "/app/src/signals/routes/__tests__/stripe-automation-events.test.ts";
-
-const piLifecycle =
-  "/repo/turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts";
-const piCleanupImport =
+const sandboxCleanupImport =
   'import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";';
 const computerUseRetention =
   "/repo/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
@@ -63,14 +60,6 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       code: `${computerUseCleanupImport}
         import { setupApp } from "../../../__tests__/test-helpers";
         setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true })(contract);
-      `,
-    },
-    {
-      name: "the exact isolated Pi lifecycle directly mounts its approved cleanup operator",
-      filename: piLifecycle,
-      code: `${piCleanupImport}
-        import { setupApp } from "../../../__tests__/test-helpers";
-        setupApp({ context, routes: cronCleanupSandboxesRoutes })(contract);
       `,
     },
     {
@@ -181,12 +170,6 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
         "skips a queued Stripe delivery after its owner disables the automation",
         "ordinary Stripe behavior",
       ),
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "the registered title does not authorize another API suite",
-      filename: piLifecycle,
-      code: stripeDueCase,
       errors: [{ messageId: "globalSweep" }],
     },
     {
@@ -307,7 +290,7 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
     {
       name: "the Stripe registration does not admit an unrelated operator",
       filename: stripeDueOperator,
-      code: stripeDueCase + piCleanupImport,
+      code: stripeDueCase + sandboxCleanupImport,
       errors: [{ messageId: "globalSweep" }],
     },
     {
@@ -683,7 +666,7 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
     {
       name: "retention coverage cannot import an unrelated global operator",
       filename: computerUseRetention,
-      code: piCleanupImport,
+      code: sandboxCleanupImport,
       errors: [{ messageId: "globalSweep" }],
     },
     {
@@ -696,88 +679,9 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       errors: [{ messageId: "globalSweep" }],
     },
     {
-      name: "Pi coverage cannot send its operator to a local function named setupApp",
-      filename: piLifecycle,
-      code: `${piCleanupImport} function setupApp(options) { return options; } setupApp({ routes: cronCleanupSandboxesRoutes });`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot send its operator to an unrelated imported setupApp",
-      filename: piLifecycle,
-      code: `${piCleanupImport} import { setupApp } from "./private-driver"; setupApp({ routes: cronCleanupSandboxesRoutes });`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot send its operator to a local createApp",
-      filename: piLifecycle,
-      code: `${piCleanupImport} function createApp(options) { return options; } createApp({ routes: cronCleanupSandboxesRoutes });`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot mistake a matching suffix for the actual helper module",
-      filename: piLifecycle,
-      code: `${piCleanupImport} import { setupApp } from "unrelated/__tests__/test-helpers"; setupApp({ routes: cronCleanupSandboxesRoutes });`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "another file cannot import the Pi cleanup allowance",
+      name: "a behavior suite cannot import sandbox cleanup",
       filename: behaviorTest,
-      code: piCleanupImport,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "the same basename outside the API path is not authorized",
-      filename:
-        "/app/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts",
-      code: piCleanupImport,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot import another global operator",
-      filename: piLifecycle,
-      code: routeImport,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot alias its approved import",
-      filename: piLifecycle,
-      code: 'import { cronCleanupSandboxesRoutes as cleanup } from "../cron-cleanup-sandboxes";',
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot use a namespace import",
-      filename: piLifecycle,
-      code: 'import * as cleanup from "../cron-cleanup-sandboxes";',
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot dynamically import its operator",
-      filename: piLifecycle,
-      code: 'await import("../cron-cleanup-sandboxes");',
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi allowance is bound to the actual module path",
-      filename: piLifecycle,
-      code: 'import { cronCleanupSandboxesRoutes } from "unrelated/cron-cleanup-sandboxes";',
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot alias the route after importing it",
-      filename: piLifecycle,
-      code: `${piCleanupImport} const alias = cronCleanupSandboxesRoutes;`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot spread the route into an aggregate",
-      filename: piLifecycle,
-      code: `${piCleanupImport} const routes = [...cronCleanupSandboxesRoutes];`,
-      errors: [{ messageId: "globalSweep" }],
-    },
-    {
-      name: "Pi coverage cannot mount the production aggregate",
-      filename: piLifecycle,
-      code: 'import { ROUTES } from "../../route"; import { setupApp } from "../../../__tests__/test-helpers"; setupApp({ context, routes: ROUTES });',
+      code: sandboxCleanupImport,
       errors: [{ messageId: "globalSweep" }],
     },
     {

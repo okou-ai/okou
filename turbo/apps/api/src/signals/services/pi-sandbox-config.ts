@@ -16,29 +16,27 @@ import {
   type PiModelConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
   isPiExecutionRoute,
   isPresetUpstreamModel,
   piCatalogModel,
   type PiCatalogModel,
   type PiRouteClass,
 } from "@okouai/core/pi-execution";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
-import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 
 import {
-  isAutoSelectedModel,
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
+  isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
-import { PiModelConfigurationError } from "./pi-model-configuration-error";
 
 /**
  * Resolve non-secret model metadata for the sandbox Pi runtime. Credentials
@@ -325,36 +323,6 @@ export function materializePreparedPiProvider(
     );
   }
   return { ...provider, piModelConfig: config };
-}
-
-/** Maintenance has its own platform-funded extraction model, not a chat model choice. */
-export function resolvePlatformMemoryPiModelConfig(
-  provider: ResolvedModelProviderEnvironment,
-): PiModelConfig {
-  const route = provider.builtInModelRuntimeRoute;
-  if (
-    !isBuiltInModelProviderType(provider.type) ||
-    provider.credentialOwner !== "builtin" ||
-    provider.selectedModel !== PI_MEMORY_STAGE1_BUILT_IN_MODEL ||
-    !route ||
-    route.selectedModel !== provider.selectedModel ||
-    route.upstreamModel !== provider.upstreamModel ||
-    route.providerType !== provider.concreteType
-  ) {
-    throw new PiModelConfigurationError(
-      "Invalid platform memory model binding",
-    );
-  }
-  const config = resolveOpenRouterPiModelConfig({
-    ...provider,
-    selectedModel: provider.selectedModel,
-  });
-  if (!config) {
-    throw new PiModelConfigurationError(
-      "Platform memory model configuration is unavailable",
-    );
-  }
-  return config;
 }
 
 export function resolvePreparedPiModelConfig(args: {

@@ -1,7 +1,6 @@
 import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-
 import {
   cronBrowserReconcileContract,
   cronCompactChatThreadSnapshotsContract,
@@ -14,10 +13,7 @@ import {
   cronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract,
   cronMonitorChatEventQueueContract,
-  cronMaterializeMemorySummariesContract,
   cronMaterializePiResourceIndexesContract,
-  cronExtractPiMemoryStage1Contract,
-  cronConsolidatePiMemoryPhase2Contract,
   cronOfficialWorkflowCatalogContract,
   cronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract,
@@ -39,7 +35,6 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { ROUTES } from "../signals/route";
-import { cronConsolidatePiMemoryPhase2Routes } from "../signals/routes/cron-consolidate-pi-memory-phase2";
 
 interface VercelCron {
   readonly path: string;
@@ -163,18 +158,6 @@ const expectedVercelCrons = [
     schedule: "* * * * *",
   },
   {
-    path: cronMaterializeMemorySummariesContract.materialize.path,
-    schedule: "* * * * *",
-  },
-  {
-    path: cronExtractPiMemoryStage1Contract.extract.path,
-    schedule: "* * * * *",
-  },
-  {
-    path: cronConsolidatePiMemoryPhase2Contract.consolidate.path,
-    schedule: "* * * * *",
-  },
-  {
     path: cronComputerUseScreenshotCleanupContract.cleanup.path,
     schedule: "0 * * * *",
   },
@@ -214,31 +197,5 @@ describe("vercel cron config", () => {
         `${path} must be registered in API routes`,
       ).toBeTruthy();
     }
-
-    expect(
-      crons.filter(({ path }) => {
-        return path === cronExtractPiMemoryStage1Contract.extract.path;
-      }),
-    ).toStrictEqual([
-      {
-        path: cronExtractPiMemoryStage1Contract.extract.path,
-        schedule: "* * * * *",
-      },
-    ]);
-    expect(
-      crons.filter(({ path }) => {
-        return path === cronConsolidatePiMemoryPhase2Contract.consolidate.path;
-      }),
-    ).toStrictEqual([
-      {
-        path: cronConsolidatePiMemoryPhase2Contract.consolidate.path,
-        schedule: "* * * * *",
-      },
-    ]);
-    expect(
-      cronConsolidatePiMemoryPhase2Routes.map(({ route }) => {
-        return route.path;
-      }),
-    ).toStrictEqual([cronConsolidatePiMemoryPhase2Contract.consolidate.path]);
   });
 });

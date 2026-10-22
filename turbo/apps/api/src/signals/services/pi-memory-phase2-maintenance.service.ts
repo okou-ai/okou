@@ -1,8 +1,9 @@
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { PI_MEMORY_PHASE2_MAX_ATTEMPTS } from "@okouai/db/columns/pi-memory-phase2-job";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
+import { command } from "ccstate";
 import {
   and,
   eq,
@@ -18,17 +19,37 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import { storages } from "@okouai/db/schema/storage";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
 } from "./internal-run-callback";
-import { PI_MEMORY_PHASE2_RETRY_DELAY_MS } from "./pi-memory-phase2-job.service";
-import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
+
+const PI_MEMORY_PHASE2_RETRY_DELAY_MS = 60 * 60 * 1000;
+
+// Retained for maintenance Runs admitted before Pi Memory retirement. Remove
+// with the dedicated tables after outgoing API/Runner and usage drain.
+async function lockPiMemoryCandidateStorage(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+): Promise<void> {
+  await tx
+    .select({ id: storages.id })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.orgId, owner.orgId),
+        eq(storages.userId, owner.userId),
+        eq(storages.name, MEMORY_ARTIFACT_NAME),
+      ),
+    )
+    .for("no key update");
+}
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 
@@ -211,30 +232,6 @@ function exactActiveMaintenanceCondition(args: {
     ),
     eq(piMemoryPhase2Jobs.claimedSelectionDigest, args.binding.selectionDigest),
     eq(piMemoryPhase2Jobs.maintenanceRunId, args.runId),
-  );
-}
-
-/** The admission owner samples this clock after its update timestamp. */
-export function piMemoryPhase2MaintenanceBindingCondition(
-  args: {
-    readonly binding: PiMemoryPhase2MaintenanceRunBinding;
-  },
-  currentTime: Date,
-) {
-  return and(
-    eq(piMemoryPhase2Jobs.memoryStorageId, args.binding.memoryStorageId),
-    eq(piMemoryPhase2Jobs.orgId, args.binding.orgId),
-    eq(piMemoryPhase2Jobs.userId, args.binding.userId),
-    eq(piMemoryPhase2Jobs.status, "leased"),
-    eq(piMemoryPhase2Jobs.leaseToken, args.binding.leaseToken),
-    eq(piMemoryPhase2Jobs.claimedRevision, args.binding.claimedRevision),
-    eq(
-      piMemoryPhase2Jobs.claimedBaseVersionId,
-      args.binding.claimedBaseVersionId,
-    ),
-    eq(piMemoryPhase2Jobs.claimedSelectionDigest, args.binding.selectionDigest),
-    isNull(piMemoryPhase2Jobs.maintenanceRunId),
-    gt(piMemoryPhase2Jobs.leaseExpiresAt, currentTime),
   );
 }
 

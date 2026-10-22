@@ -290,42 +290,6 @@ const cronPruneStoragePresignedUrlsResponseSchema = z.object({
   presentationTemplatePreview: storagePresignedUrlPruneResultSchema,
   privateArtifactPreview: storagePresignedUrlPruneResultSchema.optional(),
 });
-
-const cronMaterializeMemorySummariesResponseSchema = z.object({
-  success: z.literal(true),
-  backfilled: z.number().int().nonnegative(),
-  claimed: z.number().int().nonnegative(),
-  ready: z.number().int().nonnegative(),
-  noContent: z.number().int().nonnegative(),
-  retried: z.number().int().nonnegative(),
-  stale: z.number().int().nonnegative(),
-});
-
-const cronExtractPiMemoryStage1ResponseSchema = z.object({
-  success: z.literal(true),
-  scanned: z.number().int().nonnegative(),
-  claimed: z.number().int().nonnegative(),
-  succeeded: z.number().int().nonnegative(),
-  succeededNoOutput: z.number().int().nonnegative(),
-  retryableFailure: z.number().int().nonnegative(),
-  terminalFailure: z.number().int().nonnegative(),
-  sourceExpired: z.number().int().nonnegative(),
-  sourceActive: z.number().int().nonnegative(),
-  staleDiscarded: z.number().int().nonnegative(),
-});
-
-export const cronConsolidatePiMemoryPhase2ResponseSchema = z
-  .object({
-    success: z.literal(true),
-    claimed: z.number().int().nonnegative(),
-    noWork: z.number().int().nonnegative(),
-    noDiff: z.number().int().nonnegative(),
-    published: z.number().int().nonnegative(),
-    conflicted: z.number().int().nonnegative(),
-    stale: z.number().int().nonnegative(),
-    failed: z.number().int().nonnegative(),
-  })
-  .strict();
 export const cronProcessUsageEventsContract = c.router({
   process: {
     method: "GET",
@@ -657,19 +621,6 @@ export const cronPruneStoragePresignedUrlsContract = c.router({
   },
 });
 
-export const cronMaterializeMemorySummariesContract = c.router({
-  materialize: {
-    method: "GET",
-    path: "/api/cron/materialize-memory-summaries",
-    headers: authHeadersSchema,
-    responses: {
-      200: cronMaterializeMemorySummariesResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Materialize immutable memory summary projections",
-  },
-});
-
 export const cronMaterializePiResourceIndexesContract = c.router({
   materialize: {
     method: "GET",
@@ -690,32 +641,6 @@ export const cronMaterializePiResourceIndexesContract = c.router({
   },
 });
 
-export const cronExtractPiMemoryStage1Contract = c.router({
-  extract: {
-    method: "GET",
-    path: "/api/cron/extract-pi-memory-stage1",
-    headers: authHeadersSchema,
-    responses: {
-      200: cronExtractPiMemoryStage1ResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Extract bounded Pi Stage 1 memory candidates",
-  },
-});
-
-export const cronConsolidatePiMemoryPhase2Contract = c.router({
-  consolidate: {
-    method: "GET",
-    path: "/api/cron/consolidate-pi-memory-phase2",
-    headers: authHeadersSchema,
-    responses: {
-      200: cronConsolidatePiMemoryPhase2ResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Consolidate one bounded Pi Phase 2 memory job",
-  },
-});
-
 export type CronProcessUsageEventsContract =
   typeof cronProcessUsageEventsContract;
 export type CronReconcileSocialKitDownloadsContract =
@@ -728,15 +653,6 @@ export type CronReconcileBillingEntitlementsContract =
   typeof cronReconcileBillingEntitlementsContract;
 export type CronPruneStoragePresignedUrlsContract =
   typeof cronPruneStoragePresignedUrlsContract;
-export type CronMaterializeMemorySummariesContract =
-  typeof cronMaterializeMemorySummariesContract;
-export type CronExtractPiMemoryStage1Contract =
-  typeof cronExtractPiMemoryStage1Contract;
-export type CronConsolidatePiMemoryPhase2Contract =
-  typeof cronConsolidatePiMemoryPhase2Contract;
-export type CronConsolidatePiMemoryPhase2Response = z.infer<
-  typeof cronConsolidatePiMemoryPhase2ResponseSchema
->;
 export type CronTelegramCleanupContract = typeof cronTelegramCleanupContract;
 export type CronConnectorOauthStateCleanupContract =
   typeof cronConnectorOauthStateCleanupContract;
@@ -777,8 +693,6 @@ export {
   cronRenewGoogleCalendarWatchesResponseSchema,
   cronRenewGoogleWorkspaceEventSubscriptionsResponseSchema,
   cronPruneStoragePresignedUrlsResponseSchema,
-  cronMaterializeMemorySummariesResponseSchema,
-  cronExtractPiMemoryStage1ResponseSchema,
 };
 
 /** Durable jobs are claimed with short leases; every invocation has a fixed work budget. */

@@ -8,7 +8,6 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
-import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
@@ -29,7 +28,6 @@ import {
 } from "../../lib/db-raw-rows";
 import { badRequestMessage, notFound } from "../../lib/error";
 import type { SandboxAuth } from "../../types/auth";
-import { memorySummaryProjectionValues } from "./memory-summary-projection.service";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
 import {
   piResourceIndexQueueValues,
@@ -494,15 +492,6 @@ function* publishStorageCommit(
         parentVersionId: input.parentVersionId,
         runId: input.sandboxAuth.runId,
       }),
-    );
-  }
-  const summary = memorySummaryProjectionValues({
-    storage,
-    storageVersionId: input.versionId,
-  });
-  if (summary) {
-    yield writeStatement(
-      insertedStorageSql(memorySummaryProjections, summary, true),
     );
   }
   return { size, fileCount, deduplicated: !inserted };
