@@ -61,6 +61,7 @@ export enum FeatureSwitchKey {
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
+  ChatMessagePdf = "chatMessagePdf",
   CustomTemplates = "customTemplates",
   BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",

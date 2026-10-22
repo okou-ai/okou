@@ -18,6 +18,10 @@ import {
   singleWorkerJavaScriptBundlePlugin,
 } from "./single-bundle.ts";
 import { clerkUiAssetPlugin } from "./clerk-ui.ts";
+import {
+  MESSAGE_PDF_WORKER_FILE_PATTERN,
+  MESSAGE_PDF_WORKER_LIMIT_BYTES,
+} from "./message-pdf-worker.ts";
 import { sharedDatabaseWorkerHtmlPlugin } from "./shared-database-worker-html.ts";
 import { dependencyVendorChunks } from "./vendor-chunks.ts";
 import {
@@ -97,7 +101,7 @@ await test("production build isolates the configured lazy dependency", async () 
   );
 });
 
-await test("production shared worker stays on the app origin", async () => {
+await test("production workers stay on the app origin", async () => {
   const loaded = await productionConfigPromise;
 
   assert.ok(loaded);
@@ -117,7 +121,35 @@ await test("production shared worker stays on the app origin", async () => {
         'location.origin + "/okou-app/assets/shared-database-worker-AbCd1234.js"',
     },
   );
-  assert.equal(renderBuiltUrl("assets/index-AbCd1234.js", context), undefined);
+  assert.deepEqual(
+    renderBuiltUrl("assets/message-pdf-worker-AbCd1234.js", context),
+    {
+      runtime:
+        'location.origin + "/okou-app/assets/message-pdf-worker-AbCd1234.js"',
+    },
+  );
+  for (const filename of [
+    "assets/index-AbCd1234.js",
+    "assets/other-worker-AbCd1234.js",
+    "assets/message-pdf-worker-AbCd1234.js.map",
+    "assets/not-message-pdf-worker-AbCd1234.js",
+  ]) {
+    assert.equal(renderBuiltUrl(filename, context), undefined);
+  }
+  assert.equal(
+    renderBuiltUrl("assets/message-pdf-worker-AbCd1234.js", {
+      ...context,
+      hostType: "html",
+    }),
+    undefined,
+  );
+  assert.equal(
+    renderBuiltUrl("assets/message-pdf-worker-AbCd1234.js", {
+      ...context,
+      type: "public",
+    }),
+    undefined,
+  );
 });
 
 const APP_FILE = "assets/index-AppHash1.js";
@@ -192,6 +224,14 @@ function workerAsset() {
   };
 }
 
+function pdfWorkerAsset() {
+  return {
+    fileName: "assets/message-pdf-worker-PdfHash1.js",
+    source: "pdf-worker",
+    type: "asset" as const,
+  };
+}
+
 function validApplicationOutputs() {
   return [
     applicationChunk(),
@@ -199,13 +239,17 @@ function validApplicationOutputs() {
     vendorChunk(),
     runtimeChunk(),
     workerAsset(),
+    pdfWorkerAsset(),
   ];
 }
 
 await test("requires the fixed app, lazy, vendor, runtime, and worker layout", () => {
   assert.deepEqual(applicationBundleViolations(validApplicationOutputs()), []);
   assert.deepEqual(
-    applicationBundleViolations(validApplicationOutputs().slice(0, 4)),
+    applicationBundleViolations([
+      ...validApplicationOutputs().slice(0, 4),
+      pdfWorkerAsset(),
+    ]),
     [
       `Expected exactly one app entry, one lazy chunk, 1 vendor chunk(s), one Rolldown runtime chunk, and one shared database worker asset, but generated: ${APP_FILE} (chunk), ${LAZY_FILE} (chunk), ${VENDOR_FILE} (chunk), ${RUNTIME_FILE} (chunk)`,
     ],
@@ -234,11 +278,103 @@ await test("keeps the configured dependency behind the only dynamic import", () 
     vendorChunk(),
     runtimeChunk(),
     workerAsset(),
+    pdfWorkerAsset(),
   ]);
   assert.deepEqual(violations, [
     `${APP_FILE}: expected exactly one dynamic import (${LAZY_FILE})`,
     `${LAZY_FILE}: unexpected modules in the configured lazy chunk: /repo/node_modules/react/index.js`,
   ]);
+});
+
+await test("requires exactly one separately built on-demand PDF worker", () => {
+  const outputs = validApplicationOutputs();
+  const expected = [
+    "Expected exactly one separately built on-demand PDF worker asset",
+  ];
+  assert.deepEqual(
+    applicationBundleViolations(
+      outputs.filter((output) => {
+        return !MESSAGE_PDF_WORKER_FILE_PATTERN.test(output.fileName);
+      }),
+    ),
+    expected,
+  );
+  assert.deepEqual(
+    applicationBundleViolations([
+      ...outputs,
+      {
+        ...pdfWorkerAsset(),
+        fileName: "assets/message-pdf-worker-Extra001.js",
+      },
+    ]),
+    expected,
+  );
+  assert.deepEqual(
+    applicationBundleViolations(
+      outputs.map((output) => {
+        return MESSAGE_PDF_WORKER_FILE_PATTERN.test(output.fileName)
+          ? {
+              code: "pdf-worker",
+              fileName: output.fileName,
+              type: "chunk" as const,
+            }
+          : output;
+      }),
+    ),
+    expected,
+  );
+});
+
+await test("budgets on-demand PDF bytes separately without relaxing the app cap", () => {
+  const eagerOutputs = validApplicationOutputs().filter((output) => {
+    return !MESSAGE_PDF_WORKER_FILE_PATTERN.test(output.fileName);
+  });
+  const limitWorker = {
+    ...pdfWorkerAsset(),
+    source: new Uint8Array(MESSAGE_PDF_WORKER_LIMIT_BYTES),
+  };
+  assert.deepEqual(
+    applicationBundleViolations([...eagerOutputs, limitWorker]),
+    [],
+  );
+  assert.deepEqual(
+    applicationBundleViolations([
+      ...eagerOutputs,
+      {
+        ...pdfWorkerAsset(),
+        source: "x".repeat(MESSAGE_PDF_WORKER_LIMIT_BYTES - 1) + "é",
+      },
+    ]),
+    [
+      `On-demand PDF worker: ${MESSAGE_PDF_WORKER_LIMIT_BYTES + 1} raw bytes exceeds ${MESSAGE_PDF_WORKER_LIMIT_BYTES}`,
+    ],
+  );
+  const nearLimitApp = {
+    ...applicationChunk(),
+    code: "x".repeat(RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES - 100),
+  };
+  assert.deepEqual(
+    applicationBundleViolations([
+      nearLimitApp,
+      lazyChunk(),
+      vendorChunk(),
+      runtimeChunk(),
+      workerAsset(),
+      limitWorker,
+    ]),
+    [],
+  );
+  assert.match(
+    applicationBundleViolations([
+      { ...nearLimitApp, code: "x".repeat(RAW_JAVASCRIPT_OUTPUT_LIMIT_BYTES) },
+      lazyChunk(),
+      vendorChunk(),
+      runtimeChunk(),
+      workerAsset(),
+      limitWorker,
+    ])[0] ?? "",
+    /JavaScript output: .* raw bytes exceeds 8500000/u,
+  );
 });
 
 await test("rejects raw-size regressions", () => {
@@ -251,6 +387,7 @@ await test("rejects raw-size regressions", () => {
     lazyChunk(),
     runtimeChunk(),
     workerAsset(),
+    pdfWorkerAsset(),
   ]);
   assert.equal(violations.length, 1);
   assert.match(violations[0] ?? "", /raw bytes exceeds/u);
@@ -276,6 +413,7 @@ await test("keeps third-party modules only in vendor and rejects extra edges", (
     lazyChunk(),
     runtimeChunk(),
     workerAsset(),
+    pdfWorkerAsset(),
   ]);
   assert.ok(
     violations.some((violation) => {
@@ -308,6 +446,7 @@ await test("keeps only the generated Mermaid workspace module in vendor", () => 
     lazyChunk(),
     runtimeChunk(),
     workerAsset(),
+    pdfWorkerAsset(),
   ]);
   assert.ok(
     missingMermaid.some((violation) => {
@@ -327,6 +466,7 @@ await test("keeps only the generated Mermaid workspace module in vendor", () => 
       lazyChunk(),
       runtimeChunk(),
       workerAsset(),
+      pdfWorkerAsset(),
     ]),
     [
       `${VENDOR_FILE}: only node_modules and /packages/mermaid-lite/dist/mermaid.esm.min.mjs may be emitted in the vendor chunk: ${unrelatedWorkspaceModule}`,
@@ -353,6 +493,7 @@ await test("allows Prism common and rejects non-common entries", () => {
       lazyChunk(),
       runtimeChunk(),
       workerAsset(),
+      pdfWorkerAsset(),
     ]),
     [
       `${VENDOR_FILE}: forbidden non-common Prism modules reached the bundle: rehype-prism-plus (root entry), rehype-prism-plus/all, rehype-prism-plus/generator, refractor/all`,
@@ -375,6 +516,7 @@ await test("rejects server-only contracts from the eager platform graph", () => 
       lazyChunk(),
       runtimeChunk(),
       workerAsset(),
+      pdfWorkerAsset(),
     ]),
     [
       `${APP_FILE}: server-only API contract modules reached the eager platform graph: /packages/api-contracts/src/contracts/runners.ts, /packages/api-contracts/src/contracts/webhooks.ts`,
@@ -420,12 +562,14 @@ await test("rejects worker chunks with imports or forbidden packages", () => {
         code: "worker",
         fileName: "assets/shared-database-worker.js",
         imports: ["assets/worker-dependency.js"],
+        dynamicImports: ["assets/worker-lazy.js"],
         moduleIds: ["/repo/node_modules/katex/dist/katex.mjs"],
         type: "chunk",
       },
     ]),
     [
       "assets/shared-database-worker.js: unexpected JavaScript imports: assets/worker-dependency.js",
+      "assets/shared-database-worker.js: unexpected dynamic JavaScript imports: assets/worker-lazy.js",
       "assets/shared-database-worker.js: forbidden packages reached the bundle: katex",
     ],
   );
@@ -477,7 +621,7 @@ function assertSharedDatabaseWorkerMeta(
   assert.ok(workerOutput);
   assert.ok(
     htmlSource.includes(
-      `<meta name="okou-shared-database-worker" content="/${workerOutput.fileName}">`,
+      `<meta name="okou-shared-database-worker" content="/okou-app/${workerOutput.fileName}">`,
     ),
     "expected the built page to publish its SharedWorker path",
   );
@@ -538,7 +682,9 @@ function assertBuiltPageDiscovery(
   });
   assert.ok(uiAsset);
   assert.ok(
-    htmlSource.includes(`content="/${uiAsset.fileName}"`),
+    htmlSource.includes(
+      `content="https://static.okou.io/okou-app/${uiAsset.fileName}"`,
+    ),
     "the optional UI asset URL must be available to route-scoped loading",
   );
   assert.ok(!htmlSource.includes("__OKOU_CLERK_UI_SCRIPT_URL__"));
@@ -582,51 +728,61 @@ async function writeLazyPackageFixture(root: string): Promise<void> {
   );
 }
 
-await test("emits the fixed page topology and one external worker", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "okou-app-bundles-"));
+async function writeExternalWorkerFixture(root: string): Promise<void> {
   const sourceDirectory = path.join(root, "src");
   const vendorDirectory = path.join(root, "node_modules", "fixture-vendor");
   const mermaidDirectory = path.join(root, "packages", "mermaid-lite", "dist");
+  await mkdir(sourceDirectory, { recursive: true });
+  await mkdir(vendorDirectory, { recursive: true });
+  await mkdir(mermaidDirectory, { recursive: true });
+  await writeLazyPackageFixture(root);
+  await writeFile(path.join(root, "index.html"), clerkDiscoveryFixture());
+  await writeFile(
+    path.join(sourceDirectory, "main.js"),
+    'import "./main.css"; import SharedDatabaseWorker from "./shared-database-worker.js?sharedworker"; import localeUrl from "./locale.json?url"; import mermaid from "../packages/mermaid-lite/dist/mermaid.esm.min.mjs"; import vendor from "fixture-vendor"; globalThis.loadKatex = () => import("katex"); globalThis.exportPdf = () => new Worker(new URL("./message-pdf-worker.js", import.meta.url), { type: "module" }); new SharedDatabaseWorker({ name: "test" }); console.log(localeUrl, mermaid.value, vendor.value);',
+  );
+  await writeFile(
+    path.join(sourceDirectory, "main.css"),
+    "body { color: red; }",
+  );
+  await writeFile(
+    path.join(sourceDirectory, "shared-database-worker.js"),
+    'self.addEventListener("connect", () => undefined);',
+  );
+  await writeFile(
+    path.join(sourceDirectory, "message-pdf-worker.js"),
+    'self.addEventListener("message", () => self.postMessage("pdf"));',
+  );
+  await writeFile(
+    path.join(sourceDirectory, "locale.json"),
+    JSON.stringify({ greeting: "hello" }),
+  );
+  await writeFile(
+    path.join(vendorDirectory, "package.json"),
+    JSON.stringify({ exports: "./index.cjs", name: "fixture-vendor" }),
+  );
+  await writeFile(
+    path.join(vendorDirectory, "index.cjs"),
+    'module.exports = { value: "vendor-static" };',
+  );
+  await writeFile(
+    path.join(mermaidDirectory, "mermaid.esm.min.mjs"),
+    'export default { value: "mermaid-static" };',
+  );
+}
 
+await test("emits the fixed page topology and two external workers", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "okou-app-bundles-"));
   try {
-    await mkdir(sourceDirectory, { recursive: true });
-    await mkdir(vendorDirectory, { recursive: true });
-    await mkdir(mermaidDirectory, { recursive: true });
-    await writeLazyPackageFixture(root);
-    await writeFile(path.join(root, "index.html"), clerkDiscoveryFixture());
-    await writeFile(
-      path.join(sourceDirectory, "main.js"),
-      'import "./main.css"; import SharedDatabaseWorker from "./shared-database-worker.js?sharedworker"; import localeUrl from "./locale.json?url"; import mermaid from "../packages/mermaid-lite/dist/mermaid.esm.min.mjs"; import vendor from "fixture-vendor"; globalThis.loadKatex = () => import("katex"); new SharedDatabaseWorker({ name: "test" }); console.log(localeUrl, mermaid.value, vendor.value);',
-    );
-    await writeFile(
-      path.join(sourceDirectory, "main.css"),
-      "body { color: red; }",
-    );
-    await writeFile(
-      path.join(sourceDirectory, "shared-database-worker.js"),
-      'self.addEventListener("connect", () => undefined);',
-    );
-    await writeFile(
-      path.join(sourceDirectory, "locale.json"),
-      JSON.stringify({ greeting: "hello" }),
-    );
-    await writeFile(
-      path.join(vendorDirectory, "package.json"),
-      JSON.stringify({ exports: "./index.cjs", name: "fixture-vendor" }),
-    );
-    await writeFile(
-      path.join(vendorDirectory, "index.cjs"),
-      'module.exports = { value: "vendor-static" };',
-    );
-    await writeFile(
-      path.join(mermaidDirectory, "mermaid.esm.min.mjs"),
-      'export default { value: "mermaid-static" };',
-    );
-
+    await writeExternalWorkerFixture(root);
+    const loaded = await productionConfigPromise;
+    assert.ok(loaded);
     const result = await build({
       configFile: false,
       logLevel: "silent",
       root,
+      base: loaded.config.base,
+      experimental: loaded.config.experimental,
       build: {
         assetsInlineLimit: 0,
         minify: false,
@@ -658,8 +814,8 @@ await test("emits the fixed page topology and one external worker", async () => 
       return item.fileName.endsWith(".js");
     });
     // App entry, vendor, Rolldown runtime, SharedWorker, the lazy chunk group,
-    // and the separately built optional Clerk UI asset.
-    assert.equal(javaScriptOutputs.length, 6);
+    // the separately built optional Clerk UI asset, and the on-demand PDF worker.
+    assert.equal(javaScriptOutputs.length, 7);
     assert.equal(
       javaScriptOutputs.filter((item) => {
         return item.type === "chunk" && item.isEntry;
@@ -690,6 +846,7 @@ await test("emits the fixed page topology and one external worker", async () => 
       /^assets\/rolldown-runtime-[^/]+\.js$/u,
       /^assets\/shared-database-worker-[^/]+\.js$/u,
       /^assets\/clerk-ui-[^/]+\.js$/u,
+      MESSAGE_PDF_WORKER_FILE_PATTERN,
     ]) {
       assert.ok(
         javaScriptOutputs.some((item) => {
@@ -704,6 +861,21 @@ await test("emits the fixed page topology and one external worker", async () => 
     assert.ok(html?.type === "asset");
     const htmlSource = String(html.source);
     assertBuiltPageDiscovery(htmlSource, javaScriptOutputs);
+    assert.doesNotMatch(htmlSource, /message-pdf-worker-/u);
+    const pdfOutput = javaScriptOutputs.find((item) => {
+      return MESSAGE_PDF_WORKER_FILE_PATTERN.test(item.fileName);
+    });
+    assert.ok(pdfOutput?.type === "asset");
+    const entry = javaScriptOutputs.find((item) => {
+      return item.type === "chunk" && item.isEntry;
+    });
+    assert.ok(entry?.type === "chunk");
+    assert.ok(
+      entry.code.includes(
+        `location.origin + "/okou-app/${pdfOutput.fileName}"`,
+      ),
+    );
+    assert.doesNotMatch(entry.code, /new Blob|createObjectURL|importScripts/u);
     assert.ok(
       result.output.some((item) => {
         return item.type === "asset" && item.fileName.endsWith(".json");

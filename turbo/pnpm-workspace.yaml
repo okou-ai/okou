@@ -40,6 +40,9 @@ auditConfig:
     - GHSA-ch52-4w7c-c8xp
 
 overrides:
+  # speech-rule-engine 4.1.4 pins xmldom 0.9.10, which has XML injection and
+  # parser DoS advisories. Remove when upstream requires xmldom >=0.9.12.
+  "speech-rule-engine>@xmldom/xmldom": ^0.9.12
   # Upstream dependencies still resolve vulnerable releases without these floors.
   "@esbuild-kit/core-utils>esbuild": ^0.25.4
   "esbuild@>=0.27.3 <0.28.1": ">=0.28.1"
