@@ -34,7 +34,7 @@ patchedDependencies:
     hash: ce9798c21f256c34f616d6fc600043d3bb142b4269d2aa523122bc16a79c089d
     path: patches/@earendil-works__pi-ai@1.1.0.patch
   '@earendil-works/pi-coding-agent@1.1.0':
-    hash: d3bd9064b89c3ae827559884397773997eae8bc9b1bae1728831d30c897a929d
+    hash: a205973188778deec63b03cdd11b9914ec4097f34e0852119630b9ad19559f30
     path: patches/@earendil-works__pi-coding-agent@1.1.0.patch
   '@testing-library/jest-dom@6.9.1':
     hash: 82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf
@@ -381,7 +381,7 @@ importers:
     devDependencies:
       '@earendil-works/pi-coding-agent':
         specifier: 1.1.0
-        version: 1.1.0(patch_hash=d3bd9064b89c3ae827559884397773997eae8bc9b1bae1728831d30c897a929d)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(zod@4.5.4)
+        version: 1.1.0(patch_hash=a205973188778deec63b03cdd11b9914ec4097f34e0852119630b9ad19559f30)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(zod@4.5.4)
       '@modelcontextprotocol/client':
         specifier: ^2.3.0
         version: 2.3.1
@@ -1239,7 +1239,7 @@ importers:
         version: 1.1.0(patch_hash=ce9798c21f256c34f616d6fc600043d3bb142b4269d2aa523122bc16a79c089d)(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(bufferutil@4.1.0)(undici@8.10.2)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
       '@earendil-works/pi-coding-agent':
         specifier: 1.1.0
-        version: 1.1.0(patch_hash=d3bd9064b89c3ae827559884397773997eae8bc9b1bae1728831d30c897a929d)(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
+        version: 1.1.0(patch_hash=a205973188778deec63b03cdd11b9914ec4097f34e0852119630b9ad19559f30)(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
@@ -10368,7 +10368,7 @@ snapshots:
     dependencies:
       quickjs-wasi: 3.6.2
 
-  '@earendil-works/pi-coding-agent@1.1.0(patch_hash=d3bd9064b89c3ae827559884397773997eae8bc9b1bae1728831d30c897a929d)(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)':
+  '@earendil-works/pi-coding-agent@1.1.0(patch_hash=a205973188778deec63b03cdd11b9914ec4097f34e0852119630b9ad19559f30)(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)':
     dependencies:
       '@earendil-works/chord': 1.1.0
       '@earendil-works/pi-agent-core': 1.1.0(patch_hash=cf61bf230542aadd6cbda54873dcd6e475b861c9f84c26722f0d929ef965a467)(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(bufferutil@4.1.0)(undici@8.10.2)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
@@ -10405,7 +10405,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-coding-agent@1.1.0(patch_hash=d3bd9064b89c3ae827559884397773997eae8bc9b1bae1728831d30c897a929d)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(zod@4.5.4)':
+  '@earendil-works/pi-coding-agent@1.1.0(patch_hash=a205973188778deec63b03cdd11b9914ec4097f34e0852119630b9ad19559f30)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(zod@4.5.4)':
     dependencies:
       '@earendil-works/chord': 1.1.0
       '@earendil-works/pi-agent-core': 1.1.0(patch_hash=cf61bf230542aadd6cbda54873dcd6e475b861c9f84c26722f0d929ef965a467)(bufferutil@4.1.0)(undici@8.10.2)(utf-8-validate@6.0.6)(zod@4.5.4)
