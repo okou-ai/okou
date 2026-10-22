@@ -732,10 +732,9 @@ async fn reserved_reuse_running_status_timeout_recovers_claim_and_sandbox() {
         .await
         .expect("status timeout should complete the provider claim");
     assert!(
-        completion
-            .error
-            .as_deref()
-            .is_some_and(|error| error.contains("is unconfirmed (configured publication budget: 5s)"))
+        completion.error.as_deref().is_some_and(
+            |error| error.contains("is unconfirmed (configured publication budget: 5s)")
+        )
     );
     assert_eq!(completion.sandbox_id, None);
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
@@ -823,10 +822,9 @@ async fn hard_shutdown_during_reserved_reuse_running_status_stall_converges() {
         .await
         .expect("hard shutdown should recover the stalled provider claim");
     assert!(
-        completion
-            .error
-            .as_deref()
-            .is_some_and(|error| error.contains("is unconfirmed (configured publication budget: 5s)"))
+        completion.error.as_deref().is_some_and(
+            |error| error.contains("is unconfirmed (configured publication budget: 5s)")
+        )
     );
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
