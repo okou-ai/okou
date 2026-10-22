@@ -360,11 +360,10 @@ export function createChatEventsFixture(context: TestContext) {
   const routeMocks = createRouteMocks(context);
 
   async function entitledChatActor(
-    options: ApiTestUserOptions & { readonly isolatePg?: true } = {},
+    options: ApiTestUserOptions = {},
     tier: "pro" | "team" = "pro",
   ): Promise<EntitledChatActor> {
-    const { isolatePg, ...userOptions } = options;
-    const actor = bdd.user(userOptions);
+    const actor = bdd.user(options);
     chatCallbacks.acceptChatObjectStorage();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
@@ -372,7 +371,6 @@ export function createChatEventsFixture(context: TestContext) {
     chatCallbacks.disableVapid();
     const runnerGroup = api.configureRunnerGroup();
     const { customerId } = await api.grantProEntitlement(actor, {
-      ...(isolatePg ? { isolatePg } : {}),
       ...(options.orgId === STAFF_ORG_ID
         ? {
             customerId: "cus_bdd_chat_events_staff",
