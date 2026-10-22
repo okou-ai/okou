@@ -1,3 +1,4 @@
+import { creditsFor } from "./social-data-pricing";
 import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { isDeepStrictEqual } from "node:util";
 
@@ -18,23 +19,37 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
-import { and, desc, eq, isNull, lt, or, sql, notInArray } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, notInArray } from "drizzle-orm";
 
-import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
-import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
-import { creditPolicyRunId } from "./official-workflow-policy.service";
-import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
+import { insufficientCredits } from "./managed-usage.service";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
+import { orgPlanCapabilitySelection } from "./org-plan-entitlement-read.service";
+import {
+  socialAdmissionBudget,
+  socialAdmissionValues,
+  socialPricingWhere,
+  socialReservationPlan,
+  socialCreditCheckArgs,
+  managedSnapshotPlan,
+  managedSnapshotRequirement,
+  managedSnapshotAccess as snapshotAccess,
+  memberCreditPlan,
+  socialBudgetExceeded,
+  socialCapacityExceeded,
+  requireSocialPricing,
+  hasManagedSnapshotCredits,
+} from "./social-data-admission-plan";
 import {
   inspectSocialDataProviderPlan,
   readSocialDataProviderRun,
   startSocialDataProviderRun,
   stopSocialDataProviderRun,
-  type SocialDataProviderQuote,
   type SocialDataProviderRun,
 } from "./social-data-provider";
 import {
@@ -101,6 +116,14 @@ function errorResponse(
   return { status, body: { error: { code, message } } };
 }
 
+function socialContinuationConflict(): ErrorResponse {
+  return errorResponse(
+    409,
+    "SOCIAL_DATA_PAGE_ALREADY_CONTINUED",
+    "This page already has a continuation. Recover it from saved jobs; do not submit it again.",
+  );
+}
+
 function providerErrorResponse(error: unknown): ErrorResponse {
   if (error instanceof SocialDataProviderError) {
     return errorResponse(error.status, error.code, error.message);
@@ -115,32 +138,6 @@ function requestOf(body: SocialDataCreateRequest): SocialDataRequest {
 
 function providerFor(platform: SocialDataRequest["platform"]): string {
   return `monid/${platform}`;
-}
-
-function creditsFor(cost: number, unitPrice: number, unitSize: number): number {
-  if (
-    ![cost, unitPrice, unitSize].every(Number.isSafeInteger) ||
-    cost < 0 ||
-    unitPrice < 0 ||
-    unitSize <= 0
-  ) {
-    throw new SocialDataProviderError(
-      "PRICING_NOT_CONFIGURED",
-      "Social data pricing is unavailable.",
-      503,
-    );
-  }
-  const denominator = BigInt(unitSize);
-  const result =
-    (BigInt(cost) * BigInt(unitPrice) + denominator - 1n) / denominator;
-  if (result > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new SocialDataProviderError(
-      "SOCIAL_DATA_LIMIT_EXCEEDED",
-      "The requested operation exceeds the supported budget.",
-      422,
-    );
-  }
-  return Number(result);
 }
 
 function publicJob(job: Job): SocialDataJobResponse {
@@ -194,32 +191,9 @@ function replayJob(
       );
 }
 
-async function loadPricing(db: Db, platform: SocialDataRequest["platform"]) {
-  const provider = providerFor(platform);
-  const [pricing] = await db
-    .select()
-    .from(usagePricing)
-    .where(
-      and(
-        eq(usagePricing.kind, "social"),
-        eq(usagePricing.provider, provider),
-        eq(usagePricing.category, BILLING_CATEGORY),
-      ),
-    )
-    .for("share");
-  if (!pricing) {
-    throw new SocialDataProviderError(
-      "PRICING_NOT_CONFIGURED",
-      "Social data pricing is unavailable.",
-      503,
-    );
-  }
-  return pricing;
-}
-
 export const quoteSocialData$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly auth: Actor;
       readonly body: SocialDataRequest;
@@ -240,7 +214,7 @@ export const quoteSocialData$ = command(
         "This Social data platform is not available.",
       );
     }
-    const db = set(writeDb$);
+    const db = get(db$);
     const result = await settle(
       (async () => {
         const estimate = await inspectSocialDataProviderPlan(
@@ -248,7 +222,25 @@ export const quoteSocialData$ = command(
           signal,
         );
         signal.throwIfAborted();
-        const pricing = await loadPricing(db, args.body.platform);
+        const provider = providerFor(args.body.platform);
+        const [pricing] = await db
+          .select()
+          .from(usagePricing)
+          .where(
+            and(
+              eq(usagePricing.kind, "social"),
+              eq(usagePricing.provider, provider),
+              eq(usagePricing.category, BILLING_CATEGORY),
+            ),
+          )
+          .for("share");
+        if (!pricing) {
+          throw new SocialDataProviderError(
+            "PRICING_NOT_CONFIGURED",
+            "Social data pricing is unavailable.",
+            503,
+          );
+        }
         signal.throwIfAborted();
         const credits = creditsFor(
           estimate.estimatedCostUsdMicros,
@@ -273,172 +265,32 @@ export const quoteSocialData$ = command(
   },
 );
 
-async function checkBudget(
-  tx: Tx,
-  args: {
-    readonly auth: Actor;
-    readonly request: SocialDataRequest;
-    readonly estimate: SocialDataProviderQuote;
-    readonly estimatedCredits: number;
-    readonly maxCredits: number;
-  },
-  signal: AbortSignal,
-): Promise<ErrorResponse | null> {
-  if (args.maxCredits < args.estimatedCredits) {
-    return errorResponse(
-      402,
-      "BUDGET_EXCEEDED",
-      "The estimated Social data cost exceeds --max-credits. Reduce the result limit or raise the budget.",
-    );
-  }
-  const [reservation] = await tx
-    .select({
-      credits:
-        sql`COALESCE(sum(${socialDataJobs.reservedCredits}), 0)::bigint`.mapWith(
-          pgInt8ToSafeIntegerDecoder,
-        ),
-      jobs: sql`count(*)::bigint`.mapWith(pgInt8ToSafeIntegerDecoder),
-    })
-    .from(socialDataJobs)
-    .where(
-      and(
-        eq(socialDataJobs.orgId, args.auth.orgId),
-        isNull(socialDataJobs.creditsCharged),
-      ),
-    );
-  signal.throwIfAborted();
-  if ((reservation?.jobs ?? 0) >= 100) {
-    return errorResponse(
-      429,
-      "SOCIAL_DATA_CAPACITY",
-      "Wait for existing Social data jobs to finish.",
-    );
-  }
-  if (args.maxCredits === 0) {
-    return null;
-  }
-  return await checkManagedCreditsSnapshotInDb(
-    tx,
-    {
-      runId: creditPolicyRunId(args.auth),
-      orgId: args.auth.orgId,
-      userId: args.auth.userId,
-      resource: {
-        kind: "social",
-        provider: providerFor(args.request.platform),
-        category: BILLING_CATEGORY,
-        quantity: Math.max(1, args.estimate.estimatedCostUsdMicros),
-      },
-      label: "Okou Social",
-      reservedCredits:
-        (reservation?.credits ?? 0) + args.maxCredits - args.estimatedCredits,
-    },
-    signal,
-  );
+interface SocialAdmissionArgs {
+  readonly auth: Actor;
+  readonly body: SocialDataCreateRequest;
+  readonly source?: Job;
 }
 
-async function admitJob(
-  tx: Tx,
-  args: {
-    readonly auth: Actor;
-    readonly body: SocialDataCreateRequest;
-    readonly plan: SocialDataProviderPlan;
-    readonly estimate: SocialDataProviderQuote;
-    readonly source?: Job;
-  },
+async function prepareSocialAdmission(
+  args: SocialAdmissionArgs,
   signal: AbortSignal,
-): Promise<CreatedResponse | ErrorResponse> {
-  const [owner] = await tx
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.auth.orgId))
-    .for("no key update");
-  signal.throwIfAborted();
-  if (!owner) {
-    return errorResponse(404, "NOT_FOUND", "Organization not found.");
-  }
-  const [duplicate] = await tx
-    .select()
-    .from(socialDataJobs)
-    .where(requestWhere(args.auth, args.body));
-  signal.throwIfAborted();
-  if (duplicate) {
-    return replayJob(duplicate, args.body, args.source?.id ?? null);
-  }
-  if (args.source) {
-    const [successor] = await tx
-      .select({ id: socialDataJobs.id })
-      .from(socialDataJobs)
-      .where(eq(socialDataJobs.sourceJobId, args.source.id));
-    signal.throwIfAborted();
-    if (successor) {
-      return errorResponse(
-        409,
-        "SOCIAL_DATA_PAGE_ALREADY_CONTINUED",
-        "This page already has a continuation. Recover it from saved jobs; do not submit it again.",
-      );
-    }
-  }
-  const request = requestOf(args.body);
-  const pricing = await loadPricing(tx, request.platform);
-  signal.throwIfAborted();
-  const estimatedCredits = creditsFor(
-    args.estimate.estimatedCostUsdMicros,
-    pricing.unitPrice,
-    pricing.unitSize,
+) {
+  const plan = prepareSocialDataProviderPlan(
+    requestOf(args.body),
+    args.source?.nextProviderCursor ?? undefined,
   );
-  const maxCredits = args.body.maxCredits ?? estimatedCredits;
-  const rejected = await checkBudget(
-    tx,
-    { ...args, request, estimatedCredits, maxCredits },
-    signal,
-  );
-  if (rejected) {
-    return rejected;
-  }
-  const [job] = await tx
-    .insert(socialDataJobs)
-    .values({
-      orgId: args.auth.orgId,
-      userId: args.auth.userId,
-      requestId: args.body.requestId,
-      billingRunId:
-        args.auth.tokenType === "agent" || args.auth.tokenType === "sandbox"
-          ? args.auth.runId
-          : null,
-      platform: request.platform,
-      operation: request.operation,
-      request: args.body,
-      providerName: args.plan.provider,
-      providerEndpoint: args.plan.endpoint,
-      sourceJobId: args.source?.id,
-      providerCursor: args.plan.cursor,
-      collectionProgress: args.source?.collectionProgress,
-      estimatedCostUsdMicros: args.estimate.estimatedCostUsdMicros,
-      unitPrice: pricing.unitPrice,
-      unitSize: pricing.unitSize,
-      maxCredits,
-      reservedCredits: maxCredits,
-    })
-    .returning();
+  const estimate = await inspectSocialDataProviderPlan(plan, signal);
   signal.throwIfAborted();
-  if (!job) {
-    throw new Error("Social data job insertion returned no row");
-  }
-  return { status: 202, body: publicJob(job) };
+  return { plan, estimate };
 }
 
-export const createSocialDataJob$ = command(
+const checkSocialDataAdmission$ = command(
   async (
-    { set },
-    args: {
-      readonly auth: Actor;
-      readonly body: SocialDataCreateRequest;
-      readonly source?: Job;
-    },
+    { get, set },
+    args: SocialAdmissionArgs,
     signal: AbortSignal,
-  ): Promise<CreatedResponse | ErrorResponse> => {
-    const db = set(writeDb$);
+  ): Promise<CreatedResponse | ErrorResponse | null> => {
+    const db = get(db$);
     const [existing] = await db
       .select()
       .from(socialDataJobs)
@@ -464,24 +316,136 @@ export const createSocialDataJob$ = command(
         .where(eq(socialDataJobs.sourceJobId, args.source.id));
       signal.throwIfAborted();
       if (successor) {
-        return errorResponse(
-          409,
-          "SOCIAL_DATA_PAGE_ALREADY_CONTINUED",
-          "This page already has a continuation. Recover it from saved jobs; do not submit it again.",
-        );
+        return socialContinuationConflict();
       }
     }
+    return null;
+  },
+);
+
+export const createSocialDataJob$ = command(
+  async (
+    { set },
+    args: SocialAdmissionArgs,
+    signal: AbortSignal,
+  ): Promise<CreatedResponse | ErrorResponse> => {
+    const early = await set(checkSocialDataAdmission$, args, signal);
+    if (early) {
+      return early;
+    }
+    const db = set(writeDb$);
     const result = await settle(
       (async () => {
-        const plan = prepareSocialDataProviderPlan(
-          requestOf(args.body),
-          args.source?.nextProviderCursor ?? undefined,
-        );
-        const estimate = await inspectSocialDataProviderPlan(plan, signal);
-        signal.throwIfAborted();
+        const { plan, estimate } = await prepareSocialAdmission(args, signal);
+        const orgId = args.auth.orgId;
         // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0249; new non-billing transactions are prohibited.
-        return await db.transaction((tx) => {
-          return admitJob(tx, { ...args, plan, estimate }, signal);
+        return await db.transaction(async (tx) => {
+          const [owner] = await tx
+            .select({ orgId: orgMetadata.orgId })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, orgId))
+            .for("no key update");
+          signal.throwIfAborted();
+          if (!owner) {
+            return errorResponse(404, "NOT_FOUND", "Organization not found.");
+          }
+          const [duplicate] = await tx
+            .select()
+            .from(socialDataJobs)
+            .where(requestWhere(args.auth, args.body));
+          signal.throwIfAborted();
+          if (duplicate) {
+            return replayJob(duplicate, args.body, args.source?.id ?? null);
+          }
+          if (args.source) {
+            const [successor] = await tx
+              .select({ id: socialDataJobs.id })
+              .from(socialDataJobs)
+              .where(eq(socialDataJobs.sourceJobId, args.source.id));
+            signal.throwIfAborted();
+            if (successor) {
+              return socialContinuationConflict();
+            }
+          }
+          const request = requestOf(args.body);
+          const [pricing] = await tx
+            .select()
+            .from(usagePricing)
+            .where(socialPricingWhere(request.platform))
+            .for("share");
+          const price = requireSocialPricing(pricing);
+          signal.throwIfAborted();
+          const budget = socialAdmissionBudget(args.body, estimate, price);
+          if (budget.maxCredits < budget.estimatedCredits) {
+            return socialBudgetExceeded();
+          }
+          const reservationPlan = socialReservationPlan(orgId);
+          const [reservation] = await tx
+            .select(reservationPlan.columns)
+            .from(socialDataJobs)
+            .where(reservationPlan.where);
+          signal.throwIfAborted();
+          if ((reservation?.jobs ?? 0) >= 100) {
+            return socialCapacityExceeded();
+          }
+          if (budget.maxCredits !== 0) {
+            const creditArgs = socialCreditCheckArgs(
+              args.auth,
+              request,
+              estimate,
+              budget,
+              reservation,
+            );
+            const snapshotPlan = managedSnapshotPlan(creditArgs);
+            const [snapshot] = await tx
+              .with(snapshotPlan.expired)
+              .select(snapshotPlan.columns)
+              .from(snapshotPlan.expired)
+              .leftJoin(orgMetadata, snapshotPlan.orgWhere)
+              .leftJoin(usagePricing, snapshotPlan.pricingWhere);
+            signal.throwIfAborted();
+            const required = managedSnapshotRequirement(snapshot, creditArgs);
+            if ("status" in required) {
+              return required;
+            }
+            const [capabilities] = await tx
+              .select(orgPlanCapabilitySelection())
+              .from(orgPlanEntitlements)
+              .where(eq(orgPlanEntitlements.orgId, orgId))
+              .limit(1);
+            if (!capabilities) {
+              const [org] = await tx
+                .select({ orgId: orgMetadata.orgId })
+                .from(orgMetadata)
+                .where(eq(orgMetadata.orgId, orgId))
+                .limit(1);
+              if (org) {
+                throw new Error(`Missing org plan entitlement for ${orgId}`);
+              }
+            }
+            const access = snapshotAccess(required.row, capabilities, orgId);
+            signal.throwIfAborted();
+            if (access !== "paid" && access !== "free") {
+              return access;
+            }
+            if (access === "paid") {
+              const memberPlan = memberCreditPlan(creditArgs, nowDate());
+              const [member] = await tx
+                .select(memberPlan.columns)
+                .from(usagePackCreditGrants)
+                .where(memberPlan.where);
+              signal.throwIfAborted();
+              if (!hasManagedSnapshotCredits(required, member)) {
+                return insufficientCredits();
+              }
+            }
+          }
+          const [job] = await tx
+            .insert(socialDataJobs)
+            .values(socialAdmissionValues({ ...args, plan, estimate }, budget))
+            .returning();
+          signal.throwIfAborted();
+          return createdSocialDataJob(job);
         });
       })(),
       signal,
@@ -489,6 +453,13 @@ export const createSocialDataJob$ = command(
     return result.ok ? result.value : providerErrorResponse(result.error);
   },
 );
+
+function createdSocialDataJob(job: Job | undefined): CreatedResponse {
+  if (!job) {
+    throw new Error("Social data job insertion returned no row");
+  }
+  return { status: 202, body: publicJob(job) };
+}
 
 function claimedWhere(claim: Claim) {
   return and(
@@ -515,142 +486,158 @@ function jobPlan(job: Job): SocialDataProviderPlan {
   return plan;
 }
 
-async function finishFree(
-  db: Db,
-  claim: Claim,
-  status: "failed" | "cancelled" | "unknown",
-  code?: string,
-  message?: string,
-): Promise<void> {
-  await db
-    .update(socialDataJobs)
-    .set({
-      status,
-      creditsCharged: 0,
-      reservedCredits: 0,
-      error: code && message ? { code, message } : null,
-      completedAt: nowDate(),
-      updatedAt: nowDate(),
-    })
-    .where(claimedWhere(claim));
-}
-
-async function readClaimOutcome(
-  db: Db,
-  claim: Claim,
-  signal: AbortSignal,
-): Promise<SocialDataProviderRun | null> {
-  const job = claim.job;
-  const plan = jobPlan(job);
-  let outcome: SocialDataProviderRun;
-  if (job.startedAt === null) {
-    const [starting] = await db
-      .update(socialDataJobs)
-      .set({ status: "running", startedAt: nowDate() })
-      .where(and(claimedWhere(claim), isNull(socialDataJobs.stopRequestedAt)))
-      .returning();
-    signal.throwIfAborted();
-    if (!starting) {
-      await finishFree(db, claim, "cancelled");
-      return null;
-    }
-    outcome = await startSocialDataProviderRun(plan, signal);
-  } else if (job.upstreamRunId) {
-    if (job.stopRequestedAt && !job.stopSubmittedAt) {
-      const stopped = await stopSocialDataProviderRun(
-        job.upstreamRunId,
-        signal,
-      );
-      if (stopped.acknowledged) {
-        await db
-          .update(socialDataJobs)
-          .set({ stopSubmittedAt: nowDate() })
-          .where(claimedWhere(claim));
-      }
-      signal.throwIfAborted();
-    }
-    outcome = await readSocialDataProviderRun(plan, job.upstreamRunId, signal);
-  } else {
-    await finishFree(
-      db,
-      claim,
-      "unknown",
-      "SOCIAL_DATA_OUTCOME_UNKNOWN",
-      "The operation outcome could not be recovered. This job will not be charged or submitted again.",
-    );
-    return null;
-  }
-  if (outcome.upstreamRunId) {
-    const [retained] = await db
-      .update(socialDataJobs)
-      .set({ upstreamRunId: outcome.upstreamRunId })
-      .where(claimedWhere(claim))
-      .returning({ id: socialDataJobs.id });
-    if (!retained) {
-      return null;
-    }
-  }
-  signal.throwIfAborted();
-  return outcome;
-}
-
-async function saveClaimOutcome(
-  db: Db,
-  claim: Claim,
-  outcome: SocialDataProviderRun,
-): Promise<Job | null> {
-  if (
-    outcome.state === "running" ||
-    outcome.state === "pending" ||
-    (outcome.state === "unknown" && outcome.upstreamRunId)
-  ) {
-    await db
-      .update(socialDataJobs)
-      .set({ status: "running", error: null, updatedAt: nowDate() })
-      .where(claimedWhere(claim));
-    return null;
-  }
-  if (outcome.state !== "completed") {
-    await finishFree(
-      db,
-      claim,
-      outcome.state === "cancelled"
-        ? "cancelled"
-        : outcome.state === "unknown"
-          ? "unknown"
-          : "failed",
-      outcome.errorCode ?? "SOCIAL_DATA_FAILED",
-      "The Social data operation did not produce a billable result.",
-    );
-    return null;
-  }
-  if (outcome.actualCostUsdMicros === undefined || !outcome.data) {
+const finishFree$ = command(
+  async (
+    { set },
+    claim: Claim,
+    status: "failed" | "cancelled" | "unknown",
+    code?: string,
+    message?: string,
+  ): Promise<void> => {
+    const db = set(writeDb$);
     await db
       .update(socialDataJobs)
       .set({
-        status: "running",
-        error: {
-          code: "SOCIAL_DATA_SETTLEMENT_PENDING",
-          message: "The result is awaiting a confirmed settlement receipt.",
-        },
+        status,
+        creditsCharged: 0,
+        reservedCredits: 0,
+        error: code && message ? { code, message } : null,
+        completedAt: nowDate(),
         updatedAt: nowDate(),
       })
       .where(claimedWhere(claim));
-    return null;
-  }
-  const [saved] = await db
-    .update(socialDataJobs)
-    .set({
-      status: "completed",
-      actualCostUsdMicros: outcome.actualCostUsdMicros,
-      ...completedSocialDataPage(claim.job, outcome),
-      error: null,
-      updatedAt: nowDate(),
-    })
-    .where(claimedWhere(claim))
-    .returning();
-  return saved ?? null;
-}
+  },
+);
+
+const readClaimOutcome$ = command(
+  async (
+    { set },
+    claim: Claim,
+    signal: AbortSignal,
+  ): Promise<SocialDataProviderRun | null> => {
+    const db = set(writeDb$);
+    const job = claim.job;
+    const plan = jobPlan(job);
+    let outcome: SocialDataProviderRun;
+    if (job.startedAt === null) {
+      const [starting] = await db
+        .update(socialDataJobs)
+        .set({ status: "running", startedAt: nowDate() })
+        .where(and(claimedWhere(claim), isNull(socialDataJobs.stopRequestedAt)))
+        .returning();
+      signal.throwIfAborted();
+      if (!starting) {
+        await set(finishFree$, claim, "cancelled");
+        signal.throwIfAborted();
+        return null;
+      }
+      outcome = await startSocialDataProviderRun(plan, signal);
+    } else if (job.upstreamRunId) {
+      if (job.stopRequestedAt && !job.stopSubmittedAt) {
+        const stopped = await stopSocialDataProviderRun(
+          job.upstreamRunId,
+          signal,
+        );
+        if (stopped.acknowledged) {
+          await db
+            .update(socialDataJobs)
+            .set({ stopSubmittedAt: nowDate() })
+            .where(claimedWhere(claim));
+        }
+        signal.throwIfAborted();
+      }
+      outcome = await readSocialDataProviderRun(
+        plan,
+        job.upstreamRunId,
+        signal,
+      );
+    } else {
+      await set(
+        finishFree$,
+        claim,
+        "unknown",
+        "SOCIAL_DATA_OUTCOME_UNKNOWN",
+        "The operation outcome could not be recovered. This job will not be charged or submitted again.",
+      );
+      signal.throwIfAborted();
+      return null;
+    }
+    if (outcome.upstreamRunId) {
+      const [retained] = await db
+        .update(socialDataJobs)
+        .set({ upstreamRunId: outcome.upstreamRunId })
+        .where(claimedWhere(claim))
+        .returning({ id: socialDataJobs.id });
+      signal.throwIfAborted();
+      if (!retained) {
+        return null;
+      }
+    }
+    signal.throwIfAborted();
+    return outcome;
+  },
+);
+
+const saveClaimOutcome$ = command(
+  async (
+    { set },
+    claim: Claim,
+    outcome: SocialDataProviderRun,
+  ): Promise<Job | null> => {
+    const db = set(writeDb$);
+    if (
+      outcome.state === "running" ||
+      outcome.state === "pending" ||
+      (outcome.state === "unknown" && outcome.upstreamRunId)
+    ) {
+      await db
+        .update(socialDataJobs)
+        .set({ status: "running", error: null, updatedAt: nowDate() })
+        .where(claimedWhere(claim));
+      return null;
+    }
+    if (outcome.state !== "completed") {
+      await set(
+        finishFree$,
+        claim,
+        outcome.state === "cancelled"
+          ? "cancelled"
+          : outcome.state === "unknown"
+            ? "unknown"
+            : "failed",
+        outcome.errorCode ?? "SOCIAL_DATA_FAILED",
+        "The Social data operation did not produce a billable result.",
+      );
+      return null;
+    }
+    if (outcome.actualCostUsdMicros === undefined || !outcome.data) {
+      await db
+        .update(socialDataJobs)
+        .set({
+          status: "running",
+          error: {
+            code: "SOCIAL_DATA_SETTLEMENT_PENDING",
+            message: "The result is awaiting a confirmed settlement receipt.",
+          },
+          updatedAt: nowDate(),
+        })
+        .where(claimedWhere(claim));
+      return null;
+    }
+    const [saved] = await db
+      .update(socialDataJobs)
+      .set({
+        status: "completed",
+        actualCostUsdMicros: outcome.actualCostUsdMicros,
+        ...completedSocialDataPage(claim.job, outcome),
+        error: null,
+        updatedAt: nowDate(),
+      })
+      .where(claimedWhere(claim))
+      .returning();
+    return saved ?? null;
+  },
+);
 
 const settleSocialDataJob$ = command(
   async ({ set }, claim: Claim, signal: AbortSignal): Promise<void> => {
@@ -686,14 +673,13 @@ const settleSocialDataJob$ = command(
 
 const advanceClaim$ = command(
   async ({ set }, claim: Claim, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
     if (claim.job.actualCostUsdMicros === null || claim.job.result === null) {
-      const outcome = await readClaimOutcome(db, claim, signal);
+      const outcome = await set(readClaimOutcome$, claim, signal);
       signal.throwIfAborted();
       if (!outcome) {
         return;
       }
-      const saved = await saveClaimOutcome(db, claim, outcome);
+      const saved = await set(saveClaimOutcome$, claim, outcome);
       signal.throwIfAborted();
       if (!saved) {
         return;
@@ -703,39 +689,42 @@ const advanceClaim$ = command(
   },
 );
 
-async function handleClaimError(
-  db: Db,
-  claim: Claim,
-  error: unknown,
-  signal: AbortSignal,
-): Promise<void> {
-  signal.throwIfAborted();
-  if (!(error instanceof SocialDataProviderError)) {
-    throw error;
-  }
-  const [current] = await db
-    .select()
-    .from(socialDataJobs)
-    .where(claimedWhere(claim));
-  signal.throwIfAborted();
-  if (current?.upstreamRunId) {
-    await db
-      .update(socialDataJobs)
-      .set({
-        error: { code: error.code, message: error.message },
-        updatedAt: nowDate(),
-      })
+const handleClaimError$ = command(
+  async (
+    { set },
+    claim: Claim,
+    error: unknown,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    signal.throwIfAborted();
+    if (!(error instanceof SocialDataProviderError)) {
+      throw error;
+    }
+    const [current] = await db
+      .select()
+      .from(socialDataJobs)
       .where(claimedWhere(claim));
-  } else {
-    await finishFree(
-      db,
-      claim,
-      "unknown",
-      "SOCIAL_DATA_OUTCOME_UNKNOWN",
-      "The operation outcome could not be confirmed. This job will not be charged or submitted again.",
-    );
-  }
-}
+    signal.throwIfAborted();
+    if (current?.upstreamRunId) {
+      await db
+        .update(socialDataJobs)
+        .set({
+          error: { code: error.code, message: error.message },
+          updatedAt: nowDate(),
+        })
+        .where(claimedWhere(claim));
+    } else {
+      await set(
+        finishFree$,
+        claim,
+        "unknown",
+        "SOCIAL_DATA_OUTCOME_UNKNOWN",
+        "The operation outcome could not be confirmed. This job will not be charged or submitted again.",
+      );
+    }
+  },
+);
 
 export const advanceSocialDataJob$ = command(
   async ({ set }, jobId: string, signal: AbortSignal): Promise<void> => {
@@ -768,7 +757,7 @@ export const advanceSocialDataJob$ = command(
           signal,
         );
         if (!advanced.ok) {
-          await handleClaimError(db, claim, advanced.error, signal);
+          await set(handleClaimError$, claim, advanced.error, signal);
         }
       })(),
     );

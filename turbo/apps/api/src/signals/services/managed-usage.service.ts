@@ -1,7 +1,4 @@
-import {
-  officialWorkflowCreditAccess$,
-  officialWorkflowCreditAccessSql,
-} from "./official-workflow-policy.service";
+import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
@@ -33,13 +30,9 @@ import {
   pgInt8ToBigIntDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { processUsageEventKeys$ } from "./credit-usage.service";
-import {
-  loadOrgPlanCapabilities,
-  loadOrgPlanCapabilities$,
-} from "./org-plan-entitlement-read.service";
-import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 
 export interface ManagedUsageErrorResponse {
   readonly status: 402 | 403 | 503;
@@ -55,7 +48,7 @@ function errorBody(message: string, code: string) {
   return { error: { message, code } };
 }
 
-function closedOfficialRun(): ManagedUsageErrorResponse {
+export function closedOfficialRun(): ManagedUsageErrorResponse {
   return {
     status: 403,
     body: errorBody(
@@ -65,7 +58,7 @@ function closedOfficialRun(): ManagedUsageErrorResponse {
   };
 }
 
-function insufficientCredits(): ManagedUsageErrorResponse {
+export function insufficientCredits(): ManagedUsageErrorResponse {
   return {
     status: 402,
     body: errorBody(
@@ -75,7 +68,7 @@ function insufficientCredits(): ManagedUsageErrorResponse {
   };
 }
 
-function pricingNotConfigured(label: string): ManagedUsageErrorResponse {
+export function pricingNotConfigured(label: string): ManagedUsageErrorResponse {
   return {
     status: 503,
     body: errorBody(
@@ -85,7 +78,7 @@ function pricingNotConfigured(label: string): ManagedUsageErrorResponse {
   };
 }
 
-function estimatedCredits(
+export function estimatedCredits(
   unitPrice: bigint,
   unitSize: bigint,
   quantity: number,
@@ -109,99 +102,6 @@ export interface ManagedUsageCreditCheckArgs {
   readonly resource: ManagedUsageResource;
   readonly label: string;
   readonly reservedCredits?: number;
-}
-
-/** Check spendable credits within the caller's admission transaction. */
-export async function checkManagedCreditsSnapshotInDb(
-  writeDb: Db,
-  args: ManagedUsageCreditCheckArgs,
-  signal: AbortSignal,
-): Promise<ManagedUsageErrorResponse | null> {
-  const pricingProvider = args.resource.provider;
-  const expired = writeDb.$with("expired").as(
-    writeDb
-      .select({
-        total: sql`COALESCE(${sum(creditExpiresRecord.remaining)}, 0)::bigint`
-          .mapWith(pgInt8ToBigIntDecoder)
-          .as("expired_total"),
-      })
-      .from(creditExpiresRecord)
-      .where(
-        and(
-          eq(creditExpiresRecord.orgId, args.orgId),
-          lte(creditExpiresRecord.expiresAt, sql`now()`),
-          gt(creditExpiresRecord.remaining, sql`0`),
-        ),
-      ),
-  );
-  const rows = await writeDb
-    .with(expired)
-    .select({
-      officialCreditAccess: officialWorkflowCreditAccessSql(args),
-      credits: sql`${orgMetadata.credits}`.mapWith(
-        nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
-      ),
-      unsettledExpired: expired.total,
-      unitPrice: sql`${usagePricing.unitPrice}`.mapWith(
-        nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
-      ),
-      unitSize: sql`${usagePricing.unitSize}`.mapWith(
-        nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
-      ),
-    })
-    .from(expired)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId))
-    .leftJoin(
-      usagePricing,
-      and(
-        eq(usagePricing.kind, args.resource.kind),
-        eq(usagePricing.provider, pricingProvider),
-        eq(usagePricing.category, args.resource.category),
-      ),
-    );
-  signal.throwIfAborted();
-
-  const row = rows[0];
-  if (row?.unitPrice === null || row?.unitSize === null) {
-    return pricingNotConfigured(args.label);
-  }
-
-  if (!row || row.credits === null) {
-    return insufficientCredits();
-  }
-
-  const credits = row.credits;
-  const quantity = args.resource.quantity ?? 1;
-  const requiredCredits =
-    estimatedCredits(row.unitPrice, row.unitSize, quantity) +
-    BigInt(args.reservedCredits ?? 0);
-  const capabilities = await loadOrgPlanCapabilities(writeDb, args.orgId);
-  signal.throwIfAborted();
-  if (!capabilities || capabilities.status !== "active") {
-    return insufficientCredits();
-  }
-  if (row.officialCreditAccess === "closed") {
-    return closedOfficialRun();
-  }
-  if (row.officialCreditAccess === "free") {
-    return null;
-  }
-  const spendableCredits = credits - row.unsettledExpired;
-  const usagePackCredits = BigInt(
-    await getSpendableUsagePackCredits(writeDb, {
-      orgId: args.orgId,
-      userId: args.userId,
-    }),
-  );
-  signal.throwIfAborted();
-  if (
-    usagePackCredits + (spendableCredits > 0n ? spendableCredits : 0n) >=
-    requiredCredits
-  ) {
-    return null;
-  }
-
-  return insufficientCredits();
 }
 
 const checkManagedCreditBalance$ = command(
