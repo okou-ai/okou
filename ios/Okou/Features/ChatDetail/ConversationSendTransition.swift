@@ -15,6 +15,9 @@ final class ConversationSendTransition {
   @ObservationIgnored private var deadline: CFTimeInterval = 0
   @ObservationIgnored private var options = UIView.AnimationOptions.curveEaseInOut
   @ObservationIgnored private var animator: UIViewPropertyAnimator?
+  @ObservationIgnored private var displayLink: CADisplayLink?
+  private let progress = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+  @ObservationIgnored private var animationOrigin = CGPoint.zero
   @ObservationIgnored private var generation = UUID()
   @ObservationIgnored private var reduceMotion = false
   @ObservationIgnored var didBegin: (() -> Void)?
@@ -22,7 +25,12 @@ final class ConversationSendTransition {
 
   var isActive: Bool { messageID != nil }
 
-  func attach(_ collection: UICollectionView) { self.collection = collection }
+  func attach(_ collection: UICollectionView) {
+    self.collection = collection
+    progress.isUserInteractionEnabled = false
+    progress.accessibilityElementsHidden = true
+    collection.addSubview(progress)
+  }
 
   func begin(messageID: String, reduceMotion: Bool) {
     cancel()
@@ -94,15 +102,15 @@ final class ConversationSendTransition {
 
   /// Structural/height updates join the running send from its presented position.
   func prepareForSnapshot() {
-    guard isAnimating, let collection, animator?.state == .active else { return }
-    let offset = collection.layer.presentation()?.bounds.origin ?? collection.contentOffset
+    guard isAnimating, animator?.state == .active else { return }
     let alpha = arrivingView?.layer.presentation()?.opacity
     generation = UUID()
     animator?.stopAnimation(true)
     animator = nil
+    displayLink?.invalidate()
+    displayLink = nil
     target = nil
     UIView.performWithoutAnimation {
-      collection.setContentOffset(offset, animated: false)
       if let alpha { arrivingView?.alpha = CGFloat(alpha) }
     }
   }
@@ -115,24 +123,47 @@ final class ConversationSendTransition {
     if let target, abs(target - y) <= 0.5 { return }
     prepareForSnapshot()
     target = y
+    animationOrigin = collection.contentOffset
     let generation = UUID()
     self.generation = generation
     let duration = reduceMotion ? 0 : max(0, deadline - CACurrentMediaTime())
+    if duration == 0 {
+      collection.setContentOffset(CGPoint(x: animationOrigin.x, y: y), animated: false)
+      arrivingView?.alpha = 1
+      finish()
+      return
+    }
+    UIView.performWithoutAnimation { progress.alpha = 0 }
+    displayLink?.invalidate()
+    let frameTarget = ConversationSendFrameTarget(transition: self)
+    let link = CADisplayLink(
+      target: frameTarget, selector: #selector(ConversationSendFrameTarget.tick(_:)))
+    displayLink = link
+    link.add(to: .main, forMode: .common)
     animator = UIViewPropertyAnimator.runningPropertyAnimator(
       withDuration: duration, delay: 0,
-      options: options.union([.beginFromCurrentState, .allowUserInteraction])
+      options: options.union(.allowUserInteraction)
     ) {
-      collection.setContentOffset(CGPoint(x: collection.contentOffset.x, y: y), animated: false)
+      self.progress.alpha = 1
       self.arrivingView?.alpha = 1
     } completion: { [weak self] _ in
       guard let self, self.generation == generation, isActive else { return }
+      if let target {
+        collection.setContentOffset(CGPoint(x: animationOrigin.x, y: target), animated: false)
+      }
       finish()
     }
   }
 
+  fileprivate func advanceFrame() {
+    guard let collection, let target, isAnimating else { return }
+    let fraction = CGFloat(progress.layer.presentation()?.opacity ?? 0)
+    let y = animationOrigin.y + (target - animationOrigin.y) * min(1, max(0, fraction))
+    // Move the native viewport every frame so collection reuse keeps the visible rows mounted.
+    collection.setContentOffset(CGPoint(x: animationOrigin.x, y: y), animated: false)
+  }
+
   func cancel() {
-    let wasAnimating = isAnimating
-    let offset = collection?.layer.presentation()?.bounds.origin ?? collection?.contentOffset
     generation = UUID()
     messageID = nil
     isAnimating = false
@@ -142,11 +173,10 @@ final class ConversationSendTransition {
     keyboardObserver = nil
     if animator?.state == .active { animator?.stopAnimation(true) }
     animator = nil
+    displayLink?.invalidate()
+    displayLink = nil
     arrivingView?.alpha = 1
     arrivingView = nil
-    if wasAnimating, let collection, let offset {
-      UIView.performWithoutAnimation { collection.setContentOffset(offset, animated: false) }
-    }
   }
 
   private func finish() {
@@ -157,7 +187,22 @@ final class ConversationSendTransition {
     if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
     keyboardObserver = nil
     animator = nil
+    displayLink?.invalidate()
+    displayLink = nil
     arrivingView = nil
     didFinish?()
+  }
+}
+
+@MainActor
+private final class ConversationSendFrameTarget: NSObject {
+  private weak var transition: ConversationSendTransition?
+  init(transition: ConversationSendTransition) { self.transition = transition }
+  @objc func tick(_ link: CADisplayLink) {
+    guard let transition else {
+      link.invalidate()
+      return
+    }
+    transition.advanceFrame()
   }
 }

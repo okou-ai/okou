@@ -52,8 +52,8 @@ final class ConversationSendTransitionTests: XCTestCase {
       samples.append(presentedOffset(collection))
       return fixture.contains(pending.id, in: collection)
         && collection.contentOffset.y > before + 20
-        && abs(presentedOffset(collection) - collection.contentOffset.y) < 1
-        && collection.layer.animation(forKey: "bounds") == nil
+        && collection.contentSize.height + collection.adjustedContentInset.bottom
+          - collection.bounds.maxY <= 1
     }
     await send.value
     try await fixture.assertFinished(pending.id, in: collection)
@@ -92,12 +92,15 @@ final class ConversationSendTransitionTests: XCTestCase {
     let collection = try await fixture.mount()
     defer { fixture.close() }
     fixture.conversation.draft = "Send through a viewport change"
+    let origin = collection.contentOffset.y
     let send = Task { await fixture.scrolling.send() }
     try await eventually { !fixture.conversation.pending.isEmpty }
     let pending = try XCTUnwrap(fixture.conversation.pending.first)
     try await eventually {
       fixture.contains(pending.id, in: collection)
-        && collection.contentOffset.y - presentedOffset(collection) > 5
+        && collection.contentOffset.y > origin + 5
+        && collection.contentSize.height + collection.adjustedContentInset.bottom
+          - collection.bounds.maxY > 5
     }
     let before = presentedOffset(collection)
     let window = try XCTUnwrap(fixture.window)
@@ -117,8 +120,37 @@ final class ConversationSendTransitionTests: XCTestCase {
     fixture.conversation.draft = "Send without motion"
     await fixture.scrolling.send()
     let pending = try XCTUnwrap(fixture.conversation.pending.first)
+    try await eventually { offset(of: pending.id, in: fixture.host.view) != nil }
+    XCTAssertEqual(
+      collection.contentSize.height + collection.adjustedContentInset.bottom
+        - collection.bounds.maxY,
+      0, accuracy: 1)
     try await fixture.assertFinished(pending.id, in: collection)
-    XCTAssertNil(collection.layer.animation(forKey: "bounds"))
+  }
+
+  func testLongSentMessagesKeepNativeCellsInThePresentedViewportThroughoutScrolling() async throws {
+    let fixture = SendTransitionFixture()
+    let collection = try await fixture.mount()
+    defer { fixture.close() }
+    fixture.conversation.draft = String(
+      repeating: "A long message with several visible lines. ", count: 100)
+    let send = Task { await fixture.scrolling.send() }
+    try await eventually { !fixture.conversation.pending.isEmpty }
+    let pending = try XCTUnwrap(fixture.conversation.pending.first)
+    try await eventually {
+      var viewport = collection.layer.presentation()?.bounds ?? collection.bounds
+      viewport.origin.y += collection.adjustedContentInset.top
+      viewport.size.height -=
+        collection.adjustedContentInset.top + collection.adjustedContentInset.bottom
+      XCTAssertTrue(
+        collection.visibleCells.contains { $0.frame.intersects(viewport) },
+        "Virtualization must keep rows mounted where the user currently sees them")
+      return fixture.contains(pending.id, in: collection)
+        && collection.contentSize.height + collection.adjustedContentInset.bottom
+          - collection.bounds.maxY <= 1
+    }
+    await send.value
+    try await fixture.assertFinished(pending.id, in: collection)
   }
 }
 
@@ -172,8 +204,12 @@ private final class SendTransitionFixture {
         && abs(presentedOffset(collection) - collection.contentOffset.y) < 1
     }
     try await eventually {
-      guard let y = offset(of: id, in: self.host.view) else { return false }
-      return y >= 0 && y < collection.bounds.height
+      guard let row = markers(in: self.host.view).first(where: { $0.messageID == id }) else {
+        return false
+      }
+      let rect = row.convert(row.bounds, to: collection)
+      return rect.maxY > collection.bounds.minY + collection.adjustedContentInset.top
+        && rect.minY < collection.bounds.maxY - collection.adjustedContentInset.bottom
     }
   }
 
@@ -209,7 +245,7 @@ private struct SendTransitionProbe: View {
     ) { row, anchor in
       if let message = row.message {
         Text(message.text)
-          .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 120)
+          .frame(maxWidth: .infinity, minHeight: 120)
           .background {
             if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
           }
