@@ -97,6 +97,12 @@ const wbPost = z
     attitudes_count: count.optional(),
     comments_count: count.optional(),
     reposts_count: count.optional(),
+    pic_infos: z
+      .record(
+        z.string(),
+        z.object({ large: z.object({ url: z.string() }).optional() }),
+      )
+      .optional(),
     pics: z
       .array(
         z.object({
@@ -206,18 +212,86 @@ function invalid(): never {
   );
 }
 
-/** Explicit compatible envelopes, not a recursive search for arbitrary data arrays. */
-function douyinData(output: unknown) {
-  const parsed = z
-    .object({ code: z.literal(200).optional(), data: dyData })
+const wbTimelineFeed = z.object({ category: z.literal("feed"), data: wbPost });
+const wbTimelineCard = z.object({ category: z.literal("card") });
+const wbTimelineItem = z.discriminatedUnion("category", [
+  wbTimelineFeed,
+  wbTimelineCard,
+]);
+const wbTimeline = z.object({
+  items: z.array(
+    z.discriminatedUnion("category", [
+      wbTimelineFeed,
+      wbTimelineCard,
+      z.object({
+        category: z.literal("group"),
+        items: z.array(wbTimelineItem),
+      }),
+    ]),
+  ),
+  moreInfo: z.object({ noMore: z.boolean() }),
+});
+
+/** Only the observed endpoint envelopes are accepted; never search arbitrary nested arrays. */
+function douyinData(plan: SocialDataProviderPlan, output: unknown) {
+  const wrapped = z
+    .object({ code: z.literal(200).optional(), data: z.unknown() })
     .safeParse(output);
-  return parsed.success ? parsed.data.data : invalid();
+  const body = wrapped.success ? wrapped.data.data : output;
+  const status = z.object({ status_code: z.number().int() }).safeParse(body);
+  if (status.success && status.data.status_code !== 0) {
+    if (
+      plan.format === "douyin-following" &&
+      status.data.status_code === 2096
+    ) {
+      throw new SocialDataProviderError(
+        "SOCIAL_DATA_SOURCE_UNAVAILABLE",
+        "The source account's privacy settings prevent access to this list.",
+      );
+    }
+    throw new SocialDataProviderError(
+      "SOCIAL_DATA_SOURCE_ERROR",
+      "The source platform could not complete this operation.",
+    );
+  }
+  const rootSupported =
+    plan.endpoint === "/api/v1/douyin/web/handler_user_profile" ||
+    plan.endpoint === "/api/v1/douyin/app/v3/fetch_video_comments";
+  if (!wrapped.success && (!rootSupported || !status.success)) {
+    return invalid();
+  }
+  const parsed = dyData.safeParse(body);
+  return parsed.success ? parsed.data : invalid();
 }
-function weiboData(output: unknown) {
-  const parsed = z
+
+function weiboData(
+  plan: SocialDataProviderPlan,
+  output: unknown,
+): z.infer<typeof wbData> {
+  const wrapped = z
     .object({ code: z.literal(200).optional(), data: wbData })
     .safeParse(output);
-  return parsed.success ? parsed.data.data : invalid();
+  if (wrapped.success) {
+    return wrapped.data.data;
+  }
+  if (plan.endpoint === "/api/v1/weibo/web_v2/fetch_user_info") {
+    const parsed = z.object({ user: wbUser }).safeParse(output);
+    return parsed.success ? parsed.data : invalid();
+  }
+  if (plan.endpoint === "/api/v1/weibo/app/fetch_user_timeline") {
+    const parsed = wbTimeline.safeParse(output);
+    if (!parsed.success) {
+      return invalid();
+    }
+    const statuses = parsed.data.items.flatMap((item) => {
+      const entries = item.category === "group" ? item.items : [item];
+      return entries.flatMap((entry) => {
+        return entry.category === "feed" ? [entry.data] : [];
+      });
+    });
+    return { statuses, has_more: !parsed.data.moreInfo.noMore };
+  }
+  return invalid();
 }
 
 function douyinSearchData(output: unknown) {
@@ -368,7 +442,7 @@ function douyinRows(
       };
     });
   }
-  const data = douyinData(output);
+  const data = douyinData(plan, output);
   switch (plan.format) {
     case "douyin-user": {
       return data.user ? [projectDyUser(data.user)] : invalid();
@@ -439,7 +513,7 @@ function weiboRows(
   if (plan.format === "weibo-search") {
     return weiboSearchRows(output);
   }
-  const data = weiboData(output);
+  const data = weiboData(plan, output);
   if (plan.format === "weibo-user") {
     const user = data.userInfo ?? data.user;
     return user ? [projectWbUser(user)] : invalid();
@@ -479,11 +553,14 @@ function weiboRows(
         likes: post.attitudes_count,
         comments: post.comments_count,
         shares: post.reposts_count,
-        mediaUrls: media(
-          post.pics?.map((pic) => {
+        mediaUrls: media([
+          ...(post.pics?.map((pic) => {
             return pic.large?.url ?? pic.url;
-          }) ?? [],
-        ),
+          }) ?? []),
+          ...Object.values(post.pic_infos ?? {}).map((pic) => {
+            return pic.large?.url;
+          }),
+        ]),
       };
     }) ?? invalid()
   );
@@ -552,8 +629,8 @@ function chinaPageData(plan: SocialDataProviderPlan, output: unknown) {
     return douyinSearchData(output);
   }
   return plan.request.platform === "douyin"
-    ? douyinData(output)
-    : weiboData(output);
+    ? douyinData(plan, output)
+    : weiboData(plan, output);
 }
 
 function chinaNextCursor(

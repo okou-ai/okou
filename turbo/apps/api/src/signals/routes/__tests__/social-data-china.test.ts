@@ -174,6 +174,111 @@ async function execute(
 }
 
 describe("Douyin and Weibo Social adapters", () => {
+  it("inspects a Douyin profile from the live root user envelope", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid(
+        "/api/v1/douyin/web/handler_user_profile",
+        { sec_user_id: { type: "string" } },
+        {
+          status_code: 0,
+          status_msg: null,
+          user: {
+            uid: UID,
+            sec_uid: SEC_UID,
+            nickname: "Example creator",
+            unique_id: "example_creator",
+            signature: "A fictional public profile",
+            follower_count: 12,
+            following_count: 3,
+            aweme_count: 4,
+          },
+        },
+        { queryParams: { sec_user_id: SEC_UID } },
+      );
+      const job = await execute(setup, {
+        platform: "douyin",
+        operation: "inspect",
+        url: `https://www.douyin.com/user/${SEC_UID}`,
+        limit: 1,
+      });
+      expect(job.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [
+            {
+              id: UID,
+              url: `https://www.douyin.com/user/${SEC_UID}`,
+              username: "example_creator",
+              displayName: "Example creator",
+              description: "A fictional public profile",
+              followers: 12,
+              following: 3,
+              posts: 4,
+            },
+          ],
+        },
+        collection: { itemsReturned: 1, continuationAvailable: false },
+      });
+    });
+  });
+
+  it("delivers live root Douyin comments without confusing post and parent IDs", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid(
+        "/api/v1/douyin/app/v3/fetch_video_comments",
+        {
+          aweme_id: { type: "string" },
+          cursor: { type: "integer" },
+          count: { type: "integer" },
+        },
+        {
+          status_code: 0,
+          comments: [
+            {
+              cid: COMMENT,
+              aweme_id: POST,
+              text: "A fictional comment",
+              user: { uid: UID, sec_uid: SEC_UID, nickname: "Example reader" },
+              reply_id: "0",
+              digg_count: 2,
+              reply_comment_total: 1,
+            },
+          ],
+          cursor: 20,
+          has_more: 0,
+          total: 1,
+        },
+        { queryParams: { aweme_id: POST, cursor: 0, count: 20 } },
+      );
+      const job = await execute(setup, {
+        platform: "douyin",
+        operation: "comments",
+        url: `https://www.douyin.com/video/${POST}`,
+        limit: 10,
+      });
+      expect(job.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [
+            {
+              id: COMMENT,
+              text: "A fictional comment",
+              authorId: UID,
+              authorUrl: `https://www.douyin.com/user/${SEC_UID}`,
+              parentId: "0",
+              likes: 2,
+              replies: 1,
+            },
+          ],
+          pagination: { hasMore: false },
+        },
+        collection: { itemsReturned: 1, continuationAvailable: false },
+      });
+    });
+  });
+
   it("delivers typed Douyin posts with stable author identity and allowed media", async () => {
     const setup = await scenario();
     await setup.run(async () => {
@@ -288,7 +393,9 @@ describe("Douyin and Weibo Social adapters", () => {
       expect(job.body).toMatchObject({
         status: "completed",
         data: {
-          items: [{ parentId: COMMENT, authorId: UID }],
+          items: [
+            { id: "7354669356632638219", parentId: COMMENT, authorId: UID },
+          ],
           pagination: { hasMore: false },
         },
       });
@@ -330,6 +437,77 @@ describe("Douyin and Weibo Social adapters", () => {
         data: { items: [], pagination: { hasMore: true } },
       });
       expect(executions).toHaveLength(1);
+    });
+  });
+
+  it("reports a private Douyin following list as unavailable without charging credits", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid(
+        "/api/v1/douyin/web/fetch_user_following_list",
+        {
+          sec_user_id: { type: "string" },
+          max_time: { type: "string" },
+          source_type: { type: "integer" },
+          count: { type: "integer" },
+        },
+        {
+          status_code: 2096,
+          followings: null,
+          status_msg: "由于该用户隐私设置，列表不可见",
+        },
+        {
+          queryParams: {
+            sec_user_id: SEC_UID,
+            max_time: "0",
+            source_type: 2,
+            count: 20,
+          },
+        },
+      );
+      const job = await execute(setup, {
+        platform: "douyin",
+        operation: "following",
+        url: `https://www.douyin.com/user/${SEC_UID}`,
+        limit: 10,
+      });
+      expect(job.body).toMatchObject({
+        status: "failed",
+        error: {
+          code: "SOCIAL_DATA_SOURCE_UNAVAILABLE",
+          message:
+            "The source account's privacy settings prevent access to this list.",
+        },
+        data: null,
+        billing: { creditsCharged: 0, reservedCredits: 0 },
+      });
+    });
+  });
+
+  it("reports other Douyin business failures as source errors without exposing upstream text", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid(
+        "/api/v1/douyin/web/handler_user_profile",
+        { sec_user_id: { type: "string" } },
+        { status_code: 1, status_msg: "Example upstream diagnostic" },
+        { queryParams: { sec_user_id: SEC_UID } },
+      );
+      const job = await execute(setup, {
+        platform: "douyin",
+        operation: "inspect",
+        url: `https://www.douyin.com/user/${SEC_UID}`,
+        limit: 1,
+      });
+      expect(job.body).toMatchObject({
+        status: "failed",
+        error: {
+          code: "SOCIAL_DATA_SOURCE_ERROR",
+          message: "The source platform could not complete this operation.",
+        },
+        data: null,
+        billing: { creditsCharged: 0, reservedCredits: 0 },
+      });
     });
   });
 
@@ -503,6 +681,200 @@ describe("Douyin and Weibo Social adapters", () => {
           items: [
             { id: UID, url: `https://weibo.com/u/${UID}`, followers: 10 },
           ],
+        },
+      });
+    });
+  });
+
+  it("inspects a Weibo profile from the live root user envelope", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid(
+        "/api/v1/weibo/web_v2/fetch_user_info",
+        { uid: { type: "string" } },
+        {
+          user: {
+            id: Number(UID),
+            idstr: UID,
+            screen_name: "Example publisher",
+            description: "A fictional Weibo profile",
+            followers_count: 15,
+            friends_count: 5,
+            statuses_count: 7,
+          },
+        },
+        { queryParams: { uid: UID } },
+      );
+      const job = await execute(setup, {
+        platform: "weibo",
+        operation: "inspect",
+        url: `https://weibo.com/u/${UID}`,
+        limit: 1,
+      });
+      expect(job.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [
+            {
+              id: UID,
+              url: `https://weibo.com/u/${UID}`,
+              displayName: "Example publisher",
+              description: "A fictional Weibo profile",
+              followers: 15,
+              following: 5,
+              posts: 7,
+            },
+          ],
+        },
+        collection: { itemsReturned: 1, continuationAvailable: false },
+      });
+    });
+  });
+
+  it("delivers grouped and direct Weibo timeline feeds and stops at moreInfo.noMore", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      const parameters = {
+        uid: { type: "string" },
+        page: { type: "integer" },
+        filter_type: { type: "string" },
+      };
+      monid(
+        "/api/v1/weibo/app/fetch_user_timeline",
+        parameters,
+        {
+          items: [
+            { category: "card", data: { card_type: 216 } },
+            {
+              category: "group",
+              items: [
+                { category: "card", data: { card_type: 8 } },
+                {
+                  category: "feed",
+                  data: {
+                    idstr: POST,
+                    text: "A fictional grouped post",
+                    user: {
+                      id: Number(UID),
+                      idstr: UID,
+                      screen_name: "Example publisher",
+                    },
+                    attitudes_count: 3,
+                    comments_count: 2,
+                    reposts_count: 1,
+                    pic_infos: {
+                      fictional_picture: {
+                        large: {
+                          url: "https://wx1.sinaimg.cn/large/fictional-picture.jpg",
+                        },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              category: "feed",
+              data: {
+                idstr: "6000000000000002",
+                text: "A fictional direct post",
+                user: { idstr: UID },
+              },
+            },
+          ],
+          moreInfo: {
+            pagingType: "cursor",
+            params: { max_id: 0, page: 2, count: 20 },
+            noMore: false,
+          },
+        },
+        { queryParams: { uid: UID, page: 1, filter_type: "all" } },
+      );
+      const job = await execute(setup, {
+        platform: "weibo",
+        operation: "posts",
+        url: `https://weibo.com/u/${UID}`,
+        limit: 10,
+      });
+      expect(job.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [
+            {
+              id: POST,
+              url: `https://weibo.com/${UID}/${POST}`,
+              text: "A fictional grouped post",
+              authorId: UID,
+              authorUrl: `https://weibo.com/u/${UID}`,
+              likes: 3,
+              comments: 2,
+              shares: 1,
+              mediaUrls: ["https://wx1.sinaimg.cn/large/fictional-picture.jpg"],
+            },
+            {
+              id: "6000000000000002",
+              text: "A fictional direct post",
+              authorId: UID,
+            },
+          ],
+          pagination: { hasMore: true },
+        },
+        collection: { itemsReturned: 2, continuationAvailable: true },
+      });
+      monid(
+        "/api/v1/weibo/app/fetch_user_timeline",
+        parameters,
+        {
+          items: [
+            {
+              category: "feed",
+              data: {
+                idstr: "6000000000000003",
+                text: "A fictional final post",
+                user: { idstr: UID },
+              },
+            },
+          ],
+          moreInfo: {
+            pagingType: "cursor",
+            params: { max_id: 0, page: 3, count: 20 },
+            noMore: true,
+          },
+        },
+        { queryParams: { uid: UID, page: 2, filter_type: "all" } },
+      );
+      const continued = await accept(
+        setup.social.continue({
+          headers: authenticate(setup.actor),
+          params: { jobId: job.body.jobId },
+          body: { requestId: randomUUID() },
+        }),
+        [202],
+      );
+      await accept(
+        setup.cron.reconcile({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const next = await accept(
+        setup.social.get({
+          headers: authenticate(setup.actor),
+          params: { jobId: continued.body.jobId },
+        }),
+        [200],
+      );
+      expect(next.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [{ id: "6000000000000003", text: "A fictional final post" }],
+          pagination: { hasMore: false },
+        },
+        collection: {
+          itemsReturned: 1,
+          cumulativeItemsReturned: 3,
+          continuationAvailable: false,
         },
       });
     });
