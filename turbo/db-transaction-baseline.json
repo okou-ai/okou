@@ -187,11 +187,6 @@
       "owner": "refreshPaymentFailedPaidThroughCandidate"
     },
     {
-      "id": "TX-0126",
-      "file": "turbo/apps/api/src/signals/services/cron-billing-entitlements.service.ts",
-      "owner": "downgradePaymentFailedBillingCandidate"
-    },
-    {
       "id": "TX-0128",
       "file": "turbo/apps/api/src/signals/services/cron-cleanup-sandboxes.service.ts",
       "owner": "commitStaleRunTimeout"
