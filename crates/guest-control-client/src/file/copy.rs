@@ -452,36 +452,28 @@ impl GuestControlClient {
                 &mut normal_operation,
             )
             .await;
-        match copy_result {
-            ExecOperationWaitOutcome::Terminal(Ok(CopyFileOutcome::Copied { bytes_copied })) => {
-                match tokio::fs::rename(temp_guard.path(), host_path).await {
-                    Ok(()) => {
-                        temp_guard.disarm();
-                        normal_operation.complete()?;
-                        Ok(CopyFileResult { bytes_copied })
-                    }
-                    Err(err) => {
-                        temp_guard.remove_now().await;
-                        normal_operation.complete()?;
-                        Err(err)
-                    }
-                }
-            }
-            ExecOperationWaitOutcome::Terminal(Ok(CopyFileOutcome::Missing)) => {
-                temp_guard.remove_now().await;
-                normal_operation.complete()?;
-                Ok(CopyFileResult { bytes_copied: 0 })
-            }
-            ExecOperationWaitOutcome::Terminal(Err(error)) => {
-                temp_guard.remove_now().await;
-                normal_operation.complete()?;
-                Err(error)
-            }
+        let terminal_result = match copy_result {
+            ExecOperationWaitOutcome::Terminal(result) => result,
             ExecOperationWaitOutcome::Unproven(error) => {
                 temp_guard.remove_now().await;
-                Err(error)
+                return Err(error);
             }
-        }
+        };
+        let result = match terminal_result {
+            Ok(CopyFileOutcome::Copied { bytes_copied }) => {
+                tokio::fs::rename(temp_guard.path(), host_path)
+                    .await
+                    .map(|()| {
+                        temp_guard.disarm();
+                        CopyFileResult { bytes_copied }
+                    })
+            }
+            Ok(CopyFileOutcome::Missing) => Ok(CopyFileResult { bytes_copied: 0 }),
+            Err(error) => Err(error),
+        };
+        temp_guard.remove_now().await;
+        normal_operation.complete()?;
+        result
     }
 
     async fn copy_file_to_temp(
