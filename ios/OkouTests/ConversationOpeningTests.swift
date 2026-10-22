@@ -31,7 +31,8 @@ final class ConversationOpeningTests: XCTestCase {
     try await eventually { delay.didResume }
     XCTAssertEqual(list.itemCount, 1)
     XCTAssertGreaterThan(list.collection.contentSize.height, 0)
-    XCTAssertFalse(list.loading.isAnimating, "A stale delayed wake must not cover rendered messages")
+    XCTAssertFalse(
+      list.loading.isAnimating, "A stale delayed wake must not cover rendered messages")
     XCTAssertTrue(list.loading.isHidden)
   }
 
