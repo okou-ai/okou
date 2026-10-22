@@ -162,6 +162,9 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
+      '@sentry/cloudflare':
+        specifier: ^10.76.2
+        version: 10.76.2(@cloudflare/workers-types@5.20260924.1)(wrangler@4.129.0(@cloudflare/workers-types@5.20260924.1)(@types/node@24.3.0)(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@sentry/node':
         specifier: ^10.73.0
         version: 10.73.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.222.0(@opentelemetry/api@1.9.1))
@@ -265,6 +268,9 @@ importers:
         specifier: ^4.3.6
         version: 4.5.4
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 5.20260924.1
+        version: 5.20260924.1
       '@electric-sql/pglite':
         specifier: ^0.5.8
         version: 0.5.8
@@ -340,6 +346,9 @@ importers:
       vitest:
         specifier: ^5.0.5
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      wrangler:
+        specifier: ^4.129.0
+        version: 4.129.0(@cloudflare/workers-types@5.20260924.1)(@types/node@24.3.0)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
   apps/app-worker:
     dependencies:
@@ -3878,12 +3887,28 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
+  '@sentry/cloudflare@10.76.2':
+    resolution: {integrity: sha512-6t9kG3gkBGYUAugNhaiUZA8IcU56C1ul6oVYjoRPUUomTHVIDK2vBVq5ZqBWAZiYSO34GJU9x+OMulz+vzIzpg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@cloudflare/workers-types': ^4.x || ^5.x
+      wrangler: ^4.x
+    peerDependenciesMeta:
+      '@cloudflare/workers-types':
+        optional: true
+      wrangler:
+        optional: true
+
   '@sentry/conventions@0.16.0':
     resolution: {integrity: sha512-fO9PLmHdVURcSPUpWCItWAtgKiMwGdJHbovoSEyLplX5sxs2ugvI4CBPTrkkgqhObnZOD0CnWBKDzSVQYBKEyQ==}
     engines: {node: '>=14'}
 
   '@sentry/core@10.73.0':
     resolution: {integrity: sha512-FLO1UgH19RyasVpofu612WCOgb2nEH0dZy+R72d7p65XU9i0wxlMKm3+sgfwKmiSJp1Qhilaaxs4Jg6BbiM5HA==}
+    engines: {node: '>=18'}
+
+  '@sentry/core@10.76.2':
+    resolution: {integrity: sha512-vndrQalRiwYatTkjlLWvyf69KocXIb9TKJ4A9oiyWguL8PJYtqIRTlRe4OpkpjLrxS18fvRdV0jEm29c/9p3hQ==}
     engines: {node: '>=18'}
 
   '@sentry/feedback@10.73.0':
@@ -3939,6 +3964,10 @@ packages:
 
   '@sentry/server-utils@10.73.0':
     resolution: {integrity: sha512-QskripdKFbM/+gipC6mpa2crLwL7+VbkX84IpHg2z9UlYQ1kNKd3aMT+Qk9NLRSw/zu1rSIAvlbWfx4D3rgNAA==}
+    engines: {node: '>=18'}
+
+  '@sentry/server-utils@10.76.2':
+    resolution: {integrity: sha512-wogj6Trj8fAu+aD7HbpvHEBlyANMOvvO9MP5NFJaiQbprLKugtCdE6rFTxDhofXvRo4nswL9m4Cvysg3k5KcvQ==}
     engines: {node: '>=18'}
 
   '@sentry/vite-plugin@4.9.1':
@@ -11922,9 +11951,23 @@ snapshots:
       - encoding
       - supports-color
 
+  '@sentry/cloudflare@10.76.2(@cloudflare/workers-types@5.20260924.1)(wrangler@4.129.0(@cloudflare/workers-types@5.20260924.1)(@types/node@24.3.0)(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      '@sentry/core': 10.76.2
+      '@sentry/server-utils': 10.76.2
+      magic-string: 0.30.21
+    optionalDependencies:
+      '@cloudflare/workers-types': 5.20260924.1
+      wrangler: 4.129.0(@cloudflare/workers-types@5.20260924.1)(@types/node@24.3.0)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+
   '@sentry/conventions@0.16.0': {}
 
   '@sentry/core@10.73.0':
+    dependencies:
+      '@sentry/conventions': 0.16.0
+
+  '@sentry/core@10.76.2':
     dependencies:
       '@sentry/conventions': 0.16.0
 
@@ -11990,6 +12033,11 @@ snapshots:
     dependencies:
       '@sentry/conventions': 0.16.0
       '@sentry/core': 10.73.0
+
+  '@sentry/server-utils@10.76.2':
+    dependencies:
+      '@sentry/conventions': 0.16.0
+      '@sentry/core': 10.76.2
 
   '@sentry/vite-plugin@4.9.1':
     dependencies:
@@ -13475,7 +13523,7 @@ snapshots:
       obug: 3.0.0
       std-env: 4.3.0
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/istanbul-lib-coverage@1.0.2': {}
 
@@ -13517,7 +13565,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.3.4(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/utils@5.0.5':
     dependencies:
@@ -16182,6 +16230,19 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  miniflare@5.20260903.0-alpha(@types/node@24.3.0)(bufferutil@4.1.0)(utf-8-validate@6.0.6):
+    dependencies:
+      '@cspotcode/source-map-support': 0.8.1
+      sharp: 0.35.5(@types/node@24.3.0)
+      undici: 7.30.0
+      workerd: 1.20260903.1
+      ws: 8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      youch: 4.1.0-beta.10
+    transitivePeerDependencies:
+      - '@types/node'
+      - bufferutil
+      - utf-8-validate
+
   minimalistic-assert@1.0.1: {}
 
   minimatch@10.2.6:
@@ -18189,6 +18250,24 @@ snapshots:
       blake3-wasm: 2.1.5
       esbuild: 0.28.1
       miniflare: 5.20260903.0-alpha(@types/node@24.13.4)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      path-to-regexp: 6.3.0
+      unenv: 2.0.0-rc.24
+      workerd: 1.20260903.1
+    optionalDependencies:
+      '@cloudflare/workers-types': 5.20260924.1
+      fsevents: 2.3.3
+    transitivePeerDependencies:
+      - '@types/node'
+      - bufferutil
+      - utf-8-validate
+
+  wrangler@4.129.0(@cloudflare/workers-types@5.20260924.1)(@types/node@24.3.0)(bufferutil@4.1.0)(utf-8-validate@6.0.6):
+    dependencies:
+      '@cloudflare/kv-asset-handler': 0.5.0
+      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260903.1)
+      blake3-wasm: 2.1.5
+      esbuild: 0.28.1
+      miniflare: 5.20260903.0-alpha(@types/node@24.3.0)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       path-to-regexp: 6.3.0
       unenv: 2.0.0-rc.24
       workerd: 1.20260903.1

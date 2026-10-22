@@ -11,6 +11,7 @@ import type { ApiDb } from "./db-types";
 import { env } from "./env";
 import { logger } from "./log";
 import { singleton } from "./singleton";
+import { currentRequestRuntime } from "./request-runtime";
 
 const log = logger("api:db");
 
@@ -62,9 +63,16 @@ const pool = singleton((): Pool => {
   return pgPool;
 });
 
-export const db: SingletonValue<ApiDb> = singleton((): ApiDb => {
+const nodeDb = singleton((): ApiDb => {
   return drizzle(pool());
 });
+
+export const db: SingletonValue<ApiDb> = Object.assign(
+  (): ApiDb => {
+    return currentRequestRuntime()?.database() ?? nodeDb();
+  },
+  { peek: nodeDb.peek, reset: nodeDb.reset },
+);
 
 export async function closeDbPool(): Promise<void> {
   const current = pool.peek();

@@ -11,6 +11,8 @@
 # deps
 node_modules/
 dist/
+dist-worker/
+.wrangler/
 
 # env
 .env

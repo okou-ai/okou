@@ -1,0 +1,250 @@
+import { tracing } from "cloudflare:workers";
+import type { ExecutionContext, Hyperdrive } from "@cloudflare/workers-types";
+import { trace } from "@opentelemetry/api";
+import { withSentry } from "@sentry/cloudflare";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+
+import { instrumentPgPool } from "./lib/db-instrumentation";
+import type { ApiDb } from "./lib/db-types";
+import { env } from "./lib/env";
+import {
+  filterDiscordOauthSentryBreadcrumb,
+  filterDiscordOauthSentryEvent,
+} from "./lib/discord-oauth-telemetry";
+import {
+  filterTelegramAuthSentryBreadcrumb,
+  filterTelegramAuthSentryEvent,
+} from "./lib/telegram-auth-telemetry";
+import { withRequestRuntime, type RequestRuntime } from "./lib/request-runtime";
+import { createProductionApp } from "./production-bootstrap";
+import { createDeferredPromise, settleIncludingAbort } from "./signals/utils";
+
+interface WorkerBindings {
+  readonly HYPERDRIVE: Hyperdrive;
+}
+
+/** Keep the pool alive until both response streaming and registered work finish. */
+function ownResponse(
+  response: Response,
+  finish: () => void,
+  waitUntil: (work: Promise<unknown>) => void,
+  signal: AbortSignal,
+): Response {
+  if (!response.body) {
+    finish();
+    return response;
+  }
+  const reader = response.body.getReader();
+  let finished = false;
+  let cancellation: Promise<void> | undefined;
+  const complete = () => {
+    if (!finished) {
+      finished = true;
+      signal.removeEventListener("abort", abort);
+      reader.releaseLock();
+      finish();
+    }
+  };
+  const cancel = (reason: unknown) => {
+    if (!cancellation) {
+      // A second reader.cancel() need not join the original source cleanup.
+      // Both downstream cancellation and abort must own this same operation.
+      cancellation = reader.cancel(reason).finally(complete);
+      waitUntil(cancellation);
+    }
+    return cancellation;
+  };
+  const abort = () => {
+    if (!finished) {
+      return cancel(signal.reason);
+    }
+  };
+  if (signal.aborted) {
+    abort();
+  } else {
+    signal.addEventListener("abort", abort, { once: true });
+  }
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const result = await settleIncludingAbort(reader.read());
+        if (!result.ok) {
+          controller.error(result.error);
+          complete();
+        } else if (result.value.done) {
+          controller.close();
+          complete();
+        } else {
+          controller.enqueue(result.value.value);
+        }
+      },
+      cancel(reason) {
+        return finished ? cancellation : cancel(reason);
+      },
+    }),
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    },
+  );
+}
+
+function workerFetch(
+  request: Request,
+  bindings: WorkerBindings,
+  context: ExecutionContext,
+): Promise<Response> {
+  let pool: Pool | undefined;
+  let database: ApiDb | undefined;
+  const background = new Set<Promise<unknown>>();
+  // This bounds admitted request work; it does not extend Workers waitUntil's
+  // 30-second post-response budget or turn background work into durable work.
+  const signal = AbortSignal.any([
+    request.signal,
+    AbortSignal.timeout(300_000),
+  ]);
+  // Cancellation requests that work stop; it does not prove that the handler
+  // or stream has joined. Completion latches belong to the resource owner.
+  const lifetime = new AbortController();
+  const responseFinished = createDeferredPromise<void>(lifetime.signal);
+  const foregroundFinished = createDeferredPromise<void>(lifetime.signal);
+  let closing = false;
+  const finish = () => {
+    if (!responseFinished.settled()) {
+      responseFinished.resolve();
+    }
+  };
+
+  return tracing.enterSpan("api.request", (requestSpan) => {
+    const runtime: RequestRuntime = {
+      database() {
+        if (closing) {
+          throw new Error("Worker request database is closed");
+        }
+        if (!database) {
+          pool = instrumentPgPool(
+            new Pool({
+              connectionString: bindings.HYPERDRIVE.connectionString,
+              min: 0,
+              max: Math.min(4, env("DB_POOL_MAX")),
+              connectionTimeoutMillis: env("DB_POOL_CONNECT_TIMEOUT_MS"),
+              idleTimeoutMillis: env("DB_POOL_IDLE_TIMEOUT_MS"),
+            }),
+            trace.getTracer("vm0-api/pg"),
+          );
+          pool.on("error", activeClientError);
+          pool.on("acquire", (client) => {
+            client.on("error", activeClientError);
+          });
+          pool.on("release", (_error, client) => {
+            client.removeListener("error", activeClientError);
+          });
+          database = drizzle(pool);
+        }
+        return database;
+      },
+      waitUntil(work) {
+        // Rejection remains visible to Cloudflare and the owning caller;
+        // this continuation only tracks completion for resource teardown.
+        const tracked = work.finally(() => {
+          background.delete(tracked);
+        });
+        background.add(tracked);
+        context.waitUntil(tracked);
+      },
+      traceQuery(name, sql, execute) {
+        return tracing.enterSpan(name, async (span) => {
+          span.setAttributes({
+            "db.system": "postgresql",
+            "db.system.name": "postgresql",
+            "db.statement": sql,
+            "db.query.text": sql,
+            "okou.runtime": "cloudflare-workers",
+          });
+          const result = await settleIncludingAbort(execute);
+          if (result.ok) {
+            span.setAttribute("okou.outcome", "success");
+            return result.value;
+          }
+          // Native custom spans have no setStatus API yet. Keep an explicit
+          // outcome; missing OTel status must not be interpreted as success.
+          // Never include query parameter values in telemetry attributes.
+          span.setAttribute("okou.outcome", "error");
+          span.setAttribute(
+            "error.type",
+            result.error instanceof Error ? result.error.name : "unknown",
+          );
+          throw result.error;
+        });
+      },
+      observeHttp(method, route, status) {
+        requestSpan.setAttributes({
+          "http.request.method": method,
+          "http.route": route,
+          "http.response.status_code": status,
+          "okou.runtime": "cloudflare-workers",
+          "okou.outcome": status >= 500 ? "error" : "success",
+        });
+      },
+    };
+    function activeClientError(error: Error): void {
+      requestSpan.setAttribute("okou.db.connection_error", error.name);
+    }
+    context.waitUntil(
+      withRequestRuntime(runtime, async () => {
+        // Wait for actual owners, never treat an abort notification as a join.
+        await foregroundFinished.promise;
+        await responseFinished.promise;
+        while (background.size > 0) {
+          await Promise.allSettled(background);
+        }
+        closing = true;
+        await pool?.end();
+        lifetime.abort();
+      }),
+    );
+    return withRequestRuntime(runtime, async () => {
+      const result = await settleIncludingAbort(async () => {
+        signal.throwIfAborted();
+        const response = await createProductionApp(signal).fetch(
+          request,
+          bindings,
+          context,
+        );
+        return ownResponse(response, finish, runtime.waitUntil, signal);
+      });
+      foregroundFinished.resolve();
+      if (!result.ok) {
+        finish();
+        throw result.error;
+      }
+      return result.value;
+    });
+  });
+}
+
+export default withSentry(
+  () => {
+    return {
+      dsn: env("SENTRY_DSN"),
+      environment: env("ENV"),
+      release: env("GIT_COMMIT_SHA"),
+      sendDefaultPii: false,
+      tracesSampleRate: 0,
+      enableLogs: false,
+      beforeSend(event) {
+        return filterTelegramAuthSentryEvent(event)
+          ? filterDiscordOauthSentryEvent(event)
+          : null;
+      },
+      beforeBreadcrumb(breadcrumb) {
+        return filterTelegramAuthSentryBreadcrumb(breadcrumb)
+          ? filterDiscordOauthSentryBreadcrumb(breadcrumb)
+          : null;
+      },
+    };
+  },
+  Object.freeze({ fetch: workerFetch }),
+);
