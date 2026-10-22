@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
-import sharp from "sharp";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import {
   artifactHtmlMetadata,
   GENERIC_ARTIFACT_DESCRIPTION,
@@ -13,15 +13,16 @@ import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
 import { apiBackendUrl } from "../../lib/api-backend-url";
-import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
+import {
+  SLACK_PREVIEW_IMAGE_HEIGHT,
+  SLACK_PREVIEW_IMAGE_WIDTH,
+} from "../../lib/slack-preview-image";
+import { publicArtifactsBaseUrl } from "../../lib/file-url";
 import { db$ } from "../external/db";
 import {
   downloadHostedSitesS3Buffer,
-  downloadS3BufferWithMaxBytes,
-  isS3NotFoundError,
-  S3ObjectSizeLimitError,
+  signPresignedGetUrl$,
 } from "../external/s3";
-import { settle } from "../utils";
 import {
   artifactReferenceRecord$,
   type SharedThreadArtifactReference,
@@ -35,7 +36,7 @@ import {
   privateArtifactRecord$,
   privateArtifactsBucket,
 } from "./private-artifact-storage.service";
-import { hostedPreviewArtifactId } from "./hosted-preview.service";
+import { hostedPreviewArtifactIds } from "./hosted-preview.service";
 import { authorizeHostedSiteDelivery$ } from "./host.service";
 import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
 
@@ -63,7 +64,7 @@ function imageSource(
   key: string,
   contentType: string,
 ): ImageSource | undefined {
-  return ["image/png", "image/jpeg", "image/webp"].includes(contentType)
+  return contentType.startsWith("image/")
     ? { bucket: privateArtifactsBucket(), key }
     : undefined;
 }
@@ -79,18 +80,20 @@ const hostedCover$ = command(
     if (!manifest.preview) {
       return undefined;
     }
-    const file = await set(
-      privateArtifactRecord$,
-      hostedPreviewArtifactId(manifest.deploymentId, manifest.preview),
-      signal,
-    );
-    if (!file || file.materializationStatus !== "ready") {
-      return undefined;
+    for (const id of hostedPreviewArtifactIds(
+      manifest.deploymentId,
+      manifest.preview,
+    )) {
+      const file = await set(privateArtifactRecord$, id, signal);
+      if (!file || file.materializationStatus !== "ready") {
+        continue;
+      }
+      if (file.userId !== ownerId || file.orgId !== orgId) {
+        throw new Error("Hosted cover owner mismatch");
+      }
+      return { bucket: file.bucket, key: file.key };
     }
-    if (file.userId !== ownerId || file.orgId !== orgId) {
-      throw new Error("Hosted cover owner mismatch");
-    }
-    return { bucket: file.bucket, key: file.key };
+    return undefined;
   },
 );
 
@@ -308,7 +311,12 @@ const authorizedOgSource$ = command(
 );
 
 export const artifactOgMetadata$ = command(
-  async ({ get, set }, target: ArtifactOgTarget, signal: AbortSignal) => {
+  async (
+    { get, set },
+    target: ArtifactOgTarget,
+    variant: "slack" | undefined,
+    signal: AbortSignal,
+  ) => {
     const source = await set(authorizedOgSource$, target, signal);
     if (!source) {
       return { available: false as const };
@@ -341,66 +349,41 @@ export const artifactOgMetadata$ = command(
       title: metadata?.title || source.title,
       description: metadata?.description || GENERIC_ARTIFACT_DESCRIPTION,
       url: source.url,
-      imageUrl: imageUrl.href,
+      imageUrl: r2ImageTransformUrl(
+        imageUrl.href,
+        {
+          authorizedSource: true,
+          ...(variant === "slack"
+            ? {
+                width: SLACK_PREVIEW_IMAGE_WIDTH,
+                height: SLACK_PREVIEW_IMAGE_HEIGHT,
+              }
+            : {}),
+        },
+        publicArtifactsBaseUrl("current"),
+      ),
     };
   },
 );
 
 export const artifactOgImage$ = command(
   async (
-    { get, set },
+    { set },
     target: ArtifactOgTarget,
     version: string,
-    variant: "slack" | undefined,
     signal: AbortSignal,
-  ): Promise<Buffer | null> => {
+  ): Promise<string | null> => {
     const source = await set(authorizedOgSource$, target, signal);
     if (!source?.image || source.version !== version) {
       return null;
     }
-    const downloaded = await settle(
-      get(
-        downloadS3BufferWithMaxBytes(
-          source.image.bucket,
-          source.image.key,
-          5 * 1024 * 1024,
-          signal,
-        ),
-      ),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!downloaded.ok) {
-      if (
-        isS3NotFoundError(downloaded.error) ||
-        downloaded.error instanceof S3ObjectSizeLimitError
-      ) {
-        return null;
-      }
-      throw downloaded.error;
-    }
-    const image = sharp(downloaded.value, {
-      limitInputPixels: 4096 * 4096,
-      failOn: "warning",
+    const url = await set(signPresignedGetUrl$, {
+      ...source.image,
+      publicEndpoint: true,
+      expiresInSeconds: 60,
+      responseCacheControl: "private, no-store, must-revalidate",
     });
-    const metadata = await image.metadata();
     signal.throwIfAborted();
-    if (
-      !metadata.format ||
-      !["png", "jpeg", "webp"].includes(metadata.format) ||
-      (metadata.pages ?? 1) !== 1
-    ) {
-      return null;
-    }
-    image.rotate();
-    if (variant === "slack") {
-      image.resize({
-        height: SLACK_PREVIEW_IMAGE_HEIGHT,
-        withoutEnlargement: true,
-      });
-    }
-    const normalized = await image.png().toBuffer();
-    signal.throwIfAborted();
-    return normalized.length <= 5 * 1024 * 1024 ? normalized : null;
+    return url;
   },
 );

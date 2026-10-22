@@ -1,6 +1,6 @@
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -26,8 +26,6 @@ import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { cancelRun$ } from "./agent-run-terminal-transition.service";
 import { dispatchCancelSideEffects$ } from "./run-cancel.service";
-import { lockDeletionProtection } from "./threadless-run-protection.service";
-import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
 import {
   deleteLockedRunHistories,
@@ -105,7 +103,7 @@ function terminalError(candidate: ThreadlessRunCandidate): string | undefined {
   return "Run failed";
 }
 
-function threadlessRunCandidateReadPlan(currentTime: Date) {
+function threadlessRunCandidateReadPlan() {
   const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
   return {
     selection: {
@@ -125,9 +123,6 @@ function threadlessRunCandidateReadPlan(currentTime: Date) {
         ...ACTIVE_RUN_STATUSES,
         ...TERMINAL_RUN_STATUSES,
       ]),
-      ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
-        return protection.sweepEligibility({ currentTime });
-      }),
     ],
     forwardCohort: gte(agentRuns.createdAt, forwardCutoff),
     deletedThread: {
@@ -235,17 +230,6 @@ async function deleteIfStillEligible(
       return null;
     }
 
-    if (
-      await lockDeletionProtection(THREADLESS_RUN_PROTECTIONS, tx, {
-        runId: candidate.runId,
-        orgId: candidate.orgId,
-        userId: candidate.userId,
-        completedAt: current.completedAt,
-      })
-    ) {
-      return null;
-    }
-
     if (await hasDeletionBlocker(tx, candidate.runId)) {
       return null;
     }
@@ -315,7 +299,7 @@ export const cleanupThreadlessRuns$ = command(
     const candidates = await (async (): Promise<
       readonly ThreadlessRunCandidate[]
     > => {
-      const plan = threadlessRunCandidateReadPlan(currentTime);
+      const plan = threadlessRunCandidateReadPlan();
       return await db
         .select(plan.selection)
         .from(agentRuns)
@@ -359,7 +343,6 @@ export const cleanupThreadlessRuns$ = command(
                 orgId: candidate.orgId,
                 runnerCancellationMode: "hard",
                 preserveExistingCancellation: true,
-                protectThreadlessRuns: true,
               },
               signal,
             );

@@ -8,7 +8,8 @@ CREATE TABLE "openai_image_webhook_receipts" (
 );
 --> statement-breakpoint
 CREATE INDEX "idx_openai_image_webhook_receipts_response_id" ON "openai_image_webhook_receipts" USING btree ("response_id");--> statement-breakpoint
-CREATE INDEX "idx_openai_image_webhook_receipts_processed_at" ON "openai_image_webhook_receipts" USING btree ("processed_at","updated_at");
+CREATE INDEX "idx_openai_image_webhook_receipts_processed_at" ON "openai_image_webhook_receipts" USING btree ("processed_at","updated_at");--> statement-breakpoint
+CREATE INDEX "idx_built_in_generation_jobs_image_usage_keys" ON "built_in_generation_jobs" USING gin (("request"->'__openAiImageSettlement'->'usageKeys'));
 --> statement-breakpoint
 -- GPT-4.1 orchestration rates: https://developers.openai.com/api/docs/models/gpt-4.1
 -- Existing configured tariffs remain authoritative.

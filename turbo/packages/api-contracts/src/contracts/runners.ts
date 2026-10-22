@@ -1,14 +1,14 @@
 import { z } from "zod";
 
-import { authHeadersSchema, initContract } from "./base";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
   firewallApiSchema,
   firewallSchema,
-  networkPolicySchema,
   networkPoliciesSchema,
+  networkPolicySchema,
 } from "@okouai/connectors/firewall-contracts";
+import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
 import { modelProviderCodexRuntimeConfigSchema } from "./model-providers";
@@ -121,8 +121,6 @@ export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 export const releaseVersionSchema = z
   .string()
   .regex(/^\d+\.\d+\.\d+$/, "Release versions are MAJOR.MINOR.PATCH");
-export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_CANDIDATES = 256;
-export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_UTF8_BYTES = 21_036_800;
 export function elapsedSinceApiStartMs(
   apiStartTimeMs: number | undefined,
   nowMs: number,
@@ -666,8 +664,6 @@ export const secretConnectorMetadataMapSchema = z.record(
   secretConnectorMetadataSchema,
 );
 
-export const PI_MEMORY_ROOT = `${PI_AGENT_DIR}/memory`;
-export const PI_MEMORY_SUMMARY_PATH = `${PI_MEMORY_ROOT}/memory_summary.md`;
 export const PI_MEMORY_SUMMARY_MAX_BYTES = 64 * 1024;
 /** Budget for the summary excerpt injected into the prompt, marker included. */
 export const PI_MEMORY_SUMMARY_MAX_TOKENS = 2500;
@@ -943,67 +939,6 @@ export const piModelConfigSchema = z.union([
   piModelConfigV5Schema,
 ]);
 
-const lowercaseSha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
-
-export const piMemoryPhase2MaintenanceCandidateSchema = z
-  .object({
-    piSessionId: z.string().min(1).max(255),
-    sourceRunId: z.uuid(),
-    sourceHistoryHash: lowercaseSha256Schema,
-    sourceCompletedAt: z.string().datetime({ offset: true }),
-    rawMemory: z.string(),
-    rolloutSummary: z.string(),
-    rolloutSlug: z.string().max(255).nullable(),
-  })
-  .strict()
-  .readonly();
-
-/**
- * Authenticated private input for one non-interactive Pi memory maintenance
- * run. The runner forwards this object only through the Pi launch config and
- * the guest writes it to the existing 0600 launch-payload file.
- */
-export const piMemoryPhase2MaintenanceSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    memoryStorageId: z.uuid(),
-    claimedRevision: z.number().int().positive(),
-    claimedBaseVersionId: lowercaseSha256Schema,
-    leaseToken: z.uuid(),
-    selectionDigest: lowercaseSha256Schema,
-    selected: z
-      .array(piMemoryPhase2MaintenanceCandidateSchema)
-      .max(PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_CANDIDATES),
-  })
-  .strict()
-  .superRefine((maintenance, refinement) => {
-    const sessionIds = new Set<string>();
-    let selectedUtf8Bytes = 0;
-    for (const [index, candidate] of maintenance.selected.entries()) {
-      if (sessionIds.has(candidate.piSessionId)) {
-        refinement.addIssue({
-          code: "custom",
-          path: ["selected", index, "piSessionId"],
-          message: "Pi memory maintenance session ids must be unique",
-        });
-      }
-      sessionIds.add(candidate.piSessionId);
-      selectedUtf8Bytes += new TextEncoder().encode(
-        `${candidate.rawMemory}${candidate.rolloutSummary}${candidate.rolloutSlug ?? ""}`,
-      ).length;
-    }
-    if (
-      selectedUtf8Bytes > PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_UTF8_BYTES
-    ) {
-      refinement.addIssue({
-        code: "custom",
-        path: ["selected"],
-        message: "Pi memory maintenance selection exceeds its byte bound",
-      });
-    }
-  })
-  .readonly();
-
 /**
  * Version marker for the sandbox Pi launch contract. Runtime resources are
  * discovered from Pi's canonical filesystem locations by the official loader.
@@ -1011,8 +946,6 @@ export const piMemoryPhase2MaintenanceSchema = z
 export const piLaunchConfigSchema = z
   .object({
     schemaVersion: z.literal(2),
-    memoryRecall: piMemoryRecallSelectionSchema.optional(),
-    maintenance: piMemoryPhase2MaintenanceSchema.optional(),
   })
   .strict()
   .readonly();
@@ -1584,9 +1517,6 @@ export type RunnerInstalledVersions = z.infer<
   typeof runnerInstalledVersionsSchema
 >;
 export type PiLaunchConfig = z.infer<typeof piLaunchConfigSchema>;
-export type PiMemoryPhase2Maintenance = z.infer<
-  typeof piMemoryPhase2MaintenanceSchema
->;
 export type PiMemoryRecallSelection = z.infer<
   typeof piMemoryRecallSelectionSchema
 >;

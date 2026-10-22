@@ -51,88 +51,12 @@ pub mod runners {
             pub model_catalog: Option<serde_json::Value>,
         }
 
-        /// Frozen exact-version Pi memory recall selection.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "status", rename_all_fields = "camelCase")]
-        pub enum PiLaunchConfigMemoryRecall {
-            /// The launch epoch intentionally contains no memory.
-            #[serde(rename = "no-content")]
-            NoContent {
-                /// Canonical memory Storage identity.
-                memory_storage_id: String,
-                /// Exact pinned Storage version identity.
-                storage_version_id: String,
-            },
-            /// The launch epoch contains an authenticated summary.
-            #[serde(rename = "ready")]
-            Ready {
-                /// Canonical memory Storage identity.
-                memory_storage_id: String,
-                /// Exact pinned Storage version identity.
-                storage_version_id: String,
-                /// Authenticated frozen root summary content.
-                content: String,
-                /// Lowercase SHA-256 of the frozen summary bytes.
-                source_hash: String,
-                /// Exact frozen summary byte size.
-                source_size: i64,
-                /// Exact o200k token count of the frozen summary.
-                token_count: i64,
-            },
-        }
-
-        /// One bounded Stage 1 candidate snapshot.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigMaintenanceSelected {
-            /// Canonical Pi session identity.
-            pub pi_session_id: String,
-            /// Run that produced the candidate.
-            pub source_run_id: String,
-            /// Exact source session-history hash.
-            pub source_history_hash: String,
-            /// Completion time of the source run.
-            pub source_completed_at: String,
-            /// Restricted Stage 1 memory candidate.
-            pub raw_memory: String,
-            /// Restricted Stage 1 rollout summary.
-            pub rollout_summary: String,
-            /// Optional safe rollout evidence slug.
-            pub rollout_slug: Option<String>,
-        }
-
-        /// Private input for one sandbox Pi memory maintenance run.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigMaintenance {
-            /// Pi memory maintenance input version.
-            pub schema_version: i64,
-            /// Canonical mounted memory Storage identity.
-            pub memory_storage_id: String,
-            /// Exact claimed Phase 2 input revision.
-            pub claimed_revision: i64,
-            /// Exact memory version mounted for the claim.
-            pub claimed_base_version_id: String,
-            /// Opaque token fencing this maintenance claim.
-            pub lease_token: String,
-            /// Digest of the bounded selected candidate set.
-            pub selection_digest: String,
-            /// Bounded Stage 1 candidate snapshots selected by the claim.
-            pub selected: Vec<PiLaunchConfigMaintenanceSelected>,
-        }
-
         /// API-owned launch configuration forwarded to Pi in the sandbox.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct PiLaunchConfig {
             /// Pi launch contract version.
             pub schema_version: i64,
-            /// Optional frozen memory-summary selection for API and Sandbox parity.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub memory_recall: Option<PiLaunchConfigMemoryRecall>,
-            /// Optional authenticated input for a first-party Pi memory maintenance run.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub maintenance: Option<PiLaunchConfigMaintenance>,
         }
 
         /// Native Pi request dialects supported by this generation.
@@ -3640,24 +3564,6 @@ pub mod webhooks {
 
             /// DTOs for committing direct sandbox storage uploads.
             pub mod commit {
-                /// Private proof of a validated Pi memory maintenance tree.
-                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                pub struct RequestMaintenanceAttestation {
-                    /// Memory publication attestation version.
-                    pub schema_version: i64,
-                    /// Opaque token fencing the maintenance claim.
-                    pub lease_token: String,
-                    /// Exact claimed Phase 2 input revision.
-                    pub claimed_revision: i64,
-                    /// Exact memory version mounted for the claim.
-                    pub claimed_base_version_id: String,
-                    /// Digest of the bounded selected candidate set.
-                    pub selection_digest: String,
-                    /// Content hash of the validated mounted tree.
-                    pub validated_version_id: String,
-                }
-
                 /// Request body for committing a direct sandbox storage upload.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -3676,9 +3582,6 @@ pub mod webhooks {
                     /// Optional commit message associated with the storage version.
                     #[serde(default, skip_serializing_if = "Option::is_none")]
                     pub message: Option<String>,
-                    /// Private validation proof required for Pi memory maintenance publication.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    pub maintenance_attestation: Option<RequestMaintenanceAttestation>,
                 }
 
                 /// Response body returned after committing a direct sandbox storage upload.
@@ -3715,24 +3618,6 @@ pub mod webhooks {
                     pub deleted: Vec<String>,
                 }
 
-                /// Private proof of a validated Pi memory maintenance tree.
-                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                pub struct RequestMaintenanceAttestation {
-                    /// Memory publication attestation version.
-                    pub schema_version: i64,
-                    /// Opaque token fencing the maintenance claim.
-                    pub lease_token: String,
-                    /// Exact claimed Phase 2 input revision.
-                    pub claimed_revision: i64,
-                    /// Exact memory version mounted for the claim.
-                    pub claimed_base_version_id: String,
-                    /// Digest of the bounded selected candidate set.
-                    pub selection_digest: String,
-                    /// Content hash of the validated mounted tree.
-                    pub validated_version_id: String,
-                }
-
                 /// Request body for preparing a direct sandbox storage upload.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -3755,9 +3640,6 @@ pub mod webhooks {
                     /// Optional incremental file changes from the base version.
                     #[serde(default, skip_serializing_if = "Option::is_none")]
                     pub changes: Option<RequestChanges>,
-                    /// Private validation proof required for Pi memory maintenance publication.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    pub maintenance_attestation: Option<RequestMaintenanceAttestation>,
                 }
 
                 /// Presigned upload target for the storage archive object.

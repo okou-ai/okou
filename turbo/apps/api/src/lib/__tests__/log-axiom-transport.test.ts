@@ -5,6 +5,7 @@ import { z } from "zod";
 import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { accept, testContext } from "../../__tests__/test-context";
+import { createApp } from "../../app-factory";
 
 import { withRealAxiomLoggingForTest } from "../../__tests__/mocks";
 import { setupApp } from "../../__tests__/test-helpers";
@@ -14,11 +15,201 @@ import { publicChatActor } from "../../signals/routes/__tests__/helpers/public-c
 import { useSecretKmsProbe } from "../../signals/routes/__tests__/helpers/secret-kms-probe";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../signals/utils";
+import { flushWaitUntilForTest } from "../../signals/context/wait-until";
+import { healthRoutes } from "../../signals/routes/health";
 import { mockOptionalEnv } from "../env";
+import { clearMockMonotonicNow, mockMonotonicNow, mockNow } from "../time";
 
 const context = testContext();
 const FAILURE_MESSAGE =
   "Fal built-in generation webhook reported failed generation";
+
+// Logger-owned telemetry contract: exercise the production health route rather
+// than constructing a handler or mounting a test-only route.
+describe("request lifecycle Axiom transport", () => {
+  const requestEvent = z.object({
+    _time: z.string(),
+    method: z.string(),
+    status: z.number(),
+    path_template: z.string(),
+    request_time_ms: z.number(),
+    type: z.string().optional(),
+    x_client_request_id: z.string().optional(),
+    lifecycle_time_ms: z.number().optional(),
+    background_time_ms: z.number().optional(),
+    wait_until_task_count: z.number().optional(),
+    wait_until_failure_count: z.number().optional(),
+    lifecycle_error: z.boolean().optional(),
+  });
+
+  function eventsIn(dataset: string) {
+    return context.mocks.axiom.ingest.mock.calls.flatMap(
+      ([ingestedDataset, events]) => {
+        return ingestedDataset === dataset
+          ? z.array(requestEvent).parse(events)
+          : [];
+      },
+    );
+  }
+
+  function deliveryBarrier() {
+    const deferred = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!deferred.settled()) {
+        deferred.resolve();
+      }
+    });
+    return deferred;
+  }
+
+  function setTime(wallTime: number, elapsed: number): void {
+    mockNow(wallTime);
+    mockMonotonicNow(elapsed);
+  }
+
+  it("returns health before request-log delivery and records lifecycle after delivery", async () => {
+    const startedAt = Date.parse("2026-10-21T12:00:00.000Z");
+    onTestFinished(clearMockMonotonicNow);
+    setTime(startedAt, 0);
+    const requestLogFlushed = deliveryBarrier();
+    context.mocks.axiom.flush
+      .mockResolvedValue(undefined)
+      .mockImplementationOnce(() => {
+        return requestLogFlushed.promise;
+      });
+    const app = createApp({ signal: context.signal, routes: healthRoutes });
+
+    const response = await app.request("/health");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+    expect(eventsIn("request-log")).toStrictEqual([
+      expect.objectContaining({
+        method: "GET",
+        path_template: "/health",
+        status: 200,
+        request_time_ms: 0,
+      }),
+    ]);
+    expect(context.mocks.axiom.flush).toHaveBeenCalledTimes(1);
+    expect(eventsIn("web-logs")).toHaveLength(0);
+
+    // A wall-clock correction must not inflate the new elapsed metrics.
+    setTime(startedAt + 60_000, 750);
+    requestLogFlushed.resolve();
+    await flushWaitUntilForTest();
+
+    expect(eventsIn("web-logs")).toStrictEqual([
+      expect.objectContaining({
+        _time: new Date(startedAt).toISOString(),
+        type: "request_lifecycle",
+        method: "GET",
+        path_template: "/health",
+        status: 200,
+        request_time_ms: 0,
+        lifecycle_time_ms: 750,
+        background_time_ms: 750,
+        wait_until_failure_count: 0,
+        lifecycle_error: false,
+      }),
+    ]);
+    expect(eventsIn("request-log")).toHaveLength(1);
+    expect(context.mocks.axiom.flush).toHaveBeenCalledTimes(2);
+  });
+
+  it("completes another health lifecycle while the first request-log delivery is pending", async () => {
+    const startedAt = Date.parse("2026-10-21T13:00:00.000Z");
+    onTestFinished(clearMockMonotonicNow);
+    setTime(startedAt, 0);
+    const firstFlushed = deliveryBarrier();
+    const secondFlushed = deliveryBarrier();
+    const secondLifecycle = deliveryBarrier();
+    context.mocks.axiom.flush
+      .mockResolvedValue(undefined)
+      .mockImplementationOnce(() => {
+        return firstFlushed.promise;
+      })
+      .mockImplementationOnce(() => {
+        return secondFlushed.promise;
+      });
+    context.mocks.axiom.ingest.mockImplementation((dataset, events) => {
+      if (dataset === "web-logs") {
+        for (const event of z.array(requestEvent).parse(events)) {
+          if (
+            event.type === "request_lifecycle" &&
+            event.x_client_request_id === "health-second"
+          ) {
+            secondLifecycle.resolve();
+          }
+        }
+      }
+      return true;
+    });
+    const app = createApp({ signal: context.signal, routes: healthRoutes });
+
+    const firstResponse = await app.request("/health", {
+      headers: { "X-Client-Request-Id": "health-first" },
+    });
+    expect(firstResponse.status).toBe(200);
+    await expect(firstResponse.json()).resolves.toStrictEqual({ status: "ok" });
+
+    setTime(startedAt + 100, 100);
+    const secondResponse = await app.request("/health", {
+      headers: { "X-Client-Request-Id": "health-second" },
+    });
+    expect(secondResponse.status).toBe(200);
+    await expect(secondResponse.json()).resolves.toStrictEqual({
+      status: "ok",
+    });
+    expect(eventsIn("web-logs")).toHaveLength(0);
+
+    setTime(startedAt + 300, 300);
+    secondFlushed.resolve();
+    // Observe only B's external ingest; a global drain would also await A.
+    await secondLifecycle.promise;
+    expect(eventsIn("web-logs")).toStrictEqual([
+      expect.objectContaining({
+        type: "request_lifecycle",
+        x_client_request_id: "health-second",
+        _time: new Date(startedAt + 100).toISOString(),
+        status: 200,
+        request_time_ms: 0,
+        lifecycle_time_ms: 200,
+        background_time_ms: 200,
+        wait_until_failure_count: 0,
+        lifecycle_error: false,
+      }),
+    ]);
+
+    setTime(startedAt + 900, 900);
+    firstFlushed.resolve();
+    await flushWaitUntilForTest();
+    const lifecycleEvents = eventsIn("web-logs");
+    expect(lifecycleEvents).toHaveLength(2);
+    expect(lifecycleEvents).toContainEqual(
+      expect.objectContaining({
+        type: "request_lifecycle",
+        x_client_request_id: "health-first",
+        _time: new Date(startedAt).toISOString(),
+        status: 200,
+        request_time_ms: 0,
+        lifecycle_time_ms: 900,
+        background_time_ms: 900,
+        wait_until_failure_count: 0,
+        lifecycle_error: false,
+      }),
+    );
+    expect(eventsIn("request-log")).toStrictEqual([
+      expect.objectContaining({
+        x_client_request_id: "health-first",
+        request_time_ms: 0,
+      }),
+      expect.objectContaining({
+        x_client_request_id: "health-second",
+        request_time_ms: 0,
+      }),
+    ]);
+  });
+});
 
 async function ownedTelemetryUpload() {
   const owned = await publicChatActor(context);
@@ -101,6 +292,15 @@ describe("Axiom ingest HTTP error diagnostics", () => {
 
         const failed = await accept(upload.send(), [500]);
         expect(failed.body).toStrictEqual({ error: "Internal server error" });
+        await flushWaitUntilForTest();
+        expect(context.mocks.axiom.ingest).toHaveBeenCalledWith("web-logs", [
+          expect.objectContaining({
+            type: "request_lifecycle",
+            method: "POST",
+            status: 500,
+            lifecycle_error: true,
+          }),
+        ]);
         expect(context.mocks.axiomLogging.error).toHaveBeenCalledWith(
           "Unhandled request error: Axiom ingest failed with status 503",
           expect.objectContaining({

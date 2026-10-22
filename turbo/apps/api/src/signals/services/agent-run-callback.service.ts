@@ -20,7 +20,6 @@ import {
   type InternalRunCallbackEnvelope,
   type InternalRunCallbackKind,
 } from "./internal-run-callback";
-import { handlePiMemoryPhase2MaintenanceCallback$ } from "./pi-memory-phase2-maintenance.service";
 import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 
 const L = logger("AgentRunCallback");
@@ -151,13 +150,6 @@ const dispatchInternalCallback$ = command(
         return await set(
           handleWorkflowAutomationInternalCallback$,
           { kind: input.kind, callback: input.envelope },
-          signal,
-        );
-      }
-      case "pi-memory:phase2": {
-        return await set(
-          handlePiMemoryPhase2MaintenanceCallback$,
-          input.envelope,
           signal,
         );
       }

@@ -1,16 +1,16 @@
-import {
-  pgTable,
-  uuid,
-  text,
-  varchar,
-  jsonb,
-  timestamp,
-  integer,
-  index,
-} from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
-import { agentRuns } from "./agent-run";
 import type { AgentRunCallbackPayload } from "@okouai/db/jsonb-contracts/agent-run-callback";
+import { sql } from "drizzle-orm";
+import {
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
+import { agentRuns } from "./agent-run";
 
 /**
  * Agent Run Callbacks table
@@ -47,9 +47,6 @@ export const agentRunCallbacks = pgTable(
   (table) => {
     return [
       index("idx_agent_run_callbacks_run_id").on(table.runId),
-      index("idx_agent_run_callbacks_pi_memory")
-        .on(sql`(${table.payload}->>'memoryStorageId')`, table.runId)
-        .where(sql`${table.internalKind} = 'pi-memory:phase2'`),
       index("idx_agent_run_callbacks_pending")
         .on(table.status)
         .where(sql`status = 'pending'`),

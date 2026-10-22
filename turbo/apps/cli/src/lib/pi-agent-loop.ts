@@ -1,23 +1,17 @@
-import { mkdir, open, readFile, readdir, stat, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, open, readFile, readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 
 import {
   CANONICAL_PI_SESSION_DIR,
   PI_AGENT_DIR,
-  PI_MEMORY_ROOT,
   piLaunchPayloadSchema,
   piModelConfigSchema,
   type PiLaunchPayload,
 } from "@okouai/api-contracts/contracts/runners";
+import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import {
-  createPiSessionJsonl,
-  PI_MEMORY_PRESET,
-} from "@okouai/pi-agent-runtime/api";
-import {
-  PiMemoryPhase2EngineError,
   materializePiAgentModelConfig,
   runPiOfficialRpcMode,
-  runPiMemoryPhase2MountedConsolidation,
   type PiAgentModelConfig,
   type PiPreparationObservation,
 } from "@okouai/pi-agent-runtime/node";
@@ -33,7 +27,6 @@ const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
-const PI_MEMORY_PHASE2_VALIDATION_FILENAME = "maintenance-validation.json";
 
 /**
  * Report one sandbox session-preparation phase to guest-agent.
@@ -216,14 +209,8 @@ async function materializeSandboxModel(
       },
     });
     outcome = "success";
-    // Chat Completions pins OpenRouter's sticky routing to the owning thread so
-    // every Run of that thread reuses one upstream prompt cache. Memory shares
-    // its owner-scoped route across stages, independently of the run/thread.
-    const threadId = env.OKOU_CHAT_THREAD_ID?.trim();
-    const affinityKey =
-      model.model === PI_MEMORY_PRESET
-        ? requiredEnv(env, "OKOU_MEMORY_SESSION_ID")
-        : threadId;
+    // Preserve thread-scoped upstream prompt-cache affinity.
+    const affinityKey = env.OKOU_CHAT_THREAD_ID?.trim();
     return model.dialect === "openai-completions" && affinityKey
       ? { ...model, sessionAffinityKey: affinityKey }
       : model;
@@ -251,57 +238,7 @@ export async function runPiSandboxAgentLoop(args: {
   readonly cwd?: string;
   readonly agentDir?: string;
   readonly sessionDir?: string;
-  readonly memoryRoot?: string;
-  readonly maintenanceValidationFile?: string;
 }): Promise<void> {
-  const maintenance = args.config.launchPayload.launchConfig.maintenance;
-  if (maintenance) {
-    const validationFile =
-      args.maintenanceValidationFile ??
-      join(
-        dirname(requiredEnv(process.env, PI_LAUNCH_PAYLOAD_FILE_ENV)),
-        PI_MEMORY_PHASE2_VALIDATION_FILENAME,
-      );
-    await unlink(validationFile).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") {
-        throw error;
-      }
-    });
-    const result = await runPiMemoryPhase2MountedConsolidation(
-      {
-        memoryRoot: args.memoryRoot ?? PI_MEMORY_ROOT,
-        memoryStorageId: maintenance.memoryStorageId,
-        claimedBaseVersionId: maintenance.claimedBaseVersionId,
-        selectionDigest: maintenance.selectionDigest,
-        selected: maintenance.selected.map((candidate) => {
-          return {
-            ...candidate,
-            sourceCompletedAt: new Date(candidate.sourceCompletedAt),
-          };
-        }),
-        model: args.config.model,
-      },
-      AbortSignal.timeout(2 * 60 * 60 * 1000),
-    );
-    const marker = {
-      schemaVersion: 1,
-      runId: args.config.runId,
-      memoryStorageId: maintenance.memoryStorageId,
-      claimedRevision: maintenance.claimedRevision,
-      claimedBaseVersionId: maintenance.claimedBaseVersionId,
-      leaseToken: maintenance.leaseToken,
-      selectionDigest: maintenance.selectionDigest,
-      validatedVersionId: result.validatedVersionId,
-    } as const;
-    const file = await open(validationFile, "wx", 0o600);
-    try {
-      await file.writeFile(JSON.stringify(marker), "utf8");
-      await file.sync();
-    } finally {
-      await file.close();
-    }
-    return;
-  }
   const sessionDir = args.sessionDir ?? CANONICAL_PI_SESSION_DIR;
   const cwd = args.cwd ?? process.cwd();
   const sessionFile = await resolvePiSessionFile({
@@ -332,14 +269,8 @@ export async function runPiSandboxAgentLoop(args: {
 export function reportPiSandboxAgentLoopFailure(error: unknown): void {
   process.exitCode = 1;
   try {
-    console.error(
-      error instanceof PiMemoryPhase2EngineError
-        ? error.terminalMessage()
-        : error instanceof Error
-          ? error.message
-          : String(error),
-    );
+    console.error(error instanceof Error ? error.message : String(error));
   } catch {
-    // The diagnostic sink cannot turn a failed maintenance run into success.
+    // The diagnostic sink cannot turn a failed Run into success.
   }
 }

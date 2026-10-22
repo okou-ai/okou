@@ -11,8 +11,13 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
 import { delay } from "signal-timers";
+import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
+import {
+  threadMailLocation$,
+  threadMailParams,
+  type ThreadMailDestination,
+} from "./thread-mail-location.ts";
 
 // ---------------------------------------------------------------------------
 // Page-level coordinator for the thread-owned utility sidebar. Sidebar state
@@ -33,8 +38,16 @@ export const activeThreadSidebar$ = computed(
     readonly target: ThreadSidebarTarget;
     readonly animateEntry: boolean;
   } | null => {
+    const mailLocation = get(threadMailLocation$);
+    if (mailLocation?.view === "list") {
+      return null;
+    }
     for (const thread of [get(currentLeftThread$), get(currentRightThread$)]) {
-      if (!thread) {
+      // History can restore mail while another pane retains its utility target.
+      if (
+        !thread ||
+        (mailLocation && mailLocation.threadId !== thread.threadId)
+      ) {
         continue;
       }
       const target = get(thread.sidebar.target$);
@@ -75,7 +88,7 @@ const closeOtherThreadSidebars$ = command(
   ({ get, set }, thread: ChatPanelSignals): void => {
     for (const other of [get(currentLeftThread$), get(currentRightThread$)]) {
       if (other && other.threadId !== thread.threadId) {
-        set(other.sidebar.close$);
+        set(other.sidebar.dismiss$);
       }
     }
   },
@@ -133,11 +146,46 @@ export const openThreadCatalogArtifact$ = command(
   },
 );
 
-/**
- * The card hands over its own signals, which carry the owning thread id, so
- * the sidebar target holds everything its panel renders from — no registry
- * lookup on either side.
- */
+const changeThreadMailLocation$ = command(
+  (
+    { get, set },
+    thread: ChatPanelSignals,
+    destination: ThreadMailDestination,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const params = threadMailParams(
+      get(searchParams$),
+      thread.threadId,
+      destination,
+    );
+    if (params.toString() === get(searchParams$).toString()) {
+      return;
+    }
+    for (const pane of [get(currentLeftThread$), get(currentRightThread$)]) {
+      if (pane) {
+        set(pane.sidebar.dismiss$);
+      }
+    }
+    if (destination.view === "detail") {
+      const href = `/mail/drafts/${destination.mailDraftId}`;
+      set(thread.mail.register$, {
+        mailDraftId: destination.mailDraftId,
+        href,
+        originalUrl: new URL(href, window.location.origin).href,
+      });
+    }
+    set(updateSearchParams$, params, {}, get(hash$));
+  },
+);
+
+export const openThreadMailList$ = command(
+  ({ get, set }, thread: ChatPanelSignals) => {
+    set(changeThreadMailLocation$, thread, { view: "list" }, get(pageSignal$));
+  },
+);
+
+/** Inline cards keep their direct-detail navigation, now represented in the URL. */
 export const openThreadMailDraft$ = command(
   ({ get, set }, signals: MailDraftSignals) => {
     const thread = [get(currentLeftThread$), get(currentRightThread$)].find(
@@ -145,73 +193,44 @@ export const openThreadMailDraft$ = command(
         return candidate?.threadId === signals.threadId;
       },
     );
-    if (!thread) {
-      return;
+    if (thread) {
+      set(
+        changeThreadMailLocation$,
+        thread,
+        { view: "detail", mailDraftId: signals.mailDraftId },
+        get(pageSignal$),
+      );
     }
-    set(
-      openOnThread$,
-      thread,
-      { type: "email-draft", signals },
-      get(pageSignal$),
-    );
   },
 );
 
-// Named browser snapshots morph the anchored list into the existing detail
-// panel, and reverse the same path on Back. Reduced motion moves immediately.
 async function waitForMailLayout(signal: AbortSignal): Promise<void> {
-  // Let React and Floating UI finish their queued layout work. Rendering is
-  // paused inside a view-transition update, so animation frames cannot run.
+  // View Transitions pause animation frames while React and Floating UI commit.
   await delay(0, { signal });
   signal.throwIfAborted();
   await delay(0, { signal });
   signal.throwIfAborted();
 }
 
+/** Navigation commits before the destination reads its data. */
 export const navigateThreadMail$ = command(
   async (
-    { get, set },
+    { set },
     thread: ChatPanelSignals,
-    mail: ThreadMailSummary | null,
+    destination: ThreadMailDestination,
     signal: AbortSignal,
   ) => {
-    if (!mail) {
-      set(thread.mail.refresh$);
-      await get(thread.mail.filtered$);
-      signal.throwIfAborted();
-    }
-    const update = () => {
-      signal.throwIfAborted();
-      if (mail) {
-        const href = `/mail/drafts/${mail.mailDraftId}`;
-        const signals = set(thread.mail.register$, {
-          mailDraftId: mail.mailDraftId,
-          href,
-          originalUrl: new URL(href, window.location.origin).href,
-        });
-        set(thread.mail.setOpen$, false);
-        set(
-          openOnThread$,
-          thread,
-          { type: "email-draft", signals, fromMailList: true },
-          signal,
-        );
-      } else {
-        set(thread.sidebar.close$);
-        set(thread.mail.restore$);
-      }
-    };
     if (
       !("startViewTransition" in document) ||
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
-      update();
+      set(changeThreadMailLocation$, thread, destination, signal);
       return;
     }
     await document.startViewTransition({
       types: ["thread-mail"],
       update: async () => {
-        update();
+        set(changeThreadMailLocation$, thread, destination, signal);
         await waitForMailLayout(signal);
       },
     }).finished;

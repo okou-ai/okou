@@ -47,9 +47,14 @@ export const historyState$ = computed((get) => {
 });
 
 export const updateSearchParams$ = command(
-  ({ set }, searchParams: URLSearchParams, historyState: unknown = {}) => {
+  (
+    { set },
+    searchParams: URLSearchParams,
+    historyState: unknown = {},
+    hash = "",
+  ) => {
     const str = searchParams.toString();
-    pushState(historyState, "", `${pathname()}${str ? `?${str}` : ""}`);
+    pushState(historyState, "", `${pathname()}${str ? `?${str}` : ""}${hash}`);
     set(internalHistoryState$, historyState);
     set(reloadPathname$, (x) => {
       return x + 1;
@@ -98,6 +103,32 @@ interface Route {
   path: string;
   setup: Command<Promise<void> | void, [AbortSignal]>;
   analytics?: boolean;
+  /** Query changes the mounted page owns without replacing its lifetime. */
+  inPlaceSearchParams?: readonly string[];
+}
+
+function isInPlaceSearchChange(
+  previous: URLSearchParams,
+  next: URLSearchParams,
+  allowed: readonly string[],
+): boolean {
+  const keys = new Set([...previous.keys(), ...next.keys()]);
+  const changed = [...keys].filter((key) => {
+    const before = previous.getAll(key);
+    const after = next.getAll(key);
+    return (
+      before.length !== after.length ||
+      before.some((value, index) => {
+        return value !== after[index];
+      })
+    );
+  });
+  return (
+    changed.length > 0 &&
+    changed.every((key) => {
+      return allowed.includes(key);
+    })
+  );
 }
 
 const internalRouteConfig$ = state<Route[] | undefined>(undefined);
@@ -243,23 +274,30 @@ const slideRoute$ = command(
 );
 
 export const initRoutes$ = command(
-  async ({ set }, config: readonly Route[], signal: AbortSignal) => {
+  async ({ get, set }, config: readonly Route[], signal: AbortSignal) => {
     set(internalRouteConfig$, config as Route[]);
     set(navigateToDefaultWhenInvalid$);
 
     window.addEventListener(
       "popstate",
       onDomEventFn(async (event: PopStateEvent) => {
+        const nextParams = new URLSearchParams(search());
+        const route = get(currentRoute$);
+        const inPlace =
+          route?.inPlaceSearchParams !== undefined &&
+          pathname() === get(pathname$) &&
+          hash() === get(hash$) &&
+          isInPlaceSearchChange(
+            get(searchParams$),
+            nextParams,
+            route.inPlaceSearchParams,
+          );
         // The browser has already moved to the destination, while the route
         // state still describes the page on screen. After an edge swipe the
         // browser has animated the change itself, so a slide would play twice.
         const direction = event.hasUAVisualTransition
           ? "none"
-          : set(
-              pageTransitionDirectionTo$,
-              pathname(),
-              new URLSearchParams(search()),
-            );
+          : set(pageTransitionDirectionTo$, pathname(), nextParams);
         const move: RouteMove = { kind: "pop", historyState: event.state };
         if (direction === "none") {
           set(moveRouteState$, move);
@@ -267,7 +305,9 @@ export const initRoutes$ = command(
           await set(slideRoute$, direction, move, signal);
         }
         set(navigateToDefaultWhenInvalid$);
-        await set(loadRoute$, signal);
+        if (!inPlace) {
+          await set(loadRoute$, signal);
+        }
       }),
       { signal },
     );

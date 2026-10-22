@@ -1,35 +1,20 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { http, HttpResponse } from "msw";
-import fsSync, { promises as fs } from "node:fs";
-import { server } from "../mocks/server";
-import terminalFixtures from "../../../../../fixtures/pi-memory-phase2-terminal.json";
-import { zstdDecompressSync } from "node:zlib";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createHash } from "node:crypto";
 import { once } from "node:events";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import fsSync from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { zstdDecompressSync } from "node:zlib";
 
+import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  MemoryPiSession,
-  PiMemoryPhase2EngineError,
-} from "@okouai/pi-agent-runtime/node";
 import {
   piSandboxAgentConfigFromEnv,
   recordPiPreparationTiming,
-  runPiSandboxAgentLoop,
   reportPiSandboxAgentLoopFailure,
   type PiSandboxAgentConfig,
 } from "./pi-agent-loop";
@@ -572,225 +557,6 @@ describe("sandbox Pi agent loop", () => {
     expect(code).toBe(0);
     expect(stdout).toBe("still-alive");
   });
-  it("writes the private maintenance attestation only after mounted validation", async () => {
-    const errors = vi.spyOn(console, "error");
-    const exitCode = process.exitCode;
-    const validationFile = join(
-      launchPayloadDirectory,
-      "maintenance-validation.json",
-    );
-    const memoryRoot = join(launchPayloadDirectory, "memory");
-    const storageId = "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63";
-    const memory = "# Durable memory\n";
-    const summary = "v1\nDurable memory\n";
-    await mkdir(memoryRoot, { recursive: true });
-    await writeFile(join(memoryRoot, "MEMORY.md"), memory);
-    await writeFile(join(memoryRoot, "memory_summary.md"), summary);
-    const versionEntries = [
-      `MEMORY.md:${createHash("sha256").update(memory).digest("hex")}`,
-      `memory_summary.md:${createHash("sha256").update(summary).digest("hex")}`,
-    ].sort();
-    const validatedVersionId = createHash("sha256")
-      .update(`storage:${storageId}\n${versionEntries.join("\n")}`)
-      .digest("hex");
-    const selectionEncoding = Buffer.from(
-      "vm0.pi-memory.phase2.selection.v1",
-      "utf8",
-    );
-    const selectionEncodingLength = Buffer.alloc(4);
-    selectionEncodingLength.writeUInt32BE(selectionEncoding.length);
-    const emptySelectionLength = Buffer.alloc(4);
-    emptySelectionLength.writeUInt32BE(0);
-    const selectionDigest = createHash("sha256")
-      .update(
-        Buffer.concat([
-          selectionEncodingLength,
-          selectionEncoding,
-          emptySelectionLength,
-        ]),
-      )
-      .digest("hex");
-    const maintenance = {
-      schemaVersion: 1 as const,
-      memoryStorageId: storageId,
-      claimedRevision: 7,
-      claimedBaseVersionId: validatedVersionId,
-      leaseToken: "44754115-d375-4c46-aea7-a55bd1b61ec7",
-      selectionDigest,
-      selected: [],
-    };
-    await writeFile(validationFile, "stale-attestation", { mode: 0o600 });
-
-    await runPiSandboxAgentLoop({
-      config: {
-        ...CONFIG,
-        launchPayload: {
-          ...CONFIG.launchPayload,
-          launchConfig: {
-            ...CONFIG.launchPayload.launchConfig,
-            maintenance,
-          },
-        },
-      },
-      memoryRoot,
-      maintenanceValidationFile: validationFile,
-    });
-
-    await expect(readFile(join(memoryRoot, "MEMORY.md"), "utf8")).resolves.toBe(
-      memory,
-    );
-    await expect(
-      readFile(join(memoryRoot, "memory_summary.md"), "utf8"),
-    ).resolves.toBe(summary);
-    await expect(readFile(validationFile, "utf8")).resolves.toBe(
-      JSON.stringify({
-        schemaVersion: 1,
-        runId: RUN_ID,
-        memoryStorageId: maintenance.memoryStorageId,
-        claimedRevision: maintenance.claimedRevision,
-        claimedBaseVersionId: maintenance.claimedBaseVersionId,
-        leaseToken: maintenance.leaseToken,
-        selectionDigest: maintenance.selectionDigest,
-        validatedVersionId,
-      }),
-    );
-    expect((await stat(validationFile)).mode & 0o777).toBe(0o600);
-    expect(errors).not.toHaveBeenCalled();
-    expect(process.exitCode).toBe(exitCode);
-  });
-
-  it.each(
-    // Only the output-validation and mounted-apply fixtures are reproducible
-    // by this scenario. Session-lifecycle fixtures are covered by the engine
-    // tests and the shared serializer boundary. `summary_tokens` is a historical
-    // diagnostic: a valid source above the prompt injection budget now publishes
-    // in full, so the runtime cannot produce it. Its fixture stays for the
-    // parsers that must keep reading old terminal records.
-    terminalFixtures.filter((fixture) => {
-      return (
-        fixture.diagnostic &&
-        fixture.errorClass === "agent_output_invalid" &&
-        fixture.diagnostic.reason !== "summary_tokens"
-      );
-    }),
-  )(
-    "carries $name through the real mounted runtime and CLI terminal serializer",
-    async (fixture) => {
-      server.use(
-        http.post("https://phase2-fixture.example/responses", () => {
-          return HttpResponse.text(
-            responsesTextSse("Synthetic model leaves files unchanged", 1),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        }),
-      );
-      const memoryRoot = join(launchPayloadDirectory, "terminal-memory");
-      const validationFile = join(
-        launchPayloadDirectory,
-        "maintenance-validation.json",
-      );
-      const memory = "# PRIVATE_MEMORY_SENTINEL\n";
-      const isApply = fixture.diagnostic?.stage === "mounted_apply";
-      const summary = isApply
-        ? "v1\nValid summary"
-        : "V1\nPRIVATE_SUMMARY_SENTINEL";
-      await mkdir(memoryRoot);
-      await writeFile(join(memoryRoot, "MEMORY.md"), memory);
-      await writeFile(join(memoryRoot, "memory_summary.md"), summary);
-      await writeFile(validationFile, "stale-attestation");
-      const memoryStorageId = "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63";
-      const stalePath = join(
-        memoryRoot,
-        "rollout_summaries/pi/PRIVATE_PATH_SENTINEL.md",
-      );
-      const staleContent = "PRIVATE_EVIDENCE_SENTINEL";
-      if (isApply) {
-        await mkdir(join(memoryRoot, "rollout_summaries/pi"), {
-          recursive: true,
-        });
-        await writeFile(stalePath, staleContent);
-      }
-      const contentIdentity = createHash("sha256")
-        .update(
-          `storage:${memoryStorageId}\n${[
-            `MEMORY.md:${createHash("sha256").update(memory).digest("hex")}`,
-            `memory_summary.md:${createHash("sha256").update(summary).digest("hex")}`,
-            ...(isApply
-              ? [
-                  `rollout_summaries/pi/PRIVATE_PATH_SENTINEL.md:${createHash("sha256").update(staleContent).digest("hex")}`,
-                ]
-              : []),
-          ]
-            .sort()
-            .join("\n")}`,
-        )
-        .digest("hex");
-      const originalUnlink = fs.unlink;
-      const remove = vi.spyOn(fs, "unlink").mockImplementation(async (path) => {
-        if (isApply && path === stalePath)
-          throw Object.assign(new Error("PRIVATE_ERROR_SENTINEL"), {
-            code:
-              fixture.diagnostic?.errno === "unknown"
-                ? "PRIVATE_ERRNO_SENTINEL"
-                : fixture.diagnostic?.errno,
-            path: stalePath,
-          });
-        await originalUnlink(path);
-      });
-      const log = vi.spyOn(console, "error").mockImplementation(() => {});
-      const previousExit = process.exitCode;
-      try {
-        const run = runPiSandboxAgentLoop({
-          config: {
-            ...CONFIG,
-            model: {
-              provider: "openrouter",
-              baseUrl: "https://phase2-fixture.example/",
-              apiKey: "SYNTHETIC_KEY",
-              model: "openai/gpt-6-luna",
-              dialect: "openai-responses",
-              transport: "sse",
-            },
-            launchPayload: {
-              ...CONFIG.launchPayload,
-              launchConfig: {
-                ...CONFIG.launchPayload.launchConfig,
-                maintenance: {
-                  schemaVersion: 1,
-                  memoryStorageId,
-                  claimedRevision: 7,
-                  claimedBaseVersionId: contentIdentity,
-                  leaseToken: "44754115-d375-4c46-aea7-a55bd1b61ec7",
-                  selectionDigest:
-                    "f95c6835f8a93234e88b26bc2162bd3cf8defd709037f6eefb14ee6ae3d56e48",
-                  selected: [],
-                },
-              },
-            },
-          },
-          memoryRoot,
-          maintenanceValidationFile: validationFile,
-        }).catch(reportPiSandboxAgentLoopFailure);
-        await run;
-        expect(process.exitCode).toBe(1);
-        expect(log.mock.calls).toEqual([[fixture.stderr]]);
-        expect(fixture.stderr.length).toBeLessThan(512);
-        expect(fixture.stderr).not.toMatch(
-          /PRIVATE_|SYNTHETIC_KEY|terminal-memory/,
-        );
-        await expect(readFile(validationFile)).rejects.toMatchObject({
-          code: "ENOENT",
-        });
-        expect(await readFile(join(memoryRoot, "MEMORY.md"), "utf8")).toBe(
-          memory,
-        );
-      } finally {
-        process.exitCode = previousExit;
-        log.mockRestore();
-        remove.mockRestore();
-      }
-    },
-  );
 
   it("preserves failure status when the terminal log sink throws", () => {
     const previousExit = process.exitCode;
@@ -798,11 +564,7 @@ describe("sandbox Pi agent loop", () => {
       throw new Error("PRIVATE_SINK_SENTINEL");
     });
     try {
-      const failure = new PiMemoryPhase2EngineError("agent_output_invalid", {
-        candidateCount: 0,
-        fileCount: 0,
-        totalBytes: 0,
-      });
+      const failure = new Error("Run failed");
       expect(() => {
         return reportPiSandboxAgentLoopFailure(failure);
       }).not.toThrow();
@@ -811,45 +573,6 @@ describe("sandbox Pi agent loop", () => {
       process.exitCode = previousExit;
       log.mockRestore();
     }
-  });
-
-  it("removes a stale maintenance attestation when validation fails", async () => {
-    const validationFile = join(
-      launchPayloadDirectory,
-      "maintenance-validation.json",
-    );
-    const memoryRoot = join(launchPayloadDirectory, "memory");
-    await mkdir(memoryRoot, { recursive: true });
-    await writeFile(join(memoryRoot, "MEMORY.md"), "# Partial memory\n");
-    await writeFile(validationFile, "stale-attestation", { mode: 0o600 });
-
-    await expect(
-      runPiSandboxAgentLoop({
-        config: {
-          ...CONFIG,
-          launchPayload: {
-            ...CONFIG.launchPayload,
-            launchConfig: {
-              ...CONFIG.launchPayload.launchConfig,
-              maintenance: {
-                schemaVersion: 1,
-                memoryStorageId: "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63",
-                claimedRevision: 7,
-                claimedBaseVersionId: "a".repeat(64),
-                leaseToken: "44754115-d375-4c46-aea7-a55bd1b61ec7",
-                selectionDigest: "b".repeat(64),
-                selected: [],
-              },
-            },
-          },
-        },
-        memoryRoot,
-        maintenanceValidationFile: validationFile,
-      }),
-    ).rejects.toThrow("Pi memory Phase 2 input was invalid");
-    await expect(readFile(validationFile)).rejects.toMatchObject({
-      code: "ENOENT",
-    });
   });
 
   it("reports each sandbox preparation phase as a bounded stderr envelope", () => {
@@ -907,27 +630,6 @@ describe("sandbox Pi agent loop", () => {
     await expect(
       piSandboxAgentConfigFromEnv(piEnv({ OKOU_RUN_ID: RUN_ID })),
     ).resolves.toEqual(CONFIG);
-  });
-
-  it("carries the frozen memory epoch through the private launch file", async () => {
-    const memoryRecall = {
-      status: "no-content" as const,
-      memoryStorageId: "memory-storage",
-      storageVersionId: "memory-version-a",
-    };
-    await writeFile(
-      launchPayloadFile,
-      JSON.stringify({
-        ...CONFIG.launchPayload,
-        launchConfig: { ...CONFIG.launchPayload.launchConfig, memoryRecall },
-      }),
-    );
-
-    await expect(
-      piSandboxAgentConfigFromEnv(piEnv({ OKOU_RUN_ID: RUN_ID })),
-    ).resolves.toMatchObject({
-      launchPayload: { launchConfig: { memoryRecall } },
-    });
   });
 
   it("preserves versioned Responses request policy at launch", async () => {
@@ -1018,44 +720,6 @@ describe("sandbox Pi agent loop", () => {
     });
     const resolved = await piSandboxAgentConfigFromEnv(responses);
     expect(resolved.model).not.toHaveProperty("sessionAffinityKey");
-  });
-
-  it("keeps memory owner affinity independent of run and thread IDs", async () => {
-    const config = {
-      schemaVersion: 5,
-      dialect: "openai-completions",
-      transport: "sse",
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "@preset/memory",
-      catalogModel: "okou-memory",
-      credentialBindings: [
-        {
-          kind: "api-key",
-          environment: "OPENAI_API_KEY",
-          secretName: "OPENROUTER_API_KEY",
-        },
-      ],
-    };
-    for (const thread of ["thread-a", "thread-b"]) {
-      const env = piEnv({
-        OKOU_RUN_ID: RUN_ID,
-        OKOU_CHAT_THREAD_ID: thread,
-        OKOU_MEMORY_SESSION_ID: "MEMORY-user-1-org-1",
-      });
-      env.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
-      await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
-        model: {
-          model: "@preset/memory",
-          sessionAffinityKey: "MEMORY-user-1-org-1",
-        },
-      });
-    }
-    const missing = piEnv({ OKOU_RUN_ID: RUN_ID });
-    missing.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
-    await expect(piSandboxAgentConfigFromEnv(missing)).rejects.toThrow(
-      "OKOU_MEMORY_SESSION_ID",
-    );
   });
 
   it.each([2, 3] as const)(

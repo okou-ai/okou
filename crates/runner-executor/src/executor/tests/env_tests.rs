@@ -1055,25 +1055,11 @@ fn pi_auto_runtime_payload_preserves_captured_identity() {
 }
 
 #[test]
-fn pi_maintenance_candidates_use_only_the_private_run_payload() {
+fn pi_additive_launch_fields_use_only_the_private_run_payload() {
     let mut context = pi_context_for_test();
-    let candidate_secret = "PRIVATE_MAINTENANCE_CANDIDATE_31891";
-    context.pi_launch_config.as_mut().unwrap()["maintenance"] = json!({
-        "schemaVersion": 1,
-        "memoryStorageId": "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63",
-        "claimedRevision": 7,
-        "claimedBaseVersionId": "b".repeat(64),
-        "leaseToken": "44754115-d375-4c46-aea7-a55bd1b61ec7",
-        "selectionDigest": "c".repeat(64),
-        "selected": [{
-            "piSessionId": "11111111-1111-4111-8111-111111111111",
-            "sourceRunId": "22222222-2222-4222-8222-222222222222",
-            "sourceHistoryHash": "d".repeat(64),
-            "sourceCompletedAt": "2026-09-05T02:00:00.000Z",
-            "rawMemory": candidate_secret,
-            "rolloutSummary": "private rollout evidence",
-            "rolloutSlug": null
-        }]
+    let private_input = "PRIVATE_LAUNCH_INPUT_31891";
+    context.pi_launch_config.as_mut().unwrap()["futureLaunchField"] = json!({
+        "privateInput": private_input
     });
     let sandbox_id = SandboxId::new_v4().to_string();
     let payload =
@@ -1083,14 +1069,11 @@ fn pi_maintenance_candidates_use_only_the_private_run_payload() {
             .unwrap();
 
     let launch: serde_json::Value = serde_json::from_str(&payload.pi_launch_config).unwrap();
-    assert_eq!(
-        launch["maintenance"]["selected"][0]["rawMemory"],
-        candidate_secret
-    );
+    assert_eq!(launch["futureLaunchField"]["privateInput"], private_input);
     assert!(
         !serde_json::to_string(&build_user_env_json(&context))
             .unwrap()
-            .contains(candidate_secret)
+            .contains(private_input)
     );
 }
 
@@ -1099,18 +1082,6 @@ fn pi_execution_context_accepts_a_launch_without_the_handoff_slot() {
     let ctx = pi_context_for_test();
 
     validate_context_for_test(&ctx).unwrap();
-}
-
-#[test]
-fn pi_execution_context_rejects_an_unknown_memory_recall_before_sandbox() {
-    let mut ctx = pi_context_for_test();
-    ctx.pi_launch_config.as_mut().unwrap()["memoryRecall"] = json!({
-        "status": "future-status"
-    });
-
-    let error = validate_context_for_test(&ctx).unwrap_err();
-
-    assert!(error.contains("Pi launch config v2 is invalid"));
 }
 
 #[test]
