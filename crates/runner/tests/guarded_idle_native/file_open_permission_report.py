@@ -224,6 +224,14 @@ def validate(raw, source, capture, directory, *, original_directory=False):
         result = strict_json(bytes.fromhex(producer["stdout_hex"]))
         expected = {"payload_hex": PAYLOAD.hex()} if allow else {"errno": 1}
         if original_directory and allow:
+            fields(result, "payload_hex directory child")
+            for owner, names in (
+                ("directory", "device inode file_type"),
+                ("child", "device inode"),
+            ):
+                fields(result[owner], names)
+                for item in result[owner].values():
+                    integer(item)
             expected["directory"] = {
                 key: original[key] for key in ("device", "inode", "file_type")
             }

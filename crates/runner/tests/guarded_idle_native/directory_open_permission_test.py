@@ -178,6 +178,12 @@ class InputAndReaderTests(unittest.TestCase):
             raw[4] = FAN_OPEN_PERM | FAN_ONDIR
             event["raw_hex"] = EVENT.pack(*raw).hex()
 
+        def wrong_producer_type(value, owner, key):
+            producer = value["cases"][0]["producer"]
+            result = json.loads(bytes.fromhex(producer["stdout_hex"]))
+            result[owner][key] = float(result[owner][key])
+            producer["stdout_hex"] = json.dumps(result).encode().hex()
+
         mutations = (
             wrong_mask,
             lambda v: v.update(mark_mask=FAN_OPEN_PERM),
@@ -190,6 +196,9 @@ class InputAndReaderTests(unittest.TestCase):
             lambda v: v["cases"][2]["cleanup"].update(denied=[]),
             lambda v: v["cases"][0]["disposition"].update(response_completed_ns=10001),
             lambda v: v["invocation"].pop(),
+            lambda v: wrong_producer_type(v, "directory", "inode"),
+            lambda v: wrong_producer_type(v, "directory", "file_type"),
+            lambda v: wrong_producer_type(v, "child", "inode"),
         )
         for index, mutate in enumerate(mutations):
             changed = copy.deepcopy(original)
