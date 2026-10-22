@@ -3652,19 +3652,16 @@ export async function calculateUsagePackUpgradeCreditGrants(
   });
 }
 
-export async function usagePackInvoiceFulfillmentExists(
-  db: Pick<Db, "select">,
+function existingInvoiceFulfillmentMatches(
+  existing:
+    | Pick<
+        typeof usagePackInvoiceFulfillments.$inferSelect,
+        "usagePackSubscriptionId"
+      >
+    | undefined,
   invoiceId: string,
   usagePackSubscriptionId: string,
-): Promise<boolean> {
-  const [existing] = await db
-    .select({
-      usagePackSubscriptionId:
-        usagePackInvoiceFulfillments.usagePackSubscriptionId,
-    })
-    .from(usagePackInvoiceFulfillments)
-    .where(eq(usagePackInvoiceFulfillments.stripeInvoiceId, invoiceId))
-    .limit(1);
+): boolean {
   if (!existing) {
     return false;
   }
@@ -3732,27 +3729,10 @@ const findUsagePackChangeForInvoice$ = command(
   },
 );
 
-async function insertInvoiceFulfillmentReceipt(
-  tx: WriteTx,
+function requireInvoiceFulfillmentReceipt(
+  existing: typeof usagePackInvoiceFulfillments.$inferSelect | undefined,
   values: typeof usagePackInvoiceFulfillments.$inferInsert,
-): Promise<boolean> {
-  const [inserted] = await tx
-    .insert(usagePackInvoiceFulfillments)
-    .values(values)
-    .onConflictDoNothing()
-    .returning({
-      stripeInvoiceId: usagePackInvoiceFulfillments.stripeInvoiceId,
-    });
-  if (inserted) {
-    return true;
-  }
-  const [existing] = await tx
-    .select()
-    .from(usagePackInvoiceFulfillments)
-    .where(
-      eq(usagePackInvoiceFulfillments.stripeInvoiceId, values.stripeInvoiceId),
-    )
-    .limit(1);
+): void {
   if (
     !existing ||
     existing.usagePackSubscriptionId !== values.usagePackSubscriptionId ||
@@ -3763,7 +3743,6 @@ async function insertInvoiceFulfillmentReceipt(
       "Invoice fulfillment receipt belongs to different business facts",
     );
   }
-  return false;
 }
 
 const commitUsagePackUpgradeInvoice$ = command(
@@ -4012,117 +3991,120 @@ interface PreparedSubscriptionChangeGrant {
   readonly sourceAmountCents: number;
 }
 
-async function prepareSubscriptionChangeFulfillment(
-  db: Db,
-  args: SubscriptionChangeFulfillmentArgs,
-): Promise<{
-  readonly expectedRoot: UsagePackSubscriptionChangeRow;
-  readonly preparedGrants: readonly PreparedSubscriptionChangeGrant[];
-}> {
-  const [changes, roots] = await Promise.all([
-    db
-      .select()
-      .from(usagePackAllocationChanges)
-      .where(
-        eq(
-          usagePackAllocationChanges.subscriptionChangeId,
-          args.subscriptionChangeId,
+const prepareSubscriptionChangeFulfillment$ = command(
+  async (
+    { get },
+    args: SubscriptionChangeFulfillmentArgs,
+  ): Promise<{
+    readonly expectedRoot: UsagePackSubscriptionChangeRow;
+    readonly preparedGrants: readonly PreparedSubscriptionChangeGrant[];
+  }> => {
+    const db = get(db$);
+    const [changes, roots] = await Promise.all([
+      db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(
+          eq(
+            usagePackAllocationChanges.subscriptionChangeId,
+            args.subscriptionChangeId,
+          ),
         ),
-      ),
-    db
-      .select()
-      .from(usagePackSubscriptionChanges)
-      .where(eq(usagePackSubscriptionChanges.id, args.subscriptionChangeId))
-      .limit(1),
-  ]);
-  const expectedRoot = roots[0];
-  if (!expectedRoot) {
-    throw new Error(
-      `Unknown usage pack subscription change: ${args.subscriptionChangeId}`,
-    );
-  }
-  if (
-    changes.length === 0 &&
-    expectedRoot.sourceTier === expectedRoot.targetTier
-  ) {
-    throw new Error(
-      `Subscription change ${expectedRoot.id} has neither a plan nor package change`,
-    );
-  }
-  const immediateChanges = changes.filter((change) => {
-    return change.kind === "addition" || change.kind === "upgrade";
-  });
-  const prorationPeriod = {
-    start: args.prorationTimestamp,
-    end: args.periodEnd,
-  };
-  const preparedGrants = await Promise.all(
-    immediateChanges.map(async (change) => {
-      if (!change.targetStripePriceId) {
-        throw new Error(
-          `Subscription change allocation ${change.id} has no target Price`,
-        );
-      }
-      if (change.kind === "addition") {
-        const grant = await calculateUsagePackAdditionCreditGrant(
-          change.targetStripePriceId,
-          { start: args.periodStart, end: args.periodEnd },
-          args.prorationTimestamp,
+      db
+        .select()
+        .from(usagePackSubscriptionChanges)
+        .where(eq(usagePackSubscriptionChanges.id, args.subscriptionChangeId))
+        .limit(1),
+    ]);
+    const expectedRoot = roots[0];
+    if (!expectedRoot) {
+      throw new Error(
+        `Unknown usage pack subscription change: ${args.subscriptionChangeId}`,
+      );
+    }
+    if (
+      changes.length === 0 &&
+      expectedRoot.sourceTier === expectedRoot.targetTier
+    ) {
+      throw new Error(
+        `Subscription change ${expectedRoot.id} has neither a plan nor package change`,
+      );
+    }
+    const immediateChanges = changes.filter((change) => {
+      return change.kind === "addition" || change.kind === "upgrade";
+    });
+    const prorationPeriod = {
+      start: args.prorationTimestamp,
+      end: args.periodEnd,
+    };
+    const preparedGrants = await Promise.all(
+      immediateChanges.map(async (change) => {
+        if (!change.targetStripePriceId) {
+          throw new Error(
+            `Subscription change allocation ${change.id} has no target Price`,
+          );
+        }
+        if (change.kind === "addition") {
+          const grant = await calculateUsagePackAdditionCreditGrant(
+            change.targetStripePriceId,
+            { start: args.periodStart, end: args.periodEnd },
+            args.prorationTimestamp,
+          );
+          const refundSource = upgradeRefundInvoiceSource(args.invoice, change);
+          return {
+            change,
+            ...grant,
+            stripeInvoiceLineId: refundSource?.invoiceLineId ?? null,
+            sourceAmountCents:
+              refundSource?.amountCents ??
+              Math.floor(grant.purchasedCredits / CREDITS_PER_CENT),
+          };
+        }
+        if (!change.sourceAllocationId || !change.sourceStripePriceId) {
+          throw new Error(
+            `Subscription change allocation ${change.id} has no source`,
+          );
+        }
+        const [sourceAllocation] = await db
+          .select()
+          .from(usagePackAllocations)
+          .where(eq(usagePackAllocations.id, change.sourceAllocationId))
+          .limit(1);
+        if (!sourceAllocation) {
+          throw new Error(
+            `Subscription change allocation ${change.id} is incomplete`,
+          );
+        }
+        const [sourceCredits, targetCredits] = await Promise.all([
+          usagePackCreditsForPrice(change.sourceStripePriceId),
+          usagePackCreditsForPrice(change.targetStripePriceId),
+        ]);
+        const purchasedCredits = proratedCreditDelta(
+          sourceCredits.purchased,
+          targetCredits.purchased,
+          sourceAllocation,
+          prorationPeriod,
         );
         const refundSource = upgradeRefundInvoiceSource(args.invoice, change);
         return {
           change,
-          ...grant,
+          purchasedCredits,
+          bonusCredits: proratedCreditDelta(
+            sourceCredits.bonus,
+            targetCredits.bonus,
+            sourceAllocation,
+            prorationPeriod,
+          ),
           stripeInvoiceLineId: refundSource?.invoiceLineId ?? null,
           sourceAmountCents:
             refundSource?.amountCents ??
-            Math.floor(grant.purchasedCredits / CREDITS_PER_CENT),
+            Math.floor(purchasedCredits / CREDITS_PER_CENT),
         };
-      }
-      if (!change.sourceAllocationId || !change.sourceStripePriceId) {
-        throw new Error(
-          `Subscription change allocation ${change.id} has no source`,
-        );
-      }
-      const [sourceAllocation] = await db
-        .select()
-        .from(usagePackAllocations)
-        .where(eq(usagePackAllocations.id, change.sourceAllocationId))
-        .limit(1);
-      if (!sourceAllocation) {
-        throw new Error(
-          `Subscription change allocation ${change.id} is incomplete`,
-        );
-      }
-      const [sourceCredits, targetCredits] = await Promise.all([
-        usagePackCreditsForPrice(change.sourceStripePriceId),
-        usagePackCreditsForPrice(change.targetStripePriceId),
-      ]);
-      const purchasedCredits = proratedCreditDelta(
-        sourceCredits.purchased,
-        targetCredits.purchased,
-        sourceAllocation,
-        prorationPeriod,
-      );
-      const refundSource = upgradeRefundInvoiceSource(args.invoice, change);
-      return {
-        change,
-        purchasedCredits,
-        bonusCredits: proratedCreditDelta(
-          sourceCredits.bonus,
-          targetCredits.bonus,
-          sourceAllocation,
-          prorationPeriod,
-        ),
-        stripeInvoiceLineId: refundSource?.invoiceLineId ?? null,
-        sourceAmountCents:
-          refundSource?.amountCents ??
-          Math.floor(purchasedCredits / CREDITS_PER_CENT),
-      };
-    }),
-  );
-  return { expectedRoot, preparedGrants };
-}
+      }),
+    );
+    return { expectedRoot, preparedGrants };
+  },
+);
 
 function fulfillmentChangeIdentity(change: UsagePackAllocationChangeRow) {
   return and(
@@ -4143,125 +4125,190 @@ function fulfillmentChangeIdentity(change: UsagePackAllocationChangeRow) {
   );
 }
 
-async function fulfillPreparedSubscriptionChange(
-  tx: WriteTx,
-  args: SubscriptionChangeFulfillmentArgs,
+function requireSubscriptionChangeFulfillmentRoot(
+  root: UsagePackSubscriptionChangeRow | undefined,
   expectedRoot: UsagePackSubscriptionChangeRow,
-  preparedGrants: readonly PreparedSubscriptionChangeGrant[],
-): Promise<void> {
-  // Root identity and invoice receipt are existing business facts. The
-  // unique receipt insertion arbitrates duplicate fulfillment without a key.
-  const [root] = await tx
-    .select()
-    .from(usagePackSubscriptionChanges)
-    .where(eq(usagePackSubscriptionChanges.id, args.subscriptionChangeId))
-    .limit(1);
+  subscriptionChangeId: string,
+): UsagePackSubscriptionChangeRow {
   if (
     !root ||
     root.orgId !== expectedRoot.orgId ||
     root.usagePackSubscriptionId !== expectedRoot.usagePackSubscriptionId
   ) {
     throw new Error(
-      `Unknown usage pack subscription change: ${args.subscriptionChangeId}`,
+      `Unknown usage pack subscription change: ${subscriptionChangeId}`,
     );
   }
-  if (
-    await usagePackInvoiceFulfillmentExists(
-      tx,
-      args.invoice.id,
-      root.usagePackSubscriptionId,
-    )
-  ) {
-    return;
-  }
-  const inserted = await insertInvoiceFulfillmentReceipt(tx, {
-    stripeInvoiceId: args.invoice.id,
-    usagePackSubscriptionId: root.usagePackSubscriptionId,
-    periodStart: new Date(args.prorationTimestamp * 1000),
-    periodEnd: new Date(args.periodEnd * 1000),
-  });
-  if (!inserted) {
-    return;
-  }
-  for (const prepared of preparedGrants) {
-    const completedAt = nowDate();
-    // Conditional transition instead of a row lock: only an applied
-    // addition/upgrade with a replacement can be completed, exactly once.
-    const [change] = await tx
-      .update(usagePackAllocationChanges)
-      .set({ status: "completed", completedAt, updatedAt: completedAt })
-      .where(
-        and(
-          eq(usagePackAllocationChanges.id, prepared.change.id),
-          inArray(usagePackAllocationChanges.kind, ["addition", "upgrade"]),
-          eq(usagePackAllocationChanges.status, "applied"),
-          fulfillmentChangeIdentity(prepared.change),
-          isNotNull(usagePackAllocationChanges.replacementAllocationId),
-        ),
-      )
-      .returning();
-    if (!change) {
-      throw new Error(
-        `Subscription change allocation ${prepared.change.id} is not ready for fulfillment`,
-      );
-    }
-    if (prepared.purchasedCredits > 0) {
-      await createUsagePackCreditGrant(tx, {
-        orgId: change.orgId,
-        userId: change.userId,
-        grantType: "purchased",
-        idempotencyKey: `usage-pack-subscription-change:${root.id}:${change.id}:${args.invoice.id}:purchased`,
-        amount: prepared.purchasedCredits,
-        expiresAt: new Date(args.periodEnd * 1000),
-        refundSource: {
-          type: "invoice",
-          invoiceId: args.invoice.id,
-          invoiceLineId: prepared.stripeInvoiceLineId,
-          amountCents: prepared.sourceAmountCents,
-        },
-      });
-    }
-    if (prepared.bonusCredits > 0) {
-      await createUsagePackCreditGrant(tx, {
-        orgId: change.orgId,
-        userId: change.userId,
-        grantType: "bonus",
-        idempotencyKey: `usage-pack-subscription-change:${root.id}:${change.id}:${args.invoice.id}:bonus`,
-        amount: prepared.bonusCredits,
-        expiresAt: new Date(args.periodEnd * 1000),
-      });
-    }
-  }
+  return root;
 }
 
-export async function fulfillUsagePackSubscriptionChangeInvoice(
-  db: Db,
-  args: SubscriptionChangeFulfillmentArgs,
-): Promise<void> {
-  const { expectedRoot, preparedGrants } =
-    await prepareSubscriptionChangeFulfillment(db, args);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0272; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    const [subscription] = await tx
-      .select()
-      .from(
-        grantSubscriptionOwnershipQuery(
-          expectedRoot.orgId,
-          expectedRoot.usagePackSubscriptionId,
-        ),
-      );
-    const [wallet] = await tx
-      .select()
-      .from(grantWalletOwnershipQuery(expectedRoot.orgId));
-    requireGrantOwnership(subscription, wallet);
-    await fulfillPreparedSubscriptionChange(
-      tx,
-      args,
-      expectedRoot,
-      preparedGrants,
-    );
-  });
+function subscriptionChangeFulfillmentCondition(
+  change: UsagePackAllocationChangeRow,
+) {
+  return and(
+    eq(usagePackAllocationChanges.id, change.id),
+    inArray(usagePackAllocationChanges.kind, ["addition", "upgrade"]),
+    eq(usagePackAllocationChanges.status, "applied"),
+    fulfillmentChangeIdentity(change),
+    isNotNull(usagePackAllocationChanges.replacementAllocationId),
+  );
 }
+
+function subscriptionChangePurchasedGrantValues(
+  rootId: string,
+  change: UsagePackAllocationChangeRow,
+  args: SubscriptionChangeFulfillmentArgs,
+  prepared: PreparedSubscriptionChangeGrant,
+): Parameters<typeof createUsagePackCreditGrant>[1] {
+  return {
+    orgId: change.orgId,
+    userId: change.userId,
+    grantType: "purchased",
+    idempotencyKey: `usage-pack-subscription-change:${rootId}:${change.id}:${args.invoice.id}:purchased`,
+    amount: prepared.purchasedCredits,
+    expiresAt: new Date(args.periodEnd * 1000),
+    refundSource: {
+      type: "invoice",
+      invoiceId: args.invoice.id,
+      invoiceLineId: prepared.stripeInvoiceLineId,
+      amountCents: prepared.sourceAmountCents,
+    },
+  };
+}
+
+function subscriptionChangeBonusGrantValues(
+  rootId: string,
+  change: UsagePackAllocationChangeRow,
+  args: SubscriptionChangeFulfillmentArgs,
+  prepared: PreparedSubscriptionChangeGrant,
+): Parameters<typeof createUsagePackCreditGrant>[1] {
+  return {
+    orgId: change.orgId,
+    userId: change.userId,
+    grantType: "bonus",
+    idempotencyKey: `usage-pack-subscription-change:${rootId}:${change.id}:${args.invoice.id}:bonus`,
+    amount: prepared.bonusCredits,
+    expiresAt: new Date(args.periodEnd * 1000),
+  };
+}
+
+export const fulfillUsagePackSubscriptionChangeInvoice$ = command(
+  async function fulfillUsagePackSubscriptionChangeInvoice(
+    { set },
+    args: SubscriptionChangeFulfillmentArgs,
+  ): Promise<void> {
+    const db = set(writeDb$);
+    const { expectedRoot, preparedGrants } = await set(
+      prepareSubscriptionChangeFulfillment$,
+      args,
+    );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0272; new non-billing transactions are prohibited.
+    await db.transaction(async (tx) => {
+      const [subscription] = await tx
+        .select()
+        .from(
+          grantSubscriptionOwnershipQuery(
+            expectedRoot.orgId,
+            expectedRoot.usagePackSubscriptionId,
+          ),
+        );
+      const [wallet] = await tx
+        .select()
+        .from(grantWalletOwnershipQuery(expectedRoot.orgId));
+      requireGrantOwnership(subscription, wallet);
+      // Root identity and invoice receipt are existing business facts. The
+      // unique receipt insertion arbitrates duplicate fulfillment without a key.
+      const [storedRoot] = await tx
+        .select()
+        .from(usagePackSubscriptionChanges)
+        .where(eq(usagePackSubscriptionChanges.id, args.subscriptionChangeId))
+        .limit(1);
+      const root = requireSubscriptionChangeFulfillmentRoot(
+        storedRoot,
+        expectedRoot,
+        args.subscriptionChangeId,
+      );
+      const [existing] = await tx
+        .select({
+          usagePackSubscriptionId:
+            usagePackInvoiceFulfillments.usagePackSubscriptionId,
+        })
+        .from(usagePackInvoiceFulfillments)
+        .where(
+          eq(usagePackInvoiceFulfillments.stripeInvoiceId, args.invoice.id),
+        )
+        .limit(1);
+      if (
+        existingInvoiceFulfillmentMatches(
+          existing,
+          args.invoice.id,
+          root.usagePackSubscriptionId,
+        )
+      ) {
+        return;
+      }
+      const values = {
+        stripeInvoiceId: args.invoice.id,
+        usagePackSubscriptionId: root.usagePackSubscriptionId,
+        periodStart: new Date(args.prorationTimestamp * 1000),
+        periodEnd: new Date(args.periodEnd * 1000),
+      };
+      const [inserted] = await tx
+        .insert(usagePackInvoiceFulfillments)
+        .values(values)
+        .onConflictDoNothing()
+        .returning({
+          stripeInvoiceId: usagePackInvoiceFulfillments.stripeInvoiceId,
+        });
+      if (!inserted) {
+        const [winner] = await tx
+          .select()
+          .from(usagePackInvoiceFulfillments)
+          .where(
+            eq(
+              usagePackInvoiceFulfillments.stripeInvoiceId,
+              values.stripeInvoiceId,
+            ),
+          )
+          .limit(1);
+        requireInvoiceFulfillmentReceipt(winner, values);
+        return;
+      }
+      for (const prepared of preparedGrants) {
+        const completedAt = nowDate();
+        // Conditional transition instead of a row lock: only an applied
+        // addition/upgrade with a replacement can be completed, exactly once.
+        const [change] = await tx
+          .update(usagePackAllocationChanges)
+          .set({ status: "completed", completedAt, updatedAt: completedAt })
+          .where(subscriptionChangeFulfillmentCondition(prepared.change))
+          .returning();
+        if (!change) {
+          throw new Error(
+            `Subscription change allocation ${prepared.change.id} is not ready for fulfillment`,
+          );
+        }
+        if (prepared.purchasedCredits > 0) {
+          await createUsagePackCreditGrant(
+            tx,
+            subscriptionChangePurchasedGrantValues(
+              root.id,
+              change,
+              args,
+              prepared,
+            ),
+          );
+        }
+        if (prepared.bonusCredits > 0) {
+          await createUsagePackCreditGrant(
+            tx,
+            subscriptionChangeBonusGrantValues(root.id, change, args, prepared),
+          );
+        }
+      }
+    });
+  },
+);
 
 const CANCELED_CHANGE_FAILURE_REASON = "subscription_canceled";
 const CANCELED_CHANGE_REFUNDED_FAILURE_REASON =
@@ -5789,15 +5836,11 @@ export const usagePackInvoiceFulfillmentExistsOwned$ = command(
       .from(usagePackInvoiceFulfillments)
       .where(eq(usagePackInvoiceFulfillments.stripeInvoiceId, invoiceId))
       .limit(1);
-    if (!existing) {
-      return false;
-    }
-    if (existing.usagePackSubscriptionId !== usagePackSubscriptionId) {
-      throw new Error(
-        `Invoice ${invoiceId} is already bound to another usage pack subscription`,
-      );
-    }
-    return true;
+    return existingInvoiceFulfillmentMatches(
+      existing,
+      invoiceId,
+      usagePackSubscriptionId,
+    );
   },
 );
 
