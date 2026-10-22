@@ -165,10 +165,12 @@ final class NativeProcessTests: XCTestCase {
     let event = try XCTUnwrap(collector.events().first)
     let attachments = try collector.attachments(for: event)
     let expected = try Data(contentsOf: directory.appendingPathComponent("malformed-response.bin"))
-    XCTAssertEqual(attachments["native-helper-response.bin"], expected)
+    let received = try XCTUnwrap(attachments["native-helper-response.bin"])
     XCTAssertFalse(event.formatted.contains("content"))
     let details = String(
       decoding: try XCTUnwrap(attachments["native-helper-diagnostics.txt"]), as: UTF8.self)
+    let mismatch = zip(received, expected).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+    XCTAssertEqual(received, expected, "firstMismatchOffset=\(String(describing: mismatch))\n\(details)")
     XCTAssertTrue(details.contains("responseBytes=\(expected.count)"))
     XCTAssertTrue(details.contains("responseTruncated=false"))
     XCTAssertTrue(details.contains("DecodingError"))
@@ -202,6 +204,10 @@ final class NativeProcessTests: XCTestCase {
     }
     let events = try collector.events()
     XCTAssertEqual(events.count, 4)
+    XCTAssertTrue(
+      events.contains {
+        $0["contexts"]["nativeHelper"]["responseBytes"].number == Double(4 * 1024 * 1024 + 4096)
+      })
     var attached = 0
     var limited = 0
     for event in events {
