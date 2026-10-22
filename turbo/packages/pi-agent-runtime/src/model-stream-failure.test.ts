@@ -23,6 +23,7 @@ import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { piModelFailureReason } from "./model-request-diagnostics";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import upstreamStreamError from "./test/fixtures/pi-upstream-stream-error.json";
+import upstreamUnicodeStreamError from "./test/fixtures/pi-upstream-unicode-stream-error.json";
 
 const route = {
   provider: "openrouter",
@@ -218,6 +219,26 @@ describe("Chat Completions upstream stream failures", () => {
     expect(JSON.stringify(result.diagnostics)).not.toContain(
       "private-provider-code",
     );
+  });
+
+  it("keeps bounded upstream error text valid for the Guest JSON parser", async () => {
+    const message =
+      "Specific upstream generation failure ".padEnd(1999, "x") +
+      "😀 trailing detail";
+    server.use(
+      http.post(endpoint, () => {
+        return response({
+          error: { code: 502, message },
+          nativeFinishReason: "upstream_failed",
+        });
+      }),
+    );
+    const result = await stream().result();
+    expect(result).toMatchObject(upstreamUnicodeStreamError);
+    expect(JSON.parse(result.errorMessage ?? "")).toMatchObject({
+      error: { message: expect.stringMatching(/^[^\p{Surrogate}]*$/u) },
+    });
+    expect(piModelFailureReason(result)).toBe("provider_server_error");
   });
 
   it("retains a native-only failure without inventing a semantic classification", async () => {

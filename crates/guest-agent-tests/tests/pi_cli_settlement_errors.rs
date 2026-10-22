@@ -754,31 +754,48 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
     let upstream_stream_error: Value = serde_json::from_str(include_str!(
         "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/pi-upstream-stream-error.json"
     ))?;
-    for (run_id, with_reason) in [
-        ("00000000-0000-4000-8000-000000000193", true),
-        ("00000000-0000-4000-8000-000000000194", false),
+    let upstream_unicode_stream_error: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/pi-upstream-unicode-stream-error.json"
+    ))?;
+    for (upstream_error, cases) in [
+        (
+            &upstream_stream_error,
+            [
+                ("00000000-0000-4000-8000-000000000193", true),
+                ("00000000-0000-4000-8000-000000000194", false),
+            ],
+        ),
+        (
+            &upstream_unicode_stream_error,
+            [
+                ("00000000-0000-4000-8000-000000000195", true),
+                ("00000000-0000-4000-8000-000000000196", false),
+            ],
+        ),
     ] {
-        let mut message = upstream_stream_error.clone();
-        if !with_reason {
-            message["diagnostics"][0]["details"]
-                .as_object_mut()
-                .ok_or_else(|| std::io::Error::other("missing model-request details"))?
-                .remove("failureReason");
+        for (run_id, with_reason) in cases {
+            let mut message = upstream_error.clone();
+            if !with_reason {
+                message["diagnostics"][0]["details"]
+                    .as_object_mut()
+                    .ok_or_else(|| std::io::Error::other("missing model-request details"))?
+                    .remove("failureReason");
+            }
+            run_settlement_case(
+                run_id,
+                &[message],
+                ExpectedTerminalResult::Exact(
+                    upstream_error["errorMessage"]
+                        .as_str()
+                        .ok_or_else(|| std::io::Error::other("missing upstream error text"))?,
+                ),
+                Some(FailureReason::ProviderServerError),
+                None,
+                &base_path,
+                &original_directory,
+            )
+            .await?;
         }
-        run_settlement_case(
-            run_id,
-            &[message],
-            ExpectedTerminalResult::Exact(
-                upstream_stream_error["errorMessage"]
-                    .as_str()
-                    .ok_or_else(|| std::io::Error::other("missing upstream error text"))?,
-            ),
-            Some(FailureReason::ProviderServerError),
-            None,
-            &base_path,
-            &original_directory,
-        )
-        .await?;
     }
     // Shared with the real TypeScript provider-boundary regression. No status
     // is inferred from the detail text by this guest entry point.
