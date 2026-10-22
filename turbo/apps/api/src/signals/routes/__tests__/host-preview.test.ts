@@ -73,15 +73,6 @@ function previewStorage(
         grants.set(token, command.input.Key);
         return Promise.resolve(`https://preview-upload.example/${token}`);
       }
-      if (
-        command instanceof GetObjectCommand &&
-        command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") &&
-        command.input.Key
-      ) {
-        return Promise.resolve(
-          `https://preview-download.example/${command.input.Key}?signature=preview`,
-        );
-      }
       return baseSign(client, command, options);
     },
   );
@@ -465,9 +456,12 @@ describe("sandbox hosted previews", () => {
     if (!originalUrl) {
       throw new Error("Missing original cover redirect");
     }
-    const originalKey = decodeURIComponent(new URL(originalUrl).pathname).slice(
-      1,
-    );
+    const originalObject = new URL(originalUrl).searchParams.get("object");
+    const bucketPrefix = `${env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")}/`;
+    if (!originalObject?.startsWith(bucketPrefix)) {
+      throw new Error("Missing original cover object in the signing fixture");
+    }
+    const originalKey = originalObject.slice(bucketPrefix.length);
     expect(previewObjects.get(originalKey)).toStrictEqual(bytes);
     const compact = await accept(
       og.image({ query: { ...imageQuery, variant: "slack" } }),
