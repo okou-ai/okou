@@ -190,9 +190,9 @@ test("A request from another chat cannot enable a browser or continue this task"
   );
   expect(getButton(card, "Retry")).toBeEnabled();
   expect(
-    queryAllByRoleFast("button", card).find(
-      (button) => {return button.textContent?.trim() === "Allow"},
-    ),
+    queryAllByRoleFast("button", card).find((button) => {
+      return button.textContent?.trim() === "Allow";
+    }),
   ).toBeUndefined();
 });
 
@@ -221,8 +221,8 @@ test("Expired requests are unavailable in the transcript", async () => {
     "This cloud browser authorization link is invalid, expired, or not available for this workspace.",
   );
   expect(
-    queryAllByRoleFast("button", card).find(
-      (button) => {return button.textContent?.trim() === "Allow"},
-    ),
+    queryAllByRoleFast("button", card).find((button) => {
+      return button.textContent?.trim() === "Allow";
+    }),
   ).toBeUndefined();
 });
