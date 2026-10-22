@@ -7,7 +7,10 @@ import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray, or } from "drizzle-orm";
-import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
+import {
+  buildGenerationTemplatesPrompt,
+  type LiveGenerationTemplate,
+} from "../../lib/generation-template-prompt";
 import { db$ } from "../external/db";
 import { projectUserMessage } from "./chat-user-message.service";
 import {
@@ -19,6 +22,7 @@ import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import {
   selectedUserTemplateIds,
   userTemplateVolumes,
+  type MountedUserTemplate,
 } from "./user-template-data.service";
 
 export type RunTemplatesResult =
@@ -36,6 +40,7 @@ export function createRunTemplates(
   >,
   orgId: string,
   features$: Computed<Promise<FeatureSwitchContext>>,
+  disabledPaidTools$: Computed<Promise<readonly string[]>>,
 ): Computed<Promise<RunTemplatesResult>> {
   const selection$ = computed(async (get) => {
     const event = await get(event$);
@@ -120,39 +125,59 @@ export function createRunTemplates(
     });
   });
   return computed(async (get): Promise<RunTemplatesResult> => {
-    const [selection, presentations, mounted, features] = await Promise.all([
-      get(selection$),
-      get(presentations$),
-      get(mounted$),
-      get(features$),
-    ]);
-    const templates = selection?.templates ?? [];
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.BuiltinDocumentTemplates, features) &&
-      templates.some((template) => {
-        return template.type === "document";
-      })
-    ) {
-      return {
-        error: { code: "FORBIDDEN", message: "Document templates disabled" },
-      };
-    }
-    const guidance = buildGenerationTemplatesPrompt(templates, {
-      mountedUserPresentationTemplateIds: presentations,
-      mountedUserTemplates: mounted,
+    const [selection, presentations, mounted, features, disabledPaidTools] =
+      await Promise.all([
+        get(selection$),
+        get(presentations$),
+        get(mounted$),
+        get(features$),
+        get(disabledPaidTools$),
+      ]);
+    return buildRunTemplateGuidance({
+      templates: selection?.templates ?? [],
+      presentations,
+      mounted,
+      features,
+      disabledPaidTools,
     });
-    if (guidance.status === "invalid") {
-      return { error: { code: "BAD_REQUEST", message: guidance.message } };
-    }
-    return {
-      systemPromptVariables: { generationTemplatePrompt: guidance.prompt },
-      userPromptVariables: {},
-      skillVolumes: [
-        ...userPresentationTemplateVolumes(presentations),
-        ...userTemplateVolumes(mounted),
-      ].map((volume) => {
-        return { ...volume, source: "request_additional_volume" as const };
-      }),
-    };
   });
+}
+
+function buildRunTemplateGuidance(args: {
+  readonly templates: readonly LiveGenerationTemplate[];
+  readonly presentations: readonly string[];
+  readonly mounted: readonly MountedUserTemplate[];
+  readonly features: FeatureSwitchContext;
+  readonly disabledPaidTools: readonly string[];
+}): RunTemplatesResult {
+  const { templates, presentations, mounted, features, disabledPaidTools } =
+    args;
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.BuiltinDocumentTemplates, features) &&
+    templates.some((template) => {
+      return template.type === "document";
+    })
+  ) {
+    return {
+      error: { code: "FORBIDDEN", message: "Document templates disabled" },
+    };
+  }
+  const guidance = buildGenerationTemplatesPrompt(templates, {
+    mountedUserPresentationTemplateIds: presentations,
+    mountedUserTemplates: mounted,
+    disabledPaidTools,
+  });
+  if (guidance.status === "invalid") {
+    return { error: { code: "BAD_REQUEST", message: guidance.message } };
+  }
+  return {
+    systemPromptVariables: { generationTemplatePrompt: guidance.prompt },
+    userPromptVariables: {},
+    skillVolumes: [
+      ...userPresentationTemplateVolumes(presentations),
+      ...userTemplateVolumes(mounted),
+    ].map((volume) => {
+      return { ...volume, source: "request_additional_volume" as const };
+    }),
+  };
 }

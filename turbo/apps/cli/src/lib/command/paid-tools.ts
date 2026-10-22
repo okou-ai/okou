@@ -1,6 +1,5 @@
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
-  AVAILABLE_PAID_TOOL_IDS,
   paidToolIdSchema,
   type PaidToolId,
 } from "@okouai/api-contracts/contracts/paid-tools";
@@ -25,7 +24,18 @@ function readPolicy(): ReadonlySet<string> | null {
   }
 }
 
-export async function getPaidToolUnavailableMessage(
+export function isPaidToolEnabled(tool: PaidToolId): boolean {
+  const policy = readPolicy();
+  return policy !== null && !policy.has(tool);
+}
+
+/** Whole managed families are absent from the run's command tree. */
+export function isPaidCommandEnabled(name: string): boolean {
+  const tool = paidToolIdSchema.safeParse(name);
+  return !tool.success || isPaidToolEnabled(tool.data);
+}
+
+async function getPaidToolUnavailableMessage(
   tool: PaidToolId,
 ): Promise<string | undefined> {
   const policy = readPolicy();
@@ -42,16 +52,6 @@ export async function getPaidToolUnavailableMessage(
 export async function assertPaidToolEnabled(tool: PaidToolId): Promise<void> {
   const message = await getPaidToolUnavailableMessage(tool);
   if (message) throw new Error(message);
-}
-
-export function getGenerationPaidTool(type: string): PaidToolId | undefined {
-  switch (type) {
-    case "image":
-    case "image-batch":
-      return "image-generation";
-    default:
-      return undefined;
-  }
 }
 
 function commandPath(program: Command, command: Command): Command[] {
@@ -174,20 +174,5 @@ export function installPaidToolPolicy(program: Command): void {
     return withErrorHandler(async () => {
       for (const tool of tools) await assertPaidToolEnabled(tool);
     })();
-  });
-
-  program.addHelpText("afterAll", ({ command }) => {
-    const policy = readPolicy();
-    if (policy === null) {
-      return "\nPaid tools are unavailable because this run's paid-tool configuration is invalid. Help and free operations remain available.";
-    }
-    const disabled = paidToolsForHelp(commandPath(program, command)).filter(
-      (tool) => {
-        return policy.has(tool);
-      },
-    );
-    if (disabled.length === 0) return "";
-
-    return `\nDisabled paid tools in this run: ${disabled.join(", ")}.\nManage them in Settings > Personal > Tools. Help and free operations remain available.`;
   });
 }

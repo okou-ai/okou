@@ -9,8 +9,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { spriteCommand } from "../sprite";
+
+const generateCommand = createGenerateCommand();
 
 describe("okou generate sprite command", () => {
   vi.spyOn(process, "exit").mockImplementation((() => {

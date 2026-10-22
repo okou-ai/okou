@@ -47,6 +47,7 @@ import {
   type PromptMessage,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installS3Fixture,
@@ -1044,6 +1045,45 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     await cancelChatRun(actor, website.runId);
   }, 90_000);
+
+  it("keeps selected templates usable without recommending disabled managed image generation", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await setPaidToolDisabled(context, actor, "image-generation", true);
+    const presentation = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+      return item.slug === "playful-launch-presentation";
+    });
+    const website = WEBSITE_TEMPLATE_ITEMS[0];
+    const illustration = ILLUSTRATION_TEMPLATE_ITEMS[0];
+    if (!presentation || !website || !illustration) {
+      throw new Error("Expected registered templates");
+    }
+    const templates: readonly GenerationTemplateRequest[] = [
+      {
+        type: "presentation",
+        selection: { templateId: presentation.templateId },
+      },
+      { type: "website", selection: { websiteTemplateId: website.id } },
+      {
+        type: "illustration",
+        selection: { illustrationStyleId: illustration.illustrationStyleId },
+      },
+    ];
+    for (const template of templates) {
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "use this template",
+        template,
+      });
+      const prompt =
+        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+      expect(prompt).toContain("# Inline Templates");
+      expect(prompt).not.toContain("okou generate image-batch");
+      expect(prompt).not.toContain("--provider built-in");
+      expect(prompt).not.toContain("# Built-in image model");
+      expect(prompt).toContain("okou connector search");
+      await cancelChatRun(actor, run.runId);
+    }
+  });
 
   it("uses R2 for archive-backed styles", async () => {
     const { actor, agentId } = await entitledChatActor();

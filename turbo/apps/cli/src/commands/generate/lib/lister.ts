@@ -6,10 +6,7 @@ import {
   listConnectedConnectors,
 } from "../../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../../lib/platform-url";
-import {
-  getGenerationPaidTool,
-  getPaidToolUnavailableMessage,
-} from "../../../lib/command/paid-tools";
+import { isPaidToolEnabled } from "../../../lib/command/paid-tools";
 import { getOkouAgentId } from "../../../lib/okou-env";
 import { connectorActionUrl } from "../../connector/action-url";
 import {
@@ -85,7 +82,7 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   sprite: {
     label: "Built-in sprite asset generation",
     command: "okou generate sprite -h",
-    description: `Models: Built-in image generation with ${IMAGE_MODEL_SETTING_SUMMARY}`,
+    description: "Returns sprite authoring and postprocessing instructions.",
   },
 };
 
@@ -141,6 +138,8 @@ interface GenerationCandidate {
 function getBuiltInCommand(
   generationType: GenerationType,
 ): BuiltInGenerationCommand | null {
+  if (generationType === "image" && !isPaidToolEnabled("image-generation"))
+    return null;
   return BUILT_IN_GENERATION_COMMANDS[generationType] ?? null;
 }
 
@@ -321,11 +320,7 @@ function renderActions(
   }
 }
 
-function renderBuiltInCommand(params: {
-  generationType: GenerationType;
-  unavailableMessage: string | undefined;
-}): void {
-  const { generationType, unavailableMessage } = params;
+function renderBuiltInCommand(generationType: GenerationType): void {
   const command = getBuiltInCommand(generationType);
   if (!command) return;
 
@@ -333,9 +328,6 @@ function renderBuiltInCommand(params: {
   console.log("Built-in command:");
   console.log(`  Okou  ${command.label}`);
   console.log(`  ${command.description}`);
-  if (unavailableMessage) {
-    console.log(`  Availability: ${unavailableMessage}`);
-  }
   console.log(`  Use: ${command.command}`);
 }
 
@@ -357,17 +349,8 @@ function renderText(params: {
   other: GenerationCandidate[];
   showAll: boolean;
   runBound: boolean;
-  unavailableMessage: string | undefined;
 }): void {
-  const {
-    generationType,
-    agentId,
-    ready,
-    other,
-    showAll,
-    runBound,
-    unavailableMessage,
-  } = params;
+  const { generationType, agentId, ready, other, showAll, runBound } = params;
   const label = GENERATION_TYPE_LABELS[generationType];
   const scope = runBound ? "for current run" : "(saved-account directory)";
 
@@ -407,10 +390,7 @@ function renderText(params: {
     }
   }
 
-  renderBuiltInCommand({
-    generationType,
-    unavailableMessage,
-  });
+  renderBuiltInCommand(generationType);
   renderGenerationContext(generationType);
 
   if (showAll && other.length > 0) {
@@ -454,16 +434,11 @@ export async function runLister(
   const connectorGenerationType = getConnectorGenerationType(generationType);
   const agentId = getOkouAgentId();
   const runBound = isRunBoundConnectorContext();
-  const paidTool = getGenerationPaidTool(generationType);
-  const [catalog, enabledConnectorSlugs, platformOrigin, unavailableMessage] =
-    await Promise.all([
-      loadGenerationCatalog(connectorGenerationType, runBound),
-      agentId ? getAgentUserBuiltinConnectors(agentId) : Promise.resolve(null),
-      getPlatformOrigin(),
-      paidTool
-        ? getPaidToolUnavailableMessage(paidTool)
-        : Promise.resolve(undefined),
-    ]);
+  const [catalog, enabledConnectorSlugs, platformOrigin] = await Promise.all([
+    loadGenerationCatalog(connectorGenerationType, runBound),
+    agentId ? getAgentUserBuiltinConnectors(agentId) : Promise.resolve(null),
+    getPlatformOrigin(),
+  ]);
   const authorizedConnectorSlugs = enabledConnectorSlugs
     ? new Set(enabledConnectorSlugs)
     : null;
@@ -528,7 +503,6 @@ export async function runLister(
     other,
     showAll: options.all === true,
     runBound,
-    unavailableMessage,
   });
 
   const shouldShowOtherHint =

@@ -34,6 +34,7 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
+  AVAILABLE_PAID_TOOL_IDS,
   DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -11294,9 +11295,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "run `okou intro` first",
           'okou data maps search "<query>"',
           "Public-web search, current public facts, and source discovery",
-          "okou data web search <query>",
-          "framework-native web search tool is exposed",
-          "managed Web Search is disabled for a personal-subscription Run",
+          "okou web-search <query>",
           "external public-web provider",
           "bounded, ranked results",
           "result-count, recency, and domain filters",
@@ -11432,6 +11431,38 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
+      it("omits all disabled managed tool guidance while retaining independent tools and content policy", async () => {
+        const api = createRunsApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor(
+          {},
+          NATIVE_RUNNER_ROUTE,
+        );
+        for (const tool of AVAILABLE_PAID_TOOL_IDS) {
+          await setPaidToolDisabled(context, actor, tool, true);
+        }
+        const run = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "use my available capabilities",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(run.runId);
+        const prompt = claim.appendSystemPrompt ?? "";
+        for (const tool of AVAILABLE_PAID_TOOL_IDS) {
+          expect(prompt).not.toContain(`okou ${tool}`);
+        }
+        expect(prompt).not.toContain("# Built-in image model");
+        expect(prompt).not.toContain("--provider built-in");
+        expect(prompt).toContain("okou generate <type>");
+        expect(prompt).toContain("okou connector search");
+        expect(prompt).toContain("okou weather");
+        expect(prompt).toContain("# Restricted Explicit Content");
+        expect(
+          claim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+        ).toBe("true");
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await finishCancelledRun(run.runId, claim.sandboxToken);
+      });
+
       it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
@@ -11448,6 +11479,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "image-generation", false);
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(queued.runId);
+        expect(claim.appendSystemPrompt).not.toContain("okou web-search");
+        expect(claim.appendSystemPrompt).not.toContain(
+          "# Built-in image model",
+        );
+        expect(claim.appendSystemPrompt).toContain("okou people-search");
+        expect(claim.appendSystemPrompt).toContain("okou seo");
+        expect(claim.appendSystemPrompt).toContain("connector-backed image");
         expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["image-generation","web-search"]',
         );
@@ -11471,6 +11509,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the updated paid tool preferences",
         });
         const enabledClaim = await api.claimRunnerJob(enabled.runId);
+        expect(enabledClaim.appendSystemPrompt).toContain("okou web-search");
+        expect(enabledClaim.appendSystemPrompt).toContain(
+          "# Built-in image model",
+        );
         expect(
           enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
         ).toBe("[]");
@@ -11544,6 +11586,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(queued.runId);
         expect(claim.cliAgentType).toBe("codex");
+        expect(claim.appendSystemPrompt).not.toContain(
+          "# Built-in image model",
+        );
+        expect(claim.appendSystemPrompt).toContain("okou web-search");
         expect(
           claim.platformEnvironment[ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR],
         ).toBe("true");
@@ -11562,6 +11608,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: "gpt-6-astra",
         });
         const managedClaim = await api.claimRunnerJob(managedImages.runId);
+        expect(managedClaim.appendSystemPrompt).toContain(
+          "# Built-in image model",
+        );
+        expect(managedClaim.appendSystemPrompt).not.toContain(
+          "okou web-search",
+        );
         expect(managedClaim.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
@@ -11615,6 +11667,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["scrape"]',
         );
+        expect(claim.appendSystemPrompt).not.toContain("okou scrape");
+        expect(claim.appendSystemPrompt).toContain("okou web-search");
         await api.requestCancelRun(member, run.runId, [200]);
       });
 

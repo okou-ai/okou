@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { getGenerationCommand } from "../get";
+
+const generateCommand = createGenerateCommand();
 
 const generationId = "00000000-0000-4000-8000-000000000001";
 const statusUrl = `http://localhost:3000/api/built-in-generations/${generationId}`;

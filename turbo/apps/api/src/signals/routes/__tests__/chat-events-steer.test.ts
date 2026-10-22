@@ -15,6 +15,7 @@ import {
   userMessageWithTemplate,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 
 /**
  * Steering without delivery IDs: a running sandbox run reads the next
@@ -125,6 +126,49 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     });
     await cancelChatRun(actor, active.runId);
   });
+
+  it.each([true, false])(
+    "uses the active Run's captured image policy when steering templates (disabled: %s)",
+    async (disabled) => {
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      await setPaidToolDisabled(context, actor, "image-generation", disabled);
+      const active = await sendChatRun(actor, {
+        agentId,
+        prompt: "Start a run",
+      });
+      const claimed = await claimChatRun(runnerGroup, active.runId);
+      await setPaidToolDisabled(context, actor, "image-generation", !disabled);
+      const template = WEBSITE_TEMPLATE_ITEMS[0];
+      if (!template) {
+        throw new Error("Expected a website template");
+      }
+      const eventId = randomUUID();
+      await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: active.threadId,
+          clientEventId: eventId,
+          prompt: "Make a website",
+          userMessage: userMessageWithTemplate("Make a website", {
+            type: "website",
+            selection: { websiteTemplateId: template.id },
+          }),
+        },
+        [201],
+      );
+      const next = await api.nextSteerableInput(
+        claimed.claim.sandboxToken,
+        active.runId,
+      );
+      expect(next.input?.eventId).toBe(eventId);
+      expect(next.input?.prompt).toContain("okou host");
+      expect(next.input?.prompt.includes("okou generate image-batch")).toBe(
+        !disabled,
+      );
+      await cancelChatRun(actor, active.runId);
+    },
+  );
 
   it("includes cover guidance for a template steered into an existing run", async () => {
     const {

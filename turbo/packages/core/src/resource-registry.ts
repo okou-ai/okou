@@ -4,7 +4,7 @@ import {
   type WebsiteTemplateItem,
 } from "./website-template-items";
 import {
-  PRESENTATION_IMAGE_BATCH_INSTRUCTION,
+  presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
   presentationDeliveryInstructions,
 } from "./presentation-generation-instructions";
@@ -3580,6 +3580,7 @@ export function resolvePresentationRunbookColorToken(
 export function buildPresentationRunbookInstructionLines(args: {
   readonly runbookPackage: PresentationRunbookPackage;
   readonly colorSystemToken: string;
+  readonly imageGenerationEnabled: boolean;
   readonly hostCommand?: string;
 }): readonly string[] {
   const { runbookPackage: pkg, colorSystemToken } = args;
@@ -3592,7 +3593,7 @@ export function buildPresentationRunbookInstructionLines(args: {
     `- Pull the selected package once: okou resource pull ${pkg.resourceId} --dir ./generated/resources`,
     `- Before preparing sources, planning slides, or authoring, read ${packageDir}/SKILL.md fully and follow its template, authoring, and verification instructions.`,
     "- Read any workflow SKILL.md it references before starting that workflow. Use the documented entry command and bundled parallel workflow when specified, reusing the local package and saved task state.",
-    PRESENTATION_IMAGE_BATCH_INSTRUCTION,
+    presentationImageInstructions(args.imageGenerationEnabled),
     "- Use the requested slide count; default to 8.",
     PRESENTATION_STATIC_HTML_INSTRUCTION,
     ...presentationDeliveryInstructions({

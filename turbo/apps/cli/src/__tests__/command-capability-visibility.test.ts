@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { Command, Help } from "commander";
 import { buildHelpText, registerCommands } from "../okou";
-import { generateCommand } from "../commands/generate";
+import { createGenerateCommand } from "../commands/generate";
 import { decodeSandboxTokenPayload } from "../lib/api/sandbox-token";
+
+const generateCommand = createGenerateCommand();
 
 function buildOkouToken(payload: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(

@@ -33,12 +33,16 @@ function builtInImageModelPrompt(model: ImageModel): string {
 
 export function createRuntimePrompt(
   selectedImageModel$: Computed<Promise<ImageModel>>,
+  disabledPaidTools$: Computed<Promise<readonly string[]>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
-    const selectedImageModel = await get(selectedImageModel$);
+    const disabledPaidTools = await get(disabledPaidTools$);
+    const imageModelPrompt = disabledPaidTools.includes("image-generation")
+      ? ""
+      : builtInImageModelPrompt(await get(selectedImageModel$));
     return {
       systemPromptVariables: {
-        builtInImageModel: builtInImageModelPrompt(selectedImageModel),
+        builtInImageModel: imageModelPrompt,
         restrictedExplicitContent: RESTRICTED_EXPLICIT_CONTENT_PROMPT,
       },
       userPromptVariables: {},

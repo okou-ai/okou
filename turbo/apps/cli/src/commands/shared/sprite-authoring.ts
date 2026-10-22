@@ -9,6 +9,7 @@
  */
 
 import type { ArtifactVisibility } from "./artifact-visibility";
+import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 
 export interface SpritePlan {
   readonly assetType: string;
@@ -43,7 +44,7 @@ const SPRITE_SKILL = {
 } as const;
 
 const CORE_INVARIANTS = [
-  "Every raw sprite image must come from built-in image generation. Never draw raw sprite art with Three.js, Canvas, SVG, HTML/CSS, PIL shapes, procedural geometry, placeholder primitives, or code-rendered screenshots. Code may only assemble layout guides, postprocess generated images, or display finished assets at runtime.",
+  "Every raw sprite image must come from an available image generation tool. Never draw raw sprite art with Three.js, Canvas, SVG, HTML/CSS, PIL shapes, procedural geometry, placeholder primitives, or code-rendered screenshots. Code may only assemble layout guides, postprocess generated images, or display finished assets at runtime.",
   "Background is 100% solid flat magenta `#FF00FF` with no gradient, so the local processor can chroma-key it to transparency. Keep this rule unless the user explicitly wants a different processing workflow.",
   "No text, labels, UI, speech bubbles, borders, or frames between cells. Generate the exact requested grid count only.",
   "Keep the same asset identity, the same bounding box, and the same pixel scale across every frame.",
@@ -57,7 +58,7 @@ const CORE_INVARIANTS = [
 const WORKFLOW = [
   "1. Resolve the upstream skill below, then infer or confirm the asset plan. Pick the smallest useful output and do not pad unrelated actions into one raw sheet.",
   "2. Write the art prompt by hand using the skill's prompt-rules. Lock the art style, the exact sheet shape, the solid magenta background, the identity, and the containment rules. Do not delegate prompt writing to a script.",
-  "3. Generate each raw sheet with built-in image generation as described under Image Generation. If a reference is involved, make it visible to the model first (view a local file before generating); never pass a bare filesystem path as the visual reference.",
+  "3. Generate each raw sheet with an available image generation tool as described under Image Generation. If a reference is involved, make it visible to the model first (view a local file before generating); never pass a bare filesystem path as the visual reference.",
   "4. Postprocess each raw sheet locally with the skill's processor script: magenta cleanup, frame extraction, alignment, shared-scale normalization, component filtering, QC metadata, transparent sheet export, and GIF export.",
   "5. QC each sheet: no frame touches a cell edge, scale is consistent, detached FX did not become noise, the sheet reads as one coherent animation, and hero/player body height matches the accepted idle/run scale within ~10-15%. Reprocess or regenerate if it fails.",
   "6. Return the bundle for the resolved plan (single sheet, unit/spell/combat bundle, line bundle, or hero action bundle with separate FX assets and an optional assembled engine atlas after per-action QC).",
@@ -101,7 +102,7 @@ export function createSpriteAuthoringInstructions(
     "# Okou generate sprite",
     "",
     "This is a federated generation source-selection packet for the current agent.",
-    "Okou is not generating these sprites on the server. You resolve the sprite skill below, write the art prompt yourself, generate each raw sheet with built-in image generation, then run the skill's local processor for chroma-key cleanup, frame extraction, alignment, QC, and transparent/GIF export.",
+    "Okou is not generating these sprites on the server. You resolve the sprite skill below, write the art prompt yourself, generate each raw sheet with an available image generation tool, then run the skill's local processor for chroma-key cleanup, frame extraction, alignment, QC, and transparent/GIF export.",
     "",
     "## User Prompt",
     prompt,
@@ -115,9 +116,15 @@ export function createSpriteAuthoringInstructions(
     `- Output name: ${plan.name}`,
     "",
     "## Image Generation",
-    '- Generate every raw sheet via built-in image generation (`okou generate image --provider built-in --raw-prompt "..."`, or the in-context image tool). Do not pass a model: built-in image generation uses the image model selected in Settings › Built-in tools.',
+    ...(isPaidToolEnabled("image-generation")
+      ? [
+          '- Generate every raw sheet via built-in image generation (`okou generate image --provider built-in --raw-prompt "..."`, or the in-context image tool). Do not pass a model: built-in image generation uses the image model selected in Settings › Built-in tools.',
+          "- Pick a sheet-friendly square or grid-aligned size (for example `--size 1024x1024` for 2x2/3x3/4x4) so each cell stays evenly spaced. If the selected model rejects the size, use a supported square size listed by `okou generate image -h`.",
+        ]
+      : [
+          "- Generate raw sheets with an image tool exposed in the current agent context or follow connector guidance from `okou generate image --provider <connector>`. Select a supported square or grid-aligned size so cells stay evenly spaced.",
+        ]),
     "- Do not request a transparent background; the solid magenta background is chroma-keyed by the local processor.",
-    "- Pick a sheet-friendly square or grid-aligned size (for example `--size 1024x1024` for 2x2/3x3/4x4) so each cell stays evenly spaced. If the selected model rejects the size, use a supported square size listed by `okou generate image -h`.",
     "",
     "## Workflow Skill",
     "Resolve this skill before authoring; it is the authority for sprite prompt patterns, sheet/bundle selection, and the postprocessing primitive.",

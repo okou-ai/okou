@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import chalk from "chalk";
-import { generateCommand } from "../index";
+import { createGenerateCommand } from "../index";
 import { reportCommand } from "../artifacts";
 import { selectResourceCandidates } from "@okouai/core/resource-registry";
+
+const generateCommand = createGenerateCommand();
 
 describe("okou generate source-backed artifact commands", () => {
   vi.spyOn(process, "exit").mockImplementation((() => {

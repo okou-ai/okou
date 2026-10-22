@@ -153,10 +153,7 @@ export const spriteCommand = new Command()
   .option("--sheet <grid>", `Sheet/grid shape: ${SHEETS.join(", ")}`, "auto")
   .option("--frames <count>", "Frame count: 'auto' or an integer (1-64)")
   .option("--bundle <preset>", `Bundle preset: ${BUNDLES.join(", ")}`)
-  .option(
-    "--art-style <style>",
-    `Sprite art style (the sprite analog of 'okou generate image --style'): ${ART_STYLES.join(", ")}`,
-  )
+  .option("--art-style <style>", `Sprite art style: ${ART_STYLES.join(", ")}`)
   .option("--anchor <anchor>", `Frame anchor: ${ANCHORS.join(", ")}`)
   .option("--margin <margin>", `Safe-area margin: ${MARGINS.join(", ")}`)
   .option(
@@ -189,9 +186,8 @@ Output:
   With no --prompt and no piped input, prints the generation choices instead.
 
 Notes:
-  - The agent generates each raw sheet with built-in image generation, which
-    uses the image model selected in Settings › Built-in tools, on a solid
-    magenta background, then runs the
+  - The agent generates each raw sheet with an available image generation
+    tool on a solid magenta background, then runs the
     sprite skill's local processor for chroma-key cleanup, frame extraction,
     alignment, QC, and transparent/GIF export.
   - Raw sprite art must originate from image generation, never from code-drawn

@@ -13,7 +13,8 @@ import {
   formatRegistryListing,
 } from "../shared/resource-listing";
 import { dispatchGenerate } from "./lib/dispatch";
-import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
+import { websiteImageInstructions } from "@okouai/core/website-generation-instructions";
+import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 
 const WEBSITE_TARGET = "website";
 const WEBSITE_USAGE_COMMAND = "okou generate website";
@@ -176,7 +177,7 @@ ${formatRegistryListing(templates, "website templates")}`;
           ...templateSelectionRules,
           "If it is a marketing site, make the product or offer visible in the first viewport.",
           "For app or tool surfaces, prioritize dense, scannable, task-focused UI over decorative sections.",
-          WEBSITE_IMAGE_BATCH_INSTRUCTION,
+          websiteImageInstructions(isPaidToolEnabled("image-generation")),
           "Use responsive HTML/CSS and verify the page works at mobile and desktop widths.",
         ],
       });
