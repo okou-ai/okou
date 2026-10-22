@@ -117,7 +117,7 @@ case "${1:-}" in
       [ "${MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12" ]; then
+    elif [ "${3:-}" = "b4a90a6b3f79527f91836df6a2bcc8fe81c622e8" ]; then
       [ "${MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "da0dc9cd1b21ecdd91200fb1cad8600ee5fdfd29" ]; then
       [ "${MOCK_AGENT_INSTRUCTIONS_RUNNER_FLOOR_VALID:-1}" = "1" ]
@@ -240,8 +240,6 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_COMMIT-5151515151515151515151515151515151515151}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
-    elif [[ "$*" == *agent-instructions-claim.service.ts* ]]; then
-      printf '%s\n' "${MOCK_AGENT_INSTRUCTIONS_API_COMMIT-ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
       printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -856,14 +854,10 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "chat thread provenance floor must fail before artifact or host access"
 fi
 
-for reader_commit in "" invalid; do
-  assert_failure "Cannot resolve the merged Agent instructions DB reader" \
-    run_resolver "${tmp_dir}/agent-instructions-api-history.output" "MOCK_AGENT_INSTRUCTIONS_API_COMMIT=${reader_commit}"
-  [ ! -s "${tmp_dir}/agent-instructions-api-history.output" ] || fail "invalid instruction reader history must not publish outputs"
-done
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the Agent instructions DB reader" \
+assert_failure "Rollback target predates the database-only Agent instructions reader" \
   run_resolver "${tmp_dir}/agent-instructions-api-floor.output" MOCK_AGENT_INSTRUCTIONS_API_FLOOR_VALID=0
+grep -Fq 'b4a90a6b3f79527f91836df6a2bcc8fe81c622e8' "${tmp_dir}/failure.err" || fail "Agent instruction rejection must identify the database-only reader commit"
 [ ! -s "${tmp_dir}/agent-instructions-api-floor.output" ] || fail "Storage instruction reader must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
   fail "Agent instruction API floor must fail before artifact or host access"

@@ -8,7 +8,6 @@ import {
   cleanupOnboardingRecommendationJobs$,
   executeOnboardingRecommendationWork$,
 } from "../services/onboarding-recommendation.service";
-import { executeStorageObjectCleanupWork$ } from "../services/storage-object-cleanup.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const process$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -23,22 +22,16 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   // Each kind owns a disjoint queue, so a long export cannot keep a fresh
   // onboarding result from using the same durable wakeup.
-  const [exports, recommendations, storageCleanup, approvals] =
-    await Promise.all([
-      set(executeDurableUserExportWork$, {}, workSignal),
-      set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
-      set(executeStorageObjectCleanupWork$, {}, workSignal),
-      set(recoverLinkApprovalWorkflows$, workSignal),
-    ]);
+  const [exports, recommendations, approvals] = await Promise.all([
+    set(executeDurableUserExportWork$, {}, workSignal),
+    set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
+    set(recoverLinkApprovalWorkflows$, workSignal),
+  ]);
   signal.throwIfAborted();
   return {
     status: 200 as const,
     body: {
-      processed:
-        exports.processed +
-        recommendations.processed +
-        storageCleanup.processed +
-        approvals,
+      processed: exports.processed + recommendations.processed + approvals,
       cleaned: cleanedExports.processed + cleanedRecommendations.processed,
     },
   };

@@ -895,27 +895,11 @@ describe("runner storage manifest contract", () => {
     );
   });
 
-  it("preserves the current-Agent marker for supported API rollback readers", () => {
-    expect(
-      storedExecutionContextSchema.parse({
-        ...storedContext,
-        agentInstructionsSource: "agent",
-      }),
-    ).toEqual({ ...storedContext, agentInstructionsSource: "agent" });
-    for (const agentInstructionsSource of [null, "storage", "", 1]) {
-      expect(
-        storedExecutionContextSchema.safeParse({
-          ...storedContext,
-          agentInstructionsSource,
-        }).success,
-      ).toBe(false);
-    }
-  });
-
   it("requires canonical mounts while ignoring previous stored fields", () => {
     expect(
       storedExecutionContextSchema.parse({
         ...storedContext,
+        agentInstructionsSource: "agent",
         storageManifest: null,
       }),
     ).toEqual(storedContext);
