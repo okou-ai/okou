@@ -23,7 +23,6 @@ import {
 
 import { singleton } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
-import { onRejection } from "../utils";
 import type {
   ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
@@ -114,7 +113,6 @@ interface PreparedExternalCatalogCache<
         readonly catalog: Catalog;
       }
     | undefined;
-  readonly inFlight: Map<string, Promise<Catalog>>;
 }
 
 interface EffectiveConnector<
@@ -195,7 +193,6 @@ const preparedCatalogCache = singleton(
   (): PreparedExternalCatalogCache<AcceptedConnectorCatalogSnapshot> => {
     return {
       completed: undefined,
-      inFlight: new Map<string, Promise<AcceptedConnectorCatalogSnapshot>>(),
     };
   },
 );
@@ -204,7 +201,6 @@ const preparedDisplayCatalogCache = singleton(
   (): PreparedExternalCatalogCache<AcceptedDisplayCatalogSnapshot> => {
     return {
       completed: undefined,
-      inFlight: new Map<string, Promise<AcceptedDisplayCatalogSnapshot>>(),
     };
   },
 );
@@ -283,18 +279,6 @@ function materializeAcceptedConnectorCatalog<
   );
 }
 
-function deleteInFlightCatalog<
-  Catalog extends { readonly identity: ExternalCatalogIdentity },
->(
-  cache: PreparedExternalCatalogCache<Catalog>,
-  key: string,
-  promise: Promise<Catalog>,
-): void {
-  if (cache.inFlight.get(key) === promise) {
-    cache.inFlight.delete(key);
-  }
-}
-
 async function readCachedConnectorCatalogSnapshot<
   Catalog extends { readonly identity: ExternalCatalogIdentity },
 >(args: {
@@ -311,13 +295,6 @@ async function readCachedConnectorCatalogSnapshot<
     return cache.completed.catalog;
   }
 
-  const existing = cache.inFlight.get(currentKey);
-  if (existing) {
-    timing?.recordAcceptedCacheOutcome("in_flight");
-    timing?.recordValidationResult({ outcome: "not_run" });
-    return await existing;
-  }
-
   const completedIdentity = cache.completed?.catalog.identity;
   timing?.recordAcceptedCacheMissReason(
     completedIdentity === undefined
@@ -329,12 +306,7 @@ async function readCachedConnectorCatalogSnapshot<
         : "capability_identity_changed",
   );
   timing?.recordAcceptedCacheOutcome("miss");
-  const promise = args.load();
-  cache.inFlight.set(currentKey, promise);
-  const catalog = await onRejection(promise, () => {
-    deleteInFlightCatalog(cache, currentKey, promise);
-  });
-  deleteInFlightCatalog(cache, currentKey, promise);
+  const catalog = await args.load();
   cache.completed = { key: currentKey, catalog };
   return catalog;
 }
