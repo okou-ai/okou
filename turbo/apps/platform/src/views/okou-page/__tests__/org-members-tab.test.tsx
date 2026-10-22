@@ -562,42 +562,45 @@ test.each(["limited-free-1", "pro"])(
   },
 );
 
-test("shows a pending-invitation conflict without closing the invite dialog", async () => {
-  mockMembersStory(undefined, "admin", "owner");
-  mockMemberInviteEntitlement(false, {
-    tier: "limited-free-1",
-    status: "active",
-  });
-  context.mocks.api(orgInviteContract.invite, ({ respond }) => {
-    return respond(409, {
-      error: {
-        code: "INVITATION_ALREADY_EXISTS",
-        message: "This person already has a pending invitation.",
-      },
+test.each([
+  [
+    409,
+    "INVITATION_ALREADY_EXISTS",
+    "This person already has a pending invitation.",
+  ],
+  [400, "BAD_REQUEST", "Enter a valid email address."],
+] as const)(
+  "shows an invitation refusal (%s) without closing the invite dialog",
+  async (status, code, message) => {
+    mockMembersStory(undefined, "admin", "owner");
+    mockMemberInviteEntitlement(false, {
+      tier: "limited-free-1",
+      status: "active",
     });
-  });
+    context.mocks.api(orgInviteContract.invite, ({ respond }) => {
+      return respond(status, { error: { code, message } });
+    });
 
-  await setupPage({ context, path: "/?settings=people" });
-  await screen.findByRole("heading", { name: "People" });
-  click(buttonByText("Add member"));
-  const inviteDialog = await screen.findByRole("dialog", {
-    name: "Invite member",
-  });
-  await fill(
-    within(inviteDialog).getByPlaceholderText("email@example.com"),
-    "already.invited@example.com",
-  );
-  const send = buttonByText("Send invitation", inviteDialog);
-  await waitFor(() => {
-    expect(send).toBeEnabled();
-  });
-  click(send);
+    await setupPage({ context, path: "/?settings=people" });
+    await screen.findByRole("heading", { name: "People" });
+    click(buttonByText("Add member"));
+    const inviteDialog = await screen.findByRole("dialog", {
+      name: "Invite member",
+    });
+    await fill(
+      within(inviteDialog).getByPlaceholderText("email@example.com"),
+      "rejected.invitee@example.com",
+    );
+    const send = buttonByText("Send invitation", inviteDialog);
+    await waitFor(() => {
+      expect(send).toBeEnabled();
+    });
+    click(send);
 
-  await expect(
-    screen.findByText("This person already has a pending invitation."),
-  ).resolves.toBeInTheDocument();
-  expect(inviteDialog).toBeInTheDocument();
-});
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    expect(inviteDialog).toBeInTheDocument();
+  },
+);
 
 test.each([
   { tier: "pro", hasSubscription: true },

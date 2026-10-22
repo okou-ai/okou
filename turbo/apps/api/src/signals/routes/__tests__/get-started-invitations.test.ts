@@ -31,9 +31,10 @@ class ClerkInvitationTestError extends Error {
   constructor(
     code: string,
     readonly status: number,
+    longMessage = code,
   ) {
     super(`Clerk invitation failed: ${code}`);
-    this.errors = [{ code, message: code, longMessage: code }];
+    this.errors = [{ code, message: code, longMessage }];
   }
 }
 
@@ -209,10 +210,14 @@ test.each([
   },
 );
 
-test("keeps unrelated Clerk invitation failures as server errors", async () => {
+test("returns an address-level error when Clerk rejects the email format without recording invitation progress", async () => {
   await org();
   context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValueOnce(
-    new ClerkInvitationTestError("invalid_clerk_configuration", 400),
+    new ClerkInvitationTestError(
+      "form_param_format_invalid",
+      422,
+      "Email address must be a valid email address.",
+    ),
   );
 
   const response = await accept(
@@ -220,15 +225,44 @@ test("keeps unrelated Clerk invitation failures as server errors", async () => {
       headers,
       body: { email: `${randomUUID()}@example.com`, role: "member" },
     }),
-    [500],
+    [400],
   );
 
-  expect(response.body).toStrictEqual({ error: "Internal server error" });
+  expect(response.body).toStrictEqual({
+    error: { code: "BAD_REQUEST", message: "Enter a valid email address." },
+  });
   await expect(progress()).resolves.toMatchObject({
     claimedCount: 0,
     pendingCount: 0,
   });
 });
+
+test.each([
+  ["invalid_clerk_configuration", 400, "invalid_clerk_configuration"],
+  ["form_param_format_invalid", 422, "Redirect URL must be a valid URL."],
+] as const)(
+  "keeps unrelated Clerk invitation failure %s as a server error",
+  async (code, status, longMessage) => {
+    await org();
+    context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValueOnce(
+      new ClerkInvitationTestError(code, status, longMessage),
+    );
+
+    const response = await accept(
+      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
+        headers,
+        body: { email: `${randomUUID()}@example.com`, role: "member" },
+      }),
+      [500],
+    );
+
+    expect(response.body).toStrictEqual({ error: "Internal server error" });
+    await expect(progress()).resolves.toMatchObject({
+      claimedCount: 0,
+      pendingCount: 0,
+    });
+  },
+);
 
 test("revoking an invitation removes pending progress without consuming a reward slot", async () => {
   await org();
