@@ -309,6 +309,7 @@ runs:
         add_secret CRON_SECRET CRON_SECRET
         add_secret ABLY_API_KEY ABLY_API_KEY
         add_secret OPENAI_API_KEY OPENAI_API_KEY
+        add_secret OPENAI_IMAGE_WEBHOOK_SECRET OPENAI_IMAGE_WEBHOOK_SECRET
         add_secret FAL_KEY FAL_KEY
         add_var VAPID_PUBLIC_KEY VAPID_PUBLIC_KEY
         add_secret VAPID_PRIVATE_KEY VAPID_PRIVATE_KEY
