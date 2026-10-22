@@ -659,6 +659,7 @@ export function CloudflareAccessDialog({
           <CloudflareAccessConflictReview />
           {!isSaving && <CloudflareAccessSaveNotice />}
           <RemoteNetworkScopeConfirmation
+            busy={isSaving}
             provider="cloudflare"
             configId={dialog.config?.id}
           />

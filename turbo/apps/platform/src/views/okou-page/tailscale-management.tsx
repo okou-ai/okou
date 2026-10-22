@@ -576,6 +576,7 @@ export function TailscaleDialog({
           <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
           {!busy && <TailscaleReview dialog={dialog} />}
           <RemoteNetworkScopeConfirmation
+            busy={busy}
             provider="tailscale"
             configId={dialog.config?.id}
           />

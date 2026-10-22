@@ -2,7 +2,7 @@ import boldFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Bold.otf?url";
 import regularFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf?url";
 import type { Root } from "hast";
 
-import { createDeferredPromise, withCleanup } from "../../signals/utils.ts";
+import { createDeferredPromise } from "../../signals/utils.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
 import type { PdfWorkerRequest, PdfWorkerResponse } from "./types.ts";
@@ -30,6 +30,12 @@ export async function generateMessagePdfBlob(
       return parseMessagePdfTree(content).children;
     }),
   };
+  const [assets, regularFont, boldFont] = await Promise.all([
+    preparePdfAssets(tree, imageUrls, signal),
+    loadFont(regularFontUrl, signal),
+    loadFont(boldFontUrl, signal),
+  ]);
+  signal.throwIfAborted();
   const worker = new Worker(
     new URL("./message-pdf-worker.ts", import.meta.url),
     {
@@ -37,59 +43,41 @@ export async function generateMessagePdfBlob(
     },
   );
   const result = createDeferredPromise<Blob>(signal);
-  const onMessage = (event: MessageEvent<PdfWorkerResponse>) => {
-    if (result.settled()) {
-      return;
-    }
-    if (event.data.ok) {
-      result.resolve(event.data.blob);
-    } else {
-      result.reject(new Error("PDF export worker could not complete"));
-    }
-  };
+  worker.addEventListener(
+    "message",
+    (event: MessageEvent<PdfWorkerResponse>) => {
+      if (result.settled()) {
+        return;
+      }
+      if (event.data.ok) {
+        result.resolve(event.data.blob);
+      } else {
+        result.reject(new Error("PDF export worker could not complete"));
+      }
+    },
+    { signal },
+  );
   const onError = () => {
     if (!result.settled()) {
       result.reject(new Error("PDF export worker could not complete"));
     }
   };
-  const onAbort = () => {
-    worker.terminate();
-  };
-  worker.addEventListener("message", onMessage);
-  worker.addEventListener("error", onError);
-  worker.addEventListener("messageerror", onError);
-  signal.addEventListener("abort", onAbort, { once: true });
-  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-  return await withCleanup(
-    (async () => {
-      const [assets, regularFont, boldFont] = await Promise.all([
-        preparePdfAssets(tree, imageUrls, signal),
-        loadFont(regularFontUrl, signal),
-        loadFont(boldFontUrl, signal),
-      ]);
-      signal.throwIfAborted();
-      const request: PdfWorkerRequest = {
-        baseUrl: location.href,
-        tree,
-        assets,
-        regularFont,
-        boldFont,
-      };
-      worker.postMessage(request, [regularFont, boldFont]);
-      return result.promise;
-    })(),
+  worker.addEventListener("error", onError, { signal });
+  worker.addEventListener("messageerror", onError, { signal });
+  signal.addEventListener(
+    "abort",
     () => {
-      worker.removeEventListener("message", onMessage);
-      worker.removeEventListener("error", onError);
-      worker.removeEventListener("messageerror", onError);
-      signal.removeEventListener("abort", onAbort);
       worker.terminate();
-      // A preparation failure must also release the deferred's abort listener.
-      if (!result.settled()) {
-        result.reject(
-          new Error("PDF export stopped before document generation"),
-        );
-      }
     },
+    { once: true },
   );
+  const request: PdfWorkerRequest = {
+    baseUrl: location.href,
+    tree,
+    assets,
+    regularFont,
+    boldFont,
+  };
+  worker.postMessage(request, [regularFont, boldFont]);
+  return result.promise;
 }

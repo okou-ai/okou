@@ -11,7 +11,6 @@ import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { isOrgAdmin$ } from "./org.ts";
 import { accept } from "../lib/accept.ts";
-import { withCleanup } from "./utils.ts";
 
 export type RemoteNetworkProvider = "tailscale" | "cloudflare";
 type RemoteNetworkScope = "personal" | "organization";
@@ -29,10 +28,6 @@ const pending$ = state<ScopeChange | null>(null);
 const acknowledged$ = state<string | null>(null);
 const approved$ = state(false);
 const error$ = state<"conflict" | "unavailable" | "uncertain" | null>(null);
-const request$ = state<Promise<unknown> | null>(null);
-export const remoteNetworkScopeOperation$ = computed((get) => {
-  return get(request$);
-});
 const saved$ = state<{ id: string; sessionKey: string } | null>(null);
 const enabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.RemoteControlGuidedSetup];
@@ -71,7 +66,7 @@ export const editRemoteNetworkScope$ = command(
     scope: RemoteNetworkScope,
   ) => {
     const sessionKey = get(authenticatedSessionKey$);
-    if (!sessionKey || !get(enabled$) || get(request$)) {
+    if (!sessionKey || !get(enabled$)) {
       return;
     }
     set(draft$, { provider, configId, scope, sessionKey });
@@ -82,12 +77,10 @@ export const editRemoteNetworkScope$ = command(
     set(saved$, null);
   },
 );
-export const cancelRemoteNetworkScope$ = command(({ get, set }) => {
-  if (!get(request$)) {
-    set(pending$, null);
-    set(approved$, false);
-    set(acknowledged$, null);
-  }
+export const cancelRemoteNetworkScope$ = command(({ set }) => {
+  set(pending$, null);
+  set(approved$, false);
+  set(acknowledged$, null);
 });
 export const acknowledgeRemoteNetworkScope$ = command(
   ({ set }, snapshot: string | null) => {
@@ -182,7 +175,7 @@ export const applyRemoteNetworkScope$ = command(
     if (!matchingScopeDraft(draft, provider, config)) {
       return config;
     }
-    if (get(request$) || get(error$)) {
+    if (get(error$)) {
       return null;
     }
     const admin = await get(isOrgAdmin$);
@@ -232,55 +225,37 @@ export const applyRemoteNetworkScope$ = command(
             },
             fetchOptions: { signal },
           });
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    const operation = withCleanup(
-      Promise.allSettled([
-        accept(request, [200, 400, 401, 403, 404, 409, 500], signal, {
-          showErrorToast: false,
-        }),
-      ]),
-      () => {
-        set(finishScopeOperation$, pending, signal);
-      },
+    const result = await accept(
+      request,
+      [200, 400, 401, 403, 404, 409, 500],
+      signal,
+      { showErrorToast: false },
     );
-    set(request$, operation);
-    const [outcome] = await operation;
     signal.throwIfAborted();
     if (pending !== get(remoteNetworkScopeChange$)) {
       return null;
     }
-    if (outcome.status === "rejected" || outcome.value.status === 500) {
+    if (result.status === 500) {
       set(error$, "uncertain");
       return null;
     }
-    if (outcome.value.status !== 200) {
-      set(error$, outcome.value.status === 409 ? "conflict" : "unavailable");
+    if (result.status !== 200) {
+      set(error$, result.status === 409 ? "conflict" : "unavailable");
       return null;
     }
     set(saved$, { id: config.id, sessionKey: pending.sessionKey });
     set(draft$, null);
     set(pending$, null);
     set(acknowledged$, null);
-    return outcome.value.body;
+    return result.body;
   },
 );
 
-const finishScopeOperation$ = command(
-  ({ get, set }, pending: ScopeChange, signal: AbortSignal) => {
-    set(request$, null);
-    if (signal.aborted && pending === get(remoteNetworkScopeChange$)) {
-      set(error$, "uncertain");
-    }
-  },
-);
-
-export const resetRemoteNetworkScope$ = command(({ get, set }) => {
-  if (!get(request$)) {
-    set(draft$, null);
-    set(pending$, null);
-    set(approved$, false);
-    set(acknowledged$, null);
-    set(error$, null);
-    set(saved$, null);
-  }
+export const resetRemoteNetworkScope$ = command(({ set }) => {
+  set(draft$, null);
+  set(pending$, null);
+  set(approved$, false);
+  set(acknowledged$, null);
+  set(error$, null);
+  set(saved$, null);
 });

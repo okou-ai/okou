@@ -97,10 +97,9 @@ function HostedSitePermissions({
 }) {
   const { t } = useTranslation();
   const loadable = useLoadable(session.visibility$);
-  const operation = useLoadable(session.visibilityOperation$);
+  const [operation, change] = useLoadableSet(session.changeVisibility$);
   const organization = useLastResolved(currentOrgInfo$);
   const signal = useGet(session.signal$);
-  const change = useSet(session.changeVisibility$);
   const refresh = useSet(session.refreshVisibility$);
   if (!signal || (loadable.state === "hasData" && !loadable.data)) {
     return null;

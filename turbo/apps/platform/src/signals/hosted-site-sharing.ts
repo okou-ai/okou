@@ -22,7 +22,7 @@ import {
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
 import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
-import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
+import { onRef, resetSignal, settle } from "./utils.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
@@ -63,7 +63,6 @@ function createSiteVisibilitySignals(sourceUrl: string) {
     );
     return result.status === 200 ? result.body : null;
   });
-  const operation$ = state<Promise<void> | null>(null);
   const persist$ = command(
     async ({ get, set }, visibility: Visibility, signal: AbortSignal) => {
       const details = await get(details$);
@@ -71,26 +70,28 @@ function createSiteVisibilitySignals(sourceUrl: string) {
       if (!details || details.visibility === visibility) {
         return false;
       }
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      const updated = await withCleanup(
-        accept(
-          get(apiClient$)(hostContract).updateSiteVisibility({
-            params: { siteId: details.siteId },
-            body: { visibility, expectedRevision: details.revision },
-            fetchOptions: { signal },
-          }),
-          [200],
-          signal,
-        ),
-        () => {
-          if (!signal.aborted) {
-            set(reload$, (value) => {
-              return value + 1;
-            });
-          }
-        },
+      const response = await accept(
+        get(apiClient$)(hostContract).updateSiteVisibility({
+          params: { siteId: details.siteId },
+          body: { visibility, expectedRevision: details.revision },
+          fetchOptions: { signal },
+        }),
+        [200, 409],
+        signal,
       );
       signal.throwIfAborted();
+      if (response.status === 409) {
+        set(reload$, (value) => {
+          return value + 1;
+        });
+        await get(details$);
+        signal.throwIfAborted();
+      }
+      const updated = await accept(Promise.resolve(response), [200], signal);
+      signal.throwIfAborted();
+      set(reload$, (value) => {
+        return value + 1;
+      });
       set(recordHostedSiteVisibilityChange$, {
         url: sourceUrl,
         revision: updated.body.revision,
@@ -100,24 +101,17 @@ function createSiteVisibilitySignals(sourceUrl: string) {
       return true;
     },
   );
-  const save$ = throttleCommand(persist$, 0);
   const change$ = command(
-    ({ get, set }, visibility: Visibility, signal: AbortSignal) => {
+    async ({ set }, visibility: Visibility, signal: AbortSignal) => {
+      const updated = await set(persist$, visibility, signal);
       signal.throwIfAborted();
-      let promise: Promise<void> | null = null;
-      promise = (async () => {
-        const updated = await set(save$, visibility, signal);
-        signal.throwIfAborted();
-        if (updated && get(operation$) === promise) {
-          toast.success(
-            i18n.t(($) => {
-              return $.artifacts.sharing.permissionsUpdated;
-            }),
-          );
-        }
-      })();
-      set(operation$, promise);
-      return promise;
+      if (updated) {
+        toast.success(
+          i18n.t(($) => {
+            return $.artifacts.sharing.permissionsUpdated;
+          }),
+        );
+      }
     },
   );
   const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -136,9 +130,6 @@ function createSiteVisibilitySignals(sourceUrl: string) {
   });
   return {
     visibility$: details$,
-    visibilityOperation$: computed((get) => {
-      return get(operation$);
-    }),
     changeVisibility$: change$,
     refreshVisibility$: refresh$,
   };
