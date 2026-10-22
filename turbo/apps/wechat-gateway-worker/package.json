@@ -10,9 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "zod": "^4.3.6",
+    "@okouai/api-contracts": "workspace:*",
     "@okouai/core": "workspace:*",
-    "@okouai/api-contracts": "workspace:*"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260903.1",
@@ -24,7 +24,7 @@
     "miniflare": "5.20260903.0-alpha",
     "oxlint": "^1.75.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.3",
+    "vitest": "^5.0.5",
     "wrangler": "^4.129.0"
   }
 }
