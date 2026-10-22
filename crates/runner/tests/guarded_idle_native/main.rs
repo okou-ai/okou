@@ -51,6 +51,7 @@ mod recovery_source;
 mod refusal;
 mod returned_guest;
 mod returned_guest_probe;
+mod running_restore;
 mod shared_reads;
 mod snapshot_preparation;
 mod speculative_fault;
