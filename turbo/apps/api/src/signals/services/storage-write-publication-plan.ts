@@ -10,7 +10,7 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/memory-selection";
 import { eq, getTableColumns, is, Param, SQL, sql } from "drizzle-orm";
 import {
   PgDialect,

@@ -45,7 +45,7 @@ function load(forceNative = false) {
 test("Worker require interop initializes real Node builtins when import.meta.url is absent", async () => {
   const result = await build({
     stdin: {
-      contents: `${workerRequireBanner}\nexport const EventEmitter = require("node:events").EventEmitter;`,
+      contents: `${workerRequireBanner}\nexport const EventEmitter = require("node:events").EventEmitter; export const processes = [require("process"), require("node:process")];`,
     },
     platform: "node",
     format: "cjs",
@@ -60,7 +60,9 @@ test("Worker require interop initializes real Node builtins when import.meta.url
     commonJsModule,
     commonJsModule.exports,
   );
-  const { EventEmitter } = commonJsModule.exports;
+  const { EventEmitter, processes } = commonJsModule.exports;
+  assert.equal(processes[0], process);
+  assert.equal(processes[1], process);
   const emitter = new EventEmitter();
   let observed;
   emitter.on("probe", (value) => {
