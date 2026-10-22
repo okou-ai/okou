@@ -1,6 +1,8 @@
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { and, asc, eq, or, type SQL } from "drizzle-orm";
+import { connectors } from "@okouai/db/schema/connector";
+import { secrets } from "@okouai/db/schema/secret";
+import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 
 interface ConnectorIdentity {
   readonly connectorId: string;
@@ -60,4 +62,41 @@ export function assertCustomConnectorOAuthStateRows(
       throw new Error("custom connector OAuth mode and config do not match");
     }
   }
+}
+
+/**
+ * Refresh publication decides by the refresh token it consumed: any reconnect
+ * or concurrent refresh replaces that secret row (KMS ciphertext is never
+ * reused), so a stale result or failure cannot overwrite the newer credential.
+ */
+export function storedRefreshTokenCondition(
+  connectorId: string,
+  encryptedRefreshToken: string | null,
+  refreshTokenSecretName: string,
+) {
+  const refreshRow = and(
+    eq(secrets.connectorId, connectorId),
+    eq(secrets.name, refreshTokenSecretName),
+  );
+  const observed = sql`EXISTS (SELECT 1 FROM ${secrets} WHERE ${refreshRow}`;
+  return encryptedRefreshToken === null
+    ? sql`NOT ${observed})`
+    : sql`${observed} AND ${secrets.encryptedValue} = ${encryptedRefreshToken})`;
+}
+
+export function customConnectorRefreshReconnectCondition(
+  connectorId: string,
+  observedEncryptedRefreshToken: string | null | undefined,
+  refreshTokenSecretName: string,
+) {
+  return and(
+    eq(connectors.id, connectorId),
+    observedEncryptedRefreshToken === undefined
+      ? undefined
+      : storedRefreshTokenCondition(
+          connectorId,
+          observedEncryptedRefreshToken,
+          refreshTokenSecretName,
+        ),
+  );
 }
