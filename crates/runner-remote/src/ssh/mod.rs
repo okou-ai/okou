@@ -98,30 +98,14 @@ impl SshRuntime {
         self.authority.http.clone()
     }
     pub(crate) fn ably_message(&self, message: &ably_subscriber::Message) -> bool {
-        use api_contracts::generated::types::runners::ssh::InvalidateNotification;
         if message.name.as_deref() != Some("ssh-authority-invalidated") {
             return false;
         }
-        if message.data.get("connectionId").is_none() {
-            return true;
-        }
-        let Ok(notification) =
-            serde_json::from_value::<InvalidateNotification>(message.data.clone())
-        else {
-            tracing::warn!("Invalid SSH authority invalidation notification");
+        let Some(notification) = crate::authority_invalidation::parse(&message.data) else {
             return true;
         };
-        let Ok(run) = notification.run_id.parse::<RunId>() else {
-            return true;
-        };
-        let connection = match notification.connection_id {
-            Some(value) => match value.parse::<uuid::Uuid>() {
-                Ok(connection) => Some(connection),
-                Err(_) => return true,
-            },
-            None => None,
-        };
-        self.cache.invalidate(run, connection);
+        self.cache
+            .invalidate(notification.run, notification.connection);
         true
     }
 

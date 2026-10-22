@@ -86,6 +86,7 @@ async fn malformed_notifications_cannot_become_run_wide_evictions() {
     let resolve = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     for data in [
+        json!({"runId": h.run, "connectionId": null, "unexpected": true}),
         json!({"runId": h.run}),
         json!({"runId": h.run, "connectionId": 42}),
         json!({"runId": h.run, "connectionId": "invalid"}),

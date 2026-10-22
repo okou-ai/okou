@@ -1,3 +1,5 @@
+mod notifications;
+
 use runner_provider::AblySideMessageHandler;
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
