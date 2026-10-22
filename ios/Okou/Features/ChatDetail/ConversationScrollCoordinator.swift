@@ -32,7 +32,8 @@ final class ConversationScrollCoordinator {
   }
 
   var showsBottomButton: Bool {
-    hasPositionedHistory && isAwayFromBottom && !conversation.visibleMessages.isEmpty
+    hasPositionedHistory && isAwayFromBottom && !sendTransition.isActive
+      && !conversation.visibleMessages.isEmpty
   }
 
   private var isScrolling: Bool { phase != .idle }

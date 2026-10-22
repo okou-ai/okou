@@ -684,9 +684,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private func applyObservedHeights() {
     guard !isScrolling, !appliesRows else { return }
-    // A width/font snapshot can still be restoring its anchor when a mounted
-    // Markdown view acquires its final height. Keep that intended position.
-    let position = source.anchor.preservedPosition ?? source.anchor.capture()
     let atBottom =
       source.followsBottom
       || collection.contentSize.height + collection.adjustedContentInset.bottom
@@ -704,6 +701,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
     guard !changed.isEmpty else { return }
     source.sendTransition?.prepareForSnapshot()
+    // Capture the presented position after pausing any send animation.
+    let position = source.anchor.preservedPosition ?? source.anchor.capture()
     appliesRows = true
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changed)
