@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+barrier_script="${repo_root}/.github/scripts/cancel-superseded-merge-group-runs.sh"
 lock_script="${repo_root}/.github/scripts/runner/with-runner-lifecycle-lock.sh"
 namespace_cleanup_script="${repo_root}/.github/scripts/runner/cleanup-pr-runner-namespace.sh"
 tmp_dir=$(mktemp -d)
@@ -39,10 +40,17 @@ done
 
 case "$endpoint" in
   repos/okou-ai/okou/pulls/42)
-    if [ "${MOCK_PR_STATE:-closed}" = "error" ]; then
-      exit 1
+    if [[ " $* " == *" --jq .state "* ]]; then
+      case "${MOCK_PR_STATE:-closed}" in
+        error) exit 1 ;;
+        *) printf '%s\n' "${MOCK_PR_STATE:-closed}" ;;
+      esac
+    else
+      printf 'feature/late-approval\tokou-ai/okou\n'
     fi
-    printf '%s\n' "${MOCK_PR_STATE:-closed}"
+    ;;
+  repos/okou-ai/okou/actions/runs)
+    printf '[{"workflow_runs":[]}]\n'
     ;;
   *)
     echo "unexpected gh endpoint: ${endpoint}" >&2
@@ -94,6 +102,22 @@ printf 'start\n' >>"$MOCK_ORDER_LOG"
 SH
 chmod +x "${fake_bin}/gh" "${fake_bin}/ssh" \
   "${fake_bin}/ansible-playbook" "${fake_bin}/late-start-critical"
+
+barrier_output=$(
+  env -i \
+    PATH="${fake_bin}:$PATH" \
+    HOME="${HOME:-/tmp}" \
+    GH_TOKEN=test-token \
+    GITHUB_REPOSITORY=okou-ai/okou \
+    GITHUB_RUN_ID=900 \
+    PR_NUMBER=42 \
+    RUNNER_OWNER_SCOPE=closed-pr-cleanup \
+    SUPERSEDED_RUN_POLL_SECONDS=0 \
+    SUPERSEDED_RUN_TIMEOUT_SECONDS=5 \
+    bash "$barrier_script"
+)
+grep -q "No active runner-owner CI runs found for PR #42" <<<"$barrier_output" ||
+  fail "expected the stabilized discovery barrier to return an empty owner set"
 
 # The protected cleanup helper must fail before Ansible when current GitHub
 # state no longer authorizes deletion or cannot be resolved.
@@ -152,7 +176,8 @@ cleanup_ready=$(
 [ "$cleanup_ready" = "cleanup-entered" ] ||
   fail "cleanup readiness marker was invalid"
 
-# A late Turbo start tries to acquire the same namespace while cleanup owns deletion.
+# Model approval after the empty discovery snapshot: the late Turbo start now
+# tries to acquire the same namespace while cleanup still owns deletion.
 PATH="${fake_bin}:$PATH" \
   JOB_REF=pr-42 \
   METAL_HOSTS=metal-a.example.test \

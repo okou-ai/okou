@@ -17,7 +17,7 @@ jobs:
     if: "github.event.action == 'closed' && !startsWith(github.head_ref || '', 'release-please--branches--')"
     runs-on: ubuntu-latest
     permissions:
-      actions: write
+      actions: read
       contents: read
       pull-requests: read
     steps:
@@ -39,7 +39,7 @@ jobs:
             echo "should-cleanup=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Cancel active CI before runner cleanup
+      - name: Wait for active CI owners before runner cleanup
         if: steps.check.outputs.should-cleanup == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
