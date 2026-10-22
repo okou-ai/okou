@@ -2,6 +2,7 @@ import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
+import { MessagePdfAction } from "./message-pdf-action.tsx";
 import { chatResourcePanelEnabled$ } from "../../signals/chat-page/chat-resources.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -8410,6 +8411,7 @@ function PagedGroupPrimaryActions({
   thread,
   onCopy,
   onShare,
+  pdfAction,
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
@@ -8418,6 +8420,7 @@ function PagedGroupPrimaryActions({
   thread: ChatPanelSignals;
   onCopy: () => Promise<boolean>;
   onShare: ((revert: () => void) => void) | undefined;
+  pdfAction?: ReactNode;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
@@ -8473,6 +8476,7 @@ function PagedGroupPrimaryActions({
         />
       )}
       {onShare && <MessageShareAction onShare={onShare} />}
+      {pdfAction}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
@@ -8503,6 +8507,7 @@ function PagedGroupActions({
   const copyEvent = useSet(thread.copyEvent$);
   const shareMessage = useSet(thread.sharing.shareMessage$);
   const sharingPhase = useGet(thread.sharing.phase$);
+  const pdfEnabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatMessagePdf];
   if (sharingPhase !== "idle") {
     return null;
   }
@@ -8516,17 +8521,22 @@ function PagedGroupActions({
     return copyEvent({ text: content, attachments: [] }, pageSignal);
   };
   // Only persisted output messages can be shared; streaming text has no seqId.
-  const shareEventIds = shareEvents
-    .filter((event) => {
+  const persistedMessages = shareEvents.filter(
+    (event): event is EnrichedChatEvent & { readonly content: string } => {
       return (
         event.eventType === "output.message" &&
         event.seqId !== undefined &&
-        Boolean(event.content)
+        typeof event.content === "string" &&
+        event.content.length > 0
       );
-    })
-    .map((event) => {
-      return event.id;
-    });
+    },
+  );
+  const shareEventIds = persistedMessages.map((event) => {
+    return event.id;
+  });
+  const pdfContents = persistedMessages.map((event) => {
+    return event.content;
+  });
   const handleShare =
     shareEventIds.length > 0
       ? (revert: () => void) => {
@@ -8548,6 +8558,22 @@ function PagedGroupActions({
         thread={thread}
         onCopy={handleCopy}
         onShare={handleShare}
+        pdfAction={
+          pdfEnabled &&
+          hasContent &&
+          handleShare &&
+          persistedMessages.every((event) => {
+            return event.tree !== undefined;
+          }) ? (
+            <MessagePdfAction
+              key={JSON.stringify(pdfContents)}
+              contents={pdfContents}
+              trees={persistedMessages.flatMap((event) => {
+                return event.tree ? [event.tree] : [];
+              })}
+            />
+          ) : undefined
+        }
         relatedArtifacts={relatedArtifacts}
       />
     </div>

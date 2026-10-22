@@ -83,6 +83,7 @@ import {
   type SentryMock,
 } from "../../test/mocks/sentry-behavior.ts";
 import { createDeferredPromise } from "../utils.ts";
+import { mockDedicatedWorker } from "../../test/mocks/dedicated-worker.ts";
 
 interface WindowOpenCall {
   url: string | null;
@@ -612,6 +613,12 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
       clipboardExecCommand: (): ClipboardExecCommandMock => {
         return mockClipboardExecCommand(getSignal());
+      },
+      dedicatedWorker: (
+        respond: (message: unknown) => Promise<unknown>,
+      ): void => {
+        const signal = getSignal();
+        restoreOnAbort(signal, mockDedicatedWorker(respond, signal));
       },
       blobDownload: (
         options: { readonly deferRead?: boolean } = {},
