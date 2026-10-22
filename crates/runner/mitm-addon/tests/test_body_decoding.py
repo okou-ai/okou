@@ -703,6 +703,24 @@ class TestDecompressBody:
 
         assert result == first + second[:4]
 
+    @pytest.mark.parametrize("empty_kind", ["compressed", "skippable"])
+    @pytest.mark.parametrize("empty_count", [62, 63, 7000])
+    def test_zstd_frame_budget_retains_prefix_without_traversing_empty_tail(
+        self, headers, monkeypatch, empty_kind, empty_count
+    ):
+        compressor = zstandard.ZstdCompressor()
+        empty = compressor.compress(b"") if empty_kind == "compressed" else zstd_skippable_frame()
+        compressed = (
+            compressor.compress(b"prefix") + empty * empty_count + compressor.compress(b"tail")
+        )
+        hdrs = headers(("Content-Encoding", "zstd"))
+        stats = track_zstd_decompressor(monkeypatch, max_output=32)
+
+        result = decompress_body(compressed, hdrs, max_output=32)
+
+        assert result == (b"prefixtail" if empty_count == 62 else b"prefix")
+        assert stats["objects"] <= 64
+
     def test_zstd_corrupt_later_frame_returns_original_data(self, headers):
         first = zstandard.ZstdCompressor().compress(b"first")
         compressed = first + b"not a zstd frame"

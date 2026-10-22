@@ -41,9 +41,9 @@ _ZSTD_PREFIX_INPUT_CHUNK_SIZE = 1024
 _ZSTD_VALIDATE_INPUT_CHUNK_SIZE = 32
 # Preserve ordinary concatenation with substantial headroom while capping
 # per-frame decoder construction independently of compressed and decoded bytes.
-_ZSTD_VALIDATE_MAX_FRAMES = 64
+_ZSTD_MAX_FRAMES = 64
 # Empty zstd frames do not consume decoded-output allowance in the initial
-# cross-frame reader. Bound optional request capture before that native pass,
+# cross-frame decoder. Bound optional request capture before that pass,
 # with headroom for incompressible 64 KiB capture bodies and frame overhead.
 _ZSTD_REQUEST_CAPTURE_MAX_INPUT_BYTES = 128 * 1024
 # Empty gzip/deflate members consume no decoded-output allowance. Preserve
@@ -418,8 +418,9 @@ def decompress_body(
       zlib stops decoding once the cap is reached. Concatenated members are
       decoded until the shared cap is exhausted.
     - zstd: hard cap via ``ZstdDecompressor.decompress(data, max_length=)``;
-      concatenated frames share the cap. Buffered codec output is drained
-      before more input, and unused-tail copies stay chunk-bounded.
+      concatenated frames share the cap, and at most 64 frames are traversed.
+      Buffered codec output is drained before more input, and unused-tail
+      copies stay chunk-bounded.
     - br: exact accumulator cap over adaptive compressed-input chunks.
       Brotli 1.2's ``output_buffer_limit`` keeps transient output near the
       remaining budget, plus library allocation blocks; returned chunks may
@@ -431,7 +432,8 @@ def decompress_body(
     completed, or preserve the decoded prefix otherwise. Brotli/zstd decoder
     exceptions return the original data; for Brotli, this includes errors from
     further input inspected after a completed stream. Reaching the output cap
-    may return a decoded prefix without inspecting later input.
+    may return a decoded prefix without inspecting later input. Exhausting the
+    zstd frame budget also retains the decoded prefix.
 
     A valid frame that decodes to an empty body returns ``b""`` — callers that
     short-circuit via ``if not body`` rely on that (see #10287).
@@ -476,7 +478,7 @@ def _decode_zstd_for_network_log_capture(data: bytes, max_output: int) -> bytes 
         return b""
 
     try:
-        body, error = _decode_zstd_prefix(data, max_output, max_frames=_ZSTD_VALIDATE_MAX_FRAMES)
+        body, error = _decode_zstd_prefix(data, max_output)
     except zstd.ZstdError:
         return None
 
@@ -625,7 +627,8 @@ def _decode_body_bounded(
 
     Valid empty compressed frames return ``b""``. ``max_output`` caps decoded
     output and may return a truncated decoded prefix without inspecting later
-    input or marking failure.
+    input or marking failure. Zstd frame-budget exhaustion likewise retains
+    the decoded prefix without marking failure.
     """
     encoding = content_encoding.read_folded(headers)
     if not encoding or encoding == "identity":
@@ -714,15 +717,13 @@ def _decompress_zlib_json_usage_body(
     return b"", INVALID_COMPRESSED_BODY
 
 
-def _decode_zstd_prefix(
-    data: bytes, max_output: int, *, max_frames: int | None = None
-) -> tuple[bytes, str | None]:
+def _decode_zstd_prefix(data: bytes, max_output: int) -> tuple[bytes, str | None]:
     """Read a bounded cross-frame prefix, allowing incomplete final input.
 
     Strict consumers separately verify complete frames. Feed bounded views so
     each unused-data copy stays small, and drain retained output before feeding
     another chunk. A complete frame needs a fresh decoder in this public API;
-    strict consumers bound those constructions before complete-frame validation.
+    all consumers bound those constructions, including best-effort capture.
     """
     source = memoryview(data)
     offset = 0
@@ -752,7 +753,7 @@ def _decode_zstd_prefix(
             pending = decoder.unused_data
             if not pending and offset == len(source):
                 break
-            if max_frames is not None and frames >= max_frames:
+            if frames >= _ZSTD_MAX_FRAMES:
                 return bytes(output), COMPRESSED_FRAME_LIMIT_EXCEEDED
             decoder = zstd.ZstdDecompressor()
             frames += 1
@@ -771,7 +772,7 @@ def _validate_complete_zstd_frames(data: bytes, max_output: int) -> str | None:
     decoded_size = 0
     validated_frames = 0
     while source_offset < len(source) or pending_input:
-        if validated_frames >= _ZSTD_VALIDATE_MAX_FRAMES:
+        if validated_frames >= _ZSTD_MAX_FRAMES:
             return COMPRESSED_FRAME_LIMIT_EXCEEDED
         validated_frames += 1
         obj = zstd.ZstdDecompressor()
@@ -812,9 +813,7 @@ def _decompress_zstd_json_usage_body(
         return b"", DECODED_BODY_LIMIT_EXCEEDED if data else None
 
     try:
-        body, error = _decode_zstd_prefix(
-            data, max_output + 1, max_frames=_ZSTD_VALIDATE_MAX_FRAMES
-        )
+        body, error = _decode_zstd_prefix(data, max_output + 1)
     except zstd.ZstdError:
         return b"", INVALID_COMPRESSED_BODY
 

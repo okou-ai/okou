@@ -671,11 +671,13 @@ Python 3.14.0 interpreter, which is also used by tests and static checks. Every
 output allowance and 64 KiB. Buffered output is drained with empty input until
 `needs_input` permits another chunk. Prefix decoding feeds at most 1 KiB at a
 time, and strict validation feeds at most 32 bytes, bounding copied unused tails
-across frame transitions. Both prefix decoding for strict consumers and complete
-validation retain a 64-frame limit, including skippable frames. Prefix
-completion alone does not establish complete
-compressed input: capture and JSON usage retain their separate complete-frame
-validation and failure policies.
+across frame transitions. All prefix decoding and complete validation use a
+64-frame limit, including skippable frames. Best-effort response capture retains
+the decoded prefix when this budget is exhausted, avoiding thousands of decoder
+constructions for tiny empty frames. Strict capture and JSON usage reject frame
+budget exhaustion. Prefix completion alone does not establish complete compressed
+input: capture and JSON usage retain their separate complete-frame validation
+and failure policies.
 
 These budgets bound repeated decoder construction and zstd compressed input;
 they are not general CPU deadlines for every compression pattern within a frame
