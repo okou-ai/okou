@@ -86,6 +86,7 @@ import {
 import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
 import { setupHostedSiteAuthorizationPage$ } from "./hosted-site-authorization-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
+import { setupPermissionBatchPage$ } from "./permission-allow/permission-batch-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
 import { initSlackOrg$ as handleSlackRedirect$ } from "./okou-page/slack.ts";
@@ -322,6 +323,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.agentChat,
     setup: setupAuthPageWrapper(setupAgentChatPage$),
+  },
+  {
+    path: "/agents/:agentId/permissions/batch",
+    setup: setupAuthPageWrapper(setupPermissionBatchPage$),
   },
   {
     path: ROUTES.agentPermissions,

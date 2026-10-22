@@ -1021,6 +1021,24 @@
       "saving": "保存中…",
       "userFallback": "朋友",
       "wouldLike": "希望进行以下操作"
+    },
+    "permissionBatch": {
+      "allowAll_other": "允许全部 {{count}} 项权限",
+      "allowed": "权限已允许",
+      "allowedCount": "已允许 {{allowed}} / {{total}} 项权限",
+      "alwaysNote": "这些权限会持续允许，直到你更改或撤销为止。",
+      "continue": "继续",
+      "continued": "对话已继续。",
+      "continueFailed": "权限已允许，但未能继续对话。请重试继续。",
+      "continuing": "正在继续…",
+      "details": "查看权限详情",
+      "dismissed": "未更改任何权限。",
+      "invalid": "此权限链接无效或不可用。",
+      "loadFailed": "无法验证全部请求的权限，暂时无法更改权限。",
+      "loading": "正在加载权限",
+      "notNow": "暂不允许",
+      "scopeNote": "适用于此智能体，而不仅限于当前任务。",
+      "title": "允许以下权限"
     }
   },
   "billing": {

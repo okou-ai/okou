@@ -1041,6 +1041,26 @@
       "saving": "Salvataggio...",
       "userFallback": "lì",
       "wouldLike": "Mi piacerebbe"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Concedi {{count}} autorizzazione",
+      "allowAll_many": "Concedi tutte le {{count}} autorizzazioni",
+      "allowAll_other": "Concedi tutte le {{count}} autorizzazioni",
+      "allowed": "Autorizzazioni concesse",
+      "allowedCount": "{{allowed}} autorizzazioni concesse su {{total}}",
+      "alwaysNote": "Queste autorizzazioni restano concesse finché non le modifichi o le revochi.",
+      "continue": "Continua",
+      "continued": "La conversazione è ripresa.",
+      "continueFailed": "Le autorizzazioni sono state concesse, ma non è stato possibile riprendere la conversazione. Prova di nuovo a continuare.",
+      "continuing": "Ripresa in corso…",
+      "details": "Visualizza i dettagli delle autorizzazioni",
+      "dismissed": "Nessuna autorizzazione è stata modificata.",
+      "invalid": "Questo link di autorizzazione non è valido o non è disponibile.",
+      "loadFailed": "Impossibile verificare tutte le autorizzazioni richieste. Nessuna autorizzazione può essere modificata.",
+      "loading": "Caricamento delle autorizzazioni",
+      "notNow": "Non ora",
+      "scopeNote": "Si applica a questo agente, non solo all’attività corrente.",
+      "title": "Concedi le seguenti autorizzazioni"
     }
   },
   "billing": {

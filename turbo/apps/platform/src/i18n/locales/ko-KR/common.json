@@ -1021,6 +1021,24 @@
       "saving": "저장 중...",
       "userFallback": "거기",
       "wouldLike": "원합니다"
+    },
+    "permissionBatch": {
+      "allowAll_other": "권한 {{count}}개 모두 허용",
+      "allowed": "권한이 허용되었습니다",
+      "allowedCount": "권한 {{total}}개 중 {{allowed}}개 허용됨",
+      "alwaysNote": "이 권한은 변경하거나 철회할 때까지 허용된 상태로 유지됩니다.",
+      "continue": "계속",
+      "continued": "대화가 재개되었습니다.",
+      "continueFailed": "권한은 허용되었지만 대화를 재개하지 못했습니다. 다시 계속해 주세요.",
+      "continuing": "계속하는 중…",
+      "details": "권한 세부 정보 보기",
+      "dismissed": "변경된 권한이 없습니다.",
+      "invalid": "이 권한 링크는 유효하지 않거나 사용할 수 없습니다.",
+      "loadFailed": "요청된 모든 권한을 확인하지 못했습니다. 권한을 변경할 수 없습니다.",
+      "loading": "권한을 불러오는 중",
+      "notNow": "나중에",
+      "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
+      "title": "다음 권한 허용"
     }
   },
   "billing": {

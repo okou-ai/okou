@@ -15,13 +15,26 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import { and, asc, eq, gt, inArray, isNull, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type {
   ApplyUserPermissionGrantsRequest,
+  ApplyUserPermissionGrantsBatchRequest,
   UserPermissionGrantExpiresIn,
   UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { notFound } from "../../lib/error";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$, type Db } from "../external/db";
 import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
@@ -38,6 +51,7 @@ import {
   connectorRuntimeWakeupRunColumns,
   connectorRuntimeWakeupCondition,
   publishConnectorRuntimeWakeupRows,
+  publishConnectorRuntimeSyncWakeups$,
   reportConnectorRuntimeWakeupDiscoveryFailure,
   uniqueConnectorRuntimeTargets,
   type ConnectorRuntimeWakeupBusinessArgs,
@@ -788,6 +802,236 @@ export const applyUserPermissionGrants$ = command(
       kind: "ok" as const,
       grants: rows.map((grant) => {
         return formatUserPermissionGrant(grant, responseScope);
+      }),
+    };
+  },
+);
+
+type RequestedBatchGrant =
+  ApplyUserPermissionGrantsBatchRequest["groups"][number]["grants"][number] & {
+    readonly connectorSlug: string;
+  };
+
+const writeUserPermissionGrantBatch$ = command(
+  async (
+    { set },
+    args: UserPermissionGrantBaseScope & {
+      readonly agentId: string;
+      readonly requested: readonly RequestedBatchGrant[];
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const timestamp = nowDate();
+    const values = args.requested.map((grant) => {
+      const expiresAt = resolveGrantExpiresAt(grant.expiresIn, timestamp);
+      return sql`(${grant.connectorSlug}::varchar, ${grant.permission}::varchar,
+        ${expiresAt?.toISOString() ?? null}::timestamp)`;
+    });
+    const authorized = db.$with("batch_permission_agent").as(
+      db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.orgId, args.orgId),
+            eq(agents.id, args.agentId),
+            visibleAgentCondition(args.userId),
+          ),
+        ),
+    );
+    const written = db.$with("batch_permission_written").as(
+      db
+        .insert(userPermissionGrants)
+        .select(
+          db
+            .select({
+              id: sql`gen_random_uuid()`
+                .mapWith(userPermissionGrants.id)
+                .as("id"),
+              orgId: sql`${args.orgId}`
+                .mapWith(userPermissionGrants.orgId)
+                .as("org_id"),
+              userId: sql`${args.userId}`
+                .mapWith(userPermissionGrants.userId)
+                .as("user_id"),
+              agentId: authorized.id,
+              connectorSlug: sql`requested.connector_slug`
+                .mapWith(userPermissionGrants.connectorSlug)
+                .as("connector_slug"),
+              permission: sql`requested.permission`
+                .mapWith(userPermissionGrants.permission)
+                .as("permission"),
+              action: sql`'allow'`
+                .mapWith(userPermissionGrants.action)
+                .as("action"),
+              expiresAt: sql`requested.expires_at`
+                .mapWith(
+                  nullableDriverValueDecoder(userPermissionGrants.expiresAt),
+                )
+                .as("expires_at"),
+              createdAt: sql`${timestamp.toISOString()}::timestamp`
+                .mapWith(userPermissionGrants.createdAt)
+                .as("created_at"),
+              updatedAt: sql`${timestamp.toISOString()}::timestamp`
+                .mapWith(userPermissionGrants.updatedAt)
+                .as("updated_at"),
+            })
+            .from(authorized)
+            .crossJoin(
+              sql`(values ${sql.join(values, sql`, `)}) as requested(connector_slug, permission, expires_at)`,
+            )
+            .where(sql`true`),
+        )
+        .onConflictDoUpdate({
+          target: [
+            userPermissionGrants.orgId,
+            userPermissionGrants.userId,
+            userPermissionGrants.agentId,
+            userPermissionGrants.connectorSlug,
+            userPermissionGrants.permission,
+          ],
+          set: {
+            action: "allow",
+            expiresAt: sql`excluded.expires_at`,
+            updatedAt: timestamp,
+          },
+          setWhere: or(
+            eq(userPermissionGrants.action, "deny"),
+            lte(userPermissionGrants.expiresAt, timestamp),
+          ),
+        })
+        .returning({ id: userPermissionGrants.id }),
+    );
+    // The write CTE executes even when its RETURNING rows are unused. The
+    // outer row distinguishes inaccessible agents from idempotent no-ops.
+    const [authorizedAgent] = await db
+      .with(authorized, written)
+      .select({ id: authorized.id })
+      .from(authorized);
+    signal.throwIfAborted();
+    return authorizedAgent !== undefined;
+  },
+);
+
+/** Allow-only patch. All connector validation finishes against one captured
+ * catalog before the sole write statement. Existing active allows are not
+ * updated, including their original expiration and updatedAt.
+ *
+ * This does not serialize with legacy apply/replace: PostgreSQL's existing
+ * unique key arbitrates overlapping upserts, while a concurrent replacement
+ * may remove grants visible to its DELETE snapshot. A batch is atomic, not a
+ * global ordering barrier for other permission edits.
+ */
+export const applyUserPermissionGrantsBatch$ = command(
+  async (
+    { set },
+    args: UserPermissionGrantBaseScope & {
+      readonly apply: ApplyUserPermissionGrantsBatchRequest;
+    },
+    signal: AbortSignal,
+  ): Promise<ApplyUserPermissionGrantsResult> => {
+    const db = set(writeDb$);
+    const connectorSlugs = [
+      ...new Set(
+        args.apply.groups.map((group) => {
+          return group.connectorSlug;
+        }),
+      ),
+    ];
+    const plan = connectorRuntimeSlugSelectionReadPlan({ connectorSlugs });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      plan.selection,
+      await db
+        .select(plan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, plan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
+    signal.throwIfAborted();
+    for (const group of args.apply.groups) {
+      const validation = await validateApplyUserPermissionGrants(
+        { ...group, agentId: args.apply.agentId, mode: "patch" },
+        snapshot.serverFirewalls,
+      );
+      signal.throwIfAborted();
+      if (validation) {
+        return validation;
+      }
+    }
+
+    const requested = args.apply.groups
+      .flatMap((group) => {
+        return group.grants.map((grant) => {
+          return { ...grant, connectorSlug: group.connectorSlug };
+        });
+      })
+      .sort((left, right) => {
+        return (
+          left.connectorSlug.localeCompare(right.connectorSlug) ||
+          left.permission.localeCompare(right.permission)
+        );
+      });
+    const authorizedAgent = await set(
+      writeUserPermissionGrantBatch$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId: args.apply.agentId,
+        requested,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!authorizedAgent) {
+      return notFound(`Agent not found: ${args.apply.agentId}`);
+    }
+    await publishConnectorPermissionUpdatedSafely(args.userId);
+    signal.throwIfAborted();
+    await set(
+      publishConnectorRuntimeSyncWakeups$,
+      {
+        scope: {
+          orgId: args.orgId,
+          userId: args.userId,
+          agentId: args.apply.agentId,
+        },
+        targets: connectorSlugs.map((connectorSlug) => {
+          return { kind: "builtin" as const, connectorSlug };
+        }),
+      },
+      signal,
+    );
+
+    const rows = await db
+      .select(userPermissionGrantSelection)
+      .from(userPermissionGrants)
+      .where(
+        and(
+          eq(userPermissionGrants.orgId, args.orgId),
+          eq(userPermissionGrants.userId, args.userId),
+          eq(userPermissionGrants.agentId, args.apply.agentId),
+          or(
+            ...requested.map((grant) => {
+              return and(
+                eq(userPermissionGrants.connectorSlug, grant.connectorSlug),
+                eq(userPermissionGrants.permission, grant.permission),
+              );
+            }),
+          ),
+          eq(userPermissionGrants.action, "allow"),
+          activeUserPermissionGrantCondition(nowDate()),
+        ),
+      )
+      .orderBy(
+        asc(userPermissionGrants.connectorSlug),
+        asc(userPermissionGrants.permission),
+      );
+    signal.throwIfAborted();
+    return {
+      kind: "ok",
+      grants: rows.map((row) => {
+        return formatUserPermissionGrant(row, { agentId: args.apply.agentId });
       }),
     };
   },

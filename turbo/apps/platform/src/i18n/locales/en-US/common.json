@@ -1022,6 +1022,25 @@
       "saving": "Saving...",
       "userFallback": "there",
       "wouldLike": "Would like to"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Allow {{count}} permission",
+      "allowAll_other": "Allow all {{count}} permissions",
+      "allowed": "Permissions allowed",
+      "allowedCount": "{{allowed}} of {{total}} permissions allowed",
+      "alwaysNote": "These permissions stay allowed until you change or revoke them.",
+      "continue": "Continue",
+      "continued": "The conversation has continued.",
+      "continueFailed": "Permissions allowed, but could not continue. Try continuing again.",
+      "continuing": "Continuing…",
+      "details": "View permission details",
+      "dismissed": "No permissions were changed.",
+      "invalid": "This permission link is invalid or unavailable.",
+      "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
+      "loading": "Loading permissions",
+      "notNow": "Not now",
+      "scopeNote": "Applies to this agent, not only the current task.",
+      "title": "Allow the following permissions"
     }
   },
   "billing": {

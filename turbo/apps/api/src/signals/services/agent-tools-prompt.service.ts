@@ -58,6 +58,7 @@ export interface AgentToolsPromptInputs {
   readonly presentationConvertEnabled: boolean;
   readonly browserNativeInputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
+  readonly batchConnectorPermissionsEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -90,6 +91,10 @@ export function buildAgentToolsPromptInputs(args: {
       context,
     ),
     cloudBrowserEnabled: args.cloudBrowserEnabled,
+    batchConnectorPermissionsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.BatchConnectorPermissions,
+      context,
+    ),
   };
 }
 
@@ -205,9 +210,16 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Check permission state: run `okou whoami --permissions` and skip permissions already allowed.",
     "- For AWS SigV4 connector failures, run `okou connector check --help` before the URL check and follow its AWS selector guidance. URL and method alone may yield `unknown-endpoint`; use only observed, non-secret request details.",
     "- Diagnose failed connector requests before attributing them to Okou permission policy: run `okou connector check --url <FAILED_URL> --method <METHOD> [--connector <slug>]`. Use the `url` field from a firewall denial response when present; omit query strings or fragments when they may contain secrets. Only request access when the check reports a deny or ask outcome.",
-    "- Request missing permissions: run the exact `okou connector permission-request` command printed by the immediately preceding URL check, one command per permission. Never construct a permission request from provider OAuth errors such as Slack `missing_scope` or `needed`; those values are provider scopes, not Okou permissions. The user chooses the grant duration in the confirmation UI.",
+    "- Request missing permissions: for individual permission links, run the exact `okou connector permission-request` command printed by the immediately preceding URL check, one command per permission. Never construct a permission request from provider OAuth errors such as Slack `missing_scope` or `needed`; those values are provider scopes, not Okou permissions. The user chooses the grant duration in the confirmation UI.",
     "- Continue after a single access action: when the current web chat turn needs exactly one permission approval, add `--callback-prompt <prompt>` to `okou connector permission-request`; keep the prompt concise and do not include secrets. `okou connector check` and `okou connector status` show a callback URL or permission-command example when the current environment has `OKOU_CHAT_THREAD_ID`. Use a callback command or URL only when this is the turn's only connector or permission action. After sharing it, end the current turn; when the user completes the action, Okou starts the next round with the callback prompt.",
-    "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple connector or permission actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
+    ...(args.batchConnectorPermissionsEnabled
+      ? [
+          "- Batch permission approvals: after diagnosing each concrete builtin HTTP operation with `okou connector check`, use `okou connector permission-request --batch-file <path>` for multiple permissions when the installed command's `--help` advertises `--batch-file`. The JSON file contains `{ connector, permission, url, method }` entries, with the existing AWS diagnostic selectors when needed; use only the exact diagnosed operations, never provider OAuth scopes. The CLI rechecks every item and skips permissions already allowed. Return its single batch URL verbatim. A single batch approval may carry one `--callback-prompt <prompt>` when it is this turn's only access action; after sharing it, end the current turn. The user chooses one permission duration for the batch. If the installed CLI does not yet support batch files, use the ordinary per-permission commands and non-callback links.",
+          "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, or separate approval links are still needed. Return all generated links in one response, one link per line, and wait for the user to finish all of them.",
+        ]
+      : [
+          "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple connector or permission actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
+        ]),
     "- Inspect yourself: `okou whoami` for identity and permissions, `okou agent view $OKOU_AGENT_ID --instructions` for your current settings.",
     ...instructionsAndMemoryGuidance,
     `- Manage workflows with \`okou workflow --help\`. Create or update a durable workflow with \`okou workflow create|edit <name>\`, passing the workflow body via \`--instruction <text>\` or \`--instruction-file <path>\`; its \`SKILL.md\` is synthesized from the name, description, and instruction. \`--dir <path>\` uploads supplementary files only and must not contain a \`SKILL.md\` (it is rejected).`,

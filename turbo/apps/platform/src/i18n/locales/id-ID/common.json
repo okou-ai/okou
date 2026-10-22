@@ -1021,6 +1021,24 @@
       "saving": "Menyimpan...",
       "userFallback": "di sana",
       "wouldLike": "Ingin"
+    },
+    "permissionBatch": {
+      "allowAll_other": "Berikan semua {{count}} izin",
+      "allowed": "Izin diberikan",
+      "allowedCount": "{{allowed}} dari {{total}} izin diberikan",
+      "alwaysNote": "Izin ini tetap berlaku sampai Anda mengubah atau mencabutnya.",
+      "continue": "Lanjutkan",
+      "continued": "Percakapan telah dilanjutkan.",
+      "continueFailed": "Izin telah diberikan, tetapi percakapan tidak dapat dilanjutkan. Coba lanjutkan lagi.",
+      "continuing": "Melanjutkan…",
+      "details": "Lihat detail izin",
+      "dismissed": "Tidak ada izin yang diubah.",
+      "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
+      "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
+      "loading": "Memuat izin",
+      "notNow": "Tidak sekarang",
+      "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
+      "title": "Berikan izin berikut"
     }
   },
   "billing": {
