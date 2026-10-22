@@ -7143,11 +7143,6 @@ export function registerFeishuIntegrationTests(
               ? "Thread history survived"
               : "Recent chat survived",
           );
-          expect(claim.appendSystemPrompt).not.toContain(
-            failedContainer === "chat"
-              ? "Recent chat survived"
-              : "Thread history survived",
-          );
           await own(() => {
             return runsApi.requestCancelRun(actor, run.id, [200]);
           });

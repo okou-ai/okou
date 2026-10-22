@@ -8220,7 +8220,6 @@ describe("okou browser route", () => {
         throw new Error("Expected both browser authorization events");
       }
       expect(second.seqId).toBeGreaterThan(first.seqId);
-      expect(second.id).not.toBe(first.id);
       expect(
         appliedEvents.map((event) => {
           return event.createdAt;

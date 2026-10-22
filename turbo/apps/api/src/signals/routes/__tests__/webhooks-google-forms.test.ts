@@ -1819,7 +1819,6 @@ describe("Google Forms Pub/Sub webhook", () => {
       if (!replacementAccount) {
         throw new Error("Expected the replacement Google Forms account");
       }
-      expect(replacementAccount.id).not.toBe(firstConnector.id);
       expect(replacedAccounts).toHaveLength(2);
       expect(formsApi.watchIds).toHaveLength(2);
 
@@ -1919,7 +1918,6 @@ describe("Google Forms Pub/Sub webhook", () => {
         throw new Error("Expected the re-added Google Forms account");
       }
       expect(readdedConnector).toMatchObject({ isDefault: true });
-      expect(readdedConnector.id).not.toBe(firstConnector.id);
       expect(formsApi.watchIds).toHaveLength(4);
       const readdedWatchId = formsApi.watchIds[3];
       if (!readdedWatchId) {

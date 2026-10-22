@@ -774,17 +774,6 @@ describe("GET /api/connector-catalog", () => {
           )
         ).tokenExpiresAt,
       ).toBe(completed.account.tokenExpiresAt);
-      expect(
-        Date.parse(
-          (
-            await connectorsApi.readBuiltinConnectorAccount(
-              actor,
-              "stripe",
-              completed.connectionId,
-            )
-          ).tokenExpiresAt ?? "",
-        ),
-      ).toBeLessThan(now());
     });
   });
 

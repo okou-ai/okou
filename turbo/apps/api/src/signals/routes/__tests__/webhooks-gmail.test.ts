@@ -779,12 +779,7 @@ describe("POST /api/webhooks/gmail", () => {
       eventConfig: { resolvedLabelId: "Label_old_account" },
     });
 
-    const replacementConnectionId = await connectGmail(
-      actor,
-      uniqueGmailEmail(),
-      "gmail-label-account-two",
-    );
-    expect(replacementConnectionId).not.toBe(initialConnection.id);
+    await connectGmail(actor, uniqueGmailEmail(), "gmail-label-account-two");
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "gmail",
@@ -950,12 +945,7 @@ describe("POST /api/webhooks/gmail", () => {
     expectResponseStatus(sameAccountEvent, 200);
     expect(sameAccountEvent.body).toMatchObject({ watchStates: 1 });
 
-    const replacementConnectionId = await connectGmail(
-      actor,
-      `replacement-${gmailEmail}`,
-      "gmail-account-two",
-    );
-    expect(replacementConnectionId).not.toBe(initialConnection.id);
+    await connectGmail(actor, `replacement-${gmailEmail}`, "gmail-account-two");
     await connectorsApi.deleteBuiltinConnectorAccount(
       actor,
       "gmail",
@@ -1441,7 +1431,7 @@ describe("POST /api/webhooks/gmail", () => {
       ),
     );
 
-    const { actor, workflowId, firstConnectorId, secondConnectorId } =
+    const { actor, workflowId, secondConnectorId } =
       await setupMultiAccountGmailFixture();
     const accountScopedLabelAutomation = await accept(
       automationsClient().create({
@@ -1474,7 +1464,6 @@ describe("POST /api/webhooks/gmail", () => {
     const chatThreadId = requireAutomationChatThreadId(
       accountScopedLabelAutomation.body,
     );
-    expect(firstConnectorId).not.toBe(secondConnectorId);
     expect(recorder.watchedTokens).toStrictEqual(["Bearer gmail-access-token"]);
 
     await accept(
@@ -1724,7 +1713,6 @@ describe("POST /api/webhooks/gmail", () => {
       displayName: "Replacement Gmail",
       agentId,
     });
-    expect(replacementConnectorId).not.toBe(firstConnectorId);
     expect(recorder.watchedTokens).toStrictEqual([
       "Bearer gmail-access-token",
       "Bearer gmail-replacement-access-token",

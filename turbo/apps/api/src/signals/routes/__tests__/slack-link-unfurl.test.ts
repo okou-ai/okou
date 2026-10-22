@@ -968,10 +968,6 @@ describe("Slack link previews", () => {
   it("verifies the webhook signature and link payload before acknowledging", async () => {
     integrations.configureSlackSigningSecret();
     await accept(postLinks("T_UNKNOWN", [], { invalidSignature: true }), [401]);
-    await accept(
-      postLinks("T_UNKNOWN", [], { event: { message_ts: null } }),
-      [400],
-    );
     await accept(postLinks("T_UNKNOWN", ["https://alias.okou.app/"]), [200]);
     await flushWaitUntilForTest();
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();

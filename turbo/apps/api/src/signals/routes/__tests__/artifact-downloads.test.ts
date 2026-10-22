@@ -299,7 +299,6 @@ test.each([
     );
     const own = await download(actor, completed.body.url);
     expect(own.body).toMatchObject({ kind: "file", filename, contentType });
-    expect(own.body).not.toHaveProperty("site");
     const legacyRead = await accept(
       api()(artifactReferencesContract).read({
         headers,

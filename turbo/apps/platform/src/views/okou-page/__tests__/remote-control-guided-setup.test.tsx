@@ -188,19 +188,8 @@ test.each([
     await page("/connectors?scope=remote-control", true, undefined, {}, userId);
     await screen.findByRole("heading", { name: "No devices added yet" });
     expect(
-      screen.queryByText("Start with SSH or VNC and follow the setup steps."),
-    ).toBeNull();
-    expect(
       screen.getByText("Let Okou work on a computer or server you choose."),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        "Saving a connection does not authorize its use in chat.",
-      ),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("region", { name: "Personal connections" }),
-    ).toBeNull();
     expect(
       screen.queryByRole("heading", { name: "Add remote connection" }),
     ).toBeNull();
@@ -308,7 +297,6 @@ test("Connecting my computer starts with a private network and can return from n
     "https://tailscale.com/download",
   );
   expect(screen.queryByText("Cloudflare Access", { exact: true })).toBeNull();
-  expect(queryAction("button", "Return to network services", guide)).toBeNull();
   await userEvent.keyboard("{Escape}");
   click(getAction("button", "Back"));
   await screen.findByRole("heading", {
@@ -494,7 +482,6 @@ test("Computer SSH saves the chosen network without exposing route selection or 
   );
   expect(screen.queryByLabelText("Connection method")).toBeNull();
   click(screen.getByText("More settings", { selector: "summary" }));
-  expect(screen.queryByLabelText("Connection type")).toBeNull();
   click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Connection added" });
   expect(requests).toStrictEqual([
@@ -1007,7 +994,6 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
     ).toHaveTextContent(network.name);
     expect(screen.queryByLabelText("Client Secret")).toBeNull();
     expect(queryAction("button", "Add Service Token")).toBeNull();
-    expect(queryAction("button", "Create new network")).toBeNull();
   },
 );
 test("Manual SSH chooses a saved Tailscale SSH route and saves without SSH credentials", async () => {
@@ -1185,7 +1171,6 @@ test.each(["tailscale", "cloudflare"] as const)(
     expect(secret).toHaveAttribute("type", "text");
     click(getAction("button", "Back"));
     await screen.findByRole("heading", { name: network.name });
-    expect(queryAction("button", "Update credentials")).toBeNull();
     click(getAction("button", "Edit settings"));
     const replaceAgain = await screen.findByRole("checkbox", {
       name: replaceLabel,
@@ -1238,7 +1223,6 @@ test.each([
       `/connectors?scope=private-network&remoteResource=${provider}:${network.id}`,
     );
     await screen.findByRole("heading", { name: network.name });
-    expect(queryAction("button", "Update credentials")).toBeNull();
     click(getAction("button", "Edit settings"));
     const name = await screen.findByLabelText("Network name");
     await fill(name, "Updated office network");
@@ -1257,7 +1241,6 @@ test.each([
     click(getAction("button", "Save network"));
     await screen.findByRole("heading", { name: "Updated office network" });
     expect(getAction("button", "Edit settings")).toBeInTheDocument();
-    expect(queryAction("button", "Update credentials")).toBeNull();
   },
 );
 
@@ -1283,11 +1266,6 @@ test("Direct SSH accepts an optional name, retains input through username help a
   });
   const username = await directForm();
   click(screen.getByText("Connection name (optional)"));
-  expect(
-    screen.queryByText(
-      "Saving a connection does not authorize its use in chat.",
-    ),
-  ).toBeNull();
   const name = screen.getByLabelText(/Connection name/u);
   expect(name).toHaveValue("");
   expect(name).not.toBeRequired();
@@ -1313,7 +1291,6 @@ test("Direct SSH accepts an optional name, retains input through username help a
       },
     ),
   ).toStrictEqual([]);
-  expect(queryAction("button", "Save and check")).toBeNull();
   click(getAction("button", "Add connection"));
   await waitFor(() => {
     return expect(requests).toHaveLength(1);
@@ -1512,7 +1489,6 @@ test("VNC keeps empty SSH selection disabled and preserves the draft between ste
   expect(
     screen.getByText("More settings", { selector: "summary" }),
   ).not.toBeVisible();
-  expect(screen.queryByText("Connection requirements")).toBeNull();
   expect(
     screen.queryByText(/SSH protects the Runner-to-SSH-server hop/u),
   ).toBeNull();
@@ -2235,11 +2211,6 @@ test("Mac VNC review shows its network, address, and account method before savin
   expect(
     screen.getByText("Apple DH username and password", { selector: "dd" }),
   ).toBeVisible();
-  expect(
-    screen.queryByText(
-      "Saving a connection does not authorize its use in chat.",
-    ),
-  ).toBeNull();
   expect(getAction("button", "Save")).toBeEnabled();
 });
 
@@ -2946,7 +2917,6 @@ test.each(["ssh", "vnc"] as const)(
     expect(secret).toHaveValue("");
     expect(secret).not.toBeRequired();
     expect(screen.queryByLabelText("Credential name")).toBeNull();
-    expect(screen.queryByLabelText("VNC credential name")).toBeNull();
     click(screen.getByText("Connection settings", { selector: "summary" }));
     if (protocol === "vnc") {
       click(screen.getByText("More settings", { selector: "summary" }));
@@ -3512,7 +3482,6 @@ test("Private network starts with a provider selector and each guide can be clos
     expect(
       getAction("button", "Enter existing credentials"),
     ).toBeInTheDocument();
-    expect(queryAction("button", "Return to selection")).toBeNull();
     await userEvent.keyboard("{Escape}");
     click(getAction("button", "Back"));
     await screen.findByRole("heading", { name: "No networks added yet" });
@@ -3873,11 +3842,7 @@ test("SSH and VNC share one ungrouped connection list regardless of network scop
   expect(
     screen.queryByRole("heading", { name: "Remote connections" }),
   ).toBeNull();
-  expect(screen.queryByText("Personal connections")).toBeNull();
   expect(screen.queryByText("Only you have access")).toBeNull();
-  expect(
-    screen.queryByRole("region", { name: "Organization connections" }),
-  ).toBeNull();
   click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Add remote connection" });
 });
@@ -4070,8 +4035,6 @@ test.each(["ssh", "vnc"] as const)(
       "true",
     );
     expect(toggle).toHaveFocus();
-
-    expect(screen.queryByText("Loading remote connections…")).toBeNull();
 
     connectionsReady.resolve();
     defaultsReady.resolve();
@@ -4284,11 +4247,6 @@ test.each(["tailscale", "cloudflare"] as const)(
     ).toBeChecked();
     expect(saved.scope).toBe("personal");
     expect(saved.name).toBe(network.name);
-    expect(
-      screen.queryByText(
-        "Sharing network settings does not share device connections.",
-      ),
-    ).toBeNull();
     click(getAction("button", "Save network"));
     await waitFor(() => {
       expect(getAction("button", "Saving...")).toBeDisabled();

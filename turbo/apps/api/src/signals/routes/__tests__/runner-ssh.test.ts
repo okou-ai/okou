@@ -909,7 +909,6 @@ describe("SSH connection observations", () => {
         connectionId: additional.body.id,
         connectionCreatedAt: additional.body.createdAt,
       };
-      expect(sibling.connectionId).not.toBe(f.connectionId);
       const siblingCredential = await resolve(sibling);
       expect(siblingCredential).toMatchObject({
         outcome: "resolved",

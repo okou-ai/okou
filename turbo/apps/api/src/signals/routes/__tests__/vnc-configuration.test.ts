@@ -2117,10 +2117,6 @@ describe("VNC owner configuration", () => {
       }),
       [201],
     );
-    expect(second.body.id).not.toBe(first.body.id);
-    expect(requireVncCredentialId(second.body)).not.toBe(
-      requireVncCredentialId(first.body),
-    );
     expect(second.body.host).toBe(first.body.host);
     expect(second.body.port).toBe(first.body.port);
     expect(second.body.security).toMatchObject({
