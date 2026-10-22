@@ -2,7 +2,7 @@ import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Check, Loader2 } from "lucide-react";
 import type { PermissionBatchSignals } from "../../signals/chat-page/permission-batch-signals.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";

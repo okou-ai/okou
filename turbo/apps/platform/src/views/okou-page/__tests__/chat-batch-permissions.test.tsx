@@ -10,7 +10,7 @@ import {
   type UserPermissionGrantBatchItem,
   type UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { FeatureSwitchKey } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -557,7 +557,10 @@ test("A batch save does not empty sibling permission cards during a grants reloa
   let grants: UserPermissionGrantResponse[] = [];
   context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
     if (refreshing) {
-      reloadStarted.resolve(undefined);
+      // Each card owns a grants read, so the shared reload starts multiple requests.
+      if (!reloadStarted.settled()) {
+        reloadStarted.resolve(undefined);
+      }
       await reloadResponse.promise;
     }
     return respond(200, grants);
@@ -604,7 +607,7 @@ test("A batch save does not empty sibling permission cards during a grants reloa
     within(batch).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(sibling).getByText(items[2]!.permission, { exact: true }),
+    within(sibling).getByText(`Allow ${items[2]!.permission}`, { exact: true }),
   ).toBeInTheDocument();
   expect(getButton("Confirm", sibling)).toBeEnabled();
   reloadResponse.resolve(undefined);

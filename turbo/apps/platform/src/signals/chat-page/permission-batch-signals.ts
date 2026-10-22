@@ -5,7 +5,7 @@ import {
   type UserPermissionGrantExpiresIn,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { agentById } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";

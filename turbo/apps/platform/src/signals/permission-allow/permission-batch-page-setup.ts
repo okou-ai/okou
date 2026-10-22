@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { createElement } from "react";
-import { FeatureSwitchKey } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
 import { PermissionBatchPage } from "../../views/permission-allow/permission-batch-page.tsx";
 import { createPermissionBatchSignals } from "../chat-page/permission-batch-signals.ts";
