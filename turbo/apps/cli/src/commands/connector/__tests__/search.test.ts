@@ -272,7 +272,7 @@ describe("okou connector search command", () => {
             externalUsername: null,
             externalEmail: null,
             connectionStatus: "reconnect-required",
-            reconnectReason: "authorization_expired_or_revoked",
+            reconnectReason: null,
           },
         ]),
       );
