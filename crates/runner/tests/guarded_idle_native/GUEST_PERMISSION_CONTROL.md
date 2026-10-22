@@ -107,7 +107,8 @@ The six strict commands are `start`, `observe`, `status`, `decide`, `join` and
 while retaining the held event. Later helper opens can then proceed without
 being mistaken for the selected boundary. The gate closes before child wait;
 original descriptors close after the child is positively joined. EOF/error
-disposes the gate before attempting that same join and exits unsuccessfully.
+disposes the gate before attempting that same join, retains original descriptors
+until the child is joined, and exits unsuccessfully.
 Uncertain cleanup or a failed wait cannot produce a successful retirement.
 
 The component owns synthetic current, retained and stale payloads below an
@@ -119,7 +120,7 @@ and connection. It retains original control/exec frames and helper stdin/output;
 VM kill/wait remains containment only.
 
 Build the `native_guest_permission` target above at the committed source and run
-its `preparation::native_same_operation_preparation_allow_and_deny` ignored test,
+its `preparation::native_same_operation_preparation_allow_deny_and_eof` ignored test,
 setting a nonexistent short absolute `OKOU_TEST_GUEST_PREPARATION_DIR` in addition
 to the three packaged-input variables. Run the existing restore test at that
 same source when shared control/permission code changes. Install and read back
@@ -128,7 +129,10 @@ all current packaged Guest binaries before claiming current-source execution.
 For each successful case, retain `capture.json` containing exactly
 `source_commit` and `files`, the latter mapping every name in
 `guest_preparation_control_report.FILES` to its original SHA256. Pin the capture
-hash separately from the capture itself and replay:
+hash separately from the capture itself and replay. The EOF case instead uses
+`EOF_FILES` and explicit `--eof`: it requires the actual exit1/EOF terminal and
+the fixture's captured failure audit proving explicit denial, child wait and
+descriptor disposal. It cannot pass as successful control retirement.
 
 ```bash
 python3 -B crates/runner/tests/guarded_idle_native/guest_preparation_control_report.py \

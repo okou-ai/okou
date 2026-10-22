@@ -24,7 +24,72 @@ fn hex_bytes(value: &Value) -> TestResult<Vec<u8>> {
         .collect::<TestResult<Vec<_>>>()
 }
 
-async fn qualify_preparation(directory: &Path, allow: bool) -> TestResult<()> {
+fn verify_helper(
+    directory: &Path,
+    guest_dir: &str,
+    allow: bool,
+    joined: &Value,
+    started: &Value,
+) -> TestResult<()> {
+    assert_eq!(field(joined, &["helper_joined"])?, &json!(true));
+    assert_eq!(
+        field(joined, &["returncode"])?,
+        &json!(if allow {
+            0
+        } else {
+            guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_CLEANUP_FAILED
+        })
+    );
+    assert_eq!(
+        field(joined, &["request_hex"])?,
+        field(started, &["request_hex"])?
+    );
+    assert_eq!(
+        field(joined, &["child_pid"])?,
+        field(started, &["child_pid"])?
+    );
+    let stdout = hex_bytes(field(joined, &["stdout_hex"])?)?;
+    let stderr = hex_bytes(field(joined, &["stderr_hex"])?)?;
+    let stdin = hex_bytes(field(joined, &["request_hex"])?)?;
+    let decoded: guest_contracts::reuse_preparation::ReusePreparationRequest =
+        serde_json::from_slice(&stdin)?;
+    assert_eq!(
+        decoded.current_runtime_dir,
+        format!("{guest_dir}/runtime/current")
+    );
+    assert_eq!(
+        decoded.retained_runtime_dir,
+        Some(format!("{guest_dir}/runtime/retained"))
+    );
+    for name in ["current", "retained", "stale"] {
+        if allow && name == "stale" {
+            assert!(field(joined, &["payloads"])?.get(name).is_none());
+        } else {
+            assert_eq!(
+                hex_bytes(field(joined, &["payloads", name])?)?,
+                format!("original {name}\n").as_bytes()
+            );
+        }
+    }
+    if allow {
+        let report: guest_contracts::reuse_preparation::ReusePreparationReport =
+            serde_json::from_slice(&stdout)?;
+        assert_eq!(report.removed_entries, 1);
+        assert!(stderr.is_empty());
+    } else {
+        assert!(stdout.is_empty());
+        assert!(std::str::from_utf8(&stderr)?.contains("runtime cleanup failed"));
+        assert!(std::str::from_utf8(&stderr)?.contains("os error 1"));
+    }
+    write_new(&directory.join("helper-stdin.json"), &stdin)?;
+    write_new(&directory.join("helper-stdout.bin"), &stdout)?;
+    write_new(&directory.join("helper-stderr.bin"), &stderr)?;
+    Ok(())
+}
+
+async fn qualify_preparation(directory: &Path, mode: &str) -> TestResult<()> {
+    let allow = mode == "allow";
+    let eof = mode == "eof";
     fs::DirBuilder::new().mode(0o700).create(directory)?;
     let rootfs = directory.join("rootfs.ext4");
     assert!(
@@ -182,75 +247,27 @@ async fn qualify_preparation(directory: &Path, allow: bool) -> TestResult<()> {
         controls.response.try_recv(),
         Err(tokio::sync::oneshot::error::TryRecvError::Empty)
     ));
-    let decision = control
-        .command(json!({"op": "decide", "event_id": 1, "allow": allow}))
-        .await?;
-    assert_eq!(
-        field(&decision, &["event_descriptors_closed"])?,
-        &json!(true)
-    );
-    assert_eq!(
-        field(&decision, &["retirement", "group_closed"])?,
-        &json!(true)
-    );
-    assert_eq!(field(&decision, &["retirement", "denied"])?, &json!([]));
-    let joined = control.command(json!({"op": "join"})).await?;
-    assert_eq!(field(&joined, &["helper_joined"])?, &json!(true));
-    assert_eq!(
-        field(&joined, &["returncode"])?,
-        &json!(if allow {
-            0
-        } else {
-            guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_CLEANUP_FAILED
-        })
-    );
-    assert_eq!(
-        field(&joined, &["request_hex"])?,
-        field(&started, &["request_hex"])?
-    );
-    assert_eq!(
-        field(&joined, &["child_pid"])?,
-        field(&started, &["child_pid"])?
-    );
-    let stdout = hex_bytes(field(&joined, &["stdout_hex"])?)?;
-    let stderr = hex_bytes(field(&joined, &["stderr_hex"])?)?;
-    let stdin = hex_bytes(field(&joined, &["request_hex"])?)?;
-    let decoded: guest_contracts::reuse_preparation::ReusePreparationRequest =
-        serde_json::from_slice(&stdin)?;
-    assert_eq!(
-        decoded.current_runtime_dir,
-        format!("{guest_dir}/runtime/current")
-    );
-    assert_eq!(
-        decoded.retained_runtime_dir,
-        Some(format!("{guest_dir}/runtime/retained"))
-    );
-    for name in ["current", "retained", "stale"] {
-        if allow && name == "stale" {
-            assert!(field(&joined, &["payloads"])?.get(name).is_none());
-        } else {
-            assert_eq!(
-                hex_bytes(field(&joined, &["payloads", name])?)?,
-                format!("original {name}\n").as_bytes()
-            );
-        }
-    }
-    if allow {
-        let report: guest_contracts::reuse_preparation::ReusePreparationReport =
-            serde_json::from_slice(&stdout)?;
-        assert_eq!(report.removed_entries, 1);
-        assert!(stderr.is_empty());
+    if eof {
+        control.stream.shutdown().await?;
     } else {
-        assert!(stdout.is_empty());
-        assert!(std::str::from_utf8(&stderr)?.contains("runtime cleanup failed"));
-        assert!(std::str::from_utf8(&stderr)?.contains("os error 1"));
+        let decision = control
+            .command(json!({"op": "decide", "event_id": 1, "allow": allow}))
+            .await?;
+        assert_eq!(
+            field(&decision, &["event_descriptors_closed"])?,
+            &json!(true)
+        );
+        assert_eq!(
+            field(&decision, &["retirement", "group_closed"])?,
+            &json!(true)
+        );
+        assert_eq!(field(&decision, &["retirement", "denied"])?, &json!([]));
+        let joined = control.command(json!({"op": "join"})).await?;
+        verify_helper(directory, &guest_dir, allow, &joined, &started)?;
+        let retired = control.command(json!({"op": "retire"})).await?;
+        assert_eq!(field(&retired, &["helper_joined"])?, &json!(true));
+        assert_eq!(field(&retired, &["originals_closed"])?, &json!(true));
     }
-    write_new(&directory.join("helper-stdin.json"), &stdin)?;
-    write_new(&directory.join("helper-stdout.bin"), &stdout)?;
-    write_new(&directory.join("helper-stderr.bin"), &stderr)?;
-    let retired = control.command(json!({"op": "retire"})).await?;
-    assert_eq!(field(&retired, &["helper_joined"])?, &json!(true));
-    assert_eq!(field(&retired, &["originals_closed"])?, &json!(true));
     let terminal = bounded(&mut controls.response).await??;
     write_new(&directory.join("exec-terminal.bin"), terminal.raw())?;
     controls
@@ -261,8 +278,54 @@ async fn qualify_preparation(directory: &Path, allow: bool) -> TestResult<()> {
     assert_eq!(actual.request, request);
     assert_eq!(actual.response, terminal);
     let result = controller.wait(DEADLINE).await?;
-    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    assert_eq!(
+        result.termination,
+        ExecTermination::Exited {
+            exit_code: if eof { 1 } else { 0 }
+        }
+    );
     assert!(!result.stream_overflowed);
+    if eof {
+        let ExecOwnedCapturedOutput::Captured {
+            bytes,
+            truncated: false,
+        } = &result.stdout
+        else {
+            return Err(io::Error::other("missing failure cleanup audit").into());
+        };
+        let audit: Value = serde_json::from_slice(bytes)?;
+        assert_eq!(
+            field(&audit, &["schema"])?,
+            &json!("guest-preparation-failure-cleanup-v1")
+        );
+        assert_eq!(field(&audit, &["originals_closed"])?, &json!(true));
+        verify_helper(
+            directory,
+            &guest_dir,
+            false,
+            field(&audit, &["joined"])?,
+            &started,
+        )?;
+        let cleanup = field(&audit, &["retirement"])?;
+        assert_eq!(field(cleanup, &["group_closed"])?, &json!(true));
+        let denied = field(cleanup, &["denied"])?
+            .as_array()
+            .ok_or_else(|| io::Error::other("missing denied event"))?;
+        assert_eq!(denied.len(), 1);
+        let denied = denied
+            .first()
+            .ok_or_else(|| io::Error::other("missing original denial"))?;
+        assert_eq!(field(denied, &["event"])?, field(&event, &["event"])?);
+        assert_eq!(field(denied, &["decision"])?, &json!("deny"));
+        let ExecOwnedCapturedOutput::Captured {
+            bytes,
+            truncated: false,
+        } = &result.stderr
+        else {
+            return Err(io::Error::other("missing actual EOF failure").into());
+        };
+        assert!(std::str::from_utf8(bytes)?.contains("EOFError: permission control stream ended"));
+    }
     for output in [&result.stdout, &result.stderr] {
         assert!(matches!(
             output,
@@ -284,7 +347,7 @@ async fn qualify_preparation(directory: &Path, allow: bool) -> TestResult<()> {
     write_new(
         &directory.join("qualification.json"),
         &serde_json::to_vec_pretty(&json!({
-            "schema": "native-guest-preparation-component-v1", "source_commit": option_env!("OKOU_TEST_BUILD_SOURCE_SHA"),
+            "schema": if eof { "native-guest-preparation-eof-v1" } else { "native-guest-preparation-component-v1" }, "source_commit": option_env!("OKOU_TEST_BUILD_SOURCE_SHA"),
             "allow": allow, "nonce": nonce, "controller_joined": true, "exchange_joined": true,
             "connection_joined": true, "vm_containment_only": true,
             "runner_final_exec_established": false, "cancellation_custody_established": false,
@@ -297,7 +360,7 @@ async fn qualify_preparation(directory: &Path, allow: bool) -> TestResult<()> {
 
 #[tokio::test]
 #[ignore = "requires root/KVM, exact current packaged Guests and an exclusive short output path"]
-async fn native_same_operation_preparation_allow_and_deny() -> TestResult<()> {
+async fn native_same_operation_preparation_allow_deny_and_eof() -> TestResult<()> {
     let source = option_env!("OKOU_TEST_BUILD_SOURCE_SHA")
         .ok_or_else(|| io::Error::other("missing build source"))?;
     assert_eq!(source.len(), 40);
@@ -305,7 +368,8 @@ async fn native_same_operation_preparation_allow_and_deny() -> TestResult<()> {
     let directory = PathBuf::from(std::env::var("OKOU_TEST_GUEST_PREPARATION_DIR")?);
     assert!(directory.is_absolute());
     fs::DirBuilder::new().mode(0o700).create(&directory)?;
-    qualify_preparation(&directory.join("allow"), true).await?;
-    qualify_preparation(&directory.join("deny"), false).await?;
+    qualify_preparation(&directory.join("allow"), "allow").await?;
+    qualify_preparation(&directory.join("deny"), "deny").await?;
+    qualify_preparation(&directory.join("eof"), "eof").await?;
     Ok(())
 }

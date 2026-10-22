@@ -32,6 +32,8 @@ class Preparation(Controller):
     """Own a direct helper child; the enclosing accepted exec owns this process."""
 
     def __init__(self, parent):
+        # The regular-file base initializer would arm the wrong kind of gate.
+        # Initialize its complete ownership state with the directory original.
         self.original = self.executable = self.gate = None
         self.event = self.child = None
         self.stdout = self.stderr = None
@@ -145,18 +147,31 @@ class Preparation(Controller):
         return super().command(value)
 
     def close(self):
-        result = super().close()
+        result = None
+        if self.gate is not None:
+            result = self.gate.close()
+            self.gate = None
         # Explicit gate denial/unmark precedes waiting even on EOF/error. A
         # timeout propagates as failed unresolved ownership; never kill-to-pass.
+        joined = None
         try:
             if self.child is not None and not self.joined:
-                self.join()
+                joined = self.join()
         finally:
-            for name in ("stdout", "stderr"):
-                stream = getattr(self, name)
-                if stream is not None:
-                    setattr(self, name, None)
-                    stream.close()
+            # Preserve originals/captures while an accepted child is unresolved.
+            if self.child is None or self.joined:
+                super().close()
+                for name in ("stdout", "stderr"):
+                    stream = getattr(self, name)
+                    if stream is not None:
+                        setattr(self, name, None)
+                        stream.close()
+        if joined is not None:
+            # Failure-only fixture audit on the already-owned exec capture. The
+            # control stream still fails; this never acknowledges successful retirement.
+            print(json.dumps({"schema": "guest-preparation-failure-cleanup-v1",
+                              "retirement": result, "joined": joined,
+                              "originals_closed": True}, separators=(",", ":")), flush=True)
         return result
 
 

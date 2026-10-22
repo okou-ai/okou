@@ -36,19 +36,18 @@ const PORT: u32 = 52010;
 const ASSETS: [(&str, &str); 3] = [
     (
         "file_residency.py",
-        include_str!("../../runner/tests/guarded_idle_native/file_residency.py"),
+        include_str!("../../../runner/tests/guarded_idle_native/file_residency.py"),
     ),
     (
         "file_open_permission.py",
-        include_str!("../../runner/tests/guarded_idle_native/file_open_permission.py"),
+        include_str!("../../../runner/tests/guarded_idle_native/file_open_permission.py"),
     ),
     (
         "guest_permission_control.py",
-        include_str!("../../runner/tests/guarded_idle_native/guest_permission_control.py"),
+        include_str!("../../../runner/tests/guarded_idle_native/guest_permission_control.py"),
     ),
 ];
 
-#[path = "native_permission_support/preparation.rs"]
 mod preparation;
 
 async fn bounded<F: Future>(future: F) -> TestResult<F::Output> {

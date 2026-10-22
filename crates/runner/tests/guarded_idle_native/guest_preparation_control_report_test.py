@@ -104,7 +104,48 @@ def write_capture(directory, files):
     return hashlib.sha256(manifest).hexdigest()
 
 
+def original_eof():
+    files = {name: raw for name, raw in original(False).items() if name in report.EOF_FILES}
+    complete = original(False)
+    decision = json.loads(complete["control-4-response.bin"][4:])["result"]
+    cleanup = copy.deepcopy(decision.pop("retirement"))
+    cleanup["started_ns"] = 35
+    cleanup["denied"] = [decision]
+    audit = {"schema": "guest-preparation-failure-cleanup-v1", "retirement": cleanup,
+             "joined": json.loads(complete["control-5-response.bin"][4:])["result"],
+             "originals_closed": True}
+    stdout = json.dumps(audit).encode()
+    stderr = b"EOFError: permission control stream ended\n"
+    files["exec-terminal.bin"] = packet(0x0e, b"\0" + (1).to_bytes(4, "big") + bytes(4)
+                                        + b"\x01\0" + sized(stdout)
+                                        + b"\x01\0" + sized(stderr) + bytes(2))
+    files["controller-terminal.txt"] = complete["controller-terminal.txt"].replace(
+        b"exit_code: 0", b"exit_code: 1")
+    value = json.loads(files["qualification.json"])
+    value["schema"] = "native-guest-preparation-eof-v1"
+    files["qualification.json"] = json.dumps(value).encode()
+    return files
+
+
 class ReaderTests(unittest.TestCase):
+    def test_actual_failure_audit_requires_explicit_eof_mode_and_positive_join(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            files = original_eof()
+            digest = write_capture(directory, files)
+            command = [sys.executable, "-B", str(Path(report.__file__)), str(directory),
+                       "--expected-source", SOURCE, "--expected-capture-sha256", digest]
+            for flags, expected in ((["--eof"], 0), ([], 1)):
+                result = subprocess.run(command + flags, capture_output=True, timeout=10, check=False)
+                self.assertEqual(result.returncode, expected, result.stderr)
+            # A typed audit is required even when its file hashes are recomputed.
+            raw = files["exec-terminal.bin"]
+            files["exec-terminal.bin"] = raw.replace(b'"helper_joined": true',
+                                                      b'"helper_joined": null')
+            digest = write_capture(directory, files)
+            with self.assertRaises(ValueError):
+                report.validate(directory, SOURCE, digest, eof=True)
+
     def test_original_allow_and_deny_records_through_real_cli(self):
         with tempfile.TemporaryDirectory() as root:
             directory = Path(root)
