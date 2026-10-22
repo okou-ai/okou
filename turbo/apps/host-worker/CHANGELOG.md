@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.20](https://github.com/okou-ai/okou/compare/host-worker-v1.7.19...host-worker-v1.7.20) (2026-10-22)
+
+
+### Bug Fixes
+
+* **host:** enforce site policies and resolve restricted previews ([#42243](https://github.com/okou-ai/okou/issues/42243)) ([31a1a37](https://github.com/okou-ai/okou/commit/31a1a376b2c6597dd12b16d668bc940e69e09829))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.1
+    * @okouai/core bumped to 8.777.6
+
 ## [1.7.19](https://github.com/okou-ai/okou/compare/host-worker-v1.7.18...host-worker-v1.7.19) (2026-10-22)
 
 
