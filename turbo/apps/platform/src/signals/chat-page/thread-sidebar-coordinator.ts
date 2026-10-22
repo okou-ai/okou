@@ -236,6 +236,7 @@ const navigateThreadMail$ = command(
       return;
     }
     set(thread.mail.navigating$, true);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(set(moveThreadMail$, thread, mail, signal), () => {
       set(thread.mail.navigating$, false);
     });

@@ -14,11 +14,13 @@ interface RuleDocs {
   requiresTypeChecking?: boolean;
 }
 
-export const createRule = ESLintUtils.RuleCreator<RuleDocs>((name) =>
-  name === "no-on-rejection"
-    ? "https://github.com/okou-ai/okou/blob/main/docs/app/signals/onRejection.md"
-    : `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`,
-);
+export const createRule = ESLintUtils.RuleCreator<RuleDocs>((name) => {
+  if (name === "no-on-rejection" || name === "no-with-cleanup") {
+    const helper = name === "no-on-rejection" ? "onRejection" : "withCleanup";
+    return `https://github.com/okou-ai/okou/blob/main/docs/app/signals/${helper}.md`;
+  }
+  return `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`;
+});
 
 export interface TypeRefPath {
   name: string;

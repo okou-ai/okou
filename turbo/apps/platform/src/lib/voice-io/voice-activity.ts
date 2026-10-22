@@ -63,6 +63,7 @@ export async function analyzeVoiceActivity(
   });
   // Each analysis has fresh recurrent state. Separate composers cannot corrupt
   // one another, and cancellation still releases a session created in flight.
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return await withCleanup(
     (async (): Promise<VoiceActivityDecision> => {
       signal.throwIfAborted();

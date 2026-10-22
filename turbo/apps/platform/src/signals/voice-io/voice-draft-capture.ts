@@ -42,6 +42,7 @@ function createCaptureCompletionCommand(
 ) {
   return command(
     ({ get, set }, pcm: VoiceDraftCapture["pcm"], signal: AbortSignal) => {
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       return withCleanup(pcm.completed, () => {
         if (get(acquisition$)?.signal === signal) {
           set(resetAcquisition$);
@@ -164,6 +165,7 @@ export function createVoiceDraftCaptureSignals() {
     // Taking the resource makes repeated Stop events harmless, without another
     // boolean or Promise atom mirroring the command's execution.
     set(acquisition$, { ...acquisition, capture: null });
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       (async () => {
         if (capture.monitor) {

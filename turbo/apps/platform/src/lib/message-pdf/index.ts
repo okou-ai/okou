@@ -59,6 +59,7 @@ export async function generateMessagePdfBlob(
   worker.addEventListener("error", onError);
   worker.addEventListener("messageerror", onError);
   signal.addEventListener("abort", onAbort, { once: true });
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return await withCleanup(
     (async () => {
       const [assets, regularFont, boldFont] = await Promise.all([

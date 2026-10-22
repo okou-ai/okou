@@ -147,6 +147,7 @@ export function createSubscriptionResetSignals(
       // A failed attempt may have spent the last credit before its response was
       // lost. Retry the same key even at zero/unknown credits. Eligibility and
       // reconnect checks still apply, including after a failed precondition read.
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       const operation = withCleanup(
         set(reset$, previous !== undefined, signal),
         () => {

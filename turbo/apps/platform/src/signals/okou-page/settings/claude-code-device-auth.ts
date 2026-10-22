@@ -209,6 +209,7 @@ function createClaudeCodeRun$(
     const operation = set(startFlow$, createRequestId(ctx.scope), flowSignal);
     // Retain the actual startup result until retry or dialog-session release.
     set(ctx.internalStartOperation$, operation);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(operation, () => {
       set(ctx.reloadProviders$);
     });
@@ -280,6 +281,7 @@ function createClaudeCodeSubmit$(ctx: ClaudeCodeDeviceAuthSignalContext) {
       }
 
       set(ctx.internalFlowState$, { ...current, errorMessage: null });
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       const completed = await withCleanup(
         set(
           completeClaudeCodeDeviceAuth$,
@@ -333,6 +335,7 @@ function createClaudeCodeClose$(ctx: ClaudeCodeDeviceAuthSignalContext) {
       return;
     }
 
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       set(cancelClaudeCodeDeviceAuth$, sessionToken, signal),
       () => {
