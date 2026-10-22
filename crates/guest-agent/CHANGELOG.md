@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.107.31](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.30...guest-agent-v0.107.31) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** recover disk-full startup through blank and cold ([#42289](https://github.com/okou-ai/okou/issues/42289)) ([b7a350a](https://github.com/okou-ai/okou/commit/b7a350adb56582cb54d7dfcbc22ec34a224bd162))
+
+
+### Documentation
+
+* **rust:** remove stale pi handoff contract from system log accessor ([#42278](https://github.com/okou-ai/okou/issues/42278)) ([c819f76](https://github.com/okou-ai/okou/commit/c819f76b0ba262c47a82eaa6e600e26b9d75df92))
+
 ## [0.107.30](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.29...guest-agent-v0.107.30) (2026-10-22)
 
 

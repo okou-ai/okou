@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.9...guest-contracts-v0.26.10) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** recover disk-full startup through blank and cold ([#42289](https://github.com/okou-ai/okou/issues/42289)) ([b7a350a](https://github.com/okou-ai/okou/commit/b7a350adb56582cb54d7dfcbc22ec34a224bd162))
+
 ## [0.26.9](https://github.com/okou-ai/okou/compare/guest-contracts-v0.26.8...guest-contracts-v0.26.9) (2026-10-22)
 
 

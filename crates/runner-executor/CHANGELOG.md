@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.10...runner-executor-v0.15.11) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** recover disk-full startup through blank and cold ([#42289](https://github.com/okou-ai/okou/issues/42289)) ([b7a350a](https://github.com/okou-ai/okou/commit/b7a350adb56582cb54d7dfcbc22ec34a224bd162))
+
 ## [0.15.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.9...runner-executor-v0.15.10) (2026-10-22)
 
 

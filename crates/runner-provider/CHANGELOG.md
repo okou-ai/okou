@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.5...runner-provider-v0.11.6) (2026-10-22)
+
+
+### Refactoring
+
+* **rust:** retire native continuation claim advertisement ([#42287](https://github.com/okou-ai/okou/issues/42287)) ([67a9608](https://github.com/okou-ai/okou/commit/67a9608c675eaa99eb19323b5c6fd3033955baaa))
+
 ## [0.11.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.4...runner-provider-v0.11.5) (2026-10-22)
 
 ## [0.11.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.3...runner-provider-v0.11.4) (2026-10-22)

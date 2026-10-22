@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.10...runner-supervisor-v0.20.11) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner-lifecycle:** clarify unconfirmed status publication ([#42282](https://github.com/okou-ai/okou/issues/42282)) ([ab41e91](https://github.com/okou-ai/okou/commit/ab41e915050921f65f97edbf7c26c3ee50a30ea0))
+* **runner:** recover disk-full startup through blank and cold ([#42289](https://github.com/okou-ai/okou/issues/42289)) ([b7a350a](https://github.com/okou-ai/okou/commit/b7a350adb56582cb54d7dfcbc22ec34a224bd162))
+
 ## [0.20.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.9...runner-supervisor-v0.20.10) (2026-10-22)
 
 ## [0.20.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.8...runner-supervisor-v0.20.9) (2026-10-22)

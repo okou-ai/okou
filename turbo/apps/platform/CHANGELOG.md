@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1052.1](https://github.com/okou-ai/okou/compare/app-v0.1052.0...app-v0.1052.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **app:** show email skeletons and draft-only actions ([#42281](https://github.com/okou-ai/okou/issues/42281)) ([0a950aa](https://github.com/okou-ai/okou/commit/0a950aa023b7011c38cc1a657ae4bb67fba936b1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.0
+    * @okouai/core bumped to 8.777.5
+
 ## [0.1052.0](https://github.com/okou-ai/okou/compare/app-v0.1051.3...app-v0.1052.0) (2026-10-22)
 
 

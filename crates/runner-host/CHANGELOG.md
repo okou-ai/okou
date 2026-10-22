@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.26](https://github.com/okou-ai/okou/compare/runner-host-v0.9.25...runner-host-v0.9.26) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** recover disk-full startup through blank and cold ([#42289](https://github.com/okou-ai/okou/issues/42289)) ([b7a350a](https://github.com/okou-ai/okou/commit/b7a350adb56582cb54d7dfcbc22ec34a224bd162))
+
 ## [0.9.25](https://github.com/okou-ai/okou/compare/runner-host-v0.9.24...runner-host-v0.9.25) (2026-10-22)
 
 ## [0.9.24](https://github.com/okou-ai/okou/compare/runner-host-v0.9.23...runner-host-v0.9.24) (2026-10-21)
