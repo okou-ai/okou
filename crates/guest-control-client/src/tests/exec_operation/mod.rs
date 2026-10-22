@@ -40,6 +40,7 @@ async fn start_capture_operation(
 
 mod cancel;
 mod capture;
+mod deadline;
 mod exec;
 mod lifecycle;
 mod malformed;
