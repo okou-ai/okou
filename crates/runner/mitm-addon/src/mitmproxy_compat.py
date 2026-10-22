@@ -40,7 +40,7 @@ _BRIDGE_MARKER_ATTRIBUTE = "_request_end_stream_bridge"
 _REQUEST_END_STREAM_METADATA = "_request_end_stream"
 _RESPONSE_INSPECTION_BRIDGE = "_response_inspection_bridge"
 _MANAGED_HEADERS_WAITING = "_okou_managed_headers_waiting"
-_INSPECTION_CHECKPOINTS: ContextVar[list["_InspectionHook"] | None] = ContextVar(
+_INSPECTION_CHECKPOINTS: ContextVar[list[_InspectionHook] | None] = ContextVar(
     "response_inspection_checkpoints", default=None
 )
 

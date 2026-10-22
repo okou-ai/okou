@@ -215,8 +215,6 @@ pub struct ProxyConfig {
     pub client_session_id: String,
     /// Version of the Runner binary, supplied by the composition root.
     pub client_version: &'static str,
-    /// System trust bundle used by mitmdump.
-    pub system_ca_bundle: &'static str,
 }
 
 /// Manages the mitmdump process lifecycle and proxy registry.
@@ -542,7 +540,6 @@ impl MitmProxy {
                     api_url: None,
                     client_session_id: "runner-session-test".to_string(),
                     client_version: "test-runner-version",
-                    system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
                 },
                 runtime: None,
                 child: None,
@@ -695,12 +692,7 @@ async fn spawn_mitmdump(
         .arg("--set")
         .arg("flow_detail=0")
         .arg("--set")
-        .arg("termlog_verbosity=warn")
-        .arg("--set")
-        .arg(format!(
-            "ssl_verify_upstream_trusted_ca={}",
-            config.system_ca_bundle
-        ));
+        .arg("termlog_verbosity=warn");
     if let Some(url) = &config.api_url {
         cmd.arg("--set").arg(format!("okou_api_url={url}"));
     }
@@ -1547,7 +1539,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         }
     }
 
@@ -1695,7 +1686,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
 
         let result = MitmProxy::new(config, ADDON_FILES.as_slice()).await;
@@ -1731,7 +1721,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
 
         let (_proxy, _crash_rx) = MitmProxy::new(config, ADDON_FILES.as_slice())
@@ -1907,7 +1896,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2027,7 +2015,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2079,7 +2066,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));

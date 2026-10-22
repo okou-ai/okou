@@ -58,7 +58,7 @@ _PERCENT_DECODED_UPSTREAM_HOST_SYNTAX_CHARS = frozenset("{}*.\u3002\uff0e\uff61,
 _UPSTREAM_HOST_FORBIDDEN_CHARS = frozenset("{}*")
 _https_context: ssl.SSLContext | None = None
 _https_context_lock = threading.Lock()
-_dns_resolver: "_AddressResolver | None" = None
+_dns_resolver: _AddressResolver | None = None
 
 
 class _AddressResolver(Protocol):
@@ -446,7 +446,7 @@ def _normalized_forward_request_host(parsed: urllib.parse.SplitResult) -> str:
             parsed_ip = ipaddress.ip_address(decoded.value)
         except ValueError as exc:
             raise ValueError("Invalid upstream URL: invalid host") from exc
-        if parsed_ip.version != IPV6_VERSION or parsed_ip.scope_id is not None:
+        if not isinstance(parsed_ip, ipaddress.IPv6Address) or parsed_ip.scope_id is not None:
             raise ValueError("Invalid upstream URL: invalid host")
         return parsed_ip.compressed.lower()
 
@@ -695,7 +695,7 @@ def forward_request_sync(
                     raise h11.RemoteProtocolError("auth.base does not support protocol upgrades")
             response_body = _read_response_body(protocol, source, conn)
             return response.status_code, response_body, _filter_response_headers(response_headers)
-    except (TimeoutError, AuthBaseForwardingDeadlineExceededError):
+    except TimeoutError, AuthBaseForwardingDeadlineExceededError:
         # A synchronous timeout can win the race with the event-loop timer.
         # Mark/abort while the socket is still owned, before cleanup clears it.
         abort_handle.abort_for_deadline()

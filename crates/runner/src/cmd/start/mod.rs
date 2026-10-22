@@ -602,7 +602,6 @@ async fn run_start_observed(
             api_url: Some(server.url.clone()),
             client_session_id: runner_client_session_id,
             client_version: env!("CARGO_PKG_VERSION"),
-            system_ca_bundle: deps::SYSTEM_CA_BUNDLE,
         },
         crate::ADDON_FILES,
     )

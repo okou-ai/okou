@@ -102,7 +102,7 @@ def launch(
                 try:
                     assert exchange(directory, status_request(generation))["type"] == "result"
                     break
-                except (FileNotFoundError, ConnectionRefusedError):
+                except FileNotFoundError, ConnectionRefusedError:
                     time.sleep(0.02)
             with socket.create_connection(("127.0.0.1", port), timeout=2):
                 pass

@@ -285,7 +285,7 @@ def test_writer_publishes_backlog_completion_once_per_batch(tmp_path):
             self.pending_bytes = 0
             self.queued_writes = 0
 
-        def __enter__(self) -> "ObservedCondition":
+        def __enter__(self) -> ObservedCondition:
             self.acquisitions += 1
             self._condition.acquire()
             return self
@@ -487,7 +487,7 @@ def test_out_of_order_concurrent_flushes_prune_after_final_waiter(tmp_path):
             self.delayed_waiter_woke = threading.Event()
             self.release_delayed_waiter = threading.Event()
 
-        def __enter__(self) -> "DelayedWaitCondition":
+        def __enter__(self) -> DelayedWaitCondition:
             self._condition.acquire()
             return self
 

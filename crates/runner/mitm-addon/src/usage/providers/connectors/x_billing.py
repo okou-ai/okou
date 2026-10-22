@@ -540,7 +540,7 @@ def _tweet_create_body_is_plain_text_without_url(body: bytes | None) -> bool:
         return False
     try:
         obj = json.loads(body)
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         return False
     if not isinstance(obj, dict):
         return False

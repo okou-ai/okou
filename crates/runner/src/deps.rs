@@ -39,10 +39,6 @@ pub const MITMPROXY_ARCHIVE_SHA256_X86_64: &str =
 pub const MITMPROXY_ARCHIVE_SHA256_AARCH64: &str =
     "f8756fa831c4abe431dd922ae7291b158b465285562b35d12e5669cbfc29d1f3";
 
-/// System CA certificate bundle path. The standalone mitmproxy binary bundles its
-/// own (incomplete) certifi CA store; we override it with the host's system store.
-pub const SYSTEM_CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
-
 /// Tarball entry name for firecracker binary.
 pub fn firecracker_tar_entry(arch: &str) -> String {
     format!("firecracker-{FIRECRACKER_VERSION}-{arch}")

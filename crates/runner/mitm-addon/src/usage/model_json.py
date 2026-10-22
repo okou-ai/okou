@@ -92,7 +92,7 @@ class ModelJsonResponseInspector:
         """
         self._extractor.feed(chunk)
 
-    def feed_steps(self, chunk: bytes) -> Generator[None, None, None]:
+    def feed_steps(self, chunk: bytes) -> Generator[None]:
         """Inspect bounded input slices without resetting this document's budget.
 
         Exhaust the iterator before feeding another chunk or finishing the document.

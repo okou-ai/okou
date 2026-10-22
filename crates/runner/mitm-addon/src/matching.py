@@ -188,13 +188,13 @@ class _AwsFormActionResult(NamedTuple):
 
 class _CompiledPrefixTrieNode[T](NamedTuple):
     values: tuple[T, ...]
-    children: Mapping[str, "_CompiledPrefixTrieNode[T]"]
+    children: Mapping[str, _CompiledPrefixTrieNode[T]]
 
 
 @dataclass
 class _PrefixTrieBuilder[T]:
     values: list[T] = field(default_factory=list)
-    children: dict[str, "_PrefixTrieBuilder[T]"] = field(default_factory=dict)
+    children: dict[str, _PrefixTrieBuilder[T]] = field(default_factory=dict)
 
 
 class _CompiledRule(NamedTuple):
@@ -581,7 +581,7 @@ def _api_routing_identity(api_entry: dict) -> str | None:
             separators=(",", ":"),
             sort_keys=True,
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -1781,7 +1781,7 @@ def _form_action_values(
             keep_blank_values=True,
             max_num_fields=aws_sigv4.MAX_AWS_SIGV4_QUERY_PAIRS,
         )
-    except (UnicodeDecodeError, ValueError):
+    except UnicodeDecodeError, ValueError:
         return _AwsFormActionResult([], False)
     return _AwsFormActionResult(_query_values(pairs, "Action"), True)
 

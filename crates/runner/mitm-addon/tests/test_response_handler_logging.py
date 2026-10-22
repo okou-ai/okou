@@ -37,7 +37,7 @@ from tests.timestamp_helpers import assert_utc_millisecond_timestamp
 class _BoundedFindUrl(str):
     find_calls: list[tuple[str, int, int | None]]
 
-    def __new__(cls, value: str) -> "_BoundedFindUrl":
+    def __new__(cls, value: str) -> _BoundedFindUrl:
         instance = super().__new__(cls, value)
         instance.find_calls = []
         return instance

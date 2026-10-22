@@ -34,7 +34,7 @@ TlsAdmissionKind = Literal[
 ]
 PlatformRequestPathDecision = Literal["api_allow", "firewall", "deny"]
 PlatformConnectorAuthPathDecision = Literal["allow", "deny"]
-_tls_admissions: dict[str, "TlsAdmission"] = {}
+_tls_admissions: dict[str, TlsAdmission] = {}
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,7 @@ def _connected_verified_tls_destination_endpoint(
         return None
     try:
         normalized_sni = normalize_hostname(server_sni)
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return None
     if normalized_sni != host:
         return None
@@ -204,7 +204,7 @@ def _api_destination(
 
     try:
         api_destination = platform_api_url.parse_platform_api_url(api_url)
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         api_destination = None
     _api_destination_cache = (api_url, api_destination)
     return api_destination
@@ -265,7 +265,7 @@ def _bind_privileged_upstream_destination(
             host=raw_sni.strip(),
             port=port,
         )
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return
     is_api_destination = api_destination_matches(
         api_url,
@@ -580,7 +580,7 @@ def ensure_bound_destination(
             host=trusted_host,
             port=flow.request.port,
         )
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return False
 
     api_destination = _api_destination(api_url)

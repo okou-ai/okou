@@ -10,7 +10,7 @@ from usage.json_probe import probe_top_level_string_field
 class _SliceTrackingBytes(bytes):
     slice_lengths: list[int]
 
-    def __new__(cls, value: bytes) -> "_SliceTrackingBytes":
+    def __new__(cls, value: bytes) -> _SliceTrackingBytes:
         instance = super().__new__(cls, value)
         instance.slice_lengths = []
         return instance

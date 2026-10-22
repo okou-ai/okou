@@ -330,7 +330,7 @@ def _address_matches(host: str, port: int, address: object) -> bool:
     address_host, address_port = address_pair
     try:
         normalized_address_host = normalize_hostname(address_host)
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return False
     return normalized_address_host == host and address_port == port
 
@@ -482,7 +482,7 @@ def diagnostic_snapshot_for_flow(
     if trusted_host:
         try:
             normalized_host = normalize_hostname(trusted_host)
-        except (UnicodeError, ValueError):
+        except UnicodeError, ValueError:
             normalized_host = None
     matching_client_bindings = (
         tuple(
@@ -554,7 +554,7 @@ def flow_matches_bound_destination(
             host=trusted_host,
             port=flow.request.port,
         )
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return False
 
     return flow_matches_normalized_destination(
@@ -612,7 +612,7 @@ def flow_matches_direct_bound_destination(
         return False
     try:
         normalized_host = normalize_hostname(trusted_host)
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return False
 
     server = flow.server_conn
@@ -652,7 +652,7 @@ def bound_destination_endpoint_for_flow(
             host=trusted_host,
             port=flow.request.port,
         )
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return None
 
     match = _resolve_destination_binding(

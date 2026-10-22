@@ -223,7 +223,7 @@ def get_trusted_authority(flow: http.HTTPFlow) -> TrustedAuthority:
 
     try:
         normalized_sni = normalize_hostname(sni)
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         raise _authority_validation_error(
             "invalid_sni",
             message="Request blocked: HTTPS request has invalid TLS SNI",
@@ -267,7 +267,7 @@ def get_trusted_authority(flow: http.HTTPFlow) -> TrustedAuthority:
         try:
             parsed_host, explicit_port = _parse_host_authority(authority)
             normalized_authority_host = normalize_hostname(parsed_host)
-        except (UnicodeError, ValueError):
+        except UnicodeError, ValueError:
             raise _authority_validation_error(
                 "invalid_authority",
                 message="Request blocked: HTTPS request has invalid Host authority",

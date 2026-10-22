@@ -809,15 +809,7 @@ jobs:
         run: |
           uv run --no-sync ruff check .
           uv run --no-sync ruff format --check .
-
-      - name: Check Python 3.12 source compatibility
-        working-directory: crates/runner/mitm-addon
-        env:
-          UV_PROJECT_ENVIRONMENT: .venv-py312
-        run: |
-          uv sync --locked --python 3.12
-          uv run --no-sync --python 3.12 basedpyright --pythonpath .venv-py312/bin/python -p .
-          uv run --no-sync --python 3.12 python -m pytest tests/test_body_decoding.py -q
+          uv run --no-sync basedpyright -p .
 
       - name: Run mitm-addon tests
         working-directory: crates/runner/mitm-addon

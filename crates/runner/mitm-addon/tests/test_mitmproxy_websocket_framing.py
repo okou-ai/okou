@@ -36,7 +36,7 @@ _PERMESSAGE_DEFLATE = "permessage-deflate"
 
 
 @pytest.fixture(autouse=True)
-async def _reset_aggregate_decoded_budget() -> AsyncGenerator[None, None]:
+async def _reset_aggregate_decoded_budget() -> AsyncGenerator[None]:
     websocket_framing.reset_aggregate_budget_for_tests()
     yield
     await asyncio.sleep(0)
@@ -72,7 +72,7 @@ class _DecompressionStats:
     input_sizes: list[int] = field(default_factory=list)
     unused_tail_sizes: list[int] = field(default_factory=list)
     output_sizes: list[int] = field(default_factory=list)
-    instances: list[weakref.ReferenceType["_TrackingDecompressor"]] = field(default_factory=list)
+    instances: list[weakref.ReferenceType[_TrackingDecompressor]] = field(default_factory=list)
 
 
 class _TrackingDecompressor:

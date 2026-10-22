@@ -40,7 +40,7 @@ class _CaptureHandler:
 class _FindTrackingBytes(bytes):
     find_calls: list[tuple[bytes, int, int | None]]
 
-    def __new__(cls, value: bytes) -> "_FindTrackingBytes":
+    def __new__(cls, value: bytes) -> _FindTrackingBytes:
         instance = super().__new__(cls, value)
         instance.find_calls = []
         return instance

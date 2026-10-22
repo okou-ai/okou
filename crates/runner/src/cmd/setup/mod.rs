@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 
-use crate::deps::{FIRECRACKER_VERSION, MITMPROXY_VERSION, SYSTEM_CA_BUNDLE};
+use crate::deps::{FIRECRACKER_VERSION, MITMPROXY_VERSION};
 use crate::error::{RunnerError, RunnerResult};
 use runner_host::paths::HomePaths;
 
@@ -66,7 +66,6 @@ pub async fn run_setup() -> RunnerResult<()> {
     artifacts::install_firecracker(&http_client, &paths, arch).await?;
     artifacts::install_kernel(&http_client, &paths, arch).await?;
     artifacts::install_mitmdump(&http_client, &paths, arch).await?;
-    check_system_ca_bundle()?;
     check_kvm();
 
     if !missing_required.is_empty() {
@@ -877,18 +876,6 @@ async fn ensure_artifact_installed(
 // Host checks
 // ---------------------------------------------------------------------------
 
-fn check_system_ca_bundle() -> RunnerResult<()> {
-    if Path::new(SYSTEM_CA_BUNDLE).exists() {
-        tracing::info!("[OK] system CA bundle found at {SYSTEM_CA_BUNDLE}");
-        Ok(())
-    } else {
-        Err(RunnerError::Config(format!(
-            "system CA bundle not found at {SYSTEM_CA_BUNDLE} — \
-             install ca-certificates: sudo apt install ca-certificates"
-        )))
-    }
-}
-
 fn check_kvm() {
     let result = File::options()
         .read(true)
@@ -1679,22 +1666,5 @@ mod tests {
         )
         .await
         .unwrap();
-    }
-
-    #[test]
-    fn check_system_ca_bundle_consistent_with_filesystem() {
-        let result = check_system_ca_bundle();
-        let exists = std::path::Path::new(SYSTEM_CA_BUNDLE).exists();
-        assert_eq!(
-            result.is_ok(),
-            exists,
-            "check_system_ca_bundle should succeed iff {} exists",
-            SYSTEM_CA_BUNDLE
-        );
-        if let Err(e) = result {
-            let msg = e.to_string();
-            assert!(msg.contains(SYSTEM_CA_BUNDLE), "error should mention path");
-            assert!(msg.contains("ca-certificates"), "error should suggest fix");
-        }
     }
 }

@@ -93,7 +93,7 @@ _STRUCTURED_FIREWALL_AUTH_ERROR_CODES = frozenset(
     }
 )
 _FIREWALL_AUTH_FAILURE_REASONS = frozenset({"upstream_provider", "reconnect_required"})
-_dns_resolver: "_AddressResolver | None" = None
+_dns_resolver: _AddressResolver | None = None
 _https_context: ssl.SSLContext | None = None
 
 
@@ -248,7 +248,7 @@ class FirewallAuthRequest:
             separators=(",", ":"),
         ).encode("utf-8")
 
-    def with_prepared_normal_body(self, body: bytes) -> "FirewallAuthRequest":
+    def with_prepared_normal_body(self, body: bytes) -> FirewallAuthRequest:
         """Attach normal request bytes for the request-local fetch path."""
         return replace(self, prepared_normal_body=body)
 
@@ -973,7 +973,7 @@ def _raise_firewall_auth_http_error(response: _HttpResponse, url: str) -> None:
     )
     try:
         error_body: object = json.loads(response.body)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except UnicodeDecodeError, json.JSONDecodeError:
         raise error from None
     if not isinstance(error_body, dict):
         raise error from None

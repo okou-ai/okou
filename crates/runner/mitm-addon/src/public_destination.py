@@ -175,13 +175,13 @@ def _runtime_destination_host_kind(
         if hostname_classification == "deferable":
             try:
                 normalize_hostname(ip_text)
-            except (UnicodeError, ValueError):
+            except UnicodeError, ValueError:
                 pass
             else:
                 return "deferable_hostname"
         try:
             normalize_idna_hostname(ip_text)
-        except (UnicodeError, ValueError):
+        except UnicodeError, ValueError:
             return "invalid"
         return "hostname"
 

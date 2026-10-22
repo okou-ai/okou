@@ -1370,7 +1370,7 @@ async def _try_firewall_request_stream_from_headers(
                 )
             ),
         )
-    except (asyncio.CancelledError, Exception):
+    except asyncio.CancelledError, Exception:
         if managed_policy is not None:
             managed_openrouter.release_from_flow(flow)
             if flow.killable:
@@ -1429,7 +1429,7 @@ async def _try_firewall_request_stream_from_headers(
                     flow, classification, managed_openrouter.RequestRejectedError(reason)
                 )
                 flow.request.stream = upload
-    except (asyncio.CancelledError, Exception):
+    except asyncio.CancelledError, Exception:
         _release_terminal_flow_state(flow, release_tracking=True)
         restore_request_state()
         _restore_request_headers_probe_metadata(flow, metadata_snapshot)

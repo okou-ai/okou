@@ -28,8 +28,8 @@ a supported public API provides the required capability.
 
 The official pinned Linux standalone requires glibc 2.36 or newer on both host
 architectures. Establish that host prerequisite before deployment. Runner uses
-its own interception CA and explicitly selects the host system bundle for
-upstream verification; a bundled certifi update does not update host trust.
+its own interception CA for sandbox clients. Upstream verification uses the
+pinned standalone's bundled certifi roots; the runtime owns public trust updates.
 The optional `emudhra` and `emudhra_old` signing modes remain disabled.
 
 ## Cooperative response inspection
@@ -665,8 +665,8 @@ frame overhead. Within it, the existing hard decoded-output limit, strict
 remain effective. Response capture and JSON-usage decoding keep their existing
 policies.
 
-Production zstd decoding uses `compression.zstd` on Python 3.14 and
-`backports.zstd` on the supported Python 3.12/3.13 source floor. Every
+Production zstd decoding uses `compression.zstd` on the pinned standalone's
+Python 3.14.0 interpreter, which is also used by tests and static checks. Every
 `decompress` call supplies a positive `max_length`, bounded by both the remaining
 output allowance and 64 KiB. Buffered output is drained with empty input until
 `needs_input` permits another chunk. Prefix decoding feeds at most 1 KiB at a

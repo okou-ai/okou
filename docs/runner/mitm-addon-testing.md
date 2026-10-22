@@ -40,11 +40,11 @@ uv sync --locked
 `uv sync --locked` installs the development and test dependency groups into
 `.venv` without changing `uv.lock`. It also selects the exact interpreter from
 `.python-version`, which matches the Python patch embedded in the pinned
-mitmproxy standalone runtime. The package metadata, Ruff, and BasedPyright
-retain Python 3.12 as the supported source-compatibility floor.
+mitmproxy standalone runtime. Package metadata, Ruff, and BasedPyright target
+that runtime's Python 3.14; related checks and tests use Python 3.14.0.
 
 The test-only `zstandard` package supplies independent wire fixtures. Production
-uses the stdlib/backport zstd API provided by the pinned runtime; installing the
+uses the stdlib zstd API provided by the pinned runtime; installing the
 test codec does not establish standalone compatibility. Keep the verified
 packaged suite in the upgrade gate. Its compressed-response case checks original
 wire forwarding, decoded network-log capture and complete JSON usage through
@@ -198,16 +198,11 @@ Run the same static checks used by CI:
 ```bash
 uv run --no-sync ruff format --check .
 uv run --no-sync ruff check .
-UV_PROJECT_ENVIRONMENT=.venv-py312 uv sync --locked --python 3.12
-UV_PROJECT_ENVIRONMENT=.venv-py312 uv run --no-sync --python 3.12 \
-  basedpyright --pythonpath .venv-py312/bin/python -p .
-UV_PROJECT_ENVIRONMENT=.venv-py312 uv run --no-sync --python 3.12 \
-  python -m pytest tests/test_body_decoding.py -q
+uv run --no-sync basedpyright -p .
 ```
 
-The separate environment makes the source-floor backport available to the type
-checker and exercises its real codec. It leaves `.venv` on the exact standalone
-interpreter for the complete runtime suite.
+Keep these commands in the same locked environment as the complete addon suite,
+using the exact interpreter declared in `.python-version`.
 
 ### Private control and packaged runtime
 

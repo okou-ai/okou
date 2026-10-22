@@ -20,12 +20,12 @@ INSPECTION_INTERRUPTED = "response inspection interrupted"
 class CooperativeResponseInspection:
     def __init__(
         self,
-        steps: Callable[[bytes], Generator[None, None, None]],
+        steps: Callable[[bytes], Generator[None]],
         fail: Callable[[str], None],
     ) -> None:
         self._steps = steps
         self._fail = fail
-        self._pending: Generator[None, None, None] | None = None
+        self._pending: Generator[None] | None = None
         self._draining: asyncio.Future[None] | None = None
         self._closed = False
 
@@ -91,7 +91,7 @@ def decoded_steps(
     iter_chunks: Callable[[bytes], Iterator[bytes]],
     feed_steps: Callable[[bytes], Iterator[None]],
     chunk: bytes,
-) -> Generator[None, None, None]:
+) -> Generator[None]:
     # Streaming EOF stays with the explicit decoder/parser finalization path.
     if not chunk:
         return

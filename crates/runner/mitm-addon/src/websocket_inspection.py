@@ -12,9 +12,7 @@ import websocket_retention
 from response_inspection import CooperativeResponseInspection
 
 
-def _message_steps(
-    flow: http.HTTPFlow, body: bytes, *, from_client: bool
-) -> Generator[None, None, None]:
+def _message_steps(flow: http.HTTPFlow, body: bytes, *, from_client: bool) -> Generator[None]:
     if from_client:
         client = yield from usage.inspect_openai_responses_client_event_steps(body)
         if model_websocket_usage.is_enabled(flow):

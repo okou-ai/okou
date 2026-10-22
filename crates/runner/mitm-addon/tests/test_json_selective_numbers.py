@@ -171,7 +171,7 @@ def test_number_acceptance_matches_strict_json_across_streaming_boundaries(
     payload, number_start = _number_document(number, layout)
     try:
         _strict_json_loads(payload)
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+    except UnicodeDecodeError, json.JSONDecodeError, ValueError:
         expected_complete = False
     else:
         expected_complete = True

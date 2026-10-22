@@ -8,18 +8,13 @@ Exports:
 - JSON usage decompression with diagnostic error classification.
 """
 
-import sys
 import zlib
 from collections.abc import Callable, Iterator
+from compression import zstd
 from typing import Literal, NamedTuple
 
 import brotli  # type: ignore[import-untyped]
 from mitmproxy import http
-
-if sys.version_info >= (3, 14):
-    from compression import zstd
-else:
-    from backports import zstd
 
 import content_encoding
 from body_limits import (

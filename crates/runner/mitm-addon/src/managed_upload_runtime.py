@@ -32,7 +32,7 @@ from managed_upload import Phase, Upload, from_request, get
 _PATCHED = "_okou_managed_upload_runtime"
 _CONNECTION_READERS = "_okou_managed_upload_readers"
 _H2_CAPACITY = "_okou_managed_h2_capacity"
-_current_reader: ContextVar["Reader | None"] = ContextVar("managed_upload_reader", default=None)
+_current_reader: ContextVar[Reader | None] = ContextVar("managed_upload_reader", default=None)
 
 
 class DrainWriter(Protocol):
