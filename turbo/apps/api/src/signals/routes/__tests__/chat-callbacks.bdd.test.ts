@@ -779,7 +779,7 @@ describe("CHAT-02: completed chat callback", () => {
     );
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.prompt).toBe(
-      `[Template #1: ${template.title} (presentation)]queued next turn`,
+      "[Template #1: Playful Launch Presentation (presentation)]queued next turn",
     );
     const appended = autoContext.body.appendSystemPrompt ?? "";
     expect(appended).toContain(
