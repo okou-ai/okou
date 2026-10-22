@@ -69,6 +69,7 @@ import {
   type StripeSubscriptionSnapshotReconciliation,
 } from "./webhooks-stripe.service";
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
+import { paymentFailedPlanEntitlementInsertSql } from "./payment-failed-plan-projection";
 import { canceledPlanEntitlementInsertSql } from "./subscription-deletion-projection";
 import {
   archivedSubscriptionHasSurvivingComponents,
@@ -960,9 +961,23 @@ const downgradePaymentFailedBillingCandidate$ = command(
     signal: AbortSignal,
   ): Promise<DowngradedSubscription[]> {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0126; new non-billing transactions are prohibited.
-    const rows = await db.transaction(async (tx) => {
-      const changed = await tx
+    const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
+      {
+        orgId: candidate.orgId,
+        tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+        subscription,
+        stripeSubscriptionId: candidate.stripeSubscriptionId,
+        stripePriceId:
+          knownBillingPlanPriceItem(subscription.items.data)?.price.id ?? null,
+      },
+      false,
+    );
+    const values = orgPlanEntitlementValues(
+      entitlementArgs,
+      resolveStripeSubscriptionSnapshot(entitlementArgs),
+    );
+    const changed = db.$with("downgraded_payment_failed_organization").as(
+      db
         .update(orgMetadata)
         .set({
           tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
@@ -973,47 +988,19 @@ const downgradePaymentFailedBillingCandidate$ = command(
           orgId: orgMetadata.orgId,
           subscriptionId: orgMetadata.stripeSubscriptionId,
           status: orgMetadata.subscriptionStatus,
-        });
-      for (const row of changed) {
-        const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
-          {
-            orgId: row.orgId,
-            tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-            subscription,
-            stripeSubscriptionId: row.subscriptionId,
-            stripePriceId:
-              knownBillingPlanPriceItem(subscription.items.data)?.price.id ??
-              null,
-          },
-          false,
-        );
-        const snapshotArgs = entitlementArgs;
-        const [owner] = snapshotArgs.stripeSubscriptionId
-          ? await tx
-              .select({ orgId: orgPlanEntitlements.orgId })
-              .from(orgPlanEntitlements)
-              .where(
-                eq(
-                  orgPlanEntitlements.stripeSubscriptionId,
-                  snapshotArgs.stripeSubscriptionId,
-                ),
-              )
-              .limit(1)
-          : [];
-        const values = orgPlanEntitlementValues(
-          snapshotArgs,
-          resolveStripeSubscriptionSnapshot(snapshotArgs, owner?.orgId ?? null),
-        );
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(values)
-          .onConflictDoUpdate({
-            target: orgPlanEntitlements.orgId,
-            set: orgPlanEntitlementUpdateValues(values),
-          });
-      }
-      return changed;
-    });
+        }),
+    );
+    // A stale candidate cannot publish capabilities. Both writes share one
+    // snapshot and commit, including the subscription's duplicate-owner decision.
+    const projected = db
+      .$with("downgraded_payment_failed_plan", {})
+      .as(
+        paymentFailedPlanEntitlementInsertSql(
+          db.select({ orgId: changed.orgId }).from(changed).getSQL(),
+          values,
+        ),
+      );
+    const rows = await db.with(changed, projected).select().from(changed);
     signal.throwIfAborted();
     return rows;
   },
