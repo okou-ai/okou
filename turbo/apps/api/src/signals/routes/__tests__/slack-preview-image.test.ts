@@ -155,7 +155,7 @@ describe("Slack preview thumbnails", () => {
     ];
     const origins = [
       "https://images.example.com",
-      "http://127.0.0.1",
+      "http://10.0.0.1",
       "http://[fd00::1]",
       "https://internal.local",
     ];
@@ -166,7 +166,8 @@ describe("Slack preview thumbnails", () => {
     for (const [index, dimensions] of cases.entries()) {
       const bytes = await png(dimensions.width, dimensions.height);
       server.use(
-        http.get(sources[index]!, ({ request }) => {
+        http.get(new RegExp(`/${index}\\.png$`, "u"), ({ request }) => {
+          expect(request.url).toBe(sources[index]);
           requests.push(request);
           return new HttpResponse(new Uint8Array(bytes), {
             headers: { "content-type": "image/png" },

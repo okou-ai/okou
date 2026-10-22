@@ -4352,7 +4352,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       expectedCode: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL,
       providerOptions: {
         registration: "cimd" as const,
-        authorizationEndpoint: "https://localhost/authorize",
+        authorizationEndpoint:
+          "https://automatic-issuer.example.test/authorize#fragment",
       },
     },
     {

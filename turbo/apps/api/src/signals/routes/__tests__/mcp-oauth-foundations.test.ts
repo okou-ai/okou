@@ -297,7 +297,8 @@ describe("MCP OAuth foundations", () => {
     const oauth = await automaticOAuthFixture();
     const metadataSteps: number[] = [];
     server.use(
-      http.get(`${origin}/redirect/:step`, ({ params }) => {
+      http.get("*/redirect/:step", ({ params, request }) => {
+        expect(new URL(request.url).origin).toBe(origin);
         const step = Number(params.step);
         metadataSteps.push(step);
         return step < 3
