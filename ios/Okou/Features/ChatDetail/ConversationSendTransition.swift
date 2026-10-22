@@ -104,9 +104,9 @@ final class ConversationSendTransition {
     self.arrivingView = arrivingView
     UIView.performWithoutAnimation { arrivingView?.alpha = 0 }
     isAnimating = true
-    if deadline <= CACurrentMediaTime() {
-      deadline = CACurrentMediaTime() + 0.22
-    }
+    // Measurement can consume most of a keyboard transition. The arriving row
+    // still needs a visible transition instead of a nearly zero-duration jump.
+    deadline = max(deadline, CACurrentMediaTime() + 0.22)
     animateToBottom()
   }
 
@@ -136,6 +136,21 @@ final class ConversationSendTransition {
     animationOrigin = offset
     let generation = UUID()
     self.generation = generation
+    if reduceMotion {
+      startAnimation(to: y, in: collection, generation: generation)
+      return
+    }
+    // Diffable snapshots can invoke their completion with UIView animations
+    // disabled. Start after that synchronous layout transaction has returned.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.generation == generation, isActive, isAnimating else { return }
+      startAnimation(to: y, in: collection, generation: generation)
+    }
+  }
+
+  private func startAnimation(
+    to y: CGFloat, in collection: UICollectionView, generation: UUID
+  ) {
     let duration = reduceMotion ? 0 : max(0, deadline - CACurrentMediaTime())
     if duration == 0 {
       offset = CGPoint(x: animationOrigin.x, y: y)
