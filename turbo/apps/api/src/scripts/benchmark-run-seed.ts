@@ -107,11 +107,12 @@ export const insertBenchmarkRunBatch$ = command(
       db
         .select({
           count: count().as("identity_count"),
-          invalid: sql`${min(sql`${identities.runId}::text`)} FILTER (
+          invalid:
+            sql`${min(sql`${identities.runId}::text COLLATE "C"`)} FILTER (
             WHERE ${identities.runId}::text !~* '^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$'
           )`
-            .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-            .as("invalid_uuid"),
+              .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+              .as("invalid_uuid"),
         })
         .from(identities),
     );
