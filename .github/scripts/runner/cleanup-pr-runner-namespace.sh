@@ -34,12 +34,9 @@ if [ "$JOB_REF" != "pr-${PR_NUMBER}" ]; then
   exit 2
 fi
 
-# The outer barrier normally drains every owner before lock acquisition. This
-# second stabilized discovery runs while the host lock is held and aborts
-# instead of waiting if approval raced with that first barrier. Aborting lets
-# the late owner acquire the lock; a later daily cleanup collects the namespace.
-RUNNER_OWNER_ASSERT_IDLE=true \
-  RUNNER_OWNER_SCOPE=closed-pr-cleanup \
+# Cancel owners while holding the namespace lock, then delete without waiting
+# for GitHub's run status to converge. Recheck closed-PR authority afterward.
+RUNNER_OWNER_SCOPE=closed-pr-cleanup \
   "${SCRIPT_DIR}/../cancel-superseded-merge-group-runs.sh"
 
 if ! pr_state=$(gh api --method GET \

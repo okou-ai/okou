@@ -86,7 +86,7 @@ case "$endpoint" in
     if [[ " $* " == *" --jq .state "* ]]; then
       printf 'closed\n'
     else
-      printf 'feature/pr-%s\tokou-ai/okou\n' "$pr_number"
+      printf 'feature/pr-%s\tokou-ai/okou\tclosed\n' "$pr_number"
     fi
     ;;
   repos/okou-ai/okou/actions/runs)
@@ -100,8 +100,10 @@ case "$endpoint" in
       printf '[{"workflow_runs":[]}]\n'
     fi
     ;;
-  repos/okou-ai/okou/actions/runs/100)
-    printf 'queued\n'
+  repos/okou-ai/okou/actions/runs/100/force-cancel)
+    printf 'HTTP/2.0 %s\nContent-Type: application/json\n\n' "$MOCK_CANCEL_HTTP_STATUS"
+    echo 'gh: cancellation failed' >&2
+    exit 1
     ;;
   *)
     echo "unexpected gh endpoint: ${endpoint}" >&2
@@ -160,7 +162,7 @@ SH
 chmod +x "${fake_bin}/gh" "${fake_bin}/ssh" "${fake_bin}/ansible-playbook"
 
 run_cleanup() {
-  local scenario=$1 blocked_pr=$2 dry_run=$3
+  local scenario=$1 blocked_pr=$2 dry_run=$3 cancel_http_status=${4:-409}
   local pr_number
   case_dir="${tmp_dir}/${scenario}"
   mkdir -p "${case_dir}/locks"
@@ -187,10 +189,10 @@ run_cleanup() {
       PR_NUMBERS='[41,42,43]' \
       DRY_RUN="$dry_run" \
       MOCK_BLOCKED_PR="$blocked_pr" \
+      MOCK_CANCEL_HTTP_STATUS="$cancel_http_status" \
       MOCK_EXTERNAL_LOG="${case_dir}/external.log" \
       MOCK_RESOURCE_ROOT="${case_dir}/resources" \
       MOCK_LOCK_ROOT="${case_dir}/locks" \
-      SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS=0 \
       RUNNER_LIFECYCLE_LOCK_TIMEOUT_SECONDS=5 \
       bash --noprofile --norc -e -o pipefail "${tmp_dir}/cleanup.sh"
   ) >"${case_dir}/output.log" 2>&1 || cleanup_status=$?
@@ -209,17 +211,19 @@ assert_resources() {
   done
 }
 
-run_cleanup blocked-owner 42 false
-[ "$cleanup_status" -eq 1 ] || fail "an owner timeout must remain a failed cleanup"
+run_cleanup cancellation-failure 42 false 500
+[ "$cleanup_status" -eq 1 ] || fail "a cancellation failure must remain a failed cleanup"
 assert_resources 41 absent
 assert_resources 42 present
 assert_resources 43 absent
 assert_resources 44 present
 grep -qx 'Cleaned: 2' "${case_dir}/output.log" || fail "missing successful PR count"
-grep -qx 'Failures: 1' "${case_dir}/output.log" || fail "missing blocked PR count"
-if grep -q '/cancel\|/force-cancel' "${case_dir}/external.log"; then
-  fail "closed-PR cleanup attempted to cancel a runner owner"
-fi
+grep -qx 'Failures: 1' "${case_dir}/output.log" || fail "missing failed PR count"
+
+run_cleanup active-owners 42 false
+[ "$cleanup_status" -eq 0 ] || fail "cancellation conflicts must allow closed-PR cleanup"
+for pr_number in 41 42 43; do assert_resources "$pr_number" absent; done
+assert_resources 44 present
 
 run_cleanup idle-owners 0 false
 [ "$cleanup_status" -eq 0 ] || fail "idle closed PRs should clean successfully"
@@ -233,4 +237,4 @@ run_cleanup dry-run 42 true
 for pr_number in 41 42 43 44; do assert_resources "$pr_number" present; done
 [ ! -s "${case_dir}/external.log" ] || fail "dry-run reached an external cleanup operation"
 
-echo "PASS: stale runner cleanup preserves blocked namespaces and cleans subsequent PRs"
+echo "PASS: stale runner cleanup cancels owners and preserves real cancellation failures"

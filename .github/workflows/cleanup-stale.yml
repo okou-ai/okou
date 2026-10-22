@@ -220,7 +220,7 @@ jobs:
   cleanup-metal-runners:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
       pull-requests: read
     steps:
@@ -332,24 +332,14 @@ jobs:
 
             PR_FAILED=0
 
-            # First await owners visible through GitHub, then hold the same
-            # host-local namespace lock as Turbo through the actual deletion.
-            # A late approval serializes behind cleanup and reconciles after it.
-            if ! PR_NUMBER="$PR_NUMBER" \
-              RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-              "$GITHUB_WORKSPACE/.github/scripts/cancel-superseded-merge-group-runs.sh"; then
-              echo "::warning::Owner check failed for pr-${PR_NUMBER}; retaining its resources and continuing with the next PR"
-              FAILED=$((FAILED + 1))
-              continue
-            fi
-
-            # Cleanup every runner resource in the PR namespace.
+            # Cancel CI and clean the PR namespace under Turbo's lifecycle lock.
             JOB_REF="pr-${PR_NUMBER}"
             export JOB_REF PR_NUMBER
             if ! "$GITHUB_WORKSPACE/.github/scripts/runner/with-runner-lifecycle-lock.sh" \
               "$GITHUB_WORKSPACE/.github/scripts/runner/cleanup-pr-runner-namespace.sh"; then
               echo "::warning::PR runner cleanup failed for pr-${PR_NUMBER}"
-              PR_FAILED=1
+              FAILED=$((FAILED + 1))
+              continue
             fi
 
             # Cleanup Stripe CLI listener

@@ -2,7 +2,6 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-barrier_script="${repo_root}/.github/scripts/cancel-superseded-merge-group-runs.sh"
 lock_script="${repo_root}/.github/scripts/runner/with-runner-lifecycle-lock.sh"
 namespace_cleanup_script="${repo_root}/.github/scripts/runner/cleanup-pr-runner-namespace.sh"
 tmp_dir=$(mktemp -d)
@@ -40,17 +39,29 @@ done
 
 case "$endpoint" in
   repos/okou-ai/okou/pulls/42)
+    if [ "${MOCK_PR_STATE:-closed}" = "error" ]; then
+      exit 1
+    fi
     if [[ " $* " == *" --jq .state "* ]]; then
-      case "${MOCK_PR_STATE:-closed}" in
-        error) exit 1 ;;
-        *) printf '%s\n' "${MOCK_PR_STATE:-closed}" ;;
-      esac
+      printf '%s\n' "${MOCK_PR_STATE:-closed}"
     else
-      printf 'feature/late-approval\tokou-ai/okou\n'
+      printf 'feature/late-approval\tokou-ai/okou\t%s\n' "${MOCK_PR_STATE:-closed}"
     fi
     ;;
   repos/okou-ai/okou/actions/runs)
-    printf '[{"workflow_runs":[]}]\n'
+    if [ "${MOCK_ACTIVE_RUN:-false}" = "true" ] && [[ " $* " == *" status=in_progress "* ]]; then
+      cat <<'JSON'
+[{"workflow_runs":[{"id":100,"name":"Turbo","status":"in_progress","event":"pull_request","head_sha":"old","head_branch":"feature/late-approval","head_repository":{"full_name":"okou-ai/okou"},"path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/100"}]}]
+JSON
+    else
+      printf '[{"workflow_runs":[]}]\n'
+    fi
+    ;;
+  repos/okou-ai/okou/actions/runs/100/force-cancel)
+    printf 'cancel\n' >>"$MOCK_ORDER_LOG"
+    printf 'HTTP/2.0 409\nContent-Type: application/json\n\n'
+    echo '{"message":"Cannot cancel a workflow run that is not in progress.","status":"409"}'
+    exit 1
     ;;
   *)
     echo "unexpected gh endpoint: ${endpoint}" >&2
@@ -87,6 +98,9 @@ cat >"${fake_bin}/ansible-playbook" <<'SH'
 set -euo pipefail
 if [ -n "${MOCK_ANSIBLE_LOG:-}" ]; then
   printf 'ansible\n' >>"$MOCK_ANSIBLE_LOG"
+  if [ -n "${MOCK_ORDER_LOG:-}" ]; then
+    printf 'delete\n' >>"$MOCK_ORDER_LOG"
+  fi
   exit 0
 fi
 printf 'cleanup-entered\n' >"$MOCK_CLEANUP_READY_FIFO"
@@ -102,22 +116,6 @@ printf 'start\n' >>"$MOCK_ORDER_LOG"
 SH
 chmod +x "${fake_bin}/gh" "${fake_bin}/ssh" \
   "${fake_bin}/ansible-playbook" "${fake_bin}/late-start-critical"
-
-barrier_output=$(
-  env -i \
-    PATH="${fake_bin}:$PATH" \
-    HOME="${HOME:-/tmp}" \
-    GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=okou-ai/okou \
-    GITHUB_RUN_ID=900 \
-    PR_NUMBER=42 \
-    RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-    SUPERSEDED_RUN_POLL_SECONDS=0 \
-    SUPERSEDED_RUN_TIMEOUT_SECONDS=5 \
-    bash "$barrier_script"
-)
-grep -q "No active runner-owner CI runs found for PR #42" <<<"$barrier_output" ||
-  fail "expected the stabilized discovery barrier to return an empty owner set"
 
 # The protected cleanup helper must fail before Ansible when current GitHub
 # state no longer authorizes deletion or cannot be resolved.
@@ -139,6 +137,29 @@ for rejected_state in open error; do
 done
 [ ! -e "$authority_ansible_log" ] ||
   fail "cleanup reached Ansible without closed-PR authority"
+
+# A stale run status and cancellation conflict must still allow the locked
+# cleanup to delete the namespace after issuing its cancellation request.
+cancel_order_log="${tmp_dir}/cancel-order.log"
+PATH="${fake_bin}:$PATH" \
+  JOB_REF=pr-42 \
+  GH_TOKEN=test-token \
+  GITHUB_REPOSITORY=okou-ai/okou \
+  GITHUB_RUN_ID=900 \
+  METAL_HOSTS=metal-a.example.test \
+  METAL_USER=runner \
+  PR_NUMBER=42 \
+  MOCK_ANSIBLE_LOG="${tmp_dir}/cancel-ansible.log" \
+  MOCK_ORDER_LOG="$cancel_order_log" \
+  MOCK_ACTIVE_RUN=true \
+  MOCK_LOCK_ROOT="$lock_root" \
+  "$lock_script" "$namespace_cleanup_script" \
+  >"${tmp_dir}/cancel-cleanup.out" 2>"${tmp_dir}/cancel-cleanup.err" || {
+  sed 's/^/  /' "${tmp_dir}/cancel-cleanup.err" >&2
+  fail "locked cleanup did not continue after the cancellation conflict"
+}
+[ "$(cat "$cancel_order_log")" = $'cancel\ndelete' ] ||
+  fail "closed-PR cleanup must cancel CI before deleting its runner namespace"
 
 cleanup_ready_fifo="${tmp_dir}/cleanup-ready"
 cleanup_release_fifo="${tmp_dir}/cleanup-release"
@@ -176,8 +197,7 @@ cleanup_ready=$(
 [ "$cleanup_ready" = "cleanup-entered" ] ||
   fail "cleanup readiness marker was invalid"
 
-# Model approval after the empty discovery snapshot: the late Turbo start now
-# tries to acquire the same namespace while cleanup still owns deletion.
+# A late Turbo start tries to acquire the same namespace while cleanup owns deletion.
 PATH="${fake_bin}:$PATH" \
   JOB_REF=pr-42 \
   METAL_HOSTS=metal-a.example.test \

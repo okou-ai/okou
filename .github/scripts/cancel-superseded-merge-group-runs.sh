@@ -19,14 +19,6 @@ if [[ ! "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]; then
 fi
 
 owner_scope=${RUNNER_OWNER_SCOPE:-superseded}
-assert_idle=${RUNNER_OWNER_ASSERT_IDLE:-false}
-case "$assert_idle" in
-  true|false) ;;
-  *)
-    echo "invalid RUNNER_OWNER_ASSERT_IDLE: ${assert_idle}" >&2
-    exit 2
-    ;;
-esac
 case "$owner_scope" in
   superseded)
     require_env GITHUB_SHA
@@ -43,26 +35,18 @@ case "$owner_scope" in
     fi
     selected_runs_label="superseded CI runs"
     selected_run_label="superseded run"
-    completion_boundary="shared resources were reused"
-    cancel_selected_runs=true
     ;;
   closed-pr-cleanup)
     require_env PR_NUMBER
     pr_number=${PR_NUMBER:-}
     selected_runs_label="active runner-owner CI runs"
     selected_run_label="active runner-owner run"
-    completion_boundary="closed-PR resource cleanup starts"
-    cancel_selected_runs=false
     ;;
   *)
     echo "invalid RUNNER_OWNER_SCOPE: ${owner_scope}" >&2
     exit 2
     ;;
 esac
-if [ "$assert_idle" = "true" ] && [ "$owner_scope" != "closed-pr-cleanup" ]; then
-  echo "RUNNER_OWNER_ASSERT_IDLE is only valid for closed-PR cleanup" >&2
-  exit 2
-fi
 
 if [[ ! "$pr_number" =~ ^[0-9]+$ ]]; then
   echo "invalid PR number: ${pr_number}" >&2
@@ -72,35 +56,24 @@ fi
 if ! pr_head=$(
   gh api --method GET \
     "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
-    --jq '[.head.ref, .head.repo.full_name] | @tsv' 2>&1
+    --jq '[.head.ref, .head.repo.full_name, .state] | @tsv' 2>&1
 ); then
   echo "failed to resolve PR #${pr_number} head: ${pr_head}" >&2
   exit 1
 fi
-IFS=$'\t' read -r pr_head_ref pr_head_repository <<<"$pr_head"
-if [ -z "$pr_head_ref" ] || [ -z "$pr_head_repository" ]; then
-  echo "failed to resolve head repository and ref for PR #${pr_number}" >&2
+IFS=$'\t' read -r pr_head_ref pr_head_repository pr_state <<<"$pr_head"
+if [ -z "$pr_head_ref" ] || [ -z "$pr_head_repository" ] || [ -z "$pr_state" ]; then
+  echo "failed to resolve head repository, ref and state for PR #${pr_number}" >&2
+  exit 1
+fi
+if [ "$owner_scope" = "closed-pr-cleanup" ] && [ "$pr_state" != "closed" ]; then
+  echo "refusing to cancel CI for PR #${pr_number} in state ${pr_state}" >&2
   exit 1
 fi
 
-poll_seconds=${SUPERSEDED_RUN_POLL_SECONDS:-2}
 timeout_seconds=${SUPERSEDED_RUN_TIMEOUT_SECONDS:-180}
-# Discovery and the terminal-state barrier wait for different things, so they
-# get different ceilings. Force-cancel only *requests* termination: when a
-# superseded job is wedged in a step that never returns, GitHub reaps it on its
-# own hard-kill schedule, bounded at five minutes from when cancellation began,
-# and force-cancel does not shorten that. Superseded runs that wind down
-# normally still clear this barrier in a couple of seconds, so the larger
-# ceiling only covers the wedged case instead of relaxing the healthy one.
-if [ "$owner_scope" = "superseded" ]; then
-  completion_timeout_seconds=${SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS:-420}
-else
-  completion_timeout_seconds=${SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS:-$timeout_seconds}
-fi
-if [[ ! "$poll_seconds" =~ ^[0-9]+$ ||
-  ! "$timeout_seconds" =~ ^[0-9]+$ ||
-  ! "$completion_timeout_seconds" =~ ^[0-9]+$ ]]; then
-  echo "superseded run polling values must be non-negative integers" >&2
+if [[ ! "$timeout_seconds" =~ ^[0-9]+$ ]]; then
+  echo "run discovery timeout must be a non-negative integer" >&2
   exit 2
 fi
 
@@ -193,90 +166,31 @@ if [ -z "$selected_runs" ]; then
   exit 0
 fi
 
-if [ "$assert_idle" = "true" ]; then
-  echo "::error::A runner owner appeared while closed-PR cleanup held the namespace lifecycle lock:" >&2
-  printf '%s\n' "$selected_runs" >&2
-  exit 1
-fi
-
-if $cancel_selected_runs; then
-  echo "Cancelling ${selected_runs_label} for PR #${pr_number}:"
-else
-  echo "Awaiting ${selected_runs_label} for PR #${pr_number}:"
-fi
+echo "Cancelling ${selected_runs_label} for PR #${pr_number}:"
 printf '%s\n' "$selected_runs"
 
-# Both phases share the existing completion budget. API acceptance alone must
-# never let an image disappear underneath a still-running consumer.
-started_at=$SECONDS
-
-read_run_status() {
-  local run_id=$1 current_status
-  if ! current_status=$(gh api --method GET \
-    "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status' 2>&1); then
-    echo "failed to query ${selected_run_label} ${run_id}: ${current_status}" >&2
-    return 1
-  fi
-  case "$current_status" in
-    completed|queued|in_progress|pending|waiting|requested) printf '%s\n' "$current_status" ;;
-    *) echo "invalid status for ${selected_run_label} ${run_id}: ${current_status}" >&2; return 1 ;;
-  esac
-}
-
-await_phase() {
-  local records=$1 phase_label=$2 run_record run_id cancel_error cancel_status current_status
-  local run_ids=() pending_runs=()
+cancel_runs() {
+  local records=$1 run_record run_id cancel_error cancel_status
   [ -n "$records" ] || return 0
 
   while IFS= read -r run_record; do
     run_id=${run_record%%$'\t'*}
-    if $cancel_selected_runs; then
-      # Stop always()-guarded jobs as well as ordinary steps. A 409 may race
-      # with cancellation elsewhere; keep this owner in the completion barrier.
-      if ! cancel_error=$(gh api --method POST \
-        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" --include 2>&1); then
-        current_status=$(read_run_status "$run_id")
-        cancel_status=$(awk '/^HTTP\// { print $2; exit }' <<<"$cancel_error")
-        if [ "$current_status" != "completed" ]; then
-          if [ "$cancel_status" != "409" ]; then
-            echo "failed to cancel active ${selected_run_label} ${run_id}: ${cancel_error}" >&2
-            return 1
-          fi
-          echo "Cancellation conflict for ${selected_run_label} ${run_id}; awaiting completion (status: ${current_status})."
-        fi
+    if ! cancel_error=$(gh api --method POST \
+      "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" --include 2>&1); then
+      cancel_status=$(awk '/^HTTP\// { print $2; exit }' <<<"$cancel_error")
+      if [ "$cancel_status" != "409" ]; then
+        echo "failed to cancel ${selected_run_label} ${run_id}: ${cancel_error}" >&2
+        return 1
       fi
+      echo "Cancellation conflict for ${selected_run_label} ${run_id}; continuing without waiting."
     fi
-    run_ids+=("$run_id")
   done <<<"$records"
-
-  while true; do
-    pending_runs=()
-    for run_id in "${run_ids[@]}"; do
-      current_status=$(read_run_status "$run_id")
-      if [ "$current_status" != "completed" ]; then
-        pending_runs+=("${run_id}:${current_status}")
-      fi
-    done
-    if [ "${#pending_runs[@]}" -eq 0 ]; then
-      echo "All ${phase_label} completed."
-      return 0
-    fi
-    if ((SECONDS - started_at >= completion_timeout_seconds)); then
-      echo "::error::Timed out after ${completion_timeout_seconds}s waiting for ${selected_runs_label} to complete: ${pending_runs[*]}" >&2
-      return 1
-    fi
-    echo "Waiting for ${selected_runs_label} (${phase_label}): ${pending_runs[*]}"
-    sleep "$poll_seconds"
-  done
 }
 
-if $cancel_selected_runs; then
-  consumers=$(awk -F '\t' '$7 != ".github/workflows/runner-image.yml"' <<<"$selected_runs")
-  producers=$(awk -F '\t' '$7 == ".github/workflows/runner-image.yml"' <<<"$selected_runs")
-  await_phase "$consumers" "superseded runner consumers"
-  await_phase "$producers" "superseded runner image producers"
-else
-  await_phase "$selected_runs" "$selected_runs_label"
-fi
-
-echo "All ${selected_runs_label} completed before ${completion_boundary}."
+consumers=$(awk -F '\t' '$7 != ".github/workflows/runner-image.yml"' <<<"$selected_runs")
+producers=$(awk -F '\t' '$7 == ".github/workflows/runner-image.yml"' <<<"$selected_runs")
+# Request consumer cancellation first, then producer cancellation. GitHub's
+# top-level run status can remain active after every job has finished.
+cancel_runs "$consumers"
+cancel_runs "$producers"
+echo "Requested cancellation of ${selected_runs_label}; continuing without waiting for completion."

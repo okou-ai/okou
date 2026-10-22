@@ -38,11 +38,11 @@ end
 cleanup = cleanup_workflow.fetch("jobs").fetch("cleanup-runner")
 permissions = cleanup.fetch("permissions")
 unless permissions == {
-  "actions" => "read",
+  "actions" => "write",
   "contents" => "read",
   "pull-requests" => "read",
 }
-  raise "cleanup runner must have only the permissions needed for ownership handoff"
+  raise "cleanup runner needs cancellation and closed-PR lookup permissions"
 end
 
 checkout = cleanup.fetch("steps").find { |step| step.fetch("uses", "").start_with?("actions/checkout@") }
@@ -51,24 +51,7 @@ unless checkout&.dig("with", "ref") == "${{ github.event.repository.default_bran
   raise "cleanup runner must execute the trusted default-branch ownership script"
 end
 
-handoff = named_step(cleanup, "Wait for active CI owners before runner cleanup")
-raise "missing closed-PR ownership handoff" unless handoff
-unless handoff.fetch("if").include?("steps.check.outputs.should-cleanup") &&
-    handoff.dig("env", "GH_TOKEN") == "${{ github.token }}" &&
-    handoff.dig("env", "GITHUB_REPOSITORY") == "${{ github.repository }}" &&
-    handoff.dig("env", "GITHUB_RUN_ID") == "${{ github.run_id }}" &&
-    handoff.dig("env", "PR_NUMBER") == "${{ github.event.pull_request.number }}" &&
-    handoff.dig("env", "RUNNER_OWNER_SCOPE") == "closed-pr-cleanup" &&
-    handoff.fetch("run") == ".github/scripts/cancel-superseded-merge-group-runs.sh" &&
-    !handoff.key?("continue-on-error")
-  raise "closed-PR ownership handoff must fail closed"
-end
-
 cleanup_names = cleanup.fetch("steps").map { |step| step["name"] }
-unless cleanup_names.index("Wait for active CI owners before runner cleanup") <
-    cleanup_names.index("Cleanup PR runners on all metal hosts")
-  raise "ownership handoff must complete before shared runner resources are deleted"
-end
 cleanup_runner = named_step(cleanup, "Cleanup PR runners on all metal hosts")
 cleanup_runner_script = cleanup_runner.fetch("run")
 cleanup_lock_index = cleanup_runner_script.index(".github/scripts/runner/with-runner-lifecycle-lock.sh")
@@ -87,11 +70,11 @@ end
 
 stale = YAML.load_file(ARGV.fetch(1)).fetch("jobs").fetch("cleanup-metal-runners")
 unless stale.fetch("permissions") == {
-  "actions" => "read",
+  "actions" => "write",
   "contents" => "read",
   "pull-requests" => "read",
 }
-  raise "stale runner cleanup must use the same ownership permissions"
+  raise "stale runner cleanup needs cancellation and closed-PR lookup permissions"
 end
 stale_checkout = stale.fetch("steps").find { |step| step.fetch("uses", "").start_with?("actions/checkout@") }
 unless stale_checkout&.dig("with", "ref") == "${{ github.sha }}" &&
@@ -135,14 +118,13 @@ unless stale_cleanup.dig("env", "GH_TOKEN") == "${{ github.token }}" &&
 end
 stale_script = stale_cleanup.fetch("run")
 stale_dry_run_index = stale_script.index('if [ "$DRY_RUN" = "true" ]')
-stale_handoff_index = stale_script.index("RUNNER_OWNER_SCOPE=closed-pr-cleanup")
 stale_lock_index = stale_script.index(".github/scripts/runner/with-runner-lifecycle-lock.sh")
 stale_action_index = stale_script.index(".github/scripts/runner/cleanup-pr-runner-namespace.sh")
-unless stale_dry_run_index && stale_handoff_index && stale_lock_index && stale_action_index &&
-    stale_dry_run_index < stale_handoff_index && stale_handoff_index < stale_lock_index &&
+unless stale_dry_run_index && stale_lock_index && stale_action_index &&
+    stale_dry_run_index < stale_lock_index &&
     stale_lock_index < stale_action_index &&
     stale_script.include?('JOB_REF="pr-${PR_NUMBER}"') && stale_script.include?("export JOB_REF")
-  raise "stale cleanup must await discovered owners and hold the namespace lock through deletion"
+  raise "stale cleanup must hold the namespace lock through cancellation and deletion"
 end
 unless stale_script.include?('if [ "$FAILED" -gt 0 ]') &&
     !stale_script.include?("playbooks/cleanup-crates-runner.yml")

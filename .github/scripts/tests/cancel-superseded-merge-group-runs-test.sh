@@ -16,7 +16,6 @@ fail() {
 cat >"${fake_bin}/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >>"$MOCK_GH_LOG"
 
 endpoint=""
 method="GET"
@@ -41,7 +40,7 @@ case "$endpoint" in
       echo 'gh: failed to resolve PR head (HTTP 500)' >&2
       exit 1
     fi
-    printf 'feature/safe-shared-runner\tokou-ai/okou\n'
+    printf 'feature/safe-shared-runner\tokou-ai/okou\t%s\n' "${MOCK_PR_STATE:-closed}"
     ;;
   repos/okou-ai/okou/actions/runs)
     if [ "${MOCK_DISCOVERY_FAILURE_STATUS:-}" = "$status_filter" ]; then
@@ -92,11 +91,6 @@ JSON
     run_id=${endpoint%/force-cancel}
     run_id=${run_id##*/}
     printf '%s\n' "$run_id" >>"$MOCK_CANCEL_LOG"
-    if [ "$run_id" = "120" ] && [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] &&
-      [ ! -f "$MOCK_RUNS_RELEASED" ]; then
-      echo 'producer cancelled before consumers terminated' >&2
-      exit 1
-    fi
     case " ${MOCK_CANCEL_FAILURE_RUN_IDS:-} " in
       *" $run_id "*)
         http_status=${MOCK_CANCEL_FAILURE_HTTP_STATUS:-500}
@@ -110,30 +104,10 @@ JSON
         exit 1
         ;;
     esac
-    if [ "${MOCK_FORCE_CANCEL_COMPLETION:-0}" = "1" ]; then
-      touch "$MOCK_RUNS_RELEASED"
-    fi
     ;;
   repos/okou-ai/okou/actions/runs/*)
-    run_id=${endpoint##*/}
-    case " ${MOCK_RUN_STATUS_FAILURE_RUN_IDS:-} " in
-      *" $run_id "*)
-        echo 'gh: failed to query workflow run (HTTP 500)' >&2
-        exit 1
-        ;;
-    esac
-    if [ "${MOCK_INVALID_STATUS:-0}" = "1" ]; then
-      printf 'null\n'
-    elif [[ " ${MOCK_CANCEL_FAILURE_RUN_IDS:-} " == *" $run_id "* ]] &&
-      [ "${MOCK_CANCEL_FAILURE_ACTIVE:-0}" = "1" ]; then
-      printf 'in_progress\n'
-    elif [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] && [ ! -f "$MOCK_RUNS_RELEASED" ] &&
-      { [ -z "${MOCK_DELAY_COMPLETION_RUN_IDS:-}" ] ||
-        [[ " ${MOCK_DELAY_COMPLETION_RUN_IDS} " == *" $run_id "* ]]; }; then
-      printf 'in_progress\n'
-    else
-      printf 'completed\n'
-    fi
+    echo 'gh: run status has not converged (HTTP 500)' >&2
+    exit 1
     ;;
   *)
     echo "unexpected gh endpoint: ${endpoint}" >&2
@@ -142,13 +116,7 @@ JSON
 esac
 SH
 
-cat >"${fake_bin}/sleep" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$1" >>"$MOCK_SLEEP_LOG"
-touch "$MOCK_RUNS_RELEASED"
-SH
-chmod +x "${fake_bin}/gh" "${fake_bin}/sleep"
+chmod +x "${fake_bin}/gh"
 
 run_cancel() {
   env -i \
@@ -159,12 +127,8 @@ run_cancel() {
     GITHUB_RUN_ID=200 \
     GITHUB_SHA=current-sha \
     MERGE_GROUP_HEAD_REF=gh-readonly-queue/main/pr-42-current \
-    MOCK_GH_LOG="${tmp_dir}/gh.log" \
     MOCK_CANCEL_LOG="${tmp_dir}/cancel.log" \
-    MOCK_SLEEP_LOG="${tmp_dir}/sleep.log" \
-    MOCK_RUNS_RELEASED="${tmp_dir}/runs-released" \
     MOCK_QUEUED_QUERY_COUNT="${tmp_dir}/queued-query-count" \
-    SUPERSEDED_RUN_POLL_SECONDS=0 \
     SUPERSEDED_RUN_TIMEOUT_SECONDS=10 \
     "$@" \
     bash "$script"
@@ -179,136 +143,49 @@ run_closed_pr_cleanup() {
     GITHUB_RUN_ID=400 \
     PR_NUMBER=42 \
     RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-    MOCK_GH_LOG="${tmp_dir}/gh.log" \
     MOCK_CANCEL_LOG="${tmp_dir}/cancel.log" \
-    MOCK_SLEEP_LOG="${tmp_dir}/sleep.log" \
-    MOCK_RUNS_RELEASED="${tmp_dir}/runs-released" \
     MOCK_QUEUED_QUERY_COUNT="${tmp_dir}/queued-query-count" \
-    SUPERSEDED_RUN_POLL_SECONDS=0 \
     SUPERSEDED_RUN_TIMEOUT_SECONDS=10 \
     "$@" \
     bash "$script"
 }
 
-: >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-output=$(run_cancel)
-grep -q "All superseded CI runs completed" <<<"$output" ||
-  fail "expected cancellation barrier to complete"
+run_cancel >/dev/null
 cancelled_runs=$(cat "${tmp_dir}/cancel.log")
 [ "$cancelled_runs" = $'100\n110\n120' ] ||
   fail "expected only older same-PR consumer runs to be cancelled, got: ${cancelled_runs}"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "already-completed superseded runs must not poll"
 
-: >"${tmp_dir}/gh.log"
+# GitHub can reject cancellation as already finished while reads still expose
+# an active run. The new merge group must continue after requesting cancellation.
 : >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-output=$(run_closed_pr_cleanup MOCK_DELAY_COMPLETION=1)
-grep -q "All active runner-owner CI runs completed before closed-PR resource cleanup starts" <<<"$output" ||
-  fail "expected closed-PR cleanup to await every active runner owner"
-[ ! -s "${tmp_dir}/cancel.log" ] ||
-  fail "closed-PR cleanup must not cancel active required checks"
-grep -q "Waiting for active runner-owner CI runs" <<<"$output" ||
-  fail "closed-PR cleanup must retain an explicit terminal-state barrier"
-[ "$(wc -l <"${tmp_dir}/sleep.log")" -eq 1 ] ||
-  fail "closed-PR cleanup must wait for active owners to finish naturally"
+run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
+  >/dev/null
+[ "$(cat "${tmp_dir}/cancel.log")" = $'100\n110\n120' ] ||
+  fail "a cancellation conflict must still allow the remaining cancellation requests"
 
 : >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-if run_closed_pr_cleanup RUNNER_OWNER_ASSERT_IDLE=true \
-  >"${tmp_dir}/assert-idle.out" 2>"${tmp_dir}/assert-idle.err"; then
-  fail "locked cleanup must abort when a late owner appears"
-fi
-grep -q "appeared while closed-PR cleanup held the namespace lifecycle lock" \
-  "${tmp_dir}/assert-idle.err" ||
-  fail "locked cleanup must explain the late-owner handoff"
-[ ! -s "${tmp_dir}/cancel.log" ] ||
-  fail "locked cleanup must not cancel the late owner"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "locked cleanup must release its host lock instead of awaiting the late owner"
+run_closed_pr_cleanup MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 >/dev/null
+[ "$(cat "${tmp_dir}/cancel.log")" = $'100\n110\n190\n300\n120' ] ||
+  fail "closed-PR cleanup must request cancellation of every same-PR owner, consumers first"
 
 : >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-if run_closed_pr_cleanup \
-  MOCK_DELAY_COMPLETION=1 \
-  SUPERSEDED_RUN_TIMEOUT_SECONDS=0 \
-  >"${tmp_dir}/closed-timeout.out" 2>"${tmp_dir}/closed-timeout.err"; then
-  fail "closed-PR cleanup must fail closed when an active owner outlives the barrier"
+if run_closed_pr_cleanup MOCK_PR_STATE=open \
+  >"${tmp_dir}/open-pr.out" 2>"${tmp_dir}/open-pr.err"; then
+  fail "closed-PR cleanup must reject a reopened PR"
 fi
 [ ! -s "${tmp_dir}/cancel.log" ] ||
-  fail "timed-out closed-PR cleanup must not cancel the active owner"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "zero-timeout ownership barrier must fail before polling"
+  fail "closed-PR cleanup must not cancel CI for an open PR"
 
-: >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 rm -f "${tmp_dir}/queued-query-count"
-output=$(run_cancel MOCK_STATUS_TRANSITION=1)
+run_cancel MOCK_STATUS_TRANSITION=1 >/dev/null
 cancelled_runs=$(cat "${tmp_dir}/cancel.log")
 [ "$cancelled_runs" = $'100\n110\n120\n125' ] ||
   fail "expected a run that changed status during discovery to be cancelled, got: ${cancelled_runs}"
 [ "$(cat "${tmp_dir}/queued-query-count")" -ge 3 ] ||
   fail "expected discovery to rescan until the active run set stabilized"
 
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-output=$(run_cancel MOCK_DELAY_COMPLETION=1)
-grep -q "Waiting for superseded CI runs" <<<"$output" ||
-  fail "expected an explicit completion barrier"
-[ "$(wc -l <"${tmp_dir}/sleep.log")" -eq 1 ] ||
-  fail "expected one poll before superseded runs completed"
-consumer_terminal_line=$(grep -n 'api --method GET repos/okou-ai/okou/actions/runs/110 ' "${tmp_dir}/gh.log" | tail -1 | cut -d: -f1)
-producer_cancel_line=$(grep -n 'api --method POST repos/okou-ai/okou/actions/runs/120/force-cancel' "${tmp_dir}/gh.log" | tail -1 | cut -d: -f1)
-[ "$consumer_terminal_line" -lt "$producer_cancel_line" ] ||
-  fail "producer cancellation must follow consumer terminal confirmation"
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-output=$(run_cancel MOCK_DELAY_COMPLETION=1 SUPERSEDED_RUN_TIMEOUT_SECONDS=0)
-grep -q "All superseded CI runs completed" <<<"$output" ||
-  fail "superseded barrier must not inherit the discovery-stabilization budget"
-[ "$(wc -l <"${tmp_dir}/sleep.log")" -eq 1 ] ||
-  fail "expected one poll before superseded runs completed"
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-if run_cancel \
-  MOCK_DELAY_COMPLETION=1 \
-  SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS=0 \
-  >"${tmp_dir}/superseded-timeout.out" 2>"${tmp_dir}/superseded-timeout.err"; then
-  fail "superseded barrier must fail closed when its own budget expires"
-fi
-grep -q "Timed out after 0s waiting for superseded CI runs to complete" \
-  "${tmp_dir}/superseded-timeout.err" ||
-  fail "superseded barrier timeout must report the exhausted budget"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "zero-budget superseded barrier must fail before polling"
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-output=$(
-  run_cancel \
-    MOCK_DELAY_COMPLETION=1 \
-    MOCK_FORCE_CANCEL_COMPLETION=1
-)
-grep -q "All superseded CI runs completed" <<<"$output" ||
-  fail "expected force cancellation to terminate otherwise-active runs"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "force-cancelled runs must not need a completion poll"
-
-: >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 output=$(run_cancel MOCK_NO_TARGETS=1)
 grep -q "No superseded CI runs found" <<<"$output" ||
@@ -320,83 +197,16 @@ if run_cancel MERGE_GROUP_HEAD_REF=gh-readonly-queue/main/no-pr >/dev/null 2>&1;
   fail "invalid merge-group ref must fail closed"
 fi
 
-: >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_ACTIVE=1 \
+if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 \
   >"${tmp_dir}/cancel-failure.out" 2>"${tmp_dir}/cancel-failure.err"; then
-  fail "active consumer cancellation failure must stop the handoff"
+  fail "non-conflict cancellation failure must stop the handoff"
 fi
-grep -q 'failed to cancel active superseded run 100' "${tmp_dir}/cancel-failure.err" ||
-  fail "expected an explicit active-owner failure"
+grep -q 'failed to cancel superseded run 100' "${tmp_dir}/cancel-failure.err" ||
+  fail "expected an explicit cancellation failure"
 [ "$(cat "${tmp_dir}/cancel.log")" = 100 ] ||
-  fail "no producer request may follow an unconfirmed consumer cancellation"
+  fail "no producer request may follow a failed consumer cancellation"
 
-# A cancellation conflict after a concurrent terminal transition is safe only
-# after its fresh GET; it does not remove this consumer from the barrier.
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100)
-grep -q "All superseded CI runs completed" <<<"$output" || fail "terminal conflict must be safe"
-grep -q 'api --method GET repos/okou-ai/okou/actions/runs/100 ' "${tmp_dir}/gh.log" ||
-  fail "terminal conflict must have fresh status proof"
-
-# A concurrent cancellation can return 409 before its terminal status is visible.
-# Only the conflicted consumer stays active; its producer must remain untouched
-# until that consumer completes, without replaying the cancellation request.
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
-  MOCK_DELAY_COMPLETION=1 MOCK_DELAY_COMPLETION_RUN_IDS=100)
-grep -q "All superseded CI runs completed" <<<"$output" ||
-  fail "cancellation conflict must await eventual completion"
-[ "$(wc -l <"${tmp_dir}/sleep.log")" -eq 1 ] ||
-  fail "conflicted consumer must remain in the completion barrier"
-[ "$(cat "${tmp_dir}/cancel.log")" = $'100\n110\n120' ] ||
-  fail "conflict recovery must preserve ordering without replaying cancellation"
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
-  MOCK_CANCEL_FAILURE_ACTIVE=1 SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS=0 \
-  >"${tmp_dir}/conflict-timeout.out" 2>"${tmp_dir}/conflict-timeout.err"; then
-  fail "cancellation conflict must not release an active consumer"
-fi
-grep -q "Timed out after 0s waiting for superseded CI runs to complete" \
-  "${tmp_dir}/conflict-timeout.err" ||
-  fail "cancellation conflict must use the existing completion deadline"
-if grep -qx 120 "${tmp_dir}/cancel.log"; then
-  fail "timed-out conflicted consumer must retain its producer"
-fi
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "zero-budget conflict must fail before polling"
-
-: >"${tmp_dir}/cancel.log"
-if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
-  MOCK_RUN_STATUS_FAILURE_RUN_IDS=100 \
-  >"${tmp_dir}/conflict-status.out" 2>"${tmp_dir}/conflict-status.err"; then
-  fail "cancellation conflict must not hide unreadable ownership status"
-fi
-grep -q "failed to query superseded run 100" "${tmp_dir}/conflict-status.err" ||
-  fail "cancellation conflict must preserve the status-read failure"
-[ "$(cat "${tmp_dir}/cancel.log")" = 100 ] ||
-  fail "unreadable conflicted consumer must stop the handoff"
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-if run_cancel MOCK_INVALID_STATUS=1 >"${tmp_dir}/invalid.out" 2>"${tmp_dir}/invalid.err"; then
-  fail "unknown status must stop the handoff"
-fi
-if grep -qx 120 "${tmp_dir}/cancel.log"; then fail "unknown consumer status must retain producer"; fi
-
-: >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 if run_cancel MOCK_PR_LOOKUP_FAILURE=1 >"${tmp_dir}/lookup.out" 2>"${tmp_dir}/lookup.err"; then
   fail "PR lookup failure must stop the handoff"
@@ -404,23 +214,12 @@ fi
 [ ! -s "${tmp_dir}/cancel.log" ] ||
   fail "a PR lookup API failure must not attempt cancellation"
 
-: >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 if run_cancel MOCK_DISCOVERY_FAILURE_STATUS=queued >"${tmp_dir}/discovery.out" 2>"${tmp_dir}/discovery.err"; then
   fail "discovery failure must stop the handoff"
 fi
 [ ! -s "${tmp_dir}/cancel.log" ] ||
   fail "a run discovery API failure must not attempt cancellation"
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-if run_cancel MOCK_RUN_STATUS_FAILURE_RUN_IDS=100 >"${tmp_dir}/status.out" 2>"${tmp_dir}/status.err"; then
-  fail "unknown consumer status must stop the handoff"
-fi
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "an API status failure must stop before polling"
-if grep -qx 120 "${tmp_dir}/cancel.log"; then fail "status read failure must retain producer"; fi
 
 if run_closed_pr_cleanup MOCK_DISCOVERY_FAILURE_STATUS=queued >/dev/null 2>&1; then
   fail "closed-PR cleanup must fail closed when run discovery fails"
