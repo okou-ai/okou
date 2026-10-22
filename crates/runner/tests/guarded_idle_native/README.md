@@ -37,6 +37,17 @@ This running boundary does not establish positive saving, private-runtime
 removal, full-lease release, cleanup IO/physical relief or the parent's remaining
 final-exec/quiesce/production-recovery matrices. Containment remains containment.
 
+`OKOU_TEST_RUNNING_RESTORE_FAULT=producer-unwind` adds four allow/deny x
+Fresh/Snapshot cases. Preparation observation is dropped while the actual helper
+is held. After its real terminal, positively retire and join the independent
+controller before delivering the held response and triggering the actual relay
+panic. The controller has a separate control stream, but its contained process
+is connection-owned; disconnect cleanup cannot substitute for that join. The
+strict reader requires the Host join-before-delivery clock, failed exchange and
+actual connection panic, retaining the original complete custody and uncertainty.
+The earlier eight cases keep their existing ordering and format. This late
+transport fault does not establish transport loss while a helper remains blocked.
+
 ## Guest quiesce cancellation and retained Dirty custody
 
 `quiesce::native_quiesce_loss_retains_original_uncertainty` exercises the

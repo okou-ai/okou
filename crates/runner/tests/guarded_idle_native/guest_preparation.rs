@@ -83,10 +83,10 @@ impl Selection {
             return format!(
                 "RunningRestore-{}-{}",
                 if allow { "allow" } else { "deny" },
-                if self.fault == native_unpark::Fault::Drop {
-                    "drop"
-                } else {
-                    "observer-unwind"
+                match self.fault {
+                    native_unpark::Fault::Drop => "drop",
+                    native_unpark::Fault::ObserverUnwind => "observer-unwind",
+                    native_unpark::Fault::ProducerUnwind => "producer-unwind",
                 }
             );
         }
@@ -564,6 +564,18 @@ async fn lose(
         }
     }
     let producer_unwind = request.selection.fault == native_unpark::Fault::ProducerUnwind;
+    let mut completed_control = None;
+    let controller_joined_before_delivery_ns =
+        if producer_unwind && let Some(control) = running.as_mut() {
+            // The controller's contained process is connection-owned even though
+            // its control stream is independent. Join it before the known relay
+            // panic so disconnect cleanup cannot substitute for actual retirement.
+            control.retire().await?;
+            completed_control = Some(control.record());
+            Some(evidence::clocks()?.0)
+        } else {
+            None
+        };
     let delivered = evidence::clocks()?.0;
     hold.delivery
         .take()
@@ -603,26 +615,33 @@ async fn lose(
             return Err(io::Error::other("live native connection already ended").into());
         }
     }
-    let completed_control = if let Some(control) = running.as_mut() {
+    if completed_control.is_none()
+        && let Some(control) = running.as_mut()
+    {
         control.retire().await?;
-        Some(control.record())
-    } else {
-        None
-    };
+        completed_control = Some(control.record());
+    }
     live(request).await?;
-    witness(
-        "actual_terminal_drained",
-        running_restore::with_control(
-            json!({"request":frame(&captured),"response":frame(&response),
+    let mut joined = json!({"request":frame(&captured),"response":frame(&response),
         "delivery_requested_ns":delivered,"joined_ns":evidence::clocks()?.0,
         (kind.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero", "canonical_quiesce_acknowledged")):kind.running() != Some(false),
         (kind.field("helper_stdin_stderr_joined", "exec_stdin_stdout_stderr_joined", "guest_dispatcher_completed")):true,
         "exchange_joined":!producer_unwind,"transport_producer_unwound":producer_unwind,
         "connection_retained_pending":!producer_unwind,
         (kind.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")):kind.running().is_some(),
-        "ordinary_reuse_reopened":false,"original_full_lease_active":true,"allocated":request.context.budget.allocated()}),
-            completed_control,
-        ),
+        "ordinary_reuse_reopened":false,"original_full_lease_active":true,"allocated":request.context.budget.allocated()});
+    if let Some(joined_ns) = controller_joined_before_delivery_ns {
+        joined
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("joined running evidence is not an object"))?
+            .insert(
+                "running_controller_joined_before_delivery_ns".into(),
+                json!(joined_ns),
+            );
+    }
+    witness(
+        "actual_terminal_drained",
+        running_restore::with_control(joined, completed_control),
     )?;
     Ok(())
 }
@@ -771,9 +790,6 @@ pub(super) async fn selected(kind: Kind, prefix: &str) -> TestResult<()> {
         "producer-unwind" => native_unpark::Fault::ProducerUnwind,
         _ => return Err(io::Error::other("fixed fault invalid").into()),
     };
-    if kind.running().is_some() && fault == native_unpark::Fault::ProducerUnwind {
-        return Err(io::Error::other("running transport unwind is a separate authority").into());
-    }
     measured_selected_corpora(
         &[NativeScope::Batch(IdleRetirementBatchScope::All)],
         &[Corpus::GuestPreparation(Selection {
