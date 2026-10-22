@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/phase2-memory-selection";
 
 describe("Pi memory Phase 2 selection encoding", () => {
   // Fixed SHA-256 goldens from an independent uint32-BE/UTF-8 encoder.
