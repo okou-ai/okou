@@ -162,7 +162,7 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertEqual(store.selectedConversation?.thread.title, "Screenshot conversation")
 
     deleted.withLock { $0 = true }
-    await store.refresh([.threadList])
+    await store.list.refresh(waitForCurrent: true)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertNil(store.selectedConversation)
   }
