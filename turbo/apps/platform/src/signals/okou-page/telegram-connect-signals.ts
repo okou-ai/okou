@@ -108,6 +108,7 @@ export const connectTelegramAccount$ = command(
       set(refreshTelegramConnection$);
       return result;
     };
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     return await withCleanup(confirm(), unsubscribe);
   },
 );

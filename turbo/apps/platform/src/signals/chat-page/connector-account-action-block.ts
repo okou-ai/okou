@@ -299,6 +299,7 @@ function createConnectorAccountActionSignals(
       if (running) {
         return running;
       }
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       const operation = withCleanup(set(selectAndContinue$, signal), () => {
         set(running$, null);
       });

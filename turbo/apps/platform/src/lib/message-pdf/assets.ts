@@ -34,6 +34,7 @@ async function rasterizeImage(
   image.addEventListener("load", onLoad, { once: true, signal });
   image.addEventListener("error", onError, { once: true, signal });
   image.src = url;
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return withCleanup(
     (async () => {
       await loaded.promise;

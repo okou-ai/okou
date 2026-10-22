@@ -138,6 +138,7 @@ export const connectWallet$ = command(async ({ get }, signal: AbortSignal) => {
   };
   signal.addEventListener("abort", close, { once: true });
   let navigated = false;
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   await withCleanup(
     (async () => {
       const result = await accept(
@@ -166,6 +167,7 @@ export const connectWallet$ = command(async ({ get }, signal: AbortSignal) => {
 
 export const disconnectWallet$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       accept(
         get(apiClient$)(walletUserContract).disconnect({

@@ -157,6 +157,7 @@ export const setCustomConnectorAgentAuthorization$ = command(
       return false;
     }
     const client = get(apiClient$)(agentCustomConnectorsContract);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       accept(
         client.update({
@@ -217,6 +218,7 @@ const authorizeCustomConnectorForTarget$ = command(
           });
     signal.throwIfAborted();
     const client = get(apiClient$)(agentCustomConnectorsContract);
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       Promise.all(
         agentIds.map(async (agentId) => {
@@ -659,6 +661,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
     const authWindow = openCustomConnectorAuthorizationWindow(signal);
     let navigated = false;
     let hadSavedAccounts: boolean | undefined;
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const { startResult, account } = await withCleanup(
       (async () => {
         const createClient = get(apiClient$);

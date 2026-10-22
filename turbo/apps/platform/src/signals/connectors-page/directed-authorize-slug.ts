@@ -254,6 +254,7 @@ export const authorizeConnector$ = command(
     const createClient = get(apiClient$);
     const client = createClient(userBuiltinConnectorsContract);
 
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       accept(
         client.update({

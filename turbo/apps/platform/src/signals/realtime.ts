@@ -298,6 +298,7 @@ async function subscribeChannel(
     }
   };
 
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   await withCleanup(
     (async () => {
       await channel.subscribe(topic, callback, handleResync, signal);
@@ -739,6 +740,7 @@ function createSessionOutputSubscriptionChannel(
         return;
       }
       entry.detaching ??= entry.channel.detach();
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       await withCleanup(entry.detaching, () => {
         entry.detaching = undefined;
       });
@@ -841,6 +843,7 @@ function whenChannelAttached(
     }
   };
   channel.on(handleStateChange);
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return withCleanup(deferred.promise, () => {
     channel.off(handleStateChange);
   });
@@ -1076,6 +1079,7 @@ const realtimeChannel$ = command(
       return [...prev, pendingSubscription];
     });
 
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const connectedChannel = await withCleanup(channelDeferred.promise, () => {
       set(pendingAblySubscriptions$, (pending) => {
         return pending.filter((entry) => {

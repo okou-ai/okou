@@ -232,6 +232,7 @@ export const applyRemoteNetworkScope$ = command(
             },
             fetchOptions: { signal },
           });
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const operation = withCleanup(
       Promise.allSettled([
         accept(request, [200, 400, 401, 403, 404, 409, 500], signal, {

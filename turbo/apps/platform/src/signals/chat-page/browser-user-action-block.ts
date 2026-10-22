@@ -1411,6 +1411,7 @@ function createSubmitSignal({
       if (inFlight) {
         return inFlight;
       }
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       const operation = withCleanup(set(submit$, action, signal), () => {
         set(inFlight$, null);
       });
