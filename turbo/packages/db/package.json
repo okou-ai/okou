@@ -70,8 +70,7 @@
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs",
-    "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts",
-    "test:instruction-storage-retirement": "node --import tsx --test --test-timeout=120000 scripts/migrations/023-retire-instruction-storage/cleanup.native.ts"
+    "test:migration-smoke-diagnostics": "tsx scripts/test-migration-smoke-diagnostics.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",
