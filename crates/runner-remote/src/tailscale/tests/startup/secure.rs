@@ -18,7 +18,8 @@ use hyper_util::rt::TokioIo;
 use runner_types::ids::RunId;
 use std::{
     convert::Infallible,
-    os::fd::AsRawFd,
+    os::fd::{AsRawFd, RawFd},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -55,6 +56,38 @@ pub(in crate::tailscale::tests) enum KeyReply {
     Oversized,
 }
 
+struct SocketIdentity {
+    fd: RawFd,
+    identity: PathBuf,
+}
+
+impl SocketIdentity {
+    fn record(socket: &impl AsRawFd) -> Self {
+        let fd = socket.as_raw_fd();
+        Self {
+            fd,
+            identity: std::fs::read_link(format!("/proc/self/fd/{fd}"))
+                .expect("record control socket identity"),
+        }
+    }
+
+    fn is_open(&self) -> bool {
+        let current = match std::fs::read_link(format!("/proc/self/fd/{}", self.fd)) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+            result => result.expect("inspect control socket identity"),
+        };
+        current == self.identity
+    }
+
+    fn assert_open(&self) {
+        assert!(self.is_open(), "original control socket must remain open");
+    }
+
+    fn assert_closed(&self) {
+        assert!(!self.is_open(), "original control socket must be closed");
+    }
+}
+
 pub(in crate::tailscale::tests) struct Service {
     key_address: std::net::SocketAddr,
     key_requested: Arc<tokio::sync::Notify>,
@@ -62,7 +95,7 @@ pub(in crate::tailscale::tests) struct Service {
     key_task: tokio::task::JoinHandle<()>,
     noise: NoiseService,
     tls: FixtureTls,
-    control_fd: Arc<Mutex<Option<i32>>>,
+    control_socket: Arc<Mutex<Option<SocketIdentity>>>,
 }
 
 #[derive(Clone)]
@@ -71,7 +104,7 @@ pub(crate) struct Sockets {
     control: std::net::SocketAddr,
     expected: Arc<Mutex<Option<ts_keys::MachinePublicKey>>>,
     auth: Arc<Mutex<String>>,
-    fd: Arc<Mutex<Option<i32>>>,
+    control_socket: Arc<Mutex<Option<SocketIdentity>>>,
     tls: FixtureTls,
 }
 
@@ -86,7 +119,7 @@ impl crate::tailscale::producer::ControlSockets for Sockets {
         let control = tokio::net::TcpStream::connect(self.control)
             .await
             .map_err(|_| Failure::DomainFailed)?;
-        *self.fd.lock().unwrap() = Some(control.as_raw_fd());
+        *self.control_socket.lock().unwrap() = Some(SocketIdentity::record(&control));
         Ok((key, control))
     }
     fn tls(&self) -> impl Tls {
@@ -111,7 +144,7 @@ impl Service {
                 control: self.noise.address,
                 expected: Arc::clone(&self.noise.expected_client),
                 auth: Arc::clone(&self.noise.expected_auth),
-                fd: Arc::clone(&self.control_fd),
+                control_socket: Arc::clone(&self.control_socket),
                 tls: self.tls.clone(),
             },
         }
@@ -207,7 +240,7 @@ impl Service {
             key_task,
             noise,
             tls: FixtureTls(Arc::new(client)),
-            control_fd: Arc::new(Mutex::new(None)),
+            control_socket: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -215,7 +248,7 @@ impl Service {
         let key_address = self.key_address;
         let control_address = self.noise.address;
         let expected = Arc::clone(&self.noise.expected_client);
-        let fd = Arc::clone(&self.control_fd);
+        let control_socket = Arc::clone(&self.control_socket);
         let tls = self.tls.clone();
         Box::new(move |control| {
             Box::pin(async move {
@@ -227,7 +260,7 @@ impl Service {
                 let control_io = tokio::net::TcpStream::connect(control_address)
                     .await
                     .map_err(|_| Failure::DomainFailed)?;
-                *fd.lock().unwrap() = Some(control_io.as_raw_fd());
+                *control_socket.lock().unwrap() = Some(SocketIdentity::record(&control_io));
                 let client = registration
                     .connect_using(key_io, control_io, DERIVED, &tls)
                     .await?;
@@ -263,7 +296,7 @@ impl Service {
         let relay_address = relay.address;
         let relay_tls = relay.tls.clone();
         let expected = Arc::clone(&self.noise.expected_client);
-        let fd = Arc::clone(&self.control_fd);
+        let control_socket = Arc::clone(&self.control_socket);
         let tls = self.tls.clone();
         Box::new(move |control| {
             // Complete root and fresh identity exist before either startup dial.
@@ -278,7 +311,7 @@ impl Service {
                 let control_io = tokio::net::TcpStream::connect(control_address)
                     .await
                     .map_err(|_| Failure::DomainFailed)?;
-                *fd.lock().unwrap() = Some(control_io.as_raw_fd());
+                *control_socket.lock().unwrap() = Some(SocketIdentity::record(&control_io));
                 let connector = move |keys, cancelled| {
                     single_connector(keys, cancelled, relay_address, relay_tls, gate, descriptors)
                 };
@@ -321,7 +354,7 @@ impl Service {
             control: self.noise.address,
             expected: Arc::clone(&self.noise.expected_client),
             auth: Arc::clone(&self.noise.expected_auth),
-            fd: Arc::clone(&self.control_fd),
+            control_socket: Arc::clone(&self.control_socket),
             tls: self.tls.clone(),
         };
         self.noise
@@ -365,8 +398,12 @@ impl Service {
     }
 
     pub(in crate::tailscale::tests) fn assert_control_open(&self) {
-        let fd = self.control_fd.lock().unwrap().unwrap();
-        assert_ne!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
+        self.control_socket
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .assert_open();
     }
 
     pub(in crate::tailscale::tests) async fn registration_requested(&self) {
@@ -388,12 +425,12 @@ impl Service {
     }
 
     pub(in crate::tailscale::tests) fn assert_control_closed(&self) {
-        let fd = self.control_fd.lock().unwrap().unwrap();
-        assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
-        assert_eq!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(libc::EBADF)
-        );
+        self.control_socket
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .assert_closed();
     }
 
     pub(in crate::tailscale::tests) async fn finish(self) {
@@ -405,12 +442,65 @@ impl Service {
     }
 
     pub(in crate::tailscale::tests) async fn finish_unused(self) {
-        assert!(self.control_fd.lock().unwrap().is_none());
+        assert!(self.control_socket.lock().unwrap().is_none());
         self.key_task.abort();
         self.noise.task.abort();
         assert!(matches!(self.key_task.await, Err(error) if error.is_cancelled()));
         assert!(matches!(self.noise.task.await, Err(error) if error.is_cancelled()));
     }
+}
+
+#[test]
+fn control_socket_assertions_follow_identity_through_descriptor_reuse() {
+    use std::{
+        fs::File,
+        io::Read,
+        net::{TcpListener, TcpStream},
+        os::fd::OwnedFd,
+        panic::catch_unwind,
+        sync::mpsc,
+        time::Duration,
+    };
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let socket = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let identity = SocketIdentity::record(&socket);
+    identity.assert_open();
+    assert!(catch_unwind(|| identity.assert_closed()).is_err());
+
+    let socket = OwnedFd::from(socket);
+    let replacement = File::open("/dev/null").unwrap();
+    std::thread::scope(|scope| {
+        let (replaced, observed) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let worker = scope.spawn(move || {
+            let fd = socket.as_raw_fd();
+            // SAFETY: both descriptors are owned here. Atomically replacing the
+            // still-owned target closes the socket without exposing a free slot
+            // that another test could allocate before the replacement is installed.
+            assert_eq!(
+                unsafe { libc::dup3(replacement.as_raw_fd(), fd, libc::O_CLOEXEC) },
+                fd
+            );
+            replaced.send(()).unwrap();
+            released.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+
+        observed.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+        assert_ne!(unsafe { libc::fcntl(identity.fd, libc::F_GETFD) }, -1);
+        assert_eq!(
+            std::fs::read_link(format!("/proc/self/fd/{}", identity.fd)).unwrap(),
+            PathBuf::from("/dev/null")
+        );
+        identity.assert_closed();
+        assert!(catch_unwind(|| identity.assert_open()).is_err());
+        release.send(()).unwrap();
+        worker.join().unwrap();
+    });
+    identity.assert_closed();
 }
 
 fn configuration() -> Key {
