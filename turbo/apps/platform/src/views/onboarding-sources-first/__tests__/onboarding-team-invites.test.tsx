@@ -85,35 +85,38 @@ test("An invited teammate is only marked invited once the API accepts the addres
   expect(requested[0]).toStrictEqual({ email: TEAMMATE, role: "member" });
 });
 
-test("A refused address shows why, and the step continues anyway", async () => {
-  context.mocks.api(orgInviteContract.invite, ({ respond }) => {
-    return respond(409, {
-      error: {
-        message: "This person already has a pending invitation.",
-        code: "INVITATION_ALREADY_EXISTS",
-      },
+test.each([
+  [
+    409,
+    "INVITATION_ALREADY_EXISTS",
+    "This person already has a pending invitation.",
+  ],
+  [400, "BAD_REQUEST", "Enter a valid email address."],
+] as const)(
+  "A refused address (%s) shows why, and the step continues anyway",
+  async (status, code, message) => {
+    context.mocks.api(orgInviteContract.invite, ({ respond }) => {
+      return respond(status, { error: { message, code } });
     });
-  });
-  await openTeamStep();
+    await openTeamStep();
 
-  await typeInvite(TEAMMATE);
-  click(getButtonByName("Send invite"));
+    await typeInvite(TEAMMATE);
+    click(getButtonByName("Send invite"));
 
-  await expect(
-    screen.findByText("This person already has a pending invitation."),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Not sent")).toBeInTheDocument();
-  expect(screen.queryByText("Invited")).not.toBeInTheDocument();
-  // A refused invite completes nothing, so only Not now leads on.
-  expect(getButtonByName("Continue")).toBeDisabled();
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    expect(screen.getByText("Not sent")).toBeInTheDocument();
+    expect(screen.queryByText("Invited")).not.toBeInTheDocument();
+    // A refused invite completes nothing, so only Not now leads on.
+    expect(getButtonByName("Continue")).toBeDisabled();
 
-  click(getButtonByName("Not now"));
+    click(getButtonByName("Not now"));
 
-  await expect(
-    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboardingExperience);
-});
+    await expect(
+      screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe(ROUTES.onboardingExperience);
+  },
+);
 
 test("The step can be left without inviting anyone", async () => {
   await openTeamStep();

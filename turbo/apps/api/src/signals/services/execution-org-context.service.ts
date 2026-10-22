@@ -2,14 +2,11 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { computed } from "ccstate";
 import { eq, type SQL, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
-import { nowDate } from "../../lib/time";
-import { db$ } from "../external/db";
 import { executionCreditQueries } from "./execution-credit-balance.service";
 import { activeConcurrencySubscriptionPredicate } from "./org-concurrency-entitlements.service";
 import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
@@ -40,36 +37,35 @@ const planSchema = z.object({
  * enqueue alongside these rows, so it can share this statement without moving
  * any failure across the enqueue boundary.
  */
-export function createExecutionOrgRows(orgId: string, attached?: SQL) {
-  return computed(async (get) => {
-    const at = nowDate();
-    const expired = executionCreditQueries({ orgId, userId: "" }, at).expired;
-    const builder = new QueryBuilder();
-    const slots = builder
-      .select({
-        value: sql`${sum(orgConcurrencySubscriptions.slots)}::text`.mapWith(
-          rawDecoder,
-        ),
-      })
-      .from(orgConcurrencySubscriptions)
-      .where(activeConcurrencySubscriptionPredicate(orgId, at));
-    const expiredTotal = builder
-      .select({
-        value: sql`${sum(creditExpiresRecord.remaining)}::text`.mapWith(
-          rawDecoder,
-        ),
-      })
-      .from(creditExpiresRecord)
-      .where(expired.where);
-    const rows = await get(db$)
+export function executionOrgQuery(orgId: string, at: Date, attached?: SQL) {
+  const expired = executionCreditQueries({ orgId, userId: "" }, at).expired;
+  const builder = new QueryBuilder();
+  const slots = builder
+    .select({
+      value: sql`${sum(orgConcurrencySubscriptions.slots)}::text`.mapWith(
+        rawDecoder,
+      ),
+    })
+    .from(orgConcurrencySubscriptions)
+    .where(activeConcurrencySubscriptionPredicate(orgId, at));
+  const expiredTotal = builder
+    .select({
+      value: sql`${sum(creditExpiresRecord.remaining)}::text`.mapWith(
+        rawDecoder,
+      ),
+    })
+    .from(creditExpiresRecord)
+    .where(expired.where);
+  return (
+    builder
       .select({
         metadata:
           sql`CASE WHEN ${orgMetadata.orgId} IS NULL THEN NULL ELSE jsonb_build_object(
         'credits', ${orgMetadata.credits},
         'defaultAgentId', ${orgMetadata.defaultAgentId},
-        'openrouterPreset', ${orgMetadata.openrouterPreset}) END`.mapWith(
-            rawDecoder,
-          ),
+        'openrouterPreset', ${orgMetadata.openrouterPreset}) END`
+            .mapWith(rawDecoder)
+            .as("metadata"),
         plan: sql`(SELECT jsonb_build_object(
         'planKey', ${orgPlanEntitlements.planKey}, 'status', ${orgPlanEntitlements.status},
         'baseConcurrencyLimit', ${orgPlanEntitlements.baseConcurrencyLimit},
@@ -79,27 +75,33 @@ export function createExecutionOrgRows(orgId: string, attached?: SQL) {
         'workflowWebhookAutomationAllowed', ${orgPlanEntitlements.workflowWebhookTriggerAllowed},
         'audioLifetimeLimit', ${orgPlanEntitlements.audioLifetimeLimit}, 'audioDailyRateLimit', ${orgPlanEntitlements.audioDailyRateLimit},
         'audioDailyDurationSeconds', ${orgPlanEntitlements.audioDailyDurationSeconds})
-        FROM ${orgPlanEntitlements} WHERE ${eq(orgPlanEntitlements.orgId, orgId)})`.mapWith(
-          rawDecoder,
-        ),
-        slots: sql`(${slots})`.mapWith(rawDecoder),
-        expired: sql`(${expiredTotal})`.mapWith(rawDecoder),
-        attached: (attached ? sql`(${attached})` : sql`NULL`).mapWith(
-          rawDecoder,
-        ),
+        FROM ${orgPlanEntitlements} WHERE ${eq(orgPlanEntitlements.orgId, orgId)})`
+          .mapWith(rawDecoder)
+          .as("plan"),
+        slots: sql`(${slots})`.mapWith(rawDecoder).as("slots"),
+        expired: sql`(${expiredTotal})`.mapWith(rawDecoder).as("expired"),
+        attached: (attached ? sql`(${attached})` : sql`NULL`)
+          .mapWith(rawDecoder)
+          .as("attached"),
       })
       .from(orgMetadata)
       // Preserve entitlement-only organizations and absent metadata without a second read.
       .rightJoin(
         sql`(SELECT ${orgId}::text AS org_id) AS context_org`,
         eq(orgMetadata.orgId, sql`context_org.org_id`),
-      );
-    return { at, rows };
-  });
+      )
+  );
 }
-export type ExecutionOrgRows = Awaited<
-  ReturnType<ReturnType<typeof createExecutionOrgRows>["read"]>
->;
+export interface ExecutionOrgRows {
+  readonly at: Date;
+  readonly rows: readonly {
+    readonly metadata: unknown;
+    readonly plan: unknown;
+    readonly slots: unknown;
+    readonly expired: unknown;
+    readonly attached: unknown;
+  }[];
+}
 export function executionOrgAttached(snapshot: ExecutionOrgRows): unknown {
   return requiredOrgRow(snapshot).attached;
 }

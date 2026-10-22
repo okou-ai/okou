@@ -3,7 +3,6 @@ import { Buffer } from "node:buffer";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { commerceContract } from "@okouai/api-contracts/contracts/commerce";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -11,13 +10,11 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { billingStatusRoutes } from "../billing-status";
 import { commerceRoutes } from "../commerce";
 import { usageRecordRoutes } from "../usage-record";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -41,8 +38,7 @@ function authenticate(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 function actor() {
-  const orgId = createUniqueStaffOrgIdFixture();
-  return { ...createBddApi(context).user({ orgId }), orgId };
+  return createBddApi(context).user();
 }
 async function fundedActor() {
   const user = actor();
@@ -103,51 +99,6 @@ describe("Commerce Amazon routes", () => {
       [401],
     );
     expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it("keeps the staff rollout closed even with a non-staff user override", async () => {
-    const user = createBddApi(context).user();
-    if (!user.orgId) {
-      throw new Error("Expected an organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: user.userId, orgId: user.orgId },
-      { [FeatureSwitchKey.Commerce]: true },
-    );
-    let calls = 0;
-    server.use(
-      http.post(`${BASE}/products/live/advanced`, () => {
-        calls += 1;
-        return HttpResponse.json(providerResponse(0.0033, []));
-      }),
-    );
-    const response = await accept(
-      client()(commerceContract).search({
-        headers: authenticate(user),
-        body: { query: "coffee" },
-      }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("FEATURE_UNAVAILABLE");
-    expect(calls).toBe(0);
-  });
-
-  it("lets staff disable commerce without contacting the provider", async () => {
-    const user = actor();
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: user.userId, orgId: user.orgId },
-      { [FeatureSwitchKey.Commerce]: false },
-    );
-    const response = await accept(
-      client()(commerceContract).inspect({
-        headers: authenticate(user),
-        body: { target: "B085RFFC9Q" },
-      }),
-      [403],
-    );
-    expect(response.body.error.code).toBe("FEATURE_UNAVAILABLE");
   });
 
   it("searches a bounded US page, normalizes items and settles actual reported cost", async () => {

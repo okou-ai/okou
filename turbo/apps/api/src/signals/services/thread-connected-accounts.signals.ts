@@ -14,12 +14,9 @@ import {
   connectorAuthMethodRuntimeMetadata,
   type ConnectorRuntimeBindingEntry,
 } from "@okouai/connectors/connector-auth-method";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { computed, type Computed } from "ccstate";
-import { asc, eq } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
-import { db$ } from "../external/db";
 import { safeSync } from "../utils";
 import type { AgentConnectorScope } from "./agent-connector-scope.service";
 import type {
@@ -218,6 +215,7 @@ function createConnectorInputSignals(
       orgId: execution.orgId,
       userId: execution.userId,
       chatThreadId: event.chatThreadId,
+      threadSelectionRows: event.preparation.threadConnectorSelections,
       timing: get(dispatchTiming$),
     };
   });
@@ -278,22 +276,10 @@ function createThreadAccountSignals(
   const { connectorInput$, connectorScope$, ownedThread$ } = inputs;
   const threadSelections$ = computed(
     async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const { chatThreadId } = await get(connectorInput$);
+      const { threadSelectionRows: rows } = await get(connectorInput$);
       if (!(await get(ownedThread$))) {
         return [];
       }
-      const rows = await get(db$)
-        .select({
-          connectorId: chatThreadConnectorSelections.connectorId,
-          connectorSlug: chatThreadConnectorSelections.connectorSlug,
-          customConnectorId: chatThreadConnectorSelections.customConnectorId,
-        })
-        .from(chatThreadConnectorSelections)
-        .where(eq(chatThreadConnectorSelections.chatThreadId, chatThreadId))
-        .orderBy(
-          asc(chatThreadConnectorSelections.connectorSlug),
-          asc(chatThreadConnectorSelections.customConnectorId),
-        );
       const scope = await get(connectorScope$);
       return rows
         .map((row) => {

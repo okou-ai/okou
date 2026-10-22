@@ -29,6 +29,25 @@ const SEC_UID = "MS4wLjABAAAA_public_example";
 const UID = "1722594714";
 const POST = "5283919831764022";
 const COMMENT = "7354669356632638218";
+const DOUYIN_SEARCH_ACCOUNT = Object.freeze({
+  user_id: SEC_UID,
+  nick_name: "Result",
+  fans_cnt: 123,
+  publish_cnt: 4,
+  avatar_url: "https://p3.douyinpic.com/example.jpeg",
+});
+const WEIBO_SEARCH_POST = Object.freeze({
+  weibo_id: "5356786167057917",
+  user_name: "Example",
+  user_nick: "Example",
+  user_url: "//weibo.com/1678512213?refer_flag=1001030103_",
+  post_url: "//weibo.com/1678512213/RnPgAtC5n?refer_flag=1001030103_",
+  content: "Public test content",
+  publish_time: "19秒前",
+  weibo_type: "original",
+  media: { has_image: false, has_video: false, images: [], videos: [] },
+  interaction: { repost_count: 1, comment_count: 2, like_count: 3 },
+});
 
 function authenticate(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -324,15 +343,13 @@ describe("Douyin and Weibo Social adapters", () => {
           cursor: { type: "integer" },
         },
         {
-          code: 200,
+          code: 0,
           data: {
-            status_code: 0,
-            cursor: 20,
-            has_more: 1,
-            user_list: [
-              { user_info: { uid: UID, sec_uid: SEC_UID, nickname: "Result" } },
-            ],
+            user_list: [DOUYIN_SEARCH_ACCOUNT],
+            has_more: true,
+            cursor: 30,
           },
+          message: "",
         },
         { body: { keyword: "business", cursor: 0 } },
         { location: "body" },
@@ -342,15 +359,114 @@ describe("Douyin and Weibo Social adapters", () => {
         operation: "search",
         query: "business",
         type: "account",
-        limit: 10,
+        limit: 2,
       });
       expect(job.body).toMatchObject({
         status: "completed",
         data: {
-          items: [{ id: UID, url: `https://www.douyin.com/user/${SEC_UID}` }],
+          items: [
+            {
+              id: SEC_UID,
+              url: `https://www.douyin.com/user/${SEC_UID}`,
+              displayName: "Result",
+              followers: 123,
+              posts: 4,
+              mediaUrls: ["https://p3.douyinpic.com/example.jpeg"],
+            },
+          ],
+          pagination: { hasMore: true },
+        },
+        collection: {
+          requestedItems: 2,
+          itemsReturned: 1,
+          continuationAvailable: true,
         },
       });
       expect(executions).toHaveLength(1);
+
+      const nextExecutions = monid(
+        "/api/v1/douyin/search/fetch_user_search_v2",
+        { keyword: { type: "string" }, cursor: { type: "integer" } },
+        {
+          code: 0,
+          data: { user_list: [], has_more: false, cursor: 30 },
+          message: "",
+        },
+        { body: { keyword: "business", cursor: 30 } },
+        { location: "body" },
+      );
+      const continued = await accept(
+        setup.social.continue({
+          headers: authenticate(setup.actor),
+          params: { jobId: job.body.jobId },
+          body: { requestId: randomUUID() },
+        }),
+        [202],
+      );
+      await accept(
+        setup.cron.reconcile({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const next = await accept(
+        setup.social.get({
+          headers: authenticate(setup.actor),
+          params: { jobId: continued.body.jobId },
+        }),
+        [200],
+      );
+      expect(next.body).toMatchObject({
+        status: "completed",
+        data: { items: [], pagination: { hasMore: false } },
+        collection: { itemsReturned: 0, continuationAvailable: false },
+      });
+      expect(nextExecutions).toHaveLength(1);
+    });
+  });
+
+  it("caps Douyin search results and returned count at the requested limit", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid(
+        "/api/v1/douyin/search/fetch_user_search_v2",
+        { keyword: { type: "string" }, cursor: { type: "integer" } },
+        {
+          code: 0,
+          data: {
+            user_list: [
+              DOUYIN_SEARCH_ACCOUNT,
+              { ...DOUYIN_SEARCH_ACCOUNT, user_id: `${SEC_UID}_second` },
+            ],
+            has_more: true,
+            cursor: 30,
+          },
+          message: "",
+        },
+        { body: { keyword: "business", cursor: 0 } },
+        { location: "body" },
+      );
+      const job = await execute(setup, {
+        platform: "douyin",
+        operation: "search",
+        query: "business",
+        type: "account",
+        limit: 1,
+      });
+      expect(job.body).toMatchObject({
+        status: "completed",
+        data: {
+          items: [{ id: SEC_UID }],
+          pagination: { hasMore: true },
+        },
+        collection: {
+          requestedItems: 1,
+          itemsReturned: 1,
+          cumulativeItemsReturned: 1,
+          continuationAvailable: false,
+        },
+      });
     });
   });
 
@@ -444,19 +560,12 @@ describe("Douyin and Weibo Social adapters", () => {
           page: { type: "integer" },
         },
         {
-          code: 200,
-          data: {
-            cards: [
-              {
-                card_type: 9,
-                mblog: {
-                  idstr: POST,
-                  id: Number(POST),
-                  text_raw: "Latest public result",
-                  user: { idstr: UID, id: Number(UID), screen_name: "Author" },
-                },
-              },
-            ],
+          parsed_data: {
+            results: [WEIBO_SEARCH_POST],
+            result_count: 1,
+            pagination: {},
+            search_stats: {},
+            parse_success: true,
           },
         },
         { queryParams: { query: "business", page: 1 } },
@@ -473,14 +582,87 @@ describe("Douyin and Weibo Social adapters", () => {
         data: {
           items: [
             {
-              id: POST,
-              authorId: UID,
-              authorUrl: `https://weibo.com/u/${UID}`,
-              text: "Latest public result",
+              id: "5356786167057917",
+              url: "https://weibo.com/1678512213/RnPgAtC5n",
+              authorId: "1678512213",
+              authorUrl: "https://weibo.com/u/1678512213",
+              text: "Public test content",
+              publishedAt: "19秒前",
+              likes: 3,
+              comments: 2,
+              shares: 1,
             },
           ],
           pagination: { hasMore: null },
         },
+        collection: {
+          itemsReturned: 1,
+          hasMore: null,
+          continuationAvailable: false,
+        },
+      });
+    });
+  });
+
+  it.each([
+    {
+      name: "a Douyin search account without its canonical sec UID",
+      platform: "douyin",
+      type: "account",
+      endpoint: "/api/v1/douyin/search/fetch_user_search_v2",
+      output: {
+        code: 0,
+        data: {
+          user_list: [{ ...DOUYIN_SEARCH_ACCOUNT, user_id: undefined }],
+          has_more: false,
+          cursor: 0,
+        },
+        message: "",
+      },
+      expectedInput: { body: { keyword: "business", cursor: 0 } },
+      location: "body",
+    },
+    {
+      name: "a failed Weibo realtime parse despite usable post data",
+      platform: "weibo",
+      type: "post",
+      endpoint: "/api/v1/weibo/web_v2/fetch_realtime_search",
+      output: {
+        parsed_data: {
+          results: [WEIBO_SEARCH_POST],
+          result_count: 1,
+          pagination: {},
+          search_stats: {},
+          parse_success: false,
+        },
+      },
+      expectedInput: { queryParams: { query: "business", page: 1 } },
+      location: "queryParams",
+    },
+  ] as const)("rejects $name", async (testCase) => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      monid(
+        testCase.endpoint,
+        testCase.location === "body"
+          ? { keyword: { type: "string" }, cursor: { type: "integer" } }
+          : { query: { type: "string" }, page: { type: "integer" } },
+        testCase.output,
+        testCase.expectedInput,
+        { location: testCase.location },
+      );
+      const job = await execute(setup, {
+        platform: testCase.platform,
+        operation: "search",
+        query: "business",
+        type: testCase.type,
+        limit: 1,
+      });
+      expect(job.body).toMatchObject({
+        status: "failed",
+        error: { code: "SOCIAL_DATA_INVALID_RESULT" },
+        data: null,
+        billing: { creditsCharged: 0, reservedCredits: 0 },
       });
     });
   });

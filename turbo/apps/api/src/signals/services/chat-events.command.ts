@@ -120,9 +120,11 @@ import {
 } from "./chat-thread-event.service";
 import {
   isOfficialWorkflowThread$,
+  officialWorkflowThreadCondition,
   OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
 } from "./official-workflow-policy.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import {
   notifyRunningChatRunOfPendingInput$,
   pickEnqueuedChatThread$,
@@ -613,7 +615,14 @@ const loadExistingSendThreadRow$ = command(
   ) => {
     const db = get(db$);
     const [thread] = await db
-      .select(chatThreadRequestSelection())
+      .select({
+        ...chatThreadRequestSelection(),
+        isOfficialWorkflowThread: officialWorkflowThreadCondition({
+          threadId,
+          orgId: args.orgId,
+          userId: args.userId,
+        }).mapWith(pgBooleanDecoder),
+      })
       .from(chatThreads)
       .where(
         and(eq(chatThreads.id, threadId), eq(chatThreads.userId, args.userId)),
@@ -1617,14 +1626,7 @@ const prepareNormalSend$ = command(
     if ("status" in authorized) {
       return authorized;
     }
-    if (
-      existingThreadId &&
-      (await set(
-        isOfficialWorkflowThread$,
-        { threadId: existingThreadId, orgId: args.orgId, userId: args.userId },
-        signal,
-      ))
-    ) {
+    if ("thread" in authorized && authorized.thread.isOfficialWorkflowThread) {
       return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
     }
     const source = await set(

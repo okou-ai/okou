@@ -138,7 +138,6 @@ const dyData = z.object({
   ...pageFields,
   status_code: z.literal(0).optional(),
   user: dyUser.optional(),
-  user_list: z.array(z.object({ user_info: dyUser })).optional(),
   aweme_list: z.array(dyPost).optional(),
   comments: z.array(dyComment).optional(),
   followers: z.array(dyUser).optional(),
@@ -151,9 +150,53 @@ const wbData = z.object({
   user: wbUser.optional(),
   statuses: z.array(wbPost).optional(),
   data: z.array(wbComment).optional(),
-  cards: z
-    .array(z.object({ card_type: z.number(), mblog: wbPost.optional() }))
-    .optional(),
+});
+
+// These search endpoints do not return the profile/post endpoint envelopes.
+const dySearchData = z.object({
+  ...pageFields,
+  user_list: z.array(
+    z.object({
+      user_id: secId,
+      nick_name: z.string().optional(),
+      fans_cnt: count.optional(),
+      publish_cnt: count.optional(),
+      avatar_url: z.string().optional(),
+    }),
+  ),
+});
+const wbSearchData = z.object({
+  parse_success: z.literal(true),
+  results: z.array(
+    z.object({
+      weibo_id: id,
+      user_nick: z.string().optional(),
+      user_url: z.string(),
+      post_url: z.string(),
+      content: z.string().optional(),
+      publish_time: z.string().optional(),
+      interaction: z
+        .object({
+          repost_count: count.optional(),
+          comment_count: count.optional(),
+          like_count: count.optional(),
+        })
+        .optional(),
+      media: z
+        .object({
+          images: z.array(z.string()).optional(),
+          videos: z
+            .array(
+              z.object({
+                streams: z.array(z.string()).optional(),
+                src: z.string().optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+    }),
+  ),
 });
 
 function invalid(): never {
@@ -175,6 +218,67 @@ function weiboData(output: unknown) {
     .object({ code: z.literal(200).optional(), data: wbData })
     .safeParse(output);
   return parsed.success ? parsed.data.data : invalid();
+}
+
+function douyinSearchData(output: unknown) {
+  const parsed = z
+    .object({ code: z.literal(0), data: dySearchData })
+    .safeParse(output);
+  return parsed.success ? parsed.data.data : invalid();
+}
+
+function weiboSearchRows(output: unknown): SocialDataRecord[] {
+  const parsed = z.object({ parsed_data: wbSearchData }).safeParse(output);
+  if (!parsed.success) {
+    return invalid();
+  }
+  return parsed.data.parsed_data.results.map((post) => {
+    const author = weiboSearchUrl(post.user_url);
+    const authorId = /^\/(?:u\/)?(\d{1,128})\/?$/u.exec(author.pathname)?.[1];
+    const url = weiboSearchUrl(post.post_url);
+    const postAuthorId = /^\/(\d{1,128})\/[A-Za-z0-9]+\/?$/u.exec(
+      url.pathname,
+    )?.[1];
+    if (!authorId || authorId !== postAuthorId) {
+      return invalid();
+    }
+    return {
+      id: post.weibo_id,
+      url: url.href,
+      text: post.content,
+      // Keep the provider's relative publication text; do not invent an absolute date.
+      publishedAt: post.publish_time,
+      authorId,
+      authorUrl: `https://weibo.com/u/${authorId}`,
+      displayName: post.user_nick,
+      likes: post.interaction?.like_count,
+      comments: post.interaction?.comment_count,
+      shares: post.interaction?.repost_count,
+      mediaUrls: media([
+        ...(post.media?.images ?? []),
+        ...(post.media?.videos?.flatMap((video) => {
+          return [...(video.streams ?? []), video.src];
+        }) ?? []),
+      ]),
+    };
+  });
+}
+
+function weiboSearchUrl(value: string): URL {
+  const url = URL.parse(value.startsWith("//") ? `https:${value}` : value);
+  if (
+    !url ||
+    url.protocol !== "https:" ||
+    !["weibo.com", "www.weibo.com"].includes(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.port
+  ) {
+    return invalid();
+  }
+  url.search = "";
+  url.hash = "";
+  return url;
 }
 
 function media(values: readonly (string | undefined)[]): string[] | undefined {
@@ -251,17 +355,23 @@ function douyinRows(
   plan: SocialDataProviderPlan,
   output: unknown,
 ): SocialDataRecord[] {
+  if (plan.format === "douyin-user-search") {
+    return douyinSearchData(output).user_list.map((user) => {
+      return {
+        // user_id is a sec_uid on this endpoint, not a numeric uid.
+        id: user.user_id,
+        url: `https://www.douyin.com/user/${user.user_id}`,
+        displayName: user.nick_name,
+        followers: user.fans_cnt,
+        posts: user.publish_cnt,
+        mediaUrls: media([user.avatar_url]),
+      };
+    });
+  }
   const data = douyinData(output);
   switch (plan.format) {
     case "douyin-user": {
       return data.user ? [projectDyUser(data.user)] : invalid();
-    }
-    case "douyin-user-search": {
-      return (
-        data.user_list?.map((entry) => {
-          return projectDyUser(entry.user_info);
-        }) ?? invalid()
-      );
     }
     case "douyin-followers": {
       return data.followers?.map(projectDyUser) ?? invalid();
@@ -326,6 +436,9 @@ function weiboRows(
   plan: SocialDataProviderPlan,
   output: unknown,
 ): SocialDataRecord[] {
+  if (plan.format === "weibo-search") {
+    return weiboSearchRows(output);
+  }
   const data = weiboData(output);
   if (plan.format === "weibo-user") {
     const user = data.userInfo ?? data.user;
@@ -351,14 +464,8 @@ function weiboRows(
       }) ?? invalid()
     );
   }
-  const posts =
-    plan.format === "weibo-post"
-      ? data.statuses
-      : data.cards?.flatMap((card) => {
-          return card.card_type === 9 && card.mblog ? [card.mblog] : [];
-        });
   return (
-    posts?.map((post) => {
+    data.statuses?.map((post) => {
       const postId = post.idstr ?? post.id;
       const authorId = post.user?.idstr ?? post.user?.id;
       return {
@@ -405,8 +512,11 @@ export function extractChinaContinuation(
   }
   // Validate the same typed rows before allowing a cursor to cause another billed request.
   chinaRows(plan, output);
-  const data =
-    plan.request.platform === "douyin" ? douyinData(output) : weiboData(output);
+  if (plan.format === "weibo-search") {
+    // Realtime search supplies no trusted source-end flag or continuation token.
+    return {};
+  }
+  const data = chinaPageData(plan, output);
   const initializingFollowing =
     plan.format === "douyin-following" && plan.cursor === undefined;
   if (data.has_more === false && !initializingFollowing) {
@@ -437,9 +547,21 @@ export function extractChinaContinuation(
   };
 }
 
+function chinaPageData(plan: SocialDataProviderPlan, output: unknown) {
+  if (plan.format === "douyin-user-search") {
+    return douyinSearchData(output);
+  }
+  return plan.request.platform === "douyin"
+    ? douyinData(output)
+    : weiboData(output);
+}
+
 function chinaNextCursor(
   plan: SocialDataProviderPlan,
-  data: z.infer<typeof dyData> | z.infer<typeof wbData>,
+  data:
+    | z.infer<typeof dyData>
+    | z.infer<typeof wbData>
+    | z.infer<typeof dySearchData>,
 ): SocialDataProviderCursor | undefined {
   let nextCursor: SocialDataProviderCursor | undefined;
   switch (plan.format) {

@@ -404,7 +404,7 @@ describe("CHAT-02: web chat send and client ids", () => {
     );
   }, 30_000);
 
-  it("rejects an existing-thread send naming another agent than the thread's", async () => {
+  it("authorizes existing-thread sends against the thread's agent", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     const threadAgent = await bdd.createAgent(actor, {
@@ -431,6 +431,22 @@ describe("CHAT-02: web chat send and client ids", () => {
     expect(mismatched.body.error.message).toBe("Chat thread not found");
     const events = await chat.listThreadEvents(actor, thread.id);
     expect(events.events).toStrictEqual([]);
+
+    const clientEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: threadAgent.agentId,
+        threadId: thread.id,
+        clientEventId,
+        prompt: "send through the owning agent",
+      },
+      [201],
+    );
+    const accepted = await chat.listThreadEvents(actor, thread.id);
+    expect(userMessages(accepted.events)).toContainEqual(
+      expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
+    );
   }, 30_000);
 });
 
