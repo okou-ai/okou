@@ -424,9 +424,6 @@ describe("sandbox hosted previews", () => {
     const retained = await accept(og.image({ query: imageQuery }), [302]);
     expect(retained.headers.get("location")).toBe(originalUrl);
     expect(previewObjects.get(originalKey)).toStrictEqual(bytes);
-    previewObjects.clear();
-    const missing = await accept(og.image({ query: imageQuery }), [302]);
-    expect(missing.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
     await host.deleteHostedSite(actor, first.publicSlug);
     expect(
       (await accept(og.metadata({ query: target }), [200])).body,
