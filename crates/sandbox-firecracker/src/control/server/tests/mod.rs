@@ -814,6 +814,39 @@ async fn control_server_cancel_removes_socket() {
 }
 
 #[tokio::test]
+async fn cancelled_control_server_retirement_preserves_replacement_socket() {
+    let fixture = ControlServerFixture::new();
+    let shutdown = CancellationToken::new();
+    let mut old_handle = fixture.spawn_default(shutdown.clone());
+
+    shutdown.cancel();
+    wait_for_socket_removed(&fixture.sock_path).await;
+    let mut replacement = fixture.spawn_default(CancellationToken::new());
+
+    old_handle.shutdown().await;
+    drop(old_handle);
+
+    let response = send_terminate(
+        &fixture.sock_path,
+        &TerminateRequest {
+            action: TerminateAction::Terminate,
+            expected_run_id: None,
+        },
+        Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        response,
+        TerminateResponse::Status {
+            status: TerminateStatus::AlreadyStopped
+        }
+    );
+
+    replacement.shutdown().await;
+}
+
+#[tokio::test]
 async fn control_server_cancel_cancels_pending_connection() {
     let fixture = ControlServerFixture::new();
     let shutdown = CancellationToken::new();

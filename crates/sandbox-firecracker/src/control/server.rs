@@ -111,52 +111,33 @@ impl ProcessTerminationRequest {
 
 /// A control socket server whose listener has already been bound.
 pub(crate) struct BoundControlServer {
-    sock_path: Option<SocketPathGuard>,
-    listener: Option<UnixListener>,
+    // Close an abandoned listener before its final pathname owner unlinks it.
+    listener: UnixListener,
+    sock_path: SocketPathGuard,
     guest_operations: GuestOperationStartGate,
     termination: ProcessTerminationHandle,
 }
 
 impl BoundControlServer {
     /// Spawn the accept loop for this pre-bound control socket.
-    pub(crate) fn spawn(mut self, shutdown: CancellationToken) -> ControlServerHandle {
-        let Some(listener) = self.listener.take() else {
-            return ControlServerHandle::stopped(self.sock_path.take(), shutdown);
-        };
-        let Some(sock_path) = self.sock_path.take() else {
-            drop(listener);
-            return ControlServerHandle::stopped(None, shutdown);
-        };
-
+    pub(crate) fn spawn(self, shutdown: CancellationToken) -> ControlServerHandle {
         let task = spawn_bound_server(
-            listener,
-            sock_path.clone(),
-            self.guest_operations.clone(),
-            self.termination.clone(),
+            self.listener,
+            self.sock_path.clone(),
+            self.guest_operations,
+            self.termination,
             shutdown.clone(),
         );
         ControlServerHandle {
-            sock_path: Some(sock_path),
+            sock_path: Some(self.sock_path),
             shutdown,
             task: Some(task),
         }
     }
 
-    pub(crate) fn close(mut self) {
-        self.close_inner();
-    }
-
-    fn close_inner(&mut self) {
-        drop(self.listener.take());
-        if let Some(sock_path) = self.sock_path.take() {
-            sock_path.unlink_once();
-        }
-    }
-}
-
-impl Drop for BoundControlServer {
-    fn drop(&mut self) {
-        self.close_inner();
+    pub(crate) fn close(self) {
+        drop(self.listener);
+        self.sock_path.unlink_once();
     }
 }
 
@@ -168,14 +149,6 @@ pub(crate) struct ControlServerHandle {
 }
 
 impl ControlServerHandle {
-    fn stopped(sock_path: Option<SocketPathGuard>, shutdown: CancellationToken) -> Self {
-        Self {
-            sock_path,
-            shutdown,
-            task: None,
-        }
-    }
-
     pub(crate) async fn shutdown(&mut self) {
         self.shutdown.cancel();
         self.unlink_socket();
@@ -248,10 +221,22 @@ impl SocketPathGuard {
     }
 
     fn unlink_once(&self) {
-        if self.inner.unlinked.swap(true, Ordering::AcqRel) {
+        self.inner.unlink_once();
+    }
+}
+
+impl SocketPathGuardInner {
+    fn unlink_once(&self) {
+        if self.unlinked.swap(true, Ordering::AcqRel) {
             return;
         }
-        remove_socket_path(&self.inner.path);
+        remove_socket_path(&self.path);
+    }
+}
+
+impl Drop for SocketPathGuardInner {
+    fn drop(&mut self) {
+        self.unlink_once();
     }
 }
 
@@ -264,8 +249,8 @@ pub(crate) fn bind_server(
     let listener = bind_unix_listener(&sock_path)?;
     let sock_path = SocketPathGuard::new(sock_path);
     Ok(BoundControlServer {
-        sock_path: Some(sock_path),
-        listener: Some(listener),
+        listener,
+        sock_path,
         guest_operations,
         termination,
     })
