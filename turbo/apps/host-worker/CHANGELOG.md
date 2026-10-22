@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.24](https://github.com/okou-ai/okou/compare/host-worker-v1.7.23...host-worker-v1.7.24) (2026-10-22)
+
+
+### Bug Fixes
+
+* **host:** show access recovery pages and static website covers ([#42371](https://github.com/okou-ai/okou/issues/42371)) ([e56611e](https://github.com/okou-ai/okou/commit/e56611ee7374ad6f62cba34a0382bdaad8f950b5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.1
+    * @okouai/core bumped to 8.779.1
+
 ## [1.7.23](https://github.com/okou-ai/okou/compare/host-worker-v1.7.22...host-worker-v1.7.23) (2026-10-22)
 
 

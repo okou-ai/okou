@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.24](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.23...sandbox-firecracker-v0.53.24) (2026-10-22)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** converge command output retirement ([#42365](https://github.com/okou-ai/okou/issues/42365)) ([ee08cd4](https://github.com/okou-ai/okou/commit/ee08cd45d83d39e75677d56468609b80166ab4da))
+
 ## [0.53.23](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.22...sandbox-firecracker-v0.53.23) (2026-10-22)
 
 ## [0.53.22](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.21...sandbox-firecracker-v0.53.22) (2026-10-22)

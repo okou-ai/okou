@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.42](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.41...guest-control-client-v0.23.42) (2026-10-22)
+
+
+### Bug Fixes
+
+* **guest-control-client:** reject expired queued exec starts ([#42377](https://github.com/okou-ai/okou/issues/42377)) ([8a18f65](https://github.com/okou-ai/okou/commit/8a18f657b53f219507ff78bf83a311c84432afd1))
+
 ## [0.23.41](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.40...guest-control-client-v0.23.41) (2026-10-22)
 
 

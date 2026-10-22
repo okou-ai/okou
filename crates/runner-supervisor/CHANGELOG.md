@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.12...runner-supervisor-v0.20.13) (2026-10-22)
+
+
+### Refactoring
+
+* **runner:** retire unused guarded retirement adapter ([#42383](https://github.com/okou-ai/okou/issues/42383)) ([78bc0bb](https://github.com/okou-ai/okou/commit/78bc0bb062d73453d616946ca3f979a82c934d52))
+
 ## [0.20.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.11...runner-supervisor-v0.20.12) (2026-10-22)
 
 ## [0.20.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.20.10...runner-supervisor-v0.20.11) (2026-10-22)
