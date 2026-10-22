@@ -122,14 +122,20 @@ async fn local_backpressure_retries_only_the_expected_payload_then_resumes_in_or
             text: "first".to_owned(),
         };
         queue.write_active_input_sync(&entry).unwrap();
-        let mut later = ActiveInputEntry {
-            run_id,
-            sequence: 2,
-            text: "x".repeat(100 * 1024),
-        };
+        let large_text = "x".repeat(100 * 1024);
+        // Only inputs 2 and 3 are consumed; inotify guards against reading the tail.
         for sequence in 2..=1001 {
-            later.sequence = sequence;
-            queue.write_active_input_sync(&later).unwrap();
+            queue
+                .write_active_input_sync(&ActiveInputEntry {
+                    run_id,
+                    sequence,
+                    text: if sequence <= 3 {
+                        large_text.clone()
+                    } else {
+                        "unread".to_owned()
+                    },
+                })
+                .unwrap();
         }
         let watcher = Inotify::init(InitFlags::IN_CLOEXEC | InitFlags::IN_NONBLOCK).unwrap();
         watcher
@@ -195,7 +201,7 @@ async fn local_backpressure_retries_only_the_expected_payload_then_resumes_in_or
             assert_eq!(call.id, id);
             assert_eq!(
                 call.payload,
-                guest_contracts::active_input::encode_active_input(&id, &later.text).unwrap()
+                guest_contracts::active_input::encode_active_input(&id, &large_text).unwrap()
             );
             assert_eq!(
                 payload_accesses(&watcher),
