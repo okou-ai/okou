@@ -271,13 +271,17 @@ final class ConversationStore {
   func send(
     initialSelection: ChatModelSelection? = nil, willSend: (@MainActor (String) -> Void)? = nil
   ) async {
-    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard composer.hasContent, composer.canSend, attachmentDraft.isReady,
       !isSending, !isRecoveringFailure, !closed, !needsUpgrade, !Task.isCancelled
     else { return }
     guard initialSelection != nil || modelSelection?.canSend != false else { return }
+    let messageID = UUID().uuidString.lowercased()
+    willSend?(messageID)
+    // Resigning can commit marked text. Capture the message after native editing ends.
+    composer.editor.dismissKeyboard()
+    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     var message = PendingMessage(
-      id: UUID().uuidString.lowercased(), text: text, createdAt: Date(),
+      id: messageID, text: text, createdAt: Date(),
       attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
     if let initialSelection {
       message.modelSelection = initialSelection
@@ -287,7 +291,6 @@ final class ConversationStore {
       message.modelSelection = modelSelection?.selection
       message.reasoningEffort = modelSelection?.requestedEffort
     }
-    willSend?(message.id)
     pending.append(message)
     rebuildMessages()
     composer.clear()

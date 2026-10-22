@@ -92,22 +92,29 @@ final class ConversationSendTransition {
     animateToBottom()
   }
 
+  /// Structural/height updates join the running send from its presented position.
+  func prepareForSnapshot() {
+    guard isAnimating, let collection, animator?.state == .active else { return }
+    let offset = collection.layer.presentation()?.bounds.origin ?? collection.contentOffset
+    let alpha = arrivingView?.layer.presentation()?.opacity
+    generation = UUID()
+    animator?.stopAnimation(true)
+    animator = nil
+    target = nil
+    UIView.performWithoutAnimation {
+      collection.setContentOffset(offset, animated: false)
+      if let alpha { arrivingView?.alpha = CGFloat(alpha) }
+    }
+  }
+
   private func animateToBottom() {
     guard let collection, isActive, isAnimating else { return }
     let insets = collection.adjustedContentInset
     let y = max(
       -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
     if let target, abs(target - y) <= 0.5 { return }
+    prepareForSnapshot()
     target = y
-    if animator?.state == .active {
-      let offset = collection.layer.presentation()?.bounds.origin ?? collection.contentOffset
-      let alpha = arrivingView?.layer.presentation()?.opacity
-      animator?.stopAnimation(true)
-      UIView.performWithoutAnimation {
-        collection.setContentOffset(offset, animated: false)
-        if let alpha { arrivingView?.alpha = CGFloat(alpha) }
-      }
-    }
     let generation = UUID()
     self.generation = generation
     let duration = reduceMotion ? 0 : max(0, deadline - CACurrentMediaTime())

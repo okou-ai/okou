@@ -481,12 +481,13 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private var isScrolling: Bool {
-    animatesScroll || source.sendTransition?.isAnimating == true || collection.isTracking
-      || collection.isDragging || collection.isDecelerating
+    // A send can accept measured updates and retarget its own animation.
+    animatesScroll || collection.isTracking || collection.isDragging || collection.isDecelerating
   }
 
   private func applyPreparedRows() {
     guard let prepared = preparedRows, !isScrolling, !appliesRows else { return }
+    source.sendTransition?.prepareForSnapshot()
     preparedRows = nil
     appliesRows = true
     let rows = prepared.rows
@@ -702,6 +703,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       }
     }
     guard !changed.isEmpty else { return }
+    source.sendTransition?.prepareForSnapshot()
     appliesRows = true
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changed)
@@ -714,7 +716,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         publishMetrics()
         return
       }
-      if atBottom {
+      if source.sendTransition?.isActive == true {
+        source.sendTransition?.layoutDidChange()
+      } else if atBottom {
         source.anchor.followBottom()
       } else if let position {
         source.anchor.restore(position)

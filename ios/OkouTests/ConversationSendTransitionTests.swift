@@ -14,6 +14,8 @@ final class ConversationSendTransitionTests: XCTestCase {
     input.becomeFirstResponder()
     input.insertText("A multiline message\nwith a second line")
     try await eventually { input.isFirstResponder && !fixture.conversation.draft.isEmpty }
+    input.setMarkedText("待确认", selectedRange: NSRange(location: 3, length: 0))
+    try await eventually { input.markedTextRange != nil }
     await stableHostingGeometry(fixture.host.view)
     let before = collection.contentOffset.y
 
@@ -32,6 +34,7 @@ final class ConversationSendTransitionTests: XCTestCase {
     try await fixture.assertFinished(pending.id, in: collection)
     XCTAssertFalse(fixture.inputs.contains(where: \.isFirstResponder))
     XCTAssertTrue(fixture.inputs.allSatisfy { $0.text.isEmpty })
+    XCTAssertTrue(pending.text.contains("待确认"))
     XCTAssertTrue(fixture.conversation.pending.first?.needsRetry == true)
   }
 
@@ -84,6 +87,28 @@ final class ConversationSendTransitionTests: XCTestCase {
         - collection.bounds.maxY, 20)
   }
 
+  func testViewportResizeRetargetsASendFromItsPresentedPosition() async throws {
+    let fixture = SendTransitionFixture()
+    let collection = try await fixture.mount()
+    defer { fixture.close() }
+    fixture.conversation.draft = "Send through a viewport change"
+    let send = Task { await fixture.scrolling.send() }
+    try await eventually { !fixture.conversation.pending.isEmpty }
+    let pending = try XCTUnwrap(fixture.conversation.pending.first)
+    try await eventually {
+      fixture.contains(pending.id, in: collection)
+        && collection.contentOffset.y - presentedOffset(collection) > 5
+    }
+    let before = presentedOffset(collection)
+    let window = try XCTUnwrap(fixture.window)
+    window.frame.size.height = 620
+    fixture.host.view.setNeedsLayout()
+    fixture.host.view.layoutIfNeeded()
+    XCTAssertEqual(presentedOffset(collection), before, accuracy: 1)
+    await send.value
+    try await fixture.assertFinished(pending.id, in: collection)
+  }
+
   func testReduceMotionStillInsertsTheMessageAndReachesTheNewBottom() async throws {
     let fixture = SendTransitionFixture()
     let collection = try await fixture.mount()
@@ -108,7 +133,7 @@ private final class SendTransitionFixture {
   let conversation: ConversationStore
   let scrolling: ConversationScrollCoordinator
   let host: UIHostingController<SendTransitionProbe>
-  private var window: UIWindow?
+  private(set) var window: UIWindow?
 
   init() {
     let conversation = remote.conversation()
