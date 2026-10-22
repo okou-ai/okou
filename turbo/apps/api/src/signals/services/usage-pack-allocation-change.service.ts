@@ -50,7 +50,7 @@ import {
 } from "./context-rowset";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, rawSqlReadDb$, writeDb$, type Db } from "../external/db";
+import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   type StripeClient,
@@ -117,7 +117,6 @@ type UsagePackAllocationChangeRow =
   typeof usagePackAllocationChanges.$inferSelect;
 type UsagePackSubscriptionChangeRow =
   typeof usagePackSubscriptionChanges.$inferSelect;
-type WriteTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type OpenUsagePackAllocationChangeStatus = Exclude<
   UsagePackAllocationChangeRow["status"],
   "completed" | "failed"
@@ -320,46 +319,6 @@ function openManagementChangeStatus(
   }
 }
 
-export async function failScheduledUsagePackAllocationChangesForSchedule(
-  db: Pick<Db, "update">,
-  args: {
-    readonly scheduleId: string;
-    readonly completedAt: Date;
-    readonly effectiveAfter?: Date;
-  },
-): Promise<readonly string[]> {
-  const rows = await db
-    .update(usagePackAllocationChanges)
-    .set({
-      status: "failed",
-      failureReason: "scheduled_change_restored",
-      completedAt: args.completedAt,
-      updatedAt: args.completedAt,
-    })
-    .where(
-      and(
-        eq(usagePackAllocationChanges.status, "scheduled"),
-        eq(usagePackAllocationChanges.stripeScheduleId, args.scheduleId),
-        ...(args.effectiveAfter
-          ? [
-              or(
-                isNull(usagePackAllocationChanges.effectiveAt),
-                gt(usagePackAllocationChanges.effectiveAt, args.effectiveAfter),
-              ),
-            ]
-          : []),
-      ),
-    )
-    .returning({ orgId: usagePackAllocationChanges.orgId });
-  return [
-    ...new Set(
-      rows.map((row) => {
-        return row.orgId;
-      }),
-    ),
-  ];
-}
-
 function stripeObjectId(
   value: string | { readonly id: string } | null | undefined,
 ): string | null {
@@ -450,15 +409,12 @@ function usagePackSubscriptionIdFromMetadata(
   return metadata.usagePackSubscriptionId ?? null;
 }
 
-async function loadUsagePackChangeContextBySubscriptionId(
-  db: Pick<Db, "select">,
-  usagePackSubscriptionId: string,
-): Promise<UsagePackChangeContext | null> {
+function usagePackChangeContextSelection(usagePackSubscriptionId: string) {
   const allocationColumns = getTableColumns(usagePackAllocations);
   const changeColumns = getTableColumns(usagePackAllocationChanges);
   const allocationSchema = contextProjectionSchema(allocationColumns);
   const changeSchema = contextProjectionSchema(changeColumns);
-  const allocations = db
+  const allocations = new QueryBuilder()
     .select({
       payload: contextJsonProjection(allocationColumns)
         .mapWith(zodDriverValueDecoder(allocationSchema))
@@ -468,7 +424,7 @@ async function loadUsagePackChangeContextBySubscriptionId(
     .where(
       eq(usagePackAllocations.usagePackSubscriptionId, usagePackSubscriptionId),
     );
-  const changes = db
+  const changes = new QueryBuilder()
     .select({
       payload: contextJsonProjection(changeColumns)
         .mapWith(zodDriverValueDecoder(changeSchema))
@@ -484,46 +440,15 @@ async function loadUsagePackChangeContextBySubscriptionId(
         inArray(usagePackAllocationChanges.status, [...OPEN_CHANGE_STATUSES]),
       ),
     );
-  // Allocation replacement and its change-status transition commit together.
-  // One statement prevents mixing child rows from either side of that commit.
-  const [context] = await db
-    .select({
-      subscription: usagePackSubscriptions,
-      allocations: contextJsonRows(allocations).mapWith(
-        zodDriverValueDecoder(allocationSchema.array()),
-      ),
-      changes: contextJsonRows(changes).mapWith(
-        zodDriverValueDecoder(changeSchema.array()),
-      ),
-    })
-    .from(usagePackSubscriptions)
-    .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
-    .limit(1);
-  return context ?? null;
-}
-
-async function loadUsagePackChangeContextForOrg(
-  db: Pick<Db, "select">,
-  orgId: string,
-): Promise<UsagePackChangeContext | null> {
-  const [subscription] = await db
-    .select()
-    .from(usagePackSubscriptions)
-    .where(
-      and(
-        eq(usagePackSubscriptions.orgId, orgId),
-        isNotNull(usagePackSubscriptions.stripeSubscriptionId),
-        notInArray(usagePackSubscriptions.subscriptionStatus, [
-          ...TERMINAL_SUBSCRIPTION_STATUSES,
-        ]),
-      ),
-    )
-    .orderBy(desc(usagePackSubscriptions.updatedAt))
-    .limit(1);
-  if (!subscription) {
-    return null;
-  }
-  return await loadUsagePackChangeContextBySubscriptionId(db, subscription.id);
+  return {
+    subscription: usagePackSubscriptions,
+    allocations: contextJsonRows(allocations).mapWith(
+      zodDriverValueDecoder(allocationSchema.array()),
+    ),
+    changes: contextJsonRows(changes).mapWith(
+      zodDriverValueDecoder(changeSchema.array()),
+    ),
+  };
 }
 
 function activeMemberAllocations(
@@ -854,26 +779,24 @@ function usagePackAllocationAdditionCharge(
   };
 }
 
-async function expireStaleUsagePackPreviews(
-  tx: WriteTx,
-  orgId: string,
+function expiredUsagePackPreviewCondition(orgId: string, at: Date) {
+  return and(
+    eq(usagePackAllocationChanges.orgId, orgId),
+    eq(usagePackAllocationChanges.status, "previewed"),
+    lte(usagePackAllocationChanges.previewExpiresAt, at),
+  );
+}
+
+function failedUsagePackPreviewValues(
   at: Date,
-): Promise<void> {
-  await tx
-    .update(usagePackAllocationChanges)
-    .set({
-      status: "failed",
-      failureReason: "preview_expired",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        eq(usagePackAllocationChanges.orgId, orgId),
-        eq(usagePackAllocationChanges.status, "previewed"),
-        lte(usagePackAllocationChanges.previewExpiresAt, at),
-      ),
-    );
+  reason: string,
+): PgUpdateSetSource<typeof usagePackAllocationChanges> {
+  return {
+    status: "failed",
+    failureReason: reason,
+    completedAt: at,
+    updatedAt: at,
+  };
 }
 
 function usagePackManagementResponse(
@@ -936,85 +859,88 @@ function usagePackManagementResponse(
   };
 }
 
-export async function getUsagePackManagement(
-  db: Pick<Db, "select">,
-  orgId: string,
-): Promise<UsagePackManagementResponse | null> {
-  const context = await (async (): Promise<UsagePackChangeContext | null> => {
-    const [subscription] = await db
-      .select()
-      .from(usagePackSubscriptions)
-      .where(
-        and(
-          eq(usagePackSubscriptions.orgId, orgId),
-          isNotNull(usagePackSubscriptions.stripeSubscriptionId),
-          notInArray(usagePackSubscriptions.subscriptionStatus, [
-            ...TERMINAL_SUBSCRIPTION_STATUSES,
-          ]),
-        ),
-      )
-      .orderBy(desc(usagePackSubscriptions.updatedAt))
-      .limit(1);
-    if (!subscription) {
-      return null;
-    }
-    const usagePackSubscriptionId = subscription.id;
-    return await (async (): Promise<UsagePackChangeContext | null> => {
-      const allocationColumns = getTableColumns(usagePackAllocations);
-      const changeColumns = getTableColumns(usagePackAllocationChanges);
-      const allocationSchema = contextProjectionSchema(allocationColumns);
-      const changeSchema = contextProjectionSchema(changeColumns);
-      const allocations = db
-        .select({
-          payload: contextJsonProjection(allocationColumns)
-            .mapWith(zodDriverValueDecoder(allocationSchema))
-            .as("payload"),
-        })
-        .from(usagePackAllocations)
-        .where(
-          eq(
-            usagePackAllocations.usagePackSubscriptionId,
-            usagePackSubscriptionId,
-          ),
-        );
-      const changes = db
-        .select({
-          payload: contextJsonProjection(changeColumns)
-            .mapWith(zodDriverValueDecoder(changeSchema))
-            .as("payload"),
-        })
-        .from(usagePackAllocationChanges)
+export const getUsagePackManagement$ = command(
+  async (
+    { get },
+    orgId: string,
+  ): Promise<UsagePackManagementResponse | null> => {
+    const db = get(db$);
+    const context = await (async (): Promise<UsagePackChangeContext | null> => {
+      const [subscription] = await db
+        .select()
+        .from(usagePackSubscriptions)
         .where(
           and(
-            eq(
-              usagePackAllocationChanges.usagePackSubscriptionId,
-              usagePackSubscriptionId,
-            ),
-            inArray(usagePackAllocationChanges.status, [
-              ...OPEN_CHANGE_STATUSES,
+            eq(usagePackSubscriptions.orgId, orgId),
+            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+            notInArray(usagePackSubscriptions.subscriptionStatus, [
+              ...TERMINAL_SUBSCRIPTION_STATUSES,
             ]),
           ),
-        );
-      // Allocation replacement and its change-status transition commit together.
-      // One statement prevents mixing child rows from either side of that commit.
-      const [context] = await db
-        .select({
-          subscription: usagePackSubscriptions,
-          allocations: contextJsonRows(allocations).mapWith(
-            zodDriverValueDecoder(allocationSchema.array()),
-          ),
-          changes: contextJsonRows(changes).mapWith(
-            zodDriverValueDecoder(changeSchema.array()),
-          ),
-        })
-        .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
+        )
+        .orderBy(desc(usagePackSubscriptions.updatedAt))
         .limit(1);
-      return context ?? null;
+      if (!subscription) {
+        return null;
+      }
+      const usagePackSubscriptionId = subscription.id;
+      return await (async (): Promise<UsagePackChangeContext | null> => {
+        const allocationColumns = getTableColumns(usagePackAllocations);
+        const changeColumns = getTableColumns(usagePackAllocationChanges);
+        const allocationSchema = contextProjectionSchema(allocationColumns);
+        const changeSchema = contextProjectionSchema(changeColumns);
+        const allocations = db
+          .select({
+            payload: contextJsonProjection(allocationColumns)
+              .mapWith(zodDriverValueDecoder(allocationSchema))
+              .as("payload"),
+          })
+          .from(usagePackAllocations)
+          .where(
+            eq(
+              usagePackAllocations.usagePackSubscriptionId,
+              usagePackSubscriptionId,
+            ),
+          );
+        const changes = db
+          .select({
+            payload: contextJsonProjection(changeColumns)
+              .mapWith(zodDriverValueDecoder(changeSchema))
+              .as("payload"),
+          })
+          .from(usagePackAllocationChanges)
+          .where(
+            and(
+              eq(
+                usagePackAllocationChanges.usagePackSubscriptionId,
+                usagePackSubscriptionId,
+              ),
+              inArray(usagePackAllocationChanges.status, [
+                ...OPEN_CHANGE_STATUSES,
+              ]),
+            ),
+          );
+        // Allocation replacement and its change-status transition commit together.
+        // One statement prevents mixing child rows from either side of that commit.
+        const [context] = await db
+          .select({
+            subscription: usagePackSubscriptions,
+            allocations: contextJsonRows(allocations).mapWith(
+              zodDriverValueDecoder(allocationSchema.array()),
+            ),
+            changes: contextJsonRows(changes).mapWith(
+              zodDriverValueDecoder(changeSchema.array()),
+            ),
+          })
+          .from(usagePackSubscriptions)
+          .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
+          .limit(1);
+        return context ?? null;
+      })();
     })();
-  })();
-  return usagePackManagementResponse(context);
-}
+    return usagePackManagementResponse(context);
+  },
+);
 
 export function usagePackManagement(orgId$: Computed<string>) {
   return computed(async (get): Promise<UsagePackManagementResponse | null> => {
@@ -2460,177 +2386,205 @@ async function scheduleUsagePackAllocationChange(
   };
 }
 
-export async function reserveUsagePackMemberRemoval(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  signal.throwIfAborted();
-  const at = nowDate();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0267; new non-billing transactions are prohibited.
-  const reservationId = await db.transaction(async (tx) => {
-    await expireStaleUsagePackPreviews(tx, args.orgId, at);
-    const [allocation] = await tx
-      .select()
-      .from(usagePackAllocations)
-      .where(
-        and(
-          eq(usagePackAllocations.orgId, args.orgId),
-          eq(usagePackAllocations.userId, args.userId),
-          eq(usagePackAllocations.status, "active"),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!allocation) {
-      return null;
-    }
-    const context = await loadUsagePackChangeContextForOrg(tx, args.orgId);
-    if (!context?.subscription.stripeSubscriptionId) {
-      throw new Error(
-        "Usage pack subscription is not ready for member removal",
-      );
-    }
-    const blockingChange = context.changes.find((change) => {
-      return (
-        change.status === "applying" ||
-        change.status === "pending_payment" ||
-        change.status === "applied"
-      );
-    });
-    if (blockingChange) {
-      throw new Error(
-        `Usage pack billing change ${blockingChange.id} must finish before member removal`,
-      );
-    }
-    const existing = context.changes.find((change) => {
-      return change.userId === args.userId;
-    });
-    if (existing?.status === "scheduled" && existing.kind !== "removal") {
-      throw new Error(
-        `Usage pack change ${existing.id} must finish before member removal`,
-      );
-    }
-    const existingRemoval = existing?.kind === "removal" ? existing : null;
-    await invalidateUsagePackChangePreviews(tx, {
-      orgId: args.orgId,
-      at,
-      reason: "member_removal_reserved",
-      ...(existingRemoval ? { preservedChangeId: existingRemoval.id } : {}),
-    });
-    if (existingRemoval) {
-      if (existingRemoval.status === "previewed") {
-        await tx
-          .update(usagePackAllocationChanges)
-          .set({
-            previewExpiresAt: new Date(at.getTime() + PREVIEW_TTL_MS),
-            updatedAt: at,
-          })
-          .where(eq(usagePackAllocationChanges.id, existingRemoval.id));
-      }
-      return existingRemoval.id;
-    }
-    if (existing) {
+function memberRemovalReservationContext(
+  context: UsagePackChangeContext | null,
+  userId: string,
+) {
+  if (!context?.subscription.stripeSubscriptionId) {
+    throw new Error("Usage pack subscription is not ready for member removal");
+  }
+  const blockingChange = context.changes.find((change) => {
+    return (
+      change.status === "applying" ||
+      change.status === "pending_payment" ||
+      change.status === "applied"
+    );
+  });
+  if (blockingChange) {
+    throw new Error(
+      `Usage pack billing change ${blockingChange.id} must finish before member removal`,
+    );
+  }
+  const existing = context.changes.find((change) => {
+    return change.userId === userId;
+  });
+  if (existing?.status === "scheduled" && existing.kind !== "removal") {
+    throw new Error(
+      `Usage pack change ${existing.id} must finish before member removal`,
+    );
+  }
+  const existingRemoval = existing?.kind === "removal" ? existing : null;
+  return { context, existing, existingRemoval };
+}
+
+function memberRemovalReservationValues(
+  context: UsagePackChangeContext,
+  allocation: UsagePackAllocationRow,
+  args: { readonly orgId: string; readonly userId: string },
+  at: Date,
+): typeof usagePackAllocationChanges.$inferInsert {
+  return {
+    usagePackSubscriptionId: context.subscription.id,
+    orgId: args.orgId,
+    userId: args.userId,
+    sourceAllocationId: allocation.id,
+    kind: "removal",
+    status: "previewed",
+    sourceUsagePackUsd: allocation.usagePackUsd,
+    sourceStripePriceId: allocation.stripePriceId,
+    immediateAmountCents: 0,
+    nextRecurringAmountCents: 0,
+    previewExpiresAt: new Date(at.getTime() + PREVIEW_TTL_MS),
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+export const reserveUsagePackMemberRemoval$ = command(
+  async function reserveUsagePackMemberRemoval(
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<string | null> {
+    const db = set(writeDb$);
+    signal.throwIfAborted();
+    const at = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0267; new non-billing transactions are prohibited.
+    const reservationId = await db.transaction(async (tx) => {
       await tx
         .update(usagePackAllocationChanges)
-        .set({
-          status: "failed",
-          failureReason: "member_removal_reserved",
-          completedAt: at,
-          updatedAt: at,
-        })
-        .where(eq(usagePackAllocationChanges.id, existing.id));
+        .set(failedUsagePackPreviewValues(at, "preview_expired"))
+        .where(expiredUsagePackPreviewCondition(args.orgId, at));
+      const [allocation] = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          and(
+            eq(usagePackAllocations.orgId, args.orgId),
+            eq(usagePackAllocations.userId, args.userId),
+            eq(usagePackAllocations.status, "active"),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!allocation) {
+        return null;
+      }
+      const [subscription] = await tx
+        .select()
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            eq(usagePackSubscriptions.orgId, args.orgId),
+            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+            notInArray(usagePackSubscriptions.subscriptionStatus, [
+              ...TERMINAL_SUBSCRIPTION_STATUSES,
+            ]),
+          ),
+        )
+        .orderBy(desc(usagePackSubscriptions.updatedAt))
+        .limit(1);
+      let loaded: UsagePackChangeContext | null = null;
+      if (subscription) {
+        // Allocation replacement and its change-status transition commit together.
+        // One statement prevents mixing child rows from either side of that commit.
+        const [context] = await tx
+          .select(usagePackChangeContextSelection(subscription.id))
+          .from(usagePackSubscriptions)
+          .where(eq(usagePackSubscriptions.id, subscription.id))
+          .limit(1);
+        loaded = context ?? null;
+      }
+      const { context, existing, existingRemoval } =
+        memberRemovalReservationContext(loaded, args.userId);
+      await tx
+        .update(usagePackAllocationChanges)
+        .set(failedUsagePackPreviewValues(at, "member_removal_reserved"))
+        .where(
+          invalidatedUsagePackPreviewCondition({
+            orgId: args.orgId,
+            ...(existingRemoval
+              ? { preservedChangeId: existingRemoval.id }
+              : {}),
+          }),
+        );
+      if (existingRemoval) {
+        if (existingRemoval.status === "previewed") {
+          await tx
+            .update(usagePackAllocationChanges)
+            .set({
+              previewExpiresAt: new Date(at.getTime() + PREVIEW_TTL_MS),
+              updatedAt: at,
+            })
+            .where(eq(usagePackAllocationChanges.id, existingRemoval.id));
+        }
+        return existingRemoval.id;
+      }
+      if (existing) {
+        await tx
+          .update(usagePackAllocationChanges)
+          .set(failedUsagePackPreviewValues(at, "member_removal_reserved"))
+          .where(eq(usagePackAllocationChanges.id, existing.id));
+      }
+      const [reservation] = await tx
+        .insert(usagePackAllocationChanges)
+        .values(memberRemovalReservationValues(context, allocation, args, at))
+        // The same member's reservations queue on its active allocation row.
+        // Another member's committed open change keeps the active-org unique
+        // index occupied; that is the same blocking outcome as above.
+        .onConflictDoNothing()
+        .returning({ id: usagePackAllocationChanges.id });
+      if (!reservation) {
+        throw new Error(
+          "A usage pack billing change must finish before member removal",
+        );
+      }
+      return reservation.id;
+    });
+    signal.throwIfAborted();
+    return reservationId;
+  },
+);
+
+export const cancelUsagePackMemberRemovalReservation$ = command(
+  async ({ set }, reservationId: string | null): Promise<void> => {
+    if (!reservationId) {
+      return;
     }
-    const [reservation] = await tx
-      .insert(usagePackAllocationChanges)
-      .values({
-        usagePackSubscriptionId: context.subscription.id,
-        orgId: args.orgId,
-        userId: args.userId,
-        sourceAllocationId: allocation.id,
-        kind: "removal",
-        status: "previewed",
-        sourceUsagePackUsd: allocation.usagePackUsd,
-        sourceStripePriceId: allocation.stripePriceId,
-        immediateAmountCents: 0,
-        nextRecurringAmountCents: 0,
-        previewExpiresAt: new Date(at.getTime() + PREVIEW_TTL_MS),
-        createdAt: at,
+    const db = set(writeDb$);
+    const at = nowDate();
+    await db
+      .update(usagePackAllocationChanges)
+      .set({
+        status: "failed",
+        failureReason: "member_removal_failed",
+        completedAt: at,
         updatedAt: at,
       })
-      // The same member's reservations queue on its active allocation row.
-      // Another member's committed open change keeps the active-org unique
-      // index occupied; that is the same blocking outcome as above.
-      .onConflictDoNothing()
-      .returning({ id: usagePackAllocationChanges.id });
-    if (!reservation) {
-      throw new Error(
-        "A usage pack billing change must finish before member removal",
+      .where(
+        and(
+          eq(usagePackAllocationChanges.id, reservationId),
+          eq(usagePackAllocationChanges.kind, "removal"),
+          eq(usagePackAllocationChanges.status, "previewed"),
+        ),
       );
-    }
-    return reservation.id;
-  });
-  signal.throwIfAborted();
-  return reservationId;
-}
-
-export async function cancelUsagePackMemberRemovalReservation(
-  db: Db,
-  reservationId: string | null,
-): Promise<void> {
-  if (!reservationId) {
-    return;
-  }
-  const at = nowDate();
-  await db
-    .update(usagePackAllocationChanges)
-    .set({
-      status: "failed",
-      failureReason: "member_removal_failed",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        eq(usagePackAllocationChanges.id, reservationId),
-        eq(usagePackAllocationChanges.kind, "removal"),
-        eq(usagePackAllocationChanges.status, "previewed"),
-      ),
-    );
-}
-
-async function invalidateUsagePackChangePreviews(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-    readonly reason: string;
-    readonly preservedChangeId?: string;
   },
-): Promise<void> {
-  await tx
-    .update(usagePackAllocationChanges)
-    .set({
-      status: "failed",
-      failureReason: args.reason,
-      completedAt: args.at,
-      updatedAt: args.at,
-    })
-    .where(
-      args.preservedChangeId
-        ? and(
-            eq(usagePackAllocationChanges.orgId, args.orgId),
-            eq(usagePackAllocationChanges.status, "previewed"),
-            ne(usagePackAllocationChanges.id, args.preservedChangeId),
-          )
-        : and(
-            eq(usagePackAllocationChanges.orgId, args.orgId),
-            eq(usagePackAllocationChanges.status, "previewed"),
-          ),
-    );
+);
+
+function invalidatedUsagePackPreviewCondition(args: {
+  readonly orgId: string;
+  readonly preservedChangeId?: string;
+}) {
+  return args.preservedChangeId
+    ? and(
+        eq(usagePackAllocationChanges.orgId, args.orgId),
+        eq(usagePackAllocationChanges.status, "previewed"),
+        ne(usagePackAllocationChanges.id, args.preservedChangeId),
+      )
+    : and(
+        eq(usagePackAllocationChanges.orgId, args.orgId),
+        eq(usagePackAllocationChanges.status, "previewed"),
+      );
 }
 
 const prepareUsagePackMemberRemoval$ = command(

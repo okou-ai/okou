@@ -32,6 +32,7 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import {
+  usagePackAllocationChanges,
   usagePackSubscriptions,
   usagePackAllocations,
 } from "@okouai/db/schema/usage-pack-subscription";
@@ -44,7 +45,7 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   isStripeResourceMissingError,
@@ -93,7 +94,6 @@ import {
   handleUsagePackSubscriptionDeleted$,
   handleUsagePackSubscriptionUpdated$,
 } from "./usage-pack-subscription.service";
-import { failScheduledUsagePackAllocationChangesForSchedule } from "./usage-pack-allocation-change.service";
 import {
   handleUsagePackInvitationCheckoutFailed$,
   handleUsagePackInvitationCheckoutPaid$,
@@ -4017,51 +4017,77 @@ const handleSubscriptionUpdated$ = command(
   },
 );
 
-async function handleSubscriptionScheduleReleased(
-  db: Db,
-  schedule: SubscriptionScheduleInput,
-  releasedAt: Date,
-): Promise<readonly string[]> {
-  const updatedAt = nowDate();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0330; new non-billing transactions are prohibited.
-  const { rows, usagePackOrgIds } = await db.transaction(async (tx) => {
-    const usagePackOrgIds =
-      await failScheduledUsagePackAllocationChangesForSchedule(tx, {
-        scheduleId: schedule.id,
-        completedAt: updatedAt,
-        effectiveAfter: releasedAt,
-      });
-    const rows = await tx
-      .update(orgMetadata)
-      .set({
-        cancelAtPeriodEnd: false,
-        pendingSubscriptionScheduleId: null,
-        pendingSubscriptionTargetTier: null,
-        pendingSubscriptionChangeAt: null,
-        updatedAt,
-      })
-      .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
-      .returning({ orgId: orgMetadata.orgId });
-    return { rows, usagePackOrgIds };
-  });
-
-  const orgIds = [
-    ...new Set([
-      ...usagePackOrgIds,
-      ...rows.map((row) => {
-        return row.orgId;
-      }),
-    ]),
-  ];
-
-  if (orgIds.length > 0) {
-    L.debug("subscription schedule released; cleared pending billing change", {
-      scheduleId: schedule.id,
-      orgIds,
+const handleSubscriptionScheduleReleased$ = command(
+  async function handleSubscriptionScheduleReleased(
+    { set },
+    schedule: SubscriptionScheduleInput,
+    releasedAt: Date,
+  ): Promise<readonly string[]> {
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0330; new non-billing transactions are prohibited.
+    const { rows, usagePackOrgIds } = await db.transaction(async (tx) => {
+      const usagePackRows = await tx
+        .update(usagePackAllocationChanges)
+        .set({
+          status: "failed",
+          failureReason: "scheduled_change_restored",
+          completedAt: updatedAt,
+          updatedAt,
+        })
+        .where(
+          and(
+            eq(usagePackAllocationChanges.status, "scheduled"),
+            eq(usagePackAllocationChanges.stripeScheduleId, schedule.id),
+            or(
+              isNull(usagePackAllocationChanges.effectiveAt),
+              gt(usagePackAllocationChanges.effectiveAt, releasedAt),
+            ),
+          ),
+        )
+        .returning({ orgId: usagePackAllocationChanges.orgId });
+      const usagePackOrgIds = [
+        ...new Set(
+          usagePackRows.map((row) => {
+            return row.orgId;
+          }),
+        ),
+      ];
+      const rows = await tx
+        .update(orgMetadata)
+        .set({
+          cancelAtPeriodEnd: false,
+          pendingSubscriptionScheduleId: null,
+          pendingSubscriptionTargetTier: null,
+          pendingSubscriptionChangeAt: null,
+          updatedAt,
+        })
+        .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
+        .returning({ orgId: orgMetadata.orgId });
+      return { rows, usagePackOrgIds };
     });
-  }
-  return orgIds;
-}
+
+    const orgIds = [
+      ...new Set([
+        ...usagePackOrgIds,
+        ...rows.map((row) => {
+          return row.orgId;
+        }),
+      ]),
+    ];
+
+    if (orgIds.length > 0) {
+      L.debug(
+        "subscription schedule released; cleared pending billing change",
+        {
+          scheduleId: schedule.id,
+          orgIds,
+        },
+      );
+    }
+    return orgIds;
+  },
+);
 
 function endedScheduleUpdateValues() {
   return {
@@ -4570,8 +4596,8 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "subscription_schedule.released": {
-        const orgIds = await handleSubscriptionScheduleReleased(
-          db,
+        const orgIds = await set(
+          handleSubscriptionScheduleReleased$,
           event.object,
           new Date(event.created * 1000),
         );

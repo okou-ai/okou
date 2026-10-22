@@ -52,7 +52,7 @@ import {
   reconcileUsagePackSubscriptions$,
   TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
 } from "./usage-pack-subscription.service";
-import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.service";
+import { reconcileUsagePackCreditRefunds$ } from "./usage-pack-credit-refund.service";
 import { reconcileUsagePackInvitationPurchases$ } from "./usage-pack-invitation-purchase.service";
 import { syncUsagePackSubscriptionConfigurations$ } from "./usage-pack-allocation-change.service";
 import { reconcileUsagePackSubscriptionMigrations$ } from "./usage-pack-subscription-migration.service";
@@ -1393,7 +1393,7 @@ export const reconcileBillingEntitlements$ = command(
         });
       }
     }
-    await reconcileUsagePackCreditRefunds(db, signal);
+    await set(reconcileUsagePackCreditRefunds$, signal);
     signal.throwIfAborted();
 
     const invitationPurchasesReconciled = await set(

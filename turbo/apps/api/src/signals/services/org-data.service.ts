@@ -41,11 +41,11 @@ import { deleteDiscordOrgData$ } from "./discord-owner-cleanup.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import {
-  cancelUsagePackMemberRemovalReservation,
+  cancelUsagePackMemberRemovalReservation$,
   removeUsagePackMemberAllocation$,
-  reserveUsagePackMemberRemoval,
+  reserveUsagePackMemberRemoval$,
 } from "./usage-pack-allocation-change.service";
-import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
+import { refundUsagePackMemberCredits$ } from "./usage-pack-credit-refund.service";
 import { fetchUserProfileMap$ } from "./user-profile-directory.service";
 
 const clerkOrgIdentitySchema = z.object({
@@ -295,11 +295,10 @@ const commitOrgMemberRemoval$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const { reservationId, deleteMembership, onSlotsReleased } = continuation;
-    const db = set(writeDb$);
     // Once Clerk accepts the deletion, billing and resource cleanup must finish
     // even if the originating request disconnects.
     await onRejection(deleteMembership(), async () => {
-      await cancelUsagePackMemberRemovalReservation(db, reservationId);
+      await set(cancelUsagePackMemberRemovalReservation$, reservationId);
     });
     signal.throwIfAborted();
     const emptyCancellation = await set(
@@ -312,7 +311,7 @@ const commitOrgMemberRemoval$ = command(
       await set(cancelEmptyUsagePackSubscription$, emptyCancellation, signal);
       signal.throwIfAborted();
     }
-    await refundUsagePackMemberCredits(db, args, signal);
+    await set(refundUsagePackMemberCredits$, args, signal);
     signal.throwIfAborted();
     await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);
     signal.throwIfAborted();
@@ -330,9 +329,8 @@ export const leaveOrg$ = command(
     }
 
     const client = get(clerk$);
-    const writeDb = set(writeDb$);
-    const reservationId = await reserveUsagePackMemberRemoval(
-      writeDb,
+    const reservationId = await set(
+      reserveUsagePackMemberRemoval$,
       {
         orgId: args.orgId,
         userId: args.userId,
@@ -401,9 +399,8 @@ export const removeOrgMember$ = command(
       return notFound("Resource not found");
     }
 
-    const writeDb = set(writeDb$);
-    const reservationId = await reserveUsagePackMemberRemoval(
-      writeDb,
+    const reservationId = await set(
+      reserveUsagePackMemberRemoval$,
       {
         orgId: args.orgId,
         userId: target.id,
