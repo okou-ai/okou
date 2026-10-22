@@ -47,12 +47,12 @@ final class ConversationSendTransitionTests: XCTestCase {
     defer { fixture.close() }
     fixture.conversation.draft = "New message"
     let before = presentedOffset(collection)
+    let motion = SendMotionRecorder(collection)
+    defer { motion.stop() }
     let send = Task { await fixture.scrolling.send() }
     try await eventually { !fixture.conversation.pending.isEmpty }
     let pending = try XCTUnwrap(fixture.conversation.pending.first)
-    var samples = [before]
     try await eventually {
-      samples.append(presentedOffset(collection))
       return fixture.contains(pending.id, in: collection)
         && collection.contentOffset.y > before + 20
         && collection.contentSize.height + collection.adjustedContentInset.bottom
@@ -61,10 +61,13 @@ final class ConversationSendTransitionTests: XCTestCase {
     await send.value
     try await fixture.assertFinished(pending.id, in: collection)
     let after = presentedOffset(collection)
+    let samples = [before] + motion.offsets + [after]
     XCTAssertGreaterThan(after, before + 20)
     XCTAssertTrue(
       samples.contains { $0 > before + 1 && $0 < after - 1 },
-      "Insertion must move through intermediate positions: \(samples), from \(before) to \(after)")
+      "Insertion must move through intermediate positions: \(samples), from \(before) to \(after); "
+        + "native offsets: \(motion.nativeOffsets); bottom targets: \(motion.bottomTargets); "
+        + "frame times: \(motion.frameTimes)")
     for (previous, next) in zip(samples, samples.dropFirst()) {
       XCTAssertGreaterThanOrEqual(
         next, previous - 1, "A send must not reverse toward the old footer")
@@ -160,6 +163,45 @@ final class ConversationSendTransitionTests: XCTestCase {
 @MainActor
 private func presentedOffset(_ collection: UICollectionView) -> CGFloat {
   collection.layer.presentation()?.bounds.minY ?? collection.bounds.minY
+}
+
+@MainActor
+private final class SendMotionRecorder: NSObject {
+  private weak var collection: UICollectionView?
+  private var displayLink: CADisplayLink?
+  private(set) var offsets: [CGFloat] = []
+  private(set) var nativeOffsets: [CGFloat] = []
+  private(set) var bottomTargets: [CGFloat] = []
+  private(set) var frameTimes: [CFTimeInterval] = []
+  private var firstFrame: CFTimeInterval?
+
+  init(_ collection: UICollectionView) {
+    self.collection = collection
+    super.init()
+    let link = CADisplayLink(target: self, selector: #selector(sample(_:)))
+    displayLink = link
+    link.add(to: .main, forMode: .common)
+  }
+
+  @objc private func sample(_ link: CADisplayLink) {
+    guard let collection else {
+      stop()
+      return
+    }
+    offsets.append(presentedOffset(collection))
+    nativeOffsets.append(collection.contentOffset.y)
+    bottomTargets.append(
+      collection.contentSize.height + collection.adjustedContentInset.bottom
+        - collection.bounds.height)
+    let origin = firstFrame ?? link.timestamp
+    firstFrame = origin
+    frameTimes.append(link.timestamp - origin)
+  }
+
+  func stop() {
+    displayLink?.invalidate()
+    displayLink = nil
+  }
 }
 
 @MainActor

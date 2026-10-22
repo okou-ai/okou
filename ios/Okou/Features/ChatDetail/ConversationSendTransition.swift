@@ -13,13 +13,14 @@ final class ConversationSendTransition {
   @ObservationIgnored private var offset = CGPoint.zero
   @ObservationIgnored private var target: CGFloat?
   @ObservationIgnored private var deadline: CFTimeInterval = 0
-  @ObservationIgnored private var options = UIView.AnimationOptions.curveEaseInOut
-  @ObservationIgnored private var animator: UIViewPropertyAnimator?
+  @ObservationIgnored private var curve: UInt = 0
   @ObservationIgnored private var displayLink: CADisplayLink?
-  private let progress = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
   @ObservationIgnored private var animationOrigin = CGPoint.zero
+  @ObservationIgnored private var alphaOrigin: CGFloat = 0
+  @ObservationIgnored private var duration: CFTimeInterval = 0
+  @ObservationIgnored private var elapsed: CFTimeInterval = 0
+  @ObservationIgnored private var previousFrame: CFTimeInterval?
   @ObservationIgnored private var updatesOffset = false
-  @ObservationIgnored private var generation = UUID()
   @ObservationIgnored private var reduceMotion = false
   @ObservationIgnored var didBegin: (() -> Void)?
   @ObservationIgnored var didFinish: (() -> Void)?
@@ -28,9 +29,6 @@ final class ConversationSendTransition {
 
   func attach(_ collection: UICollectionView) {
     self.collection = collection
-    progress.isUserInteractionEnabled = false
-    progress.accessibilityElementsHidden = true
-    collection.addSubview(progress)
   }
 
   func begin(messageID: String, reduceMotion: Bool) {
@@ -39,7 +37,7 @@ final class ConversationSendTransition {
     self.messageID = messageID
     self.reduceMotion = reduceMotion
     offset = collection.contentOffset
-    options = .curveEaseInOut
+    curve = 0
     composerAnimation = .easeInOut(duration: 0.22)
     didBegin?()
     keyboardObserver = NotificationCenter.default.addObserver(
@@ -61,7 +59,7 @@ final class ConversationSendTransition {
     guard isActive else { return }
     // Later zero-duration keyboard geometry must not cut a visible send short.
     deadline = max(deadline, CACurrentMediaTime() + duration)
-    options = UIView.AnimationOptions(rawValue: curve << 16)
+    self.curve = curve
     switch curve {
     case 0: composerAnimation = .easeInOut(duration: duration)
     case 1: composerAnimation = .easeIn(duration: duration)
@@ -72,6 +70,7 @@ final class ConversationSendTransition {
         duration == 0 ? .linear(duration: 0) : .interpolatingSpring(duration: duration, bounce: 0)
     }
     if isAnimating {
+      self.duration = max(self.duration, elapsed + duration)
       target = nil
       animateToBottom()
     }
@@ -107,23 +106,18 @@ final class ConversationSendTransition {
     isAnimating = true
     // Measurement can consume most of a keyboard transition. The arriving row
     // still needs a visible transition instead of a nearly zero-duration jump.
-    deadline = max(deadline, CACurrentMediaTime() + 0.22)
+    duration = max(0.22, deadline - CACurrentMediaTime())
+    elapsed = 0
     animateToBottom()
   }
 
   /// Structural/height updates join the running send from its presented position.
   func prepareForSnapshot() {
-    guard isAnimating, animator?.state == .active else { return }
-    let alpha = arrivingView?.layer.presentation()?.opacity
-    generation = UUID()
-    animator?.stopAnimation(true)
-    animator = nil
+    guard isAnimating else { return }
     displayLink?.invalidate()
     displayLink = nil
+    previousFrame = nil
     target = nil
-    UIView.performWithoutAnimation {
-      if let alpha { arrivingView?.alpha = CGFloat(alpha) }
-    }
   }
 
   private func animateToBottom() {
@@ -135,76 +129,74 @@ final class ConversationSendTransition {
     prepareForSnapshot()
     target = y
     animationOrigin = offset
-    let generation = UUID()
-    self.generation = generation
+    alphaOrigin = arrivingView?.alpha ?? 1
+    duration = max(0, duration - elapsed)
+    elapsed = 0
     if reduceMotion {
-      startAnimation(to: y, in: collection, generation: generation)
-      return
-    }
-    // Diffable snapshots can invoke their completion with UIView animations
-    // disabled. Start after that synchronous layout transaction has returned.
-    DispatchQueue.main.async { [weak self] in
-      guard let self, self.generation == generation, isActive, isAnimating else { return }
-      startAnimation(to: y, in: collection, generation: generation)
-    }
-  }
-
-  private func startAnimation(
-    to y: CGFloat, in collection: UICollectionView, generation: UUID
-  ) {
-    let duration = reduceMotion ? 0 : max(0, deadline - CACurrentMediaTime())
-    if duration == 0 {
-      offset = CGPoint(x: animationOrigin.x, y: y)
-      collection.setContentOffset(offset, animated: false)
-      arrivingView?.alpha = 1
+      presentFrame(fraction: 1, in: collection, target: y)
       finish()
       return
     }
-    UIView.performWithoutAnimation { progress.alpha = 0 }
-    displayLink?.invalidate()
+    // Starting the clock on its first display callback excludes snapshot work
+    // before any frame can be presented. UIKit animation completions cannot
+    // finish the viewport ahead of this clock.
     let frameTarget = ConversationSendFrameTarget(transition: self)
     let link = CADisplayLink(
       target: frameTarget, selector: #selector(ConversationSendFrameTarget.tick(_:)))
     displayLink = link
     link.add(to: .main, forMode: .common)
-    animator = UIViewPropertyAnimator.runningPropertyAnimator(
-      withDuration: duration, delay: 0,
-      options: options.union(.allowUserInteraction)
-    ) {
-      self.progress.alpha = 1
-      self.arrivingView?.alpha = 1
-    } completion: { [weak self] _ in
-      guard let self, self.generation == generation, isActive else { return }
-      if let target {
-        offset = CGPoint(x: animationOrigin.x, y: target)
-        collection.setContentOffset(offset, animated: false)
-      }
-      finish()
+  }
+
+  fileprivate func advanceFrame(_ link: CADisplayLink) {
+    guard displayLink === link, let collection, let target, isAnimating else { return }
+    if let previousFrame {
+      elapsed += max(0, link.timestamp - previousFrame)
+    }
+    previousFrame = link.timestamp
+    let progress = duration == 0 ? 1 : min(1, elapsed / duration)
+    let value: Double
+    if progress >= 1 {
+      value = 1
+    } else {
+      value =
+        switch curve {
+        case 0: UnitCurve.easeInOut.value(at: progress)
+        case 1: UnitCurve.easeIn.value(at: progress)
+        case 2: UnitCurve.easeOut.value(at: progress)
+        case 3: progress
+        default: Spring(duration: duration, bounce: 0).value(target: 1, time: elapsed)
+        }
+    }
+    presentFrame(
+      fraction: CGFloat(min(1, max(0, value))),
+      in: collection, target: target)
+    guard displayLink === link else { return }
+    if progress >= 1 { finish() }
+  }
+
+  private func presentFrame(fraction: CGFloat, in collection: UICollectionView, target: CGFloat) {
+    let y = animationOrigin.y + (target - animationOrigin.y) * fraction
+    // Move the native viewport every frame so collection reuse keeps the visible rows mounted.
+    offset = CGPoint(x: animationOrigin.x, y: y)
+    UIView.performWithoutAnimation {
+      collection.setContentOffset(offset, animated: false)
+      arrivingView?.alpha = alphaOrigin + (1 - alphaOrigin) * fraction
     }
   }
 
-  fileprivate func advanceFrame() {
-    guard let collection, let target, isAnimating else { return }
-    let fraction = CGFloat(progress.layer.presentation()?.opacity ?? 0)
-    let y = animationOrigin.y + (target - animationOrigin.y) * min(1, max(0, fraction))
-    // Move the native viewport every frame so collection reuse keeps the visible rows mounted.
-    offset = CGPoint(x: animationOrigin.x, y: y)
-    collection.setContentOffset(offset, animated: false)
-  }
-
   func cancel() {
-    generation = UUID()
     messageID = nil
     isAnimating = false
     target = nil
     deadline = 0
     if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
     keyboardObserver = nil
-    if animator?.state == .active { animator?.stopAnimation(true) }
-    animator = nil
     displayLink?.invalidate()
     displayLink = nil
-    arrivingView?.alpha = 1
+    previousFrame = nil
+    duration = 0
+    elapsed = 0
+    UIView.performWithoutAnimation { arrivingView?.alpha = 1 }
     arrivingView = nil
   }
 
@@ -215,9 +207,11 @@ final class ConversationSendTransition {
     deadline = 0
     if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
     keyboardObserver = nil
-    animator = nil
     displayLink?.invalidate()
     displayLink = nil
+    previousFrame = nil
+    duration = 0
+    elapsed = 0
     arrivingView = nil
     didFinish?()
   }
@@ -232,6 +226,6 @@ private final class ConversationSendFrameTarget: NSObject {
       link.invalidate()
       return
     }
-    transition.advanceFrame()
+    transition.advanceFrame(link)
   }
 }
