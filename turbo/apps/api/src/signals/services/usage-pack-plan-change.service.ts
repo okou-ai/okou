@@ -34,7 +34,7 @@ import {
 } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   type StripeInvoice,
@@ -112,7 +112,6 @@ type UsagePackAllocationChangeInsert =
   typeof usagePackAllocationChanges.$inferInsert;
 type UsagePackSubscriptionChangeRow =
   typeof usagePackSubscriptionChanges.$inferSelect;
-type WriteTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 interface UsagePackSubscriptionChangeContext {
   readonly subscription: UsagePackSubscriptionRow;
@@ -1891,49 +1890,48 @@ function finalScheduleItems(
   ];
 }
 
-async function loadStoredSubscriptionChange(
-  db: Pick<Db, "select">,
-  changeId: string,
-): Promise<{
-  readonly root: UsagePackSubscriptionChangeRow;
-  readonly allocationChanges: readonly UsagePackAllocationChangeRow[];
-  readonly subscription: UsagePackSubscriptionRow;
-  readonly allocations: readonly UsagePackAllocationRow[];
-} | null> {
-  const [root] = await db
-    .select()
-    .from(usagePackSubscriptionChanges)
-    .where(eq(usagePackSubscriptionChanges.id, changeId))
-    .limit(1);
-  if (!root) {
-    return null;
-  }
-  const [allocationChanges, subscriptions, allocations] = await Promise.all([
-    db
+// These financial reads keep the original caller-owned cancellation phase.
+const loadStoredSubscriptionChange$ = command(
+  async (
+    { get },
+    changeId: string,
+  ): Promise<StoredSubscriptionChange | null> => {
+    const db = get(db$);
+    const [root] = await db
       .select()
-      .from(usagePackAllocationChanges)
-      .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id)),
-    db
-      .select()
-      .from(usagePackSubscriptions)
-      .where(eq(usagePackSubscriptions.id, root.usagePackSubscriptionId))
-      .limit(1),
-    db
-      .select()
-      .from(usagePackAllocations)
-      .where(
-        eq(
-          usagePackAllocations.usagePackSubscriptionId,
-          root.usagePackSubscriptionId,
+      .from(usagePackSubscriptionChanges)
+      .where(eq(usagePackSubscriptionChanges.id, changeId))
+      .limit(1);
+    if (!root) {
+      return null;
+    }
+    const [allocationChanges, subscriptions, allocations] = await Promise.all([
+      db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id)),
+      db
+        .select()
+        .from(usagePackSubscriptions)
+        .where(eq(usagePackSubscriptions.id, root.usagePackSubscriptionId))
+        .limit(1),
+      db
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            root.usagePackSubscriptionId,
+          ),
         ),
-      ),
-  ]);
-  const subscription = subscriptions[0];
-  if (!subscription) {
-    throw new Error(`Subscription change ${root.id} lost its subscription`);
-  }
-  return { root, allocationChanges, subscription, allocations };
-}
+    ]);
+    const subscription = subscriptions[0];
+    if (!subscription) {
+      throw new Error(`Subscription change ${root.id} lost its subscription`);
+    }
+    return { root, allocationChanges, subscription, allocations };
+  },
+);
 
 const storedSubscriptionChange$ = command(
   async (
@@ -1981,7 +1979,7 @@ const storedSubscriptionChange$ = command(
 );
 
 function storedSubscriptionChangeMatchesRequest(
-  stored: NonNullable<Awaited<ReturnType<typeof loadStoredSubscriptionChange>>>,
+  stored: StoredSubscriptionChange,
   args: {
     readonly targetTier: UsagePackTier;
     readonly memberUsagePacks: readonly MemberUsagePack[];
@@ -2040,165 +2038,170 @@ function storedSubscriptionChangePreview(
   };
 }
 
-async function completeDeferredIntent(
-  tx: WriteTx,
-  expected: UsagePackSubscriptionChangeRow,
-  observed: UsagePackSubscriptionChangeRow,
-  effectiveAt: Date,
-  updatedAt: Date,
-): Promise<boolean> {
-  const [completed] = await tx
-    .update(usagePackSubscriptionChanges)
-    .set({
-      status: "completed",
-      effectiveAt,
-      completedAt: updatedAt,
-      updatedAt,
-    })
-    .where(
-      and(
-        subscriptionChangeIdentity(expected),
-        eq(usagePackSubscriptionChanges.status, observed.status),
-      ),
-    )
-    .returning({ id: usagePackSubscriptionChanges.id });
-  if (completed) {
-    return true;
+function matchingPlanReplacementScheduleId(
+  root: UsagePackSubscriptionChangeRow,
+  org:
+    | {
+        readonly tier: string;
+        readonly scheduleId: string | null;
+        readonly targetTier: string | null;
+      }
+    | undefined,
+): string | null {
+  if (!org) {
+    throw new Error("Usage pack subscription lost its organization");
   }
-  const [winner] = await tx
-    .select({ status: usagePackSubscriptionChanges.status })
-    .from(usagePackSubscriptionChanges)
-    .where(subscriptionChangeIdentity(expected))
-    .limit(1);
-  if (winner?.status === "completed") {
-    return false;
-  }
-  throw new Error("Deferred subscription change changed before publication");
+  return org.tier === root.sourceTier && org.targetTier === root.targetTier
+    ? org.scheduleId
+    : null;
 }
 
-async function persistDeferredSubscriptionChangeSchedule(
-  db: Db,
-  stored: NonNullable<Awaited<ReturnType<typeof loadStoredSubscriptionChange>>>,
-  scheduleId: string,
-  effectiveAt: Date,
-): Promise<void> {
-  const updatedAt = nowDate();
-  const allocationReplacementScheduleId = replacementScheduleId(
-    stored.allocationChanges,
-  );
-  const hasDeferredChanges =
-    planIsDowngrade(stored.root.sourceTier, stored.root.targetTier) ||
-    stored.allocationChanges.some((change) => {
-      return change.kind === "downgrade" || change.kind === "removal";
-    });
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0287; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    const [root] = await tx
-      .select()
-      .from(usagePackSubscriptionChanges)
-      .where(subscriptionChangeIdentity(stored.root))
-      .limit(1);
-    if (!root || root.status === "failed") {
-      throw new Error("Deferred subscription change is no longer applicable");
-    }
-    if (root.status === "completed") {
-      return;
-    }
-    if (
-      !(await completeDeferredIntent(
-        tx,
-        stored.root,
-        root,
-        hasDeferredChanges ? effectiveAt : root.effectiveAt,
-        updatedAt,
-      ))
-    ) {
-      return;
-    }
-    const planRoot = stored.root;
-    const planReplacementScheduleId = await (async () => {
-      if (!planIsDowngrade(planRoot.sourceTier, planRoot.targetTier)) {
-        return null;
-      }
-      const [org] = await tx
-        .select({
-          tier: orgMetadata.tier,
-          scheduleId: orgMetadata.pendingSubscriptionScheduleId,
-          targetTier: orgMetadata.pendingSubscriptionTargetTier,
-        })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, planRoot.orgId))
+function supersededDeferredScheduleId(
+  allocationScheduleId: string | null,
+  planScheduleId: string | null,
+  unrecordedScheduleId: string | null,
+): string | null {
+  if (
+    allocationScheduleId &&
+    planScheduleId &&
+    allocationScheduleId !== planScheduleId
+  ) {
+    throw new Error("Usage pack replacement has inconsistent Stripe schedules");
+  }
+  return allocationScheduleId ?? planScheduleId ?? unrecordedScheduleId;
+}
+
+// Publication completes without adding a checkpoint after the provider phase.
+const persistDeferredSubscriptionChangeSchedule$ = command(
+  async function persistDeferredSubscriptionChangeSchedule(
+    { set },
+    stored: StoredSubscriptionChange,
+    scheduleId: string,
+    effectiveAt: Date,
+  ): Promise<Date> {
+    const db = set(writeDb$);
+    const updatedAt = nowDate();
+    const allocationReplacementScheduleId = replacementScheduleId(
+      stored.allocationChanges,
+    );
+    const hasDeferredChanges =
+      planIsDowngrade(stored.root.sourceTier, stored.root.targetTier) ||
+      stored.allocationChanges.some((change) => {
+        return change.kind === "downgrade" || change.kind === "removal";
+      });
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0287; new non-billing transactions are prohibited.
+    await db.transaction(async (tx) => {
+      const [root] = await tx
+        .select()
+        .from(usagePackSubscriptionChanges)
+        .where(subscriptionChangeIdentity(stored.root))
         .limit(1);
-      if (!org) {
-        throw new Error("Usage pack subscription lost its organization");
+      if (!root || root.status === "failed") {
+        throw new Error("Deferred subscription change is no longer applicable");
       }
-      return org.tier === planRoot.sourceTier &&
-        org.targetTier === planRoot.targetTier
-        ? org.scheduleId
-        : null;
-    })();
-    const unrecordedReplacementScheduleId =
-      stored.allocationChanges.length === 0
-        ? restorableScheduleId(
-            await tx
-              .select()
-              .from(usagePackAllocationChanges)
-              .where(scheduledAllocationCondition(stored.subscription.id)),
-          )
-        : null;
-    if (
-      allocationReplacementScheduleId &&
-      planReplacementScheduleId &&
-      allocationReplacementScheduleId !== planReplacementScheduleId
-    ) {
-      throw new Error(
-        "Usage pack replacement has inconsistent Stripe schedules",
-      );
-    }
-    const supersededScheduleId =
-      allocationReplacementScheduleId ??
-      planReplacementScheduleId ??
-      unrecordedReplacementScheduleId;
-    if (supersededScheduleId) {
-      await tx
-        .update(usagePackAllocationChanges)
+      if (root.status === "completed") {
+        return;
+      }
+      const [completed] = await tx
+        .update(usagePackSubscriptionChanges)
         .set({
-          status: "failed",
-          failureReason: "scheduled_change_superseded",
+          status: "completed",
+          effectiveAt: hasDeferredChanges ? effectiveAt : root.effectiveAt,
           completedAt: updatedAt,
           updatedAt,
         })
         .where(
-          supersededAllocationCondition(
-            stored.subscription.id,
-            supersededScheduleId,
+          and(
+            subscriptionChangeIdentity(stored.root),
+            eq(usagePackSubscriptionChanges.status, root.status),
           ),
+        )
+        .returning({ id: usagePackSubscriptionChanges.id });
+      if (!completed) {
+        const [winner] = await tx
+          .select({ status: usagePackSubscriptionChanges.status })
+          .from(usagePackSubscriptionChanges)
+          .where(subscriptionChangeIdentity(stored.root))
+          .limit(1);
+        if (winner?.status === "completed") {
+          return;
+        }
+        throw new Error(
+          "Deferred subscription change changed before publication",
         );
-    }
-    await tx
-      .update(usagePackAllocationChanges)
-      .set({
-        status: "scheduled",
-        stripeScheduleId: scheduleId,
-        effectiveAt,
-        updatedAt,
-      })
-      .where(deferredAllocationCondition(stored.root.id));
-    if (planIsDowngrade(stored.root.sourceTier, stored.root.targetTier)) {
+      }
+      const planRoot = stored.root;
+      const planReplacementScheduleId = await (async () => {
+        if (!planIsDowngrade(planRoot.sourceTier, planRoot.targetTier)) {
+          return null;
+        }
+        const [org] = await tx
+          .select({
+            tier: orgMetadata.tier,
+            scheduleId: orgMetadata.pendingSubscriptionScheduleId,
+            targetTier: orgMetadata.pendingSubscriptionTargetTier,
+          })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, planRoot.orgId))
+          .limit(1);
+        return matchingPlanReplacementScheduleId(planRoot, org);
+      })();
+      const unrecordedReplacementScheduleId =
+        stored.allocationChanges.length === 0
+          ? restorableScheduleId(
+              await tx
+                .select()
+                .from(usagePackAllocationChanges)
+                .where(scheduledAllocationCondition(stored.subscription.id)),
+            )
+          : null;
+      const supersededScheduleId = supersededDeferredScheduleId(
+        allocationReplacementScheduleId,
+        planReplacementScheduleId,
+        unrecordedReplacementScheduleId,
+      );
+      if (supersededScheduleId) {
+        await tx
+          .update(usagePackAllocationChanges)
+          .set({
+            status: "failed",
+            failureReason: "scheduled_change_superseded",
+            completedAt: updatedAt,
+            updatedAt,
+          })
+          .where(
+            supersededAllocationCondition(
+              stored.subscription.id,
+              supersededScheduleId,
+            ),
+          );
+      }
       await tx
-        .update(orgMetadata)
+        .update(usagePackAllocationChanges)
         .set({
-          cancelAtPeriodEnd: false,
-          pendingSubscriptionScheduleId: scheduleId,
-          pendingSubscriptionTargetTier: stored.root.targetTier,
-          pendingSubscriptionChangeAt: effectiveAt,
-          currentPeriodEnd: effectiveAt,
+          status: "scheduled",
+          stripeScheduleId: scheduleId,
+          effectiveAt,
           updatedAt,
         })
-        .where(eq(orgMetadata.orgId, stored.root.orgId));
-    }
-  });
-}
+        .where(deferredAllocationCondition(stored.root.id));
+      if (planIsDowngrade(stored.root.sourceTier, stored.root.targetTier)) {
+        await tx
+          .update(orgMetadata)
+          .set({
+            cancelAtPeriodEnd: false,
+            pendingSubscriptionScheduleId: scheduleId,
+            pendingSubscriptionTargetTier: stored.root.targetTier,
+            pendingSubscriptionChangeAt: effectiveAt,
+            currentPeriodEnd: effectiveAt,
+            updatedAt,
+          })
+          .where(eq(orgMetadata.orgId, stored.root.orgId));
+      }
+    });
+    return effectiveAt;
+  },
+);
 
 const storeDeferredScheduleRequest$ = command(
   async (
@@ -2244,39 +2247,40 @@ const storeDeferredScheduleRequest$ = command(
   },
 );
 
-async function completeDeferredScheduleRequest(
-  db: Db,
-  stored: StoredSubscriptionChange,
-  request: UsagePackDeferredSchedule,
-  schedule: StripeSubscriptionSchedule | null,
-  signal: AbortSignal | undefined,
-): Promise<Date> {
-  // A replay after an unknown Stripe result can finish the local transaction
-  // from current provider state without resubmitting the schedule update.
-  if (!schedule || !deferredScheduleMatchesRequest(schedule, request)) {
-    if (request.effectiveAt <= Math.floor(nowDate().getTime() / 1000)) {
-      throw new Error(
-        "Deferred subscription change passed its billing boundary",
+const completeDeferredScheduleRequest$ = command(
+  async (
+    { set },
+    stored: StoredSubscriptionChange,
+    request: UsagePackDeferredSchedule,
+    schedule: StripeSubscriptionSchedule | null,
+    signal: AbortSignal | undefined,
+  ): Promise<Date> => {
+    // A replay after an unknown Stripe result can finish the local transaction
+    // from current provider state without resubmitting the schedule update.
+    if (!schedule || !deferredScheduleMatchesRequest(schedule, request)) {
+      if (request.effectiveAt <= Math.floor(nowDate().getTime() / 1000)) {
+        throw new Error(
+          "Deferred subscription change passed its billing boundary",
+        );
+      }
+      await getStripeClient().subscriptionSchedules.update(
+        request.scheduleId,
+        request.params,
+        {
+          idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:schedule-update`,
+        },
       );
+      signal?.throwIfAborted();
     }
-    await getStripeClient().subscriptionSchedules.update(
+    const effectiveAt = new Date(request.effectiveAt * 1000);
+    return await set(
+      persistDeferredSubscriptionChangeSchedule$,
+      stored,
       request.scheduleId,
-      request.params,
-      {
-        idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:schedule-update`,
-      },
+      effectiveAt,
     );
-    signal?.throwIfAborted();
-  }
-  const effectiveAt = new Date(request.effectiveAt * 1000);
-  await persistDeferredSubscriptionChangeSchedule(
-    db,
-    stored,
-    request.scheduleId,
-    effectiveAt,
-  );
-  return effectiveAt;
-}
+  },
+);
 
 function deferredSubscriptionChangeTarget(
   stored: StoredSubscriptionChange,
@@ -2404,8 +2408,8 @@ const scheduleDeferredSubscriptionChange$ = command(
       : null;
     providerSignal?.throwIfAborted();
     if (stored.root.deferredSchedule) {
-      return await completeDeferredScheduleRequest(
-        db,
+      return await set(
+        completeDeferredScheduleRequest$,
         stored,
         stored.root.deferredSchedule,
         existingSchedule,
@@ -2465,8 +2469,8 @@ const scheduleDeferredSubscriptionChange$ = command(
         "Deferred subscription change has no stored Stripe request",
       );
     }
-    return await completeDeferredScheduleRequest(
-      db,
+    return await set(
+      completeDeferredScheduleRequest$,
       stored,
       root.deferredSchedule,
       existingSchedule,
@@ -2705,9 +2709,12 @@ async function confirmationResponseForStoredChange(
   return null;
 }
 
-type StoredSubscriptionChange = NonNullable<
-  Awaited<ReturnType<typeof loadStoredSubscriptionChange>>
->;
+interface StoredSubscriptionChange {
+  readonly root: UsagePackSubscriptionChangeRow;
+  readonly allocationChanges: readonly UsagePackAllocationChangeRow[];
+  readonly subscription: UsagePackSubscriptionRow;
+  readonly allocations: readonly UsagePackAllocationRow[];
+}
 
 type SubscriptionChangeConfirmationPreparation =
   | { readonly ready: true; readonly stored: StoredSubscriptionChange }
@@ -3809,49 +3816,52 @@ function invoiceSubscriptionId(
   return stripeObjectId(invoice.parent?.subscription_details?.subscription);
 }
 
-async function findSubscriptionChangeForInvoice(
-  db: Pick<Db, "select">,
-  invoice: UsagePackSubscriptionChangeInvoiceInput,
-): Promise<UsagePackSubscriptionChangeRow | null> {
-  const [bound] = await db
-    .select()
-    .from(usagePackSubscriptionChanges)
-    .where(eq(usagePackSubscriptionChanges.stripeInvoiceId, invoice.id))
-    .limit(1);
-  if (bound) {
-    return bound;
-  }
-  const subscriptionId = invoiceSubscriptionId(invoice);
-  if (!subscriptionId) {
-    return null;
-  }
-  const [subscription] = await db
-    .select({ id: usagePackSubscriptions.id })
-    .from(usagePackSubscriptions)
-    .where(eq(usagePackSubscriptions.stripeSubscriptionId, subscriptionId))
-    .limit(1);
-  if (!subscription) {
-    return null;
-  }
-  const [candidate] = await db
-    .select()
-    .from(usagePackSubscriptionChanges)
-    .where(
-      and(
-        eq(
-          usagePackSubscriptionChanges.usagePackSubscriptionId,
-          subscription.id,
+const findSubscriptionChangeForInvoice$ = command(
+  async (
+    { get },
+    invoice: UsagePackSubscriptionChangeInvoiceInput,
+  ): Promise<UsagePackSubscriptionChangeRow | null> => {
+    const db = get(db$);
+    const [bound] = await db
+      .select()
+      .from(usagePackSubscriptionChanges)
+      .where(eq(usagePackSubscriptionChanges.stripeInvoiceId, invoice.id))
+      .limit(1);
+    if (bound) {
+      return bound;
+    }
+    const subscriptionId = invoiceSubscriptionId(invoice);
+    if (!subscriptionId) {
+      return null;
+    }
+    const [subscription] = await db
+      .select({ id: usagePackSubscriptions.id })
+      .from(usagePackSubscriptions)
+      .where(eq(usagePackSubscriptions.stripeSubscriptionId, subscriptionId))
+      .limit(1);
+    if (!subscription) {
+      return null;
+    }
+    const [candidate] = await db
+      .select()
+      .from(usagePackSubscriptionChanges)
+      .where(
+        and(
+          eq(
+            usagePackSubscriptionChanges.usagePackSubscriptionId,
+            subscription.id,
+          ),
+          inArray(usagePackSubscriptionChanges.status, [
+            "applying",
+            "pending_payment",
+          ]),
         ),
-        inArray(usagePackSubscriptionChanges.status, [
-          "applying",
-          "pending_payment",
-        ]),
-      ),
-    )
-    .orderBy(desc(usagePackSubscriptionChanges.createdAt))
-    .limit(1);
-  return candidate ?? null;
-}
+      )
+      .orderBy(desc(usagePackSubscriptionChanges.createdAt))
+      .limit(1);
+    return candidate ?? null;
+  },
+);
 
 function paidInvoiceContext(
   stored: StoredSubscriptionChange | null,
@@ -3903,7 +3913,7 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
     // Invoice-paid financial phases retain their existing uninterruptible
     // lifetime, including undefined provider signals for deferred scheduling.
     const db = set(writeDb$);
-    const root = await findSubscriptionChangeForInvoice(db, invoice);
+    const root = await set(findSubscriptionChangeForInvoice$, invoice);
     if (!root) {
       return { handled: false, orgId: null };
     }
@@ -3983,7 +3993,7 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
       periodEnd: period.end,
       invoice,
     });
-    const refreshed = await loadStoredSubscriptionChange(db, root.id);
+    const refreshed = await set(loadStoredSubscriptionChange$, root.id);
     if (!refreshed) {
       throw new Error(`Subscription change ${root.id} disappeared`);
     }
@@ -4030,96 +4040,84 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
   },
 );
 
-async function failExpiredPendingSubscriptionChange(
-  db: Db,
-  root: UsagePackSubscriptionChangeRow,
-): Promise<void> {
-  const completedAt = nowDate();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0293; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    await tx
+const failExpiredPendingSubscriptionChange$ = command(
+  async function failExpiredPendingSubscriptionChange(
+    { set },
+    root: UsagePackSubscriptionChangeRow,
+  ): Promise<void> {
+    const db = set(writeDb$);
+    const completedAt = nowDate();
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0293; new non-billing transactions are prohibited.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(usagePackSubscriptionChanges)
+        .set({
+          status: "failed",
+          failureReason: "pending_update_expired",
+          completedAt,
+          updatedAt: completedAt,
+        })
+        .where(eq(usagePackSubscriptionChanges.id, root.id));
+      await tx
+        .update(usagePackAllocationChanges)
+        .set({
+          status: "failed",
+          failureReason: "pending_update_expired",
+          completedAt,
+          updatedAt: completedAt,
+        })
+        .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id));
+    });
+  },
+);
+
+const rollbackUnpaidSubscriptionChange$ = command(
+  async (
+    { set },
+    stored: StoredSubscriptionChange,
+    subscription: StripeSubscription,
+    invoice: StripeInvoice | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const stripe = getStripeClient();
+    if (invoice?.status === "open") {
+      await stripe.invoices.voidInvoice(
+        invoice.id,
+        {},
+        {
+          idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:void`,
+        },
+      );
+      signal.throwIfAborted();
+    }
+    const items = subscriptionUpdateItems(
+      subscription,
+      subscriptionPlanItem(subscription),
+      stored.subscription.stripePlanPriceId,
+      packageQuantitiesFromAllocations(stored.allocations),
+    );
+    if (items.length > 0) {
+      await stripe.subscriptions.update(
+        subscription.id,
+        {
+          items,
+          proration_behavior: "none",
+        },
+        {
+          idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:rollback`,
+        },
+      );
+      signal.throwIfAborted();
+    }
+    return await set(failExpiredPendingSubscriptionChange$, stored.root);
+  },
+);
+
+const expireSubscriptionChangePreviews$ = command(
+  async ({ set }, at: Date): Promise<number> => {
+    const db = set(writeDb$);
+    const expired = await db
       .update(usagePackSubscriptionChanges)
-      .set({
-        status: "failed",
-        failureReason: "pending_update_expired",
-        completedAt,
-        updatedAt: completedAt,
-      })
-      .where(eq(usagePackSubscriptionChanges.id, root.id));
-    await tx
-      .update(usagePackAllocationChanges)
-      .set({
-        status: "failed",
-        failureReason: "pending_update_expired",
-        completedAt,
-        updatedAt: completedAt,
-      })
-      .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id));
-  });
-}
-
-async function rollbackUnpaidSubscriptionChange(
-  db: Db,
-  stored: NonNullable<Awaited<ReturnType<typeof loadStoredSubscriptionChange>>>,
-  subscription: StripeSubscription,
-  invoice: StripeInvoice | null,
-  signal: AbortSignal,
-): Promise<void> {
-  const stripe = getStripeClient();
-  if (invoice?.status === "open") {
-    await stripe.invoices.voidInvoice(
-      invoice.id,
-      {},
-      {
-        idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:void`,
-      },
-    );
-    signal.throwIfAborted();
-  }
-  const items = subscriptionUpdateItems(
-    subscription,
-    subscriptionPlanItem(subscription),
-    stored.subscription.stripePlanPriceId,
-    packageQuantitiesFromAllocations(stored.allocations),
-  );
-  if (items.length > 0) {
-    await stripe.subscriptions.update(
-      subscription.id,
-      {
-        items,
-        proration_behavior: "none",
-      },
-      {
-        idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:rollback`,
-      },
-    );
-    signal.throwIfAborted();
-  }
-  await failExpiredPendingSubscriptionChange(db, stored.root);
-}
-
-async function expireSubscriptionChangePreviews(
-  db: Db,
-  at: Date,
-): Promise<number> {
-  const expired = await db
-    .update(usagePackSubscriptionChanges)
-    .set({
-      status: "failed",
-      failureReason: "preview_expired",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        eq(usagePackSubscriptionChanges.status, "previewed"),
-        lte(usagePackSubscriptionChanges.previewExpiresAt, at),
-      ),
-    )
-    .returning({ id: usagePackSubscriptionChanges.id });
-  if (expired.length > 0) {
-    await db
-      .update(usagePackAllocationChanges)
       .set({
         status: "failed",
         failureReason: "preview_expired",
@@ -4127,16 +4125,33 @@ async function expireSubscriptionChangePreviews(
         updatedAt: at,
       })
       .where(
-        inArray(
-          usagePackAllocationChanges.subscriptionChangeId,
-          expired.map((root) => {
-            return root.id;
-          }),
+        and(
+          eq(usagePackSubscriptionChanges.status, "previewed"),
+          lte(usagePackSubscriptionChanges.previewExpiresAt, at),
         ),
-      );
-  }
-  return expired.length;
-}
+      )
+      .returning({ id: usagePackSubscriptionChanges.id });
+    if (expired.length > 0) {
+      await db
+        .update(usagePackAllocationChanges)
+        .set({
+          status: "failed",
+          failureReason: "preview_expired",
+          completedAt: at,
+          updatedAt: at,
+        })
+        .where(
+          inArray(
+            usagePackAllocationChanges.subscriptionChangeId,
+            expired.map((root) => {
+              return root.id;
+            }),
+          ),
+        );
+    }
+    return expired.length;
+  },
+);
 
 async function subscriptionChangeInvoice(
   root: UsagePackSubscriptionChangeRow,
@@ -4204,8 +4219,7 @@ const reconcileSubscriptionChangeCandidate$ = command(
     },
     providerSignal: AbortSignal,
   ): Promise<string | null> => {
-    const db = set(writeDb$);
-    const stored = await loadStoredSubscriptionChange(db, args.root.id);
+    const stored = await set(loadStoredSubscriptionChange$, args.root.id);
     const subscriptionId = stored?.subscription.stripeSubscriptionId;
     if (!stored || !subscriptionId) {
       return null;
@@ -4237,8 +4251,8 @@ const reconcileSubscriptionChangeCandidate$ = command(
         args.paymentExpiredBefore,
       )
     ) {
-      await rollbackUnpaidSubscriptionChange(
-        db,
+      await set(
+        rollbackUnpaidSubscriptionChange$,
         stored,
         subscription,
         invoice,
@@ -4247,7 +4261,7 @@ const reconcileSubscriptionChangeCandidate$ = command(
       return args.root.orgId;
     }
     if (!immediateSubscriptionProjectionMatches(stored, subscription)) {
-      await failExpiredPendingSubscriptionChange(db, args.root);
+      await set(failExpiredPendingSubscriptionChange$, args.root);
       return args.root.orgId;
     }
     return null;
@@ -4269,7 +4283,7 @@ export const reconcileUsagePackSubscriptionChanges$ = command(
     const paymentExpiredBefore = new Date(
       at.getTime() - PAYMENT_CONFIRMATION_TTL_MS,
     );
-    const expiredCount = await expireSubscriptionChangePreviews(db, at);
+    const expiredCount = await set(expireSubscriptionChangePreviews$, at);
     const candidates = await db
       .select()
       .from(usagePackSubscriptionChanges)
