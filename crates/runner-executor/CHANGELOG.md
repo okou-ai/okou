@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.9...runner-executor-v0.15.10) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** reclaim disposable caches after bootstrap disk exhaustion ([#42225](https://github.com/okou-ai/okou/issues/42225)) ([cbe68e7](https://github.com/okou-ai/okou/commit/cbe68e780c1565d43e2fa32491e1350d47355229))
+
 ## [0.15.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.8...runner-executor-v0.15.9) (2026-10-22)
 
 ## [0.15.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.15.7...runner-executor-v0.15.8) (2026-10-22)
