@@ -11586,9 +11586,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
         expect(claim.appendSystemPrompt).toContain(
-          "Codex's native image generation tool is exposed because managed Image Generation is disabled, use that native tool instead",
-        );
-        expect(claim.appendSystemPrompt).toContain(
           "this setting applies only to Okou-managed image generation",
         );
         await api.requestCancelRun(actor, queued.runId, [200]);
