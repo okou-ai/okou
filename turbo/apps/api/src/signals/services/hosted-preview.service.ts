@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import sharp from "sharp";
 import { v5 as uuidv5 } from "uuid";
 import {
   MAX_HOSTED_PREVIEW_BYTES,
@@ -27,7 +26,19 @@ import {
   privateArtifactsBucket,
 } from "./private-artifact-storage.service";
 
+/** Original-byte identity; never shares an allocation with normalized covers. */
 export function hostedPreviewArtifactId(
+  deploymentId: string,
+  preview: HostedSitePreview,
+): string {
+  return uuidv5(
+    `${deploymentId}:sandbox-preview:original-v1:${preview.sha256}`,
+    uuidv5.URL,
+  );
+}
+
+/** Shared original-upload staging identity and historical normalized cover ID. */
+export function hostedPreviewLegacyArtifactId(
   deploymentId: string,
   preview: HostedSitePreview,
 ): string {
@@ -37,8 +48,21 @@ export function hostedPreviewArtifactId(
   );
 }
 
+/** Readers must check readiness and owner/org for each candidate they use. */
+export function hostedPreviewArtifactIds(
+  deploymentId: string,
+  preview: HostedSitePreview,
+): readonly string[] {
+  return [
+    hostedPreviewArtifactId(deploymentId, preview),
+    hostedPreviewLegacyArtifactId(deploymentId, preview),
+  ];
+}
+
 function uploadKey(deploymentId: string, preview: HostedSitePreview): string {
-  return `private-artifacts/${hostedPreviewArtifactId(deploymentId, preview)}/upload`;
+  // Both writer generations stage the same original bytes. Only final objects
+  // need distinct identities, so prepare grants remain rollback-compatible.
+  return `private-artifacts/${hostedPreviewLegacyArtifactId(deploymentId, preview)}/upload`;
 }
 
 export const prepareHostedPreview$ = command(
@@ -66,37 +90,6 @@ export const prepareHostedPreview$ = command(
   },
 );
 
-/** Decode bounded input and strip metadata before it becomes a reusable cover. */
-async function normalizePreview(
-  bytes: Buffer,
-  preview: HostedSitePreview,
-): Promise<Buffer> {
-  if (
-    bytes.length !== preview.size ||
-    createHash("sha256").update(bytes).digest("hex") !== preview.sha256
-  ) {
-    throw new Error("Preview bytes do not match the prepared size and SHA-256");
-  }
-  const image = sharp(bytes, {
-    limitInputPixels: 4096 * 4096,
-    failOn: "warning",
-  });
-  const metadata = await image.metadata();
-  if (
-    `image/${metadata.format}` !== preview.contentType ||
-    (metadata.pages ?? 1) !== 1
-  ) {
-    throw new Error(
-      "Preview must be a single PNG or JPEG image matching its declared type",
-    );
-  }
-  const normalized = await image.rotate().png().toBuffer();
-  if (normalized.length > MAX_HOSTED_PREVIEW_BYTES) {
-    throw new Error("Decoded preview exceeds the 5 MiB image limit");
-  }
-  return normalized;
-}
-
 /** Covers are ready file records, not standalone catalog publications. */
 const markHostedPreviewReady$ = command(
   async (
@@ -107,6 +100,7 @@ const markHostedPreviewReady$ = command(
       readonly orgId: string;
       readonly storageKey: string;
       readonly size: number;
+      readonly contentType: HostedSitePreview["contentType"];
     },
     signal: AbortSignal,
   ) => {
@@ -114,7 +108,7 @@ const markHostedPreviewReady$ = command(
       .update(runUploadedFiles)
       .set({
         url: null,
-        contentType: "image/png",
+        contentType: args.contentType,
         sizeBytes: args.size,
         materializationStatus: "ready",
         updatedAt: nowDate(),
@@ -151,9 +145,15 @@ export const completeHostedPreview$ = command(
     | { readonly status: "bad_request"; readonly message: string }
   > => {
     const id = hostedPreviewArtifactId(args.deploymentId, args.preview);
-    const existing = await set(privateArtifactRecord$, id, signal);
-    signal.throwIfAborted();
-    if (existing?.materializationStatus === "ready") {
+    for (const candidateId of hostedPreviewArtifactIds(
+      args.deploymentId,
+      args.preview,
+    )) {
+      const existing = await set(privateArtifactRecord$, candidateId, signal);
+      signal.throwIfAborted();
+      if (existing?.materializationStatus !== "ready") {
+        continue;
+      }
       if (existing.userId !== args.userId || existing.orgId !== args.orgId) {
         throw new Error("Hosted preview belongs to another owner");
       }
@@ -167,7 +167,11 @@ export const completeHostedPreview$ = command(
       signal.throwIfAborted();
       return {
         status: "ok",
-        url: privateArtifactUrl(id, existing.filename, existing.metadata),
+        url: privateArtifactUrl(
+          candidateId,
+          existing.filename,
+          existing.metadata,
+        ),
       };
     }
 
@@ -180,7 +184,7 @@ export const completeHostedPreview$ = command(
         message: "Hosted preview was not uploaded",
       };
     }
-    // Storage/provider failures remain errors; malformed caller images are 400s.
+    // Storage/provider failures remain errors; upload integrity failures are 400s.
     const downloaded = await settle(
       get(
         downloadS3BufferWithMaxBytes(
@@ -201,15 +205,15 @@ export const completeHostedPreview$ = command(
       }
       throw downloaded.error;
     }
-    const decoded = await settle(
-      normalizePreview(downloaded.value, args.preview),
-      signal,
-    );
-    if (!decoded.ok) {
+    const bytes = downloaded.value;
+    if (
+      bytes.length !== args.preview.size ||
+      createHash("sha256").update(bytes).digest("hex") !== args.preview.sha256
+    ) {
       return {
         status: "bad_request",
         message:
-          "Invalid hosted preview: supply a complete PNG or JPEG, at most 5 MiB and 16 megapixels, matching the prepared checksum",
+          "Hosted preview bytes do not match the prepared size and SHA-256",
       };
     }
     const artifact = await set(
@@ -218,18 +222,24 @@ export const completeHostedPreview$ = command(
         id,
         userId: args.userId,
         orgId: args.orgId,
-        filename: `preview-${args.preview.sha256}.png`,
-        contentType: "image/png",
-        size: decoded.value.length,
+        filename: `preview-${args.preview.sha256}.${args.preview.contentType === "image/png" ? "png" : "jpg"}`,
+        contentType: args.preview.contentType,
+        size: bytes.length,
       },
       signal,
     );
     // Upload credentials only address the staging key, never this final object.
     await get(
-      putImmutableS3Object(bucket, artifact.key, decoded.value, "image/png", {
-        signal,
-        metadata: artifact.metadata,
-      }),
+      putImmutableS3Object(
+        bucket,
+        artifact.key,
+        bytes,
+        args.preview.contentType,
+        {
+          signal,
+          metadata: artifact.metadata,
+        },
+      ),
     );
     signal.throwIfAborted();
     await set(
@@ -239,7 +249,8 @@ export const completeHostedPreview$ = command(
         userId: args.userId,
         orgId: args.orgId,
         storageKey: artifact.key,
-        size: decoded.value.length,
+        size: bytes.length,
+        contentType: args.preview.contentType,
       },
       signal,
     );

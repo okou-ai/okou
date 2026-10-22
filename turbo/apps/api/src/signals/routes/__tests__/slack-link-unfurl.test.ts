@@ -61,7 +61,7 @@ function compactBrandImageUrl() {
 
 function signedImageUrl(source: string) {
   return expect.stringContaining(
-    `${env("OKOU_API_BACKEND_URL")}/api/artifact-og/slack.png?${new URLSearchParams({ url: source })}&signature=`,
+    `${env("OKOU_PUBLIC_ARTIFACTS_BASE_URL")}/cdn-cgi/image/width=320,height=112,fit=scale-down,format=auto,quality=85,metadata=none/${env("OKOU_API_BACKEND_URL")}/api/artifact-og/slack.png?${new URLSearchParams({ url: source })}&signature=`,
   );
 }
 
@@ -209,7 +209,7 @@ describe("Slack link previews", () => {
       type: "image",
       image_url: expect.stringMatching(
         new RegExp(
-          `/api/artifact-og/slack\\.png\\?url=[^&]+kind%3Dhost%26id%3D${f.prepared.deploymentId}%26version%3D[^&]+%26variant%3Dslack&signature=`,
+          `/cdn-cgi/image/width=320,height=112,[^/]+/https?://[^/]+/api/artifact-og/image\\?kind=host&id=${f.prepared.deploymentId}&version=`,
           "u",
         ),
       ),
@@ -364,7 +364,7 @@ describe("Slack link previews", () => {
                 },
                 {
                   type: "image",
-                  image_url: signedImageUrl(compactBrandImageUrl()),
+                  image_url: compactBrandImageUrl(),
                   alt_text: ARTIFACT_OG_BRAND.title,
                 },
               ],
@@ -692,7 +692,7 @@ describe("Slack link previews", () => {
           blocks: expect.arrayContaining([
             {
               type: "image",
-              image_url: signedImageUrl(compactBrandImageUrl()),
+              image_url: compactBrandImageUrl(),
               alt_text: ARTIFACT_OG_BRAND.title,
             },
           ]),
@@ -875,7 +875,7 @@ describe("Slack link previews", () => {
                   expect.objectContaining({
                     type: "image",
                     image_url: expect.stringContaining(
-                      "/api/artifact-og/slack.png?url=",
+                      "/api/artifact-og/image?kind=reference&id=",
                     ),
                     alt_text: filename,
                   }),
@@ -937,7 +937,7 @@ describe("Slack link previews", () => {
                   type: "image",
                   image_url: expect.stringMatching(
                     new RegExp(
-                      `/api/artifact-og/slack\\.png\\?url=[^&]+kind%3Dhost%26id%3D${f.prepared.deploymentId}%26version%3D[^&]+%26variant%3Dslack&signature=`,
+                      `/cdn-cgi/image/width=320,height=112,[^/]+/https?://[^/]+/api/artifact-og/image\\?kind=host&id=${f.prepared.deploymentId}&version=`,
                       "u",
                     ),
                   ),

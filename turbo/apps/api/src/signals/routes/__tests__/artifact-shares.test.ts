@@ -21,7 +21,6 @@ import {
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import sharp from "sharp";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactOgRoutes } from "../artifact-og";
 import { testContext, accept } from "../../../__tests__/test-context";
@@ -2022,11 +2021,10 @@ test("canonical file links disclose public previews only while explicitly public
 
 test("oG checks anonymous sharing again for old image URLs after a public share becomes organization-only or revoked", async () => {
   fixture();
-  const bytes = await sharp({
-    create: { width: 600, height: 900, channels: 3, background: "#ee2200" },
-  })
-    .png()
-    .toBuffer();
+  const bytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    "base64",
+  );
   const provider = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((cmd, ...args) => {
     if (
@@ -2077,19 +2075,33 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
     throw new Error("Expected public metadata");
   }
   expect(metadata.title).toBe("confidential-report.png");
+  expect(metadata.imageUrl).toContain("/cdn-cgi/image/fit=scale-down,");
+  const sourceUrl = new URL(metadata.imageUrl.split("metadata=none/")[1]!);
+  expect(sourceUrl.pathname).toBe("/api/artifact-og/image");
+  expect(sourceUrl.searchParams.get("id")).toBe(reference);
   const imageQuery = {
     ...query,
-    version: new URL(metadata.imageUrl).searchParams.get("version")!,
+    version: sourceUrl.searchParams.get("version")!,
   };
-  const image = await accept(og.image({ query: imageQuery }), [200]);
-  await expect(
-    sharp(Buffer.from(await image.body.arrayBuffer())).metadata(),
-  ).resolves.toMatchObject({ width: 600, height: 900 });
+  const image = await accept(og.image({ query: imageQuery }), [302]);
+  const original = new URL(image.headers.get("location")!);
+  expect(original.searchParams.get("response-cache-control")).toBe(
+    "private, no-store, must-revalidate",
+  );
+  expect(original.searchParams.has("X-Amz-Signature")).toBeTruthy();
+  expect(original.searchParams.get("X-Amz-Expires")).toBe("60");
+  expect(decodeURIComponent(original.pathname)).toContain(
+    `private-artifacts/${target.id}/shares/`,
+  );
+  expect(decodeURIComponent(original.pathname)).toContain(
+    "/confidential-report.png",
+  );
+  expect(image.headers.get("cache-control")).toBe("private, no-store");
   const compactQuery = { ...imageQuery, variant: "slack" as const };
-  const compact = await accept(og.image({ query: compactQuery }), [200]);
-  await expect(
-    sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
-  ).resolves.toMatchObject({ width: 75, height: 112 });
+  const compact = await accept(og.image({ query: compactQuery }), [302]);
+  expect(new URL(compact.headers.get("location")!).pathname).toBe(
+    original.pathname,
+  );
   const brand = await accept(og.defaultImage(), [302]);
   expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
   for (const audience of ["organization", "private"] as const) {
@@ -2110,11 +2122,9 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
       og.image({ query: compactQuery }),
       [302],
     );
-    const compactBrand = new URL(compactDenied.headers.get("location")!);
-    expect(compactBrand.origin).toBe(
-      new URL(ARTIFACT_OG_BRAND.imageUrl).origin,
+    expect(compactDenied.headers.get("location")).toBe(
+      ARTIFACT_OG_BRAND.imageUrl,
     );
-    expect(compactBrand.pathname).toContain("/cdn-cgi/image/height=112,");
     expect(compactDenied.headers.get("cache-control")).toBe(
       "private, no-store",
     );

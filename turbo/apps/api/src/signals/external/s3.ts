@@ -1245,6 +1245,7 @@ function signPresignedGetUrl(
   bucket: string,
   key: string,
   options?: {
+    readonly expiresInSeconds?: number;
     readonly filename?: string;
     readonly responseCacheControl?: string;
     readonly signingDate?: Date;
@@ -1267,7 +1268,7 @@ function signPresignedGetUrl(
       : {}),
   });
   return getSignedUrl(client, command, {
-    expiresIn: PRESIGNED_URL_TTL_SECONDS,
+    expiresIn: options?.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
     ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
   });
 }
@@ -1280,6 +1281,7 @@ export const signPresignedGetUrl$ = command(
       readonly bucket: string;
       readonly key: string;
       readonly publicEndpoint: boolean;
+      readonly expiresInSeconds?: number;
       readonly filename?: string;
       readonly responseCacheControl?: string;
       readonly signingDate?: Date;

@@ -11,9 +11,11 @@ import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og"
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import type { HostedSitePrepareResponse } from "@okouai/api-contracts/contracts/host";
+import type {
+  HostedSitePrepareResponse,
+  HostedSitePreview,
+} from "@okouai/api-contracts/contracts/host";
 import { http, HttpResponse } from "msw";
-import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
@@ -49,6 +51,7 @@ function previewStorage(
     throw new Error("Missing object-storage fixture");
   }
   const objects = new Map<string, Buffer>();
+  const contentTypes = new Map<string, string>();
   const grants = new Map<string, string>();
   context.mocks.s3.getSignedUrl.mockImplementation(
     (client, command, options) => {
@@ -60,6 +63,15 @@ function previewStorage(
         const token = randomUUID();
         grants.set(token, command.input.Key);
         return Promise.resolve(`https://preview-upload.example/${token}`);
+      }
+      if (
+        command instanceof GetObjectCommand &&
+        command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") &&
+        command.input.Key
+      ) {
+        return Promise.resolve(
+          `https://preview-download.example/${command.input.Key}?signature=preview`,
+        );
       }
       return baseSign(client, command, options);
     },
@@ -105,9 +117,10 @@ function previewStorage(
         if (!objects.has(key)) {
           const body = command.input.Body;
           if (!Buffer.isBuffer(body)) {
-            throw new Error("Expected normalized preview bytes");
+            throw new Error("Expected original preview bytes");
           }
           objects.set(key, body);
+          contentTypes.set(key, command.input.ContentType ?? "");
         }
         return Promise.resolve({});
       }
@@ -122,7 +135,7 @@ function previewStorage(
       return Promise.resolve({
         Body: Readable.from([bytes]),
         ContentLength: bytes.length,
-        ContentType: "image/png",
+        ContentType: contentTypes.get(key) ?? "image/png",
         ETag: '"preview"',
       });
     }
@@ -131,19 +144,28 @@ function previewStorage(
   return objects;
 }
 
-function image(color = "#2463eb") {
-  return sharp({
-    create: { width: 1200, height: 630, channels: 3, background: color },
-  })
-    .png()
-    .toBuffer();
-}
+// Fixed PNG and JPEG uploads; tests neither generate nor decode image data.
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afo8AAAAASUVORK5CYII=",
+  "base64",
+);
+const secondPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP4z8DwHwyBNBgAAEnICff5q7YNAAAAAElFTkSuQmCC",
+  "base64",
+);
+const jpeg = Buffer.from(
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
+  "base64",
+);
 
-function preview(bytes: Buffer) {
+function preview(
+  bytes: Buffer,
+  contentType: HostedSitePreview["contentType"] = "image/png",
+) {
   return {
     size: bytes.length,
     sha256: createHash("sha256").update(bytes).digest("hex"),
-    contentType: "image/png" as const,
+    contentType,
   };
 }
 
@@ -159,6 +181,80 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
+  it.each([
+    { bytes: png, contentType: "image/png", extension: "png" },
+    { bytes: jpeg, contentType: "image/jpeg", extension: "jpg" },
+  ] as const)(
+    "preserves original $contentType bytes and file identity",
+    async ({ bytes, contentType, extension }) => {
+      const owner = createBddApi(context).user();
+      if (!owner.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const actor = { ...owner, orgId: owner.orgId };
+      const objects = previewStorage();
+      const declared = preview(bytes, contentType);
+      const prepared = await host.prepareHostedSite(actor, {
+        site: `original-${randomUUID().slice(0, 8)}`,
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        files: [hostedTextFile("/index.html", "<main>Original cover</main>")],
+        preview: declared,
+      });
+      expect(prepared.preview?.sha256).toBe(declared.sha256);
+      await upload(prepared, bytes);
+      const completed = await host.completeHostedSite(
+        actor,
+        prepared.deploymentId,
+      );
+      expect(completed.previewImageUrl).toMatch(
+        new RegExp(`\\.${extension}$`, "u"),
+      );
+      expect([...objects.values()]).toStrictEqual([bytes]);
+      expect(context.mocks.s3.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Body: bytes,
+            ContentType: contentType,
+            IfNoneMatch: "*",
+          }),
+        }),
+        expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+      );
+      if (!completed.previewImageUrl) {
+        throw new Error("Missing completed preview reference");
+      }
+      const reference = new URL(completed.previewImageUrl).pathname
+        .split("/")
+        .at(-1);
+      if (!reference) {
+        throw new Error("Missing preview reference");
+      }
+      createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+      const references = setupAppWithRoutes({
+        context,
+        routes: artifactReferenceRoutes,
+      })(artifactReferencesContract);
+      const resolved = await accept(
+        references.resolve({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { reference },
+        }),
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        contentType,
+        filename: `preview-${declared.sha256}.${extension}`,
+      });
+      await expect(
+        host.completeHostedSite(actor, prepared.deploymentId),
+      ).resolves.toMatchObject({
+        previewImageUrl: completed.previewImageUrl,
+      });
+      expect([...objects.values()]).toStrictEqual([bytes]);
+    },
+  );
+
   it("reads authored HTML metadata with the hosted-sites credentials even without an uploaded cover", async () => {
     const owner = createBddApi(context).user();
     if (!owner.orgId) {
@@ -219,7 +315,7 @@ describe("sandbox hosted previews", () => {
     );
   });
 
-  it("serves the exact published cover anonymously, retains older versions, and revokes OG on disable or deletion", async () => {
+  it("redirects to the original published cover anonymously, retains older versions, and revokes OG on deletion", async () => {
     const owner = createBddApi(context).user();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
@@ -245,7 +341,7 @@ describe("sandbox hosted previews", () => {
     const og = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
       artifactOgContract,
     );
-    const bytes = await image("#ee2211");
+    const bytes = png;
     const site = `og-${randomUUID().slice(0, 8)}`;
     const first = await host.prepareHostedSite(actor, {
       site,
@@ -272,23 +368,27 @@ describe("sandbox hosted previews", () => {
       throw new Error("Expected public OG metadata");
     }
     expect(JSON.stringify(metadata.body)).not.toContain("private-artifacts/");
-    const version = new URL(metadata.body.imageUrl).searchParams.get(
-      "version",
-    )!;
+    expect(metadata.body.imageUrl).toContain("/cdn-cgi/image/");
+    const source = metadata.body.imageUrl.split("metadata=none/")[1];
+    if (!source) {
+      throw new Error("Missing original cover source URL");
+    }
+    const version = new URL(source).searchParams.get("version")!;
     const imageQuery = { ...target, version };
-    const original = await accept(og.image({ query: imageQuery }), [200]);
-    const originalBytes = Buffer.from(await original.body.arrayBuffer());
-    await expect(sharp(originalBytes).metadata()).resolves.toMatchObject({
-      width: 1200,
-      height: 630,
-    });
+    const original = await accept(og.image({ query: imageQuery }), [302]);
+    const originalUrl = original.headers.get("location");
+    if (!originalUrl) {
+      throw new Error("Missing original cover redirect");
+    }
+    const originalKey = decodeURIComponent(new URL(originalUrl).pathname).slice(
+      1,
+    );
+    expect(previewObjects.get(originalKey)).toStrictEqual(bytes);
     const compact = await accept(
       og.image({ query: { ...imageQuery, variant: "slack" } }),
-      [200],
+      [302],
     );
-    await expect(
-      sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
-    ).resolves.toMatchObject({ width: 213, height: 112 });
+    expect(compact.headers.get("location")).toBe(originalUrl);
     expect(original.headers.get("cache-control")).toBe("private, no-store");
     expect(original.headers.get("cloudflare-cdn-cache-control")).toBe(
       "no-store",
@@ -307,12 +407,11 @@ describe("sandbox hosted previews", () => {
       }),
       [302],
     );
-    const brandUrl = new URL(ARTIFACT_OG_BRAND.imageUrl);
     expect(compactStale.headers.get("location")).toBe(
-      `${brandUrl.origin}/cdn-cgi/image/height=112,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`,
+      ARTIFACT_OG_BRAND.imageUrl,
     );
 
-    const nextBytes = await image("#1122ee");
+    const nextBytes = secondPng;
     const second = await host.prepareHostedSite(actor, {
       site,
       artifactKind: "hosted-site",
@@ -322,13 +421,9 @@ describe("sandbox hosted previews", () => {
     });
     await upload(second, nextBytes);
     await host.completeHostedSite(actor, second.deploymentId);
-    expect(
-      Buffer.from(
-        await (
-          await accept(og.image({ query: imageQuery }), [200])
-        ).body.arrayBuffer(),
-      ),
-    ).toStrictEqual(originalBytes);
+    const retained = await accept(og.image({ query: imageQuery }), [302]);
+    expect(retained.headers.get("location")).toBe(originalUrl);
+    expect(previewObjects.get(originalKey)).toStrictEqual(bytes);
     previewObjects.clear();
     const missing = await accept(og.image({ query: imageQuery }), [302]);
     expect(missing.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
@@ -374,8 +469,8 @@ describe("sandbox hosted previews", () => {
     );
     await accept(features.delete({ headers }), [403]);
     previewStorage();
-    const firstImage = await image();
-    const secondImage = await image("#ee3355");
+    const firstImage = png;
+    const secondImage = secondPng;
     const body = {
       site: `preview-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
@@ -458,13 +553,13 @@ describe("sandbox hosted previews", () => {
     );
     const runner = { bearerToken: okouTokenFromClaim(claim) };
     const objects = previewStorage({ failStagingDeleteOnce: true });
-    const bytes = await image();
+    const bytes = jpeg;
     const body = {
       site: `preview-retry-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>Website</main>")],
-      preview: preview(bytes),
+      preview: preview(bytes, "image/jpeg"),
     };
     const prepared = await host.prepareHostedSite(runner, body);
     await upload(prepared, bytes);
@@ -478,13 +573,15 @@ describe("sandbox hosted previews", () => {
       runner,
       prepared.deploymentId,
     );
-    expect(completed.previewImageUrl).toBeDefined();
+    expect(completed.previewImageUrl).toMatch(/\.jpg$/u);
     expect(completed.isActive).toBeTruthy();
+    expect([...objects.values()]).toStrictEqual([bytes]);
     expect(objects.size).toBe(1);
     expect([...objects.keys()][0]).not.toMatch(/\/upload$/u);
     await expect(
       host.completeHostedSite(runner, prepared.deploymentId),
     ).resolves.toMatchObject({ previewImageUrl: completed.previewImageUrl });
+    expect([...objects.values()]).toStrictEqual([bytes]);
     expect((await chat.listArtifactCatalog(actor)).artifacts).toStrictEqual([
       expect.objectContaining({
         kind: "hosted-site",
@@ -494,14 +591,14 @@ describe("sandbox hosted previews", () => {
     ]);
   });
 
-  it("does not activate missing, corrupt, or checksum-mismatched previews and permits repair", async () => {
+  it("does not activate missing or integrity-mismatched previews and permits repair", async () => {
     const owner = createBddApi(context).user();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
     const objects = previewStorage();
-    const bytes = await image();
+    const bytes = png;
     const body = {
       site: `preview-errors-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
@@ -511,7 +608,11 @@ describe("sandbox hosted previews", () => {
     };
     const prepared = await host.prepareHostedSite(actor, body);
     await host.requestCompleteHostedSite(actor, prepared.deploymentId, [400]);
-    await upload(prepared, Buffer.from("not an image"));
+    await upload(prepared, Buffer.from("incomplete upload"));
+    await host.requestCompleteHostedSite(actor, prepared.deploymentId, [400]);
+    const mismatched = Buffer.from(bytes);
+    mismatched[0] = 0;
+    await upload(prepared, mismatched);
     await host.requestCompleteHostedSite(actor, prepared.deploymentId, [400]);
     const pending = await host.readHostedSiteDeployments(actor, body.site);
     expect(pending.activeDeploymentId).toBeNull();
@@ -541,19 +642,5 @@ describe("sandbox hosted previews", () => {
         return bytes.toString("base64");
       }),
     ).toStrictEqual(sealed);
-
-    const corrupt = Buffer.from(
-      "declared checksum is valid, but this is not PNG data",
-    );
-    const malformed = await host.prepareHostedSite(actor, {
-      ...body,
-      preview: preview(corrupt),
-    });
-    await upload(malformed, corrupt);
-    await host.requestCompleteHostedSite(actor, malformed.deploymentId, [400]);
-    expect(
-      (await host.readHostedSiteDeployments(actor, body.site))
-        .activeDeploymentId,
-    ).toBe(prepared.deploymentId);
   });
 });
