@@ -252,6 +252,13 @@ async fn invalid_dh_public_value_is_rejected_without_credential_bytes() {
 }
 
 #[tokio::test]
+async fn dh_public_lower_bound_one_is_rejected_without_credential_bytes() {
+    let mut server_public = [0; KEY_BYTES];
+    server_public[KEY_BYTES - 1] = 1;
+    assert_invalid_dh_public_value(server_public).await;
+}
+
+#[tokio::test]
 async fn dh_public_upper_bound_p_minus_one_is_rejected_without_credential_bytes() {
     let mut server_public = synthetic_modulus();
     // The synthetic modulus ends in 0xff, so subtracting one needs no borrow.
