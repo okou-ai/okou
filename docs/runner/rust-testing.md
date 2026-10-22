@@ -147,6 +147,14 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -p shell-quote --lib tests::quoted_words_round_trip_through_posix_shell -- --exact
 
+# Real constrained Guest-home preparation: private 128 MiB tmpfs, including
+# complete byte/inode exhaustion. Requires Linux user/mount namespaces.
+# Crates CI runs these in its selected guest-home-cleanup-test container;
+# ordinary coverage keeps its existing permissions and compiles these fixtures.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j1 \
+  -p guest-agent --test bootstrap_contracts bootstrap_cases::home_reuse_cleanup \
+  -- --ignored --test-threads=1
+
 # With output (for debugging)
 cargo test --manifest-path crates/Cargo.toml --profile local -- --nocapture
 ```

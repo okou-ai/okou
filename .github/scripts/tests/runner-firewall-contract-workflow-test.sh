@@ -87,8 +87,21 @@ for wrapper in native_wrappers:
     assert not re.search(r'^python3\s', source, re.MULTILINE), \
         f'{wrapper}: receipt metadata must use the ordinary build owner'
 
+home_job = jobs['guest-home-cleanup-test']
+assert home_job['container']['image'] == jobs['check']['container']['image']
+assert home_job['container']['options'] == '--cap-add=SYS_ADMIN --security-opt apparmor=unconfined'
+assert 'guest-home-cleanup-test' in gate['needs']
+home_command = next(step['run'] for step in home_job['steps'] if 'run' in step)
+for required in ['-p guest-agent', '--test bootstrap_contracts',
+                 'bootstrap_cases::home_reuse_cleanup', '--ignored', '--test-threads=1']:
+    assert required in home_command, f'Guest home native execution is missing {required}'
+assert not jobs['coverage']['container'].get('options'), 'coverage must retain its existing permission boundary'
+
 # label, paths, contract owner, image needed, addon needed, worker needed, peer needed
 scenarios = [
+    ('guest-agent', ['crates/guest-agent/src/reuse_preparation.rs'], 'coverage', False, False, False, False),
+    ('guest-contracts', ['crates/guest-contracts/src/disk_cleanup.rs'], 'coverage', True, True, False, False),
+    ('guest-api-contracts', ['crates/api-contracts/src/lib.rs'], 'coverage', True, True, False, False),
     ('runner-types', ['crates/runner-types/src/types.rs'], 'coverage', True, True, False, False),
     ('rfb-client', ['crates/rfb-client/src/qemu_gssapi.rs'], 'coverage', True, True, False, True),
     ('kerberos-worker', ['crates/kerberos-worker/src/lib.rs'], 'coverage', True, True, True, True),
@@ -126,6 +139,11 @@ scenarios = [
      ['turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json'],
      standalone, False, True, False, False),
 ]
+home_needed_labels = {
+    'guest-agent', 'guest-contracts', 'guest-api-contracts', 'workspace-lock',
+    'workspace-config', 'ci', 'native-routing-tests', 'base-selector',
+    'crate-selector', 'toolchain', 'fixture-and-ci',
+}
 
 target = root / 'crates/target'
 assert not target.is_symlink() and target.resolve() == target
@@ -345,10 +363,11 @@ CHECK
     metadata = directory / 'metadata.json'
     names = ['ably-subscriber', 'api-contracts', 'runner', 'runner-types', 'sandbox-firecracker',
              'nbd-cow', 'guest-control-tests', 'xtask', 'rfb-client', 'kerberos-worker',
-             'kerberos-credentials']
+             'kerberos-credentials', 'guest-agent', 'guest-contracts']
     dependencies = {
         'runner': ['runner-types', 'rfb-client'],
-        'runner-types': ['api-contracts'],
+        'runner-types': ['api-contracts', 'guest-contracts'],
+        'guest-agent': ['api-contracts', 'guest-contracts'],
         'rfb-client': ['kerberos-worker', 'kerberos-credentials'],
         'kerberos-worker': ['kerberos-credentials'],
     }
@@ -408,10 +427,13 @@ cat "$CARGO_METADATA_FIXTURE"
         assert actual_owners == ([] if owner is None else [owner]), f'{label}: {actual_owners}'
         assert selected('mitm-addon-test', values) == addon_needed, label
         assert 'qemu-producer-needed' not in outputs, label
+        home_needed = label in home_needed_labels
         native_selection = {'native-kerberos-runtime': worker_needed,
-                            'native-gssapi-independent-peer': peer_needed}
+                            'native-gssapi-independent-peer': peer_needed,
+                            'guest-home-cleanup-test': home_needed}
         assert outputs['native-kerberos-needed'] == str(worker_needed).lower(), label
         assert outputs['native-gssapi-peer-needed'] == str(peer_needed).lower(), label
+        assert outputs['guest-home-cleanup-needed'] == str(home_needed).lower(), label
         for name, needed in native_selection.items():
             assert selected(name, values) == needed, f'{label}: {name}'
         contexts[label] = values
@@ -434,7 +456,7 @@ cat "$CARGO_METADATA_FIXTURE"
     unrelated = contexts['unrelated']
     skipped = {name: 'skipped' for name in gate['needs'] if name not in ['detect-release', 'detect']}
     assert_gate(unrelated, skipped, True, 'unrelated jobs skip')
-    for name in ['coverage', standalone, 'native-kerberos-runtime', 'native-gssapi-independent-peer']:
+    for name in ['coverage', standalone, 'native-kerberos-runtime', 'native-gssapi-independent-peer', 'guest-home-cleanup-test']:
         for result in ['failure', 'cancelled', '']:
             assert_gate(unrelated, skipped | {name: result}, False, f'unrelated: {name} {result!r}')
     for result in ['failure', 'cancelled', 'skipped', '']:
@@ -442,7 +464,7 @@ cat "$CARGO_METADATA_FIXTURE"
         assert not selected('coverage', unrelated | {'needs.detect.result': result})
         assert not selected(standalone, contexts['fixture-only'] | {'needs.detect.result': result})
 
-    for name in ['native-kerberos-needed', 'native-gssapi-peer-needed']:
+    for name in ['native-kerberos-needed', 'native-gssapi-peer-needed', 'guest-home-cleanup-needed']:
         for invalid in ['', 'TRUE', 'false ', '1']:
             assert_gate(unrelated | {f'needs.detect.outputs.{name}': invalid}, skipped, False,
                         f'invalid {name}: {invalid!r}')
@@ -480,6 +502,8 @@ cat "$CARGO_METADATA_FIXTURE"
 
     # Charge actual deleted/renamed harness and transitive crate inputs.
     required_inputs = [
+        ('crates/guest-agent/src/reuse_preparation.rs', False, False),
+        ('crates/guest-contracts/src/disk_cleanup.rs', False, False),
         ('crates/kerberos-worker/tests/check-native-kerberos.sh', True, True),
         ('crates/rfb-client/tests/check-native-gssapi-peer.sh', False, True),
         ('crates/kerberos-credentials/src/lib.rs', True, True),
@@ -499,6 +523,7 @@ cat "$CARGO_METADATA_FIXTURE"
             changed = dict(line.split('=', 1) for line in output.read_text().splitlines())
             assert changed['native-kerberos-needed'] == str(worker_needed).lower(), (source, operation)
             assert changed['native-gssapi-peer-needed'] == str(peer_needed).lower(), (source, operation)
+            assert changed['guest-home-cleanup-needed'] == str(source.startswith(('crates/guest-agent/', 'crates/guest-contracts/'))).lower(), (source, operation)
 
     # Main/merge queue use the same precise native selection, never QEMU builds.
     for event in ['push', 'merge_group']:
@@ -523,7 +548,9 @@ cat "$CARGO_METADATA_FIXTURE"
         assert selected('coverage', values), event
         assert not selected('native-kerberos-runtime', values), event
         assert not selected('native-gssapi-independent-peer', values), event
-        native_skipped = {'native-kerberos-runtime': 'skipped', 'native-gssapi-independent-peer': 'skipped'}
+        assert not selected('guest-home-cleanup-test', values), event
+        native_skipped = {'native-kerberos-runtime': 'skipped', 'native-gssapi-independent-peer': 'skipped',
+                          'guest-home-cleanup-test': 'skipped'}
         assert_gate(values, native_skipped, True, f'{event}: unrelated native jobs skip')
         for result in ['failure', 'cancelled', 'skipped', '']:
             assert_gate(values, native_skipped | {'coverage': result}, False, f'{event}: Rust {result!r}')
@@ -531,18 +558,19 @@ cat "$CARGO_METADATA_FIXTURE"
             for result in ['failure', 'cancelled', '']:
                 assert_gate(values, native_skipped | {name: result}, False, f'{event}: native {result!r}')
 
-    # Fail the eighth metadata operation: the first newly selected native
-    # dependency closure, after generic detection has already written outputs.
-    output = directory / 'metadata-error.output'
-    output.write_text('')
-    failed = subprocess.run(
-        ['bash', '-euo', 'pipefail', '-c', render(detect['run'], {'github.event_name': 'pull_request'})],
-        cwd=repo, env=env | {'GITHUB_OUTPUT': str(output), 'CARGO_METADATA_FAILURE_AT': '8',
-                            'CARGO_METADATA_CALLS': str(directory / 'metadata-calls')},
-        text=True, capture_output=True)
-    assert failed.returncode == 2, 'native metadata failure must fail detect'
-    partial = dict(line.split('=', 1) for line in output.read_text().splitlines())
-    assert 'native-kerberos-needed' not in partial and 'native-gssapi-peer-needed' not in partial
+    # Every native dependency closure must fail closed after generic outputs.
+    for call in [8, 9, 10]:
+        output = directory / f'metadata-error-{call}.output'
+        output.write_text('')
+        failed = subprocess.run(
+            ['bash', '-euo', 'pipefail', '-c', render(detect['run'], {'github.event_name': 'pull_request'})],
+            cwd=repo, env=env | {'GITHUB_OUTPUT': str(output), 'CARGO_METADATA_FAILURE_AT': str(call),
+                                'CARGO_METADATA_CALLS': str(directory / f'metadata-calls-{call}')},
+            text=True, capture_output=True)
+        assert failed.returncode == 2, 'native metadata failure must fail detect'
+        partial = dict(line.split('=', 1) for line in output.read_text().splitlines())
+        assert all(name not in partial for name in [
+            'native-kerberos-needed', 'native-gssapi-peer-needed', 'guest-home-cleanup-needed'])
 
     released = unrelated | {'needs.detect-release.outputs.skip': 'true'}
     release_results = {name: 'skipped' for name in gate['needs'] if name != 'detect-release'}

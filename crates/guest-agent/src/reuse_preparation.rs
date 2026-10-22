@@ -23,6 +23,9 @@
 //!    symlinks.
 //! 5. Measure rootfs capacity, recursively remove every unprotected direct child of the runtime
 //!    parent, revalidate each protected identity, and measure capacity again.
+//! 6. Inspect home and, only below its byte/inode reserve, reclaim the fixed disposable package
+//!    caches once. Terminal history evidence is captured in memory before runtime deletion and
+//!    persisted after reclamation; the final report includes capacity after those writes.
 //!
 //! Codex startup reconciliation establishes the current Codex run's auth mode, but it cannot
 //! replace this final scrub: idle sandbox reuse is not scoped to a CLI framework, so a non-Codex
@@ -273,7 +276,7 @@ fn prepare(
         }
     }
 
-    let history_proof = if retention == RuntimeRetention::TerminalCache {
+    let captured_history = if retention == RuntimeRetention::TerminalCache {
         // Containment and both descriptor-owned anchors have been proven before
         // reading final metadata or changing any surviving proof. Capture facts
         // from actual finalized bytes, then remove private runtime namespaces.
@@ -283,10 +286,9 @@ fn prepare(
             current_path,
             request.retained_runtime_dir.as_deref().map(Path::new),
             generation,
-        )
-        .map_err(ReusePreparationError::Cleanup)?;
+        );
         protected.clear();
-        proof
+        Some(proof)
     } else {
         None
     };
@@ -329,8 +331,24 @@ fn prepare(
             )));
         }
     }
+    // Keep reclamation inside this final exec, before park or home freeze. The
+    // proof was captured in memory so even zero free bytes can reach cleanup.
+    let mut home_reclaimed = false;
+    let home = prepare_home_capacity(&mut home_reclaimed)?;
+    let history_proof = match captured_history {
+        Some(proof) if home.home_rejection_reason().is_none() => {
+            proof.persist().map_err(ReusePreparationError::Cleanup)?
+        }
+        Some(proof) => {
+            proof.discard().map_err(ReusePreparationError::Cleanup)?;
+            None
+        }
+        None => None,
+    };
+    // Proof persistence may consume the last part of the reserve. It can use
+    // the same single cleanup attempt, but must never repeat an earlier one.
+    let home = prepare_home_capacity(&mut home_reclaimed)?;
     let after = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
-    let home = home_capacity().map_err(ReusePreparationError::Inspection)?;
     Ok(
         guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
             cleanup: ReusePreparationReport {
@@ -342,6 +360,19 @@ fn prepare(
             history_proof,
         },
     )
+}
+
+fn prepare_home_capacity(
+    reclaimed: &mut bool,
+) -> Result<FilesystemCapacity, ReusePreparationError> {
+    let home = home_capacity().map_err(ReusePreparationError::Inspection)?;
+    if home.home_rejection_reason().is_none() || *reclaimed {
+        return Ok(home);
+    }
+    *reclaimed = true;
+    crate::disk_cleanup::recover(guest_contracts::disk_cleanup::DiskCleanupFilesystem::Home)
+        .map_err(ReusePreparationError::Cleanup)?;
+    home_capacity().map_err(ReusePreparationError::Inspection)
 }
 
 fn cache_runtime_parent() -> PathBuf {
@@ -822,17 +853,20 @@ fn rootfs_capacity() -> io::Result<FilesystemCapacity> {
 }
 
 fn home_capacity() -> io::Result<FilesystemCapacity> {
-    let home = PathBuf::from(
-        api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR,
-    );
-    #[cfg(debug_assertions)]
-    let home = std::env::var_os(TEST_HOME_CAPACITY_ROOT_ENV)
-        .filter(|path| !path.is_empty())
-        .map_or(home, PathBuf::from);
-    let home = Dir::open_absolute(&home)?;
+    let home = Dir::open_absolute(&home_path())?;
     let (available_bytes, available_inodes) = home.available_capacity()?;
     Ok(FilesystemCapacity {
         available_bytes,
         available_inodes,
     })
+}
+
+pub(crate) fn home_path() -> PathBuf {
+    #[cfg(debug_assertions)]
+    if let Some(home) =
+        std::env::var_os(TEST_HOME_CAPACITY_ROOT_ENV).filter(|path| !path.is_empty())
+    {
+        return PathBuf::from(home);
+    }
+    PathBuf::from(api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR)
 }

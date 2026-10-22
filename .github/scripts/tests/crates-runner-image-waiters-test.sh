@@ -72,6 +72,7 @@ def check_gate(root, gate, step, needed: "true", cpu_needed: "true", release: "f
          "GUEST_CONTROL_CHANGED" => "false", "ABLY_CHANGED" => "false",
          "COVERAGE_NEEDED" => "true", "FIREWALL_CONTRACT_NEEDED" => "false",
          "NATIVE_KERBEROS_NEEDED" => "true", "NATIVE_GSSAPI_PEER_NEEDED" => "true",
+         "GUEST_HOME_CLEANUP_NEEDED" => "true",
          "CPU_FAIRNESS_NEEDED" => cpu_needed}
   run_step(root, env, script, success: success)
 end

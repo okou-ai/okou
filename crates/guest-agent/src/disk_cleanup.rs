@@ -1,4 +1,4 @@
-//! Reclaim fixed package caches before agent bootstrap, under sole-workload containment.
+//! Reclaim fixed package caches during bootstrap or reuse preparation.
 //!
 //! This helper never initializes the ordinary agent runtime or writes a file in
 //! home. It retains cache roots, work, installed environments, credentials and
@@ -117,7 +117,7 @@ fn filesystem_root(filesystem: DiskCleanupFilesystem) -> PathBuf {
         };
     }
     Path::new(match filesystem {
-        DiskCleanupFilesystem::Home => "/home/user",
+        DiskCleanupFilesystem::Home => return crate::reuse_preparation::home_path(),
         DiskCleanupFilesystem::Rootfs => "/",
     })
     .to_path_buf()
