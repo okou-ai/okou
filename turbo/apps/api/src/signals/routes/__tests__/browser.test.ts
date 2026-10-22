@@ -8029,6 +8029,8 @@ describe("okou browser route", () => {
           [200],
         );
         expect(pending.body).toStrictEqual({
+          id: expect.any(String),
+          chatThreadId: sent.threadId,
           expiresAt: created.body.expiresAt,
           completedAt: null,
           cloudBrowserEnabled: false,
@@ -8092,6 +8094,8 @@ describe("okou browser route", () => {
         [200],
       );
       expect(pending.body).toStrictEqual({
+        id: expect.any(String),
+        chatThreadId: sent.threadId,
         expiresAt: created.body.expiresAt,
         completedAt: null,
         cloudBrowserEnabled: false,
