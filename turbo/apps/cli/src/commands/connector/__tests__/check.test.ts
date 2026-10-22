@@ -354,7 +354,8 @@ describe("okou connector check command", () => {
                 externalEmail: "run@example.com",
                 connectionStatus,
                 reconnectReason:
-                  connectionStatus === "reconnect-required"
+                  connectionStatus === "reconnect-required" &&
+                  options.setupStatus !== "invalid"
                     ? "authorization_expired_or_revoked"
                     : null,
               },
@@ -1425,12 +1426,17 @@ describe("okou connector check command", () => {
     it.each(["incomplete", "invalid"] as const)(
       "diagnoses %s setup on the exact run account despite a healthy default",
       async (setupStatus) => {
-        setRunAccount("openai", "connected", {
-          label: "Run account B",
-          authMethod: "api-token",
-          setupStatus,
-          missingRequiredFields: setupStatus === "incomplete" ? ["apiKey"] : [],
-        });
+        const needsReconnect = setupStatus === "invalid";
+        setRunAccount(
+          "openai",
+          needsReconnect ? "reconnect-required" : "connected",
+          {
+            label: "Run account B",
+            authMethod: "api-token",
+            setupStatus,
+            missingRequiredFields: ["apiKey"],
+          },
+        );
         stubDiagnostic(
           resolvedEnvironment({
             connector: connectorIdentity({
@@ -1469,11 +1475,16 @@ describe("okou connector check command", () => {
         expect(text).toContain(`Connection ID: ${SELECTED_CONNECTION_ID}`);
         expect(text).toContain("Account used by this run: Run account B");
         expect(text).toContain(`Setup status: ${setupStatus}`);
-        if (setupStatus === "incomplete") {
-          expect(text).toContain("Missing required configuration: apiKey");
-        }
-        expect(text).toContain("/connectors?agentId=");
-        expect(text).toContain("authorized for this agent.");
+        expect(text).toContain("Missing required configuration: apiKey");
+        const actionPath = needsReconnect
+          ? `/connectors/openai/reconnect/${SELECTED_CONNECTION_ID}?agentId=`
+          : "/connectors?agentId=";
+        expect(text).toContain(actionPath);
+        expect(text).toContain(
+          needsReconnect
+            ? "Skipped — agent authorization can only be checked once"
+            : "authorized for this agent.",
+        );
         expect(text).not.toMatch(
           /connected and active|connected, active, and authorized/,
         );
@@ -1491,14 +1502,19 @@ describe("okou connector check command", () => {
           context: "run",
           account: {
             connectionId: SELECTED_CONNECTION_ID,
-            metadata: { connectionStatus: "connected", setupStatus },
+            metadata: {
+              connectionStatus: needsReconnect
+                ? "reconnect-required"
+                : "connected",
+              setupStatus,
+            },
           },
           authorization: { authorized: true },
           actions: expect.arrayContaining([
             expect.objectContaining({
               kind: "link",
-              url: expect.stringContaining("/connectors?agentId="),
-              supportsCallback: false,
+              url: expect.stringContaining(actionPath),
+              supportsCallback: needsReconnect,
             }),
           ]),
         });

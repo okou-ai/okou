@@ -443,6 +443,8 @@ describe("custom connector URL diagnostics", () => {
   it.each(["incomplete", "invalid"] as const)(
     "explains %s setup on the admitted custom account in text and JSON",
     async (setupStatus) => {
+      const connectionStatus =
+        setupStatus === "invalid" ? "reconnect-required" : "connected";
       server.use(
         stubAgentCustomConnectors([
           { customConnectorId: CUSTOM_ID, permissionNames: ["items:write"] },
@@ -457,10 +459,10 @@ describe("custom connector URL diagnostics", () => {
         ]),
         stubRunConnectorAccountInspection([
           {
-            ...account(),
+            ...account(connectionStatus),
             setupStatus,
-            missingRequiredFields:
-              setupStatus === "incomplete" ? ["apiKey"] : [],
+            reconnectReason: null,
+            missingRequiredFields: ["apiKey"],
           },
           {
             ...account(),
@@ -472,9 +474,7 @@ describe("custom connector URL diagnostics", () => {
       await check("--connector", `custom:${CUSTOM_ID}`);
       expect(output()).toContain(`Connection ID: ${ACCOUNT_ID}`);
       expect(output()).toContain(`Setup status: ${setupStatus}`);
-      if (setupStatus === "incomplete") {
-        expect(output()).toContain("Missing required configuration: apiKey");
-      }
+      expect(output()).toContain("Missing required configuration: apiKey");
       expect(output()).toContain(
         "[Connectors](http://localhost:3000/connectors)",
       );
@@ -488,7 +488,7 @@ describe("custom connector URL diagnostics", () => {
       expect(json).toMatchObject({
         account: {
           connectionId: ACCOUNT_ID,
-          metadata: { connectionStatus: "connected", setupStatus },
+          metadata: { connectionStatus, setupStatus },
         },
         authorization: { authorized: true },
         actions: expect.arrayContaining([
