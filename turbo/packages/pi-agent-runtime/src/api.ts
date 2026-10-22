@@ -8,12 +8,7 @@ import type {
   PiPreparationObserver,
 } from "./preparation-timing";
 import { MemoryPiSession } from "./session-memory";
-import { piMemorySummaryTokenCount as countMemorySummaryTokens } from "./memory-recall";
 import type {
-  PiMemoryRecallOutcome,
-  PiMemoryRecallOutcomeStatus,
-  PiMemoryRecallParity,
-  PiMemoryRecallSelection,
   PiPreheatedAgentsFile,
   PiPreheatedResourceSnapshot,
   PiPreheatedSkill,
@@ -22,48 +17,13 @@ import type {
 import { UnsupportedPiSessionVersionError } from "./errors";
 import {
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_PERSONAL_MODEL,
   PI_MEMORY_PRESET,
-  piMemorySessionAffinityKey,
 } from "./memory-background-config";
-import type { PiMemoryStage1Model } from "./memory-background-config";
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
-import {
-  projectPiMemoryStage1Evidence,
-  projectPiMemoryChatStage1Evidence,
-  runPiMemoryStage1Extraction,
-  preparePiMemoryStage1Extraction,
-  runPiMemoryStage1PreparedExtraction,
-} from "./stage1-memory";
-import {
-  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-  PiMemoryStage1ProviderError,
-} from "./stage1-provider";
-import type {
-  PiMemoryStage1PreparedRequest,
-  PiMemoryStage1ProviderResult,
-  PiMemoryStage1ProviderUsage,
-} from "./stage1-provider";
-import {
-  PiMemoryStage1BudgetError,
-  type PiMemoryStage1Evidence,
-} from "./stage1-input";
-import { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 export {
   piMemoryPhase2SelectionDigest,
   PI_MEMORY_PRESET,
-  piMemorySessionAffinityKey,
-  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-  PiMemoryStage1ProviderError,
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_PERSONAL_MODEL,
-  PiMemoryStage1BudgetError,
-  projectPiMemoryStage1Evidence,
-  projectPiMemoryChatStage1Evidence,
-  redactPiMemoryStage1Secrets,
-  runPiMemoryStage1Extraction,
-  preparePiMemoryStage1Extraction,
-  runPiMemoryStage1PreparedExtraction,
   UnsupportedPiSessionVersionError,
 };
 export {
@@ -71,27 +31,14 @@ export {
   measurePiPreparationSync,
   startPiPreparationObservation,
 };
-export type { PiPreparationObservation, PiPreparationObserver };
 export type {
-  PiMemoryRecallOutcome,
-  PiMemoryRecallOutcomeStatus,
-  PiMemoryRecallParity,
-  PiMemoryRecallSelection,
+  PiPreparationObservation,
+  PiPreparationObserver,
   PiPreheatedAgentsFile,
   PiPreheatedResourceSnapshot,
   PiPreheatedSkill,
   PiSessionInspection,
-  PiMemoryStage1Model,
-  PiMemoryStage1PreparedRequest,
-  PiMemoryStage1ProviderResult,
-  PiMemoryStage1Evidence,
-  PiMemoryStage1ProviderUsage,
 };
-
-/** Exact o200k token count shared by summary projection and memory recall. */
-export function piMemorySummaryTokenCount(content: string): number {
-  return countMemorySummaryTokens(content);
-}
 
 /** Create the canonical empty native Pi history for a new sandbox launch. */
 export function createPiSessionJsonl(args: {

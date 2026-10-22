@@ -1,17 +1,14 @@
-import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
   getCustomSkillStorageName,
 } from "@okouai/core/storage-names";
+import { sql, type SQL } from "drizzle-orm";
 import { env } from "../../lib/env";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
-import { db$ } from "../external/db";
-import { command } from "ccstate";
 import {
   storagePresignedUrlCacheKeySql,
-  type StorageManifestPresignedUrlCacheScope,
   type SelectedStoragePresignedUrlCacheRow,
+  type StorageManifestPresignedUrlCacheScope,
 } from "./system-storage-presigned-url-cache.service";
 
 export type ExecutionStorageCacheRows =
@@ -62,63 +59,3 @@ export function cacheRowsFromProjection(row: {
     },
   ];
 }
-
-/** One cache query per read owner; absent and failed snapshots are not reread. */
-export const readExecutionStorageCacheRows$ = command(
-  async (
-    { get },
-    pairs: readonly {
-      readonly scope: StorageManifestPresignedUrlCacheScope;
-      readonly cacheKey: string;
-    }[],
-  ): Promise<ExecutionStorageCacheRows> => {
-    const scopes: readonly StorageManifestPresignedUrlCacheScope[] = [
-      "system_storage",
-      "workflow_skill_storage",
-      "readonly_storage",
-    ];
-    const conditions = scopes.flatMap((scope) => {
-      const keys = [
-        ...new Set(
-          pairs
-            .filter((pair) => {
-              return pair.scope === scope;
-            })
-            .map((pair) => {
-              return pair.cacheKey;
-            }),
-        ),
-      ];
-      return keys.length === 0
-        ? []
-        : [
-            and(
-              eq(systemStoragePresignedUrlCache.scope, scope),
-              inArray(systemStoragePresignedUrlCache.cacheKey, keys),
-            ),
-          ];
-    });
-    const rows =
-      conditions.length === 0
-        ? []
-        : await get(db$)
-            .select({
-              scope: systemStoragePresignedUrlCache.scope,
-              cacheKey: systemStoragePresignedUrlCache.cacheKey,
-              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-              expiresAt: systemStoragePresignedUrlCache.expiresAt,
-            })
-            .from(systemStoragePresignedUrlCache)
-            .where(or(...conditions));
-    return rows.map((row) => {
-      if (
-        row.scope !== "system_storage" &&
-        row.scope !== "workflow_skill_storage" &&
-        row.scope !== "readonly_storage"
-      ) {
-        throw new Error("Unexpected execution storage cache scope");
-      }
-      return { ...row, scope: row.scope };
-    });
-  },
-);

@@ -9,7 +9,6 @@ import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -36,7 +35,6 @@ import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 /*
 helper gap:
 - INT-01 Slack channel, message, upload, and download-file happy paths still
@@ -701,13 +699,6 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     args.actor,
     chatThreadId,
     args.selectedModel,
-  );
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...args.actor, orgId: args.orgId },
-    {
-      [FeatureSwitchKey.PiMemory]: true,
-    },
   );
   return {
     ...args,

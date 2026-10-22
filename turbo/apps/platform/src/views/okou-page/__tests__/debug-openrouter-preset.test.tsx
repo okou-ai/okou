@@ -38,7 +38,6 @@ test("lets the administrator select a preset, restore the system default, and se
     "@preset/okou-1-0",
     "@preset/okou-1-0-dsf",
     "@preset/okou-experimental",
-    "@preset/memory",
   ]);
   click(screen.getByRole("option", { name: "@preset/okou-1-0-dsf" }));
   await waitFor(() => {
@@ -52,10 +51,12 @@ test("lets the administrator select a preset, restore the system default, and se
     expect(select).toHaveTextContent("System default");
   });
   click(select);
-  click(await screen.findByRole("option", { name: "@preset/memory" }));
+  click(
+    await screen.findByRole("option", { name: "@preset/okou-experimental" }),
+  );
   await waitFor(() => {
     expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("@preset/memory");
+    expect(select).toHaveTextContent("@preset/okou-experimental");
   });
   expect(screen.getByText(/for the entire organization/u)).toBeInTheDocument();
 });
@@ -78,7 +79,7 @@ test.each([
   },
 );
 
-test.each(["@preset/memory", "System default"])(
+test.each(["@preset/okou-experimental", "System default"])(
   "keeps the saved preset when saving %s fails and permits retry",
   async (selection) => {
     let current: string | null = "@preset/okou-1-0";
@@ -134,7 +135,7 @@ test("displays an existing operator preset without adding it to the selectable a
     return expect(select).toHaveTextContent("@preset/operator-only");
   });
   click(select);
-  await screen.findByRole("option", { name: "@preset/memory" });
+  await screen.findByRole("option", { name: "@preset/okou-experimental" });
   expect(
     screen.queryByRole("option", { name: "@preset/operator-only" }),
   ).not.toBeInTheDocument();

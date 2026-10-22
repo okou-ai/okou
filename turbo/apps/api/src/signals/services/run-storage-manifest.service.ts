@@ -3,7 +3,6 @@ import {
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  PI_MEMORY_ROOT,
   PI_SKILLS_ROOT,
   type PiModelConfig,
   type StorageMountEntry,
@@ -1478,13 +1477,7 @@ interface PreparedAdditionalVolumes {
   readonly sources: AdditionalVolumeSources;
 }
 
-function autoMemoryMountPath(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): string {
-  if (piSandbox !== undefined) {
-    return PI_MEMORY_ROOT;
-  }
+function autoMemoryMountPath(framework: SupportedFramework): string {
   return framework === "codex"
     ? CANONICAL_CODEX_MEMORY_MOUNT_PATH
     : CANONICAL_CLAUDE_MEMORY_MOUNT_PATH;
@@ -1495,13 +1488,16 @@ function artifactsForRun(args: {
   readonly piSandbox: PiModelConfig | undefined;
 }): RunArtifacts {
   return {
-    artifacts: [
-      {
-        name: AUTO_MEMORY_ARTIFACT_NAME,
-        mountPath: autoMemoryMountPath(args.framework, args.piSandbox),
-        missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
-      },
-    ],
+    artifacts:
+      args.piSandbox === undefined
+        ? [
+            {
+              name: AUTO_MEMORY_ARTIFACT_NAME,
+              mountPath: autoMemoryMountPath(args.framework),
+              missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
+            },
+          ]
+        : [],
   };
 }
 

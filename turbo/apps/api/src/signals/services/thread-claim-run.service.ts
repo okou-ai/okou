@@ -1,10 +1,7 @@
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
-  PI_MEMORY_ROOT,
   type PiLaunchConfig,
-  type PiMemoryRecallSelection,
-  piMemoryRecallSelectionSchema,
   type PiModelConfig,
   type SecretConnectorMetadata,
   type StoredExecutionContext,
@@ -79,7 +76,6 @@ import { logger } from "../../lib/log";
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
-import { storageIndexKey } from "./storage-index.service";
 import {
   publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
@@ -162,12 +158,6 @@ import {
 } from "./pending-launch-official-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
 import {
-  advancePendingLaunchTail,
-  type PendingLaunchTailInput,
-  pendingLaunchTailStart,
-  pendingLaunchTailRowSchema as tailRow,
-} from "./pending-launch-tail-plan";
-import {
   type PiModelPreparationInput,
   resolvePreparedPiModelConfig,
 } from "./pi-sandbox-config";
@@ -217,11 +207,6 @@ import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
-import {
-  type MemorySummaryProjectionReadInput,
-  createMemorySummaryProjectionRead,
-  type MemorySummaryProjectionReadResult,
-} from "./memory-summary-projection.service";
 
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
@@ -251,7 +236,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { isStaffOrg } from "@okouai/core/staff-org";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import type {
   AgentRunFullLaunchSnapshot,
   AgentRunLaunchSnapshot,
@@ -329,13 +313,11 @@ import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timi
 import {
   type AdditionalVolumeSources,
   type AgentRunCreateAdditionalVolume,
-  AUTO_MEMORY_ARTIFACT_NAME,
   type MaterializedAgentRunStorage,
   OfficialWorkflowArtifactResolutionError,
   type PreparedAgentRunStorage,
   prepareRunOutputMetadata,
   type ResolvedAgentExecution,
-  type ResolvedAgentRunStorage,
   type ResolvedRunExecution,
   StorageManifestBuildStats,
 } from "./run-storage-manifest.service";
@@ -3160,164 +3142,10 @@ export function createThreadClaimRunObjects(
       }
     },
   );
-
-  const preparePiLaunchResourcesInput$ = computed(async (get) => {
-    const [args, storage] = await Promise.all([
-      get(runnerArgs$),
-      get(preparedStorage$),
-    ]);
-    if (!args || isRouteError(args) || !storage || isRouteError(storage)) {
-      return null;
-    }
-    return {
-      orgId: args.orgId,
-      userId: args.userId,
-      piMemoryEnabled: isFeatureEnabled(
-        FeatureSwitchKey.PiMemory,
-        args.featureSwitchContext,
-      ),
-      runId: args.run.id,
-      storagePlan: Promise.resolve(storage.resolved),
-      piSandbox: args.piSandbox,
-      chatThreadId: args.chatThreadId,
-      piLaunchConfig: args.piLaunchConfig,
-      timing: args.timing,
-    } satisfies PreparePiLaunchResourcesArgs;
-  });
-  const capturedPiMemoryRecallSelection$ = computed(async (get) => {
-    const args = await get(preparePiLaunchResourcesInput$);
-    if (!args || args.piSandbox === undefined) {
-      return { kind: "unavailable" as const };
-    }
-    const { metadata } = await args.storagePlan;
-    const currentMemoryMount = canonicalPiMemoryMount(metadata.storageMounts);
-    const persistedMemoryMount = canonicalPiMemoryMount(
-      metadata.persistedStorageMounts,
-    );
-    if (
-      args.chatThreadId === undefined ||
-      currentMemoryMount === undefined ||
-      persistedMemoryMount === undefined ||
-      persistedMemoryMount.storageId !== currentMemoryMount.storageId ||
-      persistedMemoryMount.version !== currentMemoryMount.versionId
-    ) {
-      return { kind: "unavailable" as const };
-    }
-    const identity = {
-      memoryStorageId: currentMemoryMount.storageId,
-      storageVersionId: currentMemoryMount.versionId,
-    };
-    if (!args.piMemoryEnabled) {
-      return {
-        kind: "captured" as const,
-        recall: noContentPiMemoryRecall(identity),
-      };
-    }
-    return {
-      kind: "projection" as const,
-      identity,
-      input: {
-        args: { orgId: args.orgId, userId: args.userId, ...identity },
-      } satisfies MemorySummaryProjectionReadInput,
-    };
-  });
-  const projectionInput$ = computed(
-    async (get): Promise<MemorySummaryProjectionReadInput | undefined> => {
-      const selection = await get(capturedPiMemoryRecallSelection$);
-      return selection.kind === "projection" ? selection.input : undefined;
-    },
-  );
-  // The memory HEAD and the Pi gate are known before the Run plan, so the
-  // projection for that identity is read alongside storage preparation.
-  const earlyProjectionInput$ = computed(
-    async (get): Promise<MemorySummaryProjectionReadInput | undefined> => {
-      if (!(await get(resourceAllowed$))) {
-        return undefined;
-      }
-      const [selection, features, storage] = await Promise.all([
-        get(threadContext.subscriptionSelection$),
-        get(bootstrap.featureSwitches$),
-        get(threadContext.storage$),
-      ]);
-      if (
-        "status" in selection ||
-        !selection.piExecution ||
-        !isFeatureEnabled(FeatureSwitchKey.PiMemory, features)
-      ) {
-        return undefined;
-      }
-      const memory = storage.index.get(
-        storageIndexKey(
-          bootstrap.orgId,
-          bootstrap.userId,
-          MEMORY_ARTIFACT_NAME,
-        ),
-      );
-      return memory?.headVersion
-        ? {
-            args: {
-              orgId: bootstrap.orgId,
-              userId: bootstrap.userId,
-              memoryStorageId: memory.storageId,
-              storageVersionId: memory.headVersion.id,
-            },
-          }
-        : undefined;
-    },
-  );
-  const earlyMemorySummaryProjection$ = createMemorySummaryProjectionRead(
-    earlyProjectionInput$,
-  );
-  const canonicalMemorySummaryProjection$ =
-    createMemorySummaryProjectionRead(projectionInput$);
-  const memorySummaryProjectionRead$ = computed(
-    async (get): Promise<MemorySummaryProjectionReadResult | null> => {
-      const [input, earlyInput] = await Promise.all([
-        get(projectionInput$),
-        get(earlyProjectionInput$),
-      ]);
-      if (!input) {
-        return null;
-      }
-      return earlyInput && sameMemoryProjectionIdentity(earlyInput, input)
-        ? get(earlyMemorySummaryProjection$)
-        : get(canonicalMemorySummaryProjection$);
-    },
-  );
-  const piMemoryRecallProjection$ = memorySummaryProjectionRead$;
-  const piMemoryRecall$ = computed(
-    async (get): Promise<PiMemoryRecallSelection | undefined> => {
-      const selection = await get(capturedPiMemoryRecallSelection$);
-      if (selection.kind === "unavailable") {
-        return undefined;
-      }
-      if (selection.kind === "captured") {
-        return selection.recall;
-      }
-      const projection = await get(piMemoryRecallProjection$);
-      if (projection?.unavailableReason) {
-        L.warn("Pi memory summary projection is not ready", {
-          ...selection.identity,
-          reason: projection.unavailableReason,
-        });
-      }
-      const ready = projection?.ready;
-      return ready
-        ? piMemoryRecallSelectionSchema.parse({
-            status: "ready",
-            ...selection.identity,
-            ...ready,
-          })
-        : noContentPiMemoryRecall(selection.identity);
-    },
-  );
   const piLaunchResources$ = computed(
     async (get): Promise<PreparedPiLaunchResources | undefined> => {
-      const [args, memoryRecall] = await Promise.all([
-        get(preparePiLaunchResourcesInput$),
-        get(piMemoryRecall$),
-      ]);
-      if (!args || args.piSandbox === undefined) {
+      const args = await get(runnerArgs$);
+      if (!args || isRouteError(args) || args.piSandbox === undefined) {
         return undefined;
       }
       const piSandbox = args.piSandbox;
@@ -3330,11 +3158,9 @@ export function createThreadClaimRunObjects(
           return Promise.resolve(
             assemblePiLaunchResources({
               modelConfig: piSandbox,
-              piLaunchConfig: args.piLaunchConfig,
-              memoryRecall,
               sessionId: officialTarget?.workflow.officialDefinitionName
-                ? args.runId
-                : (args.chatThreadId ?? args.runId),
+                ? args.run.id
+                : (args.chatThreadId ?? args.run.id),
             }),
           );
         },
@@ -3426,8 +3252,6 @@ export function createThreadClaimRunObjects(
           apiStartTime: await get(runnerApiStartTime$),
           includeOkouTokenSecret: args.includeOkouTokenSecret,
           chatThreadId: args.chatThreadId,
-          // Thread launches carry no producer Pi launch options.
-          piLaunchConfig: undefined,
         },
       };
     },
@@ -3575,9 +3399,6 @@ export function createThreadClaimRunObjects(
         set(prepareRunnerInput$, signal),
         get(preparedStorage$),
         get(piLaunchResources$),
-        // Start the Pi memory projection read with storage preparation; its
-        // failure surfaces through Pi launch resources when it is used.
-        settle(get(earlyMemorySummaryProjection$)),
       ]);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
@@ -4295,32 +4116,7 @@ export function createThreadClaimRunObjects(
   return { hasFirstPickableChatEvent$, orgHasCapacity$, startRun$ };
 }
 
-// --- Thread-private implementation: storage manifest ---
-
-function canonicalPiMemoryMount<
-  T extends { readonly name: string; readonly mountPath: string },
->(mounts: readonly T[] | undefined): T | undefined {
-  return mounts?.find((mount) => {
-    return (
-      mount.name === AUTO_MEMORY_ARTIFACT_NAME &&
-      mount.mountPath === PI_MEMORY_ROOT
-    );
-  });
-}
-
 type AgentRunRecord = AgentRunRequestAgent;
-
-function sameMemoryProjectionIdentity(
-  left: MemorySummaryProjectionReadInput,
-  right: MemorySummaryProjectionReadInput,
-): boolean {
-  return (
-    left.args.orgId === right.args.orgId &&
-    left.args.userId === right.args.userId &&
-    left.args.memoryStorageId === right.args.memoryStorageId &&
-    left.args.storageVersionId === right.args.storageVersionId
-  );
-}
 
 // --- Thread-private implementation: launch persistence ---
 
@@ -5399,27 +5195,6 @@ interface BuildRunnerJobPayloadInput {
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
-  readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
-}
-
-function withPiMemoryRecallEpoch(
-  mounts: readonly PersistedStorageMount[],
-  memoryRecall: PiMemoryRecallSelection | undefined,
-): readonly PersistedStorageMount[] {
-  if (memoryRecall === undefined) {
-    return mounts;
-  }
-  return mounts.map((mount) => {
-    if (
-      mount.name !== AUTO_MEMORY_ARTIFACT_NAME ||
-      mount.mountPath !== PI_MEMORY_ROOT ||
-      mount.storageId !== memoryRecall.memoryStorageId ||
-      mount.version !== memoryRecall.storageVersionId
-    ) {
-      return mount;
-    }
-    return { ...mount, piMemoryRecall: memoryRecall };
-  });
 }
 
 function preparedRunnerGroup(): string {
@@ -5451,10 +5226,7 @@ function assembleRunnerLaunch(args: {
     args.piResources,
     args.launchSnapshot.framework,
   );
-  const persistedStorageMounts = withPiMemoryRecallEpoch(
-    builtContext.persistedStorageMounts,
-    args.piResources?.memoryRecall,
-  );
+  const persistedStorageMounts = builtContext.persistedStorageMounts;
   const runContextSnapshot = buildRunContextSnapshot({
     runId: args.runId,
     userId: args.userId,
@@ -5530,9 +5302,6 @@ function finalizedMaterializedLaunch(
     piResources: storage.piResources,
   });
 }
-// --- Thread-private implementation: run body ---
-
-const L: ReturnType<typeof logger> = logger("AgentRunCreate");
 
 function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
   return { ...body, secrets: pendingOkouTokenSecrets(body.secrets) };
@@ -5884,29 +5653,6 @@ interface AgentRunGraphInput {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-// --- Thread-private implementation: execution context prompts ---
-
-// --- Thread-private implementation: Pi launch resources ---
-
-function noContentPiMemoryRecall(args: {
-  readonly memoryStorageId: string;
-  readonly storageVersionId: string;
-}): PiMemoryRecallSelection {
-  return { ...args, status: "no-content" };
-}
-
-interface PreparePiLaunchResourcesArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly piMemoryEnabled: boolean;
-  readonly runId: string;
-  readonly storagePlan: Promise<ResolvedAgentRunStorage>;
-  readonly piSandbox: PiModelConfig | undefined;
-  readonly chatThreadId: string | undefined;
-  readonly timing: ApiDispatchTimingCollector;
-  readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
-}
-
 // --- Thread-private implementation: launch admission ---
 
 type AtomicLaunchCommitAttempt =
@@ -6106,36 +5852,22 @@ function officialRunnerGroup(group: string | undefined): string {
   return group;
 }
 
-// --- Private implementation: Pi launch resources ---
-
-/** Producer-supplied Pi runtime options, independent of the thread context. */
-type PiLaunchConfigOverrides = Omit<
-  PiLaunchConfig,
-  "schemaVersion" | "memoryRecall"
->;
-
 interface PreparedPiLaunchResources {
   readonly modelConfig: PiModelConfig;
   readonly launchConfig: PiLaunchConfig;
-  readonly memoryRecall?: PiMemoryRecallSelection;
   readonly sessionId: string;
 }
 
 function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
-  readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
-  readonly memoryRecall: PiMemoryRecallSelection | undefined;
   readonly sessionId: string;
 }): PreparedPiLaunchResources {
-  const { memoryRecall, sessionId } = args;
+  const { sessionId } = args;
   return {
     modelConfig: args.modelConfig,
     launchConfig: {
       schemaVersion: 2,
-      ...(memoryRecall === undefined ? {} : { memoryRecall }),
-      ...args.piLaunchConfig,
     },
-    ...(memoryRecall === undefined ? {} : { memoryRecall }),
     sessionId,
   };
 }
@@ -6227,32 +5959,6 @@ function pendingLaunchCommitResult(
     runnerJobPayload: args.persistence.payload,
     runContextSnapshot: args.launch.runContextSnapshot,
     queueFirstClaim: admission.queueFirstClaim,
-  };
-}
-
-function tailFacts(
-  args: PreparedCommitPreparedLaunchArgs,
-  claim: PendingLaunchClaim | undefined,
-  admission: AdmittedPreparedLaunch,
-  persisted: PersistedAtomicLaunchRows,
-): PendingLaunchTailInput {
-  return {
-    orgId: args.createArgs.orgId,
-    userId: args.createArgs.userId,
-    runId: persisted.run.id,
-    runCreatedAt: persisted.run.createdAt,
-    snapshot: args.persistence.rows.rowsArgs.launchSnapshot,
-    triggerSource: args.persistence.rows.metadata.triggerSource,
-    chatThreadId: args.persistence.rows.metadata.chatThreadId,
-    // Memory flags are captured, not a launch-time transaction fence.
-    requestMemory:
-      Boolean(claim) &&
-      isFeatureEnabled(FeatureSwitchKey.PiMemory, args.featureSwitchContext),
-    threadAgentId: args.context.resolved.agentId,
-    threadBindingFencesOwnership:
-      Boolean(admission.validatedThreadSession) &&
-      admission.validatedThreadSession?.threadAgentId ===
-        args.context.resolved.agentId,
   };
 }
 
@@ -6512,14 +6218,6 @@ export const commitPreparedPendingLaunch$ = command(
               )) {
                 await tx.execute(statement);
               }
-            }
-            const input = tailFacts(args, claim, admission, rowsPersisted);
-            let tail = pendingLaunchTailStart(input);
-            while (tail.kind === "statement") {
-              const step = tail;
-              const rows = parseRawRows(tailRow, await tx.execute(step.sql));
-              signal.throwIfAborted();
-              tail = advancePendingLaunchTail(input, step, rows);
             }
             return rowsPersisted;
           },

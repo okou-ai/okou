@@ -16,7 +16,6 @@ import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
-  signPresignedGetUrl$,
   type PresignedGetUrlSigner,
 } from "../external/s3";
 import { onRejection, safeSync } from "../utils";
@@ -1174,36 +1173,6 @@ export async function signStorageManifestPresignedUrls(
   });
   return { results, freshValues };
 }
-
-/** Fixed signer command; requests and snapshots never carry an I/O callback. */
-export const signStorageManifestPresignedUrls$ = command(
-  async ({ set }, args: ManifestSigningSnapshot) => {
-    const requests = storageManifestSigningRequests(args.input);
-    const { results, missing, issuedAt } = storageManifestSigningPlan(
-      requests,
-      args.prefetchedRows,
-      nowDate(),
-    );
-    const freshValues = await Promise.all(
-      missing.map(async (entry) => {
-        const request = { ...entry, issuedAt, lastRequestedAt: issuedAt };
-        const presignedUrl = await set(signPresignedGetUrl$, {
-          bucket: entry.request.bucket,
-          key: entry.request.objectKey,
-          publicEndpoint: entry.request.publicEndpoint,
-          ...cacheSigningOptions(request),
-        });
-        return signedCacheValue(request, presignedUrl);
-      }),
-    );
-    appendFreshStoragePresignedUrlResults({
-      results,
-      needsFresh: missing,
-      freshValues,
-    });
-    return { results, freshValues };
-  },
-);
 
 function resolveStoragePresignedUrls<TRequest extends object>(args: {
   readonly db: Db;

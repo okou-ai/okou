@@ -195,10 +195,6 @@ const SCHEMA = {
     .int()
     .positive()
     .default(128),
-  // Background workers remain opt-in until explicitly re-enabled.
-  PI_MEMORY_BACKGROUND_WORKERS_ENABLED: z
-    .enum(["true", "false"])
-    .default("false"),
 } as const;
 
 const baseEnv = createEnv<undefined, typeof SCHEMA>({

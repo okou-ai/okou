@@ -407,31 +407,6 @@
       "owner": "revokeOrgMemberRunAuthority"
     },
     {
-      "id": "TX-0222",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-maintenance-execution.service.ts",
-      "owner": "persistMaintenanceRun$"
-    },
-    {
-      "id": "TX-0223",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-phase2-job.service.ts",
-      "owner": "claimPiMemoryPhase2Job$"
-    },
-    {
-      "id": "TX-0227",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-schedule.service.ts",
-      "owner": "commitSelectedPiMemoryStage1Day$"
-    },
-    {
-      "id": "TX-0228",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-usage.service.ts",
-      "owner": "recordPiMemoryStage1Usage$"
-    },
-    {
-      "id": "TX-0229",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts",
-      "owner": "claimPiMemoryStage1Selection$"
-    },
-    {
       "id": "TX-0234",
       "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
       "owner": "recordRunnerUsageBatch$"
