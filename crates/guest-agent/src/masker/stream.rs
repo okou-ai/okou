@@ -1,17 +1,68 @@
 //! Incremental normal-policy masking before transient text is published.
 
-use std::ops::Range;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    ops::Range,
+};
 
-use super::{SecretMasker, merge_sorted_ranges, redaction_ranges};
+use aho_corasick::{
+    Anchored,
+    automaton::{Automaton, StateID},
+    nfa::contiguous::NFA,
+};
+
+use super::SecretMasker;
+
+struct MatcherState<'a> {
+    matcher: &'a NFA,
+    state: StateID,
+    consumed: usize,
+}
+
+impl<'a> MatcherState<'a> {
+    #[allow(clippy::expect_used)]
+    fn new(matcher: &'a NFA) -> Self {
+        Self {
+            matcher,
+            // Concrete NFAs support unanchored searches. Failure must not turn
+            // a configured masker into a pass-through stream.
+            state: matcher
+                .start_state(Anchored::No)
+                .expect("secret matcher must support unanchored searches"),
+            consumed: 0,
+        }
+    }
+
+    fn advance(&mut self, byte: u8) -> Option<Range<usize>> {
+        self.state = self.matcher.next_state(Anchored::No, self.state, byte);
+        self.consumed += 1;
+        if !self.matcher.is_match(self.state) {
+            return None;
+        }
+        // Matches ending at this byte are nested. Their union is the longest
+        // one, regardless of the configured pattern order.
+        let longest = (0..self.matcher.match_len(self.state))
+            .map(|index| {
+                self.matcher
+                    .pattern_len(self.matcher.match_pattern(self.state, index))
+            })
+            .max()?;
+        Some(self.consumed - longest..self.consumed)
+    }
+}
 
 /// Retains original bytes long enough to recognize every configured variant.
 /// Dropping an interrupted stream discards its tail; only completion flushes it.
 pub(crate) struct StreamingSecretMasker<'a> {
-    masker: &'a SecretMasker,
+    plain: Option<MatcherState<'a>>,
+    url_encoded: Option<MatcherState<'a>>,
     holdback: usize,
-    pending: String,
-    redactions: Vec<Range<usize>>,
+    pending: VecDeque<u8>,
+    emitted: usize,
+    redactions: BTreeMap<usize, usize>,
     continuing_redaction: bool,
+    #[cfg(test)]
+    relocated_bytes: usize,
 }
 
 impl SecretMasker {
@@ -24,11 +75,15 @@ impl SecretMasker {
             .max()
             .unwrap_or(0);
         StreamingSecretMasker {
-            masker: self,
+            plain: self.matcher.as_ref().map(MatcherState::new),
+            url_encoded: self.url_encoded_matcher.as_ref().map(MatcherState::new),
             holdback: longest.saturating_sub(1),
-            pending: String::new(),
-            redactions: Vec::new(),
+            pending: VecDeque::new(),
+            emitted: 0,
+            redactions: BTreeMap::new(),
             continuing_redaction: false,
+            #[cfg(test)]
+            relocated_bytes: 0,
         }
     }
 }
@@ -38,72 +93,148 @@ impl StreamingSecretMasker<'_> {
         if self.holdback == 0 {
             return text.to_string();
         }
-        self.pending.push_str(text);
-        self.redactions = merge_sorted_ranges(
-            std::mem::take(&mut self.redactions),
-            redaction_ranges(
-                self.masker.matcher.as_ref(),
-                self.masker.url_encoded_matcher.as_ref(),
-                &self.pending,
-            ),
-        );
+        #[cfg(test)]
+        let previous_buffer = (self.pending.len(), self.pending.capacity());
+        self.pending.extend(text.bytes());
+        #[cfg(test)]
+        if self.pending.capacity() != previous_buffer.1 {
+            self.relocated_bytes += previous_buffer.0;
+        }
+        for byte in text.bytes() {
+            if let Some(range) = self.plain.as_mut().and_then(|state| state.advance(byte)) {
+                self.record_redaction(range);
+            }
+        }
+        self.scan_url_encoded(false);
         // No later pattern can touch bytes before this boundary. Keep original
         // bytes (not replacement markers) for overlapping matches in the tail.
         let mut end = self.pending.len().saturating_sub(self.holdback);
-        while !self.pending.is_char_boundary(end) {
+        while self
+            .pending
+            .get(end)
+            .is_some_and(|byte| byte & 0b1100_0000 == 0b1000_0000)
+        {
             end -= 1;
         }
-        self.emit_prefix(end)
+        self.emit_prefix(self.emitted + end)
     }
 
     pub(crate) fn finish(mut self) -> String {
-        self.emit_prefix(self.pending.len())
+        self.scan_url_encoded(true);
+        self.emit_prefix(self.emitted + self.pending.len())
     }
 
+    fn scan_url_encoded(&mut self, finishing: bool) {
+        while let Some(state) = &self.url_encoded {
+            let index = state.consumed - self.emitted;
+            let Some(&byte) = self.pending.get(index) else {
+                break;
+            };
+            let mut bytes = [byte, 0, 0];
+            let mut count = 1;
+            if byte == b'%' {
+                // Keep at most two bytes of normalization lookahead. No URL
+                // pattern can end inside an incomplete encoded escape, so this
+                // does not extend the longest-pattern publication holdback.
+                if !finishing && self.pending.len() - index < 3 {
+                    break;
+                }
+                if let Some((&first, &second)) =
+                    self.pending.get(index + 1).zip(self.pending.get(index + 2))
+                    && first.is_ascii_hexdigit()
+                    && second.is_ascii_hexdigit()
+                {
+                    bytes = [
+                        byte,
+                        first.to_ascii_uppercase(),
+                        second.to_ascii_uppercase(),
+                    ];
+                    count = 3;
+                }
+            }
+            for byte in bytes.into_iter().take(count) {
+                if let Some(range) = self
+                    .url_encoded
+                    .as_mut()
+                    .and_then(|state| state.advance(byte))
+                {
+                    self.record_redaction(range);
+                }
+            }
+        }
+    }
+
+    fn record_redaction(&mut self, mut range: Range<usize>) {
+        debug_assert!(range.start >= self.emitted);
+        // Normalization can report a match after the plain matcher has moved
+        // ahead. Merge by position, without rescanning or rebasing all ranges.
+        if let Some((&start, &end)) = self.redactions.range(..=range.start).next_back()
+            && end > range.start
+        {
+            self.redactions.remove(&start);
+            range.start = start;
+            range.end = range.end.max(end);
+        }
+        while let Some((&start, &end)) = self.redactions.range(range.start..range.end).next() {
+            self.redactions.remove(&start);
+            range.end = range.end.max(end);
+        }
+        self.redactions.insert(range.start, range.end);
+    }
+
+    #[allow(clippy::expect_used)]
     fn emit_prefix(&mut self, end: usize) -> String {
-        if end == 0 {
+        if end == self.emitted {
             return String::new();
         }
-        let mut output = String::new();
-        let mut cursor = 0;
-        for range in &self.redactions {
-            if range.start >= end {
+        let mut output = Vec::new();
+        let mut cursor = self.emitted;
+        while let Some((&start, &range_end)) = self.redactions.first_key_value() {
+            if start >= end {
                 break;
             }
-            if range.start > cursor {
-                output.push_str(&self.pending[cursor..range.start]);
+            if start > cursor {
+                output.extend(
+                    self.pending
+                        .range(cursor - self.emitted..start - self.emitted),
+                );
                 self.continuing_redaction = false;
             }
             if !self.continuing_redaction {
-                output.push_str("***");
+                output.extend_from_slice(b"***");
             }
-            cursor = range.end.min(end);
-            self.continuing_redaction = range.end > end;
+            cursor = range_end.min(end);
+            self.redactions.pop_first();
+            self.continuing_redaction = range_end > end;
+            if self.continuing_redaction {
+                self.redactions.insert(end, range_end);
+            }
             if cursor == end {
                 break;
             }
         }
         if cursor < end {
-            output.push_str(&self.pending[cursor..end]);
+            output.extend(
+                self.pending
+                    .range(cursor - self.emitted..end - self.emitted),
+            );
             self.continuing_redaction = false;
         }
-        // Retain only the suffix allocation, not the capacity of a potentially
-        // large provider delta for every source until message completion.
-        self.pending = self.pending.split_off(end);
-        // Carry coverage, rather than holding the whole matched union: a
-        // self-overlap chain can be arbitrarily long but retention stays bounded.
-        self.redactions.retain_mut(|range| {
-            if range.end <= end {
-                return false;
+        // Removing a deque prefix moves no retained bytes. Shrink only an
+        // oversized provider allocation, leaving room for ordinary small deltas.
+        self.pending.drain(..end - self.emitted);
+        self.emitted = end;
+        let tail_bound = self.holdback + 3;
+        if self.pending.capacity() > tail_bound.saturating_mul(4) {
+            #[cfg(test)]
+            {
+                self.relocated_bytes += self.pending.len();
             }
-            range.start = range.start.saturating_sub(end);
-            range.end -= end;
-            true
-        });
-        // Independent matches can allocate many ranges in one large delta;
-        // retain_mut drops their elements but not that allocation.
-        self.redactions.shrink_to_fit();
-        output
+            self.pending.shrink_to(tail_bound.saturating_mul(2));
+        }
+        // Original text and patterns are valid UTF-8; match ranges and the
+        // emission boundary end at scalars. Deque wraparound changes no bytes.
+        String::from_utf8(output).expect("masked stream must preserve UTF-8")
     }
 }
 
@@ -132,6 +263,9 @@ mod tests {
             "cdefg",
             "aaaaa",
             "🦀é🦀",
+            "abcd%",
+            "token/a",
+            "%2faX",
         ]);
         let encoded = base64::engine::general_purpose::STANDARD.encode("audit-secret-12345");
         for text in [
@@ -144,6 +278,8 @@ mod tests {
             "audit%2f%2bsecret%20%cf%80 | audit%2F%2bsecret%20%cF%80".into(),
             "abcdefg aaaaaaaaaa abcdeabcde cdefgabcde".into(),
             "🦀é🦀é🦀🦀é🦀 plain 🦀 incomplete audit-sec".into(),
+            "abcd%|abcd%x|token%2fatoken%2fa|token%2ga|token%2|token%".into(),
+            "%252faX|%252FaX|token%2Fa|%token%2fa|%%2faX".into(),
         ] {
             let expected = masker.mask_string(&text);
             let boundaries = text
@@ -194,10 +330,9 @@ mod tests {
             let mut actual = stream.push(&text);
             assert!(stream.pending.len() <= stream.holdback + 3);
             assert!(stream.pending.capacity() < text.len() / 2);
-            assert!(
-                stream.redactions.capacity() * std::mem::size_of::<Range<usize>>() < text.len() / 2,
-                "released matches must not retain a large per-source allocation"
-            );
+            // Consumed map entries release their nodes; no vector capacity
+            // survives the independent matches in a large provider delta.
+            assert!(stream.redactions.len() <= stream.pending.len());
             actual.push_str(&stream.finish());
             assert_eq!(actual, masker.mask_string(&text));
         }
@@ -210,6 +345,44 @@ mod tests {
         assert_eq!(stream.push("é plain"), "é plain");
         assert_eq!(stream.push(" tail"), " tail");
         assert_eq!(stream.finish(), "");
+    }
+
+    #[test]
+    fn long_secrets_scan_and_relocate_only_linear_input_bytes() {
+        for secret_len in [64usize, 4096, 16_384, 65_536] {
+            let mut secret = "0123456789abcdef".repeat(secret_len.div_ceil(16));
+            secret.truncate(secret_len - 1);
+            secret.push('/');
+            let masker = masker(&[&secret]);
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&secret);
+            let percent_encoded = super::super::url_encode(&secret).replace("%2F", "%2f");
+            for variant in ["", secret.as_str(), &encoded, &percent_encoded] {
+                let text = format!("{}{variant}{}", "x".repeat(65_536), "x".repeat(196_608));
+                let expected = masker.mask_string(&text);
+                for delta_len in [16, 256, 4096] {
+                    let mut stream = masker.stream();
+                    let mut actual = String::new();
+                    for delta in text.as_bytes().chunks(delta_len) {
+                        actual.push_str(&stream.push(std::str::from_utf8(delta).unwrap()));
+                        assert!(stream.pending.len() <= stream.holdback + 3);
+                        assert!(stream.pending.capacity() <= 4 * (stream.holdback + 3));
+                    }
+                    // These positions advance at the actual transition call,
+                    // counting both the original and normalized matching paths.
+                    assert_eq!(stream.plain.as_ref().unwrap().consumed, text.len());
+                    assert_eq!(stream.url_encoded.as_ref().unwrap().consumed, text.len());
+                    assert!(
+                        stream.relocated_bytes <= 2 * text.len(),
+                        "retained-byte relocation grew with holdback for {secret_len}-byte secret, {delta_len}-byte deltas"
+                    );
+                    actual.push_str(&stream.finish());
+                    assert_eq!(
+                        actual, expected,
+                        "{secret_len}-byte secret, {delta_len}-byte deltas"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

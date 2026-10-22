@@ -9,7 +9,7 @@ mod stream;
 pub(crate) use stream::StreamingSecretMasker;
 
 use crate::env;
-use aho_corasick::{AhoCorasick, MatchKind};
+use aho_corasick::{Input, MatchKind, automaton::Automaton, nfa::contiguous::NFA};
 use base64::Engine;
 use serde_json::{Map, Value};
 use std::{
@@ -34,10 +34,10 @@ struct KeyCollisionState {
 /// values cannot leave sensitive fragments visible. Source pattern vectors are
 /// dropped after the matchers are built. See issues #9778 and #24621.
 pub struct SecretMasker {
-    matcher: Option<AhoCorasick>,
-    diagnostic_matcher: Option<AhoCorasick>,
-    url_encoded_matcher: Option<AhoCorasick>,
-    diagnostic_url_encoded_matcher: Option<AhoCorasick>,
+    matcher: Option<NFA>,
+    diagnostic_matcher: Option<NFA>,
+    url_encoded_matcher: Option<NFA>,
+    diagnostic_url_encoded_matcher: Option<NFA>,
     collision_alphabet: [char; 3],
 }
 
@@ -165,13 +165,12 @@ impl SecretMasker {
     }
 
     /// # Panics
-    /// Panics if the Aho-Corasick automaton fails to build. The only
-    /// documented failure mode is pattern sets too large for the state-ID
-    /// type (millions of patterns); user-configured secrets never approach
-    /// that bound. A hard abort is preferred over silently degrading to a
-    /// pass-through masker, which would leak every subsequent event payload.
+    /// Panics if the Aho-Corasick automaton fails to build because its pattern
+    /// set exceeds the state-ID or contiguous encoding limits. A hard abort is
+    /// preferred over silently degrading to a pass-through masker, which would
+    /// leak every subsequent event payload.
     #[allow(clippy::expect_used)]
-    fn build_matcher(patterns: &[String]) -> Option<AhoCorasick> {
+    fn build_matcher(patterns: &[String]) -> Option<NFA> {
         if patterns.is_empty() {
             return None;
         }
@@ -182,7 +181,9 @@ impl SecretMasker {
                 unique_patterns.push(pattern.as_str());
             }
         }
-        let ac = AhoCorasick::builder()
+        // Share the concrete automaton with streaming masking, which needs to
+        // retain transition state instead of searching its original tail again.
+        let ac = NFA::builder()
             .match_kind(MatchKind::Standard)
             .build(unique_patterns.iter().copied())
             .expect("AhoCorasick build failed for secret pattern set");
@@ -587,8 +588,8 @@ fn is_ascii_lowercase_hex_digit(byte: u8) -> bool {
 }
 
 fn redaction_ranges(
-    matcher: Option<&AhoCorasick>,
-    url_encoded_matcher: Option<&AhoCorasick>,
+    matcher: Option<&NFA>,
+    url_encoded_matcher: Option<&NFA>,
     haystack: &str,
 ) -> Vec<Range<usize>> {
     let canonicalized =
@@ -602,10 +603,16 @@ fn redaction_ranges(
     ranges
 }
 
-fn merged_match_ranges(matcher: &AhoCorasick, haystack: &str) -> Vec<Range<usize>> {
+#[allow(clippy::expect_used)]
+fn merged_match_ranges(matcher: &NFA, haystack: &str) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
     let mut previous_end = 0;
-    for matched in matcher.find_overlapping_iter(haystack) {
+    // Every matcher is built for Standard, unanchored overlapping searches.
+    // An unsupported configuration must fail closed, never publish secrets.
+    let matches = matcher
+        .try_find_overlapping_iter(Input::new(haystack))
+        .expect("secret matcher must support overlapping searches");
+    for matched in matches {
         // Overlapping search reports every match at one haystack position
         // before advancing, so match ends are nondecreasing. Match starts and
         // equal-end pattern order are not ordered.
