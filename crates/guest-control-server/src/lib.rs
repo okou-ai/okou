@@ -37,6 +37,7 @@ mod worker_ownership;
 mod writer;
 
 pub use connection::handle_connection_with_test_dns_readiness_program;
+pub use connection::handle_connection_with_test_dns_readiness_timeout_gate;
 pub use connection::handle_connection_with_test_guest_agent_program;
 pub use connection::handle_connection_with_test_guest_state_restore_program;
 pub use connection::handle_connection_with_test_home_drive_mount_program;

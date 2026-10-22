@@ -36,7 +36,10 @@ const THREAD_STDERR: &str = "gctl-dns-stderr";
 #[derive(Clone)]
 pub(crate) enum GuestDnsReadinessProgram {
     Production,
-    Test(PathBuf),
+    Test {
+        path: PathBuf,
+        timeout_gate: Option<mpsc::SyncSender<u32>>,
+    },
 }
 
 impl GuestDnsReadinessProgram {
@@ -45,13 +48,35 @@ impl GuestDnsReadinessProgram {
     }
 
     pub(crate) fn for_test(path: PathBuf) -> Self {
-        Self::Test(path)
+        Self::Test {
+            path,
+            timeout_gate: None,
+        }
+    }
+
+    pub(crate) fn for_test_timeout(path: PathBuf, timeout_gate: mpsc::SyncSender<u32>) -> Self {
+        Self::Test {
+            path,
+            timeout_gate: Some(timeout_gate),
+        }
+    }
+
+    fn await_test_timeout_gate(&self, child_id: u32) {
+        if let Self::Test {
+            timeout_gate: Some(timeout_gate),
+            ..
+        } = self
+        {
+            // A zero-capacity channel lets the test establish helper readiness
+            // before the real timeout starts. A dropped receiver permits cleanup.
+            let _ = timeout_gate.send(child_id);
+        }
     }
 
     fn path(&self) -> &Path {
         match self {
             Self::Production => Path::new(PRODUCTION_PROGRAM),
-            Self::Test(path) => path,
+            Self::Test { path, .. } => path,
         }
     }
 }
@@ -130,7 +155,7 @@ fn handle_request(
         operation_guard,
         admission,
     } = request;
-    let output = run_probe(program.path(), timeout_ms, &hostname, connection_cancel);
+    let output = run_probe(program, timeout_ms, &hostname, connection_cancel);
     let payload = guest_control_proto::encode_guest_dns_readiness_result(
         output.termination,
         output.duration_ms,
@@ -151,7 +176,7 @@ fn handle_request(
 }
 
 fn run_probe(
-    program: &Path,
+    program: &GuestDnsReadinessProgram,
     timeout_ms: u32,
     hostname: &str,
     connection_cancel: &AtomicBool,
@@ -167,7 +192,7 @@ fn run_probe(
             );
         }
     };
-    let mut command = Command::new(program);
+    let mut command = Command::new(program.path());
     command
         .arg(RESOLVER_DATABASE)
         .arg(hostname)
@@ -251,6 +276,7 @@ fn run_probe(
     };
     drop(drain_done_tx);
 
+    program.await_test_timeout_gate(child.id());
     let outcome = wait_with_kill_timeout_or_connection_cancelled(
         child,
         timeout_ms,
