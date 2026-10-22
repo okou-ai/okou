@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DurableOpenAiImageGeneration]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Durable OpenAI image generation",
+    description:
+      "Use background Responses image jobs with durable recovery. Preview validation only until image-tool accounting is verified.",
+    enabled: false,
+  },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
     displayName: "Batch connector permissions",

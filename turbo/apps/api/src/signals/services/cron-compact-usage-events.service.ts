@@ -1,4 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
@@ -8,10 +9,13 @@ import {
   asc,
   count,
   eq,
+  gte,
   inArray,
   isNotNull,
   isNull,
   lt,
+  notExists,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -89,6 +93,20 @@ function eligibleRawPredicate(cutoff: string): SQL {
     isNotNull(event.processedAt),
     lt(event.processedAt, sql`${cutoff}::timestamp`),
     isNull(event.billingError),
+    // The checkpoint precedes publication of these raw events, so a snapshot
+    // seeing an event also sees its retained identity. Do not key this on the
+    // provider task: response cleanup must not shorten financial retention.
+    // Terminal grace covers stale invocations holding a running job snapshot;
+    // completion alone cannot immediately make their old dedup keys deletable.
+    notExists(sql`(
+      SELECT 1 FROM ${builtInGenerationJobs}
+      WHERE ${builtInGenerationJobs.request}->'__openAiImageSettlement'->'usageKeys'
+        ? ${event.idempotencyKey}::text
+        AND ${or(
+          inArray(builtInGenerationJobs.status, ["queued", "running"]),
+          gte(builtInGenerationJobs.completedAt, sql`${cutoff}::timestamp`),
+        )}
+    )`),
   )}`;
 }
 

@@ -2,6 +2,9 @@
 -- Common model/tool prices, not a per-case pricing override.
 INSERT INTO usage_pricing (kind, provider, category, unit_price, unit_size)
 VALUES
+  ('model', 'openai/gpt-4.1', 'tokens.input', 2000, 1000000),
+  ('model', 'openai/gpt-4.1', 'tokens.cache_read', 500, 1000000),
+  ('model', 'openai/gpt-4.1', 'tokens.output', 8000, 1000000),
   ('model', 'claude-sonnet-4-6', 'tokens.input', 3000, 1000000),
   ('model', 'claude-sonnet-4-6', 'tokens.output', 15000, 1000000),
   ('model', 'claude-sonnet-4-6', 'tokens.cache_read', 300, 1000000),
@@ -176,6 +179,12 @@ VALUES
   ('model', 'gpt-5.5', 'tokens.input.long_context', 10000, 1000000),
   ('model', 'gpt-5.5', 'tokens.cache_read.long_context', 1000, 1000000),
   ('model', 'gpt-5.5', 'tokens.output.long_context', 45000, 1000000),
+  ('image', 'gpt-image-2.5-flare', 'tokens.input.text', 5000, 1000000),
+  ('image', 'gpt-image-2.5-flare', 'tokens.input.image', 8000, 1000000),
+  ('image', 'gpt-image-2.5-flare', 'tokens.output.image', 30000, 1000000),
+  ('image', 'gpt-image-2.5-sunburst', 'tokens.input.text', 5000, 1000000),
+  ('image', 'gpt-image-2.5-sunburst', 'tokens.input.image', 8000, 1000000),
+  ('image', 'gpt-image-2.5-sunburst', 'tokens.output.image', 30000, 1000000),
   ('model', 'openai/gpt-4.1-mini', 'tokens.input', 400, 1000000),
   ('model', 'openai/gpt-4.1-mini', 'tokens.cache_read', 100, 1000000),
   ('model', 'openai/gpt-4.1-mini', 'tokens.output', 1600, 1000000),

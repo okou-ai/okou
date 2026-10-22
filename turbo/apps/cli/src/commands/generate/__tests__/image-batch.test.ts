@@ -7,6 +7,7 @@ import chalk from "chalk";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
+import { deferred } from "../../../test-fixtures/ably-realtime";
 import { generateCommand } from "../index";
 import { imageBatchCommand } from "../image-batch";
 import {
@@ -127,6 +128,15 @@ if (args[0] === "stop") {
   }
 
   beforeEach(() => {
+    server.use(
+      http.post(`${IMAGE_STATUS_URL}/reconcile`, () => {
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          status: "running",
+          type: "image",
+        });
+      }),
+    );
     chalk.level = 0;
     for (const command of imageBatchCommand.commands) {
       command.setOptionValue("visibility", undefined);
@@ -678,6 +688,112 @@ if (args[0] === "stop") {
       "artifacts",
     );
   });
+
+  it.each([
+    "request-timeout",
+    "refresh-503",
+    "query-503",
+    "invalid-capability",
+  ] as const)(
+    "preserves an accepted batch job without resubmission after %s",
+    async (failure) => {
+      const root = await makeTemporaryDirectory();
+      const manifestPath = join(root, "images.tsv");
+      const stateDirectory = join(root, "state");
+      await writeFile(manifestPath, "hero\tA blue circle\n", "utf8");
+      await mkdir(stateDirectory);
+      const started = deferred<void>();
+      const aborted = deferred<void>();
+      const deadline = new AbortController();
+      const originalTimeout = AbortSignal.timeout;
+      const timeout = vi
+        .spyOn(AbortSignal, "timeout")
+        .mockImplementation((milliseconds) => {
+          return milliseconds === 60_000
+            ? deadline.signal
+            : originalTimeout(milliseconds);
+        });
+      let submissions = 0;
+      let refreshes = 0;
+      let queries = 0;
+      server.use(
+        http.post(IMAGE_URL, () => {
+          submissions++;
+          return HttpResponse.json(
+            {
+              generationId: IMAGE_GENERATION_ID,
+              type: "image",
+              status: "queued",
+              realtime: {},
+              clientReconciliation:
+                failure === "invalid-capability" ? "invalid" : true,
+            },
+            { status: 202 },
+          );
+        }),
+        http.post(`${IMAGE_STATUS_URL}/reconcile`, async ({ request }) => {
+          refreshes++;
+          if (failure === "request-timeout") {
+            request.signal.addEventListener(
+              "abort",
+              () => {
+                aborted.resolve();
+              },
+              { once: true },
+            );
+            started.resolve();
+            await aborted.promise;
+          }
+          return failure === "query-503"
+            ? HttpResponse.json({
+                generationId: IMAGE_GENERATION_ID,
+                type: "image",
+                status: "running",
+              })
+            : HttpResponse.json(
+                { error: { message: "Refresh unavailable" } },
+                { status: 503 },
+              );
+        }),
+        http.get(IMAGE_STATUS_URL, () => {
+          queries++;
+          return HttpResponse.json(
+            { error: { message: "Query unavailable" } },
+            { status: 503 },
+          );
+        }),
+      );
+      try {
+        const finished = generateCommand.parseAsync([
+          "node",
+          "cli",
+          "image-batch",
+          "__run",
+          manifestPath,
+          stateDirectory,
+        ]);
+        if (failure === "request-timeout") {
+          await started.promise;
+          deadline.abort(new DOMException("Request timed out", "TimeoutError"));
+        }
+        await finished;
+        expect(submissions).toBe(1);
+        expect(refreshes).toBe(failure === "invalid-capability" ? 0 : 1);
+        expect(queries).toBe(failure === "query-503" ? 1 : 0);
+        await expect(
+          readFile(join(stateDirectory, "done"), "utf8"),
+        ).resolves.toBe("1\n");
+        expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+          "Retrying image batch job hero once",
+        );
+        const stderr = mockConsoleError.mock.calls.flat().join("\n");
+        expect(stderr).toContain(IMAGE_GENERATION_ID);
+        expect(stderr).toContain("do not submit another job");
+      } finally {
+        timeout.mockRestore();
+      }
+    },
+  );
 
   it("does not automatically retry an async output safety block", async () => {
     const root = await makeTemporaryDirectory();

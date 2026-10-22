@@ -1,5 +1,5 @@
 {
-  "id": "f75c882b-06de-4f53-840c-194f6002e53a",
+  "id": "9076037a-92b1-4561-859f-bdc877be39be",
   "prevId": "79e71606-e206-4e44-a287-b475dc2033fe",
   "version": "7",
   "dialect": "postgresql",
@@ -5725,6 +5725,21 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "idx_built_in_generation_jobs_image_usage_keys": {
+          "name": "idx_built_in_generation_jobs_image_usage_keys",
+          "columns": [
+            {
+              "expression": "(\"request\"->'__openAiImageSettlement'->'usageKeys')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         }
       },
@@ -20925,6 +20940,94 @@
       },
       "isRLSEnabled": false
     },
+    "public.openai_image_webhook_receipts": {
+      "name": "openai_image_webhook_receipts",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "response_id": {
+          "name": "response_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_openai_image_webhook_receipts_response_id": {
+          "name": "idx_openai_image_webhook_receipts_response_id",
+          "columns": [
+            {
+              "expression": "response_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_openai_image_webhook_receipts_processed_at": {
+          "name": "idx_openai_image_webhook_receipts_processed_at",
+          "columns": [
+            {
+              "expression": "processed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.org_cache": {
       "name": "org_cache",
       "schema": "",
@@ -32547,171 +32650,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.user_jobs": {
-      "name": "user_jobs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "objective": {
-          "name": "objective",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_references": {
-          "name": "source_references",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "work": {
-          "name": "work",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{\"progress\":\"\",\"explanation\":\"\",\"authorization\":null,\"processedInputIds\":[],\"currentResultId\":null}'::jsonb"
-        },
-        "authorization_requests": {
-          "name": "authorization_requests",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "inputs": {
-          "name": "inputs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "results": {
-          "name": "results",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "viewed_result_ids": {
-          "name": "viewed_result_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "user_jobs_owner_id_idx": {
-          "name": "user_jobs_owner_id_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "user_jobs_runnable_owner_idx": {
-          "name": "user_jobs_runnable_owner_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"user_jobs\".\"status\" <> 'archived' AND (\"user_jobs\".\"status\" = 'active' OR jsonb_array_length(\"user_jobs\".\"inputs\") > jsonb_array_length(\"user_jobs\".\"work\"->'processedInputIds'))",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "user_jobs_status_check": {
-          "name": "user_jobs_status_check",
-          "value": "\"user_jobs\".\"status\" IN ('active', 'waiting_decision', 'waiting_authorization', 'completed', 'archived')"
-        },
-        "user_jobs_arrays_check": {
-          "name": "user_jobs_arrays_check",
-          "value": "jsonb_typeof(\"user_jobs\".\"inputs\") = 'array' AND jsonb_typeof(\"user_jobs\".\"results\") = 'array' AND jsonb_typeof(\"user_jobs\".\"viewed_result_ids\") = 'array' AND jsonb_typeof(\"user_jobs\".\"work\"->'processedInputIds') = 'array'"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.user_permission_grants": {
