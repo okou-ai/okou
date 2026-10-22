@@ -257,7 +257,9 @@ async def test_failed_header_auth_responds_before_body_eof(
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("initial_window", [0, 1])
-@pytest.mark.parametrize("ending", ["complete", "reset", "disconnect", "protocol-error"])
+@pytest.mark.parametrize(
+    "ending", ["complete", "exact-credit", "reset", "disconnect", "protocol-error"]
+)
 async def test_h2_auth_error_waits_for_response_credit_without_blocking_siblings(
     tmp_path, dialect, initial_window, ending
 ):
@@ -348,8 +350,11 @@ async def test_h2_auth_error_waits_for_response_credit_without_blocking_siblings
         await drive()
         assert len(body(1)) == initial_window + 1
         assert not ended(1)
-        if ending == "complete":
-            guest.increment_flow_control_window(4096, stream_id=1)
+        if ending in ("complete", "exact-credit"):
+            remaining = int(dict(reply.headers)[b"content-length"]) - len(body(1))
+            guest.increment_flow_control_window(
+                remaining if ending == "exact-credit" else 4096, stream_id=1
+            )
             await drive()
             assert ended(1)
             assert json.loads(body(1))["error"] == "insufficient_credits"

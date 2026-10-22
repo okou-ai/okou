@@ -72,7 +72,8 @@ def install() -> None:
                 pending = _PendingResponses()
                 setattr(self, _PENDING, pending)
             pending.streams.add(event.stream_id)
-        yield from native(self, event)
+        else:
+            yield from native(self, event)
         if not isinstance(pending, _PendingResponses):
             return
         if isinstance(event, events.ConnectionClosed):
@@ -83,6 +84,11 @@ def install() -> None:
             delattr(self, _PENDING)
             return
         for stream_id in tuple(pending.streams):
+            if self.is_open_for_us(stream_id) and not self.h2_conn.stream_buffers.get(stream_id):
+                # Queueing an empty EOM behind blocked DATA makes native flush
+                # require extra credit even when every response byte was sent.
+                # Once DATA drains, native EOM needs no flow-control credit.
+                yield from native(self, ResponseEndOfMessage(stream_id))
             if self.is_closed(stream_id):
                 # Native protocol-error closure switches directly to done, so
                 # a later ConnectionClosed event cannot release queued DATA.

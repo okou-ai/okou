@@ -789,8 +789,10 @@ the detector adds no body queue, grace delay or timer.
 HTTP/2 keeps response DATA and END_STREAM under native peer-window credit. A
 connection-owned completion set retires only the rejected upload with NO_ERROR
 after its response has actually ended; resetting earlier would discard buffered
-error bytes. Peer reset, disconnect and protocol-error closure release pending
-completion state and queued local response bytes.
+error bytes. Send the native end marker after queued response DATA drains, so
+credit sufficient for exactly the body also completes the response. Peer reset,
+disconnect and protocol-error closure release pending completion state and queued
+local response bytes.
 Sibling streams retain native progress and the connection stays usable.
 
 The existing firewall action, error classification and proxy diagnostic remain
