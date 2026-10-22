@@ -6,7 +6,6 @@
     "PATH",
     "SHELL",
     "DATABASE_URL",
-    "API_ENV_JSON",
     "API_ENV_JSON_PARTS",
     "API_ENV_JSON_*",
     "DB_POOL_MAX",

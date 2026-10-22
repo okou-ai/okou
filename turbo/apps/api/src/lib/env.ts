@@ -192,7 +192,7 @@ const packedConfig = configParts
         return z.string().parse(process.env[`API_ENV_JSON_${index}`]);
       },
     ).join("")
-  : process.env.API_ENV_JSON;
+  : undefined;
 const packedEnv = Object.freeze(
   packedConfig
     ? z.record(z.string(), z.string()).parse(JSON.parse(packedConfig))

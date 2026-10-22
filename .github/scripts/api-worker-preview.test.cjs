@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
-const { test } = require("node:test");
+const { test, before, after, afterEach } = require("node:test");
+const { createRequire } = require("node:module");
 const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -13,6 +14,39 @@ const {
   main,
 } = require("./api-worker-preview.cjs");
 
+// .github is outside the pnpm workspace. Resolve the API's existing MSW
+// dependency from its owning package, independent of the invocation directory.
+const requireApi = createRequire(
+  path.resolve(__dirname, "../../turbo/apps/api/package.json"),
+);
+const { http, HttpResponse } = requireApi("msw");
+const { setupServer } = requireApi("msw/node");
+const server = setupServer();
+const boundaryErrors = [];
+before(() => {
+  server.events.on("unhandledException", ({ error }) =>
+    boundaryErrors.push(error),
+  );
+  server.listen({
+    onUnhandledRequest(incoming) {
+      const error = new Error(`Unhandled ${incoming.method} ${incoming.url}`);
+      boundaryErrors.push(error);
+      throw error; // The installed MSW print.error() only logs; reject explicitly.
+    },
+  });
+});
+afterEach(() => {
+  server.resetHandlers();
+  // The production adapter sanitizes fetch failures. They must not hide a
+  // missing handler or a failed assertion inside an MSW response resolver.
+  assert.deepEqual(boundaryErrors.splice(0), []);
+});
+after(() => server.close());
+const neonBase = "https://console.neon.tech/api/v2/projects/test-project";
+const cfBase = `https://api.cloudflare.com/client/v4/accounts/${"a".repeat(32)}`;
+const prUrl = "https://api.github.com/repos/example/repository/pulls/123";
+const neon = (method, route) => request(neonBase, "test-token", method, route);
+
 test("Worker consumes the exact prepared shared branch through a direct GET-only connection", async () => {
   const branch = {
     id: "br-shared-preview",
@@ -20,25 +54,35 @@ test("Worker consumes the exact prepared shared branch through a direct GET-only
     current_state: "ready",
   };
   const requests = [];
-  const database = await sharedPreviewDatabase(async (method, route) => {
-    requests.push([method, route]);
-    assert.equal(method, "GET");
-    if (route.startsWith("/branches?"))
-      return {
+  server.use(
+    http.get(`${neonBase}/branches`, ({ request: incoming }) => {
+      const url = new URL(incoming.url);
+      requests.push([incoming.method, `/branches${url.search}`]);
+      assert.equal(url.searchParams.get("search"), branch.name);
+      assert.equal(url.searchParams.get("limit"), "100");
+      return HttpResponse.json({
         branches: [
           { ...branch, id: "br-unrelated", name: "preview/pr-123-other" },
           branch,
         ],
-      };
-    if (route === `/branches/${branch.id}`) return { branch };
-    assert.equal(
-      route,
-      "/connection_uri?branch_id=br-shared-preview&database_name=neondb&role_name=neondb_owner&pooled=false",
-    );
-    return {
-      uri: "postgresql://preview:password@ep-shared.example.neon.tech/neondb",
-    };
-  }, branch.name);
+      });
+    }),
+    http.get(`${neonBase}/branches/${branch.id}`, () =>
+      HttpResponse.json({ branch }),
+    ),
+    http.get(`${neonBase}/connection_uri`, ({ request: incoming }) => {
+      assert.deepEqual(Object.fromEntries(new URL(incoming.url).searchParams), {
+        branch_id: branch.id,
+        database_name: "neondb",
+        role_name: "neondb_owner",
+        pooled: "false",
+      });
+      return HttpResponse.json({
+        uri: "postgresql://preview:password@ep-shared.example.neon.tech/neondb",
+      });
+    }),
+  );
+  const database = await sharedPreviewDatabase(neon, branch.name);
   assert.equal(database.hostname, "ep-shared.example.neon.tech");
   assert.equal(database.searchParams.get("sslmode"), "verify-full");
   assert.equal(requests[0][1], "/branches?search=preview%2Fpr-123&limit=100");
@@ -46,11 +90,15 @@ test("Worker consumes the exact prepared shared branch through a direct GET-only
 
 test("a missing shared branch fails instead of allocating another Neon branch", async () => {
   const requests = [];
+  server.use(
+    http.get(`${neonBase}/branches`, ({ request: incoming }) => {
+      const url = new URL(incoming.url);
+      requests.push([incoming.method, `/branches${url.search}`]);
+      return HttpResponse.json({ branches: [] });
+    }),
+  );
   await assert.rejects(
-    sharedPreviewDatabase(async (method, route) => {
-      requests.push([method, route]);
-      return { branches: [] };
-    }, "preview/pr-123"),
+    sharedPreviewDatabase(neon, "preview/pr-123"),
     /Expected one existing shared API preview branch/,
   );
   assert.deepEqual(requests, [
@@ -84,20 +132,28 @@ test("closed-PR Worker cleanup deletes only its Worker and Hyperdrive without Ne
     NEON_PROJECT_ID: undefined,
   });
   const requests = [];
-  t.mock.method(globalThis, "fetch", async (url, options) => {
-    const pathname = new URL(url).pathname;
-    requests.push([options.method, pathname]);
-    if (url.startsWith("https://api.github.com/"))
-      return Response.json({ state: "closed" });
-    assert.equal(new URL(url).hostname, "api.cloudflare.com");
-    return Response.json({
-      success: true,
-      result:
-        options.method === "GET"
-          ? [{ name: "okou-api-preview-pr-123", id: "b".repeat(32) }]
-          : null,
-    });
-  });
+  server.use(
+    http.get(prUrl, () => HttpResponse.json({ state: "closed" })),
+    http.get(`${cfBase}/hyperdrive/configs`, () =>
+      HttpResponse.json({
+        success: true,
+        result: [{ name: "okou-api-preview-pr-123", id: "b".repeat(32) }],
+      }),
+    ),
+    ...[
+      `${cfBase}/workers/scripts/okou-api-preview-pr-123`,
+      `${cfBase}/hyperdrive/configs/${"b".repeat(32)}`,
+    ].map((url) =>
+      http.delete(url, ({ request: incoming }) => {
+        assert.equal(
+          incoming.headers.get("authorization"),
+          "Bearer test-token",
+        );
+        requests.push([incoming.method, new URL(incoming.url).pathname]);
+        return HttpResponse.json({ success: true, result: null });
+      }),
+    ),
+  );
   await main("cleanup");
   assert.deepEqual(
     requests.filter(([method]) => method === "DELETE"),
@@ -123,16 +179,17 @@ test("a superseded PR revision is rejected before database or Cloudflare operati
     GITHUB_REPOSITORY: "example/repository",
     EXPECTED_PR_HEAD_SHA: "1".repeat(40),
   });
-  t.mock.method(globalThis, "fetch", async (url) => {
-    assert.equal(
-      url,
-      "https://api.github.com/repos/example/repository/pulls/123",
-    );
-    return Response.json({
-      state: "open",
-      head: { sha: "2".repeat(40), repo: { full_name: "example/repository" } },
-    });
-  });
+  server.use(
+    http.get(prUrl, () =>
+      HttpResponse.json({
+        state: "open",
+        head: {
+          sha: "2".repeat(40),
+          repo: { full_name: "example/repository" },
+        },
+      }),
+    ),
+  );
   await assert.rejects(main("deploy"), /Superseded PR revision/);
 });
 
@@ -169,53 +226,80 @@ test("downstream deployment binds the existing branch and runs only build and Wo
     name: "okou-api-preview-pr-123",
     caching: { disabled: true },
   };
-  t.mock.method(globalThis, "fetch", async (url, options) => {
-    const u = new URL(url);
-    if (u.hostname === "api.github.com")
-      return Response.json({
+  server.use(
+    http.get(prUrl, () =>
+      HttpResponse.json({
         state: "open",
         head: {
           sha: "1".repeat(40),
           repo: { full_name: "example/repository" },
         },
+      }),
+    ),
+    http.get(`${neonBase}/branches`, ({ request: incoming }) => {
+      assert.equal(
+        new URL(incoming.url).searchParams.get("search"),
+        branch.name,
+      );
+      return HttpResponse.json({ branches: [branch] });
+    }),
+    http.get(`${neonBase}/branches/${branch.id}`, () =>
+      HttpResponse.json({ branch }),
+    ),
+    http.get(`${neonBase}/connection_uri`, ({ request: incoming }) => {
+      const params = new URL(incoming.url).searchParams;
+      assert.equal(params.get("branch_id"), branch.id);
+      assert.equal(params.get("pooled"), "false");
+      return HttpResponse.json({
+        uri: "postgresql://preview:password@ep-shared.example.neon.tech/neondb",
       });
-    if (u.hostname === "console.neon.tech") {
-      assert.equal(options.method, "GET");
-      if (u.pathname.endsWith("/connection_uri")) {
-        assert.equal(u.searchParams.get("branch_id"), branch.id);
-        assert.equal(u.searchParams.get("pooled"), "false");
-        return Response.json({
-          uri: "postgresql://preview:password@ep-shared.example.neon.tech/neondb",
+    }),
+    http.get(`${cfBase}/hyperdrive/configs`, () =>
+      HttpResponse.json({
+        success: true,
+        result: [hyperdrive],
+      }),
+    ),
+    http.put(
+      `${cfBase}/hyperdrive/configs/${hyperdrive.id}`,
+      async ({ request: incoming }) => {
+        assert.equal(
+          incoming.headers.get("authorization"),
+          "Bearer test-token",
+        );
+        const body = await incoming.json();
+        assert.deepEqual(body, {
+          name: hyperdrive.name,
+          origin: {
+            scheme: "postgres",
+            host: "ep-shared.example.neon.tech",
+            port: 5432,
+            database: "neondb",
+            user: "preview",
+            password: "password",
+          },
+          caching: { disabled: true },
         });
-      }
-      if (u.pathname.endsWith(`/branches/${branch.id}`))
-        return Response.json({ branch });
-      assert.equal(u.searchParams.get("search"), branch.name);
-      return Response.json({ branches: [branch] });
-    }
-    assert.equal(u.hostname, "api.cloudflare.com");
-    if (options.method === "GET")
-      return Response.json({ success: true, result: [hyperdrive] });
-    assert.equal(options.method, "PUT");
-    const body = JSON.parse(options.body);
-    assert.equal(body.origin.host, "ep-shared.example.neon.tech");
-    assert.equal(body.caching.disabled, true);
-    return Response.json({ success: true, result: hyperdrive });
-  });
+        return HttpResponse.json({ success: true, result: hyperdrive });
+      },
+    ),
+  );
   const commands = [];
+  let generatedPath;
+  let secretsPath;
   t.mock.method(childProcess, "spawnSync", (_command, args) => {
     if (args.includes("build:worker")) commands.push("build");
     else {
       assert.ok(args.includes("deploy"));
-      const config = JSON.parse(
-        fs.readFileSync(args[args.indexOf("--config") + 1], "utf8"),
-      );
+      generatedPath = args[args.indexOf("--config") + 1];
+      assert.equal(fs.statSync(generatedPath).mode & 0o777, 0o600);
+      const config = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
       assert.deepEqual(config.hyperdrive, [
         { binding: "HYPERDRIVE", id: hyperdrive.id },
       ]);
-      const secretsFile = args[args.indexOf("--secrets-file") + 1];
-      assert.equal(fs.statSync(secretsFile).mode & 0o777, 0o600);
-      const secrets = JSON.parse(fs.readFileSync(secretsFile, "utf8"));
+      secretsPath = args[args.indexOf("--secrets-file") + 1];
+      assert.equal(fs.statSync(secretsPath).mode & 0o777, 0o600);
+      const secrets = JSON.parse(fs.readFileSync(secretsPath, "utf8"));
       const runtime = JSON.parse(
         Array.from(
           { length: Number(secrets.API_ENV_JSON_PARTS) },
@@ -232,6 +316,8 @@ test("downstream deployment binds the existing branch and runs only build and Wo
   });
   await main("deploy");
   assert.deepEqual(commands, ["build", "upload"]);
+  assert.equal(fs.existsSync(generatedPath), false);
+  assert.equal(fs.existsSync(path.dirname(secretsPath)), false);
 });
 
 test("encrypted environment chunks preserve multibyte values and stay below the per-secret limit", () => {
@@ -284,16 +370,22 @@ test("deployment failures expose numeric diagnostics without printing credential
   );
 });
 
-test("control-plane failures never expose provider response bodies or native credential-bearing errors", async (t) => {
+test("control-plane failures withhold credentials and never replay uncertain requests", async () => {
   const secret = "postgres://secret:password@database";
-  t.mock.method(
-    globalThis,
-    "fetch",
-    async () => new Response(secret, { status: 400 }),
+  server.use(
+    http.post(
+      "https://api.cloudflare.com/client/v4/configs",
+      async ({ request: incoming }) => {
+        assert.equal(incoming.headers.get("authorization"), `Bearer ${secret}`);
+        assert.equal(new URL(incoming.url).searchParams.get("token"), secret);
+        assert.deepEqual(await incoming.json(), { password: secret });
+        return new HttpResponse(secret, { status: 400 });
+      },
+    ),
   );
   await assert.rejects(
     request(
-      "https://example.invalid",
+      "https://api.cloudflare.com/client/v4",
       secret,
       "POST",
       `/configs?token=${secret}`,
@@ -303,15 +395,20 @@ test("control-plane failures never expose provider response bodies or native cre
     ),
     (error) =>
       !error.message.includes(secret) &&
-      error.message.includes("example.invalid POST /configs") &&
+      error.message.includes("api.cloudflare.com POST /configs") &&
       error.message.includes("HTTP 400"),
   );
-  globalThis.fetch = async () => {
-    throw new globalThis.Error(secret);
-  };
+  let attempts = 0;
+  server.use(
+    http.post("https://api.cloudflare.com/client/v4/configs", () => {
+      attempts += 1;
+      return HttpResponse.error();
+    }),
+  );
   await assert.rejects(
-    request("https://example.invalid", secret, "POST", "/configs"),
+    request("https://api.cloudflare.com/client/v4", secret, "POST", "/configs"),
     (error) =>
       !error.message.includes(secret) && error.message.includes("not retried"),
   );
+  assert.equal(attempts, 1);
 });

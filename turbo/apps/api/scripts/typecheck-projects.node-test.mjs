@@ -80,7 +80,7 @@ function fixture(t) {
   }
   for (const file of [
     "src/worker-runtime.d.ts",
-    "src/worker-unsupported-sharp.ts",
+    "src/__tests__/worker-lifecycle.test.ts",
     "src/worker-unsupported-pg-native.ts",
     "src/worker-unsupported-react-email.ts",
   ]) {
@@ -488,7 +488,7 @@ test("Worker roots are isolated from Node programs and production bootstrap acce
   prepare(root);
   accepted(guard(root));
   const worker = config(root, "tsconfig.worker.json");
-  assert.deepEqual(worker.options.types, ["node"]);
+  assert.deepEqual(worker.options.types, ["node", "vitest/globals"]);
   assert.equal(worker.options.disableSourceOfProjectReferenceRedirect, true);
   assert.deepEqual(worker.options.paths["@cloudflare/workers-types"], [
     "./node_modules/@cloudflare/workers-types/index.ts",
