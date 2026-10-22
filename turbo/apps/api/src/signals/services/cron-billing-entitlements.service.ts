@@ -1,7 +1,6 @@
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { expireOrgCreditsAt$ } from "./org-credit-expiration.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
-import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
+import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
@@ -43,7 +42,6 @@ import {
 } from "./org-concurrency-entitlements.service";
 import {
   orgPlanEntitlementValues,
-  orgPlanEntitlementUpdateValues,
   resolveStripeSubscriptionSnapshot,
   type UpsertOrgPlanEntitlementArgs,
 } from "./org-plan-entitlements.service";
@@ -637,13 +635,6 @@ function subscriptionIsPaymentFailed(subscription: SubscriptionInput): boolean {
   );
 }
 
-function knownOrgTier(value: string): OrgTier {
-  if (isOrgTier(value)) {
-    return value;
-  }
-  throw new Error(`Unknown org tier: ${value}`);
-}
-
 function stripeSubscriptionPlanSnapshotArgs(
   args: {
     readonly orgId: string;
@@ -858,82 +849,73 @@ const refreshPaymentFailedPaidThroughCandidate$ = command(
     signal: AbortSignal,
   ): Promise<void> {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0125; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const changed = await tx
+    const changed = db.$with("refreshed_payment_failed_organization").as(
+      db
         .update(orgMetadata)
         .set(syncedFields)
         .where(currentBillingCandidateWhere(candidate))
         .returning({
           orgId: orgMetadata.orgId,
           tier: orgMetadata.tier,
-        });
-      for (const row of changed) {
-        const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
-          {
-            orgId: row.orgId,
-            tier: knownOrgTier(row.tier),
-            subscription,
-            stripeSubscriptionId: candidate.stripeSubscriptionId,
-            stripePriceId:
-              knownBillingPlanPriceItem(subscription.items.data)?.price.id ??
-              null,
-            status: subscription.status,
-          },
-          false,
-        );
-        let showUsagePack = false;
-        if (
-          entitlementArgs.stripeSubscriptionId !== null &&
-          (entitlementArgs.tier === "pro" ||
-            entitlementArgs.tier === "team" ||
-            entitlementArgs.tier === "custom")
-        ) {
-          const [allocation] = await tx
-            .select({ id: usagePackAllocations.id })
-            .from(usagePackSubscriptions)
-            .innerJoin(
-              usagePackAllocations,
-              eq(
-                usagePackAllocations.usagePackSubscriptionId,
-                usagePackSubscriptions.id,
-              ),
+        }),
+    );
+    const priceId =
+      knownBillingPlanPriceItem(subscription.items.data)?.price.id ?? null;
+    const at = nowDate();
+    const projections = PAID_TIERS.map((tier) => {
+      const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
+        {
+          orgId: candidate.orgId,
+          tier,
+          subscription,
+          stripeSubscriptionId: candidate.stripeSubscriptionId,
+          stripePriceId: priceId,
+          status: subscription.status,
+        },
+        false,
+      );
+      const showUsagePack =
+        tier === "pro" || tier === "team"
+          ? exists(
+              db
+                .select({ id: usagePackAllocations.id })
+                .from(usagePackSubscriptions)
+                .innerJoin(
+                  usagePackAllocations,
+                  eq(
+                    usagePackAllocations.usagePackSubscriptionId,
+                    usagePackSubscriptions.id,
+                  ),
+                )
+                .where(planSnapshotAllocationCondition(candidate))
+                .limit(1),
             )
-            .where(
-              planSnapshotAllocationCondition({
-                orgId: row.orgId,
-                stripeSubscriptionId: entitlementArgs.stripeSubscriptionId,
-              }),
-            )
-            .limit(1);
-          showUsagePack = allocation !== undefined;
-        }
-        const snapshotArgs = { ...entitlementArgs, showUsagePack };
-        const [owner] = snapshotArgs.stripeSubscriptionId
-          ? await tx
-              .select({ orgId: orgPlanEntitlements.orgId })
-              .from(orgPlanEntitlements)
-              .where(
-                eq(
-                  orgPlanEntitlements.stripeSubscriptionId,
-                  snapshotArgs.stripeSubscriptionId,
-                ),
-              )
-              .limit(1)
-          : [];
-        const values = orgPlanEntitlementValues(
-          snapshotArgs,
-          resolveStripeSubscriptionSnapshot(snapshotArgs, owner?.orgId ?? null),
+          : sql`false`;
+      const values = orgPlanEntitlementValues(
+        entitlementArgs,
+        resolveStripeSubscriptionSnapshot(entitlementArgs),
+        at,
+      );
+      return db
+        .$with(`refreshed_payment_failed_${tier}_plan`, {})
+        .as(
+          stripePlanEntitlementInsertSql(
+            db
+              .select({ orgId: changed.orgId })
+              .from(changed)
+              .where(eq(changed.tier, tier))
+              .getSQL(),
+            values,
+            showUsagePack,
+          ),
         );
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(values)
-          .onConflictDoUpdate({
-            target: orgPlanEntitlements.orgId,
-            set: orgPlanEntitlementUpdateValues(values),
-          });
-      }
     });
+    // The UPDATE returns at most one paid tier: exactly one projection can write.
+    // Stale candidates return no identity; all writes share one snapshot/commit.
+    await db
+      .with(changed, ...projections)
+      .select()
+      .from(changed);
     signal.throwIfAborted();
   },
 );
