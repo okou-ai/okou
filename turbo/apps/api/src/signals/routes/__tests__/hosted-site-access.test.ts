@@ -7,7 +7,6 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { mockEnv } from "../../../lib/env";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { hostRoutes } from "../host";
@@ -60,7 +59,6 @@ function client(user?: ApiTestUser) {
 }
 
 async function enable(user: ApiTestUser, value = true) {
-  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "true");
   client(user);
   await accept(
     setupAppWithRoutes({ context, routes: featureSwitchesRoutes })(
@@ -73,10 +71,9 @@ async function enable(user: ApiTestUser, value = true) {
   );
 }
 
-test("preparation keeps downloads public and blocks writes even with a user override", async () => {
+test("the visibility switch blocks settings while Public access and downloads remain available", async () => {
   const { owner, api, prepared, request } = await publish();
-  await enable(owner);
-  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
+  await enable(owner, false);
   await accept(
     client(owner).updateSiteVisibility({
       headers,
@@ -97,6 +94,18 @@ test("preparation keeps downloads public and blocks writes even with a user over
     throw new Error("Expected hosted download files");
   }
   expect(files.body.files[0]!.downloadUrl).not.toContain("/.okou/download/");
+  await enable(owner);
+  const enabledFiles = await api.requestHostedSiteFiles(
+    owner,
+    `dpl-${prepared.deploymentId}`,
+    [200],
+  );
+  if (enabledFiles.status !== 200) {
+    throw new Error("Expected hosted download files");
+  }
+  expect(enabledFiles.body.files[0]!.downloadUrl).not.toContain(
+    "/.okou/download/",
+  );
 });
 
 test.each([
@@ -111,7 +120,6 @@ test.each([
     const api = createHostMapsBddApi(context);
     api.captureHostedSitesS3();
     await enable(owner);
-    mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", "");
     const prepared = await api.prepareHostedSite(owner, {
       site: `private-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site",
@@ -146,41 +154,31 @@ test.each([
   },
 );
 
-test.each(["switch-disabled", "access-unavailable"] as const)(
-  "rejects visibility publication when %s",
-  async (reason) => {
-    const owner = createBddApi(context).user();
-    if (reason === "access-unavailable") {
-      await enable(owner);
-      mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
-    }
-    const input = {
-      site: `unavailable-${randomUUID().slice(0, 8)}`,
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      ...(reason === "switch-disabled"
-        ? { visibility: "private" as const }
-        : {}),
-      files: [hostedTextFile("/index.html", "<p>Keep private</p>")],
-    };
-    const rejected = await accept(
-      client(owner).prepare({ headers, body: input }),
-      [403],
-    );
-    expect(rejected.body.error.message).toBe(
-      "Website visibility management is not available",
-    );
-    await accept(
-      client(owner).deployments({ headers, params: { site: input.site } }),
-      [404],
-    );
-  },
-);
+test("rejects explicit visibility publication when the switch is disabled", async () => {
+  const owner = createBddApi(context).user();
+  const input = {
+    site: `unavailable-${randomUUID().slice(0, 8)}`,
+    artifactKind: "hosted-site" as const,
+    spaFallback: false,
+    visibility: "private" as const,
+    files: [hostedTextFile("/index.html", "<p>Keep private</p>")],
+  };
+  const rejected = await accept(
+    client(owner).prepare({ headers, body: input }),
+    [403],
+  );
+  expect(rejected.body.error.message).toBe(
+    "Website visibility management is not available",
+  );
+  await accept(
+    client(owner).deployments({ headers, params: { site: input.site } }),
+    [404],
+  );
+});
 
 test("redeployments preserve an existing public site's visibility when the switch is enabled", async () => {
   const { owner, api, input } = await publish();
   await enable(owner);
-  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", "");
   const next = await api.prepareHostedSite(owner, input);
   expect(next.visibility).toBe("public");
   await api.completeHostedSite(owner, next.deploymentId);
@@ -192,13 +190,6 @@ test("redeployments preserve an existing public site's visibility when the switc
     [200],
   );
   expect(access.body.decision).toBe("allow");
-  await accept(
-    client(owner).prepare({
-      headers,
-      body: { ...input, visibility: "private" },
-    }),
-    [403],
-  );
 });
 
 test("an explicitly private redeployment restricts the site before new bytes are uploaded", async () => {
@@ -240,7 +231,6 @@ async function publish() {
   };
   const prepared = await api.prepareHostedSite(owner, input);
   await api.completeHostedSite(owner, prepared.deploymentId);
-  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", prepared.siteId);
   const prefix = `sites/brands/okou/publications/${prepared.deploymentId}`;
   return {
     owner,
@@ -483,7 +473,18 @@ test("organization access follows current membership in the site's organization"
       )
     ).body.allowed,
   ).toBeTruthy();
+  const previewRequest = {
+    headers,
+    params: { publicSlug: prepared.publicSlug },
+    query: { hostname: `${prepared.publicSlug}.okou.app` },
+  };
+  const preview = await accept(
+    client(viewer).sitePreview(previewRequest),
+    [200],
+  );
+  expect(preview.body.expiresAt).not.toBeNull();
   member = false;
+  await accept(client(viewer).sitePreview(previewRequest), [404]);
   expect(
     (
       await accept(
@@ -541,6 +542,14 @@ test("redeployment preserves an explicit policy for both aliases and immutable a
 test("issued download grants stop working after a policy revision changes", async () => {
   const { owner, api, prepared } = await publish();
   await enable(owner);
+  const policy = await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "public", expectedRevision: null },
+    }),
+    [200],
+  );
   const files = await api.requestHostedSiteFiles(
     owner,
     `dpl-${prepared.deploymentId}`,
@@ -561,7 +570,7 @@ test("issued download grants stop working after a policy revision changes", asyn
     client(owner).updateSiteVisibility({
       headers,
       params: { siteId: prepared.siteId },
-      body: { visibility: "private", expectedRevision: null },
+      body: { visibility: "private", expectedRevision: policy.body.revision },
     }),
     [200],
   );
@@ -653,7 +662,6 @@ test("private downloads remain controlled with management disabled and stop afte
     [200],
   );
   await enable(owner, false);
-  mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
   const files = await api.requestHostedSiteFiles(
     owner,
     `dpl-${prepared.deploymentId}`,
@@ -692,18 +700,18 @@ test("private downloads remain controlled with management disabled and stop afte
   ).toBeNull();
 });
 
-test("a user-editable switch cannot admit a Site outside the server cohort", async () => {
+test("disabling visibility settings preserves Private policy and browser authorization", async () => {
   const { owner, prepared } = await publish();
   await enable(owner);
-  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", randomUUID());
   await accept(
     client(owner).updateSiteVisibility({
       headers,
       params: { siteId: prepared.siteId },
       body: { visibility: "private", expectedRevision: null },
     }),
-    [403],
+    [200],
   );
+  await enable(owner, false);
   expect(
     (
       await accept(
@@ -714,7 +722,20 @@ test("a user-editable switch cannot admit a Site outside the server cohort", asy
         [200],
       )
     ).body.decision,
-  ).toBe("allow");
+  ).toBe("authenticate");
+  await authorizeBrowser(
+    owner,
+    prepared.siteId,
+    `https://${prepared.publicSlug}.okou.app`,
+  );
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "public", expectedRevision: null },
+    }),
+    [403],
+  );
 });
 
 test("authorization codes require the correct proof, Site and origin, and are single-use", async () => {
@@ -992,3 +1013,96 @@ test.each([
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   },
 );
+
+test("restricted previews reuse private-artifact credentials only after current access checks", async () => {
+  mockNow(Date.parse("2026-10-22T00:00:00Z"));
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "private", expectedRevision: null },
+    }),
+    [200],
+  );
+  await enable(owner, false);
+  const request = {
+    headers,
+    params: { publicSlug: prepared.publicSlug },
+    query: { hostname: `${prepared.publicSlug}.okou.app` },
+  };
+  const issuedAt = now();
+  const first = await accept(client(owner).sitePreview(request), [200]);
+  expect(first.body.url).toMatch(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u);
+  expect(Date.parse(first.body.expiresAt!) - issuedAt).toBe(
+    48 * 60 * 60 * 1000,
+  );
+  const repeated = await accept(client(owner).sitePreview(request), [200]);
+  expect(repeated.body).toStrictEqual(first.body);
+  const outsider = createBddApi(context).user();
+  await accept(client(outsider).sitePreview(request), [404]);
+  await accept(
+    client(owner).sitePreview({
+      ...request,
+      query: { hostname: "unrelated.okou.app" },
+    }),
+    [404],
+  );
+  const invalidDeployment = `dpl-${"-".repeat(35)}a`;
+  await accept(
+    client(owner).sitePreview({
+      ...request,
+      params: { publicSlug: invalidDeployment },
+      query: { hostname: `${invalidDeployment}.okou.app` },
+    }),
+    [404],
+  );
+  const immutable = await accept(
+    client(owner).sitePreview({
+      ...request,
+      params: { publicSlug: `dpl-${prepared.deploymentId}` },
+      query: { hostname: `dpl-${prepared.deploymentId}.okou.app` },
+    }),
+    [200],
+  );
+  expect(immutable.body).toStrictEqual(first.body);
+
+  mockNow(issuedAt + 47 * 60 * 60 * 1000 - 1);
+  expect(
+    (await accept(client(owner).sitePreview(request), [200])).body,
+  ).toStrictEqual(first.body);
+  mockNow(issuedAt + 47 * 60 * 60 * 1000);
+  const renewed = await accept(client(owner).sitePreview(request), [200]);
+  expect(renewed.body.url).not.toBe(first.body.url);
+  expect(Date.parse(renewed.body.expiresAt!) - now()).toBe(48 * 60 * 60 * 1000);
+});
+
+test("public previews keep anonymous addresses without a temporary capability", async () => {
+  const { owner, prepared } = await publish();
+  const result = await accept(
+    client(owner).sitePreview({
+      headers,
+      params: { publicSlug: prepared.publicSlug },
+      query: { hostname: `${prepared.publicSlug}.okou.app` },
+    }),
+    [200],
+  );
+  expect(result.body).toStrictEqual({
+    url: `https://${prepared.publicSlug}.okou.app/`,
+    expiresAt: null,
+  });
+  const stranger = createBddApi(context).user();
+  expect(
+    (
+      await accept(
+        client(stranger).sitePreview({
+          headers,
+          params: { publicSlug: prepared.publicSlug },
+          query: { hostname: `${prepared.publicSlug}.okou.app` },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual(result.body);
+});

@@ -65,11 +65,9 @@ function SiteAddress({ link }: { readonly link: string }) {
 function SiteStatus({
   link,
   loading,
-  showPublicAccess,
 }: {
   readonly link: string | null;
   readonly loading: boolean;
-  readonly showPublicAccess: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -86,16 +84,6 @@ function SiteStatus({
               return $.artifacts.siteUrl.published;
             })}
           </span>
-          {showPublicAccess && (
-            <>
-              {" · "}
-              <span>
-                {t(($) => {
-                  return $.artifacts.sharing.publicOption;
-                })}
-              </span>
-            </>
-          )}
         </p>
       </div>
     </div>
@@ -465,11 +453,7 @@ function HostedSiteShareBody({
   const visibilityEnabled = switches[FeatureSwitchKey.HostedSiteVisibility];
   return (
     <>
-      <SiteStatus
-        link={link}
-        loading={loading}
-        showPublicAccess={!visibilityEnabled}
-      />
+      <SiteStatus link={link} loading={loading} />
       {visibilityEnabled && !editing && (
         <HostedSitePermissions session={session} />
       )}

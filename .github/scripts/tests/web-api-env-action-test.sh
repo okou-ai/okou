@@ -586,8 +586,6 @@ assert_env_value "$success_env_file" AWS_ACCESS_KEY_ID "github-preview-kms-acces
 assert_env_value "$success_env_file" AWS_SECRET_ACCESS_KEY "github-preview-kms-secret"
 assert_env_absent_value "$success_env_file" "github-production-kms"
 assert_debug_canonical "$success_env_file"
-assert_env_value "$success_env_file" HOSTED_SITE_ACCESS_ENABLED "false"
-assert_env_value "$success_env_file" HOSTED_SITE_VISIBILITY_SITE_IDS ""
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_BUCKET_NAME "user-artifact-private-dev"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "private-dev-key"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "private-dev-secret"
@@ -1087,20 +1085,5 @@ for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM
   assert_contains "$missing_oauth_output" "::error::${oauth_key} is missing from Doppler OAuth config"
   assert_no_fixture_secret_values "$missing_oauth_output"
 done
-
-hosted_site_switch_dir="$(mktemp -d)"
-TEMP_DIRS+=("$hosted_site_switch_dir")
-hosted_site_switch_output="$(
-  run_switch_action \
-    "$hosted_site_switch_dir" \
-    api \
-    production \
-    '{"HOSTED_SITE_ACCESS_ENABLED":"true","HOSTED_SITE_VISIBILITY_SITE_IDS":"00000000-0000-4000-8000-000000000001"}' \
-    2>&1
-)"
-hosted_site_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${hosted_site_switch_dir}/github-output")"
-assert_contains "$hosted_site_switch_output" "Rendered"
-assert_env_value "$hosted_site_switch_env_file" HOSTED_SITE_ACCESS_ENABLED "true"
-assert_env_value "$hosted_site_switch_env_file" HOSTED_SITE_VISIBILITY_SITE_IDS "00000000-0000-4000-8000-000000000001"
 
 echo "web-api-env-action-test: ok"

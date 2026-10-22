@@ -63,8 +63,7 @@ async function createRuntime(
   t,
   name,
   outboundService,
-  authorize = false,
-  access = false,
+  customAuthority = false,
 ) {
   const directory = await mkdtemp(join(tmpdir(), "artifact-og-workers-"));
   const worker = workers[name];
@@ -83,11 +82,19 @@ async function createRuntime(
         HOST_DOMAIN: "sites.vm0.io",
         OKOU_HOST_DOMAIN: "okou.app",
         ARTIFACT_OG_API_ORIGIN: "https://api.okou.ai",
-        ...(authorize ? { HOSTED_SITE_API_ORIGIN: "https://api.okou.ai" } : {}),
-        HOSTED_SITE_ACCESS_ENABLED: String(access),
+        HOSTED_SITE_API_ORIGIN: "https://api.okou.ai",
       },
       // Intercept the API boundary, leaving workerd's native fetch intact.
-      outboundService,
+      outboundService(request) {
+        if (
+          name === "host" &&
+          !customAuthority &&
+          new URL(request.url).pathname.startsWith("/api/host/delivery/")
+        ) {
+          return Response.json({ allowed: true, decision: "allow" });
+        }
+        return outboundService(request);
+      },
     }),
   );
   t.after(async () => {
@@ -209,46 +216,41 @@ for (const [name, worker] of Object.entries(workers)) {
   }
 }
 
-for (const access of [false, true]) {
-  for (const state of ["allowed", "denied", "redirect"]) {
-    test(`Host Worker handles ${state} delivery authorization in workerd (access=${access})`, async (t) => {
-      const runtime = await createRuntime(
-        t,
-        "host",
-        (request) => {
-          const url = new URL(request.url);
-          if (url.hostname === "redirected.example")
-            return Response.json({ allowed: true, decision: "allow" });
-          if (url.pathname === `/api/host/delivery/${siteId}/${deploymentId}`) {
-            return state === "redirect"
-              ? new Response(null, {
-                  status: 302,
-                  headers: { Location: "https://redirected.example/authority" },
-                })
-              : Response.json({
-                  allowed: state === "allowed",
-                  ...(access
-                    ? { decision: state === "allowed" ? "allow" : "deny" }
-                    : {}),
-                });
-          }
-          if (url.pathname === "/api/host/aliases/demo") {
-            assert.equal(url.searchParams.get("publicBrand"), "okou");
-            return Response.json({ pointer: null });
-          }
-          assert.equal(url.pathname, "/api/artifact-og/metadata");
-          return Response.json(metadata);
-        },
-        true,
-        access,
-      );
-      const response = await runtime.dispatchFetch(workers.host.url);
-      assert.equal(
-        response.status,
-        state === "allowed" ? 200 : state === "denied" ? 404 : 503,
-      );
-      const html = await response.text();
-      assert.equal(html.includes(body), state === "allowed");
-    });
-  }
+for (const state of ["allowed", "denied", "redirect"]) {
+  test(`Host Worker handles ${state} delivery authorization in workerd`, async (t) => {
+    const runtime = await createRuntime(
+      t,
+      "host",
+      (request) => {
+        const url = new URL(request.url);
+        if (url.hostname === "redirected.example")
+          return Response.json({ allowed: true, decision: "allow" });
+        if (url.pathname === `/api/host/delivery/${siteId}/${deploymentId}`) {
+          return state === "redirect"
+            ? new Response(null, {
+                status: 302,
+                headers: { Location: "https://redirected.example/authority" },
+              })
+            : Response.json({
+                allowed: state === "allowed",
+                decision: state === "allowed" ? "allow" : "deny",
+              });
+        }
+        if (url.pathname === "/api/host/aliases/demo") {
+          assert.equal(url.searchParams.get("publicBrand"), "okou");
+          return Response.json({ pointer: null });
+        }
+        assert.equal(url.pathname, "/api/artifact-og/metadata");
+        return Response.json(metadata);
+      },
+      true,
+    );
+    const response = await runtime.dispatchFetch(workers.host.url);
+    assert.equal(
+      response.status,
+      state === "allowed" ? 200 : state === "denied" ? 404 : 503,
+    );
+    const html = await response.text();
+    assert.equal(html.includes(body), state === "allowed");
+  });
 }

@@ -169,6 +169,7 @@ export const resolveSharedThreadArtifactReference$ = command(
     const preview = await set(
       createHostedPreviewGrant$,
       {
+        siteId: target.siteId,
         deploymentId: target.id,
         layout: linkLayoutFromSegment(reference.publicBrand),
         snapshotId: target.snapshotId,

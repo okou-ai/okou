@@ -6,7 +6,6 @@ import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { env } from "../../lib/env";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
@@ -72,10 +71,7 @@ const prepareInner$ = command(
       FeatureSwitchKey.HostedSiteVisibility,
       features,
     );
-    if (
-      (bodyResult.data.visibility !== undefined && !visibilityEnabled) ||
-      (visibilityEnabled && env("HOSTED_SITE_ACCESS_ENABLED") !== "true")
-    ) {
+    if (bodyResult.data.visibility !== undefined && !visibilityEnabled) {
       return resourceUnavailable(
         "Website visibility management is not available",
       );
@@ -100,11 +96,6 @@ const prepareInner$ = command(
 
     if (result.status === "forbidden") {
       return artifactVisibilityUnavailable();
-    }
-    if (result.status === "visibility_unavailable") {
-      return resourceUnavailable(
-        "Website visibility management is not available",
-      );
     }
     if (result.status === "bad_request") {
       return badRequestMessage(result.message);

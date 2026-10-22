@@ -2,7 +2,8 @@ import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { organizationAuthContext$ } from "../auth/auth-context";
+import { resolveHostedSitePreview$ } from "../services/hosted-site-preview.service";
+import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
@@ -20,15 +21,25 @@ import {
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
-import { env } from "../../lib/env";
+
+const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  const body = await set(
+    resolveHostedSitePreview$,
+    {
+      ...get(pathParamsOf(hostContract.sitePreview)),
+      ...get(queryOf(hostContract.sitePreview)),
+      userId: get(authContext$).userId,
+    },
+    signal,
+  );
+  return body
+    ? { status: 200 as const, body }
+    : notFound("Website preview is unavailable");
+});
 
 const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (env("HOSTED_SITE_ACCESS_ENABLED") !== "true") {
-    return resourceUnavailable(
-      "Website visibility management is not available",
-    );
-  }
   const auth = get(organizationAuthContext$);
   const features = await set(
     loadUserFeatureSwitchContext$,
@@ -40,19 +51,6 @@ const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
     return resourceUnavailable(
       "Website visibility management is not available",
     );
-  }
-  const { siteId } = get(pathParamsOf(hostContract.siteVisibility));
-  if (!env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(siteId)) {
-    const policy = await set(
-      getHostedSiteVisibility$,
-      { ...auth, siteId },
-      signal,
-    );
-    if (!policy?.revision) {
-      return resourceUnavailable(
-        "Website visibility management is not available",
-      );
-    }
   }
   return null;
 });
@@ -193,6 +191,10 @@ const exchangeSession$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const hostedSiteAccessRoutes: readonly RouteEntry[] = [
+  {
+    route: hostContract.sitePreview,
+    handler: authRoute({ requiredCapability: "host:read" }, preview$),
+  },
   { route: hostContract.authorizeSiteSession, handler: authorizeSession$ },
   { route: hostContract.exchangeSiteSession, handler: exchangeSession$ },
   { route: hostContract.siteVisibility, handler: authRoute(ownerAuth, read$) },

@@ -21,6 +21,7 @@ import {
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
+import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
@@ -70,7 +71,7 @@ function createSiteVisibilitySignals(sourceUrl: string) {
       if (!details || details.visibility === visibility) {
         return false;
       }
-      await withCleanup(
+      const updated = await withCleanup(
         accept(
           get(apiClient$)(hostContract).updateSiteVisibility({
             params: { siteId: details.siteId },
@@ -89,6 +90,10 @@ function createSiteVisibilitySignals(sourceUrl: string) {
         },
       );
       signal.throwIfAborted();
+      set(recordHostedSiteVisibilityChange$, {
+        url: sourceUrl,
+        revision: updated.body.revision,
+      });
       await get(details$);
       signal.throwIfAborted();
       return true;
@@ -119,7 +124,14 @@ function createSiteVisibilitySignals(sourceUrl: string) {
     set(reload$, (value) => {
       return value + 1;
     });
-    await settle(get(details$), signal);
+    const details = await settle(get(details$), signal);
+    signal.throwIfAborted();
+    if (details.ok && details.value) {
+      set(recordHostedSiteVisibilityChange$, {
+        url: sourceUrl,
+        revision: details.value.revision,
+      });
+    }
   });
   return {
     visibility$: details$,

@@ -10,7 +10,20 @@ const token = "a".repeat(48);
 const origin = `https://pv-${token}.okou.app`;
 const prefix = `private-sites/okou/${deploymentId}`;
 const grantKey = `private-previews/okou/${token}.json`;
-const server = setupServer();
+const server = setupServer(
+  http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
+    return HttpResponse.json({ pointer: null });
+  }),
+  http.get(
+    "https://authority.test/api/host/delivery/:siteId/:deploymentId",
+    () => {
+      return HttpResponse.json({ allowed: true, decision: "allow" });
+    },
+  ),
+  http.get("https://authority.test/api/host/sites/:siteId/access", () => {
+    return HttpResponse.json({ allowed: true, decision: "allow" });
+  }),
+);
 beforeAll(() => {
   return server.listen({ onUnhandledRequest: "error" });
 });
@@ -74,6 +87,7 @@ function fixture(immutableContent = true) {
   const reads: string[] = [];
   const objectHeaders = new Headers();
   const env: WorkerEnv = {
+    HOSTED_SITE_API_ORIGIN: "https://authority.test",
     HOST_DOMAIN: "sites.vm0.io",
     OKOU_HOST_DOMAIN: "okou.app",
     HOSTED_SITES_BUCKET: {
@@ -114,7 +128,6 @@ describe("private HTML preview gateway", () => {
     const env = {
       ...f.env,
       HOSTED_SITE_API_ORIGIN: "https://authority.test",
-      HOSTED_SITE_ACCESS_ENABLED: "true",
     };
     let allowed = true;
     server.use(
@@ -140,7 +153,7 @@ describe("private HTML preview gateway", () => {
     expect(f.reads).not.toContain(`${prefix}/assets/site.css`);
   });
 
-  it("preserves preview credentials and asset caching before activation when the API is unavailable", async () => {
+  it("fails closed when preview authorization is unavailable", async () => {
     const f = fixture();
     server.use(
       http.get("https://authority.test/*", () => {
@@ -152,10 +165,8 @@ describe("private HTML preview gateway", () => {
       new Request(`${origin}/assets/site.css`),
       env,
     );
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe(
-      "private, max-age=31536000, must-revalidate",
-    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     f.grant.expiresAt = "2000-01-01T00:00:00.000Z";
     f.objects.set(grantKey, JSON.stringify(f.grant));
     expect(
@@ -169,12 +180,7 @@ describe("private HTML preview gateway", () => {
       const response = await fetchWorker(new Request(`${origin}${path}`), env);
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe(contentType);
-      // Documents follow their site's newest publication; assets never change.
-      expect(response.headers.get("Cache-Control")).toBe(
-        contentType === "text/html"
-          ? "private, no-store"
-          : "private, max-age=31536000, must-revalidate",
-      );
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
       expect(response.headers.get("Referrer-Policy")).toBe("same-origin");
       expect(response.headers.get("Content-Security-Policy")).toContain(
         "worker-src 'none'",
@@ -245,9 +251,7 @@ describe("private HTML preview gateway", () => {
       env,
     );
     expect(asset.headers.has("Content-Encoding")).toBe(false);
-    expect(asset.headers.get("Cache-Control")).toBe(
-      "private, max-age=31536000, must-revalidate",
-    );
+    expect(asset.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
   it("does not cache a missing object from an immutable manifest", async () => {
@@ -424,5 +428,114 @@ describe("private HTML preview gateway", () => {
           .status,
       ).toBe(404);
     }
+  });
+});
+
+describe("Site preview resource capabilities", () => {
+  function capabilityFixture() {
+    const f = fixture();
+    const siteId = "00000000-0000-4000-8000-000000000008";
+    const grant = { ...f.grant, version: 2, siteId, prefix };
+    const manifest = { ...f.manifest, siteId };
+    f.objects.set(grantKey, JSON.stringify(grant));
+    f.objects.set(`${prefix}/manifest.json`, JSON.stringify(manifest));
+    return {
+      ...f,
+      grant,
+      manifest,
+      env: {
+        ...f.env,
+        HOSTED_SITE_API_ORIGIN: "https://authority.test",
+      },
+    };
+  }
+
+  it("renders an isolated iframe and its assets without a browser session", async () => {
+    const f = capabilityFixture();
+    for (const path of [
+      "/",
+      "/assets/site.css",
+      "/assets/app.js",
+      "/assets/image.svg",
+    ]) {
+      const response = await fetchWorker(
+        new Request(`${origin}${path}`, {
+          headers: {
+            "Sec-Fetch-Dest": path === "/" ? "iframe" : "script",
+            "Sec-Fetch-Site": "cross-site",
+          },
+        }),
+        f.env,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Set-Cookie")).toBeNull();
+      expect(response.headers.get("Cache-Control")).toBe(
+        path === "/"
+          ? "private, no-store"
+          : "private, max-age=31536000, must-revalidate",
+      );
+      expect(await response.text()).toContain(
+        path === "/"
+          ? "Private report"
+          : f.files[path as keyof typeof f.files][0],
+      );
+    }
+    const head = await fetchWorker(
+      new Request(`${origin}/assets/app.js`, { method: "HEAD" }),
+      f.env,
+    );
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+  });
+
+  it("serves an API-issued public-publication target through the isolated preview origin", async () => {
+    const f = capabilityFixture();
+    const publication = `sites/brands/okou/publications/${deploymentId}`;
+    for (const [key, value] of f.objects) {
+      if (key.startsWith(prefix))
+        f.objects.set(key.replace(prefix, publication), value);
+    }
+    f.objects.set(
+      `${publication}/manifest.json`,
+      JSON.stringify({ ...f.manifest, access: undefined }),
+    );
+    f.objects.set(
+      grantKey,
+      JSON.stringify({ ...f.grant, prefix: publication }),
+    );
+    const response = await fetchWorker(new Request(`${origin}/`), f.env);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Private report");
+  });
+
+  it("checks credential expiry before serving a previously read resource", async () => {
+    const f = capabilityFixture();
+    expect(
+      (await fetchWorker(new Request(`${origin}/assets/app.js`), f.env)).status,
+    ).toBe(200);
+    f.objects.set(
+      grantKey,
+      JSON.stringify({ ...f.grant, expiresAt: "2000-01-01T00:00:00Z" }),
+    );
+    const response = await fetchWorker(
+      new Request(`${origin}/assets/app.js`),
+      f.env,
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("does not authorize another deployment's manifest", async () => {
+    const f = capabilityFixture();
+    f.objects.set(
+      grantKey,
+      JSON.stringify({
+        ...f.grant,
+        siteId: "00000000-0000-4000-8000-000000000007",
+      }),
+    );
+    const response = await fetchWorker(new Request(`${origin}/`), f.env);
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("Private report");
   });
 });

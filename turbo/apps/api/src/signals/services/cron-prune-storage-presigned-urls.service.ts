@@ -17,6 +17,7 @@ export const pruneStoragePresignedUrlCache$ = command(
       readOnly,
       presentationTemplatePreview,
       privateArtifactPreview,
+      hostedSitePreview,
     ] = await Promise.all([
       set(
         pruneStoragePresignedUrls$,
@@ -58,6 +59,14 @@ export const pruneStoragePresignedUrlCache$ = command(
         },
         signal,
       ),
+      set(
+        pruneStoragePresignedUrls$,
+        {
+          scope: "hosted_site_preview",
+          limit: PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
+        },
+        signal,
+      ),
     ]);
     signal.throwIfAborted();
     return {
@@ -65,7 +74,9 @@ export const pruneStoragePresignedUrlCache$ = command(
       workflowSkill,
       readOnly,
       presentationTemplatePreview,
-      privateArtifactPreview,
+      privateArtifactPreview: {
+        pruned: privateArtifactPreview.pruned + hostedSitePreview.pruned,
+      },
     };
   },
 );

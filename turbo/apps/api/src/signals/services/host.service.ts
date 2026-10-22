@@ -262,7 +262,6 @@ type PrepareDeploymentResult =
       };
     }
   | { readonly status: "forbidden" }
-  | { readonly status: "visibility_unavailable" }
   | { readonly status: "bad_request"; readonly message: string }
   | { readonly status: "conflict"; readonly message: string }
   | { readonly status: "config_error"; readonly message: string };

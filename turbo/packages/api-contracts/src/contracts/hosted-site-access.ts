@@ -14,6 +14,21 @@ export const hostedSiteSessionSchema = z.object({
   expiresAt: z.iso.datetime(),
 });
 
+/** A resource capability, issued only after authorizing this concrete deployment. */
+export const hostedSitePreviewGrantSchema = z.object({
+  version: z.literal(2),
+  publicBrand: z.literal("okou"),
+  siteId: z.uuid(),
+  deploymentId: z.uuid(),
+  prefix: z
+    .string()
+    .regex(
+      /^(?:sites\/brands\/okou|private-sites\/okou|shared-artifacts\/okou)\/[a-zA-Z0-9/-]+$/u,
+    ),
+  expiresAt: z.iso.datetime(),
+  immutableContent: z.literal(true).optional(),
+});
+
 export const hostedSiteVisibilitySchema = z.enum([
   "private",
   "organization",

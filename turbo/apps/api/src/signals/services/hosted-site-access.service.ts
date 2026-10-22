@@ -16,7 +16,6 @@ import { hostedSiteVisibility } from "@okouai/db/schema/hosted-site-visibility";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
-import { env } from "../../lib/env";
 
 type Owner = {
   readonly userId: string;
@@ -245,14 +244,6 @@ export const prepareHostedSiteVisibility$ = command(
       (!args.unpublished || current.revision !== null)
     ) {
       return { status: "ok" as const, visibility: current.visibility };
-    }
-    // Existing public sites still require the server-owned rollout cohort.
-    if (
-      !args.unpublished &&
-      current.revision === null &&
-      !env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(args.siteId)
-    ) {
-      return { status: "visibility_unavailable" as const };
     }
     const updated = await set(
       updateHostedSiteVisibility$,

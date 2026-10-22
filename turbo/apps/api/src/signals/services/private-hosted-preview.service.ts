@@ -1,3 +1,5 @@
+import { createHostedSitePreviewGrant$ } from "./hosted-site-preview.service";
+import { readHostedSitePolicy$ } from "./hosted-site-access.service";
 import { randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import {
@@ -16,8 +18,9 @@ import { putHostedSitesS3Object } from "../external/s3";
  */
 export const createHostedPreviewGrant$ = command(
   async (
-    { get },
+    { get, set },
     args: {
+      readonly siteId: string;
       readonly deploymentId: string;
       // The previewed deployment's layout; grants live in its namespace.
       readonly layout: LinkLayout;
@@ -26,6 +29,27 @@ export const createHostedPreviewGrant$ = command(
     },
     signal: AbortSignal,
   ) => {
+    const policy = await set(readHostedSitePolicy$, args.siteId, signal);
+    if (!policy) {
+      throw new Error("Hosted preview Site is unavailable");
+    }
+    if (policy.visibility !== "public" && args.layout === "current") {
+      return set(
+        createHostedSitePreviewGrant$,
+        {
+          siteId: args.siteId,
+          deploymentId: args.deploymentId,
+          prefix: args.snapshotId
+            ? `shared-artifacts/okou/${args.snapshotId}/${args.deploymentId}`
+            : `private-sites/okou/${args.deploymentId}`,
+          revision: policy.revision,
+          ...(args.snapshotId || args.immutableContent
+            ? { immutableContent: true as const }
+            : {}),
+        },
+        signal,
+      );
+    }
     const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
     if (
       !bucket ||

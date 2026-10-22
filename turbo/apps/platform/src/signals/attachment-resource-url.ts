@@ -1,16 +1,22 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import { resolveArtifactImageTransformOrigin } from "../lib/platform-host.ts";
+import {
+  resolveArtifactImageTransformOrigin,
+  resolveEditableHostedSiteDomain,
+} from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
 import {
   artifactReferencesContract,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { clerk$ } from "./auth.ts";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
+import { hostedSiteVisibilityChanges$ } from "./hosted-site-visibility-changes.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
@@ -45,7 +51,7 @@ interface AttachmentPresignedToken {
   readonly artifactShareIdentity?: ArtifactShareIdentity;
   /**
    * Stable URL that another viewer can open. A signature cannot be converted
-   * into one, so null means that the attachment remains private.
+   * into one, so null means no independent sharing address was resolved.
    */
   readonly publicUrl: string | null;
 }
@@ -125,6 +131,48 @@ function createAttachmentPresignedToken$(
   if (isAuthenticatedAttachmentUrl(url)) {
     return createWebFilePresignedToken$(url);
   }
+  if (URL.canParse(url)) {
+    const source = new URL(url);
+    const domain = resolveEditableHostedSiteDomain();
+    const label = source.hostname.endsWith(`.${domain}`)
+      ? source.hostname.slice(0, -domain.length - 1)
+      : "";
+    if (/^[a-z0-9][a-z0-9-]*$/u.test(label) && !/^(?:pv|ps|sh)-/u.test(label)) {
+      const currentSource$ = computed((get) => {
+        return currentHostedSiteUrl(source.href, get(hostedSiteUrlChanges$));
+      });
+      const revision$ = computed((get) => {
+        return get(hostedSiteVisibilityChanges$)[source.origin] ?? null;
+      });
+      return computed(async (get) => {
+        get(revision$);
+        const currentSource = new URL(get(currentSource$));
+        if (!(await get(clerk$)).user) {
+          return null;
+        }
+        const response = await accept(
+          get(apiClient$)(hostContract).sitePreview({
+            params: { publicSlug: currentSource.hostname.split(".")[0]! },
+            query: { hostname: currentSource.hostname },
+            fetchOptions: { cache: "no-store" },
+          }),
+          [200],
+        );
+        if (response.body.expiresAt === null) {
+          return null;
+        }
+        const resource = new URL(response.body.url);
+        resource.pathname = currentSource.pathname;
+        resource.search = currentSource.search;
+        resource.hash = currentSource.hash;
+        return {
+          token: resource.href,
+          expiresAt: response.body.expiresAt,
+          publicUrl: currentSource.href,
+        };
+      });
+    }
+  }
   return computed(() => {
     return Promise.resolve(null);
   });
@@ -165,7 +213,9 @@ export function createAttachmentPreviewSignals(
     const token = await get(presignedToken$);
     return token === null
       ? currentHostedSiteUrl(url, get(hostedSiteUrlChanges$))
-      : token.publicUrl;
+      : token.publicUrl === null
+        ? null
+        : currentHostedSiteUrl(token.publicUrl, get(hostedSiteUrlChanges$));
   });
   const artifactShareIdentity$ = computed(async (get) => {
     return (await get(presignedToken$))?.artifactShareIdentity ?? null;

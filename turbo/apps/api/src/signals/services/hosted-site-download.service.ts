@@ -5,8 +5,6 @@ import {
   hostedDeployments,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedSiteDownloadGrantSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
@@ -20,7 +18,6 @@ import {
 } from "../external/s3";
 import { settle } from "../utils";
 import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   checkHostedSiteAccess$,
   readHostedSitePolicy$,
@@ -55,25 +52,11 @@ export const createHostedSiteDownloadGrant$ = command(
     if (!policy) {
       throw new Error("Hosted site is no longer available");
     }
-    // Preserve GA direct-storage downloads until #41704 activates the deployed
-    // reader and closes the old API rollback window. An explicit policy keeps
-    // controlled delivery active even after the management flag is disabled.
+    // Unmanaged Public sites retain their existing direct-storage downloads.
+    // An explicit policy keeps controlled delivery active independently of
+    // whether the owner can currently edit visibility settings.
     if (policy.revision === null) {
-      if (
-        env("HOSTED_SITE_ACCESS_ENABLED") !== "true" ||
-        !env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(args.manifest.siteId)
-      ) {
-        return null;
-      }
-      const features = await set(
-        loadUserFeatureSwitchContext$,
-        policy.site.orgId,
-        policy.site.userId,
-        signal,
-      );
-      if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)) {
-        return null;
-      }
+      return null;
     }
     const access = await set(
       checkHostedSiteAccess$,

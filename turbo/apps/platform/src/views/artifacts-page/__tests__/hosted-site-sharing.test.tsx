@@ -376,6 +376,50 @@ test("the disabled switch retains the existing share link", async () => {
   expect(queryButtonByName("Customize URL")).toBeUndefined();
 });
 
+test("restricted Site previews work with visibility settings disabled and share the stable address", async () => {
+  const temporary = `https://pv-${"a".repeat(48)}.okou.app/`;
+  context.mocks.api(hostContract.sitePreview, ({ params, query, respond }) => {
+    expect(params.publicSlug).toBe(site.publicSlug);
+    expect(query.hostname).toBe("weekly-report.okou.app");
+    return respond(200, { url: temporary, expiresAt: "2099-01-01T00:00:00Z" });
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await openSite();
+  await waitFor(() => {
+    expect(
+      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+    ).toHaveAttribute("src", temporary);
+  });
+  await openShare();
+  expect(queryAllByRoleFast("radio")).toHaveLength(0);
+  expect(screen.queryByText("Anyone with the link")).not.toBeInTheDocument();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    return expect(clipboard.writes).toStrictEqual([site.url]);
+  });
+  expect(
+    screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+  ).toHaveAttribute("src", temporary);
+});
+
+test("Public Site previews continue rendering the anonymous URL with visibility settings disabled", async () => {
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, { url: `${site.url}/`, expiresAt: null });
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  await openSite();
+  await waitFor(() => {
+    expect(
+      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+    ).toHaveAttribute("src", site.url);
+  });
+});
+
 type SiteVisibilityStatus = z.infer<typeof hostedSiteVisibilityStatusSchema>;
 
 function mockSiteAlias() {
@@ -431,6 +475,15 @@ test.each([
       visibility: "private",
       revision: null,
     };
+    const temporary = `https://pv-${"c".repeat(48)}.okou.app/`;
+    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+      return respond(
+        200,
+        status.visibility === "public"
+          ? { url: site.url, expiresAt: null }
+          : { url: temporary, expiresAt: "2099-01-01T00:00:00Z" },
+      );
+    });
     const clipboard = context.mocks.browser.clipboardWriteText();
     context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
       return respond(200, status);
@@ -472,6 +525,18 @@ test.each([
     ]) {
       click(permission(name));
       await expectPermission(name);
+      await waitFor(() => {
+        expect(
+          screen
+            .getByTestId(
+              sidebar ? "artifact-sidebar" : "artifact-dialog-site-frame",
+            )
+            .querySelector("iframe"),
+        ).toHaveAttribute(
+          "src",
+          name === "Anyone with the link" ? site.url : temporary,
+        );
+      });
       expect(getButtonByName("Copy link", menu)).toBeEnabled();
     }
     expect(clipboard.writes).toStrictEqual([site.url]);
@@ -504,7 +569,7 @@ test("permissions preload without claiming public access while their read is pen
   await expectPermission("Only me");
 });
 
-test("a closed server rollout leaves permissions unavailable until Retry succeeds", async () => {
+test("unavailable visibility settings can be retried", async () => {
   mockSiteAlias();
   let unavailable = true;
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {

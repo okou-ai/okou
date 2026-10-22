@@ -10,7 +10,6 @@ const endpoint = new URL(
 const origin = "https://demo.okou.app";
 const token = `okou_site_${"a".repeat(64)}`;
 const env = {
-  HOSTED_SITE_ACCESS_ENABLED: "true",
   HOST_DOMAIN: "sites.vm0.io",
   OKOU_HOST_DOMAIN: "okou.app",
   HOSTED_SITE_API_ORIGIN: "https://authority.test",
@@ -243,10 +242,10 @@ it("rejects an invalid session without overwriting a newer tab's cookie", async 
   expect(result.response?.headers.getSetCookie()).toEqual([]);
 });
 
-it("rejects callback delivery when activation is disabled", async () => {
+it("rejects callback delivery without browser proof", async () => {
   const response = await withHostedSiteAccess(
     new Request(`${origin}/.okou/auth/callback?code=secret`),
-    { ...env, HOSTED_SITE_ACCESS_ENABLED: "false" },
+    env,
     siteId,
     () => {
       return Promise.resolve(new Response("<html>public</html>"));
