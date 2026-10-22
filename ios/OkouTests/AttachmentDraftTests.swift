@@ -85,7 +85,7 @@ final class AttachmentDraftTests: XCTestCase {
   }
 
   func testNewImageChatStaysSelectedWhenAnOlderListRefreshFinishesAfterSending() async throws {
-    let oldListReady = expectation(description: "The list predating creation is awaiting indicators")
+    let oldListReady = expectation(description: "The pre-creation list is awaiting indicators")
     let freshListReady = expectation(description: "The replacement list is awaiting indicators")
     let (oldList, releaseOldList) = AsyncStream<Void>.makeStream()
     let (freshList, releaseFreshList) = AsyncStream<Void>.makeStream()
