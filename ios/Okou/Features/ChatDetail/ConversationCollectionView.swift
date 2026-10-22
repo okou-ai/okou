@@ -180,7 +180,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       animatesScroll = false
       source.phaseChanged(.animating)
     }
-    source.sendTransition?.didFinish = { [weak self] in self?.scrollingEnded() }
+    source.sendTransition?.didFinish = { [weak self] in
+      guard let self else { return }
+      source.anchor.followBottom()
+      scrollingEnded()
+    }
     updateContentInsets()
     (collection as? ConversationAccessibilityCollection)?.beginsAccessibilityScroll = {
       [weak self] in
@@ -597,7 +601,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     source.phaseChanged(.interacting)
   }
 
-  func scrollViewDidScroll(_ scrollView: UIScrollView) { publishMetrics() }
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    source.sendTransition?.preserveOffset()
+    publishMetrics()
+  }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
     if decelerate { source.phaseChanged(.decelerating) } else { scrollingEnded() }

@@ -32,8 +32,11 @@ final class ConversationSendTransitionTests: XCTestCase {
     XCTAssertGreaterThan(heldFrames, 0, "A new row requires native measurement before insertion")
     await send.value
     try await fixture.assertFinished(pending.id, in: collection)
-    XCTAssertFalse(fixture.inputs.contains(where: \.isFirstResponder))
-    XCTAssertTrue(fixture.inputs.allSatisfy { $0.text.isEmpty })
+    try await eventually {
+      fixture.inputs.count == 1 && fixture.inputs.first !== input
+        && fixture.inputs.first?.text.isEmpty == true
+        && !fixture.inputs.contains(where: \.isFirstResponder)
+    }
     XCTAssertTrue(pending.text.contains("待确认"))
     XCTAssertTrue(fixture.conversation.pending.first?.needsRetry == true)
   }
@@ -61,7 +64,7 @@ final class ConversationSendTransitionTests: XCTestCase {
     XCTAssertGreaterThan(after, before + 20)
     XCTAssertTrue(
       samples.contains { $0 > before + 1 && $0 < after - 1 },
-      "Insertion must move through an intermediate presented position")
+      "Insertion must move through intermediate positions: \(samples), from \(before) to \(after)")
     for (previous, next) in zip(samples, samples.dropFirst()) {
       XCTAssertGreaterThanOrEqual(
         next, previous - 1, "A send must not reverse toward the old footer")

@@ -10,7 +10,7 @@ final class ConversationSendTransition {
   @ObservationIgnored private weak var collection: UICollectionView?
   @ObservationIgnored private weak var arrivingView: UIView?
   @ObservationIgnored private var keyboardObserver: NSObjectProtocol?
-  @ObservationIgnored private var origin = CGPoint.zero
+  @ObservationIgnored private var offset = CGPoint.zero
   @ObservationIgnored private var target: CGFloat?
   @ObservationIgnored private var deadline: CFTimeInterval = 0
   @ObservationIgnored private var options = UIView.AnimationOptions.curveEaseInOut
@@ -18,6 +18,7 @@ final class ConversationSendTransition {
   @ObservationIgnored private var displayLink: CADisplayLink?
   private let progress = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
   @ObservationIgnored private var animationOrigin = CGPoint.zero
+  @ObservationIgnored private var updatesOffset = false
   @ObservationIgnored private var generation = UUID()
   @ObservationIgnored private var reduceMotion = false
   @ObservationIgnored var didBegin: (() -> Void)?
@@ -37,7 +38,7 @@ final class ConversationSendTransition {
     guard let collection else { return }
     self.messageID = messageID
     self.reduceMotion = reduceMotion
-    origin = collection.contentOffset
+    offset = collection.contentOffset
     options = .curveEaseInOut
     composerAnimation = .easeInOut(duration: 0.22)
     didBegin?()
@@ -77,12 +78,21 @@ final class ConversationSendTransition {
 
   /// Before insertion, keyboard/composer layout must not scroll toward the old footer.
   func layoutDidChange() {
-    guard let collection, isActive else { return }
+    guard isActive else { return }
+    preserveOffset()
     if isAnimating {
       animateToBottom()
-    } else {
-      UIView.performWithoutAnimation { collection.setContentOffset(origin, animated: false) }
     }
+  }
+
+  func preserveOffset() {
+    guard let collection, isActive, !updatesOffset else { return }
+    // UIKit can preserve its old bottom during a snapshot or keyboard layout.
+    // Only our display-frame updates advance this send's viewport.
+    guard abs(collection.contentOffset.y - offset.y) > 0.5 else { return }
+    updatesOffset = true
+    defer { updatesOffset = false }
+    UIView.performWithoutAnimation { collection.setContentOffset(offset, animated: false) }
   }
 
   func presentIfReady(in ids: Set<String>, arrivingView: UIView?) {
@@ -123,12 +133,13 @@ final class ConversationSendTransition {
     if let target, abs(target - y) <= 0.5 { return }
     prepareForSnapshot()
     target = y
-    animationOrigin = collection.contentOffset
+    animationOrigin = offset
     let generation = UUID()
     self.generation = generation
     let duration = reduceMotion ? 0 : max(0, deadline - CACurrentMediaTime())
     if duration == 0 {
-      collection.setContentOffset(CGPoint(x: animationOrigin.x, y: y), animated: false)
+      offset = CGPoint(x: animationOrigin.x, y: y)
+      collection.setContentOffset(offset, animated: false)
       arrivingView?.alpha = 1
       finish()
       return
@@ -149,7 +160,8 @@ final class ConversationSendTransition {
     } completion: { [weak self] _ in
       guard let self, self.generation == generation, isActive else { return }
       if let target {
-        collection.setContentOffset(CGPoint(x: animationOrigin.x, y: target), animated: false)
+        offset = CGPoint(x: animationOrigin.x, y: target)
+        collection.setContentOffset(offset, animated: false)
       }
       finish()
     }
@@ -160,7 +172,8 @@ final class ConversationSendTransition {
     let fraction = CGFloat(progress.layer.presentation()?.opacity ?? 0)
     let y = animationOrigin.y + (target - animationOrigin.y) * min(1, max(0, fraction))
     // Move the native viewport every frame so collection reuse keeps the visible rows mounted.
-    collection.setContentOffset(CGPoint(x: animationOrigin.x, y: y), animated: false)
+    offset = CGPoint(x: animationOrigin.x, y: y)
+    collection.setContentOffset(offset, animated: false)
   }
 
   func cancel() {
