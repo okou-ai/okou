@@ -41,6 +41,22 @@ describe("billing reconciliation operator", () => {
       status: "past_due",
       currentPeriodEnd: new Date(periodEnd * 1000),
     });
+    createRouteMocks(context).clerk.session(
+      owner.userId,
+      owner.orgId,
+      "org:admin",
+    );
+    const before = await accept(
+      app(billingStatusContract).get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(before.body).toMatchObject({
+      tier: "pro",
+      subscriptionStatus: "past_due",
+      hasSubscription: true,
+    });
     const canceled = {
       id: subscriptionId,
       customer: customerId,
@@ -71,11 +87,6 @@ describe("billing reconciliation operator", () => {
         headers: { authorization: "Bearer test-billing-reconciliation-secret" },
       }),
       [200],
-    );
-    createRouteMocks(context).clerk.session(
-      owner.userId,
-      owner.orgId,
-      "org:admin",
     );
     const status = await accept(
       app(billingStatusContract).get({
