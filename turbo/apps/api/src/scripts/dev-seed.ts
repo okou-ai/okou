@@ -631,12 +631,13 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup("data-search", "monid/hunterio", [
     ["provider_cost_usd_micros", 1250, 1_000_000],
   ]),
-  ...usageGroup("social", "monid/douyin", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
-  ...usageGroup("social", "monid/weibo", [
-    ["provider_cost_usd_micros", 1250, 1_000_000],
-  ]),
+  ...["xiaohongshu", "threads", "wechat", "douyin", "weibo"].flatMap(
+    (platform) => {
+      return usageGroup("social", `monid/${platform}`, [
+        ["provider_cost_usd_micros", 1250, 1_000_000],
+      ]);
+    },
+  ),
   ...usageGroup("commerce", "dataforseo", [
     ["provider_cost_usd_micros", 1250, 1_000_000],
   ]),
