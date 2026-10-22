@@ -36,7 +36,7 @@ import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { appendCanonicalChatEventsSql } from "./chat-event-append.service";
 import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
 import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.service";
-import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
+import { cancelAndRefundOrgBillingForDeletion$ } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import { removeUsagePackMemberAllocation$ } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits$ } from "./usage-pack-credit-refund.service";
@@ -349,8 +349,7 @@ export const cleanupClerkDeletedOrg$ = command(
 
 export const cleanupClerkDeletedOrgBilling$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
-    await cancelAndRefundOrgBillingForDeletion(db, orgId, signal);
+    await set(cancelAndRefundOrgBillingForDeletion$, orgId, signal);
     signal.throwIfAborted();
   },
 );

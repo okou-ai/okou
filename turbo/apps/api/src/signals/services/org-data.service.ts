@@ -38,7 +38,7 @@ import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service"
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { deleteDiscordOrgData$ } from "./discord-owner-cleanup.service";
-import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
+import { cancelAndRefundOrgBillingForDeletion$ } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import {
   cancelUsagePackMemberRemovalReservation$,
@@ -598,7 +598,7 @@ export const deleteOrg$ = command(
         return Boolean(userId);
       });
 
-    await cancelAndRefundOrgBillingForDeletion(db, args.orgId, signal);
+    await set(cancelAndRefundOrgBillingForDeletion$, args.orgId, signal);
     signal.throwIfAborted();
 
     for (const userId of memberUserIds) {
