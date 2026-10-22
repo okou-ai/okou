@@ -1016,7 +1016,7 @@ class JsonSelectiveExtractor:
                 if state.raw is None
                 else _decode_json_string(state.raw, has_escape=state.has_escape)
             )
-        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        except json.JSONDecodeError, UnicodeDecodeError, ValueError:
             self._error = "invalid string"
             return
         if state.role == "key":
@@ -1173,7 +1173,7 @@ class JsonSelectiveExtractor:
         try:
             token = bytes(state.raw or b"").decode("ascii")
             value = json.loads(token)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        except UnicodeDecodeError, json.JSONDecodeError, ValueError:
             self._error = "invalid number"
             return
         if self._document_policy is not None:

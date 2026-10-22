@@ -22,7 +22,6 @@ from dataclasses import dataclass
 
 import public_destination
 from authority_utils import (
-    IPV6_VERSION,
     RawAuthorityHost,
     authority_has_empty_port,
     percent_decode_host,
@@ -239,7 +238,7 @@ def _decoded_base_host(
             parsed_ip = ipaddress.ip_address(decoded.value)
         except ValueError as e:
             raise _invalid_resolved_base_url(firewall_name) from e
-        if parsed_ip.version != IPV6_VERSION or parsed_ip.scope_id is not None:
+        if not isinstance(parsed_ip, ipaddress.IPv6Address) or parsed_ip.scope_id is not None:
             raise _invalid_resolved_base_url(firewall_name)
     return RawAuthorityHost(decoded.value, raw_host.bracketed)
 

@@ -68,7 +68,7 @@ _forward_request_budget = request_body_admission.RequestBodyAdmissionBudget(
     negative_size_message=_NEGATIVE_FORWARD_REQUEST_BODY_SIZE_ERROR,
     already_attached_message="auth.base forwarding admission is already attached to flow",
 )
-_forward_request_active_handles: set["_ForwardRequestAbortHandle"] = set()
+_forward_request_active_handles: set[_ForwardRequestAbortHandle] = set()
 _forward_request_active_handles_lock = threading.Lock()
 
 
@@ -82,7 +82,7 @@ class _ForwardRequestAdmissionState(NamedTuple):
 _forward_request_admission_state: _ForwardRequestAdmissionState | None = None
 
 
-def _track_active_forward_request_handle(handle: "_ForwardRequestAbortHandle") -> bool:
+def _track_active_forward_request_handle(handle: _ForwardRequestAbortHandle) -> bool:
     with _forward_request_lifecycle_lock, _forward_request_active_handles_lock:
         if not _forward_request_accepting:
             return False
@@ -90,7 +90,7 @@ def _track_active_forward_request_handle(handle: "_ForwardRequestAbortHandle") -
         return True
 
 
-def _untrack_active_forward_request_handle(handle: "_ForwardRequestAbortHandle") -> None:
+def _untrack_active_forward_request_handle(handle: _ForwardRequestAbortHandle) -> None:
     with _forward_request_active_handles_lock:
         _forward_request_active_handles.discard(handle)
 

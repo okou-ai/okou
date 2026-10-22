@@ -215,8 +215,6 @@ pub struct ProxyConfig {
     pub client_session_id: String,
     /// Version of the Runner binary, supplied by the composition root.
     pub client_version: &'static str,
-    /// System trust bundle used by mitmdump.
-    pub system_ca_bundle: &'static str,
 }
 
 /// Manages the mitmdump process lifecycle and proxy registry.
@@ -542,7 +540,6 @@ impl MitmProxy {
                     api_url: None,
                     client_session_id: "runner-session-test".to_string(),
                     client_version: "test-runner-version",
-                    system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
                 },
                 runtime: None,
                 child: None,
@@ -695,12 +692,7 @@ async fn spawn_mitmdump(
         .arg("--set")
         .arg("flow_detail=0")
         .arg("--set")
-        .arg("termlog_verbosity=warn")
-        .arg("--set")
-        .arg(format!(
-            "ssl_verify_upstream_trusted_ca={}",
-            config.system_ca_bundle
-        ));
+        .arg("termlog_verbosity=warn");
     if let Some(url) = &config.api_url {
         cmd.arg("--set").arg(format!("okou_api_url={url}"));
     }
@@ -1124,10 +1116,18 @@ mod tests {
         );
     }
 
+    fn with_addon_python(script: &str) -> String {
+        let python =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runner/mitm-addon/.venv/bin/python");
+        let quoted_python = format!("'{}'", python.to_str().unwrap().replace('\'', "'\\''"));
+        script.replace("@ADDON_PYTHON@", &quoted_python)
+    }
+
     fn write_fake_listening_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env bash
+            with_addon_python(
+                r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "$0.args"
 printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
@@ -1146,7 +1146,7 @@ for arg in "$@"; do
   esac
   prev="$arg"
 done
-exec python3 - "$port" "$control_dir" "$usage_state_id" "$@" <<'PY'
+exec @ADDON_PYTHON@ - "$port" "$control_dir" "$usage_state_id" "$@" <<'PY'
 import socket
 import sys
 from pathlib import Path
@@ -1173,6 +1173,7 @@ while True:
     conn.close()
 PY
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();
@@ -1183,7 +1184,8 @@ PY
     fn write_forking_ready_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env bash
+            with_addon_python(
+                r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
 control_dir=""
@@ -1194,7 +1196,7 @@ for arg in "$@"; do
     okou_usage_state_id=*) usage_state_id="${arg#okou_usage_state_id=}" ;;
   esac
 done
-python3 - "$control_dir" "$usage_state_id" "$0.descendant" "$@" <<'PY' &
+@ADDON_PYTHON@ - "$control_dir" "$usage_state_id" "$0.descendant" "$@" <<'PY' &
 import os
 import signal
 import sys
@@ -1213,6 +1215,7 @@ while True:
 PY
 wait "$!"
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();
@@ -1223,7 +1226,9 @@ wait "$!"
     fn write_graceful_parent_with_descendant_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env python3
+            with_addon_python(
+                r#"#!/usr/bin/env bash
+exec @ADDON_PYTHON@ - "$0" "$@" <<'PY'
 import os
 import signal
 import socket
@@ -1231,6 +1236,7 @@ import sys
 import time
 from pathlib import Path
 
+sys.argv = sys.argv[1:]
 Path(f"{sys.argv[0]}.env").write_text(
     f"{os.environ['TMPDIR']}\n"
     f"{os.environ['OKOU_MITMDUMP_RUNTIME_DIR']}\n",
@@ -1271,7 +1277,9 @@ control.start()
 while True:
     connection, _ = sock.accept()
     connection.close()
+PY
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();
@@ -1282,11 +1290,12 @@ while True:
     fn write_forking_failing_mitmdump(path: &Path) {
         std::fs::write(
             path,
-            r#"#!/usr/bin/env bash
+            with_addon_python(
+                r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
 printf 'attempt\n' >> "$0.attempts"
-python3 - "$0.descendant" <<'PY' &
+@ADDON_PYTHON@ - "$0.descendant" <<'PY' &
 import os
 import signal
 import sys
@@ -1305,6 +1314,7 @@ done
 printf 'addon warning: address already in use\n' >&2
 exit 42
 "#,
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(path).unwrap().permissions();
@@ -1547,7 +1557,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         }
     }
 
@@ -1695,7 +1704,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
 
         let result = MitmProxy::new(config, ADDON_FILES.as_slice()).await;
@@ -1731,7 +1739,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
 
         let (_proxy, _crash_rx) = MitmProxy::new(config, ADDON_FILES.as_slice())
@@ -1907,7 +1914,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2027,7 +2033,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2079,7 +2084,6 @@ exit 42
             api_url: None,
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
-            system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));

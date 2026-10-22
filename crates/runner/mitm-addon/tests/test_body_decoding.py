@@ -27,7 +27,8 @@ from tests.body_decode_helpers import (
     pseudo_random_ascii,
     track_brotli_decompressor,
     track_zlib_decompressor,
-    track_zstd_reader,
+    track_zstd_decompressor,
+    zstd_skippable_frame,
 )
 from usage.json_selective import JsonSelectiveExtractor
 
@@ -676,11 +677,11 @@ class TestDecompressBody:
         plaintext = b"A" * (10 * 1024 * 1024)  # 10 MB, high ratio → small payload
         compressed = zstandard.ZstdCompressor().compress(plaintext)
         assert len(compressed) < len(plaintext) // 100  # sanity: real high ratio
-        stats = track_zstd_reader(monkeypatch, max_output)
+        stats = track_zstd_decompressor(monkeypatch, max_output)
         hdrs = headers(("Content-Encoding", "zstd"))
         result = decompress_body(compressed, hdrs, max_output=max_output)
         assert result == plaintext[:max_output]
-        assert 0 < stats["max_read"] <= max_output
+        assert 0 < stats["max_output_request"] <= max_output
         assert stats["output_bytes"] == max_output
 
     def test_zstd_short_payload_returns_full_body(self, headers):
@@ -701,6 +702,24 @@ class TestDecompressBody:
         result = decompress_body(compressed, hdrs, max_output=12)
 
         assert result == first + second[:4]
+
+    @pytest.mark.parametrize("empty_kind", ["compressed", "skippable"])
+    @pytest.mark.parametrize("empty_count", [62, 63, 7000])
+    def test_zstd_frame_budget_retains_prefix_without_traversing_empty_tail(
+        self, headers, monkeypatch, empty_kind, empty_count
+    ):
+        compressor = zstandard.ZstdCompressor()
+        empty = compressor.compress(b"") if empty_kind == "compressed" else zstd_skippable_frame()
+        compressed = (
+            compressor.compress(b"prefix") + empty * empty_count + compressor.compress(b"tail")
+        )
+        hdrs = headers(("Content-Encoding", "zstd"))
+        stats = track_zstd_decompressor(monkeypatch, max_output=32)
+
+        result = decompress_body(compressed, hdrs, max_output=32)
+
+        assert result == (b"prefixtail" if empty_count == 62 else b"prefix")
+        assert stats["objects"] <= 64
 
     def test_zstd_corrupt_later_frame_returns_original_data(self, headers):
         first = zstandard.ZstdCompressor().compress(b"first")
@@ -725,8 +744,7 @@ class TestDecompressBody:
         assert stats["max_input"] == 1024
 
     def test_zstd_corrupted_returns_original_data(self, headers, mitm_ctx):
-        # Malformed payload should fall through to the outer
-        # ``except zstandard.ZstdError`` and return ``data`` unchanged,
+        # Malformed payload reaches the codec error handler, returning data unchanged,
         # matching the existing gzip/brotli error contract.
         hdrs = headers(("Content-Encoding", "zstd"))
         garbage = b"this is not a zstd frame"
@@ -804,19 +822,19 @@ class TestDecodeRequestBodyForNetworkLogCapture:
         compressed = _compress_one_shot_body("zstd", body)
         assert len(compressed) == input_budget + extra_input
         hdrs = headers(("Content-Encoding", "zstd"))
-        stats = track_zstd_reader(monkeypatch, max_output=33)
+        stats = track_zstd_decompressor(monkeypatch, max_output=33)
 
         decoded = decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32)
 
         if extra_input:
             assert decoded is None
-            assert stats["readers"] == 0
+            assert stats["objects"] == 0
             assert stats["input_bytes"] == 0
         else:
             assert decoded == body[:32]
-            assert stats["readers"] == 1
-            assert stats["input_bytes"] == input_budget
-        assert stats["validation_objects"] == 0
+            assert stats["objects"] == 1
+            assert 0 < stats["input_bytes"] <= 1024
+            assert stats["output_bytes"] == 33
 
     def test_zstd_incompressible_capture_with_frame_overhead(self, headers):
         body = hashlib.shake_256(b"zstd ordinary capture").digest(DEFAULT_BODY_DECODE_LIMIT)
@@ -851,15 +869,18 @@ class TestDecodeRequestBodyForNetworkLogCapture:
         ) * (frame_count - 1)
         hdrs = headers(("Content-Encoding", "zstd"))
         max_output = max(1, len(body))
-        stats = track_zstd_reader(monkeypatch, max_output=max_output + 1)
+        stats = track_zstd_decompressor(monkeypatch, max_output=max_output + 1)
 
         decoded = decode_request_body_for_network_log_capture(
             compressed, hdrs, max_output=max_output
         )
 
         assert decoded == (body if frame_count == 64 else None)
-        assert stats["input_bytes"] == len(compressed)
-        assert stats["validation_objects"] == 64
+        # Re-fed unused tails are copied from at most one bounded input chunk.
+        assert stats["input_bytes"] <= 2 * len(compressed) + stats["objects"] * 1024
+        # Both strict passes stop before constructing a 65th frame decoder.
+        assert stats["objects"] <= 128
+        assert stats["max_input"] <= 1024
 
     @pytest.mark.parametrize("tail_kind", ["invalid", "incomplete", "overflow"])
     def test_zstd_last_allowed_frame_preserves_failure_policy(self, headers, tail_kind):
@@ -1219,59 +1240,62 @@ class TestDecompressJsonUsageBody:
         assert decoded == body
         assert error is None
 
+    @pytest.mark.parametrize("truncated_tail", [False, True])
+    def test_zstd_drains_buffered_output_across_frames_and_preserves_completion_policy(
+        self, headers, truncated_tail
+    ):
+        first = b"a" * (3 * STREAM_DECODE_CHUNK_LIMIT)
+        second = b"b" * (2 * STREAM_DECODE_CHUNK_LIMIT)
+        compressor = zstandard.ZstdCompressor(write_content_size=False)
+        compressed = (
+            compressor.compress(first)
+            + zstd_skippable_frame(b"ignored metadata")
+            + compressor.compress(second)
+        )
+        if truncated_tail:
+            compressed += compressor.compress(b"")[:5]
+        body = first + second
+        hdrs = headers(("Content-Encoding", "zstd"))
+        max_output = len(body) + 1
+
+        decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=max_output)
+
+        assert decoded == body
+        assert error == ("incomplete compressed body" if truncated_tail else None)
+        assert decompress_body(compressed, hdrs, max_output=max_output) == body
+        expected_capture = None if truncated_tail else body
+        assert (
+            decode_request_body_for_network_log_capture(compressed, hdrs, max_output=max_output)
+            == expected_capture
+        )
+        assert (
+            decode_response_body_for_network_log_capture(compressed, hdrs, max_output=max_output)
+            == expected_capture
+        )
+
+    @pytest.mark.parametrize("skippable_count", [63, 64])
+    def test_zstd_skippable_frames_consume_strict_frame_budget(self, headers, skippable_count):
+        body = b"{}"
+        compressed = zstandard.ZstdCompressor().compress(body) + (
+            zstd_skippable_frame() * skippable_count
+        )
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=3)
+
+        assert decoded == body
+        assert error == (None if skippable_count == 63 else "compressed frame limit exceeded")
+
 
 class TestStrictZstdFrameBudget:
-    """Structural coverage for strict zstd decoder construction bounds."""
+    """Real decoding preserves strict frame and bounded allocation contracts."""
 
     def test_zstd_validation_bounds_frame_transitions_for_strict_consumers(
         self, headers, monkeypatch
     ):
         frame = zstandard.ZstdCompressor().compress(b"")
         hdrs = headers(("Content-Encoding", "zstd"))
-        validation_objects = 0
-        validation_input_sizes: list[int] = []
-        real_factory = zstandard.ZstdDecompressor
-
-        class NonConcatenableUnusedData(bytes):
-            def __add__(self, _other: object) -> bytes:
-                raise TypeError("zstd unused data must not be concatenated")
-
-        class TrackingDecompressionObj:
-            def __init__(self, wrapped):
-                self._wrapped = wrapped
-
-            def decompress(self, data):
-                validation_input_sizes.append(len(data))
-                return self._wrapped.decompress(data)
-
-            @property
-            def eof(self):
-                return self._wrapped.eof
-
-            @property
-            def unused_data(self):
-                return NonConcatenableUnusedData(self._wrapped.unused_data)
-
-            @property
-            def unconsumed_tail(self):
-                return self._wrapped.unconsumed_tail
-
-        class TrackingZstdDecompressor:
-            def __init__(self, *args, **kwargs):
-                self._wrapped = real_factory(*args, **kwargs)
-
-            def stream_reader(self, *args, **kwargs):
-                return self._wrapped.stream_reader(*args, **kwargs)
-
-            def decompressobj(self, *args, **kwargs):
-                nonlocal validation_objects
-                validation_objects += 1
-                return TrackingDecompressionObj(self._wrapped.decompressobj(*args, **kwargs))
-
-        monkeypatch.setattr(
-            "body_decoding.zstandard.ZstdDecompressor",
-            TrackingZstdDecompressor,
-        )
+        stats = track_zstd_decompressor(monkeypatch, max_output=2)
 
         accepted = frame * 64
         decoded, error = decompress_json_usage_body(
@@ -1282,23 +1306,22 @@ class TestStrictZstdFrameBudget:
 
         assert decoded == b""
         assert error is None
-        assert validation_objects == 64
-        assert validation_input_sizes
-        assert max(validation_input_sizes) <= 32
+        assert stats["objects"] <= 128
+        assert 0 < stats["max_input"] <= 1024
 
         over_budget = frame * (STREAM_BUFFER_LIMIT // len(frame))
         assert len(over_budget) < STREAM_BUFFER_LIMIT
 
-        validation_objects = 0
+        stats["objects"] = 0
         decoded, error = decompress_json_usage_body(over_budget, hdrs, max_output=1)
         assert decoded == b""
         assert error == "compressed frame limit exceeded"
-        assert validation_objects == 64
+        assert stats["objects"] <= 64
 
-        validation_objects = 0
+        stats["objects"] = 0
         assert decode_request_body_for_network_log_capture(over_budget, hdrs, max_output=1) is None
-        assert validation_objects == 64
+        assert stats["objects"] <= 64
 
-        validation_objects = 0
+        stats["objects"] = 0
         assert decode_response_body_for_network_log_capture(over_budget, hdrs, max_output=1) is None
-        assert validation_objects == 64
+        assert stats["objects"] <= 64

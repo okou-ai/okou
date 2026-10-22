@@ -10,7 +10,7 @@ from mitmproxy import http
 
 import flow_metadata_keys as keys
 
-_uploads: WeakSet["Upload"] = WeakSet()
+_uploads: WeakSet[Upload] = WeakSet()
 PARSE_SLICE = 4096
 
 

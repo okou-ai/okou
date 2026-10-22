@@ -163,7 +163,7 @@ class _AwsSigV4FlowRepresentationIdentity:
     raw_path: bytes = field(repr=False)
     raw_header_fields: tuple[tuple[bytes, bytes], ...] = field(repr=False)
 
-    def is_current(self, other: "_AwsSigV4FlowRepresentationIdentity") -> bool:
+    def is_current(self, other: _AwsSigV4FlowRepresentationIdentity) -> bool:
         return (
             self.original_url is other.original_url
             and self.raw_path is other.raw_path
@@ -1850,7 +1850,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
 
     try:
         resolved_auth = _validate_resolved_firewall_auth(plan, token_meta)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         _restore_header_phase_probe_state(
             flow,
             metadata_snapshot=metadata_snapshot,

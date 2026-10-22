@@ -164,7 +164,7 @@ def _is_canonical_usage_free_delta(body: bytes) -> bool:
             parse_float=_parse_bounded_json_float,
             parse_constant=_reject_json_constant,
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, _FastPathRejectedError, RecursionError):
+    except UnicodeDecodeError, json.JSONDecodeError, _FastPathRejectedError, RecursionError:
         return False
     if not _json_value_is_unambiguous(decoded):
         return False

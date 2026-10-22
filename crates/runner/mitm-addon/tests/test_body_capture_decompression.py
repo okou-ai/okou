@@ -17,7 +17,7 @@ from tests.body_decode_helpers import (
     pseudo_random_ascii,
     track_brotli_decompressor,
     track_zlib_decompressor,
-    track_zstd_reader,
+    track_zstd_decompressor,
 )
 from tests.flow_helpers import response_stream
 from tests.stream_buffer_helpers import set_response_stream_buffer
@@ -188,14 +188,14 @@ class TestDecompression:
         # Capture reads one extra decoded byte to detect truncation, even when
         # the entire compressed frame fits in the stream buffer.
         max_output = BODY_CAPTURE_LIMIT + 1
-        stats = track_zstd_reader(monkeypatch, max_output)
+        stats = track_zstd_decompressor(monkeypatch, max_output)
         entry = {}
         add_capture_fields(flow, entry)
 
         assert entry["response_body"] == original[:BODY_CAPTURE_LIMIT].decode("ascii")
         assert entry["response_body_encoding"] == "utf-8"
         assert entry["response_body_truncated"] is True
-        assert 0 < stats["max_read"] <= max_output
+        assert 0 < stats["max_output_request"] <= max_output
         assert stats["output_bytes"] == max_output
 
     def test_invalid_gzip_text_fallback_captures_original_utf8_body(self, real_flow):

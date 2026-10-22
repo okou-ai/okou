@@ -203,7 +203,6 @@ pub async fn run_benchmark(
             api_url: runner_config.server.as_ref().map(|s| s.url.clone()),
             client_session_id: uuid::Uuid::new_v4().to_string(),
             client_version: env!("CARGO_PKG_VERSION"),
-            system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
         },
         crate::ADDON_FILES,
     )
@@ -877,7 +876,6 @@ mod tests {
                     api_url: None,
                     client_session_id: "benchmark-lifecycle-test".to_string(),
                     client_version: env!("CARGO_PKG_VERSION"),
-                    system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
                 },
                 crate::ADDON_FILES,
             )

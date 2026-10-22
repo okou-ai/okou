@@ -171,7 +171,7 @@ def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
     finish_decode_error = parser.finish_decode_error
     inspection_failed = False
 
-    def inspect_body(_chunk: bytes) -> Generator[None, None, None]:
+    def inspect_body(_chunk: bytes) -> Generator[None]:
         nonlocal inspection_failed
         captured = stream_capture.captured_response_stream_body(flow)
         if captured is None or flow.response is None:
@@ -424,7 +424,7 @@ def _configure_response_inspection_stream(
             )
         else:
 
-            def inspect_buffered_body(_chunk: bytes) -> Generator[None, None, None]:
+            def inspect_buffered_body(_chunk: bytes) -> Generator[None]:
                 nonlocal decode_error, finished
                 stream_body = stream_capture.captured_response_stream_body(flow)
                 if stream_body is None:

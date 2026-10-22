@@ -181,7 +181,7 @@ class ControlServer:
                 await asyncio.get_running_loop().sock_sendall(
                     connection, struct.pack("!I", len(payload)) + payload
                 )
-        except (TimeoutError, OSError, EOFError):
+        except TimeoutError, OSError, EOFError:
             # A disconnected/slow peer has no outcome to acknowledge. This
             # writer retains any pending flush ticket independently of this peer.
             pass
@@ -230,7 +230,7 @@ class ControlServer:
                 return self._error(request_id, "unknown_method")
             if request["params"]:
                 return self._error(request_id, "invalid_request")
-        except (ValueError, RecursionError):
+        except ValueError, RecursionError:
             return self._error(request_id, "invalid_request")
         return {
             "requestId": request_id,

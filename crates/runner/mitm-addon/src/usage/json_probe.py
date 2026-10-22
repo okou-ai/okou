@@ -234,7 +234,7 @@ def _read_json_string(body: bytes, i: int, *, max_bytes: int) -> _StringResult:
         return _StringResult(end_result.status)
     try:
         value = json.loads(body[i : end_result.index].decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+    except UnicodeDecodeError, json.JSONDecodeError, ValueError:
         return _StringResult("invalid")
     if not isinstance(value, str) or _contains_surrogate(value):
         return _StringResult("invalid")

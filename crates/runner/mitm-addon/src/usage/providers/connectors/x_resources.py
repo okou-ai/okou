@@ -35,7 +35,7 @@ def inspect_identities(
         return None
     try:
         document = json.loads(body)
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         # The selective validator can skip a huge unselected number that the
         # stdlib refuses to materialize. Counts still own accounting.
         return None

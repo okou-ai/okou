@@ -125,6 +125,6 @@ class FakeAuthEndpoint:
         return self._http.wait_for_request_count(count, timeout=timeout)
 
     @contextlib.contextmanager
-    def run(self) -> Iterator["FakeAuthEndpoint"]:
+    def run(self) -> Iterator[FakeAuthEndpoint]:
         with self._http.run():
             yield self

@@ -1049,7 +1049,7 @@ def _validate_response_snapshot(
             parse_constant=_reject_non_json_constant,
             parse_float=_parse_finite_json_float,
         )
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         return "response_json"
     if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
         return "response_shape"

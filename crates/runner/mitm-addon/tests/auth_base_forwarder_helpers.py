@@ -114,7 +114,7 @@ class FakeSocket:
         setsockopt_side_effect: Exception | None = None,
         handshake_side_effect: Exception | None = None,
         on_action: Callable[[], None] | None = None,
-        on_connect: Callable[["FakeSocket", _SocketAddress], None] | None = None,
+        on_connect: Callable[[FakeSocket, _SocketAddress], None] | None = None,
     ) -> None:
         self._response = response
         self._read_side_effect = read_side_effect
@@ -139,7 +139,7 @@ class FakeSocket:
 
     def set_connect_callback(
         self,
-        on_connect: Callable[["FakeSocket", _SocketAddress], None],
+        on_connect: Callable[[FakeSocket, _SocketAddress], None],
     ) -> None:
         self._on_connect = on_connect
 

@@ -162,7 +162,7 @@ def _is_http_date_header_value(value: str) -> bool:
         return False
     try:
         parsedate_to_datetime(value)
-    except (TypeError, ValueError, IndexError, OverflowError):
+    except TypeError, ValueError, IndexError, OverflowError:
         return False
     return True
 

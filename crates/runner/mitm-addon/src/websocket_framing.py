@@ -469,7 +469,7 @@ class _BoundedWebsocketConnection(_ORIGINAL_WEBSOCKET_CONNECTION):
         for extension in self._bounded_deflates:
             extension.clear()
 
-    def events(self) -> Generator[events.Event, None, None]:
+    def events(self) -> Generator[events.Event]:
         for event in super().events():
             if isinstance(event, events.CloseConnection):
                 self._clear_partial_state()

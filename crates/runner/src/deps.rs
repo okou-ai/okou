@@ -3,7 +3,7 @@
 pub const FIRECRACKER_VERSION: &str = "v1.16.2";
 pub const KERNEL_VERSION: &str = "6.18.44";
 /// Canonical mitmproxy release for runner artifacts and the embedded add-on.
-pub const MITMPROXY_VERSION: &str = "12.2.3";
+pub const MITMPROXY_VERSION: &str = "12.3.0";
 
 // Exact identities for installed artifacts, keyed by arch.
 pub const FIRECRACKER_SIZE_X86_64: u64 = 3_539_456;
@@ -18,12 +18,12 @@ pub const KERNEL_SHA256_X86_64: &str =
     "d8ced68bd61e27b6813e2c993cc53a4029c59e13210672180591c84109684fe4";
 pub const KERNEL_SHA256_AARCH64: &str =
     "3b0233769ed8c89f1f47fdbcc4ff9300a2b1b5c618e25ade966a484481b151dc";
-pub const MITMDUMP_SIZE_X86_64: u64 = 39_172_624;
-pub const MITMDUMP_SIZE_AARCH64: u64 = 36_908_488;
+pub const MITMDUMP_SIZE_X86_64: u64 = 34_305_904;
+pub const MITMDUMP_SIZE_AARCH64: u64 = 32_495_056;
 pub const MITMDUMP_SHA256_X86_64: &str =
-    "8466d978a58317cd267b91a9dae84b0c4fb630c299515849a52744d34e9e04cf";
+    "edb61120fe1496f649bb95ac3186dc0dbb3ef06e25758ea3cfce7bf91f8ebac9";
 pub const MITMDUMP_SHA256_AARCH64: &str =
-    "47612c592db3b0b80164aee2dd1be1f3841d5430891f7ebeabf2284a7cc490b9";
+    "3adf33868f5477ff65d954b3fbe5dc5eca9703b5f02692500e880b8789caccb1";
 
 // Exact identities for compressed source archives, keyed by arch.
 pub const FIRECRACKER_ARCHIVE_SIZE_X86_64: u64 = 7_499_848;
@@ -32,16 +32,12 @@ pub const FIRECRACKER_ARCHIVE_SHA256_X86_64: &str =
     "32e3cdcd4081f91fe2b024a266f57dcb3b4e5fec5033e0cb22467ad7f7820bda";
 pub const FIRECRACKER_ARCHIVE_SHA256_AARCH64: &str =
     "751365040ca3dde7616c5a1d97cc1304674fae469ce02993104eab22f5961950";
-pub const MITMPROXY_ARCHIVE_SIZE_X86_64: u64 = 119_209_168;
-pub const MITMPROXY_ARCHIVE_SIZE_AARCH64: u64 = 112_694_307;
+pub const MITMPROXY_ARCHIVE_SIZE_X86_64: u64 = 104_087_608;
+pub const MITMPROXY_ARCHIVE_SIZE_AARCH64: u64 = 98_927_179;
 pub const MITMPROXY_ARCHIVE_SHA256_X86_64: &str =
-    "2e95286b618fa6fd33e5e62a78c2e5112571d85f42ec2bac29b97ee242bdb5c5";
+    "d52bacb30012023c7e920f322a97a6bc3b0553a7944b520e9aa02278c910b938";
 pub const MITMPROXY_ARCHIVE_SHA256_AARCH64: &str =
-    "b358643a6c4f4b39e33d985350f660b724fece95687d7daa899ef0c4e211f681";
-
-/// System CA certificate bundle path. The standalone mitmproxy binary bundles its
-/// own (incomplete) certifi CA store; we override it with the host's system store.
-pub const SYSTEM_CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
+    "f8756fa831c4abe431dd922ae7291b158b465285562b35d12e5669cbfc29d1f3";
 
 /// Tarball entry name for firecracker binary.
 pub fn firecracker_tar_entry(arch: &str) -> String {

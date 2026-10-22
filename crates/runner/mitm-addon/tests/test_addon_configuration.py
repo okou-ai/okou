@@ -130,7 +130,7 @@ class TestAddonConfiguration:
             patch.object(mitm_addon.mitmproxy_compat.version, "VERSION", "12.2.4"),
             pytest.raises(
                 RuntimeError,
-                match=r"runtime compatibility layer requires mitmproxy 12\.2\.3; found 12\.2\.4",
+                match=r"runtime compatibility layer requires mitmproxy 12\.3\.0; found 12\.2\.4",
             ),
         ):
             mitm_addon.load(loader)

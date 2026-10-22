@@ -1,7 +1,7 @@
 """Complete rejected header auth before its upload finishes.
 
 Installed only by the exact-version mitmproxy compatibility owner. Public local
-responses wait for request EOF in 12.2.3; these responses already have a terminal
+responses wait for request EOF in 12.3.0; these responses already have a terminal
 authorization decision and must not enter that buffering/waiting state.
 Native H1 discards later upload data after the HTTP flow has completed; its
 framing, peer disconnect and existing TCP timeout own receive-side retirement.

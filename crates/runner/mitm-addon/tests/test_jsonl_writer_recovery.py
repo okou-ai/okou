@@ -23,7 +23,7 @@ def _record_ids(path: Path) -> list[str]:
     for line in path.read_bytes().splitlines():
         try:
             records.append(json.loads(line)["id"])
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             continue
     return records
 

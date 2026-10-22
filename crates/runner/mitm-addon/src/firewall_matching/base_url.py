@@ -188,7 +188,7 @@ def _normalize_parameterized_authority_host(host: str) -> tuple[str, bool]:
                 continue
             try:
                 labels.append(normalize_idna_label(parsed.value))
-            except (UnicodeError, ValueError):
+            except UnicodeError, ValueError:
                 labels.append(parsed.value.lower())
                 malformed = True
             continue
@@ -321,7 +321,7 @@ def _normalize_authority_host(
         if allow_host_params and _has_base_url_params(normalized):
             return _normalize_parameterized_authority_host(normalized)
         return normalize_idna_hostname(normalized), False
-    except (UnicodeError, ValueError):
+    except UnicodeError, ValueError:
         return normalized.lower(), True
 
 
