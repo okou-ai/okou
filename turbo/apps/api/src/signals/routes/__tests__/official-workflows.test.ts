@@ -486,19 +486,6 @@ beforeEach(() => {
 });
 
 describe("Proactive jobs", () => {
-  let nativeDurationLast = 0;
-  function nativeDurationPhase(label: string, reset = false) {
-    if (
-      !expect.getState().currentTestName?.includes("admits one hidden tick")
-    ) {
-      return;
-    }
-    const current = performance.now();
-    process.stderr.write(
-      `TS_CI_DURATION_GUARD_NATIVE_PHASE ${JSON.stringify({ label, ms: reset ? 0 : current - nativeDurationLast })}\n`,
-    );
-    nativeDurationLast = current;
-  }
   const jobs = () => {
     return setupApp({ context, routes: jobsRoutes })(jobsContract);
   };
@@ -537,13 +524,20 @@ describe("Proactive jobs", () => {
     }
     return { installation: detail.body, automation };
   }
+  async function readJobAutomation(actor: ApiTestUser, automationId: string) {
+    const response = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: automationId },
+      }),
+      [200],
+    );
+    return response.body;
+  }
   async function entrustedJob() {
-    nativeDurationPhase("start", true);
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const { actor } = await prepareBriefMember();
-    nativeDurationPhase("catalog-org");
     await bdd.completeOnboarding(actor);
-    nativeDurationPhase("onboarding");
     if (!actor.orgId) {
       throw new Error("Expected organization");
     }
@@ -582,28 +576,23 @@ describe("Proactive jobs", () => {
       status: "enabled",
       unavailableReason: null,
     });
-    nativeDurationPhase("switches-prefs-suggestions");
     const installed = await schedule(actor);
     expect(installed.automation).toMatchObject({
       enabled: true,
       nextRunAt: null,
       schedule: { type: "loop", intervalSeconds: 300 },
     });
-    nativeDurationPhase("initial-schedule");
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     await runs.grantProEntitlement(actor);
     await selectPersonalDefaultModel(actor);
     await runs.heartbeatRunner(runnerGroup);
-    nativeDurationPhase("paid-provider-heartbeat");
     const delegated = await runs.createThreadRun(actor, {
       agentId: installed.installation.agentId,
       model: "claude-fable-5-1",
       prompt: "Create an Okou Job to research prospects",
     });
-    nativeDurationPhase("delegate-create-run");
     const claim = await runs.claimRunnerJob(delegated.runId);
-    nativeDurationPhase("delegate-claim");
     const job = (
       await accept(
         jobs().create({
@@ -617,27 +606,22 @@ describe("Proactive jobs", () => {
         [200],
       )
     ).body;
-    nativeDurationPhase("job-create");
     await webhooks.requestAgentComplete(
       { runId: delegated.runId, exitCode: 0 },
       { authorization: `Bearer ${claim.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
-    nativeDurationPhase("delegate-complete-flush");
-    return { actor, job, runnerGroup, workflowId: installed.installation.id };
+    return { actor, job, runnerGroup, automationId: installed.automation.id };
   }
 
   it("admits one hidden tick, sleeps while waiting, wakes on a reply, and waits five minutes after completion", async () => {
     const f = await entrustedJob();
-    const firstSchedule = (await scheduleForWorkflow(f.actor, f.workflowId))
-      .automation;
+    const firstSchedule = await readJobAutomation(f.actor, f.automationId);
     expect(firstSchedule.nextRunAt).toBe(new Date(now()).toISOString());
     await Promise.all([executeAutomationCron(), executeAutomationCron()]);
     await flushWaitUntilForTest();
-    nativeDurationPhase("initial-read-and-cron-flush");
-    const inFlight = (await scheduleForWorkflow(f.actor, f.workflowId))
-      .automation;
+    const inFlight = await readJobAutomation(f.actor, f.automationId);
     if (!inFlight.chatThreadId) {
       throw new Error("Expected a hidden Jobs thread");
     }
@@ -665,7 +649,6 @@ describe("Proactive jobs", () => {
     expect(
       capturedOfficialSkill(claim.storageManifest, "proactive-jobs"),
     ).toContain("okou job list --runnable --json");
-    nativeDurationPhase("hidden-thread-metadata-and-firstclaim");
     const waiting = (
       await accept(
         jobs().update({
@@ -688,9 +671,8 @@ describe("Proactive jobs", () => {
     );
     await flushWaitUntilForTest();
     expect(
-      (await scheduleForWorkflow(f.actor, f.workflowId)).automation.nextRunAt,
+      (await readJobAutomation(f.actor, f.automationId)).nextRunAt,
     ).toBeNull();
-    nativeDurationPhase("waiting-update-complete-flush-read");
     mockNow(now() + 60_000);
     await executeAutomationCron();
     await flushWaitUntilForTest();
@@ -701,7 +683,6 @@ describe("Proactive jobs", () => {
         },
       ),
     ).toHaveLength(1);
-    nativeDurationPhase("waiting-cron-assert");
     const response = (
       await accept(
         jobs().input({
@@ -713,14 +694,12 @@ describe("Proactive jobs", () => {
       )
     ).body;
     expect(response.status).toBe("waiting_decision");
-    const awake = (await scheduleForWorkflow(f.actor, f.workflowId)).automation;
+    const awake = await readJobAutomation(f.actor, f.automationId);
     expect(awake.nextRunAt).toBe(new Date(now()).toISOString());
-    nativeDurationPhase("reply-and-awake-read");
     await runs.heartbeatRunner(f.runnerGroup);
     const second = await fireOfficialSchedule(f.actor, awake);
     expect(second.chatThreadId).toBe(inFlight.chatThreadId);
     const secondClaim = await runs.claimRunnerJob(second.runId);
-    nativeDurationPhase("second-fire-claim");
     await accept(
       jobs().update({
         headers: { authorization: `Bearer ${okouTokenFromClaim(secondClaim)}` },
@@ -747,10 +726,9 @@ describe("Proactive jobs", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect(
-      (await scheduleForWorkflow(f.actor, f.workflowId)).automation.nextRunAt,
-    ).toBe(new Date(completedAt + 300_000).toISOString());
-    nativeDurationPhase("active-update-complete-flush-read");
+    expect((await readJobAutomation(f.actor, f.automationId)).nextRunAt).toBe(
+      new Date(completedAt + 300_000).toISOString(),
+    );
     await accept(
       jobs().archive({
         headers: authHeaders(f.actor),
@@ -769,7 +747,6 @@ describe("Proactive jobs", () => {
         },
       ),
     ).toHaveLength(2);
-    nativeDurationPhase("archive-and-final-cron-assert");
   });
 
   it("recovers persisted input racing with idle completion through the existing cron", async () => {
