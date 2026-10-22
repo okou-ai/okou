@@ -2043,7 +2043,6 @@
         "noSubject": "(Nessun oggetto)",
         "open": "Gestisci email",
         "openEmail": "Apri email: {{subject}}",
-        "refresh": "Aggiorna email",
         "result": "{{succeeded}} completate · {{failed}} non riuscite",
         "retry": "Riprova",
         "search": "Cerca per oggetto o mittente",

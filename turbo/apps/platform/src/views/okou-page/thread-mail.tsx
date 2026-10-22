@@ -22,7 +22,6 @@ import {
   ChevronRight,
   Loader2,
   Mail,
-  RefreshCw,
   Search,
   Send,
   Trash,
@@ -136,9 +135,6 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   const query = useGet(manager.query$);
   const setQuery = useSet(manager.query$);
   const setOpen = useSet(manager.setOpen$);
-  const refresh = useSet(manager.refresh$);
-  const busy = useGet(manager.busy$);
-  const pending = useGet(manager.pending$);
   return (
     <div className="shrink-0 space-y-3 border-b border-border/60 p-4">
       <div className="flex items-center gap-2">
@@ -151,18 +147,6 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
             {mails.state === "hasData" ? mails.data.length : 0}
           </span>
         </h2>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          onClick={refresh}
-          disabled={busy || pending !== null}
-          aria-label={t(($) => {
-            return $.chat.mail.manager.refresh;
-          })}
-        >
-          <RefreshCw size={14} />
-        </Button>
         <Button
           type="button"
           variant="quiet"

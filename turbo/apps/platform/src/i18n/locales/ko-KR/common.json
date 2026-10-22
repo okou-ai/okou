@@ -2004,7 +2004,6 @@
         "noSubject": "(제목 없음)",
         "open": "이메일 관리",
         "openEmail": "이메일 열기: {{subject}}",
-        "refresh": "이메일 새로고침",
         "result": "{{succeeded}}개 완료 · {{failed}}개 실패",
         "retry": "다시 시도",
         "search": "제목 또는 보낸 사람 검색",

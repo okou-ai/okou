@@ -2010,7 +2010,6 @@
         "noSubject": "(No subject)",
         "open": "Manage emails",
         "openEmail": "Open email: {{subject}}",
-        "refresh": "Refresh emails",
         "result": "{{succeeded}} completed · {{failed}} failed",
         "retry": "Try again",
         "search": "Search by subject or sender",

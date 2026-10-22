@@ -2004,7 +2004,6 @@
         "noSubject": "（件名なし）",
         "open": "メールを管理",
         "openEmail": "メールを開く：{{subject}}",
-        "refresh": "メールを更新",
         "result": "{{succeeded}} 件完了 · {{failed}} 件失敗",
         "retry": "再試行",
         "search": "件名または送信者で検索",
