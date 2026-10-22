@@ -634,6 +634,19 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // gpt-5-mini model tokens, and operating margin.
   ...usageGroup("people-search", "perplexity", [["request", usd(0.02), 1]]),
 
+  // OpenAI GPT Image 2.5 token pricing, in credits per million tokens.
+  // https://developers.openai.com/api/docs/pricing
+  ...usageGroup("image", "gpt-image-2.5-flare", [
+    ["tokens.input.text", usd(5), 1_000_000],
+    ["tokens.input.image", usd(8), 1_000_000],
+    ["tokens.output.image", usd(30), 1_000_000],
+  ]),
+  ...usageGroup("image", "gpt-image-2.5-sunburst", [
+    ["tokens.input.text", usd(5), 1_000_000],
+    ["tokens.input.image", usd(8), 1_000_000],
+    ["tokens.output.image", usd(30), 1_000_000],
+  ]),
+
   // Fal-hosted GPT Image models. The endpoints return image URLs without
   // token usage, so built-in generation bills per output image tier at the
   // raw provider cost. Large tiers use the highest documented non-1024x1024

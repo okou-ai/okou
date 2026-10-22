@@ -123,6 +123,25 @@ describe("usage pricing", () => {
     },
   );
 
+  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])(
+    "seeds the complete %s image token schedule for preview",
+    (provider) => {
+      expect(
+        devSeedUsagePricing("preview")
+          .filter((row) => {
+            return row.kind === "image" && row.provider === provider;
+          })
+          .map((row) => {
+            return [row.category, row.unitPrice, row.unitSize];
+          }),
+      ).toStrictEqual([
+        ["tokens.input.text", 5000, 1_000_000],
+        ["tokens.input.image", 8000, 1_000_000],
+        ["tokens.output.image", 30_000, 1_000_000],
+      ]);
+    },
+  );
+
   it("seeds the Claude Opus 5.5 public token schedule", () => {
     expect(
       USAGE_PRICING.filter((row) => {
