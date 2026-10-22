@@ -11,6 +11,7 @@ import { z } from "zod";
 
 import {
   catalogItem,
+  manualAuthMethod,
   stubConnectorCatalog,
 } from "../../__tests__/helpers/connector-catalog";
 import {
@@ -115,11 +116,11 @@ describe("run connector account inspection", () => {
     { selector: "omitted", args: [], setup: {} },
     { selector: "matching", args: ["--agent", AGENT_ID], setup: {} },
     {
-      selector: "prepared metadata",
+      selector: "incomplete manual setup",
       args: [],
       setup: {
         setupStatus: "incomplete",
-        missingRequiredFields: ["token"],
+        missingRequiredFields: ["apiKey"],
         configuredFieldKeys: [],
       },
     },
@@ -130,13 +131,17 @@ describe("run connector account inspection", () => {
       writeContext([
         {
           kind: "builtin",
-          connectorSlug: "github",
+          connectorSlug: "openai",
           connectionId: PINNED_CONNECTION_ID,
         },
       ]);
       server.use(
         stubConnectorCatalog([
-          catalogItem({ connectorSlug: "github", label: "GitHub" }),
+          catalogItem({
+            connectorSlug: "openai",
+            label: "OpenAI",
+            authMethods: [manualAuthMethod()],
+          }),
         ]),
         stubCustomConnectors([]),
         http.post(
@@ -152,6 +157,8 @@ describe("run connector account inspection", () => {
                 }
                 return {
                   ...accountMetadata(selection.connectionId, selection.target),
+                  authMethod: "api-token",
+                  configuredFieldKeys: ["apiKey"],
                   ...setup,
                 };
               }),
@@ -168,18 +175,24 @@ describe("run connector account inspection", () => {
       expect(output).not.toContain("CONNECTED AS");
 
       mockConsoleLog.mockClear();
-      await statusCommand.parseAsync(["node", "cli", "github", ...args]);
+      await statusCommand.parseAsync(["node", "cli", "openai", ...args]);
       output = mockConsoleLog.mock.calls.flat().join("\n");
       expect(output).toContain("Account Used:");
       expect(output).toContain("Thread-selected work account");
       expect(output).toContain(PINNED_CONNECTION_ID);
       expect(output).toContain("Current Status:");
+      if (setup.setupStatus === "incomplete") {
+        expect(output).toMatch(/Setup Status:\s+incomplete/);
+        expect(output).toMatch(/Missing Fields:\s+apiKey/);
+      } else {
+        expect(output).toMatch(/Setup Status:\s+complete/);
+      }
 
       mockConsoleLog.mockClear();
       await statusCommand.parseAsync([
         "node",
         "cli",
-        "github",
+        "openai",
         "--json",
         ...args,
       ]);
@@ -191,14 +204,17 @@ describe("run connector account inspection", () => {
           context: "run",
           state: "available",
           connector: expect.objectContaining({
-            target: { kind: "builtin", connectorSlug: "github" },
+            target: { kind: "builtin", connectorSlug: "openai" },
             connectorType: "builtin",
             definitionAvailable: true,
             account: expect.objectContaining({
               state: "available",
               connectionId: PINNED_CONNECTION_ID,
               label: "Thread-selected work account",
-              metadata: expect.objectContaining(setup),
+              metadata: expect.objectContaining({
+                authMethod: "api-token",
+                ...setup,
+              }),
             }),
           }),
         }),
@@ -209,7 +225,7 @@ describe("run connector account inspection", () => {
         selections: [
           {
             connectionId: PINNED_CONNECTION_ID,
-            target: { kind: "builtin", connectorSlug: "github" },
+            target: { kind: "builtin", connectorSlug: "openai" },
           },
         ],
       });

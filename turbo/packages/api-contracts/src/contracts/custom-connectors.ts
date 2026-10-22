@@ -198,7 +198,6 @@ type CustomConnectorNonOAuthAuthResponse<
 const customConnectorManualAuthResponseSchema = z
   .object({
     authMode: z.literal("manual"),
-    oauthSetup: z.never().optional(),
     oauthConfig: z.never().optional(),
   })
   .transform((value): CustomConnectorNonOAuthAuthResponse<"manual"> => {
@@ -208,7 +207,6 @@ const customConnectorManualAuthResponseSchema = z
 const customConnectorNoAuthResponseSchema = z
   .object({
     authMode: z.literal("none"),
-    oauthSetup: z.never().optional(),
     oauthConfig: z.never().optional(),
   })
   .transform((value): CustomConnectorNonOAuthAuthResponse<"none"> => {
@@ -218,7 +216,6 @@ const customConnectorNoAuthResponseSchema = z
 const customConnectorCustomOAuthResponseSchema = z
   .object({
     authMode: z.literal("oauth"),
-    oauthSetup: z.never().optional(),
     oauthConfig: customConnectorOAuthConfigSchema.extend({
       providerAdapter: z.literal("standard"),
     }),
@@ -232,7 +229,6 @@ const customConnectorCustomOAuthResponseSchema = z
 
 const customConnectorManagedOAuthResponseSchema = z.object({
   authMode: z.literal("oauth"),
-  oauthSetup: z.never().optional(),
   oauthConfig: customConnectorOAuthConfigSchema.extend({
     providerAdapter: z.literal("feishu"),
   }),
@@ -242,7 +238,6 @@ const customConnectorManagedOAuthResponseSchema = z.object({
 const customConnectorAutomaticResponseSchema = z
   .object({
     authMode: z.literal("automatic"),
-    oauthSetup: z.never().optional(),
     oauthConfig: z.never().optional(),
   })
   .transform((value): CustomConnectorNonOAuthAuthResponse<"automatic"> => {
