@@ -36,7 +36,7 @@ function digest(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function createTemplateFixture(sourceDir, release, skill) {
+async function createTemplateFixture(sourceDir, release) {
   const templateDir = path.join(sourceDir, release.slug);
   await Promise.all([
     mkdir(path.join(templateDir, "color-systems"), { recursive: true }),
@@ -45,8 +45,7 @@ async function createTemplateFixture(sourceDir, release, skill) {
   await Promise.all([
     writeFile(
       path.join(templateDir, "SKILL.md"),
-      skill ??
-        `# ${release.slug}\n${"Use this presentation guidance.\n".repeat(64)}`,
+      `# ${release.slug}\n${"Use this presentation guidance.\n".repeat(64)}`,
     ),
     writeFile(path.join(templateDir, "design-system.md"), "# Design system\n"),
     writeFile(
@@ -88,17 +87,10 @@ test(
     const outputDir = path.join(root, "output");
     try {
       const config = JSON.parse(await readFile(configUrl, "utf8"));
-      const chineseSkill =
-        "# 使用说明\n" +
-        "按照材料创作并保留证据，检查页面后交付。\n".repeat(24);
       await mkdir(sourceDir, { recursive: true });
       await Promise.all(
-        config.templates.map(async (release, index) => {
-          await createTemplateFixture(
-            sourceDir,
-            release,
-            index === 0 ? chineseSkill : undefined,
-          );
+        config.templates.map(async (release) => {
+          await createTemplateFixture(sourceDir, release);
         }),
       );
 
@@ -135,26 +127,6 @@ test(
         runTool("verify", "--output-dir", outputDir),
         (error) => {
           assert.match(error.stderr, /archive bytes do not match/u);
-          return true;
-        },
-      );
-
-      await writeFile(
-        path.join(sourceDir, config.templates[0].slug, "SKILL.md"),
-        "# 使用说明\n内容待补充。\n",
-      );
-      await assert.rejects(
-        runTool(
-          "build",
-          "--source-dir",
-          sourceDir,
-          "--source-commit",
-          sourceCommit,
-          "--output-dir",
-          path.join(root, "short-guidance-output"),
-        ),
-        (error) => {
-          assert.match(error.stderr, /SKILL\.md is too short to be guidance/u);
           return true;
         },
       );

@@ -82,8 +82,7 @@ async function danglingColorReferences(templateDir, relativePaths) {
 export async function inspectTemplateDirectory(templateDir, release, label) {
   await assertRequiredFiles(templateDir, release, label);
   const skill = await readFile(path.join(templateDir, "SKILL.md"), "utf8");
-  const skillBytes = Buffer.byteLength(skill, "utf8");
-  if (skillBytes < 1024) {
+  if (skill.length < 1024) {
     throw new Error(
       `${release.slug} ${label}: SKILL.md is too short to be guidance`,
     );
@@ -100,7 +99,7 @@ export async function inspectTemplateDirectory(templateDir, release, label) {
   const colorSystemCount = relativePaths.filter((relativePath) => {
     return relativePath.startsWith("color-systems/");
   }).length;
-  return { skillBytes, colorSystemCount };
+  return { skillBytes: skill.length, colorSystemCount };
 }
 
 export async function inspectArchive(archivePath, release, label) {
