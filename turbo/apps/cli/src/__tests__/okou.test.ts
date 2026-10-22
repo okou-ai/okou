@@ -51,6 +51,7 @@ describe("Okou CLI program", () => {
   it("should register all expected Okou commands", () => {
     const expectedCommands = [
       "suggestion",
+      "job",
       "model",
       "agent",
       "connector",
@@ -131,8 +132,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 54 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(54);
+  it("should have exactly 55 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(55);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });

@@ -43,7 +43,7 @@ function control(
   container: ParentNode = document.body,
 ) {
   const element = queryControl(name, role, container);
-  if (!element)
+  if (!element) {
     throw new Error(
       `Missing ${role}: ${name}; available: ${queryAllByRoleFast(
         role,
@@ -54,6 +54,7 @@ function control(
         })
         .join(" | ")}`,
     );
+  }
   return element;
 }
 async function findControl(
@@ -221,7 +222,7 @@ test("retains a failed reply draft and reuses its identity on retry", async () =
   click(control("Save reply", "button"));
   await screen.findByText("Saved for the next evaluation");
   expect(fixture.replies).toHaveLength(2);
-  expect(fixture.replies[0]).toEqual(fixture.replies[1]);
+  expect(fixture.replies[0]).toStrictEqual(fixture.replies[1]);
   expect(field).toHaveValue("");
 });
 
@@ -254,9 +255,9 @@ test("keeps the completed dialog open while the card moves to history and accept
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   click(await findControl("History", "tab"));
-  expect(await findControl(/Research customers/, "button")).toHaveTextContent(
-    "Completed",
-  );
+  await expect(
+    findControl(/Research customers/, "button"),
+  ).resolves.toHaveTextContent("Completed");
 });
 
 test("archives the Job from its dialog and keeps its record in the archived view", async () => {
@@ -275,9 +276,9 @@ test("archives the Job from its dialog and keeps its record in the archived view
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   click(await findControl("Archived", "tab"));
-  expect(await findControl(/Research customers/, "button")).toHaveTextContent(
-    "Archived",
-  );
+  await expect(
+    findControl(/Research customers/, "button"),
+  ).resolves.toHaveTextContent("Archived");
 });
 
 test("grants the actual connector permission before persisting authorization input", async () => {
@@ -331,8 +332,8 @@ test("grants the actual connector permission before persisting authorization inp
   click(await findControl(/Research customers/, "button"));
   click(await findControl("Authorize", "button"));
   await screen.findByText("Saved for the next evaluation");
-  expect(order).toEqual(["grant", "input"]);
-  expect(fixture.replies).toEqual([]);
+  expect(order).toStrictEqual(["grant", "input"]);
+  expect(fixture.replies).toStrictEqual([]);
 });
 
 test("a late initial Jobs response cannot override a task the user selected", async () => {
@@ -345,7 +346,9 @@ test("a late initial Jobs response cannot override a task the user selected", as
   await setupJobs();
   click(await findControl("Image", "tab"));
   gate.resolve(undefined);
-  expect(await findControl("Remove Image", "button")).toBeInTheDocument();
+  await expect(
+    findControl("Remove Image", "button"),
+  ).resolves.toBeInTheDocument();
   expect(queryControl(/Research customers/, "button")).not.toBeInTheDocument();
 });
 

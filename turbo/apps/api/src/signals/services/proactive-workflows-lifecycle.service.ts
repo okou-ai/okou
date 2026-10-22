@@ -126,25 +126,18 @@ const loadProactiveSchedule$ = command(
   },
 );
 
-/** Materialize this fixed Official schedule atomically, without legacy installer transactions. */
-export const ensureProactiveWorkflows$ = command(
-  async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
-    const eligibility = await set(
-      loadProactiveWorkflowsEligibility$,
-      owner,
-      signal,
-    );
-    const kinds = (
-      Object.keys(PROACTIVE_WORKFLOW_DEFINITIONS) as ProactiveWorkflowKind[]
-    ).filter((kind) => {
-      return eligibility[kind].active;
-    });
-    const member =
-      kinds.length > 0 && eligibility.agentId !== null
-        ? await loadCurrentMembershipId(get(clerk$), owner, signal)
-        : null;
-    const eligible =
-      kinds.length > 0 && member !== null && eligibility.agentId !== null;
+const disableInactiveProactiveWorkflows$ = command(
+  async (
+    { set },
+    owner: ProactiveWorkflowOwner,
+    context: {
+      agentId: string | null;
+      kinds: ProactiveWorkflowKind[];
+      eligible: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { agentId, kinds, eligible } = context;
     const database = set(writeDb$);
     const ownedWorkflows = database
       .select({ id: workflows.id })
@@ -159,9 +152,9 @@ export const ensureProactiveWorkflows$ = command(
               return item.name;
             }),
           ),
-          eligible && eligibility.agentId !== null
+          eligible && agentId !== null
             ? or(
-                ne(workflows.agentId, eligibility.agentId),
+                ne(workflows.agentId, agentId),
                 notInArray(
                   workflows.officialDefinitionName,
                   kinds.map((kind) => {
@@ -190,27 +183,64 @@ export const ensureProactiveWorkflows$ = command(
         ),
       );
     signal.throwIfAborted();
+  },
+);
+
+const synchronizeProactiveJobThreads$ = command(
+  async ({ set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
+    const database = set(writeDb$);
+    const existing = await database
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.orgId, owner.orgId),
+          eq(workflows.ownerUserId, owner.userId),
+          inArray(workflows.officialDefinitionName, [
+            PROACTIVE_WORKFLOW_DEFINITIONS.action.name,
+            PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name,
+          ]),
+        ),
+      );
+    signal.throwIfAborted();
+    for (const workflow of existing) {
+      await set(
+        synchronizeOfficialWorkflowThread$,
+        { ...owner, workflowId: workflow.id },
+        signal,
+      );
+    }
+  },
+);
+
+/** Materialize this fixed Official schedule atomically, without legacy installer transactions. */
+export const ensureProactiveWorkflows$ = command(
+  async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
+    const eligibility = await set(
+      loadProactiveWorkflowsEligibility$,
+      owner,
+      signal,
+    );
+    const kinds = (
+      Object.keys(PROACTIVE_WORKFLOW_DEFINITIONS) as ProactiveWorkflowKind[]
+    ).filter((kind) => {
+      return eligibility[kind].active;
+    });
+    const member =
+      kinds.length > 0 && eligibility.agentId !== null
+        ? await loadCurrentMembershipId(get(clerk$), owner, signal)
+        : null;
+    const eligible =
+      kinds.length > 0 && member !== null && eligibility.agentId !== null;
+    await set(
+      disableInactiveProactiveWorkflows$,
+      owner,
+      { agentId: eligibility.agentId, kinds, eligible },
+      signal,
+    );
+    const database = set(writeDb$);
     if (eligibility.jobs.available) {
-      const existing = await database
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, owner.orgId),
-            eq(workflows.ownerUserId, owner.userId),
-            inArray(workflows.officialDefinitionName, [
-              PROACTIVE_WORKFLOW_DEFINITIONS.action.name,
-              PROACTIVE_WORKFLOW_DEFINITIONS.jobs.name,
-            ]),
-          ),
-        );
-      signal.throwIfAborted();
-      for (const workflow of existing)
-        await set(
-          synchronizeOfficialWorkflowThread$,
-          { ...owner, workflowId: workflow.id },
-          signal,
-        );
+      await set(synchronizeProactiveJobThreads$, owner, signal);
     }
     if (!eligible || eligibility.agentId === null) {
       return;
@@ -287,7 +317,9 @@ export const ensureProactiveWorkflows$ = command(
           ),
         );
       signal.throwIfAborted();
-      if (kind === "jobs") await set(wakeProactiveJobs$, owner, signal);
+      if (kind === "jobs") {
+        await set(wakeProactiveJobs$, owner, signal);
+      }
     }
   },
 );
@@ -388,13 +420,16 @@ export const reconcileRunnableProactiveJobs$ = command(
           set(ensureProactiveWorkflows$, owner, signal),
           signal,
         );
-        if (!result.ok)
+        if (!result.ok) {
           log.error("Could not reconcile runnable Jobs", {
             ...owner,
             error: result.error,
           });
+        }
       }
-      if (candidates.length < 100) return;
+      if (candidates.length < 100) {
+        return;
+      }
       after = candidates.at(-1);
     }
   },

@@ -27,7 +27,9 @@ export const PROACTIVE_WORKFLOW_DEFINITIONS = {
 } as const;
 
 export function proactiveWorkflowKind(name: string | null) {
-  if (name === PROACTIVE_JOBS_DEFINITION_NAME) return "jobs" as const;
+  if (name === PROACTIVE_JOBS_DEFINITION_NAME) {
+    return "jobs" as const;
+  }
   if (name === PROACTIVE_ACTION_DEFINITION_NAME) {
     return "action" as const;
   }

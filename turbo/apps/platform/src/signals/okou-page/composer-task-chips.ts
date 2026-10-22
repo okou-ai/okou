@@ -100,6 +100,43 @@ function createDocumentCategorySignals() {
   return { documentCategory$, setDocumentCategory$ };
 }
 
+function createTaskRailSignals() {
+  /**
+   * How far a rail can still travel, per rail. A rail that has never reported
+   * is assumed to fit, which hides both pagers until a measurement proves
+   * otherwise.
+   */
+  const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
+  const railTravel$ = computed((get) => {
+    return get(internalRailTravel$);
+  });
+  const setRailTravel$ = command(
+    ({ get, set }, rail: string, travel: RailTravel) => {
+      const current = get(internalRailTravel$)[rail];
+      if (
+        current?.canScrollBack === travel.canScrollBack &&
+        current.canScrollForward === travel.canScrollForward
+      ) {
+        return;
+      }
+      set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
+    },
+  );
+  /** Owns one row's DOM lifecycle; the observers report what layout knows. */
+  const bindRail$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      const rail = element.dataset.rail;
+      if (!rail) {
+        return;
+      }
+      observeRail(element, signal, (travel) => {
+        set(setRailTravel$, rail, travel);
+      });
+    }),
+  );
+  return { railTravel$, setRailTravel$, bindRail$ };
+}
+
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
   workflowActions: WorkflowRecommendationActions,
@@ -180,8 +217,9 @@ export function createComposerTaskChipsSignals(
         jobs.some((job) => {
           return job.status.startsWith("waiting_") || job.hasUnseenResult;
         })
-      )
+      ) {
         set(applyTask$, "jobs", true);
+      }
     },
   );
   const selectTemplate$ = command(
@@ -207,39 +245,7 @@ export function createComposerTaskChipsSignals(
       }
     },
   );
-  /**
-   * How far a rail can still travel, per rail. A rail that has never reported
-   * is assumed to fit, which hides both pagers until a measurement proves
-   * otherwise.
-   */
-  const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
-  const railTravel$ = computed((get) => {
-    return get(internalRailTravel$);
-  });
-  const setRailTravel$ = command(
-    ({ get, set }, rail: string, travel: RailTravel) => {
-      const current = get(internalRailTravel$)[rail];
-      if (
-        current?.canScrollBack === travel.canScrollBack &&
-        current.canScrollForward === travel.canScrollForward
-      ) {
-        return;
-      }
-      set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
-    },
-  );
-  /** Owns one row's DOM lifecycle; the observers report what layout knows. */
-  const bindRail$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-      const rail = element.dataset.rail;
-      if (!rail) {
-        return;
-      }
-      observeRail(element, signal, (travel) => {
-        set(setRailTravel$, rail, travel);
-      });
-    }),
-  );
+  const { railTravel$, setRailTravel$, bindRail$ } = createTaskRailSignals();
   return {
     task$,
     initializeHomeJobs$,

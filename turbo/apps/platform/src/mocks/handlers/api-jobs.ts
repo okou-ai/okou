@@ -24,21 +24,26 @@ export const apiJobsHandlers = [
     const items = [...jobs.values()]
       .map(refresh)
       .filter((job) => {
-        if (query.filter === "home")
+        if (query.filter === "home") {
           return (
             job.status !== "archived" &&
             (job.status !== "completed" ||
               job.hasPendingInput ||
               job.hasUnseenResult)
           );
-        if (query.filter === "history")
+        }
+        if (query.filter === "history") {
           return job.status === "completed" && !job.hasUnseenResult;
-        if (query.filter === "archived") return job.status === "archived";
-        if (query.filter === "runnable")
+        }
+        if (query.filter === "archived") {
+          return job.status === "archived";
+        }
+        if (query.filter === "runnable") {
           return (
             job.status !== "archived" &&
             (job.status === "active" || job.hasPendingInput)
           );
+        }
         return true;
       })
       .filter((job) => !query.after || job.id > query.after)
@@ -55,7 +60,9 @@ export const apiJobsHandlers = [
   }),
   mockApi(jobsContract.create, ({ body, respond }) => {
     const existing = jobs.get(body.id);
-    if (existing) return respond(200, refresh(existing));
+    if (existing) {
+      return respond(200, refresh(existing));
+    }
     const at = new Date().toISOString();
     const job = jobSchema.parse({
       ...body,
@@ -81,15 +88,18 @@ export const apiJobsHandlers = [
   }),
   mockApi(jobsContract.update, ({ params, body, respond }) => {
     const job = jobs.get(params.id);
-    if (!job) return respond(404, missing);
+    if (!job) {
+      return respond(404, missing);
+    }
     if (
       job.status === "archived" ||
       JSON.stringify({ status: job.status, work: job.work }) !==
         JSON.stringify(body.expected)
-    )
+    ) {
       return respond(409, {
         error: { code: "CONFLICT", message: "Read the current Job" },
       });
+    }
     const updated = refresh({
       ...job,
       status: body.status,
@@ -109,11 +119,14 @@ export const apiJobsHandlers = [
   }),
   mockApi(jobsContract.input, ({ params, body, respond }) => {
     const job = jobs.get(params.id);
-    if (!job) return respond(404, missing);
-    if (job.status === "archived")
+    if (!job) {
+      return respond(404, missing);
+    }
+    if (job.status === "archived") {
       return respond(409, {
         error: { code: "CONFLICT", message: "This Job is archived" },
       });
+    }
     const updated = refresh({
       ...job,
       inputs: job.inputs.some((input) => input.id === body.id)
@@ -132,7 +145,9 @@ export const apiJobsHandlers = [
   }),
   mockApi(jobsContract.viewed, ({ params, body, respond }) => {
     const job = jobs.get(params.id);
-    if (!job) return respond(404, missing);
+    if (!job) {
+      return respond(404, missing);
+    }
     const updated = refresh({
       ...job,
       viewedResultIds: [...new Set([...job.viewedResultIds, body.resultId])],
@@ -142,7 +157,9 @@ export const apiJobsHandlers = [
   }),
   mockApi(jobsContract.archive, ({ params, respond }) => {
     const job = jobs.get(params.id);
-    if (!job) return respond(404, missing);
+    if (!job) {
+      return respond(404, missing);
+    }
     const updated = { ...job, status: "archived" as const };
     jobs.set(job.id, updated);
     return respond(200, refresh(updated));

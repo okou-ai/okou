@@ -48,16 +48,18 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
       set(reconcilePendingProactiveJobsCompletions$, signal),
       signal,
     );
-    if (!completions.ok)
+    if (!completions.ok) {
       log.error("Jobs completion reconciliation failed", {
         error: completions.error,
       });
+    }
     const jobs = await settle(
       set(reconcileRunnableProactiveJobs$, signal),
       signal,
     );
-    if (!jobs.ok)
+    if (!jobs.ok) {
       log.error("Runnable Jobs reconciliation failed", { error: jobs.error });
+    }
     const recovery = await settle(
       set(recoverDueOfficialWorkflowSchedules$, signal),
       signal,

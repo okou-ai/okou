@@ -51,20 +51,25 @@ export const settleProactiveJobsRun$ = command(
       .where(eq(workflowAutomations.id, automationId))
       .limit(1);
     signal.throwIfAborted();
-    if (!row || row.blueprint !== PROACTIVE_JOBS_BLUEPRINT_KEY) return false;
+    if (!row || row.blueprint !== PROACTIVE_JOBS_BLUEPRINT_KEY) {
+      return false;
+    }
     if (
       row.runId === null ||
       (row.runStatus !== "completed" &&
         row.runStatus !== "failed" &&
         row.runStatus !== "cancelled")
-    )
+    ) {
       return true;
-    if (row.completedAt === null)
+    }
+    if (row.completedAt === null) {
       throw new Error("Terminal Jobs run has no completion time");
-    if (!callback.callbackId)
+    }
+    if (!callback.callbackId) {
       throw new Error(
         "Jobs completion requires its persisted callback identity",
       );
+    }
     const eligibility = await set(
       loadProactiveWorkflowsEligibility$,
       row,
@@ -158,11 +163,12 @@ export const reconcilePendingProactiveJobsCompletions$ = command(
         set(settleProactiveJobsRun$, row.automationId, callback, signal),
         signal,
       );
-      if (!result.ok)
+      if (!result.ok) {
         log.error("Could not settle a completed Jobs run", {
           runId: row.runId,
           error: result.error,
         });
+      }
     }
   },
 );

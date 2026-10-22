@@ -45,7 +45,9 @@ export const wakeProactiveJobs$ = command(
       owner,
       signal,
     );
-    if (!eligibility.jobs.active || eligibility.agentId === null) return;
+    if (!eligibility.jobs.active || eligibility.agentId === null) {
+      return;
+    }
     const database = set(writeDb$);
     const installation = database
       .select({ id: workflows.id })

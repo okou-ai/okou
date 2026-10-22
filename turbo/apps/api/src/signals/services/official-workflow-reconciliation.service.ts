@@ -161,8 +161,9 @@ function reconciledScheduleAnchor(
   nextRunAt: Date | null,
 ) {
   // Jobs owns the empty idle/in-flight slot and its completion-based interval.
-  if (automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY)
+  if (automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY) {
     return automation.nextRunAt;
+  }
   if (
     automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
     nextRunAt === null

@@ -36,7 +36,9 @@ const read$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(jobAccess$, signal);
-  if ("status" in owner) return owner;
+  if ("status" in owner) {
+    return owner;
+  }
   const body = await get(bodyResultOf(jobsContract.create));
   signal.throwIfAborted();
   return body.ok
@@ -45,7 +47,9 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(jobAccess$, signal);
-  if ("status" in owner) return owner;
+  if ("status" in owner) {
+    return owner;
+  }
   const body = await get(bodyResultOf(jobsContract.update));
   signal.throwIfAborted();
   return body.ok
@@ -60,7 +64,9 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const input$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(jobAccess$, signal);
-  if ("status" in owner) return owner;
+  if ("status" in owner) {
+    return owner;
+  }
   const body = await get(bodyResultOf(jobsContract.input));
   signal.throwIfAborted();
   return body.ok
@@ -75,7 +81,9 @@ const input$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const viewed$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(jobAccess$, signal);
-  if ("status" in owner) return owner;
+  if ("status" in owner) {
+    return owner;
+  }
   const body = await get(bodyResultOf(jobsContract.viewed));
   signal.throwIfAborted();
   return body.ok

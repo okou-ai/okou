@@ -505,7 +505,9 @@ describe("Proactive jobs", () => {
     const installation = listed.body.find((item) => {
       return item.official?.definitionName === "proactive-jobs";
     });
-    if (!installation) throw new Error("Expected a Jobs installation");
+    if (!installation) {
+      throw new Error("Expected a Jobs installation");
+    }
     const detail = await accept(
       workflowClient().get({
         headers: authHeaders(actor),
@@ -514,14 +516,18 @@ describe("Proactive jobs", () => {
       [200],
     );
     const automation = detail.body.automations[0];
-    if (!automation) throw new Error("Expected a Jobs loop");
+    if (!automation) {
+      throw new Error("Expected a Jobs loop");
+    }
     return { installation: detail.body, automation };
   }
   async function entrustedJob() {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
-    if (!actor.orgId) throw new Error("Expected organization");
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
@@ -603,10 +609,13 @@ describe("Proactive jobs", () => {
     await Promise.all([executeAutomationCron(), executeAutomationCron()]);
     await flushWaitUntilForTest();
     const inFlight = (await schedule(f.actor)).automation;
-    if (!inFlight.chatThreadId)
+    if (!inFlight.chatThreadId) {
       throw new Error("Expected a hidden Jobs thread");
+    }
     const runId = await launchedAutomationRunId(f.actor, inFlight.chatThreadId);
-    if (!runId) throw new Error("Expected a Jobs run");
+    if (!runId) {
+      throw new Error("Expected a Jobs run");
+    }
     const inputs = (
       await allThreadEventRows(f.actor, inFlight.chatThreadId)
     ).filter((event) => {
@@ -622,7 +631,7 @@ describe("Proactive jobs", () => {
       }),
       [200],
     );
-    expect(metadata.body.hidden).toBe(true);
+    expect(metadata.body.hidden).toBeTruthy();
     const claim = await runs.claimRunnerJob(runId);
     expect(
       capturedOfficialSkill(claim.storageManifest, "proactive-jobs"),
@@ -774,8 +783,9 @@ describe("Proactive jobs", () => {
       f.actor,
       started.chatThreadId,
     );
-    if (!resumed || resumed === started.runId)
+    if (!resumed || resumed === started.runId) {
       throw new Error("Expected a resumed Jobs run");
+    }
     const resumedClaim = await runs.claimRunnerJob(resumed);
     const current = await accept(
       jobs().get({ headers: authHeaders(f.actor), params: { id: f.job.id } }),

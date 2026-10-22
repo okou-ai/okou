@@ -587,10 +587,11 @@ const commitJobsWorkflowInput$ = command(
       source.steps.length !== 0 ||
       model.threadModelReplacement !== null ||
       args.scheduleClaim
-    )
+    ) {
       throw new Error(
         "Jobs admission requires an Official schedule without an external event source",
       );
+    }
     const database = set(writeDb$);
     const at = nowDate();
     const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
@@ -827,6 +828,19 @@ const workflowQueueDisplayName$ = command(
   },
 );
 
+function workflowAutomationAdmissionTiming(args: RunWorkflowAutomationNowArgs) {
+  const timing = args.timing ?? new ApiDispatchTimingCollector();
+  if (!args.timing) {
+    timing.recordElapsed(
+      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
+      "nested",
+      args.apiStartTime,
+    );
+  }
+
+  return timing;
+}
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
@@ -834,14 +848,7 @@ export const runWorkflowAutomationNow$ = command(
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
     const { automation, chatThreadId } = args.due;
-    const timing = args.timing ?? new ApiDispatchTimingCollector();
-    if (!args.timing) {
-      timing.recordElapsed(
-        "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-        "nested",
-        args.apiStartTime,
-      );
-    }
+    const timing = workflowAutomationAdmissionTiming(args);
 
     const { scheduleClaim } = args;
     const replacePendingTicks = pendingTickReplacement(args);

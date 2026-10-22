@@ -19,7 +19,9 @@ import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { onRef } from "../utils.ts";
 
 export const entrustedJobsEnabled$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveJobs]) return false;
+  if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveJobs]) {
+    return false;
+  }
   const [current, primary] = await Promise.all([
     get(currentChatAgentId$),
     get(defaultAgentId$),
@@ -62,7 +64,9 @@ export const reloadEntrustedJobs$ = command(({ set }) => {
 });
 export const homeJobSummaries$ = computed(async (get) => {
   get(revision$);
-  if (!(await get(entrustedJobsEnabled$))) return [];
+  if (!(await get(entrustedJobsEnabled$))) {
+    return [];
+  }
   const result = await accept(
     get(apiClient$)(jobsContract).list({
       query: { filter: "home", limit: 100 },
@@ -75,7 +79,9 @@ export const entrustedJobs$ = computed(async (get) => {
   get(revision$);
   const filter = get(filter$);
   const after = get(cursors$).at(-1);
-  if (!(await get(entrustedJobsEnabled$))) return { jobs: [], nextAfter: null };
+  if (!(await get(entrustedJobsEnabled$))) {
+    return { jobs: [], nextAfter: null };
+  }
   const result = await accept(
     get(apiClient$)(jobsContract).list({
       query: { filter, limit: 50, ...(after ? { after } : {}) },
@@ -87,7 +93,9 @@ export const entrustedJobs$ = computed(async (get) => {
 export const selectedJob$ = computed(async (get) => {
   get(revision$);
   const id = get(selectedId$);
-  if (id === null) return null;
+  if (id === null) {
+    return null;
+  }
   const result = await accept(
     get(apiClient$)(jobsContract).get({ params: { id } }),
     [200],
@@ -97,7 +105,9 @@ export const selectedJob$ = computed(async (get) => {
 export const selectedJobGrant$ = computed(async (get) => {
   const job = await get(selectedJob$);
   const request = job?.work.authorization;
-  if (!request || job?.status !== "waiting_authorization") return null;
+  if (!request || job?.status !== "waiting_authorization") {
+    return null;
+  }
   const result = await accept(
     get(apiClient$)(userPermissionGrantsContract).list({
       query: { agentId: request.agentId },
@@ -119,8 +129,32 @@ export const selectJob$ = command(({ set }, id: string | null) => {
   set(selectedId$, id);
   set(savedInputId$, null);
 });
+const jobOpener$ = state<HTMLButtonElement | null>(null);
+const jobFilterTab$ = state<HTMLButtonElement | null>(null);
+export const bindJobFilterTab$ = command(
+  ({ set }, element: HTMLButtonElement | null) => {
+    set(jobFilterTab$, element);
+  },
+);
+export const jobReturnFocus$ = computed((get) => {
+  const opener = get(jobOpener$);
+  const tab = get(jobFilterTab$);
+  // Viewed completions and archived Jobs remove their opener from the list.
+  return () => {
+    return opener?.isConnected ? opener : tab;
+  };
+});
+export const openJobFromCard$ = command(
+  ({ set }, id: string, element: HTMLButtonElement) => {
+    set(jobOpener$, element);
+    set(selectJob$, id);
+  },
+);
+
 export const selectJobListFilter$ = command(({ set }, value: string) => {
-  if (value !== "home" && value !== "history" && value !== "archived") return;
+  if (value !== "home" && value !== "history" && value !== "archived") {
+    return;
+  }
   set(filter$, value);
   set(cursors$, [undefined]);
 });
@@ -129,10 +163,11 @@ export const nextJobPage$ = command(
     const page = await get(entrustedJobs$);
     signal.throwIfAborted();
     const next = page.nextAfter;
-    if (next)
+    if (next) {
       set(cursors$, (values) => {
         return [...values, next];
       });
+    }
   },
 );
 export const previousJobPage$ = command(({ set }) => {
@@ -142,7 +177,9 @@ export const previousJobPage$ = command(({ set }) => {
 });
 export const setJobReply$ = command(({ get, set }, text: string) => {
   const id = get(selectedId$);
-  if (id === null) return;
+  if (id === null) {
+    return;
+  }
   const prior = get(drafts$)[id];
   set(drafts$, {
     ...get(drafts$),
@@ -152,15 +189,21 @@ export const setJobReply$ = command(({ get, set }, text: string) => {
 });
 export const setJobGrantDuration$ = command(({ set }, value: string | null) => {
   const parsed = userPermissionGrantExpiresInSchema.safeParse(value);
-  if (parsed.success) set(grantDuration$, parsed.data);
+  if (parsed.success) {
+    set(grantDuration$, parsed.data);
+  }
 });
 export const submitJobReply$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const job = await get(selectedJob$);
     signal.throwIfAborted();
-    if (!job || job.status === "archived") return;
+    if (!job || job.status === "archived") {
+      return;
+    }
     const draft = get(drafts$)[job.id];
-    if (!draft?.text.trim()) return;
+    if (!draft?.text.trim()) {
+      return;
+    }
     await accept(
       get(apiClient$)(jobsContract).input({
         params: { id: job.id },
@@ -191,13 +234,16 @@ export const respondToJobAuthorization$ = command(
     const job = await get(selectedJob$);
     signal.throwIfAborted();
     const request = job?.work.authorization;
-    if (!job || job.status === "archived" || !request) return;
+    if (!job || job.status === "archived" || !request) {
+      return;
+    }
     const primary = await get(defaultAgentId$);
     signal.throwIfAborted();
-    if (primary !== request.agentId)
+    if (primary !== request.agentId) {
       throw new Error(
         "The default Agent changed. The Job needs a current authorization request.",
       );
+    }
     const key = `${job.id}/${request.id}/${outcome}`;
     const inputId = get(authorizationInputs$)[key] ?? crypto.randomUUID();
     set(authorizationInputs$, { ...get(authorizationInputs$), [key]: inputId });
@@ -263,7 +309,9 @@ export const respondToJobAuthorization$ = command(
 export const archiveSelectedJob$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const id = get(selectedId$);
-    if (id === null) return;
+    if (id === null) {
+      return;
+    }
     await accept(
       get(apiClient$)(jobsContract).archive({
         params: { id },
@@ -280,7 +328,9 @@ const acknowledgeDisplayedResult$ = command(
   async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
     const id = element.dataset.jobId;
     const resultId = element.dataset.resultId;
-    if (!id || !resultId) return;
+    if (!id || !resultId) {
+      return;
+    }
     await accept(
       get(apiClient$)(jobsContract).viewed({
         params: { id },
@@ -303,7 +353,9 @@ export const enterEntrustedJobs$ = command(({ set }) => {
 });
 export const subscribeEntrustedJobs$ = command(
   ({ get, set }, signal: AbortSignal) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveJobs]) return;
+    if (!get(featureSwitch$)[FeatureSwitchKey.ProactiveJobs]) {
+      return;
+    }
     set(
       setAblyInvalidationLoop$,
       {

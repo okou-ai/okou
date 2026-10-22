@@ -120,7 +120,9 @@ export const workflowAutomationCanFire$ = command(
           )
           .limit(1);
         signal.throwIfAborted();
-        if (!work) return false;
+        if (!work) {
+          return false;
+        }
       }
       // Agent and mode changes wait for the previous proactive check.
       // The current schedule already serializes its own occurrences.

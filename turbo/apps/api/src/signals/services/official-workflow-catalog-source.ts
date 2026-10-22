@@ -13,6 +13,12 @@ import {
   PROACTIVE_JOBS_INTERVAL_SECONDS,
 } from "@okouai/api-contracts/contracts/proactive-jobs";
 
+import {
+  OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
+  type OfficialWorkflowSourceCatalog,
+  type OfficialWorkflowSourceDefinition,
+} from "@okouai/api-contracts/contracts/official-workflow-catalog";
+
 const PROACTIVE_JOBS_INSTRUCTION = `# Proactive jobs
 
 Advance only work explicitly entrusted as Okou Jobs. This hidden execution Chat is not a user-facing delivery channel. Never create Jobs from ordinary questions or Suggestions. Do not curate Suggestions.
@@ -28,11 +34,6 @@ Choose active while useful work remains. When user input is needed, set waiting_
 Read new replies even on waiting or completed Jobs, then decide whether to continue, remain waiting, or retain completion. A reply such as thanks need not reopen a Job. When work is complete, verify it, publish a Result with a stable UUID, and set work.currentResultId to that ID in the same update with status completed. Put the completion summary and authorized deliverable references on the Result; retain previous Results. The home page shows state and new Results without duplicate notices. Do not send external messages unless the Job explicitly authorizes that delivery.
 
 Archived is terminal for automatic execution. Never restore it through stale progress, pending input or callback messages. If no runnable Jobs remain, finish; the system sleeps until new eligible work or user input arrives. Further eligible runs wait five minutes after completion. Missing CLI capability or temporary tool failure is an execution error, not a completed Job or a fabricated user-decision blocker.`;
-import {
-  OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-  type OfficialWorkflowSourceCatalog,
-  type OfficialWorkflowSourceDefinition,
-} from "@okouai/api-contracts/contracts/official-workflow-catalog";
 
 const MORNING_BRIEF_CONTEXT_INSTRUCTION = `# Morning Brief
 

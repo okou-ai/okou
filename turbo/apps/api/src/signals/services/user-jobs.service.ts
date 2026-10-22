@@ -21,6 +21,7 @@ import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import {
   jobSchema,
   jobSummarySchema,
+  type Job,
   type JobCreate,
   type JobUpdate,
   type JobInputCreate,
@@ -57,8 +58,9 @@ export const jobAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
     auth.userId,
     signal,
   );
-  if (!isFeatureEnabled(FeatureSwitchKey.ProactiveJobs, features))
+  if (!isFeatureEnabled(FeatureSwitchKey.ProactiveJobs, features)) {
     return resourceUnavailable("Jobs are not enabled.");
+  }
   if (auth.tokenType === "agent") {
     const [run] = await get(db$)
       .select({ id: agentRuns.id })
@@ -80,10 +82,11 @@ export const jobAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!run)
+    if (!run) {
       return resourceUnavailable(
         "Jobs are available only to a running primary Agent.",
       );
+    }
   }
   return { orgId: auth.orgId, userId: auth.userId };
 });
@@ -134,10 +137,11 @@ export const listUserJobs$ = command(
           .limit(1)
       : [];
     signal.throwIfAborted();
-    if (query.after && !cursor)
+    if (query.after && !cursor) {
       return conflict(
         "The list cursor is unavailable. Restart this Jobs view.",
       );
+    }
     const filter =
       query.filter === "runnable"
         ? runnableJobCondition()
@@ -217,13 +221,39 @@ export const createUserJob$ = command(
       existing.body.title === input.title &&
       existing.body.objective === input.objective &&
       isDeepStrictEqual(existing.body.sourceReferences, input.sourceReferences)
-    )
+    ) {
       return existing;
+    }
     return conflict(
       "Job identity already exists with different content. Reuse the original file or choose a new ID for a new delegation.",
     );
   },
 );
+
+function jobUpdateReferenceConflict(job: Job, input: JobUpdate) {
+  const processed = input.work.processedInputIds;
+  if (
+    processed.length < job.work.processedInputIds.length ||
+    processed.length > job.inputs.length ||
+    !processed.every((value, index) => {
+      return value === job.inputs[index]?.id;
+    })
+  ) {
+    return conflict(
+      "Acknowledge only the exact input prefix you inspected. Read the Job again.",
+    );
+  }
+  if (
+    input.work.currentResultId !== null &&
+    !job.results.some((value) => {
+      return value.id === input.work.currentResultId;
+    }) &&
+    input.result?.id !== input.work.currentResultId
+  ) {
+    return conflict("The current Result must exist on this Job.");
+  }
+  return null;
+}
 
 export const updateUserJob$ = command(
   async (
@@ -234,30 +264,28 @@ export const updateUserJob$ = command(
     signal: AbortSignal,
   ) => {
     const read = await set(readUserJob$, owner, id, signal);
-    if (read.status !== 200) return read;
+    if (read.status !== 200) {
+      return read;
+    }
     const job = read.body;
-    if (job.status === "archived") return conflict("This Job is archived.");
-    const processed = input.work.processedInputIds;
-    if (
-      processed.length < job.work.processedInputIds.length ||
-      processed.length > job.inputs.length ||
-      !processed.every((value, index) => {
-        return value === job.inputs[index]?.id;
-      })
-    )
-      return conflict(
-        "Acknowledge only the exact input prefix you inspected. Read the Job again.",
-      );
+    if (job.status === "archived") {
+      return conflict("This Job is archived.");
+    }
+    const invalid = jobUpdateReferenceConflict(job, input);
+    if (invalid) {
+      return invalid;
+    }
     const request = input.work.authorization;
     const previousRequest = request
       ? job.authorizationRequests.find((value) => {
           return value.id === request.id;
         })
       : undefined;
-    if (previousRequest && !isDeepStrictEqual(previousRequest, request))
+    if (previousRequest && !isDeepStrictEqual(previousRequest, request)) {
       return conflict(
         "Authorization request identity already exists with different action or scope.",
       );
+    }
     const previousResult = input.result
       ? job.results.find((value) => {
           return value.id === input.result?.id;
@@ -274,22 +302,15 @@ export const updateUserJob$ = command(
         },
         input.result,
       )
-    )
+    ) {
       return conflict("Result identity already exists with different content.");
+    }
     const result = input.result
       ? (previousResult ?? {
           ...input.result,
           publishedAt: nowDate().toISOString(),
         })
       : undefined;
-    if (
-      input.work.currentResultId !== null &&
-      !job.results.some((value) => {
-        return value.id === input.work.currentResultId;
-      }) &&
-      result?.id !== input.work.currentResultId
-    )
-      return conflict("The current Result must exist on this Job.");
     const [row] = await set(writeDb$)
       .update(userJobs)
       .set({
@@ -318,10 +339,11 @@ export const updateUserJob$ = command(
       )
       .returning();
     signal.throwIfAborted();
-    if (!row)
+    if (!row) {
       return conflict(
         "Job progress changed. Read the current Job before deciding the next action.",
       );
+    }
     await set(sleepIdleProactiveJobs$, owner, signal);
     await set(wakeProactiveJobs$, owner, signal);
     await publishUserJobsChangedSafely(owner);
@@ -339,7 +361,9 @@ export const appendUserJobInput$ = command(
     signal: AbortSignal,
   ) => {
     const read = await set(readUserJob$, owner, id, signal);
-    if (read.status !== 200) return read;
+    if (read.status !== 200) {
+      return read;
+    }
     const job = read.body;
     const existing = job.inputs.find((value) => {
       return value.id === input.id;
@@ -354,12 +378,14 @@ export const appendUserJobInput$ = command(
         ? read
         : conflict("Input identity already exists with different content.");
     }
-    if (job.status === "archived")
+    if (job.status === "archived") {
       return conflict("Archived Jobs do not accept new input.");
+    }
     const request = job.work.authorization;
     if (input.kind === "authorization") {
-      if (!request || request.id !== input.requestId)
+      if (!request || request.id !== input.requestId) {
         return conflict("This authorization request is no longer current.");
+      }
       if (input.outcome === "granted") {
         const [grant] = await get(db$)
           .select({ id: userPermissionGrants.id })
@@ -387,10 +413,11 @@ export const appendUserJobInput$ = command(
           )
           .limit(1);
         signal.throwIfAborted();
-        if (!grant)
+        if (!grant) {
           return conflict(
             "Grant the current Agent's actual permission before saving an authorization response.",
           );
+        }
       }
     }
     const entry = {
@@ -436,7 +463,9 @@ export const appendUserJobInput$ = command(
           createdAt: _created,
           ...content
         } = saved;
-        if (isDeepStrictEqual(content, input)) return current;
+        if (isDeepStrictEqual(content, input)) {
+          return current;
+        }
       }
       return conflict("The Job or input identity changed. Reload the Job.");
     }
@@ -472,7 +501,9 @@ export const acknowledgeUserJobResult$ = command(
       )
       .returning();
     signal.throwIfAborted();
-    if (!row) return notFound("Job Result not found");
+    if (!row) {
+      return notFound("Job Result not found");
+    }
     await publishUserJobsChangedSafely(owner);
     signal.throwIfAborted();
     return { status: 200 as const, body: presentJob(row) };
@@ -487,7 +518,9 @@ export const archiveUserJob$ = command(
       .where(and(jobOwnerCondition(owner), eq(userJobs.id, id)))
       .returning();
     signal.throwIfAborted();
-    if (!row) return notFound("Job not found");
+    if (!row) {
+      return notFound("Job not found");
+    }
     await set(sleepIdleProactiveJobs$, owner, signal);
     await publishUserJobsChangedSafely(owner);
     signal.throwIfAborted();

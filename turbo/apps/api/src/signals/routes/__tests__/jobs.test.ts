@@ -29,8 +29,9 @@ async function fixture(secondary = false) {
   const runs = createRunsApi(context);
   const actor = bdd.user();
   const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-  if (!actor.orgId || !defaultAgentId)
+  if (!actor.orgId || !defaultAgentId) {
     throw new Error("Expected a default Agent");
+  }
   await bdd.completeOnboarding(actor);
   await updateFeatureSwitchesForUser(
     context,
@@ -122,7 +123,7 @@ describe("Entrusted Jobs", () => {
       list.body.jobs.map((value) => {
         return value.id;
       }),
-    ).toEqual([job.id]);
+    ).toStrictEqual([job.id]);
   });
 
   it("keeps concurrent replies pending across a progress update based on older work", async () => {
@@ -157,7 +158,7 @@ describe("Entrusted Jobs", () => {
       [200],
     );
     expect(waiting.body.inputs).toHaveLength(2);
-    expect(waiting.body.hasPendingInput).toBe(true);
+    expect(waiting.body.hasPendingInput).toBeTruthy();
     const runnable = await accept(
       client().list({ headers, query: { filter: "runnable", limit: 100 } }),
       [200],
@@ -184,7 +185,7 @@ describe("Entrusted Jobs", () => {
       }),
       [200],
     );
-    expect(next.body.hasPendingInput).toBe(false);
+    expect(next.body.hasPendingInput).toBeFalsy();
     await accept(
       client().update({
         headers: f.headers,
@@ -205,7 +206,7 @@ describe("Entrusted Jobs", () => {
       kind: "reply" as const,
       text: "Focus on the US market",
     };
-    for (let index = 0; index < 2; index++)
+    for (let index = 0; index < 2; index++) {
       await accept(
         client().input({
           headers: human(f.actor),
@@ -214,6 +215,7 @@ describe("Entrusted Jobs", () => {
         }),
         [200],
       );
+    }
     await accept(
       client().input({
         headers: human(f.actor),
@@ -274,7 +276,7 @@ describe("Entrusted Jobs", () => {
       }),
       [200],
     );
-    expect(oldReceipt.body.hasUnseenResult).toBe(true);
+    expect(oldReceipt.body.hasUnseenResult).toBeTruthy();
     const seen = await accept(
       client().viewed({
         headers: human(f.actor),
@@ -292,7 +294,7 @@ describe("Entrusted Jobs", () => {
       }),
       [200],
     );
-    expect(home.body.jobs).toEqual([]);
+    expect(home.body.jobs).toStrictEqual([]);
     const history = await accept(
       client().list({
         headers: human(f.actor),
@@ -304,7 +306,7 @@ describe("Entrusted Jobs", () => {
       history.body.jobs.map((value) => {
         return value.id;
       }),
-    ).toEqual([job.id]);
+    ).toStrictEqual([job.id]);
     const reply = await accept(
       client().input({
         headers: human(f.actor),
@@ -314,7 +316,7 @@ describe("Entrusted Jobs", () => {
       [200],
     );
     expect(reply.body.status).toBe("completed");
-    expect(reply.body.hasPendingInput).toBe(true);
+    expect(reply.body.hasPendingInput).toBeTruthy();
     const keptComplete = await accept(
       client().update({
         headers: f.headers,
@@ -332,7 +334,7 @@ describe("Entrusted Jobs", () => {
       [200],
     );
     expect(keptComplete.body.status).toBe("completed");
-    expect(keptComplete.body.hasPendingInput).toBe(false);
+    expect(keptComplete.body.hasPendingInput).toBeFalsy();
     expect(keptComplete.body.results).toHaveLength(2);
   });
 
@@ -394,7 +396,7 @@ describe("Entrusted Jobs", () => {
       }),
       [200],
     );
-    expect(runnable.body.jobs).toEqual([]);
+    expect(runnable.body.jobs).toStrictEqual([]);
   });
 
   it("requires actual Agent-scoped permission and keeps user input routes unavailable to agents", async () => {
@@ -437,7 +439,7 @@ describe("Entrusted Jobs", () => {
       client().input({ headers: f.headers, params: { id: job.id }, body }),
       [403],
     );
-    expect((await read(job.id, f.actor)).inputs).toEqual([]);
+    expect((await read(job.id, f.actor)).inputs).toStrictEqual([]);
     await accept(
       client().input({
         headers: human(f.actor),
@@ -454,7 +456,9 @@ describe("Entrusted Jobs", () => {
     const bdd = createBddApi(context);
     const other = bdd.user();
     await bdd.readOnboardingStatus(other);
-    if (!other.orgId) throw new Error("Expected another org");
+    if (!other.orgId) {
+      throw new Error("Expected another org");
+    }
     await updateFeatureSwitchesForUser(
       context,
       { ...other, orgId: other.orgId },
@@ -469,15 +473,16 @@ describe("Entrusted Jobs", () => {
       { ...f.actor, orgId: f.actor.orgId! },
       { [FeatureSwitchKey.ProactiveJobs]: false },
     );
-    await accept(
+    const denied = await accept(
       client().get({ headers: human(f.actor), params: { id: job.id } }),
       [403],
     );
+    expect(denied.status).toBe(403);
   });
 
   it("does not issue Job write authority to a secondary Agent", async () => {
     const f = await fixture(true);
-    await accept(
+    const forbidden = await accept(
       client().create({
         headers: f.headers,
         body: {
@@ -488,6 +493,7 @@ describe("Entrusted Jobs", () => {
       }),
       [403],
     );
+    expect(forbidden.status).toBe(403);
   });
   it("orders waiting work and unseen Results before active Jobs across pages", async () => {
     const f = await fixture();
@@ -533,7 +539,7 @@ describe("Entrusted Jobs", () => {
       first.body.jobs.map((job) => {
         return job.id;
       }),
-    ).toEqual([waiting.id]);
+    ).toStrictEqual([waiting.id]);
     const second = await accept(
       client().list({
         headers: human(f.actor),
@@ -545,7 +551,7 @@ describe("Entrusted Jobs", () => {
       second.body.jobs.map((job) => {
         return job.id;
       }),
-    ).toEqual([completed.id]);
+    ).toStrictEqual([completed.id]);
     const third = await accept(
       client().list({
         headers: human(f.actor),
@@ -557,7 +563,7 @@ describe("Entrusted Jobs", () => {
       third.body.jobs.map((job) => {
         return job.id;
       }),
-    ).toEqual([active.id]);
+    ).toStrictEqual([active.id]);
     expect(third.body.nextAfter).toBeNull();
   });
 
@@ -588,7 +594,7 @@ describe("Entrusted Jobs", () => {
         [200],
       )
     ).body;
-    expect(first.authorizationRequests).toEqual([request]);
+    expect(first.authorizationRequests).toStrictEqual([request]);
     const replacement = {
       ...request,
       id: randomUUID(),
@@ -621,7 +627,7 @@ describe("Entrusted Jobs", () => {
       }),
       [409],
     );
-    expect((await read(job.id, f.actor)).authorizationRequests).toEqual([
+    expect((await read(job.id, f.actor)).authorizationRequests).toStrictEqual([
       request,
       replacement,
     ]);
@@ -658,11 +664,11 @@ describe("Entrusted Jobs", () => {
           return outcome.status;
         })
         .sort(),
-    ).toEqual([200, 409]);
+    ).toStrictEqual([200, 409]);
     expect(
       (await read(job.id, f.actor)).results.map((value) => {
         return value.id;
       }),
-    ).toEqual([result.id]);
+    ).toStrictEqual([result.id]);
   });
 });

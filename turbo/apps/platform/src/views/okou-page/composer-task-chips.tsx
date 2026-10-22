@@ -679,7 +679,9 @@ function ComposerTaskPanel({
   if (selected === "suggestions") {
     return <AgentSuggestions />;
   }
-  if (selected === "jobs") return <EntrustedJobs />;
+  if (selected === "jobs") {
+    return <EntrustedJobs />;
+  }
   return (
     <div
       key={selected}
@@ -839,7 +841,9 @@ export function ComposerTaskChips({
       "visualization",
     ] as const
   ).filter((task) => {
-    if (task === "jobs") return jobsEnabled;
+    if (task === "jobs") {
+      return jobsEnabled;
+    }
     if (task === "document") {
       return documentTemplatesEnabled;
     }
