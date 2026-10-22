@@ -385,6 +385,7 @@ interface TrackedAsyncResource<T> {
 
 function trackAsyncResource<T>(promise: Promise<T>): TrackedAsyncResource<T> {
   let pending = true;
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   const trackedPromise = withCleanup(promise, () => {
     pending = false;
   });

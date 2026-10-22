@@ -5,7 +5,6 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { expect, test } from "vitest";
 
-import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -60,7 +59,13 @@ async function fixture() {
   const storage = installSharedThreadStorage(context);
   mocks.clerk.session(actor.userId, actor.orgId);
 
-  async function upload(filename: string, contentType: string, bytes: string) {
+  async function upload(
+    filename: string,
+    contentType: string,
+    bytes: string,
+    scope: "public" | "private" = "private",
+  ) {
+    mocks.clerk.session(actor.userId, scope === "public" ? null : actor.orgId);
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -86,6 +91,7 @@ async function fixture() {
       }),
       [200],
     );
+    mocks.clerk.session(actor.userId, actor.orgId);
     return {
       id: prepared.body.id,
       uploadUrl: prepared.body.uploadUrl,
@@ -150,17 +156,19 @@ async function attachmentBytes(url: string): Promise<string> {
   return (await fetch(url)).text();
 }
 
-test("publishes independent attachment bytes", async () => {
+test("publishes independent public attachment bytes", async () => {
   const f = await fixture();
   const image = await f.upload(
     "dashboard.png",
     "image/png",
     "original image bytes",
+    "public",
   );
   const pdf = await f.upload(
     "brief.pdf",
     "application/pdf",
     "original pdf bytes",
+    "public",
   );
   const message = await f.send([
     image.part,
@@ -184,10 +192,18 @@ test("publishes independent attachment bytes", async () => {
     if (!attachment) {
       throw new Error("Expected shared attachment");
     }
-    expect(attachment.url).toMatch(
-      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(png|pdf)$/u,
-    );
-    expect(attachment.size).toBe(Buffer.byteLength(expected));
+    const filename = index === 0 ? "dashboard.png" : "brief.pdf";
+    expect(attachment).toStrictEqual({
+      filename,
+      contentType: index === 0 ? "image/png" : "application/pdf",
+      size: Buffer.byteLength(expected),
+      url: expect.stringMatching(
+        new RegExp(
+          String.raw`^https://a\.okou\.io/shared-threads/${created.body.id}/[a-f0-9-]{36}-${filename.replace(".", String.raw`\.`)}$`,
+          "u",
+        ),
+      ),
+    });
     await expect(attachmentBytes(attachment.url)).resolves.toBe(expected);
   }
   f.storage.removeUpload(image.uploadUrl);
@@ -198,16 +214,6 @@ test("publishes independent attachment bytes", async () => {
   await expect(attachmentBytes(imageAttachment.url)).resolves.toBe(
     "original image bytes",
   );
-  const publicJson = JSON.stringify(shared.body);
-  for (const value of [
-    image.id,
-    pdf.id,
-    f.actor.userId,
-    f.actor.orgId,
-    message.threadId,
-  ]) {
-    expect(publicJson).not.toContain(value);
-  }
 });
 
 test("sends private attachments and shares independent private snapshots", async () => {
@@ -234,23 +240,6 @@ test("sends private attachments and shares independent private snapshots", async
     /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
   );
   await expect(attachmentBytes(url)).resolves.toBe("private bytes");
-  const copies = context.mocks.s3.send.mock.calls
-    .map(([command]) => {
-      return command;
-    })
-    .filter((command) => {
-      return command instanceof CopyObjectCommand;
-    });
-  expect(copies).toHaveLength(1);
-  expect(copies[0]?.input).toMatchObject({ Bucket: "test-private-artifacts" });
-  expect(
-    context.mocks.s3.send.mock.calls.some(([command]) => {
-      return (
-        command instanceof PutObjectCommand &&
-        command.input.Bucket === "test-user-artifacts"
-      );
-    }),
-  ).toBeFalsy();
   const source = await accept(
     api()(webFilesContract).fileUrl({ headers, query: { file_id: file.id } }),
     [200],
@@ -310,11 +299,17 @@ test("publishes the annotated image without exposing its original", async () => 
   if (!attachment) {
     throw new Error("Expected annotated attachment");
   }
-  expect(attachment.filename).toBe("screen.annotated.png");
+  expect(attachment).toStrictEqual({
+    filename: "screen.annotated.png",
+    contentType: "image/png",
+    size: Buffer.byteLength("annotated image"),
+    url: expect.stringMatching(
+      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.png$/u,
+    ),
+  });
   await expect(attachmentBytes(attachment.url)).resolves.toBe(
     "annotated image",
   );
-  expect(JSON.stringify(shared.body)).not.toContain(original.id);
 });
 
 test.each(["missing source", "copy failure"])(

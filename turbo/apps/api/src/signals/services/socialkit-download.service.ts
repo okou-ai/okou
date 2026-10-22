@@ -32,7 +32,6 @@ import {
 } from "../external/s3";
 import { type Db, writeDb$ } from "../external/db";
 import {
-  awaitWithSignal,
   onRejection,
   readBoundedResponseText,
   safeJsonParse,
@@ -647,10 +646,7 @@ async function fetchSafeSocialKitArtifact(
 ): Promise<Response> {
   let currentUrl = initialUrl;
   for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
-    const target = await awaitWithSignal(
-      validateScrapeTargetUrl(currentUrl),
-      signal,
-    );
+    const target = validateScrapeTargetUrl(currentUrl);
     signal.throwIfAborted();
     if (typeof target === "string" || target.url.protocol !== "https:") {
       throw new Error("SocialKit returned an unsafe artifact URL");

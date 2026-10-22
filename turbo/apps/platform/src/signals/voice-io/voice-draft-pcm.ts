@@ -227,6 +227,7 @@ export async function startVoiceDraftPcmCapture(
   const moduleUrl = URL.createObjectURL(
     new Blob([PCM_WORKLET_SOURCE], { type: "text/javascript" }),
   );
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   await withCleanup(audioContext.audioWorklet.addModule(moduleUrl), () => {
     URL.revokeObjectURL(moduleUrl);
   });

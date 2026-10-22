@@ -63,9 +63,17 @@ describe("Discord Gateway message identity", () => {
         content: `<@${actor.botUserId}> keep the admitted message identity`,
       });
       provider.messages.set(original.id, original);
-      expect((await postDiscordMessage(context, original)).body.outcome).toBe(
-        "accepted",
-      );
+      const concurrent = await Promise.all([
+        postDiscordMessage(context, original),
+        postDiscordMessage(context, original, `concurrent:${original.id}`),
+      ]);
+      expect(
+        concurrent
+          .map((response) => {
+            return response.body.outcome;
+          })
+          .sort(),
+      ).toStrictEqual(["accepted", "duplicate"]);
       await flushWaitUntilForTest();
       const [thread] = await discordChatThreads(context, actor);
       if (!thread) {

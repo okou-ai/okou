@@ -2941,9 +2941,6 @@ describe("managed SocialKit route", () => {
     const format = options.format ?? "mp4";
     const providerJobId = `provider-audio-only-${randomUUID()}`;
     const downloadPath = `/download-${providerJobId}`;
-    context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
-      { address: "8.8.8.8", family: 4 },
-    ]);
     server.use(
       http.post(`${SOCIALKIT_BASE}/v2/${platform}/download`, () => {
         return HttpResponse.json({ jobId: providerJobId, status: "queued" });
@@ -3244,9 +3241,6 @@ describe("managed SocialKit route", () => {
       await owner.run(async () => {
         const beforeCredits = await credits(actor);
         const providerJobId = `provider-invalid-artifact-${randomUUID()}`;
-        context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
-          { address: "8.8.8.8", family: 4 },
-        ]);
         server.use(
           http.post(`${SOCIALKIT_BASE}/v2/youtube/download`, () => {
             return HttpResponse.json({
@@ -3774,9 +3768,6 @@ describe("managed SocialKit route", () => {
       const payload = new TextEncoder().encode("cron-reconciled social video");
       const providerJobId = `provider-cron-${randomUUID()}`;
       let providerReady = false;
-      context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
-        { address: "8.8.8.8", family: 4 },
-      ]);
       server.use(
         http.post(`${SOCIALKIT_BASE}/v2/youtube/download`, () => {
           return HttpResponse.json({ jobId: providerJobId, status: "queued" });
@@ -3884,9 +3875,6 @@ describe("managed SocialKit route", () => {
       let providerCredits = 2;
       let artifactStored = false;
       const createdDownload: { id?: string } = {};
-      context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
-        { address: "8.8.8.8", family: 4 },
-      ]);
       server.use(
         http.post(`${SOCIALKIT_BASE}/v2/youtube/download`, () => {
           providerStarts += 1;

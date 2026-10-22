@@ -58,8 +58,8 @@ jobs:
     needs: detect
     if: github.ref == 'refs/heads/main' && needs.detect.outputs.needed == 'true'
     runs-on: xcode-27
-    # Cold seeding exceeded 15 minutes before it could publish the compiler cache.
-    timeout-minutes: 20
+    # Preserve main's cold-seeding budget, including compiler-cache upload.
+    timeout-minutes: 30
     # Let an active writer finish. Only selected warmers enter this queue.
     concurrency:
       group: ios-build-cache-main
