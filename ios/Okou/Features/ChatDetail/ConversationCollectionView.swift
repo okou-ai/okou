@@ -146,9 +146,14 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var animatesScroll = false
   private let loading = UIActivityIndicatorView(style: .medium)
   private var loadingTask: Task<Void, Never>?
+  private let sleep: @MainActor (Duration) async throws -> Void
 
-  init(source: ConversationCollectionView<Content>) {
+  init(
+    source: ConversationCollectionView<Content>,
+    sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+  ) {
     self.source = source
+    self.sleep = sleep
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -399,9 +404,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private func revealLoadingAfterDelay() {
     guard loadingTask == nil, !loading.isAnimating else { return }
-    loadingTask = Task { [weak self] in
-      do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
-      guard let self, !stopped else { return }
+    loadingTask = Task { [weak self, sleep] in
+      do { try await sleep(.milliseconds(100)) } catch { return }
+      guard !Task.isCancelled, let self, !stopped, displayedRows.isEmpty else { return }
       loading.startAnimating()
     }
   }
