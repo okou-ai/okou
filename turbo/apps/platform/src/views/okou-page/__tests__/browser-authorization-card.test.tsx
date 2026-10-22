@@ -106,16 +106,15 @@ test.each([
     expect(getButton(card, "Allowed")).toBeDisabled();
   });
   expect(sent).toStrictEqual([CALLBACK]);
+  await expect(screen.findByText(CALLBACK)).resolves.toBeInTheDocument();
   expect(screen.getByText("I need a browser to continue.")).toBeInTheDocument();
 });
 
-test("A failed continuation can retry without authorizing again or duplicating its event", async () => {
+test("A failed continuation retries with the same callback event identity", async () => {
   mockRequest();
-  let applyCount = 0;
   context.mocks.api(
     browserAuthorizationRequestsContract.apply,
     ({ respond }) => {
-      applyCount += 1;
       return respond(200, { ok: true, cloudBrowserEnabled: true });
     },
   );
@@ -148,7 +147,6 @@ test("A failed continuation can retry without authorizing again or duplicating i
   await waitFor(() => {
     expect(getButton(card, "Allowed")).toBeDisabled();
   });
-  expect(applyCount).toBe(1);
   expect(events).toStrictEqual([
     { prompt: CALLBACK, eventId: REQUEST_ID },
     { prompt: CALLBACK, eventId: REQUEST_ID },

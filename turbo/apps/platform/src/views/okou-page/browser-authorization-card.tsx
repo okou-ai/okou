@@ -33,20 +33,20 @@ export function BrowserAuthorizationCard({
   return (
     <ChatCard
       data-testid="browser-authorization-card"
-      className="flex h-[160px] w-full flex-col justify-between gap-3 p-3 text-left @[640px]:h-[112px] @[640px]:flex-row @[640px]:items-center"
+      className="flex h-[224px] w-full flex-col justify-between gap-3 p-3 text-left @[320px]:h-[200px] @[640px]:h-[112px] @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
           <Globe size={22} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[0.9375rem] font-medium text-foreground">
+          <div className="text-[0.9375rem] font-medium text-foreground">
             {t(($) => {
               return $.authorization.browser.title;
             })}
           </div>
           <p
-            className="mt-0.5 line-clamp-3 text-sm leading-5 text-muted-foreground"
+            className="mt-0.5 text-sm leading-5 text-muted-foreground"
             aria-live="polite"
           >
             {failed
