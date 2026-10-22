@@ -60,7 +60,8 @@ final class ConversationSendTransitionTests: XCTestCase {
       samples.contains { $0 > before + 1 && $0 < after - 1 },
       "Insertion must move through an intermediate presented position")
     for (previous, next) in zip(samples, samples.dropFirst()) {
-      XCTAssertGreaterThanOrEqual(next, previous - 1, "A send must not reverse toward the old footer")
+      XCTAssertGreaterThanOrEqual(
+        next, previous - 1, "A send must not reverse toward the old footer")
     }
   }
 
@@ -168,10 +169,11 @@ private struct SendTransitionProbe: View {
   @State private var composerHeight: CGFloat = 0
 
   var body: some View {
-    let rows = conversation.visibleMessages.map {
-      ConversationCollectionRow.message(
-        $0, showsAvatar: false, topSpacing: 0, pendingRetry: nil, isSending: false)
-    } + [.footer(.idle)]
+    let rows =
+      conversation.visibleMessages.map {
+        ConversationCollectionRow.message(
+          $0, showsAvatar: false, topSpacing: 0, pendingRetry: nil, isSending: false)
+      } + [.footer(.idle)]
     ConversationCollectionView(
       rows: rows, markdown: conversation.messageMarkdown,
       contentInsets: EdgeInsets(top: 0, leading: 0, bottom: composerHeight, trailing: 0),
@@ -199,7 +201,11 @@ private struct SendTransitionProbe: View {
         attachments: conversation.attachmentDraft, draftState: conversation.composer,
         submit: { await scrolling.send() }, refresh: nil, sendTransition: scrolling.sendTransition
       )
-      .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        composerHeight = $0
+      }
     }
     .onAppear { scrolling.activate(reduceMotion: false) }
     .task(id: conversation.visibleMessages.last) { await scrolling.latestMessageChanged() }

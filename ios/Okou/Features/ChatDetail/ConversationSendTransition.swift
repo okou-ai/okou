@@ -14,6 +14,7 @@ final class ConversationSendTransition {
   @ObservationIgnored private var target: CGFloat?
   @ObservationIgnored private var deadline: CFTimeInterval = 0
   @ObservationIgnored private var options = UIView.AnimationOptions.curveEaseInOut
+  @ObservationIgnored private var animator: UIViewPropertyAnimator?
   @ObservationIgnored private var generation = UUID()
   @ObservationIgnored private var reduceMotion = false
   @ObservationIgnored var didBegin: (() -> Void)?
@@ -41,12 +42,13 @@ final class ConversationSendTransition {
 
   private func keyboardWillChange(_ notification: Notification) {
     guard isActive else { return }
-    guard let duration =
-      (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
-      .doubleValue,
+    guard
+      let duration =
+        (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
+        .doubleValue,
       let curve =
-      (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?
-      .uintValue
+        (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?
+        .uintValue
     else { return }
     deadline = CACurrentMediaTime() + duration
     options = UIView.AnimationOptions(rawValue: curve << 16)
@@ -55,7 +57,9 @@ final class ConversationSendTransition {
     case 1: composerAnimation = .easeIn(duration: duration)
     case 2: composerAnimation = .easeOut(duration: duration)
     case 3: composerAnimation = .linear(duration: duration)
-    default: composerAnimation = .interpolatingSpring(duration: duration, bounce: 0)
+    default:
+      composerAnimation =
+        duration == 0 ? .linear(duration: 0) : .interpolatingSpring(duration: duration, bounce: 0)
     }
     if isAnimating {
       target = nil
@@ -93,12 +97,21 @@ final class ConversationSendTransition {
     let insets = collection.adjustedContentInset
     let y = max(
       -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
-    guard target != y else { return }
+    if let target, abs(target - y) <= 0.5 { return }
     target = y
+    if animator?.state == .active {
+      let offset = collection.layer.presentation()?.bounds.origin ?? collection.contentOffset
+      let alpha = arrivingView?.layer.presentation()?.opacity
+      animator?.stopAnimation(true)
+      UIView.performWithoutAnimation {
+        collection.setContentOffset(offset, animated: false)
+        if let alpha { arrivingView?.alpha = CGFloat(alpha) }
+      }
+    }
     let generation = UUID()
     self.generation = generation
     let duration = reduceMotion ? 0 : max(0, deadline - CACurrentMediaTime())
-    UIView.animate(
+    animator = UIViewPropertyAnimator.runningPropertyAnimator(
       withDuration: duration, delay: 0,
       options: options.union([.beginFromCurrentState, .allowUserInteraction])
     ) {
@@ -112,6 +125,7 @@ final class ConversationSendTransition {
 
   func cancel() {
     let wasAnimating = isAnimating
+    let offset = collection?.layer.presentation()?.bounds.origin ?? collection?.contentOffset
     generation = UUID()
     messageID = nil
     isAnimating = false
@@ -119,12 +133,11 @@ final class ConversationSendTransition {
     deadline = 0
     if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
     keyboardObserver = nil
-    arrivingView?.layer.removeAnimation(forKey: "opacity")
+    if animator?.state == .active { animator?.stopAnimation(true) }
+    animator = nil
     arrivingView?.alpha = 1
     arrivingView = nil
-    if wasAnimating, let collection {
-      let offset = collection.layer.presentation()?.bounds.origin ?? collection.contentOffset
-      collection.layer.removeAnimation(forKey: "bounds")
+    if wasAnimating, let collection, let offset {
       UIView.performWithoutAnimation { collection.setContentOffset(offset, animated: false) }
     }
   }
@@ -136,6 +149,7 @@ final class ConversationSendTransition {
     deadline = 0
     if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
     keyboardObserver = nil
+    animator = nil
     arrivingView = nil
     didFinish?()
   }
