@@ -69,18 +69,26 @@ describe("Axiom ingest HTTP error diagnostics", () => {
           http.post(
             "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
             async ({ request }) => {
-              requestBytes = Buffer.byteLength(await request.text(), "utf8");
+              const sentBody = await request.text();
+              requestBytes = Buffer.byteLength(sentBody, "utf8");
+              const responseMessage = message.replace(
+                "no healthy upstream",
+                `no healthy upstream for payload=${sentBody}`,
+              );
               const headers = {
                 "x-request-id": "axiom-upstream-request-42186",
                 "retry-after": "2",
               };
               return format === "json"
                 ? HttpResponse.json(
-                    { error: { message }, echoedEvents: privateEcho },
+                    {
+                      error: { message: responseMessage },
+                      echoedEvents: privateEcho,
+                    },
                     { status: 503, headers },
                   )
                 : new HttpResponse(
-                    `<html><body>${message.replace("Bearer another-private-token", "<span>Bearer&#32;another-private-token</span>")}</body></html>`,
+                    `<html><body>${responseMessage.replaceAll('"', "&quot;").replace("Bearer another-private-token", "<span>Bearer&#32;another-private-token</span>")}</body></html>`,
                     {
                       status: 503,
                       headers: { ...headers, "content-type": "text/html" },
@@ -128,6 +136,10 @@ describe("Axiom ingest HTTP error diagnostics", () => {
         expect(fields.error.responseBodySummary).toContain(
           "[redacted authorization]",
         );
+        expect(fields.error.responseBodySummary).toContain(
+          "[redacted telemetry payload]",
+        );
+        expect(fields.error.responseBodySummary).not.toContain(upload.runId);
         expect(fields.error.responseBodySummary).toMatch(/\.\.\.$/u);
         const logged = JSON.stringify(
           context.mocks.axiomLogging.error.mock.calls,

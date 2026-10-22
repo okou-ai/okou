@@ -331,16 +331,23 @@ function axiomRetryAfterMs(value: string | null): number | undefined {
     : undefined;
 }
 
-function sanitizedAxiomErrorDetail(value: string, token: string): string {
+function sanitizedAxiomErrorDetail(
+  value: string,
+  request: PreparedAxiomIngest,
+): string {
+  // Remove raw and HTML-escaped request echoes before normalizing their text.
+  const decoded = decodeHTML(
+    value.replaceAll(request.body, "[redacted telemetry payload]"),
+  ).replaceAll(request.body, "[redacted telemetry payload]");
   const normalized = Array.from(
-    decodeHTML(value).replace(/<[^>]*>/gu, " "),
+    decoded.replace(/<[^>]*>/gu, " "),
     (character) => {
       const code = character.charCodeAt(0);
       return code <= 31 || code === 127 ? " " : character;
     },
   ).join("");
   const redacted = normalized
-    .replaceAll(token, "[redacted]")
+    .replaceAll(request.token, "[redacted]")
     .replace(/\b(?:Bearer|Basic)\s+[^\s,;"'<>]+/giu, "[redacted authorization]")
     .replace(
       /\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|authorization|password|secret|token)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;<>]+)/giu,
@@ -379,7 +386,7 @@ function axiomErrorResponseMessage(text: string): string | undefined {
 
 async function axiomErrorResponseBody(
   response: Response,
-  token: string,
+  request: PreparedAxiomIngest,
   signal: AbortSignal,
 ): Promise<AxiomHttpErrorResponse> {
   if (!response.body) {
@@ -412,7 +419,7 @@ async function axiomErrorResponseBody(
       responseBodySummary:
         message === undefined
           ? undefined
-          : sanitizedAxiomErrorDetail(message, token),
+          : sanitizedAxiomErrorDetail(message, request),
     };
   };
   const result = await settleIncludingAbort(read()).finally(() => {
@@ -428,7 +435,7 @@ async function axiomHttpErrorDetails(
   timing: { readonly timeoutMs: number; readonly startedAt: number },
   signal: AbortSignal,
 ): Promise<AxiomHttpIngestErrorOptions> {
-  const details = await axiomErrorResponseBody(response, request.token, signal);
+  const details = await axiomErrorResponseBody(response, request, signal);
   const requestId =
     response.headers.get("x-axiom-request-id") ??
     response.headers.get("x-request-id");
@@ -443,10 +450,10 @@ async function axiomHttpErrorDetails(
     timeoutMs: timing.timeoutMs,
     elapsedMs: Math.max(0, now() - timing.startedAt),
     upstreamRequestId: requestId
-      ? sanitizedAxiomErrorDetail(requestId, request.token).slice(0, 128)
+      ? sanitizedAxiomErrorDetail(requestId, request).slice(0, 128)
       : undefined,
     responseContentType: contentType
-      ? sanitizedAxiomErrorDetail(contentType, request.token).slice(0, 128)
+      ? sanitizedAxiomErrorDetail(contentType, request).slice(0, 128)
       : undefined,
     ...details,
   };
