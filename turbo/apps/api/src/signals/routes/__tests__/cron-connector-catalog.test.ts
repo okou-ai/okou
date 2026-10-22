@@ -1352,27 +1352,12 @@ describe("connector catalog valid lifecycle", () => {
       { credential: "catalog-manual-secret" },
     );
     expect(connected).toMatchObject({
-      slug: "agora",
+      target: { kind: "builtin", connectorSlug: "agora" },
       authMethod: "api-token",
       connectionStatus: "connected",
     });
 
     const listed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(listed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "agora",
-        authMethod: "api-token",
-        namespace: "secrets",
-        name: "SERVICE_TOKEN",
-      }),
-    );
-    expect(listed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "agora",
-        name: "SERVICE_TOKEN",
-        source: { kind: "connector-secret", name: PRIVATE_VALUE },
-      }),
-    );
     expect(JSON.stringify(listed)).not.toContain("catalog-manual-secret");
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
     await withConnectorRuntime(
@@ -1727,23 +1712,12 @@ describe("connector catalog valid lifecycle", () => {
       [307],
     );
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "steam"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "steam"),
     ).resolves.toMatchObject({
       authMethod: "openid",
       externalId: STEAM_TEST_ID,
       connectionStatus: "connected",
     });
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "steam",
-        authMethod: "openid",
-        name: "STEAM_ID",
-        source: { kind: "connector-variable", name: "CATALOG_STEAM_ID" },
-      }),
-    );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeAction);
     await withConnectorRuntime(context, actor, "steam", ({ claim }) => {
       expect(claim.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
@@ -1809,49 +1783,13 @@ describe("connector catalog valid lifecycle", () => {
       oauthScopes: ["openid"],
     });
     await expect(
-      connectorsApi.readScopeDiff(actor, "aws"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "aws"),
     ).resolves.toStrictEqual({
       addedScopes: ["future_scope"],
       removedScopes: [],
       currentScopes: ["openid", "future_scope"],
       storedScopes: ["openid"],
     });
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "aws",
-        authMethod: "cli",
-        name: "AWS_ACCESS_KEY_ID",
-        source: { kind: "connector-secret", name: "CATALOG_AWS_ACCESS_KEY_ID" },
-      }),
-    );
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "aws",
-        authMethod: "cli",
-        name: "AWS_SECRET_ACCESS_KEY",
-        source: {
-          kind: "connector-secret",
-          name: "CATALOG_AWS_SECRET_ACCESS_KEY",
-        },
-      }),
-    );
-    expect(
-      (await connectorsApi.listBuiltinConnectors(actor))
-        .connectorProvidedBindings,
-    ).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "aws",
-        authMethod: "cli",
-        name: "AWS_SESSION_TOKEN",
-        source: { kind: "connector-secret", name: "CATALOG_AWS_SESSION_TOKEN" },
-      }),
-    );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeCompletion);
     await withConnectorRuntime(
       context,

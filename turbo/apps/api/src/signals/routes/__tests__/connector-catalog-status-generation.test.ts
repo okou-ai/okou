@@ -108,7 +108,6 @@ describe("single-connector current catalog status", () => {
       "openai",
       connection.id,
     );
-    const initialList = await connectors.listBuiltinConnectors(owner);
     const changed = catalog(
       `${generation}.required-region`,
       "Configuration status",
@@ -163,11 +162,8 @@ describe("single-connector current catalog status", () => {
     expect(listed.connectors).toStrictEqual([
       expect.objectContaining(attention),
     ]);
-    expect(listed.connectorProvidedBindings).toStrictEqual(
-      initialList.connectorProvidedBindings,
-    );
     await expect(
-      connectors.readConnectorBySlug(owner, "openai"),
+      connectors.readDefaultBuiltinAccount(owner, "openai"),
     ).resolves.toMatchObject(attention);
 
     mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
@@ -198,7 +194,7 @@ describe("single-connector current catalog status", () => {
       configuredFieldKeys: ["apiKey", "region"],
     });
     await expect(
-      connectors.readConnectorBySlug(owner, "openai"),
+      connectors.readDefaultBuiltinAccount(owner, "openai"),
     ).resolves.toMatchObject({
       id: connection.id,
       connectionStatus: "connected",

@@ -138,7 +138,7 @@ describe("Builtin device-auth session expiration", () => {
       );
       expect(accountIdentities(afterExpiration)).toStrictEqual(expected);
       await expect(
-        connectors.readConnectorBySlug(actor, "test-oauth-device"),
+        connectors.readDefaultBuiltinAccount(actor, "test-oauth-device"),
       ).resolves.toMatchObject({ id: defaultAccount.connectionId });
 
       const recovery = await connectors.startDeviceAuth(
@@ -158,7 +158,7 @@ describe("Builtin device-auth session expiration", () => {
       );
       expect(accountIdentities(afterRecovery)).toStrictEqual(expected);
       await expect(
-        connectors.readConnectorBySlug(actor, "test-oauth-device"),
+        connectors.readDefaultBuiltinAccount(actor, "test-oauth-device"),
       ).resolves.toMatchObject({ id: defaultAccount.connectionId });
     });
   });

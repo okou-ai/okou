@@ -84,7 +84,7 @@ async function expectAccounts(
   };
   expect(actual.sort(byId)).toStrictEqual(expected.sort(byId));
   await expect(
-    connectors.readConnectorBySlug(actor, "test-oauth-device"),
+    connectors.readDefaultBuiltinAccount(actor, "test-oauth-device"),
   ).resolves.toMatchObject({
     id: defaultId,
     oauthScopes: ["read", "baseline"],

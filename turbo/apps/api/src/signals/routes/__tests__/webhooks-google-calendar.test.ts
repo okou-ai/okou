@@ -515,7 +515,10 @@ describe("POST /api/webhooks/google-calendar", () => {
 
     expect(refreshCalls).toBe(1);
     await expect(
-      connectorsApi.readConnectorBySlug(scenario.actor, "google-calendar"),
+      connectorsApi.readDefaultBuiltinAccount(
+        scenario.actor,
+        "google-calendar",
+      ),
     ).resolves.toMatchObject({
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",
@@ -998,7 +1001,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       subject: "calendar-principal-first-subject",
     });
     await wf.connectConnector(scenario.actor, "google-calendar");
-    const initialConnection = await connectorsApi.readConnectorBySlug(
+    const initialConnection = await connectorsApi.readDefaultBuiltinAccount(
       scenario.actor,
       "google-calendar",
     );
@@ -1067,7 +1070,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       initialConnection.id,
     );
 
-    const replacementConnection = await connectorsApi.readConnectorBySlug(
+    const replacementConnection = await connectorsApi.readDefaultBuiltinAccount(
       scenario.actor,
       "google-calendar",
     );
@@ -1100,7 +1103,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       subject: "calendar-cleanup-abort-subject",
     });
     await wf.connectConnector(scenario.actor, "google-calendar");
-    const connection = await connectorsApi.readConnectorBySlug(
+    const connection = await connectorsApi.readDefaultBuiltinAccount(
       scenario.actor,
       "google-calendar",
     );

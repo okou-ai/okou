@@ -49,7 +49,6 @@ function mockConnectorListHandler(connectors: Record<string, unknown>[] = []) {
   return http.get("http://localhost:3000/api/connectors", () => {
     return HttpResponse.json({
       connectors,
-      connectorProvidedBindings: [],
     });
   });
 }

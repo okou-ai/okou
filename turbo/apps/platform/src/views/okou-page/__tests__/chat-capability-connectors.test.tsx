@@ -1092,7 +1092,6 @@ test("Reconnect an expired connector before resuming the task", async () => {
             })
           : originalConnection,
       ],
-      connectorProvidedBindings: [],
     });
   });
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {

@@ -207,7 +207,7 @@ const scopeDiffScope$ = computed((get) => {
     orgId: auth.orgId,
     userId: auth.userId,
     connectorSlug: query.connectorSlug,
-    selection: { kind: "exact" as const, connectorId: params.connectionId },
+    connectorId: params.connectionId,
   };
 });
 const scopeDiff$ = builtinConnectorScopeDiff(scopeDiffScope$);

@@ -238,7 +238,6 @@ function installDriveMocks(
         connectionState === "not-connected"
           ? []
           : [googleDriveConnector(connectionState)],
-      connectorProvidedBindings: [],
     });
   });
   targetContext.mocks.api(

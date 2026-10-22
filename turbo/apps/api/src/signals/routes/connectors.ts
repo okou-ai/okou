@@ -5,8 +5,6 @@ import {
   builtinConnectorNoAuthGrantContract,
   builtinConnectorOpenIdStartContract,
   builtinConnectorOauthStartContract,
-  builtinConnectorScopeDiffContract,
-  builtinConnectorsBySlugContract,
   builtinConnectorsMainContract,
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
@@ -36,9 +34,7 @@ import {
 import {
   connectManualGrantBuiltinConnector$,
   connectNoAuthBuiltinConnector$,
-  builtinConnectorBySlug,
   builtinConnectorList,
-  builtinConnectorScopeDiff,
   builtinConnectorSearch,
 } from "../services/connector-data.service";
 import {
@@ -187,53 +183,6 @@ const getBuiltinConnectorListInner$ = computed(async (get) => {
     builtinConnectorList({ orgId: auth.orgId, userId: auth.userId }),
   );
   return { status: 200 as const, body: result };
-});
-
-const builtinConnectorBySlugScope$ = computed((get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(builtinConnectorsBySlugContract.get));
-  return {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    connectorSlug: params.connectorSlug,
-  };
-});
-const builtinConnectorBySlug$ = builtinConnectorBySlug(
-  builtinConnectorBySlugScope$,
-);
-
-const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
-  const connector = await get(builtinConnectorBySlug$);
-  if (!connector) {
-    return notFound("Connector not found");
-  }
-
-  return { status: 200 as const, body: connector };
-});
-
-const builtinConnectorScopeDiffScope$ = computed((get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(
-    pathParamsOf(builtinConnectorScopeDiffContract.getScopeDiff),
-  );
-  return {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    connectorSlug: params.connectorSlug,
-    selection: { kind: "default" as const },
-  };
-});
-const builtinConnectorScopeDiff$ = builtinConnectorScopeDiff(
-  builtinConnectorScopeDiffScope$,
-);
-
-const getBuiltinConnectorScopeDiffInner$ = computed(async (get) => {
-  const diff = await get(builtinConnectorScopeDiff$);
-  if (!diff) {
-    return notFound("Connector not found");
-  }
-
-  return { status: 200 as const, body: diff };
 });
 
 const searchBuiltinConnectorsInner$ = computed(async (get) => {
@@ -828,19 +777,11 @@ export const builtinConnectorsRoutes: readonly RouteEntry[] = [
     handler: authRoute(connectorReadAuth, getBuiltinConnectorListInner$),
   },
   {
-    route: builtinConnectorScopeDiffContract.getScopeDiff,
-    handler: authRoute(connectorReadAuth, getBuiltinConnectorScopeDiffInner$),
-  },
-  {
     route: builtinConnectorOauthStartContract.start,
     handler: authRoute(connectorWriteAuth, startBuiltinConnectorOauthInner$),
   },
   {
     route: builtinConnectorOpenIdStartContract.start,
     handler: authRoute(connectorWriteAuth, startBuiltinConnectorOpenIdInner$),
-  },
-  {
-    route: builtinConnectorsBySlugContract.get,
-    handler: authRoute(connectorReadAuth, getBuiltinConnectorBySlugInner$),
   },
 ];

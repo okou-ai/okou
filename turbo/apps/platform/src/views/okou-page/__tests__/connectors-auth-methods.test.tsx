@@ -1108,7 +1108,7 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
   });
   mockAgentConnectorAccess("stripe");
   context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
-    return respond(200, { connectors: listed, connectorProvidedBindings: [] });
+    return respond(200, { connectors: listed });
   });
   await setupPage({
     context,

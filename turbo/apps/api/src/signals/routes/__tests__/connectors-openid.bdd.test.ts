@@ -7,10 +7,7 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorAccountRoutes } from "../connector-accounts";
-import {
-  builtinConnectorOpenIdStartContract,
-  builtinConnectorsBySlugContract,
-} from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOpenIdStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -180,6 +177,24 @@ async function completeSteamOpenIdCallback(
   );
 }
 
+async function readSteamAccount(actor: ReturnType<typeof testActor>) {
+  mockSession(actor);
+  const response = await accept(
+    setupApp({ context, routes: connectorAccountRoutes })(
+      connectorAccountsContract,
+    ).connections({
+      headers: authHeaders(),
+      query: { kind: "builtin", connectorSlug: "steam" },
+    }),
+    [200],
+  );
+  const account = response.body.defaultConnection;
+  if (!account) {
+    throw new Error("Expected a saved default Steam account");
+  }
+  return account;
+}
+
 describe("Steam OpenID connector", () => {
   it("exposes Steam in the connector catalog by default", async () => {
     const actor = testActor();
@@ -224,15 +239,7 @@ describe("Steam OpenID connector", () => {
     await completeSteamOpenIdCallback(authorizationUrl);
 
     mockSession(actor);
-    const connector = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
-      ).get({
-        params: { connectorSlug: "steam" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
+    const connector = await readSteamAccount(actor);
     const completion = await accept(
       setupApp({ context, routes: connectorAccountRoutes })(
         connectorAccountsContract,
@@ -243,9 +250,9 @@ describe("Steam OpenID connector", () => {
       }),
       [200],
     );
-    expect(completion.body).toStrictEqual({ connectionId: connector.body.id });
-    expect(connector.body).toMatchObject({
-      slug: "steam",
+    expect(completion.body).toStrictEqual({ connectionId: connector.id });
+    expect(connector).toMatchObject({
+      target: { kind: "builtin", connectorSlug: "steam" },
       authMethod: "openid",
       externalId: STEAM_ID,
       externalUsername: STEAM_ID,
@@ -267,15 +274,7 @@ describe("Steam OpenID connector", () => {
     await completeSteamOpenIdCallback(initialAuthorizationUrl);
 
     mockSession(actor);
-    const initial = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
-      ).get({
-        params: { connectorSlug: "steam" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
+    const initial = await readSteamAccount(actor);
 
     const { authorizationUrl, oauthAttemptId } = await startSteamOpenId(actor);
     mockSession(actor);
@@ -287,16 +286,8 @@ describe("Steam OpenID connector", () => {
       query: { kind: "builtin", connectorSlug: "steam" },
     });
     expect(pending.status).toBe(404);
-    const whilePending = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
-      ).get({
-        params: { connectorSlug: "steam" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(whilePending.body).toStrictEqual(initial.body);
+    const whilePending = await readSteamAccount(actor);
+    expect(whilePending).toStrictEqual(initial);
 
     mockSteamOpenIdVerification(false);
 
@@ -317,23 +308,15 @@ describe("Steam OpenID connector", () => {
     });
 
     mockSession(actor);
-    const connector = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
-      ).get({
-        params: { connectorSlug: "steam" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(connector.body).toStrictEqual(initial.body);
+    const connector = await readSteamAccount(actor);
+    expect(connector).toStrictEqual(initial);
 
     const {
       authorizationUrl: replacementAuthorizationUrl,
       oauthAttemptId: replacementAttemptId,
     } = await startSteamOpenId(actor, {
       intent: "reconnect",
-      connectionId: initial.body.id,
+      connectionId: initial.id,
     });
     const replacementPending = await accept(
       setupApp({ context, routes: connectorAccountRoutes })(
@@ -348,26 +331,13 @@ describe("Steam OpenID connector", () => {
     expect(replacementPending.body.error.message).toBe(
       "OAuth completion not found",
     );
-    const duringReconnect = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
-      ).get({ params: { connectorSlug: "steam" }, headers: authHeaders() }),
-      [200],
-    );
-    expect(duringReconnect.body).toStrictEqual(initial.body);
+    const duringReconnect = await readSteamAccount(actor);
+    expect(duringReconnect).toStrictEqual(initial);
     await completeSteamOpenIdCallback(replacementAuthorizationUrl);
     mockSession(actor);
-    const replaced = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsBySlugContract,
-      ).get({
-        params: { connectorSlug: "steam" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(replaced.body.id).toBe(initial.body.id);
-    expect(replaced.body.externalId).toBe(STEAM_ID);
+    const replaced = await readSteamAccount(actor);
+    expect(replaced.id).toBe(initial.id);
+    expect(replaced.externalId).toBe(STEAM_ID);
     const replacementCompletion = await accept(
       setupApp({ context, routes: connectorAccountRoutes })(
         connectorAccountsContract,
@@ -379,7 +349,7 @@ describe("Steam OpenID connector", () => {
       [200],
     );
     expect(replacementCompletion.body).toStrictEqual({
-      connectionId: initial.body.id,
+      connectionId: initial.id,
     });
   });
 

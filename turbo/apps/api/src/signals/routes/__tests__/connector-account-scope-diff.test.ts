@@ -101,11 +101,12 @@ async function connectGithub(actor: ApiTestUser, userId = 42): Promise<string> {
   return receipt.body.connectionId;
 }
 
-describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
+describe("GET /api/connector-accounts/:connectionId/scope-diff", () => {
   it("returns 401 when not authenticated", async () => {
-    const response = await connectorsApi.requestScopeDiff(
+    const response = await connectorsApi.requestBuiltinAccountScopeDiff(
       null,
       "github",
+      randomUUID(),
       [401],
     );
     expectApiError(response.body);
@@ -114,9 +115,10 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
 
   it("returns 401 when the authenticated session has no organization", async () => {
     const actor = bdd.user({ orgId: null });
-    const response = await connectorsApi.requestScopeDiff(
+    const response = await connectorsApi.requestBuiltinAccountScopeDiff(
       actor,
       "github",
+      randomUUID(),
       [401],
     );
     expectApiError(response.body);
@@ -134,7 +136,7 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
       storedScopes: GITHUB_CURRENT_SCOPES,
     };
     await expect(
-      connectorsApi.readScopeDiff(actor, "github"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "github"),
     ).resolves.toStrictEqual(expected);
     const exact = await requestAccountScopeDiff(actor, connectionId);
     expect(exact.status).toBe(200);
@@ -163,13 +165,16 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
 
   it("reads the current default and exact accounts after default switching and deletion", async () => {
     const actor = bdd.user();
-    const initiallyMissing = await connectorsApi.requestScopeDiff(
+    const initiallyMissing = await connectorsApi.requestBuiltinAccountScopeDiff(
       actor,
       "github",
+      randomUUID(),
       [404],
     );
     expectApiError(initiallyMissing.body);
-    expect(initiallyMissing.body.error.message).toBe("Connector not found");
+    expect(initiallyMissing.body.error.message).toBe(
+      "Connector account not found",
+    );
     const firstId = await connectGithub(actor);
     const expected = {
       addedScopes: [],
@@ -178,7 +183,7 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
       storedScopes: GITHUB_CURRENT_SCOPES,
     };
     await expect(
-      connectorsApi.readScopeDiff(actor, "github"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "github"),
     ).resolves.toStrictEqual(expected);
 
     const secondId = await connectGithub(actor, 84);
@@ -195,7 +200,7 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
       expect(exact.body).toStrictEqual(expected);
     }
     await expect(
-      connectorsApi.readScopeDiff(actor, "github"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "github"),
     ).resolves.toStrictEqual(expected);
 
     await connectorsApi.deleteBuiltinConnectorAccount(
@@ -217,11 +222,16 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     expect(surviving.status).toBe(200);
     expect(surviving.body).toStrictEqual(expected);
     await expect(
-      connectorsApi.readScopeDiff(actor, "github"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "github"),
     ).resolves.toStrictEqual(expected);
 
     await connectorsApi.deleteBuiltinConnectorAccount(actor, "github", firstId);
-    const empty = await connectorsApi.requestScopeDiff(actor, "github", [404]);
+    const empty = await connectorsApi.requestBuiltinAccountScopeDiff(
+      actor,
+      "github",
+      firstId,
+      [404],
+    );
     expect(empty.body).toStrictEqual(initiallyMissing.body);
     expect((await requestAccountScopeDiff(actor, firstId)).status).toBe(404);
   });
@@ -243,7 +253,7 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
       storedScopes: [],
     };
     await expect(
-      connectorsApi.readScopeDiff(actor, "openai"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "openai"),
     ).resolves.toStrictEqual(expected);
     const exact = await requestAccountScopeDiff(actor, connected.id, "openai");
     expect(exact.status).toBe(200);

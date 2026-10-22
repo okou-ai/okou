@@ -57,65 +57,11 @@ export type BuiltinConnectorResponse = z.infer<
   typeof builtinConnectorResponseSchema
 >;
 
-export const connectorProvidedBindingNamespaceSchema = z.enum([
-  "secrets",
-  "vars",
-]);
-
-export const connectorProvidedBindingSourceSchema = z.discriminatedUnion(
-  "kind",
-  [
-    z.object({
-      kind: z.literal("connector-secret"),
-      name: z.string(),
-    }),
-    z.object({
-      kind: z.literal("connector-variable"),
-      name: z.string(),
-    }),
-  ],
-);
-
-export const connectorProvidedBindingSchema = z.object({
-  connectorSlug: connectorSlugSchema,
-  authMethod: connectorAuthMethodIdSchema,
-  namespace: connectorProvidedBindingNamespaceSchema,
-  name: z.string(),
-  optional: z.boolean(),
-  source: connectorProvidedBindingSourceSchema,
-});
-
-export type ConnectorProvidedBinding = z.infer<
-  typeof connectorProvidedBindingSchema
->;
-export type ConnectorProvidedBindingNamespace = z.infer<
-  typeof connectorProvidedBindingNamespaceSchema
->;
-
-/**
- * Names that a stored connector guarantees at runtime. Optional bindings are
- * omitted because they describe possible connector supply, not guaranteed
- * connector supply.
- */
-export function guaranteedConnectorProvidedBindingNames(args: {
-  readonly bindings: readonly ConnectorProvidedBinding[];
-  readonly namespace: ConnectorProvidedBindingNamespace;
-}): Set<string> {
-  const names = new Set<string>();
-  for (const binding of args.bindings) {
-    if (binding.namespace === args.namespace && !binding.optional) {
-      names.add(binding.name);
-    }
-  }
-  return names;
-}
-
 /**
  * List connectors response
  */
 export const builtinConnectorListResponseSchema = z.object({
   connectors: z.array(builtinConnectorResponseSchema),
-  connectorProvidedBindings: z.array(connectorProvidedBindingSchema),
 });
 
 export type BuiltinConnectorListResponse = z.infer<

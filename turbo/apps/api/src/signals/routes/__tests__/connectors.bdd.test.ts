@@ -346,10 +346,10 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     );
 
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "openai"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "openai"),
     ).resolves.toMatchObject({
       id: connected.id,
-      slug: "openai",
+      target: { kind: "builtin", connectorSlug: "openai" },
       connectionStatus: "connected",
     });
     await expect(
@@ -400,7 +400,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
 
     const initialList = await connectorsApi.listBuiltinConnectors(actor);
     expect(initialList.connectors).toStrictEqual([]);
-    expect(initialList.connectorProvidedBindings).toStrictEqual([]);
 
     const search = await connectorsApi.searchConnectors(actor, "OPENAI");
     const openaiSearch = search.connectors.find((connector) => {
@@ -408,13 +407,12 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     });
     expect(openaiSearch?.authMethods).toStrictEqual(["api-token"]);
 
-    const missingOpenAi = await connectorsApi.requestReadConnectorBySlug(
+    const missingOpenAi = await connectorsApi.requestBuiltinConnectorAccounts(
       actor,
       "openai",
-      [404],
+      [200],
     );
-    expectApiError(missingOpenAi.body);
-    expect(missingOpenAi.body.error.code).toBe("NOT_FOUND");
+    expect(missingOpenAi.body.defaultConnection).toBeNull();
 
     const badGrant = await connectorsApi.requestManualGrant(
       actor,
@@ -439,9 +437,12 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     );
     expectNoVisibleSecret(connected, "sk-bdd-manual-secret");
 
-    const readBack = await connectorsApi.readConnectorBySlug(actor, "openai");
+    const readBack = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "openai",
+    );
     expect(readBack).toMatchObject({
-      slug: "openai",
+      target: { kind: "builtin", connectorSlug: "openai" },
       authMethod: "api-token",
       connectionStatus: "connected",
       oauthScopes: null,
@@ -453,17 +454,9 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     expect(
       builtinConnectorBySlug(listAfterConnect.connectors, "openai")?.id,
     ).toBe(connected.id);
-    expect(listAfterConnect.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "openai",
-        authMethod: "api-token",
-        namespace: "secrets",
-        name: "OPENAI_TOKEN",
-      }),
-    );
 
     await expect(
-      connectorsApi.readScopeDiff(actor, "openai"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "openai"),
     ).resolves.toStrictEqual({
       addedScopes: [],
       removedScopes: [],
@@ -473,13 +466,12 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "openai");
 
-    const deleted = await connectorsApi.requestReadConnectorBySlug(
+    const deleted = await connectorsApi.requestBuiltinConnectorAccounts(
       actor,
       "openai",
-      [404],
+      [200],
     );
-    expectApiError(deleted.body);
-    expect(deleted.body.error.code).toBe("NOT_FOUND");
+    expect(deleted.body.defaultConnection).toBeNull();
   });
 });
 
@@ -524,9 +516,9 @@ describe("CONN-02: OAuth start and callback", () => {
       expect.arrayContaining([...CONNECTOR_OAUTH_COOKIE_CLEARS]),
     );
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "github"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "github"),
     ).resolves.toMatchObject({
-      slug: "github",
+      target: { kind: "builtin", connectorSlug: "github" },
       externalUsername: "bdd-github-user",
       connectionStatus: "connected",
     });
@@ -563,13 +555,12 @@ describe("CONN-02: OAuth start and callback", () => {
       status: "error",
       message: "Provider denied access",
     });
-    const failedConnector = await connectorsApi.requestReadConnectorBySlug(
+    const failedConnector = await connectorsApi.requestBuiltinConnectorAccounts(
       failedActor,
       "github",
-      [404],
+      [200],
     );
-    expectApiError(failedConnector.body);
-    expect(failedConnector.body.error.code).toBe("NOT_FOUND");
+    expect(failedConnector.body.defaultConnection).toBeNull();
   });
 
   it("starts GitHub OAuth, completes the callback, rejects replay visibly, and keeps safe connector state", async () => {
@@ -593,9 +584,12 @@ describe("CONN-02: OAuth start and callback", () => {
       state,
     });
 
-    const connected = await connectorsApi.readConnectorBySlug(actor, "github");
+    const connected = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "github",
+    );
     expect(connected).toMatchObject({
-      slug: "github",
+      target: { kind: "builtin", connectorSlug: "github" },
       authMethod: "oauth",
       externalId: "42",
       externalUsername: "bdd-github-user",
@@ -606,7 +600,7 @@ describe("CONN-02: OAuth start and callback", () => {
     expectNoVisibleSecret(connected, "github-access-github-success-code");
 
     await expect(
-      connectorsApi.readScopeDiff(actor, "github"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "github"),
     ).resolves.toStrictEqual({
       addedScopes: [],
       removedScopes: [],
@@ -618,7 +612,7 @@ describe("CONN-02: OAuth start and callback", () => {
       code: "github-replay-code",
       state,
     });
-    const afterReplay = await connectorsApi.readConnectorBySlug(
+    const afterReplay = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "github",
     );
@@ -637,13 +631,12 @@ describe("CONN-02: OAuth start and callback", () => {
       error_description: "Provider denied access",
       state: failedState,
     });
-    const failedConnector = await connectorsApi.requestReadConnectorBySlug(
+    const failedConnector = await connectorsApi.requestBuiltinConnectorAccounts(
       failedActor,
       "github",
-      [404],
+      [200],
     );
-    expectApiError(failedConnector.body);
-    expect(failedConnector.body.error.code).toBe("NOT_FOUND");
+    expect(failedConnector.body.defaultConnection).toBeNull();
   });
 
   it("supports exact reconnect and sibling adds across OAuth callbacks", async () => {
@@ -660,7 +653,7 @@ describe("CONN-02: OAuth start and callback", () => {
       code: "github-initial-account-code",
       state: stateFromAuthorizationUrl(initialStart.authorizationUrl),
     });
-    const initialConnection = await connectorsApi.readConnectorBySlug(
+    const initialConnection = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "github",
     );
@@ -680,7 +673,7 @@ describe("CONN-02: OAuth start and callback", () => {
       state: stateFromAuthorizationUrl(reconnectStart.authorizationUrl),
     });
 
-    const reconnected = await connectorsApi.readConnectorBySlug(
+    const reconnected = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "github",
     );
@@ -709,7 +702,7 @@ describe("CONN-02: OAuth start and callback", () => {
       message: "Authorized account does not match the connector account",
     });
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "github"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "github"),
     ).resolves.toMatchObject({
       id: initialConnection.id,
       externalId: initialConnection.externalId,
@@ -769,9 +762,12 @@ describe("CONN-02: OAuth start and callback", () => {
     const codeVerifier = provider.tokenBodies[0]?.get("code_verifier");
     expect(codeVerifier?.length).toBeGreaterThanOrEqual(43);
 
-    const connected = await connectorsApi.readConnectorBySlug(actor, "datadog");
+    const connected = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "datadog",
+    );
     expect(connected).toMatchObject({
-      slug: "datadog",
+      target: { kind: "builtin", connectorSlug: "datadog" },
       authMethod: "oauth",
       externalId: "us3.datadoghq.com",
       externalUsername: "us3.datadoghq.com",
@@ -781,7 +777,7 @@ describe("CONN-02: OAuth start and callback", () => {
     expectNoVisibleSecret(connected, "bdd-datadog-refresh-token");
 
     await expect(
-      connectorsApi.readScopeDiff(actor, "datadog"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "datadog"),
     ).resolves.toStrictEqual({
       addedScopes: [],
       removedScopes: [],
@@ -884,7 +880,7 @@ describe("CONN-02: OAuth device authorization", () => {
       oauthScopes: ["read", "provider-added"],
     });
 
-    const readBack = await connectorsApi.readConnectorBySlug(
+    const readBack = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "test-oauth-device",
     );
@@ -1093,14 +1089,6 @@ describe("CONN-02: OAuth device authorization", () => {
     const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(builtinConnectorBySlug(listed.connectors, "stripe")?.id).toBe(
       poll.connectionId,
-    );
-    expect(listed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "stripe",
-        authMethod: "cli",
-        namespace: "secrets",
-        name: "STRIPE_TOKEN",
-      }),
     );
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "stripe");
@@ -1344,7 +1332,7 @@ describe("CONN-02: OAuth device authorization", () => {
     });
     expect(JSON.stringify(completed)).not.toContain("test-device-access");
 
-    const readBack = await connectorsApi.readConnectorBySlug(
+    const readBack = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "test-oauth-device",
     );
@@ -1595,13 +1583,13 @@ describe("CONN-02: OAuth device authorization", () => {
         });
         expect(deferred.calls()).toBe(1);
 
-        const nothingPersisted = await connectorsApi.requestReadConnectorBySlug(
-          actor,
-          "test-oauth-device",
-          [404],
-        );
-        expectApiError(nothingPersisted.body);
-        expect(nothingPersisted.body.error.code).toBe("NOT_FOUND");
+        const nothingPersisted =
+          await connectorsApi.requestBuiltinConnectorAccounts(
+            actor,
+            "test-oauth-device",
+            [200],
+          );
+        expect(nothingPersisted.body.defaultConnection).toBeNull();
       })().finally(() => {
         deferred.release();
       }),
@@ -1960,12 +1948,12 @@ describe("CONN-02: OAuth device authorization", () => {
       "Bearer base44-access-token",
     ]);
 
-    const base44Connector = await connectorsApi.readConnectorBySlug(
+    const base44Connector = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "base44",
     );
     expect(base44Connector).toMatchObject({
-      slug: "base44",
+      target: { kind: "builtin", connectorSlug: "base44" },
       authMethod: "oauth",
       externalId: "base44-user-id",
       externalUsername: "Base44 User",
@@ -2009,12 +1997,12 @@ describe("CONN-02: OAuth device authorization", () => {
     expect(JSON.stringify(slockPoll)).not.toContain(slockProvider.accessToken);
     expect(JSON.stringify(slockPoll)).not.toContain("slock-refresh-token");
 
-    const slockConnector = await connectorsApi.readConnectorBySlug(
+    const slockConnector = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "slock",
     );
     expect(slockConnector).toMatchObject({
-      slug: "slock",
+      target: { kind: "builtin", connectorSlug: "slock" },
       authMethod: "oauth",
       externalId: "slock-user-id",
       externalUsername: "Slock User",
@@ -3407,10 +3395,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
     await expect(
       own(() => {
-        return connectorsApi.readConnectorBySlug(peer, "github");
+        return connectorsApi.readDefaultBuiltinAccount(peer, "github");
       }),
     ).resolves.toMatchObject({
-      slug: "github",
+      target: { kind: "builtin", connectorSlug: "github" },
       connectionStatus: "connected",
     });
 
@@ -7636,20 +7624,22 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
     expect(successUrl.searchParams.get("connectorSlug")).toBe("github");
     expect(successUrl.searchParams.get("username")).toBe("bdd-github-user");
 
-    const connected = await connectorsApi.readConnectorBySlug(actor, "github");
+    const connected = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "github",
+    );
     expect(connected).toMatchObject({
-      slug: "github",
+      target: { kind: "builtin", connectorSlug: "github" },
       authMethod: "oauth",
       connectionStatus: "connected",
     });
 
-    const linearMissing = await connectorsApi.requestReadConnectorBySlug(
+    const linearMissing = await connectorsApi.requestBuiltinConnectorAccounts(
       actor,
       "linear",
-      [404],
+      [200],
     );
-    expectApiError(linearMissing.body);
-    expect(linearMissing.body.error.code).toBe("NOT_FOUND");
+    expect(linearMissing.body.defaultConnection).toBeNull();
   });
 
   it("claims, preserves, and invalidates stored OAuth state across code-less, error, and expired callbacks", async () => {
@@ -7680,7 +7670,10 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
     expect(successUrl.pathname).toBe("/connector/success");
     expect(successUrl.searchParams.get("username")).toBe("bdd-github-user");
 
-    const connected = await connectorsApi.readConnectorBySlug(actor, "github");
+    const connected = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "github",
+    );
 
     const missingCodeStart = await connectorsApi.startOauth(
       actor,
@@ -7696,7 +7689,7 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
       message: "Missing authorization code",
     });
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "github"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "github"),
     ).resolves.toStrictEqual(connected);
 
     const deniedStart = await connectorsApi.startOauth(
@@ -7714,7 +7707,7 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
       message: "Provider denied access",
     });
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "github"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "github"),
     ).resolves.toStrictEqual(connected);
 
     const consumedWithoutCode = await connectorsApi.completeOauthCallback(
@@ -7739,7 +7732,10 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
       message: "Invalid state - please try again",
     });
 
-    const stable = await connectorsApi.readConnectorBySlug(actor, "github");
+    const stable = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "github",
+    );
     expect(stable.id).toBe(connected.id);
     expect(stable.externalUsername).toBe("bdd-github-user");
 
@@ -7765,7 +7761,7 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
     clearMockNow();
 
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "github"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "github"),
     ).resolves.toStrictEqual(connected);
   });
 
@@ -7844,7 +7840,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       expect(supplementalProvider.tokenBodies).toHaveLength(1);
 
       const supplemental = await own(() => {
-        return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+        return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
       });
       expect(supplemental).toMatchObject({
         oauthScopes: ["read", "provider-added"],
@@ -7853,7 +7849,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
 
       await expect(
         own(() => {
-          return connectorsApi.readScopeDiff(actor, "test-oauth");
+          return connectorsApi.readDefaultBuiltinScopeDiff(actor, "test-oauth");
         }),
       ).resolves.toStrictEqual({
         addedScopes: [],
@@ -7890,7 +7886,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       expect(omittedProvider.tokenBodies).toHaveLength(1);
 
       const normalized = await own(() => {
-        return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+        return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
       });
       expect(normalized).toMatchObject({
         id: supplemental.id,
@@ -7932,7 +7928,10 @@ describe("CONN-02: test-oauth auth-code journey", () => {
         tenantId: "bdd-manual-tenant",
       },
     );
-    const manual = await connectorsApi.readConnectorBySlug(actor, "test-oauth");
+    const manual = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "test-oauth",
+    );
     expect(manual.authMethod).toBe("api-token");
 
     const start = await connectorsApi.startOauth(
@@ -7970,12 +7969,12 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       "https://api.okou.ai/api/connectors/test-oauth/callback",
     );
 
-    const oauthConnector = await connectorsApi.readConnectorBySlug(
+    const oauthConnector = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "test-oauth",
     );
     expect(oauthConnector).toMatchObject({
-      slug: "test-oauth",
+      target: { kind: "builtin", connectorSlug: "test-oauth" },
       authMethod: "oauth",
       externalId: "bdd-test-oauth-user",
       externalUsername: "bdd-test-oauth",
@@ -7989,40 +7988,11 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     ).resolves.toContain("test-oauth");
 
     const listed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(listed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-oauth",
-        authMethod: "oauth",
-        namespace: "secrets",
-        name: "TEST_OAUTH_TOKEN",
-        source: { kind: "connector-secret", name: "TEST_OAUTH_ACCESS_TOKEN" },
-      }),
-    );
-    expect(listed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-oauth",
-        authMethod: "oauth",
-        namespace: "vars",
-        name: "TEST_OAUTH_TENANT_ID",
-        source: {
-          kind: "connector-variable",
-          name: "TEST_OAUTH_API_TENANT_ID",
-        },
-      }),
-    );
-    expect(
-      listed.connectorProvidedBindings.filter((binding) => {
-        return (
-          binding.connectorSlug === "test-oauth" &&
-          binding.authMethod === "api-token"
-        );
-      }),
-    ).toStrictEqual([]);
     expectNoVisibleSecret(listed, "bdd-manual-test-oauth-token");
     expectNoVisibleSecret(listed, "bdd-test-oauth-access-token");
 
     await expect(
-      connectorsApi.readScopeDiff(actor, "test-oauth"),
+      connectorsApi.readDefaultBuiltinScopeDiff(actor, "test-oauth"),
     ).resolves.toStrictEqual({
       addedScopes: [],
       removedScopes: [],
@@ -8048,25 +8018,12 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     });
     expect(apiProvider.tokenBodies).toHaveLength(1);
 
-    const apiConnector = await connectorsApi.readConnectorBySlug(
+    const apiConnector = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "test-oauth",
     );
     expect(apiConnector.authMethod).toBe("api");
-
     const apiListed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(apiListed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-oauth",
-        authMethod: "api",
-        namespace: "secrets",
-        name: "TEST_OAUTH_TOKEN",
-        source: {
-          kind: "connector-secret",
-          name: "TEST_OAUTH_API_ACCESS_TOKEN",
-        },
-      }),
-    );
     expectNoVisibleSecret(apiListed, "bdd-test-oauth-api-access-token");
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(
@@ -8115,7 +8072,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       });
     });
     const oauthConnector = await own(() => {
-      return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+      return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
     });
     expect(oauthConnector).toMatchObject({
       id: initial.id,
@@ -8153,7 +8110,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     expect(failed.status).toBe(500);
     await expect(
       own(() => {
-        return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+        return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
       }),
     ).resolves.toStrictEqual(oauthConnector);
     const retainedAuth = await oauthConsumer.resolve("TEST_OAUTH_TOKEN");
@@ -8182,21 +8139,6 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       oauthScopes: null,
       tokenExpiresAt: null,
     });
-    const bindings = await own(() => {
-      return connectorsApi.listBuiltinConnectors(actor);
-    });
-    const manualBinding = bindings.connectorProvidedBindings.find((binding) => {
-      return (
-        binding.connectorSlug === "test-oauth" &&
-        binding.authMethod === "api-token" &&
-        binding.namespace === "secrets" &&
-        binding.source.kind === "connector-secret" &&
-        binding.source.name === "TEST_OAUTH_API_TOKEN_ACCESS_TOKEN"
-      );
-    });
-    if (!manualBinding) {
-      throw new Error("Expected the public manual access-token binding");
-    }
     // The still-live, normally claimed consumer owns this same account. Resolve
     // its newly published alias through the normal firewall refresh before a new
     // Run snapshots the manual method's lazily created access-token secret.
@@ -8204,7 +8146,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       oauthConsumer.claim.secretConnectorMetadataMap?.TEST_OAUTH_TOKEN,
     ).toMatchObject({ sourceType: "connector", sourceId: manual.id });
     const refreshedManual = await oauthConsumer.resolve(
-      manualBinding.name,
+      "TEST_OAUTH_API_TOKEN",
       "TEST_OAUTH_TOKEN",
     );
     expect(refreshedManual.body).toMatchObject({
@@ -8219,7 +8161,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       fixture,
       "test-oauth",
     );
-    const manualAuth = await manualConsumer.resolve(manualBinding.name);
+    const manualAuth = await manualConsumer.resolve("TEST_OAUTH_API_TOKEN");
     expect(manualAuth.body).toMatchObject({
       headers: {
         Authorization:
@@ -8273,7 +8215,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     });
     const explicitAfter = now();
     const explicitExpiry = await own(() => {
-      return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+      return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
     });
     if (!explicitExpiry.tokenExpiresAt) {
       throw new Error("Expected an explicit token expiry to be stored");
@@ -8303,7 +8245,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     });
     const defaultAfter = now();
     const defaultExpiry = await own(() => {
-      return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+      return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
     });
     expect(defaultExpiry.id).toBe(explicitExpiry.id);
     if (!defaultExpiry.tokenExpiresAt) {
@@ -8334,10 +8276,10 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       });
     });
     const slackConnector = await own(() => {
-      return connectorsApi.readConnectorBySlug(actor, "slack");
+      return connectorsApi.readDefaultBuiltinAccount(actor, "slack");
     });
     expect(slackConnector).toMatchObject({
-      slug: "slack",
+      target: { kind: "builtin", connectorSlug: "slack" },
       authMethod: "oauth",
       externalId: "U012AB3CD",
       externalUsername: "BDD Slack User",
@@ -8368,7 +8310,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     );
     await expect(
       own(() => {
-        return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+        return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
       }),
     ).resolves.toStrictEqual(defaultExpiry);
     await expect(consumer.resolve("TEST_OAUTH_TOKEN")).resolves.toMatchObject({
@@ -8394,7 +8336,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     });
     await expect(
       own(() => {
-        return connectorsApi.readConnectorBySlug(actor, "test-oauth");
+        return connectorsApi.readDefaultBuiltinAccount(actor, "test-oauth");
       }),
     ).resolves.toStrictEqual(defaultExpiry);
     await expect(consumer.resolve("TEST_OAUTH_TOKEN")).resolves.toMatchObject({
@@ -8469,16 +8411,6 @@ describe("CONN-02: device-auth method switching", () => {
     }
     expect(apiPoll.account.authMethod).toBe("api");
 
-    const apiListed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(apiListed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-oauth-device",
-        authMethod: "api",
-        namespace: "secrets",
-        name: "TEST_OAUTH_DEVICE_API_TOKEN",
-      }),
-    );
-
     const oauthSession = await connectorsApi.startDeviceAuth(
       actor,
       "test-oauth-device",
@@ -8500,30 +8432,12 @@ describe("CONN-02: device-auth method switching", () => {
     }
     expect(oauthPoll.account.authMethod).toBe("oauth");
 
-    const readBack = await connectorsApi.readConnectorBySlug(
+    const readBack = await connectorsApi.readDefaultBuiltinAccount(
       actor,
       "test-oauth-device",
     );
     expect(readBack.id).toBe(apiPoll.connectionId);
     expect(readBack.authMethod).toBe("oauth");
-
-    const oauthListed = await connectorsApi.listBuiltinConnectors(actor);
-    expect(
-      oauthListed.connectorProvidedBindings.filter((binding) => {
-        return (
-          binding.connectorSlug === "test-oauth-device" &&
-          binding.authMethod === "api"
-        );
-      }),
-    ).toStrictEqual([]);
-    expect(oauthListed.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
-        connectorSlug: "test-oauth-device",
-        authMethod: "oauth",
-        namespace: "secrets",
-        name: "TEST_OAUTH_DEVICE_TOKEN",
-      }),
-    );
 
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(
       actor,

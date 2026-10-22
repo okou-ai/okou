@@ -2247,7 +2247,7 @@ describe("workflows", () => {
         code: "stripe-copy-default-code",
         state: defaultState,
       });
-      const defaultAccount = await connectorApi.readConnectorBySlug(
+      const defaultAccount = await connectorApi.readDefaultBuiltinAccount(
         actor,
         "stripe",
       );
@@ -2503,7 +2503,7 @@ describe("workflows", () => {
       code: "google-forms-copy-first-code",
       state: firstState,
     });
-    const firstAccount = await connectorApi.readConnectorBySlug(
+    const firstAccount = await connectorApi.readDefaultBuiltinAccount(
       actor,
       "google-forms",
     );

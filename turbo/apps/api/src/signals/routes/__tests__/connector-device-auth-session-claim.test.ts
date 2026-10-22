@@ -128,7 +128,7 @@ describe("Builtin device-auth initial poll claims", () => {
       );
       expect(accountIdentities(afterFailure)).toStrictEqual(expected);
       await expect(
-        connectors.readConnectorBySlug(actor, "test-oauth-device"),
+        connectors.readDefaultBuiltinAccount(actor, "test-oauth-device"),
       ).resolves.toMatchObject({ id: defaultAccount.account.id });
 
       mockTestOAuthDeviceConnectorProvider();
@@ -144,7 +144,7 @@ describe("Builtin device-auth initial poll claims", () => {
       );
       expect(accountIdentities(afterRecovery)).toStrictEqual(expected);
       await expect(
-        connectors.readConnectorBySlug(actor, "test-oauth-device"),
+        connectors.readDefaultBuiltinAccount(actor, "test-oauth-device"),
       ).resolves.toMatchObject({ id: defaultAccount.account.id });
     });
   });

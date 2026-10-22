@@ -158,7 +158,7 @@ describe("Builtin external-code completed replay", () => {
         { id: siblingAccount.connectionId, isDefault: false },
       ]);
       await expect(
-        connectors.readConnectorBySlug(actor, "aws"),
+        connectors.readDefaultBuiltinAccount(actor, "aws"),
       ).resolves.toMatchObject({
         id: defaultAccount.connectionId,
       });
@@ -202,7 +202,7 @@ describe("Builtin external-code completed replay", () => {
         { id: defaultAccount.connectionId, isDefault: true },
       ]);
       await expect(
-        connectors.readConnectorBySlug(actor, "aws"),
+        connectors.readDefaultBuiltinAccount(actor, "aws"),
       ).resolves.toMatchObject({
         id: defaultAccount.connectionId,
       });
@@ -269,7 +269,7 @@ describe("Builtin external-code completed replay", () => {
         { id: completed.connectionId, isDefault: true },
       ]);
       await expect(
-        connectors.readConnectorBySlug(actor, "aws"),
+        connectors.readDefaultBuiltinAccount(actor, "aws"),
       ).resolves.toMatchObject({
         id: completed.connectionId,
       });

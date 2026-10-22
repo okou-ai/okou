@@ -88,7 +88,7 @@ describe("Connected connector agent authorization", () => {
       agentsApi.readEnabledConnectorSlugs(actor, decoy.agentId),
     ).resolves.toStrictEqual(decoyGrants);
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "openai"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "openai"),
     ).resolves.toMatchObject({ id: account.id, connectionStatus: "connected" });
     expect(JSON.stringify(account)).not.toContain("default-resolution-token");
 
@@ -119,7 +119,7 @@ describe("Connected connector agent authorization", () => {
       { apiKey: "no-default-resolution-token" },
     );
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "openai"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "openai"),
     ).resolves.toMatchObject({ id: account.id, connectionStatus: "connected" });
     await expect(
       agentsApi.readEnabledConnectorSlugs(actor, unrelated.agentId),
@@ -172,7 +172,10 @@ describe("Connected connector agent authorization", () => {
       status: "error",
       message: `Agent not found: ${target.agentId}`,
     });
-    const persisted = await connectorsApi.readConnectorBySlug(actor, "github");
+    const persisted = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "github",
+    );
     expect(persisted.connectionStatus).toBe("connected");
     expect(JSON.stringify(persisted)).not.toContain("github-access-");
     await expect(
@@ -212,7 +215,7 @@ describe("Connected connector agent authorization", () => {
       agentsApi.readEnabledConnectorSlugs(actor, body.agentId),
     ).resolves.toStrictEqual(defaultGrants);
     await expect(
-      connectorsApi.readConnectorBySlug(actor, "github"),
+      connectorsApi.readDefaultBuiltinAccount(actor, "github"),
     ).resolves.toMatchObject({
       id: persisted.id,
       connectionStatus: "connected",

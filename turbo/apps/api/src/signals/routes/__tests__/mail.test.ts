@@ -519,7 +519,7 @@ async function seedGmailMailCardFixture(
   registerCleanup?.(async () => {
     await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gmail");
   });
-  const gmail = await connectors.readConnectorBySlug(actor, "gmail");
+  const gmail = await connectors.readDefaultBuiltinAccount(actor, "gmail");
   await runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
   mocks.clerk.session(actor.userId, actorWithOrg.orgId);
   return { actor, agent, thread, gmail };
@@ -587,7 +587,7 @@ async function createPublicGmailMailCardFixture(
       });
     });
     const gmail = await own(() => {
-      return connectors.readConnectorBySlug(actor, "gmail");
+      return connectors.readDefaultBuiltinAccount(actor, "gmail");
     });
     await own(() => {
       return runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
@@ -882,7 +882,7 @@ describe("POST /api/mail/drafts/link", () => {
 
       await expect(
         fixture.run(() => {
-          return connectors.readConnectorBySlug(fixture.actor, "gmail");
+          return connectors.readDefaultBuiltinAccount(fixture.actor, "gmail");
         }),
       ).resolves.toMatchObject({
         oauthScopes: [GMAIL_MODIFY_SCOPE],
@@ -956,7 +956,7 @@ describe("POST /api/mail/drafts/link", () => {
     );
     expect(gmail.draftReadCount).toBe(1);
     await expect(
-      connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
     ).resolves.toMatchObject({ connectionStatus: "reconnect-required" });
   });
 
@@ -978,7 +978,7 @@ describe("POST /api/mail/drafts/link", () => {
 
     expect(gmail.draftReadCount).toBe(1);
     await expect(
-      connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
     ).resolves.toMatchObject({ connectionStatus: "connected" });
   });
 
@@ -1196,7 +1196,7 @@ describe("POST /api/mail/drafts/link", () => {
           agentId: owned.agentId,
           title: "Mail review",
         }),
-        gmail: await connectors.readConnectorBySlug(owned.actor, "gmail"),
+        gmail: await connectors.readDefaultBuiltinAccount(owned.actor, "gmail"),
       };
       const source = await owned.sendChatRun(owned.actor, {
         agentId: owned.agentId,
@@ -1371,7 +1371,7 @@ describe("POST /api/mail/drafts/link", () => {
       expect(draft.body.mailDraft.status).toBe("draft");
       expect(draft.body.mailDraft.sentGmailMessageId).toBeUndefined();
       await expect(
-        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+        connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
       ).resolves.toMatchObject({ connectionStatus: "connected" });
 
       // Only a new user request, after the provider accepts the corrected draft,
@@ -1491,7 +1491,7 @@ describe("POST /api/mail/drafts/link", () => {
       expect(draft.body.mailDraft.status).toBe("draft");
       expect(draft.body.mailDraft.sentGmailMessageId).toBeUndefined();
       await expect(
-        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+        connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
       ).resolves.toMatchObject({ connectionStatus: "connected" });
     },
   );
@@ -1592,7 +1592,7 @@ describe("POST /api/mail/drafts/link", () => {
         "Reconnect Gmail before continuing",
       );
       await expect(
-        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+        connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
       ).resolves.toMatchObject({ connectionStatus: "reconnect-required" });
     },
   );
@@ -1792,7 +1792,7 @@ describe("POST /api/mail/drafts/link", () => {
       detailAvailable: false,
     });
     await expect(
-      connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
     ).resolves.toMatchObject({
       id: fixture.gmail.id,
       connectionStatus: "reconnect-required",
@@ -2182,7 +2182,10 @@ describe("mail refresh publication", () => {
     expect(
       (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
     ).toBeTruthy();
-    const stored = await connectors.readConnectorBySlug(fixture.actor, "gmail");
+    const stored = await connectors.readDefaultBuiltinAccount(
+      fixture.actor,
+      "gmail",
+    );
     expect(stored).toMatchObject({
       id: fixture.gmail.id,
       oauthScopes: [GMAIL_MODIFY_SCOPE],
@@ -2240,7 +2243,7 @@ describe("mail refresh publication", () => {
         (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
       ).toBeTruthy();
       await expect(
-        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+        connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
       ).resolves.toMatchObject({ id: fixture.gmail.id, oauthScopes: grants });
       expect(
         (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
@@ -2273,7 +2276,7 @@ describe("mail refresh publication", () => {
         accessStatus: "reconnect",
       });
       await expect(
-        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+        connectors.readDefaultBuiltinAccount(fixture.actor, "gmail"),
       ).resolves.toMatchObject({
         id: fixture.gmail.id,
         connectionStatus,
@@ -2371,7 +2374,7 @@ describe("mail refresh publication", () => {
     const other = await seedGmailMailCardFixture();
     mockGmailDraftApi();
     const otherLink = await linkDraft(other);
-    const otherBefore = await connectors.readConnectorBySlug(
+    const otherBefore = await connectors.readDefaultBuiltinAccount(
       other.actor,
       "gmail",
     );
@@ -2393,7 +2396,7 @@ describe("mail refresh publication", () => {
       (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
     ).toBeTruthy();
     await expect(
-      connectors.readConnectorBySlug(other.actor, "gmail"),
+      connectors.readDefaultBuiltinAccount(other.actor, "gmail"),
     ).resolves.toStrictEqual(otherBefore);
     mockGmailDraftApi();
     mocks.clerk.session(other.actor.userId, other.actor.orgId);

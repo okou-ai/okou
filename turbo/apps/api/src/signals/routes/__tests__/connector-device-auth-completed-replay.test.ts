@@ -91,7 +91,7 @@ async function expectAccounts(
     }),
   );
   await expect(
-    connectors.readConnectorBySlug(actor, "test-oauth-device"),
+    connectors.readDefaultBuiltinAccount(actor, "test-oauth-device"),
   ).resolves.toMatchObject({ id: defaultId });
 }
 

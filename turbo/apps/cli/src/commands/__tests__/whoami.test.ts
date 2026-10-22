@@ -492,7 +492,6 @@ describe("okou whoami command", () => {
                 updatedAt: "2025-01-01T00:00:00Z",
               },
             ],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -554,7 +553,6 @@ describe("okou whoami command", () => {
                 updatedAt: "2025-01-01T00:00:00Z",
               },
             ],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -677,7 +675,6 @@ describe("okou whoami command", () => {
           ownerDefaultRequests += 1;
           return HttpResponse.json({
             connectors: [],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -711,7 +708,6 @@ describe("okou whoami command", () => {
           ownerDefaultRequests += 1;
           return HttpResponse.json({
             connectors: [],
-            connectorProvidedBindings: [],
           });
         }),
       );
@@ -850,7 +846,6 @@ describe("okou whoami command", () => {
           ownerDefaultRequests += 1;
           return HttpResponse.json({
             connectors: [],
-            connectorProvidedBindings: [],
           });
         }),
         mockUserPermissionGrantsHandler([

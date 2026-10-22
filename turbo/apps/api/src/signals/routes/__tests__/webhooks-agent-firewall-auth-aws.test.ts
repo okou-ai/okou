@@ -142,7 +142,7 @@ describe("AWS Sign-In refresh expiry", () => {
         });
       }
       expect(refreshCalls).toBe(1);
-      const expired = await aws.connectors.readConnectorBySlug(
+      const expired = await aws.connectors.readDefaultBuiltinAccount(
         aws.actor,
         "aws",
       );
@@ -245,7 +245,7 @@ describe("AWS Sign-In refresh expiry", () => {
         }),
       );
       expect((await aws.request(aws.account.id, true)).status).toBe(502);
-      const generic = await aws.connectors.readConnectorBySlug(
+      const generic = await aws.connectors.readDefaultBuiltinAccount(
         aws.actor,
         "aws",
       );
@@ -261,7 +261,7 @@ describe("AWS Sign-In refresh expiry", () => {
       expect((await aws.request(aws.account.id, true)).status).toBe(502);
       expect((await aws.request(aws.account.id, true)).status).toBe(502);
       expect(refreshCalls).toBe(1);
-      const expired = await aws.connectors.readConnectorBySlug(
+      const expired = await aws.connectors.readDefaultBuiltinAccount(
         aws.actor,
         "aws",
       );
@@ -304,7 +304,7 @@ describe("AWS Sign-In refresh expiry", () => {
             failureReason,
           }),
         });
-        const account = await aws.connectors.readConnectorBySlug(
+        const account = await aws.connectors.readDefaultBuiltinAccount(
           aws.actor,
           "aws",
         );
@@ -314,7 +314,7 @@ describe("AWS Sign-In refresh expiry", () => {
         expect((await aws.request(aws.account.id, true)).status).toBe(200);
         expect(provider.tokenRequests).toHaveLength(1);
         expect(
-          (await aws.connectors.readConnectorBySlug(aws.actor, "aws"))
+          (await aws.connectors.readDefaultBuiltinAccount(aws.actor, "aws"))
             .connectionStatus,
         ).toBe("connected");
       });

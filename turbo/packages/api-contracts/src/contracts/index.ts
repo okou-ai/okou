@@ -567,17 +567,11 @@ export {
   connectorResponseConnectionStatusSchema,
   builtinConnectorResponseSchema,
   builtinConnectorListResponseSchema,
-  guaranteedConnectorProvidedBindingNames,
-  connectorProvidedBindingNamespaceSchema,
-  connectorProvidedBindingSchema,
-  connectorProvidedBindingSourceSchema,
   scopeDiffResponseSchema,
   type ConnectorResponseConnectionStatus,
   type ScopeDiffResponse,
   type BuiltinConnectorResponse,
   type BuiltinConnectorListResponse,
-  type ConnectorProvidedBinding,
-  type ConnectorProvidedBindingNamespace,
 } from "./connector-schemas";
 
 export {
@@ -885,15 +879,11 @@ export {
 } from "./user-permission-grants";
 export {
   builtinConnectorsMainContract,
-  builtinConnectorsBySlugContract,
-  builtinConnectorScopeDiffContract,
   builtinConnectorManualGrantContract,
   builtinConnectorNoAuthGrantContract,
   builtinConnectorOauthDeviceAuthSessionContract,
   builtinConnectorsSearchContract,
   type BuiltinConnectorsMainContract,
-  type BuiltinConnectorsBySlugContract,
-  type BuiltinConnectorScopeDiffContract,
   type BuiltinConnectorManualGrantContract,
   type BuiltinConnectorNoAuthGrantContract,
   type BuiltinConnectorOauthDeviceAuthSessionContract,

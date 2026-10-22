@@ -132,7 +132,7 @@ describe("Connector authorization-target validation", () => {
       agentsApi.readEnabledConnectorSlugs(owner, publicAgent.agentId),
     ).resolves.toStrictEqual(publicGrants);
     await expect(
-      connectorsApi.readConnectorBySlug(owner, "openai"),
+      connectorsApi.readDefaultBuiltinAccount(owner, "openai"),
     ).resolves.toMatchObject({
       id: privateAccount.id,
       connectionStatus: "connected",
@@ -150,7 +150,7 @@ describe("Connector authorization-target validation", () => {
       agentsApi.readEnabledConnectorSlugs(member, publicAgent.agentId),
     ).resolves.toContain("openai");
     await expect(
-      connectorsApi.readConnectorBySlug(member, "openai"),
+      connectorsApi.readDefaultBuiltinAccount(member, "openai"),
     ).resolves.toMatchObject({
       id: publicAccount.id,
       connectionStatus: "connected",
@@ -189,10 +189,13 @@ describe("Connector authorization-target validation", () => {
       { apiKey: "absent-target-token" },
       { statuses: [200] },
     );
-    const account = await connectorsApi.readConnectorBySlug(actor, "openai");
+    const account = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "openai",
+    );
     expect(connected.body).toStrictEqual({ connectionId: account.id });
     expect(account).toMatchObject({
-      slug: "openai",
+      target: { kind: "builtin", connectorSlug: "openai" },
       connectionStatus: "connected",
     });
     expect(JSON.stringify(connected.body)).not.toContain("absent-target-token");
