@@ -184,6 +184,7 @@ pub(crate) struct TestRun {
     pub(super) cancel: CancellationToken,
     pub(super) lifecycle: CancellationToken,
     incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
+    rpc: Arc<Runtime>,
     dispatcher: Option<RpcRun>,
 }
 
@@ -197,9 +198,20 @@ impl TestRun {
     }
 
     pub(super) fn with_id(runtime: &Arc<VncRuntime>, id: RunId) -> Self {
+        Self::with_rpc(
+            Arc::new(Runtime::new(None, Some(Arc::clone(runtime)), None)),
+            id,
+        )
+    }
+
+    pub(super) fn reassign(&self) -> Self {
+        Self::with_rpc(Arc::clone(&self.rpc), self.id)
+    }
+
+    fn with_rpc(rpc: Arc<Runtime>, id: RunId) -> Self {
         let cancel = CancellationToken::new();
         let (incoming, receiver) = mpsc::channel(16);
-        let dispatcher = Runtime::new(None, Some(Arc::clone(runtime)), None).start(
+        let dispatcher = rpc.start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             "vnc-assigned-sandbox".into(),
             id,
@@ -210,6 +222,7 @@ impl TestRun {
             cancel,
             lifecycle: CancellationToken::new(),
             incoming,
+            rpc,
             dispatcher: Some(dispatcher),
         }
     }
@@ -328,11 +341,8 @@ impl TestRun {
         let mut sandbox = MockSandbox::new("vnc-assigned-sandbox")
             .with_guest_rpc(Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))));
         sandbox.bind_run_control(&self.id.to_string()).unwrap();
-        self.dispatcher = Some(
-            Runtime::new(None, Some(Arc::clone(runtime)), None)
-                .install(&sandbox, context, &self.cancel)
-                .unwrap(),
-        );
+        self.rpc = Arc::new(Runtime::new(None, Some(Arc::clone(runtime)), None));
+        self.dispatcher = Some(self.rpc.install(&sandbox, context, &self.cancel).unwrap());
     }
 
     pub(crate) async fn passive(&self, method: &str, params: Value) -> Value {

@@ -172,15 +172,22 @@ async fn check_history_survives_failed_vnc_delivery_without_replay() {
 
 #[tokio::test]
 async fn check_history_query_cannot_disclose_after_assignment_changes_during_authorization() {
-    use super::harness::{TestRun, bounded, resolved_response};
+    use super::harness::{bounded, resolved_response};
     use super::peer::Peer;
-    use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
+    use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let inventory = http_response(
+        "200 OK",
+        remote_inventory(&[(CONNECTION, 7)], CREATED_AT)
+            .to_string()
+            .as_bytes(),
+    );
     let mut server = RawHttpTestServer::spawn(vec![
         RawHttpAction::Respond(resolved_response(
             &json!({"outcome":"unavailable"}).to_string(),
         )),
-        RawHttpAction::Stall,
+        RawHttpAction::Respond(inventory),
+        RawHttpAction::WaitForDisconnect,
     ])
     .await;
     let mut h = Harness::with_authority(Peer::new().await, Some(server.url())).await;
@@ -199,6 +206,18 @@ async fn check_history_query_cannot_disclose_after_assignment_changes_during_aut
             .contains("/vnc/resolve")
     );
     let attempt = diagnostic_attempt(&receipt);
+    let control = h
+        .run
+        .passive("vnc.diagnose", json!({"checks":true,"attemptId":attempt}))
+        .await;
+    assert_eq!(control["status"], "found", "{control}");
+    assert_eq!(diagnostic_text(&control), diagnostic_text(&receipt));
+    assert!(
+        server
+            .next_request("unchanged check-history authority")
+            .await
+            .starts_with("GET /api/vnc/hosts ")
+    );
     let mut guest = h.run.open().await;
     let request = json!({"version":1,"method":"vnc.diagnose",
         "params":{"checks":true,"attemptId":attempt}})
@@ -212,15 +231,16 @@ async fn check_history_query_cannot_disclose_after_assignment_changes_during_aut
             .await
             .starts_with("GET /api/vnc/hosts ")
     );
-    let mut replacement = TestRun::with_id(&h.runtime, h.run.id);
+    let mut replacement = h.run.reassign();
     let mut stale = Vec::new();
     bounded(guest.read_to_end(&mut stale)).await.unwrap();
+    assert!(stale.is_empty(), "reassignment must close the stale RPC");
     assert!(!String::from_utf8_lossy(&stale).contains(CONNECTION));
     assert!(!String::from_utf8_lossy(&stale).contains(&attempt.to_string()));
     assert!(h.network.attempts.lock().unwrap().is_empty());
     replacement.shutdown().await;
     h.run.shutdown().await;
-    server.cancel_and_reap().await;
+    server.assert_finished().await;
 }
 
 #[tokio::test]
