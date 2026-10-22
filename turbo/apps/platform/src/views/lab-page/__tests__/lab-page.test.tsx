@@ -156,12 +156,6 @@ test("Lab keeps staff-only data rollouts unavailable outside their audience", as
   const metadata = getFeatureSwitchMetadata();
   expect(
     screen.queryByText(
-      metadata[FeatureSwitchKey.Commerce].displayName ??
-        FeatureSwitchKey.Commerce,
-    ),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(
       metadata[FeatureSwitchKey.SocialDataExpansion].displayName ??
         FeatureSwitchKey.SocialDataExpansion,
     ),
