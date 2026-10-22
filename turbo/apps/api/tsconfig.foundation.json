@@ -231,6 +231,7 @@
     "src/signals/services/execution-member-metadata.service.ts",
     "src/signals/services/execution-model-source.service.ts",
     "src/signals/services/execution-org-context.service.ts",
+    "src/signals/services/execution-org-member-context.signals.ts",
     "src/signals/services/execution-storage-cache-read.service.ts",
     "src/signals/services/execution-storage.service.ts",
     "src/signals/services/feature-switches.service.ts",
