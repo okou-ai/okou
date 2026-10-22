@@ -1,15 +1,10 @@
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import type { OrgPlanEntitlementSourceMetadata } from "@okouai/db/jsonb-contracts/org-plan-entitlement";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
-import type { Tx } from "../../lib/db-types";
 
-type WriteTx = Tx;
-
-interface UpsertOrgPlanEntitlementArgs {
+export interface UpsertOrgPlanEntitlementArgs {
   readonly orgId: string;
   readonly tier: OrgTier;
   readonly source:
@@ -28,33 +23,24 @@ interface UpsertOrgPlanEntitlementArgs {
   readonly sourceMetadata?: OrgPlanEntitlementSourceMetadata;
 }
 
-interface WriteOrgMetadataWithPlanEntitlementsArgs<Row> {
-  readonly writeOrgMetadata: (tx: WriteTx) => Promise<Row[]>;
-  readonly writePlanEntitlement: (tx: WriteTx, row: Row) => Promise<void>;
-}
-
 interface ResolvedStripeSubscriptionSnapshot {
   readonly stripeSubscriptionId: string | null;
   readonly sourceMetadata: OrgPlanEntitlementSourceMetadata;
 }
 
-async function resolveStripeSubscriptionSnapshot(
-  tx: WriteTx,
+export function resolveStripeSubscriptionSnapshot(
   args: Pick<
     UpsertOrgPlanEntitlementArgs,
     "orgId" | "stripeSubscriptionId" | "sourceMetadata"
   >,
-): Promise<ResolvedStripeSubscriptionSnapshot> {
+  existingOrgId: string | null = null,
+): ResolvedStripeSubscriptionSnapshot {
   const sourceMetadata = retireMarketingMetadata(args.sourceMetadata ?? {});
   const stripeSubscriptionId = args.stripeSubscriptionId ?? null;
   if (!stripeSubscriptionId) {
     return { stripeSubscriptionId: null, sourceMetadata };
   }
 
-  const existingOrgId = await orgPlanEntitlementOrgIdForStripeSubscription(
-    tx,
-    stripeSubscriptionId,
-  );
   if (!existingOrgId || existingOrgId === args.orgId) {
     return { stripeSubscriptionId, sourceMetadata };
   }
@@ -66,17 +52,6 @@ async function resolveStripeSubscriptionSnapshot(
       stripeSubscriptionSnapshotSkipped: "duplicate_stripe_subscription_id",
     },
   };
-}
-
-export async function writeOrgMetadataWithPlanEntitlements<Row>(
-  tx: WriteTx,
-  args: WriteOrgMetadataWithPlanEntitlementsArgs<Row>,
-): Promise<Row[]> {
-  const rows = await args.writeOrgMetadata(tx);
-  for (const row of rows) {
-    await args.writePlanEntitlement(tx, row);
-  }
-  return rows;
 }
 
 export function orgPlanEntitlementValues(
@@ -116,57 +91,33 @@ export function orgPlanEntitlementValues(
   };
 }
 
-export async function upsertOrgPlanEntitlement(
-  tx: WriteTx,
-  args: UpsertOrgPlanEntitlementArgs,
-): Promise<void> {
-  const stripeSubscriptionSnapshot = await resolveStripeSubscriptionSnapshot(
-    tx,
-    args,
-  );
-  const values = orgPlanEntitlementValues(args, stripeSubscriptionSnapshot);
-  await tx
-    .insert(orgPlanEntitlements)
-    .values(values)
-    .onConflictDoUpdate({
-      target: orgPlanEntitlements.orgId,
-      set: {
-        planKey: values.planKey,
-        planRank: values.planRank,
-        source: values.source,
-        status: values.status,
-        baseConcurrencyLimit: values.baseConcurrencyLimit,
-        canBuyConcurrency: values.canBuyConcurrency,
-        canBuyCredits: values.canBuyCredits,
-        showUsagePack: values.showUsagePack,
-        autoRechargeAllowed: values.autoRechargeAllowed,
-        restrictedBuiltInModels: values.restrictedBuiltInModels,
-        workflowWebhookTriggerAllowed: values.workflowWebhookTriggerAllowed,
-        audioLifetimeLimit: values.audioLifetimeLimit,
-        audioDailyRateLimit: values.audioDailyRateLimit,
-        audioDailyDurationSeconds: values.audioDailyDurationSeconds,
-        stripeSubscriptionId: values.stripeSubscriptionId,
-        stripeProductId: null,
-        stripePriceId: values.stripePriceId,
-        currentPeriodStart: values.currentPeriodStart,
-        currentPeriodEnd: values.currentPeriodEnd,
-        cancelAt: values.cancelAt,
-        expiresAt: values.expiresAt,
-        metadataHash: null,
-        sourceMetadata: values.sourceMetadata,
-        updatedAt: values.updatedAt,
-      },
-    });
-}
-
-export async function orgPlanEntitlementOrgIdForStripeSubscription(
-  tx: WriteTx,
-  stripeSubscriptionId: string,
-): Promise<string | null> {
-  const [row] = await tx
-    .select({ orgId: orgPlanEntitlements.orgId })
-    .from(orgPlanEntitlements)
-    .where(eq(orgPlanEntitlements.stripeSubscriptionId, stripeSubscriptionId))
-    .limit(1);
-  return row?.orgId ?? null;
+export function orgPlanEntitlementUpdateValues(
+  values: ReturnType<typeof orgPlanEntitlementValues>,
+) {
+  return {
+    planKey: values.planKey,
+    planRank: values.planRank,
+    source: values.source,
+    status: values.status,
+    baseConcurrencyLimit: values.baseConcurrencyLimit,
+    canBuyConcurrency: values.canBuyConcurrency,
+    canBuyCredits: values.canBuyCredits,
+    showUsagePack: values.showUsagePack,
+    autoRechargeAllowed: values.autoRechargeAllowed,
+    restrictedBuiltInModels: values.restrictedBuiltInModels,
+    workflowWebhookTriggerAllowed: values.workflowWebhookTriggerAllowed,
+    audioLifetimeLimit: values.audioLifetimeLimit,
+    audioDailyRateLimit: values.audioDailyRateLimit,
+    audioDailyDurationSeconds: values.audioDailyDurationSeconds,
+    stripeSubscriptionId: values.stripeSubscriptionId,
+    stripeProductId: null,
+    stripePriceId: values.stripePriceId,
+    currentPeriodStart: values.currentPeriodStart,
+    currentPeriodEnd: values.currentPeriodEnd,
+    cancelAt: values.cancelAt,
+    expiresAt: values.expiresAt,
+    metadataHash: null,
+    sourceMetadata: values.sourceMetadata,
+    updatedAt: values.updatedAt,
+  };
 }

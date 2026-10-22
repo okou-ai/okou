@@ -1,3 +1,4 @@
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { expireOrgCreditsAt$ } from "./org-credit-expiration.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
@@ -23,7 +24,7 @@ import {
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   isStripeResourceMissingError,
@@ -40,8 +41,10 @@ import {
   isConcurrencyPriceId,
 } from "./org-concurrency-entitlements.service";
 import {
-  upsertOrgPlanEntitlement,
-  writeOrgMetadataWithPlanEntitlements,
+  orgPlanEntitlementValues,
+  orgPlanEntitlementUpdateValues,
+  resolveStripeSubscriptionSnapshot,
+  type UpsertOrgPlanEntitlementArgs,
 } from "./org-plan-entitlements.service";
 import {
   knownBillingPlanPriceItem,
@@ -65,7 +68,6 @@ import {
   reconcileStripeSubscriptionSnapshot$,
   type StripeSubscriptionSnapshotReconciliation,
 } from "./webhooks-stripe.service";
-import type { Tx } from "../../lib/db-types";
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
 import {
   archivedSubscriptionHasSurvivingComponents,
@@ -169,7 +171,6 @@ interface ReconcileCandidateRows {
 }
 
 interface ReconcileBillingContext {
-  readonly db: Db;
   readonly stripe: ReturnType<typeof getStripeClient>;
   readonly now: Date;
   readonly staleBefore: Date;
@@ -179,8 +180,6 @@ interface ReconciledCandidateRows {
   readonly downgraded: readonly DowngradedSubscription[];
   readonly expiredConcurrency: readonly ExpiredConcurrencySubscription[];
 }
-
-type ReconcileTx = Tx;
 
 interface StripeSubscriptionDiscovery {
   readonly subscriptions: readonly StripeSubscription[];
@@ -257,112 +256,117 @@ async function listStripeSubscriptionPages(
   );
 }
 
-async function loadKnownStripeSubscriptionIds(
-  db: Db,
-): Promise<readonly string[]> {
-  const [planRows, concurrencyRows, usagePackRows] = await Promise.all([
-    db
-      .select({ subscriptionId: orgMetadata.stripeSubscriptionId })
-      .from(orgMetadata)
-      .where(isNotNull(orgMetadata.stripeSubscriptionId)),
-    db
-      .select({
-        subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
-        status: orgConcurrencySubscriptions.subscriptionStatus,
-      })
-      .from(orgConcurrencySubscriptions),
-    db
-      .select({
-        subscriptionId: usagePackSubscriptions.stripeSubscriptionId,
-        status: usagePackSubscriptions.subscriptionStatus,
-      })
-      .from(usagePackSubscriptions)
-      .where(
-        and(
-          isNotNull(usagePackSubscriptions.stripeSubscriptionId),
-          notInArray(usagePackSubscriptions.subscriptionStatus, [
-            ...TERMINAL_LOCAL_SUBSCRIPTION_STATUSES,
-          ]),
+const loadKnownStripeSubscriptionIds$ = command(
+  async function loadKnownStripeSubscriptionIds({
+    get,
+  }): Promise<readonly string[]> {
+    const db = get(db$);
+    const [planRows, concurrencyRows, usagePackRows] = await Promise.all([
+      db
+        .select({ subscriptionId: orgMetadata.stripeSubscriptionId })
+        .from(orgMetadata)
+        .where(isNotNull(orgMetadata.stripeSubscriptionId)),
+      db
+        .select({
+          subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+          status: orgConcurrencySubscriptions.subscriptionStatus,
+        })
+        .from(orgConcurrencySubscriptions),
+      db
+        .select({
+          subscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+          status: usagePackSubscriptions.subscriptionStatus,
+        })
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+            notInArray(usagePackSubscriptions.subscriptionStatus, [
+              ...TERMINAL_LOCAL_SUBSCRIPTION_STATUSES,
+            ]),
+          ),
         ),
-      ),
-  ]);
+    ]);
 
-  return [
-    ...new Set([
-      ...planRows.flatMap((row) => {
-        return row.subscriptionId ? [row.subscriptionId] : [];
-      }),
-      ...concurrencyRows.flatMap((row) => {
-        return localSubscriptionStatusIsReconcileable(row.status)
-          ? [row.subscriptionId]
-          : [];
-      }),
-      ...usagePackRows.flatMap((row) => {
-        return row.subscriptionId ? [row.subscriptionId] : [];
-      }),
-    ]),
-  ];
-}
+    return [
+      ...new Set([
+        ...planRows.flatMap((row) => {
+          return row.subscriptionId ? [row.subscriptionId] : [];
+        }),
+        ...concurrencyRows.flatMap((row) => {
+          return localSubscriptionStatusIsReconcileable(row.status)
+            ? [row.subscriptionId]
+            : [];
+        }),
+        ...usagePackRows.flatMap((row) => {
+          return row.subscriptionId ? [row.subscriptionId] : [];
+        }),
+      ]),
+    ];
+  },
+);
 
-async function discoverStripeSubscriptions(
-  db: Db,
-  stripe: ReturnType<typeof getStripeClient>,
-  signal: AbortSignal,
-): Promise<StripeSubscriptionDiscovery> {
-  const discovered = new Map<string, StripeSubscription>();
-  signal.throwIfAborted();
-  const listedSubscriptions = (
-    await Promise.all(
-      DISCOVERABLE_STRIPE_SUBSCRIPTION_STATUSES.map(async (status) => {
-        return await listStripeSubscriptionPages(stripe, { status }, signal);
-      }),
-    )
-  ).flat();
-  signal.throwIfAborted();
-
-  for (const subscription of listedSubscriptions) {
-    if (
-      stripeSubscriptionIsDiscoverable(subscription) &&
-      isCurrentStripePreviewMetadata(subscription.metadata) &&
-      stripeSubscriptionLooksBillingRelated(subscription)
-    ) {
-      discovered.set(subscription.id, subscription);
-    }
-  }
-
-  const knownSubscriptionIds = await loadKnownStripeSubscriptionIds(db);
-  signal.throwIfAborted();
-  const missingSubscriptionIds: string[] = [];
-  const failedSubscriptionIds: string[] = [];
-  for (const subscriptionId of knownSubscriptionIds) {
-    if (discovered.has(subscriptionId)) {
-      continue;
-    }
-    const retrieved = await settle(
-      stripe.subscriptions.retrieve(subscriptionId, {
-        expand: ["latest_invoice"],
-      }),
-    );
+const discoverStripeSubscriptions$ = command(
+  async function discoverStripeSubscriptions(
+    { set },
+    stripe: ReturnType<typeof getStripeClient>,
+    signal: AbortSignal,
+  ): Promise<StripeSubscriptionDiscovery> {
+    const discovered = new Map<string, StripeSubscription>();
     signal.throwIfAborted();
-    if (retrieved.ok) {
-      discovered.set(retrieved.value.id, retrieved.value);
-    } else if (isStripeResourceMissingError(retrieved.error)) {
-      missingSubscriptionIds.push(subscriptionId);
-    } else {
-      failedSubscriptionIds.push(subscriptionId);
-      L.warn("Stripe subscription retrieval failed during discovery", {
-        subscriptionId,
-        error: retrieved.error,
-      });
-    }
-  }
+    const listedSubscriptions = (
+      await Promise.all(
+        DISCOVERABLE_STRIPE_SUBSCRIPTION_STATUSES.map(async (status) => {
+          return await listStripeSubscriptionPages(stripe, { status }, signal);
+        }),
+      )
+    ).flat();
+    signal.throwIfAborted();
 
-  return {
-    subscriptions: [...discovered.values()],
-    missingSubscriptionIds,
-    failedSubscriptionIds,
-  };
-}
+    for (const subscription of listedSubscriptions) {
+      if (
+        stripeSubscriptionIsDiscoverable(subscription) &&
+        isCurrentStripePreviewMetadata(subscription.metadata) &&
+        stripeSubscriptionLooksBillingRelated(subscription)
+      ) {
+        discovered.set(subscription.id, subscription);
+      }
+    }
+
+    const knownSubscriptionIds = await set(loadKnownStripeSubscriptionIds$);
+    signal.throwIfAborted();
+    const missingSubscriptionIds: string[] = [];
+    const failedSubscriptionIds: string[] = [];
+    for (const subscriptionId of knownSubscriptionIds) {
+      if (discovered.has(subscriptionId)) {
+        continue;
+      }
+      const retrieved = await settle(
+        stripe.subscriptions.retrieve(subscriptionId, {
+          expand: ["latest_invoice"],
+        }),
+      );
+      signal.throwIfAborted();
+      if (retrieved.ok) {
+        discovered.set(retrieved.value.id, retrieved.value);
+      } else if (isStripeResourceMissingError(retrieved.error)) {
+        missingSubscriptionIds.push(subscriptionId);
+      } else {
+        failedSubscriptionIds.push(subscriptionId);
+        L.warn("Stripe subscription retrieval failed during discovery", {
+          subscriptionId,
+          error: retrieved.error,
+        });
+      }
+    }
+
+    return {
+      subscriptions: [...discovered.values()],
+      missingSubscriptionIds,
+      failedSubscriptionIds,
+    };
+  },
+);
 
 function collectStripeSubscriptionSnapshot(
   changedOrgIds: Set<string>,
@@ -385,9 +389,8 @@ const reconcileStripeSubscriptionSnapshots$ = command(
     { set },
     signal: AbortSignal,
   ): Promise<StripeSubscriptionSweepResult> => {
-    const db = set(writeDb$);
     const stripe = getStripeClient();
-    const discovery = await discoverStripeSubscriptions(db, stripe, signal);
+    const discovery = await set(discoverStripeSubscriptions$, stripe, signal);
     const changedOrgIds = new Set<string>();
     const downgraded: DowngradedSubscription[] = [];
     let paidInvoices = 0;
@@ -638,8 +641,7 @@ function knownOrgTier(value: string): OrgTier {
   throw new Error(`Unknown org tier: ${value}`);
 }
 
-async function upsertStripeSubscriptionPlanSnapshot(
-  tx: ReconcileTx,
+function stripeSubscriptionPlanSnapshotArgs(
   args: {
     readonly orgId: string;
     readonly tier: OrgTier;
@@ -648,44 +650,15 @@ async function upsertStripeSubscriptionPlanSnapshot(
     readonly stripePriceId?: string | null;
     readonly status?: string;
   },
-): Promise<void> {
+  showUsagePack: boolean,
+): UpsertOrgPlanEntitlementArgs & {
+  readonly stripeSubscriptionId: string | null;
+} {
   const scheduledEnd = subscriptionScheduledEnd(args.subscription);
   const cancelAt = subscriptionWillCancel(args.subscription)
     ? scheduledEnd
     : null;
-  let showUsagePack = false;
-  if (
-    args.stripeSubscriptionId !== null &&
-    (args.tier === "pro" || args.tier === "team" || args.tier === "custom")
-  ) {
-    const orgId = args.orgId;
-    const stripeSubscriptionId = args.stripeSubscriptionId;
-    const [allocation] = await tx
-      .select({ id: usagePackAllocations.id })
-      .from(usagePackSubscriptions)
-      .innerJoin(
-        usagePackAllocations,
-        eq(
-          usagePackAllocations.usagePackSubscriptionId,
-          usagePackSubscriptions.id,
-        ),
-      )
-      .where(
-        and(
-          eq(usagePackSubscriptions.orgId, orgId),
-          eq(usagePackSubscriptions.stripeSubscriptionId, stripeSubscriptionId),
-          notInArray(usagePackSubscriptions.subscriptionStatus, [
-            ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-          ]),
-          inArray(usagePackAllocations.status, [
-            ...MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
-          ]),
-        ),
-      )
-      .limit(1);
-    showUsagePack = allocation !== undefined;
-  }
-  await upsertOrgPlanEntitlement(tx, {
+  return {
     orgId: args.orgId,
     tier: args.tier,
     source: "stripe_subscription",
@@ -697,7 +670,23 @@ async function upsertStripeSubscriptionPlanSnapshot(
     expiresAt: cancelAt,
     showUsagePack,
     sourceMetadata: args.subscription.metadata ?? {},
-  });
+  };
+}
+
+function planSnapshotAllocationCondition(args: {
+  readonly orgId: string;
+  readonly stripeSubscriptionId: string;
+}) {
+  return and(
+    eq(usagePackSubscriptions.orgId, args.orgId),
+    eq(usagePackSubscriptions.stripeSubscriptionId, args.stripeSubscriptionId),
+    notInArray(usagePackSubscriptions.subscriptionStatus, [
+      ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+    ]),
+    inArray(usagePackAllocations.status, [
+      ...MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
+    ]),
+  );
 }
 
 interface SyncedBillingFields {
@@ -718,268 +707,412 @@ function currentBillingCandidateWhere(candidate: StripeBillingCandidate) {
   );
 }
 
-async function reconcileCanceledBillingCandidate(
-  context: ReconcileBillingContext,
-  candidate: StripeBillingCandidate,
-  subscription: SubscriptionInput,
-  signal: AbortSignal,
-): Promise<DowngradedSubscription[]> {
-  const { db, now } = context;
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0123; new non-billing transactions are prohibited.
-  const rows = await db.transaction(async (tx) => {
-    return await writeOrgMetadataWithPlanEntitlements(tx, {
-      writeOrgMetadata: async (writeTx) => {
-        return await writeTx
-          .update(orgMetadata)
-          .set({
-            tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-            subscriptionStatus: "canceled",
-            stripeSubscriptionId: null,
-            cancelAtPeriodEnd: false,
-            currentPeriodEnd: null,
-            updatedAt: now,
-          })
-          .where(currentBillingCandidateWhere(candidate))
-          .returning({
-            orgId: orgMetadata.orgId,
-            status: orgMetadata.subscriptionStatus,
-          });
-      },
-      writePlanEntitlement: async (writeTx, row) => {
-        await upsertOrgPlanEntitlement(writeTx, {
+const reconcileCanceledBillingCandidate$ = command(
+  async function reconcileCanceledBillingCandidate(
+    { set },
+    context: ReconcileBillingContext,
+    candidate: StripeBillingCandidate,
+    subscription: SubscriptionInput,
+    signal: AbortSignal,
+  ): Promise<DowngradedSubscription[]> {
+    const { now } = context;
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0123; new non-billing transactions are prohibited.
+    const rows = await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(orgMetadata)
+        .set({
+          tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+          subscriptionStatus: "canceled",
+          stripeSubscriptionId: null,
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: null,
+          updatedAt: now,
+        })
+        .where(currentBillingCandidateWhere(candidate))
+        .returning({
+          orgId: orgMetadata.orgId,
+          status: orgMetadata.subscriptionStatus,
+        });
+      for (const row of changed) {
+        const entitlementArgs: UpsertOrgPlanEntitlementArgs = {
           orgId: row.orgId,
           tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
           source: "stripe_subscription",
           sourceMetadata: subscription.metadata ?? {},
-        });
-      },
-    });
-  });
-  signal.throwIfAborted();
-
-  return rows.map((row) => {
-    return { ...row, subscriptionId: candidate.stripeSubscriptionId };
-  });
-}
-
-async function refreshRecoveredBillingCandidate(
-  context: ReconcileBillingContext,
-  candidate: StripeBillingCandidate,
-  subscription: SubscriptionInput,
-  syncedFields: SyncedBillingFields,
-  signal: AbortSignal,
-): Promise<void> {
-  const { db } = context;
-  const planItem = knownBillingPlanPriceItem(subscription.items.data);
-  const priceId = planItem?.price.id;
-  const tier = planItem
-    ? (tierForKnownPlanPrice(planItem.price) ?? undefined)
-    : undefined;
-
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0124; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    await writeOrgMetadataWithPlanEntitlements(tx, {
-      writeOrgMetadata: async (writeTx) => {
-        return await writeTx
-          .update(orgMetadata)
-          .set({
-            ...syncedFields,
-            ...(tier ? { tier } : {}),
-          })
-          .where(currentBillingCandidateWhere(candidate))
-          .returning({
-            orgId: orgMetadata.orgId,
+        };
+        const values = orgPlanEntitlementValues(
+          entitlementArgs,
+          resolveStripeSubscriptionSnapshot(entitlementArgs),
+        );
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: orgPlanEntitlementUpdateValues(values),
           });
-      },
-      writePlanEntitlement: async (writeTx, row) => {
+      }
+      return changed;
+    });
+    signal.throwIfAborted();
+
+    return rows.map((row) => {
+      return { ...row, subscriptionId: candidate.stripeSubscriptionId };
+    });
+  },
+);
+
+const refreshRecoveredBillingCandidate$ = command(
+  async function refreshRecoveredBillingCandidate(
+    { set },
+    candidate: StripeBillingCandidate,
+    subscription: SubscriptionInput,
+    syncedFields: SyncedBillingFields,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const db = set(writeDb$);
+    const planItem = knownBillingPlanPriceItem(subscription.items.data);
+    const priceId = planItem?.price.id;
+    const tier = planItem
+      ? (tierForKnownPlanPrice(planItem.price) ?? undefined)
+      : undefined;
+
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0124; new non-billing transactions are prohibited.
+    await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(orgMetadata)
+        .set({
+          ...syncedFields,
+          ...(tier ? { tier } : {}),
+        })
+        .where(currentBillingCandidateWhere(candidate))
+        .returning({
+          orgId: orgMetadata.orgId,
+        });
+      for (const row of changed) {
         if (!tier) {
-          return;
+          continue;
         }
-        await upsertStripeSubscriptionPlanSnapshot(writeTx, {
-          orgId: row.orgId,
-          tier,
-          subscription,
-          stripeSubscriptionId: candidate.stripeSubscriptionId,
-          stripePriceId: priceId,
-          status: subscription.status,
-        });
-      },
-    });
-  });
-  signal.throwIfAborted();
-}
-
-async function refreshPaymentFailedPaidThroughCandidate(
-  context: ReconcileBillingContext,
-  candidate: StripeBillingCandidate,
-  subscription: SubscriptionInput,
-  syncedFields: SyncedBillingFields,
-  signal: AbortSignal,
-): Promise<void> {
-  const { db } = context;
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0125; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    await writeOrgMetadataWithPlanEntitlements(tx, {
-      writeOrgMetadata: async (writeTx) => {
-        return await writeTx
-          .update(orgMetadata)
-          .set(syncedFields)
-          .where(currentBillingCandidateWhere(candidate))
-          .returning({
-            orgId: orgMetadata.orgId,
-            tier: orgMetadata.tier,
+        const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
+          {
+            orgId: row.orgId,
+            tier,
+            subscription,
+            stripeSubscriptionId: candidate.stripeSubscriptionId,
+            stripePriceId: priceId,
+            status: subscription.status,
+          },
+          false,
+        );
+        let showUsagePack = false;
+        if (
+          entitlementArgs.stripeSubscriptionId !== null &&
+          (entitlementArgs.tier === "pro" ||
+            entitlementArgs.tier === "team" ||
+            entitlementArgs.tier === "custom")
+        ) {
+          const [allocation] = await tx
+            .select({ id: usagePackAllocations.id })
+            .from(usagePackSubscriptions)
+            .innerJoin(
+              usagePackAllocations,
+              eq(
+                usagePackAllocations.usagePackSubscriptionId,
+                usagePackSubscriptions.id,
+              ),
+            )
+            .where(
+              planSnapshotAllocationCondition({
+                orgId: row.orgId,
+                stripeSubscriptionId: entitlementArgs.stripeSubscriptionId,
+              }),
+            )
+            .limit(1);
+          showUsagePack = allocation !== undefined;
+        }
+        const snapshotArgs = { ...entitlementArgs, showUsagePack };
+        const [owner] = snapshotArgs.stripeSubscriptionId
+          ? await tx
+              .select({ orgId: orgPlanEntitlements.orgId })
+              .from(orgPlanEntitlements)
+              .where(
+                eq(
+                  orgPlanEntitlements.stripeSubscriptionId,
+                  snapshotArgs.stripeSubscriptionId,
+                ),
+              )
+              .limit(1)
+          : [];
+        const values = orgPlanEntitlementValues(
+          snapshotArgs,
+          resolveStripeSubscriptionSnapshot(snapshotArgs, owner?.orgId ?? null),
+        );
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: orgPlanEntitlementUpdateValues(values),
           });
-      },
-      writePlanEntitlement: async (writeTx, row) => {
-        await upsertStripeSubscriptionPlanSnapshot(writeTx, {
-          orgId: row.orgId,
-          tier: knownOrgTier(row.tier),
-          subscription,
-          stripeSubscriptionId: candidate.stripeSubscriptionId,
-          stripePriceId:
-            knownBillingPlanPriceItem(subscription.items.data)?.price.id ??
-            null,
-          status: subscription.status,
-        });
-      },
+      }
     });
-  });
-  signal.throwIfAborted();
-}
+    signal.throwIfAborted();
+  },
+);
 
-async function downgradePaymentFailedBillingCandidate(
-  context: ReconcileBillingContext,
-  candidate: StripeBillingCandidate,
-  subscription: SubscriptionInput,
-  syncedFields: SyncedBillingFields,
-  signal: AbortSignal,
-): Promise<DowngradedSubscription[]> {
-  const { db } = context;
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0126; new non-billing transactions are prohibited.
-  const rows = await db.transaction(async (tx) => {
-    return await writeOrgMetadataWithPlanEntitlements(tx, {
-      writeOrgMetadata: async (writeTx) => {
-        return await writeTx
-          .update(orgMetadata)
-          .set({
-            tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-            ...syncedFields,
-          })
-          .where(currentBillingCandidateWhere(candidate))
-          .returning({
-            orgId: orgMetadata.orgId,
-            subscriptionId: orgMetadata.stripeSubscriptionId,
-            status: orgMetadata.subscriptionStatus,
+const refreshPaymentFailedPaidThroughCandidate$ = command(
+  async function refreshPaymentFailedPaidThroughCandidate(
+    { set },
+    candidate: StripeBillingCandidate,
+    subscription: SubscriptionInput,
+    syncedFields: SyncedBillingFields,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0125; new non-billing transactions are prohibited.
+    await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(orgMetadata)
+        .set(syncedFields)
+        .where(currentBillingCandidateWhere(candidate))
+        .returning({
+          orgId: orgMetadata.orgId,
+          tier: orgMetadata.tier,
+        });
+      for (const row of changed) {
+        const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
+          {
+            orgId: row.orgId,
+            tier: knownOrgTier(row.tier),
+            subscription,
+            stripeSubscriptionId: candidate.stripeSubscriptionId,
+            stripePriceId:
+              knownBillingPlanPriceItem(subscription.items.data)?.price.id ??
+              null,
+            status: subscription.status,
+          },
+          false,
+        );
+        let showUsagePack = false;
+        if (
+          entitlementArgs.stripeSubscriptionId !== null &&
+          (entitlementArgs.tier === "pro" ||
+            entitlementArgs.tier === "team" ||
+            entitlementArgs.tier === "custom")
+        ) {
+          const [allocation] = await tx
+            .select({ id: usagePackAllocations.id })
+            .from(usagePackSubscriptions)
+            .innerJoin(
+              usagePackAllocations,
+              eq(
+                usagePackAllocations.usagePackSubscriptionId,
+                usagePackSubscriptions.id,
+              ),
+            )
+            .where(
+              planSnapshotAllocationCondition({
+                orgId: row.orgId,
+                stripeSubscriptionId: entitlementArgs.stripeSubscriptionId,
+              }),
+            )
+            .limit(1);
+          showUsagePack = allocation !== undefined;
+        }
+        const snapshotArgs = { ...entitlementArgs, showUsagePack };
+        const [owner] = snapshotArgs.stripeSubscriptionId
+          ? await tx
+              .select({ orgId: orgPlanEntitlements.orgId })
+              .from(orgPlanEntitlements)
+              .where(
+                eq(
+                  orgPlanEntitlements.stripeSubscriptionId,
+                  snapshotArgs.stripeSubscriptionId,
+                ),
+              )
+              .limit(1)
+          : [];
+        const values = orgPlanEntitlementValues(
+          snapshotArgs,
+          resolveStripeSubscriptionSnapshot(snapshotArgs, owner?.orgId ?? null),
+        );
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: orgPlanEntitlementUpdateValues(values),
           });
-      },
-      writePlanEntitlement: async (writeTx, row) => {
-        await upsertStripeSubscriptionPlanSnapshot(writeTx, {
-          orgId: row.orgId,
+      }
+    });
+    signal.throwIfAborted();
+  },
+);
+
+const downgradePaymentFailedBillingCandidate$ = command(
+  async function downgradePaymentFailedBillingCandidate(
+    { set },
+    candidate: StripeBillingCandidate,
+    subscription: SubscriptionInput,
+    syncedFields: SyncedBillingFields,
+    signal: AbortSignal,
+  ): Promise<DowngradedSubscription[]> {
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0126; new non-billing transactions are prohibited.
+    const rows = await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(orgMetadata)
+        .set({
           tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-          subscription,
-          stripeSubscriptionId: row.subscriptionId,
-          stripePriceId:
-            knownBillingPlanPriceItem(subscription.items.data)?.price.id ??
-            null,
+          ...syncedFields,
+        })
+        .where(currentBillingCandidateWhere(candidate))
+        .returning({
+          orgId: orgMetadata.orgId,
+          subscriptionId: orgMetadata.stripeSubscriptionId,
+          status: orgMetadata.subscriptionStatus,
         });
-      },
+      for (const row of changed) {
+        const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
+          {
+            orgId: row.orgId,
+            tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+            subscription,
+            stripeSubscriptionId: row.subscriptionId,
+            stripePriceId:
+              knownBillingPlanPriceItem(subscription.items.data)?.price.id ??
+              null,
+          },
+          false,
+        );
+        const snapshotArgs = entitlementArgs;
+        const [owner] = snapshotArgs.stripeSubscriptionId
+          ? await tx
+              .select({ orgId: orgPlanEntitlements.orgId })
+              .from(orgPlanEntitlements)
+              .where(
+                eq(
+                  orgPlanEntitlements.stripeSubscriptionId,
+                  snapshotArgs.stripeSubscriptionId,
+                ),
+              )
+              .limit(1)
+          : [];
+        const values = orgPlanEntitlementValues(
+          snapshotArgs,
+          resolveStripeSubscriptionSnapshot(snapshotArgs, owner?.orgId ?? null),
+        );
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: orgPlanEntitlementUpdateValues(values),
+          });
+      }
+      return changed;
     });
-  });
-  signal.throwIfAborted();
-  return rows;
-}
+    signal.throwIfAborted();
+    return rows;
+  },
+);
 
-async function reconcileBillingCandidate(
-  context: ReconcileBillingContext,
-  candidate: BillingCandidate,
-  signal: AbortSignal,
-): Promise<DowngradedSubscription[]> {
-  const { stripe, now, staleBefore } = context;
-  if (!candidate.stripeSubscriptionId) {
-    return [];
-  }
-  const stripeCandidate: StripeBillingCandidate = {
-    orgId: candidate.orgId,
-    stripeSubscriptionId: candidate.stripeSubscriptionId,
-  };
+const reconcileBillingCandidate$ = command(
+  async function reconcileBillingCandidate(
+    { set },
+    context: ReconcileBillingContext,
+    candidate: BillingCandidate,
+    signal: AbortSignal,
+  ): Promise<DowngradedSubscription[]> {
+    const { stripe, now, staleBefore } = context;
+    if (!candidate.stripeSubscriptionId) {
+      return [];
+    }
+    const stripeCandidate: StripeBillingCandidate = {
+      orgId: candidate.orgId,
+      stripeSubscriptionId: candidate.stripeSubscriptionId,
+    };
 
-  const subscription = (await stripe.subscriptions.retrieve(
-    stripeCandidate.stripeSubscriptionId,
-  )) as SubscriptionInput;
-  signal.throwIfAborted();
+    const subscription = (await stripe.subscriptions.retrieve(
+      stripeCandidate.stripeSubscriptionId,
+    )) as SubscriptionInput;
+    signal.throwIfAborted();
 
-  if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
-    return [];
-  }
-  const stripePeriodEnd = subscriptionPeriodEnd(subscription);
-  const scheduledEnd = subscriptionScheduledEnd(subscription);
-  const syncedFields = {
-    subscriptionStatus: subscription.status,
-    cancelAtPeriodEnd: subscriptionWillCancel(subscription),
-    updatedAt: now,
-    ...(scheduledEnd ? { currentPeriodEnd: scheduledEnd } : {}),
-  };
+    if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
+      return [];
+    }
+    const stripePeriodEnd = subscriptionPeriodEnd(subscription);
+    const scheduledEnd = subscriptionScheduledEnd(subscription);
+    const syncedFields = {
+      subscriptionStatus: subscription.status,
+      cancelAtPeriodEnd: subscriptionWillCancel(subscription),
+      updatedAt: now,
+      ...(scheduledEnd ? { currentPeriodEnd: scheduledEnd } : {}),
+    };
 
-  if (subscription.status === "canceled") {
-    return await reconcileCanceledBillingCandidate(
-      context,
-      stripeCandidate,
-      subscription,
-      signal,
-    );
-  }
+    if (subscription.status === "canceled") {
+      return await set(
+        reconcileCanceledBillingCandidate$,
+        context,
+        stripeCandidate,
+        subscription,
+        signal,
+      );
+    }
 
-  if (!subscriptionIsPaymentFailed(subscription)) {
-    if (!subscriptionCanRefreshPaidThrough(subscription)) {
+    if (!subscriptionIsPaymentFailed(subscription)) {
+      if (!subscriptionCanRefreshPaidThrough(subscription)) {
+        L.warn(
+          "payment-failed local subscription has unexpected Stripe status; skipping downgrade",
+          {
+            orgId: candidate.orgId,
+            subscriptionId: stripeCandidate.stripeSubscriptionId,
+            status: subscription.status,
+          },
+        );
+        return [];
+      }
+
+      await set(
+        refreshRecoveredBillingCandidate$,
+        stripeCandidate,
+        subscription,
+        syncedFields,
+        signal,
+      );
+      return [];
+    }
+
+    if (!stripePeriodEnd) {
       L.warn(
-        "payment-failed local subscription has unexpected Stripe status; skipping downgrade",
+        "payment-failed subscription missing paid-through in Stripe; downgrading",
         {
           orgId: candidate.orgId,
           subscriptionId: stripeCandidate.stripeSubscriptionId,
           status: subscription.status,
         },
       );
+    } else if (stripePeriodEnd > staleBefore) {
+      await set(
+        refreshPaymentFailedPaidThroughCandidate$,
+        stripeCandidate,
+        subscription,
+        syncedFields,
+        signal,
+      );
       return [];
     }
 
-    await refreshRecoveredBillingCandidate(
-      context,
+    return await set(
+      downgradePaymentFailedBillingCandidate$,
       stripeCandidate,
       subscription,
       syncedFields,
       signal,
     );
-    return [];
-  }
-
-  if (!stripePeriodEnd) {
-    L.warn(
-      "payment-failed subscription missing paid-through in Stripe; downgrading",
-      {
-        orgId: candidate.orgId,
-        subscriptionId: stripeCandidate.stripeSubscriptionId,
-        status: subscription.status,
-      },
-    );
-  } else if (stripePeriodEnd > staleBefore) {
-    await refreshPaymentFailedPaidThroughCandidate(
-      context,
-      stripeCandidate,
-      subscription,
-      syncedFields,
-      signal,
-    );
-    return [];
-  }
-
-  return await downgradePaymentFailedBillingCandidate(
-    context,
-    stripeCandidate,
-    subscription,
-    syncedFields,
-    signal,
-  );
-}
+  },
+);
 
 /** Own each expiration before the legacy plan projection runs. */
 const expireAtomGrantCandidates$ = command(
@@ -1012,109 +1145,176 @@ const expireAtomGrantCandidates$ = command(
   },
 );
 
-async function reconcileAtomGrantCandidate(
-  context: ReconcileBillingContext,
-  candidate: AtomGrantCandidate,
-  signal: AbortSignal,
-): Promise<DowngradedSubscription[]> {
-  const { db, now } = context;
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0127; new non-billing transactions are prohibited.
-  const rows = await db.transaction(async (tx) => {
-    return await writeOrgMetadataWithPlanEntitlements(tx, {
-      writeOrgMetadata: async (writeTx) => {
-        return await writeTx
-          .update(orgMetadata)
-          .set({
-            tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-            subscriptionStatus: "expired",
-            cancelAtPeriodEnd: false,
-            currentPeriodEnd: null,
-            pendingSubscriptionScheduleId: null,
-            pendingSubscriptionTargetTier: null,
-            pendingSubscriptionChangeAt: null,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(orgMetadata.orgId, candidate.orgId),
-              inArray(orgMetadata.tier, PAID_TIERS),
-              isNull(orgMetadata.stripeSubscriptionId),
-              eq(
-                orgMetadata.subscriptionStatus,
-                ATOM_GRANT_SUBSCRIPTION_STATUS,
-              ),
-              isNotNull(orgMetadata.currentPeriodEnd),
-              lte(orgMetadata.currentPeriodEnd, now),
-            ),
-          )
-          .returning({
-            orgId: orgMetadata.orgId,
-            subscriptionId: orgMetadata.stripeSubscriptionId,
-            status: orgMetadata.subscriptionStatus,
-          });
-      },
-      writePlanEntitlement: async (writeTx, row) => {
-        await upsertOrgPlanEntitlement(writeTx, {
+const reconcileAtomGrantCandidate$ = command(
+  async function reconcileAtomGrantCandidate(
+    { set },
+    context: ReconcileBillingContext,
+    candidate: AtomGrantCandidate,
+    signal: AbortSignal,
+  ): Promise<DowngradedSubscription[]> {
+    const { now } = context;
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0127; new non-billing transactions are prohibited.
+    const rows = await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(orgMetadata)
+        .set({
+          tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+          subscriptionStatus: "expired",
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: null,
+          pendingSubscriptionScheduleId: null,
+          pendingSubscriptionTargetTier: null,
+          pendingSubscriptionChangeAt: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(orgMetadata.orgId, candidate.orgId),
+            inArray(orgMetadata.tier, PAID_TIERS),
+            isNull(orgMetadata.stripeSubscriptionId),
+            eq(orgMetadata.subscriptionStatus, ATOM_GRANT_SUBSCRIPTION_STATUS),
+            isNotNull(orgMetadata.currentPeriodEnd),
+            lte(orgMetadata.currentPeriodEnd, now),
+          ),
+        )
+        .returning({
+          orgId: orgMetadata.orgId,
+          subscriptionId: orgMetadata.stripeSubscriptionId,
+          status: orgMetadata.subscriptionStatus,
+        });
+      for (const row of changed) {
+        const entitlementArgs: UpsertOrgPlanEntitlementArgs = {
           orgId: row.orgId,
           tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
           source: "stripe_atom_grant",
-        });
-      },
+        };
+        const values = orgPlanEntitlementValues(
+          entitlementArgs,
+          resolveStripeSubscriptionSnapshot(entitlementArgs),
+        );
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: orgPlanEntitlementUpdateValues(values),
+          });
+      }
+      return changed;
     });
-  });
-  signal.throwIfAborted();
-  return rows;
-}
+    signal.throwIfAborted();
+    return rows;
+  },
+);
 
-async function reconcileConcurrencyCandidate(
-  context: ReconcileBillingContext,
-  candidate: ConcurrencyCandidate,
-  signal: AbortSignal,
-): Promise<ExpiredConcurrencySubscription[]> {
-  const { db, stripe, now, staleBefore } = context;
-  const subscription = await stripe.subscriptions.retrieve(
-    candidate.stripeSubscriptionId,
-  );
-  signal.throwIfAborted();
-
-  // This candidate is already bound to a genuine live concurrency component.
-  const item = concurrencySubscriptionItem(subscription);
-  const periodEnd = concurrencySubscriptionPeriodEnd(subscription);
-  const slots = concurrencySubscriptionSlots(subscription);
-  const isPaymentFailed = subscriptionIsPaymentFailed(subscription);
-  const syncedFields = {
-    subscriptionStatus: subscription.status,
-    cancelAtPeriodEnd:
-      (subscription.cancel_at_period_end &&
-        knownBillingPlanPriceItem(subscription.items.data) === undefined) ||
-      (candidate.cancelAtPeriodEnd &&
-        subscription.schedule !== null &&
-        subscription.schedule !== undefined),
-    updatedAt: concurrencySubscriptionUpdatedAt(now),
-    ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
-    ...(item ? { stripePriceId: item.price.id } : {}),
-    ...(slots ? { slots } : {}),
-  };
-  const currentCandidate = and(
-    eq(
-      orgConcurrencySubscriptions.stripeSubscriptionId,
+const reconcileConcurrencyCandidate$ = command(
+  async function reconcileConcurrencyCandidate(
+    { set },
+    context: ReconcileBillingContext,
+    candidate: ConcurrencyCandidate,
+    signal: AbortSignal,
+  ): Promise<ExpiredConcurrencySubscription[]> {
+    const { stripe, now, staleBefore } = context;
+    const db = set(writeDb$);
+    const subscription = await stripe.subscriptions.retrieve(
       candidate.stripeSubscriptionId,
-    ),
-    eq(
-      orgConcurrencySubscriptions.updatedAt,
-      sql`${candidate.updatedAtText}::timestamp`,
-    ),
-    sql`${orgConcurrencySubscriptions}.xmin::text = ${candidate.rowVersion}`,
-  );
+    );
+    signal.throwIfAborted();
 
-  if (subscription.status === "canceled") {
+    // This candidate is already bound to a genuine live concurrency component.
+    const item = concurrencySubscriptionItem(subscription);
+    const periodEnd = concurrencySubscriptionPeriodEnd(subscription);
+    const slots = concurrencySubscriptionSlots(subscription);
+    const isPaymentFailed = subscriptionIsPaymentFailed(subscription);
+    const syncedFields = {
+      subscriptionStatus: subscription.status,
+      cancelAtPeriodEnd:
+        (subscription.cancel_at_period_end &&
+          knownBillingPlanPriceItem(subscription.items.data) === undefined) ||
+        (candidate.cancelAtPeriodEnd &&
+          subscription.schedule !== null &&
+          subscription.schedule !== undefined),
+      updatedAt: concurrencySubscriptionUpdatedAt(now),
+      ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
+      ...(item ? { stripePriceId: item.price.id } : {}),
+      ...(slots ? { slots } : {}),
+    };
+    const currentCandidate = and(
+      eq(
+        orgConcurrencySubscriptions.stripeSubscriptionId,
+        candidate.stripeSubscriptionId,
+      ),
+      eq(
+        orgConcurrencySubscriptions.updatedAt,
+        sql`${candidate.updatedAtText}::timestamp`,
+      ),
+      sql`${orgConcurrencySubscriptions}.xmin::text = ${candidate.rowVersion}`,
+    );
+
+    if (subscription.status === "canceled") {
+      const rows = await db
+        .update(orgConcurrencySubscriptions)
+        .set({
+          subscriptionStatus: "canceled",
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: now,
+          updatedAt: concurrencySubscriptionUpdatedAt(now),
+        })
+        .where(currentCandidate)
+        .returning({
+          orgId: orgConcurrencySubscriptions.orgId,
+          subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+          status: orgConcurrencySubscriptions.subscriptionStatus,
+        });
+      signal.throwIfAborted();
+      return rows;
+    }
+
+    if (!isPaymentFailed) {
+      if (!item) {
+        L.warn(
+          "payment-failed concurrency subscription has unexpected Stripe price; skipping",
+          {
+            orgId: candidate.orgId,
+            subscriptionId: candidate.stripeSubscriptionId,
+            status: subscription.status,
+          },
+        );
+        return [];
+      }
+
+      await db
+        .update(orgConcurrencySubscriptions)
+        .set(syncedFields)
+        .where(currentCandidate);
+      signal.throwIfAborted();
+      return [];
+    }
+
+    if (!periodEnd) {
+      L.warn(
+        "payment-failed concurrency subscription missing paid-through in Stripe; expiring",
+        {
+          orgId: candidate.orgId,
+          subscriptionId: candidate.stripeSubscriptionId,
+          status: subscription.status,
+        },
+      );
+    } else if (periodEnd > staleBefore) {
+      await db
+        .update(orgConcurrencySubscriptions)
+        .set(syncedFields)
+        .where(currentCandidate);
+      signal.throwIfAborted();
+      return [];
+    }
+
     const rows = await db
       .update(orgConcurrencySubscriptions)
       .set({
-        subscriptionStatus: "canceled",
-        cancelAtPeriodEnd: false,
-        currentPeriodEnd: now,
-        updatedAt: concurrencySubscriptionUpdatedAt(now),
+        ...syncedFields,
+        subscriptionStatus: subscription.status,
       })
       .where(currentCandidate)
       .returning({
@@ -1124,62 +1324,8 @@ async function reconcileConcurrencyCandidate(
       });
     signal.throwIfAborted();
     return rows;
-  }
-
-  if (!isPaymentFailed) {
-    if (!item) {
-      L.warn(
-        "payment-failed concurrency subscription has unexpected Stripe price; skipping",
-        {
-          orgId: candidate.orgId,
-          subscriptionId: candidate.stripeSubscriptionId,
-          status: subscription.status,
-        },
-      );
-      return [];
-    }
-
-    await db
-      .update(orgConcurrencySubscriptions)
-      .set(syncedFields)
-      .where(currentCandidate);
-    signal.throwIfAborted();
-    return [];
-  }
-
-  if (!periodEnd) {
-    L.warn(
-      "payment-failed concurrency subscription missing paid-through in Stripe; expiring",
-      {
-        orgId: candidate.orgId,
-        subscriptionId: candidate.stripeSubscriptionId,
-        status: subscription.status,
-      },
-    );
-  } else if (periodEnd > staleBefore) {
-    await db
-      .update(orgConcurrencySubscriptions)
-      .set(syncedFields)
-      .where(currentCandidate);
-    signal.throwIfAborted();
-    return [];
-  }
-
-  const rows = await db
-    .update(orgConcurrencySubscriptions)
-    .set({
-      ...syncedFields,
-      subscriptionStatus: subscription.status,
-    })
-    .where(currentCandidate)
-    .returning({
-      orgId: orgConcurrencySubscriptions.orgId,
-      subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
-      status: orgConcurrencySubscriptions.subscriptionStatus,
-    });
-  signal.throwIfAborted();
-  return rows;
-}
+  },
+);
 
 function reconcileCandidateReadPlans(now: Date, staleBefore: Date) {
   return {
@@ -1253,7 +1399,8 @@ function reconcileCandidateReadPlans(now: Date, staleBefore: Date) {
   };
 }
 
-async function reconcileCandidateRows(
+const reconcileCandidateRows$ = command(async function reconcileCandidateRows(
+  { set },
   context: ReconcileBillingContext,
   rows: ReconcileCandidateRows,
   signal: AbortSignal,
@@ -1263,7 +1410,7 @@ async function reconcileCandidateRows(
 
   for (const candidate of rows.candidates) {
     const result = await settle(
-      reconcileBillingCandidate(context, candidate, signal),
+      set(reconcileBillingCandidate$, context, candidate, signal),
       signal,
     );
     if (!result.ok) {
@@ -1278,7 +1425,7 @@ async function reconcileCandidateRows(
   }
   for (const candidate of rows.atomGrantCandidates) {
     const result = await settle(
-      reconcileAtomGrantCandidate(context, candidate, signal),
+      set(reconcileAtomGrantCandidate$, context, candidate, signal),
       signal,
     );
     if (!result.ok) {
@@ -1292,7 +1439,7 @@ async function reconcileCandidateRows(
   }
   for (const candidate of rows.concurrencyCandidates) {
     const result = await settle(
-      reconcileConcurrencyCandidate(context, candidate, signal),
+      set(reconcileConcurrencyCandidate$, context, candidate, signal),
       signal,
     );
     if (!result.ok) {
@@ -1306,7 +1453,7 @@ async function reconcileCandidateRows(
     expiredConcurrency.push(...result.value);
   }
   return { downgraded, expiredConcurrency };
-}
+});
 
 /**
  * Invitation recovery first commits accepted local allocations; the daily
@@ -1432,8 +1579,9 @@ export const reconcileBillingEntitlements$ = command(
       { candidates: candidateRows.atomGrantCandidates, at: now },
       signal,
     );
-    const reconciledCandidates = await reconcileCandidateRows(
-      { db, stripe, now, staleBefore },
+    const reconciledCandidates = await set(
+      reconcileCandidateRows$,
+      { stripe, now, staleBefore },
       { ...candidateRows, atomGrantCandidates },
       signal,
     );

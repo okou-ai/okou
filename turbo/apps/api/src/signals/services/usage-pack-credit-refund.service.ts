@@ -8,7 +8,7 @@ import { and, asc, eq, gt, inArray, like, lt, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   stripeErrorInfo,
@@ -25,7 +25,6 @@ const MAX_REFUND_ATTEMPTS = 3;
 const L = logger("UsagePackCreditRefund");
 
 type UsagePackCreditRefundRow = typeof usagePackCreditRefunds.$inferSelect;
-type CreditRefundSourceStore = Pick<Db, "insert" | "select">;
 
 export type UsagePackCreditRefundSource =
   | {
@@ -95,39 +94,6 @@ export function refundSourceMatches(
     row.stripePaymentIntentId === source.stripePaymentIntentId &&
     row.sourceAmountCents === source.sourceAmountCents
   );
-}
-
-export async function ensureUsagePackCreditRefundSource(
-  db: CreditRefundSourceStore,
-  args: {
-    readonly creditGrantId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly source: UsagePackCreditRefundSource;
-  },
-): Promise<void> {
-  const source = sourceColumns(args.source);
-  const [inserted] = await db
-    .insert(usagePackCreditRefunds)
-    .values({
-      creditGrantId: args.creditGrantId,
-      orgId: args.orgId,
-      userId: args.userId,
-      ...source,
-    })
-    .onConflictDoNothing({ target: usagePackCreditRefunds.creditGrantId })
-    .returning();
-  if (inserted) {
-    return;
-  }
-  const [existing] = await db
-    .select()
-    .from(usagePackCreditRefunds)
-    .where(eq(usagePackCreditRefunds.creditGrantId, args.creditGrantId))
-    .limit(1);
-  if (!existing || !refundSourceMatches(existing, source, args)) {
-    throw new Error("Usage pack credit refund source conflict");
-  }
 }
 
 export function legacyInvoiceId(idempotencyKey: string): string | null {

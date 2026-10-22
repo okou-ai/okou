@@ -5,7 +5,8 @@ import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscriptio
 import { eq } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import type { ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
+import { command } from "ccstate";
 import {
   getStripeClient,
   isStripeResourceMissingError,
@@ -56,49 +57,52 @@ function addIfPresent(target: Set<string>, value: string | null): void {
   }
 }
 
-async function loadOrgBillingReferences(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<OrgBillingReferences> {
-  const [metadataRows, planRows, concurrencyRows, usagePackRows] =
-    await Promise.all([
-      db
-        .select({
-          customerId: orgMetadata.stripeCustomerId,
-          subscriptionId: orgMetadata.stripeSubscriptionId,
-        })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId)),
-      db
-        .select({ subscriptionId: orgPlanEntitlements.stripeSubscriptionId })
-        .from(orgPlanEntitlements)
-        .where(eq(orgPlanEntitlements.orgId, orgId)),
-      db
-        .select({
-          subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
-        })
-        .from(orgConcurrencySubscriptions)
-        .where(eq(orgConcurrencySubscriptions.orgId, orgId)),
-      db
-        .select({
-          customerId: usagePackSubscriptions.stripeCustomerId,
-          subscriptionId: usagePackSubscriptions.stripeSubscriptionId,
-        })
-        .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.orgId, orgId)),
-    ]);
+const loadOrgBillingReferences$ = command(
+  async function loadOrgBillingReferences(
+    { get },
+    orgId: string,
+  ): Promise<OrgBillingReferences> {
+    const db = get(db$);
+    const [metadataRows, planRows, concurrencyRows, usagePackRows] =
+      await Promise.all([
+        db
+          .select({
+            customerId: orgMetadata.stripeCustomerId,
+            subscriptionId: orgMetadata.stripeSubscriptionId,
+          })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId)),
+        db
+          .select({ subscriptionId: orgPlanEntitlements.stripeSubscriptionId })
+          .from(orgPlanEntitlements)
+          .where(eq(orgPlanEntitlements.orgId, orgId)),
+        db
+          .select({
+            subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+          })
+          .from(orgConcurrencySubscriptions)
+          .where(eq(orgConcurrencySubscriptions.orgId, orgId)),
+        db
+          .select({
+            customerId: usagePackSubscriptions.stripeCustomerId,
+            subscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+          })
+          .from(usagePackSubscriptions)
+          .where(eq(usagePackSubscriptions.orgId, orgId)),
+      ]);
 
-  const customerIds = new Set<string>();
-  const subscriptionIds = new Set<string>();
-  for (const row of [...metadataRows, ...usagePackRows]) {
-    addIfPresent(customerIds, row.customerId);
-    addIfPresent(subscriptionIds, row.subscriptionId);
-  }
-  for (const row of [...planRows, ...concurrencyRows]) {
-    addIfPresent(subscriptionIds, row.subscriptionId);
-  }
-  return { customerIds, subscriptionIds };
-}
+    const customerIds = new Set<string>();
+    const subscriptionIds = new Set<string>();
+    for (const row of [...metadataRows, ...usagePackRows]) {
+      addIfPresent(customerIds, row.customerId);
+      addIfPresent(subscriptionIds, row.subscriptionId);
+    }
+    for (const row of [...planRows, ...concurrencyRows]) {
+      addIfPresent(subscriptionIds, row.subscriptionId);
+    }
+    return { customerIds, subscriptionIds };
+  },
+);
 
 async function listCustomerSubscriptions(
   stripe: StripeClient,
@@ -699,34 +703,40 @@ async function cancelAndRefundSubscription(
  * subscriptions are not automatically cancelled or refunded.
  * Historical local records are retained. One-time purchases are excluded.
  */
-export async function cancelAndRefundOrgBillingForDeletion(
-  db: ReadonlyDb,
-  orgId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const references = await loadOrgBillingReferences(db, orgId);
-  signal.throwIfAborted();
-  if (
-    references.customerIds.size === 0 &&
-    references.subscriptionIds.size === 0
-  ) {
-    return;
-  }
-  const stripe = getStripeClient();
-  const subscriptions = await loadOrgSubscriptions(stripe, references, signal);
-  const markedTimestamps = subscriptions.flatMap((subscription) => {
-    const timestamp = markedDeletionTimestamp(subscription, orgId);
-    return timestamp === null ? [] : [timestamp];
-  });
-  const defaultDeletionTimestamp =
-    markedTimestamps.length > 0
-      ? Math.min(...markedTimestamps)
-      : Math.floor(nowDate().getTime() / 1000);
-  for (const subscription of subscriptions) {
-    await cancelAndRefundSubscription(
+export const cancelAndRefundOrgBillingForDeletion$ = command(
+  async function cancelAndRefundOrgBillingForDeletion(
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const references = await set(loadOrgBillingReferences$, orgId);
+    signal.throwIfAborted();
+    if (
+      references.customerIds.size === 0 &&
+      references.subscriptionIds.size === 0
+    ) {
+      return;
+    }
+    const stripe = getStripeClient();
+    const subscriptions = await loadOrgSubscriptions(
       stripe,
-      { orgId, subscription, defaultDeletionTimestamp },
+      references,
       signal,
     );
-  }
-}
+    const markedTimestamps = subscriptions.flatMap((subscription) => {
+      const timestamp = markedDeletionTimestamp(subscription, orgId);
+      return timestamp === null ? [] : [timestamp];
+    });
+    const defaultDeletionTimestamp =
+      markedTimestamps.length > 0
+        ? Math.min(...markedTimestamps)
+        : Math.floor(nowDate().getTime() / 1000);
+    for (const subscription of subscriptions) {
+      await cancelAndRefundSubscription(
+        stripe,
+        { orgId, subscription, defaultDeletionTimestamp },
+        signal,
+      );
+    }
+  },
+);

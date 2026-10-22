@@ -69,7 +69,18 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { settle, safeSync } from "../utils";
-import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
+import {
+  usagePackCreditGrantValues,
+  usagePackCreditGrantReadPlan,
+  requireUsagePackCreditGrant,
+  type UsagePackCreditGrantArgs,
+} from "./usage-pack-credit.service";
+import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
+import { usagePackCreditRefunds } from "@okouai/db/schema/usage-pack-credit-refund";
+import {
+  sourceColumns,
+  refundSourceMatches,
+} from "./usage-pack-credit-refund.service";
 
 import { z } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -4113,7 +4124,7 @@ function subscriptionChangePurchasedGrantValues(
   change: UsagePackAllocationChangeRow,
   args: SubscriptionChangeFulfillmentArgs,
   prepared: PreparedSubscriptionChangeGrant,
-): Parameters<typeof createUsagePackCreditGrant>[1] {
+): UsagePackCreditGrantArgs {
   return {
     orgId: change.orgId,
     userId: change.userId,
@@ -4135,7 +4146,7 @@ function subscriptionChangeBonusGrantValues(
   change: UsagePackAllocationChangeRow,
   args: SubscriptionChangeFulfillmentArgs,
   prepared: PreparedSubscriptionChangeGrant,
-): Parameters<typeof createUsagePackCreditGrant>[1] {
+): UsagePackCreditGrantArgs {
   return {
     orgId: change.orgId,
     userId: change.userId,
@@ -4144,6 +4155,76 @@ function subscriptionChangeBonusGrantValues(
     amount: prepared.bonusCredits,
     expiresAt: new Date(args.periodEnd * 1000),
   };
+}
+
+function subscriptionChangeGrants(
+  rootId: string,
+  change: UsagePackAllocationChangeRow,
+  args: SubscriptionChangeFulfillmentArgs,
+  prepared: PreparedSubscriptionChangeGrant,
+): UsagePackCreditGrantArgs[] {
+  return [
+    ...(prepared.purchasedCredits > 0
+      ? [subscriptionChangePurchasedGrantValues(rootId, change, args, prepared)]
+      : []),
+    ...(prepared.bonusCredits > 0
+      ? [subscriptionChangeBonusGrantValues(rootId, change, args, prepared)]
+      : []),
+  ];
+}
+
+function subscriptionChangeReceiptValues(
+  root: UsagePackSubscriptionChangeRow,
+  args: SubscriptionChangeFulfillmentArgs,
+) {
+  return {
+    stripeInvoiceId: args.invoice.id,
+    usagePackSubscriptionId: root.usagePackSubscriptionId,
+    periodStart: new Date(args.prorationTimestamp * 1000),
+    periodEnd: new Date(args.periodEnd * 1000),
+  };
+}
+
+function requireCompletedSubscriptionChange(
+  change: UsagePackAllocationChangeRow | undefined,
+  prepared: PreparedSubscriptionChangeGrant,
+) {
+  if (!change) {
+    throw new Error(
+      `Subscription change allocation ${prepared.change.id} is not ready for fulfillment`,
+    );
+  }
+  return change;
+}
+
+function subscriptionChangeRefundSourceValues(
+  creditGrantId: string,
+  grant: UsagePackCreditGrantArgs,
+  refundSource: NonNullable<UsagePackCreditGrantArgs["refundSource"]>,
+) {
+  if (grant.grantType !== "purchased") {
+    throw new Error("Bonus usage pack credits cannot have a refund source");
+  }
+  return {
+    creditGrantId,
+    orgId: grant.orgId,
+    userId: grant.userId,
+    ...sourceColumns(refundSource),
+  };
+}
+
+function requireSubscriptionChangeRefundSource(
+  existing: typeof usagePackCreditRefunds.$inferSelect | undefined,
+  source: ReturnType<typeof sourceColumns>,
+  grant: UsagePackCreditGrantArgs,
+) {
+  if (!existing || !refundSourceMatches(existing, source, grant)) {
+    throw new Error("Usage pack credit refund source conflict");
+  }
+}
+
+function invoiceFulfillmentCondition(invoiceId: string) {
+  return eq(usagePackInvoiceFulfillments.stripeInvoiceId, invoiceId);
 }
 
 export const fulfillUsagePackSubscriptionChangeInvoice$ = command(
@@ -4188,9 +4269,7 @@ export const fulfillUsagePackSubscriptionChangeInvoice$ = command(
             usagePackInvoiceFulfillments.usagePackSubscriptionId,
         })
         .from(usagePackInvoiceFulfillments)
-        .where(
-          eq(usagePackInvoiceFulfillments.stripeInvoiceId, args.invoice.id),
-        )
+        .where(invoiceFulfillmentCondition(args.invoice.id))
         .limit(1);
       if (
         existingInvoiceFulfillmentMatches(
@@ -4201,12 +4280,7 @@ export const fulfillUsagePackSubscriptionChangeInvoice$ = command(
       ) {
         return;
       }
-      const values = {
-        stripeInvoiceId: args.invoice.id,
-        usagePackSubscriptionId: root.usagePackSubscriptionId,
-        periodStart: new Date(args.prorationTimestamp * 1000),
-        periodEnd: new Date(args.periodEnd * 1000),
-      };
+      const values = subscriptionChangeReceiptValues(root, args);
       const [inserted] = await tx
         .insert(usagePackInvoiceFulfillments)
         .values(values)
@@ -4218,12 +4292,7 @@ export const fulfillUsagePackSubscriptionChangeInvoice$ = command(
         const [winner] = await tx
           .select()
           .from(usagePackInvoiceFulfillments)
-          .where(
-            eq(
-              usagePackInvoiceFulfillments.stripeInvoiceId,
-              values.stripeInvoiceId,
-            ),
-          )
+          .where(invoiceFulfillmentCondition(values.stripeInvoiceId))
           .limit(1);
         requireInvoiceFulfillmentReceipt(winner, values);
         return;
@@ -4237,27 +4306,56 @@ export const fulfillUsagePackSubscriptionChangeInvoice$ = command(
           .set({ status: "completed", completedAt, updatedAt: completedAt })
           .where(subscriptionChangeFulfillmentCondition(prepared.change))
           .returning();
-        if (!change) {
-          throw new Error(
-            `Subscription change allocation ${prepared.change.id} is not ready for fulfillment`,
-          );
-        }
-        if (prepared.purchasedCredits > 0) {
-          await createUsagePackCreditGrant(
-            tx,
-            subscriptionChangePurchasedGrantValues(
-              root.id,
-              change,
-              args,
-              prepared,
-            ),
-          );
-        }
-        if (prepared.bonusCredits > 0) {
-          await createUsagePackCreditGrant(
-            tx,
-            subscriptionChangeBonusGrantValues(root.id, change, args, prepared),
-          );
+        const completed = requireCompletedSubscriptionChange(change, prepared);
+        for (const grant of subscriptionChangeGrants(
+          root.id,
+          completed,
+          args,
+          prepared,
+        )) {
+          const [insertedGrant] = await tx
+            .insert(usagePackCreditGrants)
+            .values(usagePackCreditGrantValues(grant))
+            .onConflictDoNothing({
+              target: usagePackCreditGrants.idempotencyKey,
+            })
+            .returning({ id: usagePackCreditGrants.id });
+          let grantId = insertedGrant?.id;
+          if (!grantId) {
+            const read = usagePackCreditGrantReadPlan(grant);
+            const [existingGrant] = await tx
+              .select(read.columns)
+              .from(usagePackCreditGrants)
+              .where(read.condition)
+              .limit(1);
+            grantId = requireUsagePackCreditGrant(existingGrant, grant);
+          }
+          if (grant.refundSource) {
+            const source = subscriptionChangeRefundSourceValues(
+              grantId,
+              grant,
+              grant.refundSource,
+            );
+            const [insertedSource] = await tx
+              .insert(usagePackCreditRefunds)
+              .values(source)
+              .onConflictDoNothing({
+                target: usagePackCreditRefunds.creditGrantId,
+              })
+              .returning();
+            if (!insertedSource) {
+              const [existingSource] = await tx
+                .select()
+                .from(usagePackCreditRefunds)
+                .where(eq(usagePackCreditRefunds.creditGrantId, grantId))
+                .limit(1);
+              requireSubscriptionChangeRefundSource(
+                existingSource,
+                source,
+                grant,
+              );
+            }
+          }
         }
       }
     });

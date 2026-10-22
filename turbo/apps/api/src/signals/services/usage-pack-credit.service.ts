@@ -9,12 +9,9 @@ import { and, eq, gt, inArray, sql, sum } from "drizzle-orm";
 import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, type Db } from "../external/db";
-import {
-  ensureUsagePackCreditRefundSource,
-  type UsagePackCreditRefundSource,
-} from "./usage-pack-credit-refund.service";
+import type { UsagePackCreditRefundSource } from "./usage-pack-credit-refund.service";
 
-interface UsagePackCreditGrantArgs {
+export interface UsagePackCreditGrantArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly grantType: "purchased" | "bonus";
@@ -23,13 +20,6 @@ interface UsagePackCreditGrantArgs {
   readonly expiresAt: Date;
   readonly refundSource?: UsagePackCreditRefundSource;
 }
-
-interface UsagePackCreditGrantResult {
-  readonly id: string;
-  readonly created: boolean;
-}
-
-type UsagePackCreditGrantStore = Pick<Db, "insert" | "select">;
 
 interface UsagePackCreditBalance {
   readonly totalCredits: number;
@@ -58,52 +48,42 @@ interface UsagePackCreditGrantBalanceRow {
   readonly expiresAt: Date;
 }
 
-export async function createUsagePackCreditGrant(
-  db: UsagePackCreditGrantStore,
-  args: UsagePackCreditGrantArgs,
-): Promise<UsagePackCreditGrantResult> {
-  // Fulfillment is intentionally independent of the enrollment feature switch:
-  // an already-paid subscription must still be safe to fulfill after rollout closes.
-  const [inserted] = await db
-    .insert(usagePackCreditGrants)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      grantType: args.grantType,
-      idempotencyKey: args.idempotencyKey,
-      originalAmount: args.amount,
-      remainingAmount: args.amount,
-      expiresAt: args.expiresAt,
-    })
-    .onConflictDoNothing({ target: usagePackCreditGrants.idempotencyKey })
-    .returning({ id: usagePackCreditGrants.id });
-  if (inserted) {
-    if (args.refundSource) {
-      if (args.grantType !== "purchased") {
-        throw new Error("Bonus usage pack credits cannot have a refund source");
-      }
-      await ensureUsagePackCreditRefundSource(db, {
-        creditGrantId: inserted.id,
-        orgId: args.orgId,
-        userId: args.userId,
-        source: args.refundSource,
-      });
-    }
-    return { id: inserted.id, created: true };
-  }
+/** Pure values and conflict identity; the financial owner executes the SQL. */
+export function usagePackCreditGrantValues(args: UsagePackCreditGrantArgs) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    grantType: args.grantType,
+    idempotencyKey: args.idempotencyKey,
+    originalAmount: args.amount,
+    remainingAmount: args.amount,
+    expiresAt: args.expiresAt,
+  };
+}
 
-  const [existing] = await db
-    .select({
+export function usagePackCreditGrantReadPlan(args: UsagePackCreditGrantArgs) {
+  return {
+    columns: {
       id: usagePackCreditGrants.id,
       orgId: usagePackCreditGrants.orgId,
       userId: usagePackCreditGrants.userId,
       grantType: usagePackCreditGrants.grantType,
       originalAmount: usagePackCreditGrants.originalAmount,
       expiresAt: usagePackCreditGrants.expiresAt,
-    })
-    .from(usagePackCreditGrants)
-    .where(eq(usagePackCreditGrants.idempotencyKey, args.idempotencyKey))
-    .limit(1);
+    },
+    condition: eq(usagePackCreditGrants.idempotencyKey, args.idempotencyKey),
+  };
+}
+
+export function requireUsagePackCreditGrant(
+  existing:
+    | Pick<
+        typeof usagePackCreditGrants.$inferSelect,
+        "id" | "orgId" | "userId" | "grantType" | "originalAmount" | "expiresAt"
+      >
+    | undefined,
+  args: UsagePackCreditGrantArgs,
+): string {
   if (
     !existing ||
     existing.orgId !== args.orgId ||
@@ -114,18 +94,7 @@ export async function createUsagePackCreditGrant(
   ) {
     throw new Error("Usage pack credit grant idempotency key conflict");
   }
-  if (args.refundSource) {
-    if (args.grantType !== "purchased") {
-      throw new Error("Bonus usage pack credits cannot have a refund source");
-    }
-    await ensureUsagePackCreditRefundSource(db, {
-      creditGrantId: existing.id,
-      orgId: args.orgId,
-      userId: args.userId,
-      source: args.refundSource,
-    });
-  }
-  return { id: existing.id, created: false };
+  return existing.id;
 }
 
 export async function getSpendableUsagePackCredits(
