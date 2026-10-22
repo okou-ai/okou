@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.236.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.8...runner-rs-v0.236.9) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** preserve header auth rejection responses ([#42206](https://github.com/okou-ai/okou/issues/42206)) ([3952ddb](https://github.com/okou-ai/okou/commit/3952ddb9a6ecd8b6ef2e590f083069d19fca0e14))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.7...runner-rs-v0.236.8) (2026-10-22)
 
 ### Release Dependencies
