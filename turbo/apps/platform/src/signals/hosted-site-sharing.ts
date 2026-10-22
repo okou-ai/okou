@@ -5,11 +5,15 @@ import {
   hostedSiteUrlSlugSchema,
   type hostedSiteUrlSchema,
 } from "@okouai/api-contracts/contracts/host";
+import type { hostedSiteVisibilitySchema } from "@okouai/api-contracts/contracts/hosted-site-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
+import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
 import { apiClient$ } from "./api-client.ts";
 import { debounceCommand, throttleCommand } from "./command-scheduling.ts";
+import { featureSwitch$ } from "./external/feature-switch.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import {
   currentHostedSiteUrl,
@@ -17,10 +21,115 @@ import {
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { onRef, resetSignal } from "./utils.ts";
+import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
 type SiteUrl = z.infer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
+type Visibility = z.infer<typeof hostedSiteVisibilitySchema>;
+
+function createSiteVisibilitySignals(sourceUrl: string) {
+  const reload$ = state(0);
+  const details$ = computed(async (get) => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.HostedSiteVisibility]) {
+      return null;
+    }
+    const url = new URL(
+      currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$)),
+    );
+    if (!url.hostname.endsWith(`.${resolveEditableHostedSiteDomain()}`)) {
+      return null;
+    }
+    get(reload$);
+    // URL editing has its own rollout gate. Resolve the publication without
+    // depending on that gate, then let the visibility endpoint authorize ownership.
+    const alias = await accept(
+      get(apiClient$)(hostContract).resolveAlias({
+        params: { publicSlug: url.hostname.split(".")[0]! },
+        query: { publicBrand: "okou" },
+        fetchOptions: { cache: "no-store" },
+      }),
+      [200],
+    );
+    if (!alias.body.pointer) {
+      return null;
+    }
+    const result = await accept(
+      get(apiClient$)(hostContract).siteVisibility({
+        params: { siteId: alias.body.pointer.siteId },
+        fetchOptions: { cache: "no-store" },
+      }),
+      [200, 404],
+    );
+    return result.status === 200 ? result.body : null;
+  });
+  const operation$ = state<Promise<void> | null>(null);
+  const persist$ = command(
+    async ({ get, set }, visibility: Visibility, signal: AbortSignal) => {
+      const details = await get(details$);
+      signal.throwIfAborted();
+      if (!details || details.visibility === visibility) {
+        return false;
+      }
+      await withCleanup(
+        accept(
+          get(apiClient$)(hostContract).updateSiteVisibility({
+            params: { siteId: details.siteId },
+            body: { visibility, expectedRevision: details.revision },
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        ),
+        () => {
+          if (!signal.aborted) {
+            set(reload$, (value) => {
+              return value + 1;
+            });
+          }
+        },
+      );
+      signal.throwIfAborted();
+      await get(details$);
+      signal.throwIfAborted();
+      return true;
+    },
+  );
+  const save$ = throttleCommand(persist$, 0);
+  const change$ = command(
+    ({ get, set }, visibility: Visibility, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      let promise: Promise<void> | null = null;
+      promise = (async () => {
+        const updated = await set(save$, visibility, signal);
+        signal.throwIfAborted();
+        if (updated && get(operation$) === promise) {
+          toast.success(
+            i18n.t(($) => {
+              return $.artifacts.sharing.permissionsUpdated;
+            }),
+          );
+        }
+      })();
+      set(operation$, promise);
+      return promise;
+    },
+  );
+  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(reload$, (value) => {
+      return value + 1;
+    });
+    await settle(get(details$), signal);
+  });
+  return {
+    visibility$: details$,
+    visibilityOperation$: computed((get) => {
+      return get(operation$);
+    }),
+    changeVisibility$: change$,
+    refreshVisibility$: refresh$,
+  };
+}
 
 function createSiteUrlCheck(validation$: State<Validation>) {
   return debounceCommand(
@@ -153,6 +262,9 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const saved$ = state<SiteUrl | null>(null);
   const reload$ = state(0);
   const details$ = computed(async (get) => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.HostedSiteUrlEditing]) {
+      return null;
+    }
     const changes = get(hostedSiteUrlChanges$);
     const saved = get(saved$);
     if (saved) {
@@ -185,7 +297,14 @@ function createHostedSiteShareSession(sourceUrl: string) {
   });
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
+  const visibility = createSiteVisibilitySignals(sourceUrl);
   const linkCopy = createShareLinkCopy();
+  const changeVisibility$ = command(
+    ({ set }, choice: Visibility, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      return set(visibility.changeVisibility$, choice, signal);
+    },
+  );
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
@@ -208,6 +327,8 @@ function createHostedSiteShareSession(sourceUrl: string) {
     signal$,
     details$,
     copyUrl$,
+    ...visibility,
+    changeVisibility$,
     open$,
     ...editor,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
