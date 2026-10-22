@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1052.0](https://github.com/okou-ai/okou/compare/app-v0.1051.3...app-v0.1052.0) (2026-10-22)
+
+
+### Features
+
+* add website visibility controls to share menus ([#42236](https://github.com/okou-ai/okou/issues/42236)) ([17e8ade](https://github.com/okou-ai/okou/commit/17e8adef92cbbb5085fad2ea2b32126d48fcd738))
+
+
+### Bug Fixes
+
+* **platform:** use explicit artifact drive recovery ([#42256](https://github.com/okou-ai/okou/issues/42256)) ([f5845f4](https://github.com/okou-ai/okou/commit/f5845f471f1d1cc792c4a44fd120f5673075297e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.3
+    * @okouai/core bumped to 8.777.4
+
 ## [0.1051.3](https://github.com/okou-ai/okou/compare/app-v0.1051.2...app-v0.1051.3) (2026-10-22)
 
 
