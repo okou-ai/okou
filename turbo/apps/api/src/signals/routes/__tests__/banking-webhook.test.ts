@@ -492,29 +492,38 @@ describe("Finicity webhook outcomes", () => {
     ]);
   });
 
-  it("uses the last duplicate account while retaining any provider repair requirement", async () => {
-    const fixture = await pendingConnect();
-    server.use(
-      http.get(fixture.accountsUrl, () => {
-        return HttpResponse.json({
-          accounts: [
-            account("bank", true),
-            { ...account("bank"), name: "Latest savings", type: "savings" },
-          ],
-        });
-      }),
-    );
-    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
-    const status = await fixture.status();
-    expect(status.body.connection?.status).toBe("repair_required");
-    expect(status.body.connection?.accounts).toStrictEqual([
-      expect.objectContaining({
-        name: "Latest savings",
-        type: "savings",
-        repairRequired: false,
-      }),
-    ]);
-  });
+  it.each([false, true])(
+    "uses the last duplicate account with repairRequired=%s",
+    async (repairRequired) => {
+      const fixture = await pendingConnect();
+      server.use(
+        http.get(fixture.accountsUrl, () => {
+          return HttpResponse.json({
+            accounts: [
+              account("bank", !repairRequired),
+              {
+                ...account("bank", repairRequired),
+                name: "Latest savings",
+                type: "savings",
+              },
+            ],
+          });
+        }),
+      );
+      expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+      const status = await fixture.status();
+      expect(status.body.connection?.status).toBe(
+        repairRequired ? "repair_required" : "active",
+      );
+      expect(status.body.connection?.accounts).toStrictEqual([
+        expect.objectContaining({
+          name: "Latest savings",
+          type: "savings",
+          repairRequired,
+        }),
+      ]);
+    },
+  );
 
   it("rejects an invalid overwritten provider account without consuming the event", async () => {
     const fixture = await pendingConnect();
