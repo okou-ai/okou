@@ -230,7 +230,7 @@ struct ChatDetailView: View {
         source: source, finishedAt: finishedAt,
         select: conversation.composer.editor.selectOrAppendText
       )
-      .padding(EdgeInsets(top: 24, leading: 26, bottom: 0, trailing: 20))
+      .padding(.top, 24)
     case .earlier(let isLoading):
       Button {
         scrolling.loadEarlierMessages()
