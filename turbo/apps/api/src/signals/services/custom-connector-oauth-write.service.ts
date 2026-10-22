@@ -1,9 +1,26 @@
+import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { and, asc, eq, exists, or, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+
+export function customConnectorOAuthStartFromRow(
+  oauthState: { readonly id: string } | undefined,
+  account: ConnectorAccountMutationIntent,
+  expiresAt: Date,
+) {
+  if (!oauthState) {
+    throw new Error("Failed to create connector OAuth state");
+  }
+  return {
+    kind: "ready" as const,
+    oauthAttemptId: oauthState.id,
+    connectionId: account.intent === "add" ? oauthState.id : null,
+    expiresAt,
+  };
+}
 
 export interface CustomConnectorOAuthConnectionReadIdentity {
   readonly orgId: string;
