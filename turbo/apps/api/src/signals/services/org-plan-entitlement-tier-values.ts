@@ -28,7 +28,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     restrictedBuiltInModels: true,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: 10,
-    audioDailyRateLimit: 10,
+    audioDailyRateLimit: 40,
     audioDailyDurationSeconds: 10 * 60,
   },
   pro: {
