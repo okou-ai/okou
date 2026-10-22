@@ -92,11 +92,6 @@
       "owner": "persistBrowserUserAction"
     },
     {
-      "id": "TX-0069",
-      "file": "turbo/apps/api/src/signals/services/browser.service.ts",
-      "owner": "claimStartedProviderInstance$"
-    },
-    {
       "id": "TX-0073",
       "file": "turbo/apps/api/src/signals/services/browser.service.ts",
       "owner": "claimExpiredInactiveBrowser$"

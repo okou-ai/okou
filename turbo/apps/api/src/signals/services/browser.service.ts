@@ -42,10 +42,13 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { isUniqueViolation } from "../../lib/pg-errors";
+import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
@@ -1607,21 +1610,89 @@ const getOrCreateBrowserProfile$ = command(
 
 class BrowserPublicationLostError extends Error {}
 
+interface StartedBrowserClaimArgs {
+  readonly browser: BrowserSessionRow;
+  readonly context: BrowserRunContext;
+  readonly provider: BrowserUseSession;
+  readonly screenHeight: number;
+}
+
+function browserStartInstanceValues(
+  current: BrowserSessionRow,
+  args: StartedBrowserClaimArgs,
+): typeof browserSessionInstances.$inferInsert {
+  const cleanupAfterStart = current.status === "stopping";
+  return {
+    providerSessionId: args.provider.id,
+    chatThreadId: current.chatThreadId,
+    runId: args.context.runId,
+    status: cleanupAfterStart ? "stopped" : "active",
+    timeoutAt: new Date(args.provider.timeoutAt),
+    startedAt: new Date(args.provider.startedAt),
+    lastTouchedAt: nowDate(),
+    idleExpiresAt: nextIdleDeadline(),
+    stopRequestedAt: cleanupAfterStart ? nowDate() : null,
+    finishedAt: cleanupAfterStart ? nowDate() : null,
+  };
+}
+
+function browserStartClaimIsCurrent(
+  current: BrowserSessionRow | undefined,
+  expected: BrowserSessionRow,
+  context: BrowserRunContext,
+): current is BrowserSessionRow {
+  return (
+    current !== undefined &&
+    current.runId === context.runId &&
+    (current.status === "stopping" ||
+      (["creating", "resuming"].includes(current.status) &&
+        current.status === expected.status &&
+        current.updatedAt.getTime() === expected.updatedAt.getTime()))
+  );
+}
+
+interface StartedBrowserPublicationRow {
+  readonly browser: BrowserSessionRow | null;
+  readonly instance: { readonly idleExpiresAt: Date };
+  readonly height?: number | null;
+}
+
+function browserStartPublicationResult(
+  publication: StartedBrowserPublicationRow | undefined,
+  cleanupAfterStart: boolean,
+) {
+  if (!publication?.browser) {
+    throw new BrowserPublicationLostError("Managed browser claim changed");
+  }
+  if (cleanupAfterStart) {
+    return {
+      kind: "cleanup" as const,
+      browser: publication.browser,
+      instance: publication.instance,
+    };
+  }
+  if (publication.height === undefined || publication.height === null) {
+    throw new Error("Failed to persist managed browser resize state");
+  }
+  const screen: BrowserScreen = {
+    width: BROWSER_SCREEN_WIDTH,
+    height: publication.height,
+    resizable: true,
+  };
+  return {
+    kind: "active" as const,
+    browser: publication.browser,
+    instance: publication.instance,
+    screen,
+  };
+}
+
 const claimStartedProviderInstance$ = command(
-  async (
-    { set },
-    args: {
-      readonly browser: BrowserSessionRow;
-      readonly context: BrowserRunContext;
-      readonly provider: BrowserUseSession;
-      readonly screenHeight: number;
-    },
-  ) => {
+  async ({ set }, args: StartedBrowserClaimArgs) => {
     const db = set(writeDb$);
     const result = await settle(
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0069; new non-billing transactions are prohibited.
-      db.transaction(async (tx) => {
-        const [current] = await tx
+      (async () => {
+        const [current] = await db
           .select(BROWSER_SESSION_SELECTION)
           .from(browserSessions)
           .where(
@@ -1633,99 +1704,104 @@ const claimStartedProviderInstance$ = command(
             ),
           )
           .limit(1);
-        if (!current || current.runId !== args.context.runId) {
+        if (!browserStartClaimIsCurrent(current, args.browser, args.context)) {
           return { kind: "rejected" as const };
         }
         const cleanupAfterStart = current.status === "stopping";
-        if (
-          !cleanupAfterStart &&
-          (!["creating", "resuming"].includes(current.status) ||
-            current.status !== args.browser.status ||
-            current.updatedAt.getTime() !== args.browser.updatedAt.getTime())
-        ) {
-          return { kind: "rejected" as const };
-        }
-        // Keep instance -> logical order, shared with stop and stranded cleanup.
-        // Losing the logical claim must also roll back the instance and screen.
-        const [instance] = await tx
-          .insert(browserSessionInstances)
-          .values({
-            providerSessionId: args.provider.id,
-            chatThreadId: current.chatThreadId,
-            runId: args.context.runId,
-            status: cleanupAfterStart ? "stopped" : "active",
-            timeoutAt: new Date(args.provider.timeoutAt),
-            startedAt: new Date(args.provider.startedAt),
-            lastTouchedAt: nowDate(),
-            idleExpiresAt: nextIdleDeadline(),
-            stopRequestedAt: cleanupAfterStart ? nowDate() : null,
-            finishedAt: cleanupAfterStart ? nowDate() : null,
-          })
-          .returning();
-        if (!instance) {
-          throw new Error(
-            "Failed to persist managed browser provider instance",
-          );
-        }
-        let screen: BrowserScreen | null = null;
-        if (!cleanupAfterStart) {
-          const [resizeState] = await tx
-            .insert(browserSessionResizeStates)
-            .values({
-              providerSessionId: instance.providerSessionId,
-              screenWidth: BROWSER_SCREEN_WIDTH,
-              screenHeight: args.screenHeight,
+        const instance = db.$with("started_browser_instance").as(
+          db
+            .insert(browserSessionInstances)
+            .values(browserStartInstanceValues(current, args))
+            .returning({
+              providerSessionId: browserSessionInstances.providerSessionId,
+              idleExpiresAt: browserSessionInstances.idleExpiresAt,
+            }),
+        );
+        const resized = cleanupAfterStart
+          ? undefined
+          : db.$with("started_browser_screen").as(
+              db
+                .insert(browserSessionResizeStates)
+                .values({
+                  providerSessionId: sql`(${db
+                    .select({ providerSessionId: instance.providerSessionId })
+                    .from(instance)})`,
+                  screenWidth: BROWSER_SCREEN_WIDTH,
+                  screenHeight: args.screenHeight,
+                })
+                .returning({
+                  providerSessionId:
+                    browserSessionResizeStates.providerSessionId,
+                  height: browserSessionResizeStates.screenHeight,
+                }),
+            );
+        // Preserve instance -> screen -> logical order, shared with stop and
+        // stranded cleanup. The count consumes the preceding write first.
+        const preceding = resized ?? instance;
+        const published = db.$with("started_browser_publication").as(
+          db
+            .update(browserSessions)
+            .set({
+              status: cleanupAfterStart ? "suspended" : "active",
+              suspendedAt: cleanupAfterStart ? nowDate() : null,
+              suspensionReason: cleanupAfterStart
+                ? (current.suspensionReason ?? "reconcile")
+                : null,
+              updatedAt: nowDate(),
             })
-            .returning({ height: browserSessionResizeStates.screenHeight });
-          if (!resizeState) {
-            throw new Error("Failed to persist managed browser resize state");
-          }
-          screen = {
-            width: BROWSER_SCREEN_WIDTH,
-            height: resizeState.height,
-            resizable: true,
-          };
-        }
-        const [browser] = await tx
-          .update(browserSessions)
-          .set({
-            status: cleanupAfterStart ? "suspended" : "active",
-            suspendedAt: cleanupAfterStart ? nowDate() : null,
-            suspensionReason: cleanupAfterStart
-              ? (current.suspensionReason ?? "reconcile")
-              : null,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(browserSessions.id, current.id),
-              eq(browserSessions.chatThreadId, args.context.chatThreadId),
-              eq(browserSessions.orgId, args.context.orgId),
-              eq(browserSessions.userId, args.context.userId),
-              eq(browserSessions.runId, current.runId),
-              eq(browserSessions.status, current.status),
-              eq(browserSessions.updatedAt, current.updatedAt),
-            ),
-          )
-          .returning(BROWSER_SESSION_SELECTION);
-        if (!browser) {
-          throw new BrowserPublicationLostError(
-            "Managed browser claim changed",
-          );
-        }
-        return cleanupAfterStart
-          ? { kind: "cleanup" as const, browser, instance }
-          : { kind: "active" as const, browser, instance, screen };
-      }),
+            .where(
+              and(
+                eq(browserSessions.id, current.id),
+                eq(browserSessions.chatThreadId, args.context.chatThreadId),
+                eq(browserSessions.orgId, args.context.orgId),
+                eq(browserSessions.userId, args.context.userId),
+                eq(browserSessions.runId, current.runId),
+                eq(browserSessions.status, current.status),
+                eq(browserSessions.updatedAt, current.updatedAt),
+                eq(db.select({ count: count() }).from(preceding), 1),
+              ),
+            )
+            .returning(BROWSER_SESSION_SELECTION),
+        );
+        // The instance row keeps this SELECT nonempty even when the logical
+        // CAS loses. Its only division aborts every write before rejection.
+        const complete = sql`1 / CASE WHEN ${exists(
+          db.select({ id: published.id }).from(published),
+        )} THEN 1 ELSE 0 END`.mapWith(pgIntegerDecoder);
+        const selection = {
+          browser: { ...published._.selectedFields },
+          instance: { idleExpiresAt: instance.idleExpiresAt },
+          complete,
+        };
+        const rows = resized
+          ? await db
+              .with(instance, resized, published)
+              .select({ ...selection, height: resized.height })
+              .from(instance)
+              .leftJoin(
+                resized,
+                eq(resized.providerSessionId, instance.providerSessionId),
+              )
+              .leftJoin(published, eq(published.id, current.id))
+          : await db
+              .with(instance, published)
+              .select(selection)
+              .from(instance)
+              .leftJoin(published, eq(published.id, current.id));
+        return browserStartPublicationResult(rows[0], cleanupAfterStart);
+      })(),
     );
     if (!result.ok) {
       if (
         result.error instanceof BrowserPublicationLostError ||
+        safeSqlStateCode(result.error) === "22012" ||
         isUniqueViolation(
           result.error,
           "uq_browser_session_instances_thread_owned",
         )
       ) {
+        // 22012 belongs only to this statement's completion guard. PostgreSQL
+        // has rolled back its instance/screen writes before this rejection.
         return { kind: "rejected" as const };
       }
       throw result.error;
@@ -1798,7 +1874,7 @@ const createAndClaimProviderInstance$ = command(
     );
     if (!claimResult.ok) {
       // Provider creation is irreversible. Any failed claim must reclaim the
-      // provider because the transaction rolls back every durable owner row.
+      // provider because the atomic statement rolls back every durable owner row.
       stopProviderSessionLater(provider.value.id);
       throw claimResult.error;
     }
