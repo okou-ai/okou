@@ -4,10 +4,11 @@ import argparse
 import hashlib
 import json
 import re
+import stat
 import uuid
 from pathlib import Path
 
-from file_open_permission import EVENT, FAN_OPEN_PERM
+from file_open_permission import EVENT, FAN_ONDIR, FAN_OPEN_PERM
 from file_open_permission_probe import CLAIMS, PAYLOAD
 from file_residency import require
 from file_residency_report import decode as strict_json
@@ -56,7 +57,8 @@ def disposition(value, original, pid):
     return observed, completed
 
 
-def validate(raw, source, capture, directory):
+def validate(raw, source, capture, directory, *, original_directory=False):
+    require(type(original_directory) is bool, "directory selector must be boolean")
     require(type(raw) is bytes and 0 < len(raw) <= 65536, "unbounded original record")
     require(
         re.fullmatch(r"[0-9a-f]{40}", source)
@@ -69,10 +71,16 @@ def validate(raw, source, capture, directory):
     value = strict_json(raw)
     fields(
         value,
-        "schema source_commit run_id host controller invocation started_ns payload_sha256 cases claims error complete original borrowed_original_closed completed_ns",
+        "schema source_commit run_id host controller invocation started_ns payload_sha256 cases claims error complete original borrowed_original_closed completed_ns"
+        + (" child mark_mask" if original_directory else ""),
     )
     require(
-        value["schema"] == "original-open-permission-v1"
+        value["schema"]
+        == (
+            "original-directory-open-permission-v1"
+            if original_directory
+            else "original-open-permission-v1"
+        )
         and value["source_commit"] == source,
         "foreign source or schema",
     )
@@ -97,7 +105,7 @@ def validate(raw, source, capture, directory):
     invocation = value["invocation"]
     require(
         type(invocation) is list
-        and len(invocation) == 6
+        and len(invocation) == (7 if original_directory else 6)
         and all(type(item) is str and 0 < len(item) <= 4096 for item in invocation),
         "invalid invocation",
     )
@@ -105,21 +113,49 @@ def validate(raw, source, capture, directory):
         Path(invocation[0]).is_absolute()
         and Path(invocation[1]).is_absolute()
         and Path(invocation[1]).name == "file_open_permission_probe.py"
-        and invocation[2:] == ["--output-dir", directory, "--source-commit", source]
+        and invocation[2:]
+        == ["--output-dir", directory, "--source-commit", source]
+        + (["--directory"] if original_directory else [])
         and Path(directory).is_absolute(),
         "foreign original invocation",
     )
     original = value["original"]
-    fields(original, "device inode uid size links mtime_ns ctime_ns")
+    fields(
+        original,
+        "device inode uid size links mtime_ns ctime_ns"
+        + (" file_type" if original_directory else ""),
+    )
     for item in original.values():
         integer(item)
     require(
         original["inode"] > 0
-        and original["links"] == 1
         and original["uid"] == controller["uid"]
-        and original["size"] == len(PAYLOAD),
+        and (
+            original["links"] >= 1
+            if original_directory
+            else original["links"] == 1 and original["size"] == len(PAYLOAD)
+        ),
         "invalid original file authority",
     )
+    if original_directory:
+        require(
+            integer(value["mark_mask"]) == (FAN_OPEN_PERM | FAN_ONDIR),
+            "invalid original directory mark mask",
+        )
+        require(original["file_type"] == stat.S_IFDIR, "original is not a directory")
+        child = value["child"]
+        fields(child, "device inode uid size links mtime_ns ctime_ns")
+        for item in child.values():
+            integer(item)
+        require(
+            child["inode"] > 0
+            and child["device"] == original["device"]
+            and child["inode"] != original["inode"]
+            and child["uid"] == controller["uid"]
+            and child["links"] == 1
+            and child["size"] == len(PAYLOAD),
+            "invalid original child authority",
+        )
     require(
         value["payload_sha256"] == hashlib.sha256(PAYLOAD).hexdigest(),
         "foreign qualification payload",
@@ -186,8 +222,24 @@ def validate(raw, source, capture, directory):
             "unbounded producer output",
         )
         result = strict_json(bytes.fromhex(producer["stdout_hex"]))
+        expected = {"payload_hex": PAYLOAD.hex()} if allow else {"errno": 1}
+        if original_directory and allow:
+            fields(result, "payload_hex directory child")
+            for owner, names in (
+                ("directory", "device inode file_type"),
+                ("child", "device inode"),
+            ):
+                fields(result[owner], names)
+                for item in result[owner].values():
+                    integer(item)
+            expected["directory"] = {
+                key: original[key] for key in ("device", "inode", "file_type")
+            }
+            expected["child"] = {
+                key: value["child"][key] for key in ("device", "inode")
+            }
         require(
-            result == ({"payload_hex": PAYLOAD.hex()} if allow else {"errno": 1}),
+            result == expected,
             "incorrect original producer outcome",
         )
         if not allow:
@@ -240,6 +292,11 @@ def main():
     parser.add_argument("--expected-source", required=True)
     parser.add_argument("--expected-capture-sha256", required=True)
     parser.add_argument("--expected-directory", required=True)
+    parser.add_argument(
+        "--directory",
+        action="store_true",
+        help="require explicit original-directory evidence",
+    )
     args = parser.parse_args()
     try:
         raw = read_regular(args.record.parent, args.record.name, 65536)
@@ -248,6 +305,7 @@ def main():
             args.expected_source,
             args.expected_capture_sha256,
             args.expected_directory,
+            original_directory=args.directory,
         )
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
         parser.exit(1, f"original permission evidence rejected: {error}\n")

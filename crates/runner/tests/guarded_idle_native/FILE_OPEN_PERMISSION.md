@@ -8,11 +8,19 @@ explicit disposition or group/process failure. Requires 64-bit Linux 5.15+,
 `FAN_REPORT_PIDFD` support. Capability/ABI errors fail; no alternative gate runs.
 Python 3.10+ and its standard library are sufficient. No server is needed.
 
+Explicit `FileOpenPermission(fd, identity, directory=True)` instead binds an
+owned original directory using mark mask `FAN_OPEN_PERM|FAN_ONDIR`. Returned
+classic FD events have exactly `FAN_OPEN_PERM`; directory identity comes from
+the actual original/event descriptor type and inode, not a returned directory
+bit. The default still requires a regular file. Type selection never falls back, and
+neither mode uses child, mount or filesystem marks. A marked directory's direct
+child files/directories and unrelated originals remain independently usable.
+
 ## Ownership and invocation
 
 Keep the controller, original file and every producer outside disposable
 observation futures. Use only new private fixture files or an explicitly owned
-native fixture's original input; never mark shared mounts/directories, mutate
+native fixture's original input; never mark shared mounts or shared directories, mutate
 production inputs or use this as an access-control boundary.
 
 ```python
@@ -31,7 +39,7 @@ os.close(fd)
 ```
 
 The caller retains its borrowed original FD. The gate duplicates it and checks
-its expected device/inode, regular-file ownership, current filesystem
+its expected device/inode, explicitly selected file/directory type, ownership, current filesystem
 credentials and immutable creator process/thread/native-task generation. A path
 rename/replacement does not redirect its inode mark. The gate never reads or
 writes original payload bytes. A caller can close its own FD while the gate
@@ -95,6 +103,52 @@ is mocked and no elapsed delay supplies synchronization. The qualification
 reader also rejects actual-record corruption and inflated claims.
 
 ## Qualification and original replay
+
+For a private original directory, use the same probe and reader with an explicit
+`--directory` flag on both commands:
+
+```sh
+sudo python3 -B \
+  crates/runner/tests/guarded_idle_native/file_open_permission_probe.py \
+  --output-dir /absolute/new/private/directory-qualification \
+  --source-commit <full-verified-commit-sha> --directory
+python3 -B \
+  crates/runner/tests/guarded_idle_native/file_open_permission_report.py \
+  /absolute/downloaded/record.json \
+  --expected-source <full-verified-commit-sha> \
+  --expected-capture-sha256 <trusted-original-capture-sha256> \
+  --expected-directory /absolute/new/private/directory-qualification --directory
+```
+
+The `original-directory-open-permission-v1` record binds the directory type,
+configured `mark_mask`, exact raw FD-event mask, original device/inode and unchanged original
+child identity/bytes. Actual producers open the original with O_DIRECTORY and
+O_NOFOLLOW before reading `payload` relative to that descriptor. The three
+allow/deny/queued-retire cases require positive process joins and complete gate
+retirement. The default reader accepts only the existing regular-file schema;
+it never infers directory selection from a record. The directory selector is
+also explicit in the Python reader as `original_directory=True`.
+
+The mark and returned-event masks are deliberately different. Linux
+[fanotify(7)](https://man7.org/linux/man-pages/man7/fanotify.7.html) reports
+FAN_ONDIR in event masks only for file-handle groups; this permission/PIDFD
+primitive uses classic event descriptors. Unsupported types/masks fail instead
+of accepting a second event format.
+
+`directory_open_permission_test.py` supplies ordinary semantic-record/real CLI
+checks and explicitly privileged real directory/process cases. Run it with the
+same commands and `OKOU_TEST_OPEN_PERMISSION_KERNEL=1` selector as the file suite
+above; both modes are registered in Security CI. These cases verify original
+rename/replacement and borrower lifetime, retained independent pending events,
+queued/observed denial, and child/unrelated progress while the original open is
+still held. Synthetic consumer inputs are not kernel qualification.
+
+Host directory qualification does not establish Guest support or canonical
+final-preparation execution. That helper checks sole-exec containment before
+opening protected directories; the existing ordinary-exec Guest controller is
+itself another operation. A compatible independent owner and actual Guest
+qualification remain separate requirements. No containment check is changed
+or bypassed, and all lifecycle/saving/cleanup/physical-credit claims stay false.
 
 Run the committed probe only in a new private directory on an authorized host:
 

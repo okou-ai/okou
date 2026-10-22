@@ -12,7 +12,12 @@ import time
 import uuid
 from pathlib import Path
 
-from file_open_permission import FileOpenPermission
+from file_open_permission import (
+    FAN_ONDIR,
+    FAN_OPEN_PERM,
+    FileOpenPermission,
+    original_metadata,
+)
 from file_residency import metadata, require, task_identity
 
 PAYLOAD = b"owned original open-permission qualification\n"
@@ -35,11 +40,39 @@ except OSError as error:
     sys.exit(23)
 print(json.dumps({'payload_hex':data.hex()}),flush=True)
 """
+DIRECTORY_PRODUCER = """import json,os,stat,sys
+directory = None
+try:
+    directory=os.open(sys.argv[1],os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    original=os.fstat(directory)
+    child=os.open('payload',os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=directory)
+    try:
+        identity=os.fstat(child)
+        data=os.read(child,4097)
+    finally:
+        os.close(child)
+except OSError as error:
+    print(json.dumps({'errno':error.errno}),flush=True)
+    sys.exit(23)
+finally:
+    if directory is not None:
+        os.close(directory)
+print(json.dumps({'directory':{'device':original.st_dev,'inode':original.st_ino,
+    'file_type':stat.S_IFMT(original.st_mode)},'child':{'device':identity.st_dev,
+    'inode':identity.st_ino},'payload_hex':data.hex()}),flush=True)
+"""
 
 
-def producer(path):
+def producer(path, *, directory=False):
+    require(type(directory) is bool, "directory selector must be boolean")
     return subprocess.Popen(
-        [sys.executable, "-B", "-c", PRODUCER, str(path)],
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            DIRECTORY_PRODUCER if directory else PRODUCER,
+            str(path),
+        ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -58,7 +91,8 @@ def join(child):
     }
 
 
-def qualify(output, source):
+def qualify(output, source, *, directory=False):
+    require(type(directory) is bool, "directory selector must be boolean")
     require(
         re.fullmatch(r"[0-9a-f]{40}", source) is not None, "expected full source SHA"
     )
@@ -67,7 +101,9 @@ def qualify(output, source):
     original = output / "original"
     fd = None
     record = {
-        "schema": "original-open-permission-v1",
+        "schema": "original-directory-open-permission-v1"
+        if directory
+        else "original-open-permission-v1",
         "source_commit": source,
         "run_id": str(uuid.uuid4()),
         "host": {
@@ -86,7 +122,8 @@ def qualify(output, source):
             str(output),
             "--source-commit",
             source,
-        ],
+        ]
+        + (["--directory"] if directory else []),
         "started_ns": time.monotonic_ns(),
         "payload_sha256": hashlib.sha256(PAYLOAD).hexdigest(),
         "cases": [],
@@ -94,21 +131,46 @@ def qualify(output, source):
         "error": None,
         "complete": False,
     }
+    if directory:
+        record["mark_mask"] = FAN_OPEN_PERM | FAN_ONDIR
     active = None
     gate = None
     try:
-        fd = os.open(original, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
-        require(
-            os.write(fd, PAYLOAD) == len(PAYLOAD), "short qualification payload write"
-        )
-        os.fsync(fd)
-        record["original"] = metadata(fd)
+        if directory:
+            original.mkdir(mode=0o700)
+            child = os.open(
+                original / "payload",
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC,
+                0o600,
+            )
+            try:
+                require(
+                    os.write(child, PAYLOAD) == len(PAYLOAD),
+                    "short qualification payload write",
+                )
+                os.fsync(child)
+                record["child"] = metadata(child)
+            finally:
+                os.close(child)
+            fd = os.open(
+                original, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+            )
+        else:
+            fd = os.open(
+                original, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600
+            )
+            require(
+                os.write(fd, PAYLOAD) == len(PAYLOAD),
+                "short qualification payload write",
+            )
+            os.fsync(fd)
+        record["original"] = original_metadata(fd, directory=directory)
         identity = record["original"]["device"], record["original"]["inode"]
         for decision in ("allow", "deny", "retire"):
             case = {"kind": decision, "started_ns": time.monotonic_ns()}
             record["cases"].append(case)
-            gate = FileOpenPermission(fd, identity)
-            active = producer(original)
+            gate = FileOpenPermission(fd, identity, directory=directory)
+            active = producer(original, directory=directory)
             case["producer_pid"] = active.pid
             if decision == "retire":
                 poller = select.poll()
@@ -136,6 +198,14 @@ def qualify(output, source):
             expected = (
                 {"payload_hex": PAYLOAD.hex()} if decision == "allow" else {"errno": 1}
             )
+            if directory and decision == "allow":
+                expected["directory"] = {
+                    key: record["original"][key]
+                    for key in ("device", "inode", "file_type")
+                }
+                expected["child"] = {
+                    key: record["child"][key] for key in ("device", "inode")
+                }
             require(
                 json.loads(bytes.fromhex(case["producer"]["stdout_hex"])) == expected,
                 "unexpected actual producer result",
@@ -149,10 +219,25 @@ def qualify(output, source):
                 gate = None
             case["completed_ns"] = time.monotonic_ns()
         require(
-            metadata(fd) == record["original"]
-            and os.pread(fd, len(PAYLOAD) + 1, 0) == PAYLOAD,
-            "original payload changed",
+            original_metadata(fd, directory=directory) == record["original"],
+            "original metadata changed",
         )
+        if directory:
+            child = os.open(
+                "payload", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd
+            )
+            try:
+                require(
+                    metadata(child) == record["child"]
+                    and os.pread(child, len(PAYLOAD) + 1, 0) == PAYLOAD,
+                    "original child changed",
+                )
+            finally:
+                os.close(child)
+        else:
+            require(
+                os.pread(fd, len(PAYLOAD) + 1, 0) == PAYLOAD, "original payload changed"
+            )
         os.close(fd)
         fd = None
         record["borrowed_original_closed"] = True
@@ -188,9 +273,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument(
+        "--directory",
+        action="store_true",
+        help="qualify an owned original directory instead of a regular file",
+    )
     args = parser.parse_args()
     try:
-        capture = qualify(args.output_dir, args.source_commit)
+        capture = qualify(args.output_dir, args.source_commit, directory=args.directory)
     except (OSError, ValueError) as error:
         parser.exit(1, f"qualification failed: {error}\n")
     print(
