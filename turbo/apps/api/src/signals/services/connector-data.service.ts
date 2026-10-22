@@ -28,7 +28,6 @@ import { revokeConnectorAuthMethodAccessTokenWithMethod } from "@okouai/connecto
 import {
   connectorAuthMethodGrantMetadata,
   connectorAuthMethodOwnedSecretNames,
-  connectorAuthMethodRevokeMetadata,
   connectorAuthMethodRuntimeMetadata,
   connectorAuthMethodScopeDiff,
   type ConnectorOutputTarget,
@@ -69,14 +68,14 @@ import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { bestEffort, settle, settleIncludingAbort } from "../utils";
 import {
-  builtinConnectorCredentialSecretReadCondition,
   builtinConnectorCredentialStorageIsCompatible,
+  builtinConnectorTokenRevokeReadPlan,
+  builtinConnectorTokenRevokeInputsFromRows,
   resolveBuiltinConnectorCredentialAccess,
   resolveStoredBuiltinConnectorRuntimeMethod,
-  type BuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-access.service";
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import {
@@ -900,64 +899,6 @@ export const readBuiltinConnectorById$ = command(
   },
 );
 
-async function loadPendingConnectorTokenRevoke(
-  args: {
-    readonly access: BuiltinConnectorCredentialAccess;
-    readonly db: Db | ReadonlyDb;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<PendingBuiltinConnectorTokenRevoke | null> {
-  const revokeMetadata = connectorAuthMethodRevokeMetadata(
-    args.access.runtimeMethod.method,
-  );
-  if (revokeMetadata?.kind !== "token-revoke") {
-    return null;
-  }
-
-  const inputEntries = Object.entries(revokeMetadata.inputs);
-  if (inputEntries.length === 0) {
-    return {
-      runtimeMethod: args.access.runtimeMethod,
-      encryptedInputs: {},
-      featureSwitchContext: args.featureSwitchContext,
-    };
-  }
-
-  const secretNames = inputEntries.map(([, input]) => {
-    return input.secretName;
-  });
-  const secretRows = await args.db
-    .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
-    .from(secrets)
-    .where(
-      builtinConnectorCredentialSecretReadCondition({
-        groups: [{ access: args.access, names: secretNames }],
-      }),
-    );
-  signal.throwIfAborted();
-
-  const encryptedValuesByName = new Map(
-    secretRows.flatMap((row) => {
-      return row.encryptedValue ? [[row.name, row.encryptedValue]] : [];
-    }),
-  );
-  const encryptedInputs: Record<string, string> = {};
-  for (const [inputName, input] of inputEntries) {
-    const encryptedValue = encryptedValuesByName.get(input.secretName);
-    if (!encryptedValue) {
-      return null;
-    }
-    encryptedInputs[inputName] = encryptedValue;
-  }
-
-  return {
-    runtimeMethod: args.access.runtimeMethod,
-    encryptedInputs,
-    featureSwitchContext: args.featureSwitchContext,
-  };
-}
-
 async function decryptConnectorRevokeInputs(args: {
   readonly encryptedInputs: Readonly<Record<string, string>>;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -1193,14 +1134,42 @@ async function deleteBuiltinConnectorAccountLocalState(
       accessResult.kind === "ok" &&
       accessResult.access.runtimeMethod.method.revoke.kind === "token-revoke"
     ) {
-      pendingTokenRevoke = await loadPendingConnectorTokenRevoke(
-        {
-          access: accessResult.access,
-          db: tx,
-          featureSwitchContext,
-        },
-        signal,
-      );
+      const revokeArgs = {
+        access: accessResult.access,
+        featureSwitchContext,
+      };
+      const revokeSignal = signal;
+      pendingTokenRevoke =
+        await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
+          const read = builtinConnectorTokenRevokeReadPlan(revokeArgs.access);
+          if (read.kind === "none") {
+            return null;
+          }
+          if (read.kind === "empty") {
+            return {
+              runtimeMethod: revokeArgs.access.runtimeMethod,
+              encryptedInputs: {},
+              featureSwitchContext: revokeArgs.featureSwitchContext,
+            };
+          }
+          const secretRows = await tx
+            .select(read.columns)
+            .from(read.from)
+            .where(read.where);
+          revokeSignal.throwIfAborted();
+          const encryptedInputs = builtinConnectorTokenRevokeInputsFromRows(
+            read.inputEntries,
+            secretRows,
+          );
+          if (encryptedInputs === null) {
+            return null;
+          }
+          return {
+            runtimeMethod: revokeArgs.access.runtimeMethod,
+            encryptedInputs,
+            featureSwitchContext: revokeArgs.featureSwitchContext,
+          };
+        })();
     }
   }
   signal.throwIfAborted();
@@ -1665,14 +1634,42 @@ async function loadPendingConnectorTokenRevokeForLocalConnect(
     accessResult.kind === "ok" &&
     accessResult.access.runtimeMethod.method.revoke.kind === "token-revoke"
   ) {
-    pendingTokenRevoke = await loadPendingConnectorTokenRevoke(
-      {
-        access: accessResult.access,
-        db,
-        featureSwitchContext: args.featureSwitchContext,
-      },
-      signal,
-    );
+    const revokeArgs = {
+      access: accessResult.access,
+      featureSwitchContext: args.featureSwitchContext,
+    };
+    const revokeSignal = signal;
+    pendingTokenRevoke =
+      await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
+        const read = builtinConnectorTokenRevokeReadPlan(revokeArgs.access);
+        if (read.kind === "none") {
+          return null;
+        }
+        if (read.kind === "empty") {
+          return {
+            runtimeMethod: revokeArgs.access.runtimeMethod,
+            encryptedInputs: {},
+            featureSwitchContext: revokeArgs.featureSwitchContext,
+          };
+        }
+        const secretRows = await db
+          .select(read.columns)
+          .from(read.from)
+          .where(read.where);
+        revokeSignal.throwIfAborted();
+        const encryptedInputs = builtinConnectorTokenRevokeInputsFromRows(
+          read.inputEntries,
+          secretRows,
+        );
+        if (encryptedInputs === null) {
+          return null;
+        }
+        return {
+          runtimeMethod: revokeArgs.access.runtimeMethod,
+          encryptedInputs,
+          featureSwitchContext: revokeArgs.featureSwitchContext,
+        };
+      })();
   }
 
   return pendingTokenRevoke;
@@ -2491,14 +2488,41 @@ async function loadPendingConnectorTokenRevokeForTokenConnect(
   ) {
     return null;
   }
-  return await loadPendingConnectorTokenRevoke(
-    {
-      access: accessResult.access,
-      db,
-      featureSwitchContext: args.featureSwitchContext,
-    },
-    signal,
-  );
+  const revokeArgs = {
+    access: accessResult.access,
+    featureSwitchContext: args.featureSwitchContext,
+  };
+  const revokeSignal = signal;
+  return await (async (): Promise<PendingBuiltinConnectorTokenRevoke | null> => {
+    const read = builtinConnectorTokenRevokeReadPlan(revokeArgs.access);
+    if (read.kind === "none") {
+      return null;
+    }
+    if (read.kind === "empty") {
+      return {
+        runtimeMethod: revokeArgs.access.runtimeMethod,
+        encryptedInputs: {},
+        featureSwitchContext: revokeArgs.featureSwitchContext,
+      };
+    }
+    const secretRows = await db
+      .select(read.columns)
+      .from(read.from)
+      .where(read.where);
+    revokeSignal.throwIfAborted();
+    const encryptedInputs = builtinConnectorTokenRevokeInputsFromRows(
+      read.inputEntries,
+      secretRows,
+    );
+    if (encryptedInputs === null) {
+      return null;
+    }
+    return {
+      runtimeMethod: revokeArgs.access.runtimeMethod,
+      encryptedInputs,
+      featureSwitchContext: revokeArgs.featureSwitchContext,
+    };
+  })();
 }
 
 function authorizedExternalIdForMutation(args: {

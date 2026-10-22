@@ -1,6 +1,8 @@
 import {
   connectorAuthMethodOwnedSecretNames,
   connectorAuthMethodOwnedVariableNames,
+  connectorAuthMethodRevokeMetadata,
+  type ConnectorRevokeInputMetadata,
 } from "@okouai/connectors/connector-auth-method";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
@@ -279,4 +281,56 @@ export function builtinConnectorCredentialVariableReadCondition(args: {
     ];
   });
   return conditions.length === 0 ? isNull(variables.id) : or(...conditions);
+}
+
+export function builtinConnectorTokenRevokeReadPlan(
+  access: BuiltinConnectorCredentialAccess,
+) {
+  const revokeMetadata = connectorAuthMethodRevokeMetadata(
+    access.runtimeMethod.method,
+  );
+  if (revokeMetadata?.kind !== "token-revoke") {
+    return { kind: "none" } as const;
+  }
+
+  const inputEntries = Object.entries(revokeMetadata.inputs);
+  if (inputEntries.length === 0) {
+    return { kind: "empty" } as const;
+  }
+
+  const secretNames = inputEntries.map(([, input]) => {
+    return input.secretName;
+  });
+  return {
+    kind: "read" as const,
+    inputEntries,
+    columns: { name: secrets.name, encryptedValue: secrets.encryptedValue },
+    from: secrets,
+    where: builtinConnectorCredentialSecretReadCondition({
+      groups: [{ access, names: secretNames }],
+    }),
+  };
+}
+
+export function builtinConnectorTokenRevokeInputsFromRows(
+  inputEntries: readonly (readonly [string, ConnectorRevokeInputMetadata])[],
+  secretRows: readonly {
+    readonly name: string;
+    readonly encryptedValue: string | null;
+  }[],
+): Readonly<Record<string, string>> | null {
+  const encryptedValuesByName = new Map(
+    secretRows.flatMap((row) => {
+      return row.encryptedValue ? [[row.name, row.encryptedValue]] : [];
+    }),
+  );
+  const encryptedInputs: Record<string, string> = {};
+  for (const [inputName, input] of inputEntries) {
+    const encryptedValue = encryptedValuesByName.get(input.secretName);
+    if (!encryptedValue) {
+      return null;
+    }
+    encryptedInputs[inputName] = encryptedValue;
+  }
+  return encryptedInputs;
 }
