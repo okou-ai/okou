@@ -153,7 +153,7 @@ fn rootfs_is_clearly_full(diagnostics: &ResourceFailureDiagnostics) -> bool {
         || diagnostics.guest_root_fs_available_inodes == Some(0)
 }
 
-fn home_is_clearly_full(diagnostics: &ResourceFailureDiagnostics) -> bool {
+pub(in crate::executor) fn home_is_clearly_full(diagnostics: &ResourceFailureDiagnostics) -> bool {
     diagnostics
         .guest_home_fs_used_percent
         .is_some_and(|percent| percent >= 100)

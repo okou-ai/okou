@@ -53,9 +53,9 @@ pub(super) use network_auth::enrich_codex_workspace_reconnect;
 #[cfg(test)]
 pub(super) use oom::host_dmesg_indicates_oom;
 pub(super) use oom::{HostOomEvidenceSince, check_host_oom, host_oom_evidence_since_now};
-pub(super) use resource::collect_agent_abnormal_exit_diagnostics;
 #[cfg(test)]
 pub(super) use resource::parse_agent_abnormal_exit_resource_diagnostics;
+pub(super) use resource::{collect_agent_abnormal_exit_diagnostics, home_is_clearly_full};
 pub(super) use stdout_stream::{
     AgentStdoutStreamDiagnostics, StdoutDrainReport,
     append_stdout_stream_diagnostics_to_stream_log, drain_stdout_to_file,

@@ -10,7 +10,9 @@ use sandbox::{
 };
 use tracing::{info, warn};
 
-use super::diagnostics::{collect_agent_abnormal_exit_diagnostics, explicit_enospc_evidence};
+use super::diagnostics::{
+    collect_agent_abnormal_exit_diagnostics, explicit_enospc_evidence, home_is_clearly_full,
+};
 use super::{ResourceFailureDiagnostics, ResourceFailureKind, RunnerError, SandboxReuseResult};
 use crate::helper_exec::helper_exec_succeeded;
 use crate::telemetry::JobTelemetry;
@@ -46,9 +48,14 @@ pub(super) async fn recover(
         1,
     )
     .await;
-    let filesystem = match diagnostics.and_then(|value| value.failure_kind) {
-        Some(ResourceFailureKind::GuestHomeFilesystemFull) => DiskCleanupFilesystem::Home,
-        Some(ResourceFailureKind::GuestRootFilesystemFull) => DiskCleanupFilesystem::Rootfs,
+    // Bootstrap inputs live under /home/user. Generic failure attribution
+    // prioritizes rootfs, which must not divert this recovery when both are full.
+    let filesystem = match diagnostics.as_ref() {
+        Some(value) if home_is_clearly_full(value) => DiskCleanupFilesystem::Home,
+        Some(ResourceFailureDiagnostics {
+            failure_kind: Some(ResourceFailureKind::GuestRootFilesystemFull),
+            ..
+        }) => DiskCleanupFilesystem::Rootfs,
         _ => {
             return DiskCleanupOutcome {
                 retry: false,

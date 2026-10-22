@@ -78,6 +78,38 @@ async fn bootstrap_recovers_home_and_rootfs_before_starting_one_agent() {
 }
 
 #[tokio::test]
+async fn bootstrap_recovers_home_when_both_filesystems_are_full() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+        "No space left on device (os error 28)",
+    )));
+    overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "guest-agent-binary".into(),
+        exit_code: 0,
+        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 12000000 0 100% /\n/dev/vdb 24000000 24000000 0 100% /home/user\nVM0_DF_INODES_V1\n/dev/root 800000 100000 700000 13% /\n/dev/vdb 1500000 300000 1200000 20% /home/user\n".to_vec(),
+        stderr: Vec::new(),
+    });
+    cleanup_report(&overrides, DiskCleanupFilesystem::Rootfs, 1024);
+    cleanup_report(&overrides, DiskCleanupFilesystem::Home, 256 * 1024 * 1024);
+    let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+
+    let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.failure);
+    let writes = overrides.private_write_files_calls();
+    assert_eq!(writes.len(), 2);
+    assert_eq!(writes[0].files, writes[1].files);
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    let calls = cleanup_calls(&overrides);
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].cmd.ends_with(" home"));
+}
+
+#[tokio::test]
 async fn insufficient_capacity_preserves_failure_without_replaying_bootstrap() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
