@@ -1420,6 +1420,7 @@ describe("okou connector check command", () => {
       );
       expect(text).toContain("After reconnecting, start a new run.");
       expect(text).toContain("Setup status: invalid");
+      expect(text).toContain("The GitHub connector needs to be reconnected.");
       expect(defaultAccountRequests).toBe(0);
     });
 

@@ -74,7 +74,7 @@ interface BuiltinDiagContext extends DiagContext {
 
 type ConnectorConfigurationStatus = {
   readonly isConnected: boolean;
-  readonly isExpired: boolean;
+  readonly needsReconnect: boolean;
   readonly isSetupComplete: boolean;
 } & (
   | {
@@ -185,9 +185,7 @@ function printRunConnectionStatus(
       path: `/connectors/${ctx.connectorSlug}/reconnect/${runAccount.connectionId}`,
       agentId: ctx.agentId,
     });
-    console.log(
-      `The ${ctx.label} connector is connected but has expired and needs to be reconnected.`,
-    );
+    console.log(`The ${ctx.label} connector needs to be reconnected.`);
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
     printCallbackActionUrlExample(url, ctx.agentId);
     console.log("After reconnecting, start a new run.");
@@ -214,7 +212,7 @@ function printAgentAuthorizationStatus(
 ): void {
   if (!ctx.agentId) {
     console.log("OKOU_AGENT_ID is not set — cannot check agent authorization.");
-  } else if (status.isExpired) {
+  } else if (status.needsReconnect) {
     console.log(
       `Skipped — agent authorization can only be checked once the ${ctx.label} connector is reconnected (see 2a).`,
     );
@@ -309,7 +307,7 @@ function checkEnvironmentNames(ctx: DiagContext): void {
 
 async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
   readonly isConnected: boolean;
-  readonly isExpired: boolean;
+  readonly needsReconnect: boolean;
   readonly isSetupComplete: boolean;
   readonly hasPermission: boolean;
 }> {
@@ -334,7 +332,7 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
             isSetupComplete:
               runAccount.state === "available" &&
               runAccount.metadata.setupStatus === "complete",
-            isExpired:
+            needsReconnect:
               runAccount.state === "available" &&
               runAccount.metadata.connectionStatus === "reconnect-required",
             runAccount,
@@ -349,7 +347,7 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
             isConnected:
               facts.memberStatus === "connected" ||
               facts.memberStatus === "reconnect-required",
-            isExpired: facts.memberStatus === "reconnect-required",
+            needsReconnect: facts.memberStatus === "reconnect-required",
             isSetupComplete:
               facts.accountSummary?.defaultConnection?.setupStatus ===
               "complete",
@@ -371,7 +369,7 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
 
   return {
     isConnected: configuration.isConnected,
-    isExpired: configuration.isExpired,
+    needsReconnect: configuration.needsReconnect,
     isSetupComplete: configuration.isSetupComplete,
     hasPermission,
   };
@@ -870,7 +868,7 @@ Permission recovery:
         );
       } else if (
         status?.isConnected &&
-        !status.isExpired &&
+        !status.needsReconnect &&
         status.isSetupComplete &&
         status.hasPermission
       ) {
