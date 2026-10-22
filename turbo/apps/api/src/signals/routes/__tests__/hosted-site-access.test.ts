@@ -99,6 +99,134 @@ test("preparation keeps downloads public and blocks writes even with a user over
   expect(files.body.files[0]!.downloadUrl).not.toContain("/.okou/download/");
 });
 
+test.each([
+  [undefined, "private"],
+  ["private", "private"],
+  ["organization", "organization"],
+  ["public", "public"],
+] as const)(
+  "creation establishes %s visibility before publishing bytes",
+  async (visibility, expected) => {
+    const owner = createBddApi(context).user();
+    const api = createHostMapsBddApi(context);
+    api.captureHostedSitesS3();
+    await enable(owner);
+    mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", "");
+    const prepared = await api.prepareHostedSite(owner, {
+      site: `private-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      ...(visibility === undefined ? {} : { visibility }),
+      files: [hostedTextFile("/index.html", "<p>Private by default</p>")],
+    });
+    expect(prepared.visibility).toBe(expected);
+    const request = {
+      params: { siteId: prepared.siteId },
+      query: { origin: `https://${prepared.publicSlug}.okou.app` },
+    };
+    expect(
+      (await accept(client().siteAccess(request), [200])).body.decision,
+    ).toBe(expected === "public" ? "allow" : "authenticate");
+    await api.completeHostedSite(owner, prepared.deploymentId);
+    const policy = await accept(
+      client(owner).siteVisibility({ headers, params: request.params }),
+      [200],
+    );
+    expect(policy.body.visibility).toBe(expected);
+    expect(policy.body.revision).not.toBeNull();
+    const changed = await accept(
+      client(owner).updateSiteVisibility({
+        headers,
+        params: request.params,
+        body: { visibility: "public", expectedRevision: policy.body.revision },
+      }),
+      [200],
+    );
+    expect(changed.body.visibility).toBe("public");
+  },
+);
+
+test.each(["switch-disabled", "access-unavailable"] as const)(
+  "rejects visibility publication when %s",
+  async (reason) => {
+    const owner = createBddApi(context).user();
+    if (reason === "access-unavailable") {
+      await enable(owner);
+      mockEnv("HOSTED_SITE_ACCESS_ENABLED", "false");
+    }
+    const input = {
+      site: `unavailable-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      ...(reason === "switch-disabled"
+        ? { visibility: "private" as const }
+        : {}),
+      files: [hostedTextFile("/index.html", "<p>Keep private</p>")],
+    };
+    const rejected = await accept(
+      client(owner).prepare({ headers, body: input }),
+      [403],
+    );
+    expect(rejected.body.error.message).toBe(
+      "Website visibility management is not available",
+    );
+    await accept(
+      client(owner).deployments({ headers, params: { site: input.site } }),
+      [404],
+    );
+  },
+);
+
+test("redeployments preserve an existing public site's visibility when the switch is enabled", async () => {
+  const { owner, api, input } = await publish();
+  await enable(owner);
+  mockEnv("HOSTED_SITE_VISIBILITY_SITE_IDS", "");
+  const next = await api.prepareHostedSite(owner, input);
+  expect(next.visibility).toBe("public");
+  await api.completeHostedSite(owner, next.deploymentId);
+  const access = await accept(
+    client().siteAccess({
+      params: { siteId: next.siteId },
+      query: { origin: `https://${next.publicSlug}.okou.app` },
+    }),
+    [200],
+  );
+  expect(access.body.decision).toBe("allow");
+  await accept(
+    client(owner).prepare({
+      headers,
+      body: { ...input, visibility: "private" },
+    }),
+    [403],
+  );
+});
+
+test("an explicitly private redeployment restricts the site before new bytes are uploaded", async () => {
+  const { owner, api, input, prepared, request } = await publish();
+  await enable(owner);
+  const next = await api.prepareHostedSite(owner, {
+    ...input,
+    visibility: "private",
+  });
+  expect(next.visibility).toBe("private");
+  expect(
+    (await accept(client().deliveryAuthorization(request), [200])).body
+      .decision,
+  ).toBe("authenticate");
+  await api.completeHostedSite(owner, next.deploymentId);
+  expect(
+    (await accept(client().deliveryAuthorization(request), [200])).body
+      .decision,
+  ).toBe("deny");
+  const pinned = {
+    ...request,
+    query: { ...request.query, alias: `dpl-${prepared.deploymentId}` },
+  };
+  expect(
+    (await accept(client().deliveryAuthorization(pinned), [200])).body.decision,
+  ).toBe("authenticate");
+});
+
 async function publish() {
   const owner = createBddApi(context).user();
   const api = createHostMapsBddApi(context);

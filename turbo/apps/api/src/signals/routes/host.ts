@@ -4,6 +4,10 @@ import { hostedLinkOrigin } from "../../lib/link-layout";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { env } from "../../lib/env";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -23,6 +27,7 @@ import {
   badRequestMessage,
   conflict,
   notFound,
+  resourceUnavailable,
 } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 import { hostedSiteUrlRoutes } from "./hosted-site-url";
@@ -57,11 +62,31 @@ const prepareInner$ = command(
       return suspended;
     }
 
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    const visibilityEnabled = isFeatureEnabled(
+      FeatureSwitchKey.HostedSiteVisibility,
+      features,
+    );
+    if (
+      (bodyResult.data.visibility !== undefined && !visibilityEnabled) ||
+      (visibilityEnabled && env("HOSTED_SITE_ACCESS_ENABLED") !== "true")
+    ) {
+      return resourceUnavailable(
+        "Website visibility management is not available",
+      );
+    }
+
     const result = await set(
       prepareHostedSiteDeployment$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
+        visibilityEnabled,
         runId: "runId" in auth ? auth.runId : undefined,
         body: {
           ...bodyResult.data,
@@ -75,6 +100,11 @@ const prepareInner$ = command(
 
     if (result.status === "forbidden") {
       return artifactVisibilityUnavailable();
+    }
+    if (result.status === "visibility_unavailable") {
+      return resourceUnavailable(
+        "Website visibility management is not available",
+      );
     }
     if (result.status === "bad_request") {
       return badRequestMessage(result.message);

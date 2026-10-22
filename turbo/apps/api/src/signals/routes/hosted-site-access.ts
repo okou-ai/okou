@@ -29,15 +29,6 @@ const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Website visibility management is not available",
     );
   }
-  if (
-    !env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(
-      get(pathParamsOf(hostContract.siteVisibility)).siteId,
-    )
-  ) {
-    return resourceUnavailable(
-      "Website visibility management is not available",
-    );
-  }
   const auth = get(organizationAuthContext$);
   const features = await set(
     loadUserFeatureSwitchContext$,
@@ -45,9 +36,25 @@ const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
     auth.userId,
     signal,
   );
-  return isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)
-    ? null
-    : resourceUnavailable("Website visibility management is not available");
+  if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteVisibility, features)) {
+    return resourceUnavailable(
+      "Website visibility management is not available",
+    );
+  }
+  const { siteId } = get(pathParamsOf(hostContract.siteVisibility));
+  if (!env("HOSTED_SITE_VISIBILITY_SITE_IDS").includes(siteId)) {
+    const policy = await set(
+      getHostedSiteVisibility$,
+      { ...auth, siteId },
+      signal,
+    );
+    if (!policy?.revision) {
+      return resourceUnavailable(
+        "Website visibility management is not available",
+      );
+    }
+  }
+  return null;
 });
 
 const read$ = command(async ({ get, set }, signal: AbortSignal) => {

@@ -1,6 +1,10 @@
 import type { GenerationTarget } from "@okouai/core/resource-registry";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 import type { ArtifactVisibility } from "./artifact-visibility";
+import {
+  hostedSiteVisibilityEnabled,
+  hostedSiteVisibilityInstructions,
+} from "../../lib/host/visibility";
 
 /** Generation targets authored as static HTML from a target-specific resource index. */
 export type HtmlArtifactKind = Extract<
@@ -201,10 +205,12 @@ export function createHtmlArtifactAuthoringInstructions(
       ? "Return the exact URL from the host command."
       : "Return the exact URL from the host command. Private artifacts use an authenticated preview URL.",
     ...(options.kind === "website"
-      ? []
+      ? hostedSiteVisibilityEnabled()
+        ? [hostedSiteVisibilityInstructions()]
+        : []
       : [
           options.visibility === undefined
-            ? "Uploaded and generated files default to only-me. Hosted sites are public."
+            ? `Uploaded and generated files default to only-me. ${hostedSiteVisibilityEnabled() ? hostedSiteVisibilityInstructions() : "Hosted sites are public."}`
             : `Publish the final artifact with ${options.visibility} visibility.`,
         ]),
     `When everything is OK, publish it with:`,

@@ -57,6 +57,7 @@ export const CAPABILITIES = [
   "artifact:write",
   "host:read",
   "host:write",
+  "host-visibility:write",
   "ssh:read",
   "ssh:write",
   "vnc:read",
@@ -257,6 +258,10 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "artifact:write": { group: "Artifacts", label: "Change artifact sharing" },
   "host:read": { group: "Hosting", label: "View hosted sites" },
   "host:write": { group: "Hosting", label: "Publish hosted sites" },
+  "host-visibility:write": {
+    group: "Hosting",
+    label: "Change hosted-site visibility",
+  },
   "ssh:read": { group: "SSH", label: "List authorized SSH hosts" },
   "ssh:write": {
     group: "SSH",

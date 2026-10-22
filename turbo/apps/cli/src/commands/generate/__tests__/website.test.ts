@@ -11,7 +11,7 @@ import chalk from "chalk";
 import { generateCommand } from "../index";
 import { websiteCommand } from "../website";
 
-function buildRunToken(): string {
+function buildRunToken(capabilities: readonly string[] = []): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
     "base64url",
   );
@@ -21,7 +21,7 @@ function buildRunToken(): string {
       runId: "run_test",
       orgId: "org_test",
       scope: "okou",
-      capabilities: [],
+      capabilities,
       iat: 1,
       exp: 2,
     }),
@@ -152,6 +152,23 @@ describe("okou generate website command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain("https://static.okou.io/html-resources/");
+  });
+
+  it("explains default-private hosting when hosted-site visibility is enabled", async () => {
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      buildRunToken(["host:write", "host-visibility:write"]),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "okou",
+      "website",
+      "--prompt",
+      "An internal business report",
+    ]);
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(stdout).toContain("New hosted sites default to only-me");
+    expect(stdout).not.toContain("Hosted sites are public");
   });
 
   it("should emit the image batch workflow exactly once", async () => {

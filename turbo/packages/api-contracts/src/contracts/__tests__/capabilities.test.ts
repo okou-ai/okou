@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
-  it("should have exactly 62 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(62);
+  it("should have exactly 63 capabilities", () => {
+    expect(CAPABILITIES).toHaveLength(63);
     expect(CAPABILITIES).toContain("commerce:read");
     expect(CAPABILITIES).toContain("wechat:read");
     expect(CAPABILITIES).toContain("wechat:write");
@@ -66,6 +66,7 @@ describe("CAPABILITIES", () => {
   it("should include hosted-site read and write capabilities", () => {
     expect(CAPABILITIES).toContain("host:read");
     expect(CAPABILITIES).toContain("host:write");
+    expect(CAPABILITIES).toContain("host-visibility:write");
   });
 
   it("should include managed browser read and write capabilities", () => {

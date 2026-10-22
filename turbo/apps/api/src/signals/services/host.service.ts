@@ -1,5 +1,11 @@
-import type { HostedSiteAccessDecision } from "@okouai/api-contracts/contracts/hosted-site-access";
-import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
+import type {
+  HostedSiteAccessDecision,
+  HostedSiteVisibility,
+} from "@okouai/api-contracts/contracts/hosted-site-access";
+import {
+  checkHostedSiteAccess$,
+  prepareHostedSiteVisibility$,
+} from "./hosted-site-access.service";
 import { command } from "ccstate";
 import {
   hostedSiteAssetNameError,
@@ -238,6 +244,7 @@ type PrepareDeploymentResult =
       readonly status: "ok";
       readonly body: {
         readonly siteId: string;
+        readonly visibility?: HostedSiteVisibility;
         readonly deploymentId: string;
         readonly publicSlug: string;
         readonly url: string;
@@ -255,6 +262,7 @@ type PrepareDeploymentResult =
       };
     }
   | { readonly status: "forbidden" }
+  | { readonly status: "visibility_unavailable" }
   | { readonly status: "bad_request"; readonly message: string }
   | { readonly status: "conflict"; readonly message: string }
   | { readonly status: "config_error"; readonly message: string };
@@ -638,7 +646,7 @@ const createHostedSiteDeployment$ = command(
 export const prepareHostedSiteDeployment$ = command(
   async (
     { get, set },
-    args: PrepareDeploymentArgs,
+    args: PrepareDeploymentArgs & { readonly visibilityEnabled: boolean },
     signal: AbortSignal,
   ): Promise<PrepareDeploymentResult> => {
     const hostedR2 = hostedR2Config();
@@ -651,8 +659,8 @@ export const prepareHostedSiteDeployment$ = command(
       return { status: "bad_request", message: fileError };
     }
 
-    // Hosted sites are public publications. A site's alias is its durable
-    // address, so it never takes a private artifact reference.
+    // A site's alias is its durable address; site policies do not turn it into
+    // a private artifact reference.
     if (args.body.requirePrivateArtifact) {
       return { status: "forbidden" };
     }
@@ -684,6 +692,23 @@ export const prepareHostedSiteDeployment$ = command(
     }
     const publicSlug = siteAndDeployment.site.publicSlug;
     const url = siteAndDeployment.deployment.url;
+
+    const visibility = args.visibilityEnabled
+      ? await set(
+          prepareHostedSiteVisibility$,
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            siteId: siteAndDeployment.site.id,
+            visibility: args.body.visibility,
+            unpublished: siteAndDeployment.site.activeDeploymentId === null,
+          },
+          signal,
+        )
+      : undefined;
+    if (visibility && visibility.status !== "ok") {
+      return visibility;
+    }
 
     const uploads = await Promise.all(
       Object.values(siteAndDeployment.deployment.manifest.files).map(
@@ -730,6 +755,9 @@ export const prepareHostedSiteDeployment$ = command(
       status: "ok",
       body: {
         siteId: siteAndDeployment.site.id,
+        ...(visibility === undefined
+          ? {}
+          : { visibility: visibility.visibility }),
         ...(args.body.title === undefined
           ? {}
           : { title: artifact?.title ?? args.body.title }),
