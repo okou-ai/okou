@@ -19,6 +19,10 @@ import {
 } from "../../signals/computer-use-setup.ts";
 import { desktopDownloadSupportStatus$ } from "../../signals/okou-page/computer-use-hosts.ts";
 import { ComputerUseChatIllustration } from "./computer-use-chat-illustration.tsx";
+import {
+  computerUseInstallIllustrationImg,
+  computerUsePermissionsIllustrationImg,
+} from "./platform-assets.ts";
 
 function ChatSetupVisual() {
   return (
@@ -141,6 +145,21 @@ export function ComputerUseDownloadDialog({
           </DialogDescription>
           {step === "chat" && <ChatSetupVisual />}
           {step === "install" && <DesktopDownload downloadUrl={downloadUrl} />}
+          {step !== "chat" && (
+            <figure className="flex justify-center">
+              <img
+                src={
+                  step === "install"
+                    ? computerUseInstallIllustrationImg
+                    : computerUsePermissionsIllustrationImg
+                }
+                alt=""
+                width={144}
+                height={144}
+                className="h-36 w-36 object-contain"
+              />
+            </figure>
+          )}
         </DialogBody>
         <div className="flex shrink-0 items-center justify-end gap-3 border-t border-divider px-6 py-4">
           {step !== "install" && (
