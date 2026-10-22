@@ -13,7 +13,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { runAfterSameProcessRefresh } from "./same-process-refresh";
 import { command } from "ccstate";
-import { and, eq, exists, sql } from "drizzle-orm";
+import { and, eq, exists } from "drizzle-orm";
 import { z } from "zod";
 import {
   mcpOAuthScopeListSchema,
@@ -111,6 +111,10 @@ import {
   type McpAutomaticOAuthUserInfo,
 } from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
+import {
+  customConnectorRefreshReconnectCondition,
+  storedRefreshTokenCondition,
+} from "./custom-connector-oauth-write.service";
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
 
@@ -1601,6 +1605,7 @@ async function replaceConnectionTokens(args: {
           storedRefreshTokenCondition(
             args.connectionId,
             args.storedIdentity.encryptedRefreshToken,
+            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
           ),
         ),
       )
@@ -1990,47 +1995,6 @@ export class CustomConnectorOAuth2TokenRefreshError extends Error {
   }
 }
 
-/**
- * Refresh publication decides by the refresh token it consumed: any reconnect
- * or concurrent refresh replaces that secret row (KMS ciphertext is never
- * reused), so a stale result or failure cannot overwrite the newer credential.
- */
-function storedRefreshTokenCondition(
-  connectorId: string,
-  encryptedRefreshToken: string | null,
-) {
-  const refreshRow = and(
-    eq(secrets.connectorId, connectorId),
-    eq(secrets.name, CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME),
-  );
-  const observed = sql`EXISTS (SELECT 1 FROM ${secrets} WHERE ${refreshRow}`;
-  return encryptedRefreshToken === null
-    ? sql`NOT ${observed})`
-    : sql`${observed} AND ${secrets.encryptedValue} = ${encryptedRefreshToken})`;
-}
-
-async function markCustomConnectorNeedsReconnect(
-  db: Db,
-  connectorId: string,
-  reconnectReason: "missing_refresh_token" | "authorization_expired_or_revoked",
-  observedEncryptedRefreshToken?: string | null,
-): Promise<void> {
-  await db
-    .update(connectors)
-    .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(connectors.id, connectorId),
-        observedEncryptedRefreshToken === undefined
-          ? undefined
-          : storedRefreshTokenCondition(
-              connectorId,
-              observedEncryptedRefreshToken,
-            ),
-      ),
-    );
-}
-
 async function storeRefreshedConnectionTokens(
   args: {
     readonly db: Db;
@@ -2135,12 +2099,22 @@ async function resolveCustomConnectorOAuth2AccessToken(
   // Ordinary refresh: KMS and provider HTTP run outside any transaction and
   // publication compares the consumed refresh token (see replaceConnectionTokens).
   if (!connection.encryptedRefreshToken) {
-    await markCustomConnectorNeedsReconnect(
-      args.db,
-      connection.id,
-      "missing_refresh_token",
-      null,
-    );
+    const reconnectDb = args.db;
+    const reconnectConnectorId = connection.id;
+    const reconnectReason = "missing_refresh_token";
+    const reconnectObservedToken = null;
+    await (async () => {
+      await reconnectDb
+        .update(connectors)
+        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+        .where(
+          customConnectorRefreshReconnectCondition(
+            reconnectConnectorId,
+            reconnectObservedToken,
+            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+          ),
+        );
+    })();
     return { kind: "reconnect-required" };
   }
   const [credentials, refreshToken] = await Promise.all([
@@ -2174,12 +2148,22 @@ async function resolveCustomConnectorOAuth2AccessToken(
     ) {
       throw new CustomConnectorOAuth2TokenRefreshError(refreshResult.error);
     }
-    await markCustomConnectorNeedsReconnect(
-      args.db,
-      connection.id,
-      "authorization_expired_or_revoked",
-      connection.encryptedRefreshToken,
-    );
+    const reconnectDb = args.db;
+    const reconnectConnectorId = connection.id;
+    const reconnectReason = "authorization_expired_or_revoked";
+    const reconnectObservedToken = connection.encryptedRefreshToken;
+    await (async () => {
+      await reconnectDb
+        .update(connectors)
+        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+        .where(
+          customConnectorRefreshReconnectCondition(
+            reconnectConnectorId,
+            reconnectObservedToken,
+            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+          ),
+        );
+    })();
     return { kind: "reconnect-required" };
   }
   signal.throwIfAborted();
@@ -2226,12 +2210,22 @@ async function handleAutomaticOAuthRefreshFailure(args: {
     (args.error instanceof McpAutomaticOAuthError &&
       args.error.kind === "binding-drift")
   ) {
-    await markCustomConnectorNeedsReconnect(
-      args.db,
-      args.connectionId,
-      "authorization_expired_or_revoked",
-      args.observedEncryptedRefreshToken,
-    );
+    const reconnectDb = args.db;
+    const reconnectConnectorId = args.connectionId;
+    const reconnectReason = "authorization_expired_or_revoked";
+    const reconnectObservedToken = args.observedEncryptedRefreshToken;
+    await (async () => {
+      await reconnectDb
+        .update(connectors)
+        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+        .where(
+          customConnectorRefreshReconnectCondition(
+            reconnectConnectorId,
+            reconnectObservedToken,
+            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+          ),
+        );
+    })();
     return { kind: "reconnect-required" };
   }
   if (
@@ -2243,20 +2237,22 @@ async function handleAutomaticOAuthRefreshFailure(args: {
   throw args.error;
 }
 
+type RefreshAutomaticOAuthAccessTokenContext = {
+  readonly args: ResolveCustomConnectorOAuth2AccessTokenArgs;
+  readonly connector: CustomConnectorRow & {
+    readonly kind: "mcp";
+    readonly authMode: "automatic";
+  };
+  readonly connection: StoredConnection;
+};
+
 /**
  * Ordinary refresh for an automatic custom connector: binding/registration
  * reads, KMS and provider HTTP run outside any transaction; publication
  * compares the consumed refresh token.
  */
 async function refreshAutomaticOAuthAccessToken(
-  context: {
-    readonly args: ResolveCustomConnectorOAuth2AccessTokenArgs;
-    readonly connector: CustomConnectorRow & {
-      readonly kind: "mcp";
-      readonly authMode: "automatic";
-    };
-    readonly connection: StoredConnection;
-  },
+  context: RefreshAutomaticOAuthAccessTokenContext,
   signal: AbortSignal,
 ): Promise<
   | CustomConnectorOAuth2AccessTokenResolution
@@ -2265,12 +2261,22 @@ async function refreshAutomaticOAuthAccessToken(
   const { args, connector, connection } = context;
   const db = args.db;
   if (!connection.encryptedRefreshToken) {
-    await markCustomConnectorNeedsReconnect(
-      db,
-      connection.id,
-      "missing_refresh_token",
-      null,
-    );
+    const reconnectDb = db;
+    const reconnectConnectorId = connection.id;
+    const reconnectReason = "missing_refresh_token";
+    const reconnectObservedToken = null;
+    await (async () => {
+      await reconnectDb
+        .update(connectors)
+        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+        .where(
+          customConnectorRefreshReconnectCondition(
+            reconnectConnectorId,
+            reconnectObservedToken,
+            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+          ),
+        );
+    })();
     return { kind: "reconnect-required" };
   }
   const binding = await (async () => {
@@ -2287,12 +2293,22 @@ async function refreshAutomaticOAuthAccessToken(
   })();
   signal.throwIfAborted();
   if (!binding) {
-    await markCustomConnectorNeedsReconnect(
-      db,
-      connection.id,
-      "authorization_expired_or_revoked",
-      connection.encryptedRefreshToken,
-    );
+    const reconnectDb = db;
+    const reconnectConnectorId = connection.id;
+    const reconnectReason = "authorization_expired_or_revoked";
+    const reconnectObservedToken = connection.encryptedRefreshToken;
+    await (async () => {
+      await reconnectDb
+        .update(connectors)
+        .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
+        .where(
+          customConnectorRefreshReconnectCondition(
+            reconnectConnectorId,
+            reconnectObservedToken,
+            CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
+          ),
+        );
+    })();
     return { kind: "reconnect-required" };
   }
   if (
