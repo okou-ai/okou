@@ -54,71 +54,75 @@ export function HostedSiteAccessCard({
               return $.artifacts.access.description;
             });
   return (
-    <ResourceAccessCard
-      title={title}
-      description={description}
-      help={
-        reason === "denied"
-          ? t(($) => {
-              return $.artifacts.access.help;
-            })
-          : undefined
-      }
-      email={user?.primaryEmailAddress?.emailAddress}
-      error={
-        switching.state === "hasError"
-          ? t(($) => {
-              return $.artifacts.access.switchAccountFailed;
-            })
-          : undefined
-      }
-    >
-      {target && (
-        <a
-          href={
-            reason === "unavailable" ? target.href : hostedSiteSignInUrl(target)
-          }
-          className={buttonVariants({
-            variant: user ? "outline" : "default",
-          })}
-        >
-          {!user && reason !== "unavailable" && <LogIn aria-hidden />}
-          {reason === "unavailable"
+    <div className="h-full overflow-y-auto">
+      <ResourceAccessCard
+        title={title}
+        description={description}
+        help={
+          reason === "denied"
             ? t(($) => {
-                return $.artifacts.access.tryAgain;
+                return $.artifacts.access.help;
               })
-            : !user
+            : undefined
+        }
+        email={user?.primaryEmailAddress?.emailAddress}
+        error={
+          switching.state === "hasError"
+            ? t(($) => {
+                return $.artifacts.access.switchAccountFailed;
+              })
+            : undefined
+        }
+      >
+        {target && (
+          <a
+            href={
+              reason === "unavailable"
+                ? target.href
+                : hostedSiteSignInUrl(target)
+            }
+            className={buttonVariants({
+              variant: user ? "outline" : "default",
+            })}
+          >
+            {!user && reason !== "unavailable" && <LogIn aria-hidden />}
+            {reason === "unavailable"
               ? t(($) => {
-                  return $.artifacts.access.signIn;
+                  return $.artifacts.access.tryAgain;
                 })
-              : reason === "denied"
+              : !user
                 ? t(($) => {
-                    return $.artifacts.access.tryAgain;
+                    return $.artifacts.access.signIn;
                   })
-                : t(($) => {
-                    return $.artifacts.access.continue;
-                  })}
-        </a>
-      )}
-      {user && reason !== "unavailable" && (
-        <Button
-          variant="outline"
-          disabled={switching.state === "loading"}
-          aria-busy={switching.state === "loading"}
-          onClick={() => {
-            detach(
-              switchAccount(location.href, pageSignal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          <ArrowRightLeft aria-hidden />
-          {t(($) => {
-            return $.artifacts.access.switchAccount;
-          })}
-        </Button>
-      )}
-    </ResourceAccessCard>
+                : reason === "denied"
+                  ? t(($) => {
+                      return $.artifacts.access.tryAgain;
+                    })
+                  : t(($) => {
+                      return $.artifacts.access.continue;
+                    })}
+          </a>
+        )}
+        {user && reason !== "unavailable" && (
+          <Button
+            variant="outline"
+            disabled={switching.state === "loading"}
+            aria-busy={switching.state === "loading"}
+            onClick={() => {
+              detach(
+                switchAccount(location.href, pageSignal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            <ArrowRightLeft aria-hidden />
+            {t(($) => {
+              return $.artifacts.access.switchAccount;
+            })}
+          </Button>
+        )}
+      </ResourceAccessCard>
+    </div>
   );
 }
 
@@ -146,7 +150,7 @@ export function HostedSiteAccessPage({
         </a>
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
           {t(($) => {
-            return $.artifacts.preview.openKinds.html;
+            return $.artifacts.templates.website;
           })}
         </h1>
         <a
