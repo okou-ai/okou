@@ -7,6 +7,7 @@ import { server } from "../../../../mocks/server";
 import {
   authCodeMethod,
   catalogStatusItem,
+  manualAuthMethod,
   stubConnectorCatalog,
 } from "../../../__tests__/helpers/connector-catalog";
 import {
@@ -99,35 +100,141 @@ describe("okou connector account list command", () => {
   });
 
   it.each(["builtin", "custom"] as const)(
-    "preserves future %s account setup metadata in JSON",
+    "distinguishes connection and setup facts in %s account inventory",
     async (kind) => {
+      const custom = customConnector({
+        fields: [
+          { key: "apiKey", label: "API key", kind: "secret", required: true },
+          {
+            key: "projectId",
+            label: "Project",
+            kind: "variable",
+            required: true,
+          },
+          { key: "region", label: "Region", kind: "variable", required: true },
+        ],
+      });
       const target =
         kind === "builtin"
-          ? { kind, connectorSlug: "github" }
+          ? { kind, connectorSlug: "acme-cloud" }
           : { kind, customConnectorId: CUSTOM_CONNECTOR_ID };
+      const authMethod = kind === "builtin" ? "api-token" : "manual";
+      const selector =
+        kind === "builtin" ? "acme-cloud" : `custom:${CUSTOM_CONNECTOR_ID}`;
       const setup = {
         setupStatus: "incomplete" as const,
-        missingRequiredFields: ["apiKey"],
-        configuredFieldKeys: [],
+        missingRequiredFields: ["projectId", "region"],
+        configuredFieldKeys: ["apiKey"],
       };
+      const incomplete = connectorAccount({
+        target,
+        authMethod,
+        displayName: "Needs setup",
+        isDefault: true,
+        oauthScopes: null,
+        tokenExpiresAt: null,
+        ...setup,
+      });
       server.use(
-        stubCustomConnectors([customConnector()]),
-        stubAccounts([connectorAccount({ target, ...setup })]),
+        stubConnectorCatalog([
+          catalogStatusItem({
+            connectorSlug: "acme-cloud",
+            label: "Acme Cloud",
+            authMethods: [
+              manualAuthMethod(
+                "api-token",
+                custom.fields.map((field) => {
+                  return {
+                    id: field.key,
+                    label: field.label,
+                    required: field.required,
+                    inputType: field.kind === "secret" ? "password" : "text",
+                    placeholder: null,
+                  };
+                }),
+              ),
+            ],
+          }),
+        ]),
+        stubCustomConnectors([custom]),
+        stubAccounts([
+          incomplete,
+          connectorAccount({
+            ...incomplete,
+            id: SECOND_CONNECTION_ID,
+            displayName: "Ready",
+            isDefault: false,
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: ["apiKey", "projectId", "region"],
+          }),
+        ]),
       );
+
+      await listConnectorAccountsCommand.parseAsync(["node", "okou", selector]);
+
+      const lines = mockConsoleLog.mock.calls.flat().map(String);
+      expect(lines.join("\n")).toMatch(
+        /CONNECTION\s{2,}SETUP\s{2,}MISSING FIELDS/,
+      );
+      expect(
+        lines
+          .find((line) => {
+            return line.includes(FIRST_CONNECTION_ID);
+          })
+          ?.trim()
+          .split(/\s{2,}/),
+      ).toStrictEqual([
+        "Needs setup",
+        "yes",
+        "connected",
+        "incomplete",
+        "projectId, region",
+        authMethod,
+        FIRST_CONNECTION_ID,
+      ]);
+      expect(
+        lines
+          .find((line) => {
+            return line.includes(SECOND_CONNECTION_ID);
+          })
+          ?.trim()
+          .split(/\s{2,}/),
+      ).toStrictEqual([
+        "Ready",
+        "-",
+        "connected",
+        "complete",
+        "-",
+        authMethod,
+        SECOND_CONNECTION_ID,
+      ]);
+
+      mockConsoleLog.mockClear();
       await listConnectorAccountsCommand.parseAsync([
         "node",
         "okou",
-        kind === "builtin" ? "github" : `custom:${CUSTOM_CONNECTOR_ID}`,
+        selector,
         "--json",
       ]);
       expect(
         JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
       ).toMatchObject({
+        defaultConnectionId: FIRST_CONNECTION_ID,
         accounts: [
           {
             connectionId: FIRST_CONNECTION_ID,
+            isDefault: true,
             connectionStatus: "connected",
             ...setup,
+          },
+          {
+            connectionId: SECOND_CONNECTION_ID,
+            isDefault: false,
+            connectionStatus: "connected",
+            setupStatus: "complete",
+            missingRequiredFields: [],
+            configuredFieldKeys: ["apiKey", "projectId", "region"],
           },
         ],
       });
