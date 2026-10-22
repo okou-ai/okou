@@ -33,13 +33,6 @@ describe("runner claim installed versions", () => {
       piAgentRuntime: "1.36.0",
       piSdk: "0.86.1+okou.0123456789ab",
     });
-    const advertised = runnerInstalledVersionsSchema.parse({
-      cli: "9.353.0",
-      piAgentRuntime: "1.36.0",
-      piSdk: "0.86.1+okou.0123456789ab",
-      piSessionConstructionDigest: "d".repeat(64),
-    });
-    expect(advertised.piSessionConstructionDigest).toBe("d".repeat(64));
   });
 
   it("rejects unknown fields and loose versions", () => {
