@@ -15,8 +15,7 @@ from file_residency_report import decode as strict_json
 from file_residency_report import fields, integer, read_regular
 
 
-def disposition(value, original, pid, *, directory=False):
-    require(type(directory) is bool, "directory selector must be boolean")
+def disposition(value, original, pid):
     fields(
         value,
         "event decision response_started_ns response_completed_ns event_descriptors_closed",
@@ -35,7 +34,7 @@ def disposition(value, original, pid, *, directory=False):
     )
     require(
         (size, version, reserved, meta, mask, kind, pad, info)
-        == (32, 3, 0, 24, FAN_OPEN_PERM | (FAN_ONDIR if directory else 0), 4, 0, 8),
+        == (32, 3, 0, 24, FAN_OPEN_PERM, 4, 0, 8),
         "unexpected original kernel event layout",
     )
     require(
@@ -73,7 +72,7 @@ def validate(raw, source, capture, directory, *, original_directory=False):
     fields(
         value,
         "schema source_commit run_id host controller invocation started_ns payload_sha256 cases claims error complete original borrowed_original_closed completed_ns"
-        + (" child" if original_directory else ""),
+        + (" child mark_mask" if original_directory else ""),
     )
     require(
         value["schema"]
@@ -139,6 +138,10 @@ def validate(raw, source, capture, directory, *, original_directory=False):
         "invalid original file authority",
     )
     if original_directory:
+        require(
+            integer(value["mark_mask"]) == (FAN_OPEN_PERM | FAN_ONDIR),
+            "invalid original directory mark mask",
+        )
         require(original["file_type"] == stat.S_IFDIR, "original is not a directory")
         child = value["child"]
         fields(child, "device inode uid size links mtime_ns ctime_ns")
@@ -198,9 +201,7 @@ def validate(raw, source, capture, directory, *, original_directory=False):
             pid not in pids and pid != controller["pid"], "reused producer identity"
         )
         pids.add(pid)
-        observed, responded = disposition(
-            case["disposition"], original, pid, directory=original_directory
-        )
+        observed, responded = disposition(case["disposition"], original, pid)
         allow = case["kind"] == "allow"
         require(
             case["disposition"]["decision"] == ("allow" if allow else "deny"),

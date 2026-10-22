@@ -74,7 +74,7 @@ class FileOpenPermission:
     def __init__(self, fd, expected_identity, *, directory=False):
         require(type(directory) is bool, "directory selector must be boolean")
         self._directory = directory
-        self._mask = FAN_OPEN_PERM | (FAN_ONDIR if directory else 0)
+        self._mark_mask = FAN_OPEN_PERM | (FAN_ONDIR if directory else 0)
         require(
             sys.platform == "linux" and sys.maxsize > 2**32, "requires 64-bit Linux"
         )
@@ -155,7 +155,7 @@ class FileOpenPermission:
 
     def _change_mark(self, flags):
         path = os.fsencode(f"/proc/self/fd/{self._original}")
-        if self._mark(self._group, flags, self._mask, -100, path) != 0:
+        if self._mark(self._group, flags, self._mark_mask, -100, path) != 0:
             raise OSError(ctypes.get_errno(), "original-inode permission mark failed")
 
     def _read(self, validate=True):
@@ -209,7 +209,9 @@ class FileOpenPermission:
             require(not errors, "; ".join(errors))
             for owned, mask in adopted:
                 value = original_metadata(owned.fd, directory=self._directory)
-                require(mask == self._mask, "unexpected kernel permission mask")
+                # FAN_ONDIR selects directory marks, but classic FD-based
+                # permission groups do not report it in their event masks.
+                require(mask == FAN_OPEN_PERM, "unexpected kernel permission mask")
                 require(
                     (value["device"], value["inode"]) == self._identity,
                     "foreign permission-event original",

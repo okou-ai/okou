@@ -49,7 +49,7 @@ def synthetic_record():
         disposition = {
             "event": {
                 "raw_hex": EVENT.pack(
-                    32, 3, 0, 24, FAN_OPEN_PERM | FAN_ONDIR, 7, pid, 4, 0, 8, 8
+                    32, 3, 0, 24, FAN_OPEN_PERM, 7, pid, 4, 0, 8, 8
                 ).hex(),
                 "device": 11,
                 "inode": 37,
@@ -97,6 +97,7 @@ def synthetic_record():
         )
     return {
         "schema": "original-directory-open-permission-v1",
+        "mark_mask": FAN_OPEN_PERM | FAN_ONDIR,
         "source_commit": SOURCE,
         "run_id": "10000000-0000-4000-8000-000000000001",
         "host": {
@@ -174,11 +175,12 @@ class InputAndReaderTests(unittest.TestCase):
         def wrong_mask(value):
             event = value["cases"][0]["disposition"]["event"]
             raw = list(EVENT.unpack(bytes.fromhex(event["raw_hex"])))
-            raw[4] = FAN_OPEN_PERM
+            raw[4] = FAN_OPEN_PERM | FAN_ONDIR
             event["raw_hex"] = EVENT.pack(*raw).hex()
 
         mutations = (
             wrong_mask,
+            lambda v: v.update(mark_mask=FAN_OPEN_PERM),
             lambda v: v["original"].update(file_type=stat.S_IFREG),
             lambda v: v["cases"][0]["disposition"]["event"].update(inode=38),
             lambda v: v["child"].update(inode=39),
@@ -306,7 +308,7 @@ class DirectoryKernelTests(unittest.TestCase):
                 self.assertEqual(event.pid, child.pid)
                 self.assertEqual(
                     EVENT.unpack(bytes.fromhex(event.raw_hex))[4],
-                    FAN_OPEN_PERM | FAN_ONDIR,
+                    FAN_OPEN_PERM,
                 )
                 gate.check_pending_producer(event)
                 self.assertIsNone(child.poll())

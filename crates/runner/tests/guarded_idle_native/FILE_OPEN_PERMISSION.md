@@ -9,8 +9,10 @@ explicit disposition or group/process failure. Requires 64-bit Linux 5.15+,
 Python 3.10+ and its standard library are sufficient. No server is needed.
 
 Explicit `FileOpenPermission(fd, identity, directory=True)` instead binds an
-owned original directory and its exact `FAN_OPEN_PERM|FAN_ONDIR` event. The
-default still requires a regular file. Type selection never falls back, and
+owned original directory using mark mask `FAN_OPEN_PERM|FAN_ONDIR`. Returned
+classic FD events have exactly `FAN_OPEN_PERM`; directory identity comes from
+the actual original/event descriptor type and inode, not a returned directory
+bit. The default still requires a regular file. Type selection never falls back, and
 neither mode uses child, mount or filesystem marks. A marked directory's direct
 child files/directories and unrelated originals remain independently usable.
 
@@ -119,13 +121,19 @@ python3 -B \
 ```
 
 The `original-directory-open-permission-v1` record binds the directory type,
-exact raw directory-event mask, original device/inode and unchanged original
+configured `mark_mask`, exact raw FD-event mask, original device/inode and unchanged original
 child identity/bytes. Actual producers open the original with O_DIRECTORY and
 O_NOFOLLOW before reading `payload` relative to that descriptor. The three
 allow/deny/queued-retire cases require positive process joins and complete gate
 retirement. The default reader accepts only the existing regular-file schema;
 it never infers directory selection from a record. The directory selector is
 also explicit in the Python reader as `original_directory=True`.
+
+The mark and returned-event masks are deliberately different. Linux
+[fanotify(7)](https://man7.org/linux/man-pages/man7/fanotify.7.html) reports
+FAN_ONDIR in event masks only for file-handle groups; this permission/PIDFD
+primitive uses classic event descriptors. Unsupported types/masks fail instead
+of accepting a second event format.
 
 `directory_open_permission_test.py` supplies ordinary semantic-record/real CLI
 checks and explicitly privileged real directory/process cases. Run it with the

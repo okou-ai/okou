@@ -12,7 +12,12 @@ import time
 import uuid
 from pathlib import Path
 
-from file_open_permission import FileOpenPermission, original_metadata
+from file_open_permission import (
+    FAN_ONDIR,
+    FAN_OPEN_PERM,
+    FileOpenPermission,
+    original_metadata,
+)
 from file_residency import metadata, require, task_identity
 
 PAYLOAD = b"owned original open-permission qualification\n"
@@ -126,6 +131,8 @@ def qualify(output, source, *, directory=False):
         "error": None,
         "complete": False,
     }
+    if directory:
+        record["mark_mask"] = FAN_OPEN_PERM | FAN_ONDIR
     active = None
     gate = None
     try:
