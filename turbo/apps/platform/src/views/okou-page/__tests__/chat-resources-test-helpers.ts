@@ -8,6 +8,7 @@ import {
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -17,6 +18,7 @@ import {
   fileArtifactDetail,
   buttonNamed,
   mockArtifactConversation,
+  NAVIGATION_ARTIFACT_AGENT_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
@@ -209,6 +211,10 @@ export async function setupOverflowResources(
 ) {
   const resize = installResourceGeometry(480);
   const media = context.mocks.browser.matchMedia(true);
+  context.mocks.data.userPreferences({
+    timezone: "Etc/UTC",
+    locale: "en-US",
+  });
   const catalog = Array.from({ length: count }, (_, index) => {
     return artifactSummary(
       `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
@@ -247,6 +253,29 @@ export async function setupOverflowResources(
         createdAt: "2026-09-01T10:00:01Z",
       },
     ],
+  });
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    if (params.id !== NAVIGATION_ARTIFACT_THREAD_ID) {
+      return respond(404, {
+        error: {
+          code: "CHAT_THREAD_NOT_FOUND",
+          message: "Chat thread not found",
+        },
+      });
+    }
+    return respond(200, {
+      id: NAVIGATION_ARTIFACT_THREAD_ID,
+      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+      title: "Artifact navigation",
+      selectedModel: null,
+      modelSettings: {},
+      serviceTier: null,
+      pinnedAt: null,
+      archived: false,
+      muted: false,
+      computerUseHostId: null,
+      cloudBrowserEnabled: false,
+    });
   });
   if (options.paginated) {
     context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
