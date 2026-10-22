@@ -16,6 +16,7 @@ public enum DesktopTelemetry {
       options.releaseName = version.map { "okou-desktop@\($0)" }
       options.environment = environment
       options.cacheDirectoryPath = cacheDirectory.path
+      options.maxAttachmentSize = 5 * 1024 * 1024
       options.sendDefaultPii = false
       options.tracesSampleRate = 0
       options.enableAutoPerformanceTracing = false
@@ -34,7 +35,8 @@ public enum DesktopTelemetry {
 
   static func captureHelperFailure(
     _ reason: NativeHelperFailure, pendingRequests: Int, stderrBytes: Int,
-    responseBytes: Int? = nil, exitStatus: Int32? = nil
+    responseBytes: Int? = nil, exitStatus: Int32? = nil,
+    attachments: NativeHelperDiagnostics? = nil
   ) {
     let event = Event(level: .error)
     event.message = SentryMessage(formatted: "Native helper failure: \(reason.rawValue)")
@@ -46,8 +48,20 @@ public enum DesktopTelemetry {
     ]
     if let responseBytes { diagnostics["responseBytes"] = responseBytes }
     if let exitStatus { diagnostics["exitStatus"] = exitStatus }
+    if reason == .invalidJSON || reason == .missingRequestID {
+      diagnostics["diagnosticAttachments"] = attachments == nil ? "rate_limited" : "included"
+    }
     event.context = ["nativeHelper": diagnostics]
-    SentrySDK.capture(event: event)
+    SentrySDK.capture(event: event) { scope in
+      if let attachments {
+        scope.addAttachment(
+          Attachment(data: attachments.response, filename: "native-helper-response.bin"))
+        scope.addAttachment(
+          Attachment(
+            data: attachments.details, filename: "native-helper-diagnostics.txt",
+            contentType: "text/plain"))
+      }
+    }
   }
 
   public static func captureStartupFailure() {
