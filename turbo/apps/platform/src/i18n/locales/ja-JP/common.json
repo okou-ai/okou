@@ -1126,19 +1126,10 @@
     "invoices": {
       "amount": "金額",
       "date": "日付",
-      "downloadDescription": "連続する月を最大 3 か月まで選択します。その範囲の領収書 PDF は 1 つの ZIP ファイルにまとめられます。",
       "downloadInvoice": "{{month}} 請求書をダウンロード",
-      "downloadReceipts": "領収書のダウンロード",
-      "downloadZip": "ZIPをダウンロード",
       "empty": "まだ請求書はありません。",
-      "from": "から",
       "invoice": "請求書",
-      "loading": "請求書の読み込み",
-      "monthAria": "{{label}} 月",
-      "preparingReceipts": "領収書を準備しています...",
-      "rangeError": "連続 3 か月以内の範囲を選択します。",
-      "selectMonth": "月を選択してください",
-      "to": "に"
+      "loading": "請求書の読み込み"
     },
     "paymentMethods": {
       "description": "Stripe で請求に使用する支払い方法を管理します。",
@@ -1293,7 +1284,6 @@
       "downgradeScheduledDate": "ダウングレードが予定されています。現在のプランは {{date}} まで有効です。",
       "downgradeScheduledPeriod": "ダウングレードが予定されています。現在のプランは、請求期間が終了するまで有効のままです。",
       "planRestored": "計画が復元されました。サブスクリプションは通常どおり更新されます。",
-      "receiptsDownloaded": "領収書をダウンロードしました",
       "subscriptionChangeConfirmed": "サブスクリプションの変更が確認されました。"
     },
     "usage": {
