@@ -48,6 +48,8 @@ pub(super) enum Scenario {
     RuntimeTurnFailedUnknown,
     RuntimeTurnFailedRequestSend,
     RuntimeRequestSendError,
+    RuntimeTurnFailedUnsupportedModel,
+    RuntimeUnsupportedModelError,
     RuntimeTurnFailedRemoteCompactionRequestSend,
     RuntimeTurnFailedHttpConnection,
     RuntimeTurnFailedHttpConnectionStderr,
@@ -188,6 +190,10 @@ impl Scenario {
                 "runtime-turn-failed-unauthorized" => Ok(Self::RuntimeTurnFailedUnauthorized),
                 "runtime-turn-failed-unknown" => Ok(Self::RuntimeTurnFailedUnknown),
                 "runtime-turn-failed-request-send" => Ok(Self::RuntimeTurnFailedRequestSend),
+                "runtime-turn-failed-unsupported-model" => {
+                    Ok(Self::RuntimeTurnFailedUnsupportedModel)
+                }
+                "runtime-unsupported-model-error" => Ok(Self::RuntimeUnsupportedModelError),
                 "runtime-request-send-error" => Ok(Self::RuntimeRequestSendError),
                 "runtime-turn-failed-remote-compaction-request-send" => {
                     Ok(Self::RuntimeTurnFailedRemoteCompactionRequestSend)
@@ -325,6 +331,9 @@ impl Scenario {
             Self::RuntimeTurnFailedRequestSend | Self::RuntimeRequestSendError => {
                 Some(TurnFailure::RequestSend)
             }
+            Self::RuntimeTurnFailedUnsupportedModel | Self::RuntimeUnsupportedModelError => {
+                Some(TurnFailure::UnsupportedModel)
+            }
             Self::RuntimeTurnFailedRemoteCompactionRequestSend => {
                 Some(TurnFailure::RemoteCompactionRequestSend)
             }
@@ -378,6 +387,7 @@ pub(super) enum TurnFailure {
     Unauthorized,
     Unknown,
     RequestSend,
+    UnsupportedModel,
     RemoteCompactionRequestSend,
     HttpConnection,
     HttpConnectionStderr,

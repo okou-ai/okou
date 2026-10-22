@@ -10,6 +10,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 const SEND_ERROR: &str = "stream disconnected before completion: error sending request";
+const UNSUPPORTED_MODEL_ERROR: &str = r#"{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}}"#;
 
 #[tokio::test]
 async fn native_request_failure_retains_evidence_and_progress_without_claiming_recovery()
@@ -28,6 +29,20 @@ async fn native_request_failure_retains_evidence_and_progress_without_claiming_r
             "runtime-request-send-error",
             None,
             Some(Stage::RequestSend),
+            Some(Kind::Other),
+            None,
+        ),
+        (
+            "runtime-turn-failed-unsupported-model",
+            Some(FailureReason::UnsupportedModel),
+            None,
+            Some(Kind::Other),
+            None,
+        ),
+        (
+            "runtime-unsupported-model-error",
+            Some(FailureReason::UnsupportedModel),
+            None,
             Some(Kind::Other),
             None,
         ),
@@ -166,9 +181,21 @@ async fn native_request_failure_retains_evidence_and_progress_without_claiming_r
 
         if matches!(
             scenario,
-            "runtime-turn-failed-request-send" | "runtime-request-send-error"
+            "runtime-turn-failed-request-send"
+                | "runtime-request-send-error"
+                | "runtime-turn-failed-unsupported-model"
+                | "runtime-unsupported-model-error"
         ) {
-            assert_eq!(failure.message, SEND_ERROR);
+            let (expected_message, partial_answer) =
+                if reason == Some(FailureReason::UnsupportedModel) {
+                    (
+                        UNSUPPORTED_MODEL_ERROR,
+                        "Partial answer before unsupported model failure",
+                    )
+                } else {
+                    (SEND_ERROR, "Partial answer before request sending failure")
+                };
+            assert_eq!(failure.message, expected_message);
             let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
             let events = log
                 .lines()
@@ -185,11 +212,14 @@ async fn native_request_failure_retains_evidence_and_progress_without_claiming_r
                 events
                     .iter()
                     .filter(|event| event.pointer("/item/text").and_then(Value::as_str)
-                        == Some("Partial answer before request sending failure"))
+                        == Some(partial_answer))
                     .count(),
                 1
             );
-            if scenario == "runtime-request-send-error" {
+            if matches!(
+                scenario,
+                "runtime-request-send-error" | "runtime-unsupported-model-error"
+            ) {
                 assert!(events.iter().any(|event| event["type"] == "error"));
             } else {
                 let completed = events
