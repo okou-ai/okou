@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.777.7](https://github.com/okou-ai/okou/compare/core-v8.777.6...core-v8.777.7) (2026-10-22)
+
+
+### Refactoring
+
+* retire pi memory producers before storage contraction ([#42316](https://github.com/okou-ai/okou/issues/42316)) ([d7b32fb](https://github.com/okou-ai/okou/commit/d7b32fb46d53ee8648e1a825d1533d887b16dbec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.2
+
 ## [8.777.6](https://github.com/okou-ai/okou/compare/core-v8.777.5...core-v8.777.6) (2026-10-22)
 
 

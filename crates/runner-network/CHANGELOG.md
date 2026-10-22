@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.73](https://github.com/okou-ai/okou/compare/runner-network-v0.2.72...runner-network-v0.2.73) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** upgrade to mitmproxy 12.3.0 with bundled trust ([#42291](https://github.com/okou-ai/okou/issues/42291)) ([f246eb6](https://github.com/okou-ai/okou/commit/f246eb6921f4b4d32e8699361e7eec4ed054fd4c))
+
 ## [0.2.72](https://github.com/okou-ai/okou/compare/runner-network-v0.2.71...runner-network-v0.2.72) (2026-10-22)
 
 ## [0.2.71](https://github.com/okou-ai/okou/compare/runner-network-v0.2.70...runner-network-v0.2.71) (2026-10-22)
