@@ -1,20 +1,12 @@
 import type { FileEntryWithHash } from "@okouai/api-contracts/contracts/storage-content-hash";
-import {
-  MEMORY_ARTIFACT_NAME,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
-import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
-import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/phase2-memory-selection";
+import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { eq, getTableColumns, is, Param, SQL, sql } from "drizzle-orm";
 import {
-  PgDialect,
   PgColumn,
+  PgDialect,
   QueryBuilder,
   type AnyPgColumn,
   type PgTable,
@@ -26,32 +18,19 @@ import {
   pgInt8ToSafeIntegerSchema,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { notFound } from "../../lib/error";
 import type { SandboxAuth } from "../../types/auth";
-import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
 import {
   piResourceIndexQueueValues,
-  piResourceIndexRepairValues,
   piResourceIndexRepairCondition,
+  piResourceIndexRepairValues,
 } from "./pi-resource-version-index.service";
 import {
   sandboxStorageRunCondition,
+  storageCommitLineageCondition,
   storageIdentityCondition,
   storageVersionCondition,
-  maintenanceCallbackCondition,
-  storageMaintenanceJobCondition,
-  storageCommitLineageCondition,
-  memoryCandidateOwnerCondition,
-  memorySelectedCandidateCondition,
-  externalMemoryHeadChangeCondition,
-  externalMemoryHeadChangeValues,
-  storageMaintenanceCompletionValues,
 } from "./storage-write-conditions";
-import {
-  maintenancePublicationResultCondition,
-  maintenancePublicationResultVersion,
-  type MaintenancePublicationBinding,
-} from "./pi-memory-phase2-result";
 import type {
   CommitStorageForStorageInput,
   CommitStorageResponse,
@@ -59,16 +38,7 @@ import type {
   StorageRow,
   StorageVersionRow,
   VerifiedStorageCommit,
-  PiMemoryPhase2PublicationAttestation,
 } from "./storage-write.service";
-
-export interface MaintenancePublicationInput {
-  readonly auth: SandboxAuth;
-  readonly storageId: string;
-  readonly parentVersionId?: string;
-  readonly versionId: string;
-  readonly attestation?: PiMemoryPhase2PublicationAttestation;
-}
 
 // A plan never receives a database, transaction or clock. Its owner supplies
 // each statement's rows and captures Date values at the requested steps.
@@ -151,8 +121,6 @@ const ACTIVE_SANDBOX_STORAGE_RUN_STATUSES = ["pending", "running"] as const;
 const integerRow = z.union([z.int(), pgInt8ToSafeIntegerSchema]);
 const dateRow = z.union([z.date(), pgTimestampWithoutTimezoneToDateSchema]);
 const idRows = z.array(z.object({ id: z.string() }));
-const callbackRows = z.array(z.object({ payload: z.unknown() }));
-const resultRows = z.array(z.object({ version_id: z.string() }));
 const mountRow = z.object({
   storageId: z.string(),
   orgId: z.string(),
@@ -228,22 +196,6 @@ function versionSnapshotSql(condition: SQL | undefined) {
     .limit(1)
     .getSQL();
 }
-function callbackSnapshotSql(runId: string) {
-  return new QueryBuilder()
-    .select({ payload: agentRunCallbacks.payload })
-    .from(agentRunCallbacks)
-    .where(maintenanceCallbackCondition(runId))
-    .limit(1)
-    .getSQL();
-}
-function resultSnapshotSql(binding: MaintenancePublicationBinding) {
-  return new QueryBuilder()
-    .select({ version_id: maintenancePublicationResultVersion() })
-    .from(piMemoryPhase2Jobs)
-    .where(maintenancePublicationResultCondition(binding))
-    .limit(1)
-    .getSQL();
-}
 function runSnapshotSql(auth: SandboxAuth) {
   return new QueryBuilder()
     .select({
@@ -254,18 +206,6 @@ function runSnapshotSql(auth: SandboxAuth) {
     .where(sandboxStorageRunCondition(auth))
     .limit(1)
     .for("update")
-    .getSQL();
-}
-function maintenanceJobLockSql(
-  binding: MaintenancePublicationBinding,
-  currentTime: Date,
-) {
-  return new QueryBuilder()
-    .select({ id: sql`${piMemoryPhase2Jobs.memoryStorageId}`.as("id") })
-    .from(piMemoryPhase2Jobs)
-    .where(storageMaintenanceJobCondition(binding, currentTime))
-    .limit(1)
-    .for("update", { of: piMemoryPhase2Jobs })
     .getSQL();
 }
 function lineageSnapshotSql(
@@ -292,60 +232,7 @@ function lineageSnapshotSql(
 interface AdmittedCommit {
   readonly storage: StorageRow;
   readonly runStatus?: string;
-  readonly binding?: MaintenancePublicationBinding;
-  readonly resultVersionId?: string;
   readonly version?: StorageVersionRow;
-}
-
-function* admitMaintenanceCommit(
-  input: CommitStorageForStorageInput,
-  auth: SandboxAuth,
-  payload: unknown,
-): StorageSqlPlan<
-  | {
-      readonly binding?: MaintenancePublicationBinding;
-      readonly resultVersionId?: string;
-    }
-  | StorageErrorResponse
-> {
-  const binding = maintenancePublicationBinding(payload, {
-    ...input,
-    auth,
-    attestation: input.maintenanceAttestation,
-  });
-  if (!binding) {
-    return {};
-  }
-  if ("status" in binding) {
-    return binding;
-  }
-  let [result] = binding
-    ? resultRows.parse(
-        yield readStatement(resultSnapshotSql(binding), resultRows.element),
-      )
-    : [];
-  const [active] =
-    binding && !result
-      ? idRows.parse(
-          yield readStatement(
-            maintenanceJobLockSql(binding, yield* publicationTimestampPlan()),
-            idRows.element,
-          ),
-        )
-      : [];
-  if (binding && !result && !active) {
-    // Settlement while waiting on the job lock requires a fresh statement snapshot.
-    [result] = resultRows.parse(
-      yield readStatement(resultSnapshotSql(binding), resultRows.element),
-    );
-  }
-  if (result && result.version_id !== input.versionId) {
-    return notFound("Pi memory maintenance publication already committed");
-  }
-  if (binding && !result && !active) {
-    return notFound("Active Pi memory maintenance publication not found");
-  }
-  return { binding, resultVersionId: result?.version_id };
 }
 
 function* admitStorageCommit(
@@ -372,20 +259,6 @@ function* admitStorageCommit(
   if (!storage) {
     return notFound(auth ? "Writeback storage not found" : "Storage not found");
   }
-  const [callback] = auth
-    ? callbackRows.parse(
-        yield readStatement(
-          callbackSnapshotSql(auth.runId),
-          callbackRows.element,
-        ),
-      )
-    : [];
-  const maintenance = auth
-    ? yield* admitMaintenanceCommit(input, auth, callback?.payload)
-    : {};
-  if ("status" in maintenance) {
-    return maintenance;
-  }
   const [version] = versionRows.parse(
     yield readStatement(
       versionSnapshotSql(storageVersionCondition(storage.id, input.versionId)),
@@ -395,7 +268,6 @@ function* admitStorageCommit(
   return {
     storage,
     runStatus: run?.status,
-    ...maintenance,
     version,
   };
 }
@@ -461,28 +333,6 @@ function* publishStorageCommit(
       published,
       "Locked Storage HEAD could not be published",
     );
-    if (
-      storage.name === MEMORY_ARTIFACT_NAME &&
-      storage.userId !== VOLUME_ORG_USER_ID
-    ) {
-      // This transaction already locks the exact canonical Storage and has just
-      // published the observed HEAD; repeating that canonical lock is redundant.
-      const change = {
-        memoryStorageId: storage.id,
-        orgId: storage.orgId,
-        userId: storage.userId,
-        observedHeadVersionId: input.versionId,
-        changedAt,
-        sourceRunId: input.sandboxAuth?.runId,
-      };
-      yield writeStatement(
-        updatedStorageSql(
-          piMemoryPhase2Jobs,
-          externalMemoryHeadChangeValues(change),
-          externalMemoryHeadChangeCondition(change),
-        ),
-      );
-    }
   }
   if (input.sandboxAuth && input.parentVersionId) {
     yield writeStatement(
@@ -495,56 +345,6 @@ function* publishStorageCommit(
     );
   }
   return { size, fileCount, deduplicated: !inserted };
-}
-
-function* settleStoragePublication(
-  binding: MaintenancePublicationBinding,
-  versionId: string,
-): StorageSqlPlan<void> {
-  const [callback] = callbackRows.parse(
-    yield readStatement(
-      callbackSnapshotSql(binding.runId),
-      callbackRows.element,
-    ),
-  );
-  const payload = maintenancePayload(callback?.payload);
-  yield writeStatement(
-    updatedStorageSql(
-      piMemoryStage1Candidates,
-      { lastSelectedSourceHistoryHash: null },
-      memoryCandidateOwnerCondition(payload),
-    ),
-  );
-  for (const candidate of payload.selected) {
-    yield writeStatement(
-      updatedStorageSql(
-        piMemoryStage1Candidates,
-        { lastSelectedSourceHistoryHash: candidate.sourceHistoryHash },
-        memorySelectedCandidateCondition(payload, candidate),
-      ),
-    );
-  }
-  const completed = storageMaintenanceCompletionValues(
-    payload,
-    binding.runId,
-    versionId,
-    yield* publicationTimestampPlan(),
-  );
-  const [settled] = idRows.parse(
-    yield readStatement(
-      updatedStorageSql(
-        piMemoryPhase2Jobs,
-        completed,
-        storageMaintenanceJobCondition({ ...payload, runId: binding.runId }),
-        piMemoryPhase2Jobs.memoryStorageId,
-      ),
-      idRows.element,
-    ),
-  );
-  requirePublicationRow(
-    settled,
-    "Pi memory Phase 2 maintenance success lost its claim fence",
-  );
 }
 
 function* enqueueStorageIndex(versionId: string): StorageSqlPlan<void> {
@@ -590,19 +390,6 @@ function* enqueueStorageIndex(versionId: string): StorageSqlPlan<void> {
   }
 }
 
-function shouldPublishStorageHead(
-  admitted: AdmittedCommit,
-  input: CommitStorageForStorageInput,
-  replay: boolean,
-  terminal: boolean,
-) {
-  const noDiff =
-    admitted.binding &&
-    input.versionId === admitted.binding.claimedBaseVersionId &&
-    admitted.version;
-  return !replay && !terminal && !noDiff;
-}
-
 export function* storageCommitPublicationPlan(
   input: CommitStorageForStorageInput,
   verification: VerifiedStorageCommit,
@@ -611,13 +398,11 @@ export function* storageCommitPublicationPlan(
   if ("status" in admitted) {
     return admitted;
   }
-  const { storage, version, binding } = admitted;
-  const replay =
-    version !== undefined && admitted.resultVersionId === version.id;
+  const { storage, version } = admitted;
   const terminal =
     admitted.runStatus !== undefined &&
     !sandboxStorageRunIsActive(admitted.runStatus);
-  if (terminal && !replay) {
+  if (terminal) {
     const auth = input.sandboxAuth;
     if (
       !auth ||
@@ -641,19 +426,13 @@ export function* storageCommitPublicationPlan(
       return notFound("Active agent run not found");
     }
   }
-  // A validated no-diff result acknowledges its epoch without restoring it as
-  // HEAD when an ordinary writer has already published another version.
-  const publish = shouldPublishStorageHead(admitted, input, replay, terminal);
-  const result = publish
+  const result = !terminal
     ? yield* publishStorageCommit(input, verification, storage, version)
     : {
         size: version ? Number(version.size) : totalSize(input.files),
         fileCount: version?.fileCount ?? input.files.length,
         deduplicated: true,
       };
-  if (binding && !replay && !terminal) {
-    yield* settleStoragePublication(binding, input.versionId);
-  }
   yield* enqueueStorageIndex(input.versionId);
   return storageCommitSuccess({
     storage,
@@ -667,57 +446,6 @@ export function sandboxStorageRunIsActive(
   return ACTIVE_SANDBOX_STORAGE_RUN_STATUSES.some((activeStatus) => {
     return status === activeStatus;
   });
-}
-
-export function maintenancePublicationBinding(
-  payload: unknown,
-  args: MaintenancePublicationInput,
-) {
-  if (payload === undefined) {
-    return args.attestation
-      ? badRequestMessage("Unexpected maintenance publication attestation")
-      : undefined;
-  }
-  const parsed =
-    piMemoryPhase2MaintenanceCallbackPayloadSchema.safeParse(payload);
-  if (
-    !parsed.success ||
-    !args.attestation ||
-    !matchesMaintenancePublication(parsed.data, args.attestation, args)
-  ) {
-    return notFound("Active Pi memory maintenance publication not found");
-  }
-  const maintenance = parsed.data;
-  return {
-    runId: args.auth.runId,
-    memoryStorageId: maintenance.memoryStorageId,
-    orgId: maintenance.orgId,
-    userId: maintenance.userId,
-    leaseToken: maintenance.leaseToken,
-    claimedRevision: maintenance.claimedRevision,
-    claimedBaseVersionId: maintenance.claimedBaseVersionId,
-    selectionDigest: maintenance.selectionDigest,
-  };
-}
-
-function matchesMaintenancePublication(
-  payload: ReturnType<
-    typeof piMemoryPhase2MaintenanceCallbackPayloadSchema.parse
-  >,
-  attestation: PiMemoryPhase2PublicationAttestation,
-  args: MaintenancePublicationInput,
-): boolean {
-  return (
-    payload.memoryStorageId === args.storageId &&
-    payload.orgId === args.auth.orgId &&
-    payload.userId === args.auth.userId &&
-    payload.leaseToken === attestation.leaseToken &&
-    payload.claimedRevision === attestation.claimedRevision &&
-    payload.claimedBaseVersionId === attestation.claimedBaseVersionId &&
-    payload.selectionDigest === attestation.selectionDigest &&
-    args.parentVersionId === attestation.claimedBaseVersionId &&
-    args.versionId === attestation.validatedVersionId
-  );
 }
 
 export function totalSize(files: readonly FileEntryWithHash[]): number {
@@ -838,14 +566,4 @@ function requirePublicationRow(row: unknown, message: string) {
   if (!row) {
     throw new Error(message);
   }
-}
-
-function maintenancePayload(payload: unknown) {
-  const parsed = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse(payload);
-  if (
-    piMemoryPhase2SelectionDigest(parsed.selected) !== parsed.selectionDigest
-  ) {
-    throw new Error("Pi memory publication selection mismatch");
-  }
-  return parsed;
 }

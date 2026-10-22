@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runBuiltInAdmissions } from "@okouai/db/schema/run-built-in-admission";
-import { and, count, eq, lte } from "drizzle-orm";
+import { and, count, eq, lte, sql } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -74,6 +74,8 @@ export const startRunBuiltInAdmission$ = command(
 
     const runId = args.runId;
     const writeDb = set(writeDb$);
+    // Keep the post-lock snapshot: a single statement waiting for this Run
+    // could otherwise miss an admission committed by the previous lock holder.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0236; new non-billing transactions are prohibited.
     return await writeDb.transaction(async (tx) => {
       await tx
@@ -95,26 +97,23 @@ export const startRunBuiltInAdmission$ = command(
           ),
         );
 
-      const [activeResult] = await tx
-        .select({ total: count() })
-        .from(runBuiltInAdmissions)
-        .where(
-          and(
-            eq(runBuiltInAdmissions.runId, runId),
-            eq(runBuiltInAdmissions.status, "active"),
+      // The Run lock serializes all inserts and blocks cascade deletion.
+      // Completion only changes status, so both limits share this snapshot.
+      const [counts] = await tx
+        .select({
+          active: count(
+            sql`CASE WHEN ${eq(runBuiltInAdmissions.status, "active")} THEN 1 END`,
           ),
-        );
-      signal.throwIfAborted();
-      if (Number(activeResult?.total ?? 0) >= RUN_BUILT_IN_MAX_IN_FLIGHT) {
-        return runConcurrencyLimit();
-      }
-
-      const [startedResult] = await tx
-        .select({ total: count() })
+          started: count(),
+        })
         .from(runBuiltInAdmissions)
         .where(eq(runBuiltInAdmissions.runId, runId));
       signal.throwIfAborted();
-      if (Number(startedResult?.total ?? 0) >= RUN_BUILT_IN_MAX_STARTED) {
+      if ((counts?.active ?? 0) >= RUN_BUILT_IN_MAX_IN_FLIGHT) {
+        return runConcurrencyLimit();
+      }
+
+      if ((counts?.started ?? 0) >= RUN_BUILT_IN_MAX_STARTED) {
         return runUsageLimit();
       }
 

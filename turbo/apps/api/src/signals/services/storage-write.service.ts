@@ -3,19 +3,15 @@ import {
   type FileEntryWithHash,
 } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
-import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
-import { runResultSchema } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
-import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { badRequestMessage, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
@@ -26,38 +22,16 @@ import {
   s3ObjectHead,
   type S3ObjectHead,
 } from "../external/s3";
+import { storageCommitLineageCondition } from "./storage-write-conditions";
 import {
-  maintenanceCallbackCondition,
-  storageMaintenanceJobCondition,
-  storageCommitLineageCondition,
-} from "./storage-write-conditions";
-import {
-  storageCommitPublicationPlan,
   sandboxStorageRunIsActive,
-  maintenancePublicationBinding,
-  totalSize,
+  storageCommitPublicationPlan,
   terminalStorageCommitPersistedStateMatches,
-  storageCommitSuccess,
-  type MaintenancePublicationInput,
+  totalSize,
 } from "./storage-write-publication-plan";
-
-import {
-  maintenancePublicationResultCondition,
-  maintenancePublicationResultVersion,
-  maintenancePublicationVersion,
-} from "./pi-memory-phase2-result";
 
 interface StorageChanges {
   readonly deleted?: readonly string[];
-}
-
-export interface PiMemoryPhase2PublicationAttestation {
-  readonly schemaVersion: number;
-  readonly leaseToken: string;
-  readonly claimedRevision: number;
-  readonly claimedBaseVersionId: string;
-  readonly selectionDigest: string;
-  readonly validatedVersionId: string;
 }
 
 interface PrepareStorageUploadInput {
@@ -67,7 +41,6 @@ interface PrepareStorageUploadInput {
   readonly parentVersionId?: string;
   readonly baseVersion?: string;
   readonly changes?: StorageChanges;
-  readonly maintenanceAttestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 interface PrepareStorageInput extends PrepareStorageUploadInput {
@@ -85,7 +58,6 @@ interface CommitStorageUploadInput {
   readonly runId?: string;
   readonly parentVersionId?: string;
   readonly message?: string;
-  readonly maintenanceAttestation?: PiMemoryPhase2PublicationAttestation;
 }
 
 interface CommitStorageInput extends CommitStorageUploadInput {
@@ -103,7 +75,6 @@ export type StorageVersionRow = typeof storageVersions.$inferSelect;
 
 interface MountedWritebackStorage {
   readonly runStatus: typeof agentRuns.$inferSelect.status;
-  readonly runResult: typeof agentRuns.$inferSelect.result;
   readonly storage: StorageRow;
 }
 
@@ -207,7 +178,6 @@ const readMountedWritebackStorage$ = command(
     const [mounted] = await get(db$)
       .select({
         runStatus: agentRuns.status,
-        runResult: agentRuns.result,
         storage: storageRowSelection(),
       })
       .from(agentRuns)
@@ -243,67 +213,9 @@ const readMountedWritebackStorage$ = command(
     return mounted.storage
       ? {
           runStatus: mounted.runStatus,
-          runResult: mounted.runResult,
           storage: mounted.storage,
         }
       : notFound("Writeback storage not found");
-  },
-);
-
-const guardMaintenancePreparation$ = command(
-  async ({ get }, args: MaintenancePublicationInput, signal: AbortSignal) => {
-    const db = get(db$);
-    const [callback] = await db
-      .select({ payload: agentRunCallbacks.payload })
-      .from(agentRunCallbacks)
-      .where(maintenanceCallbackCondition(args.auth.runId))
-      .limit(1);
-    signal.throwIfAborted();
-    const binding = maintenancePublicationBinding(callback?.payload, args);
-    if (!binding || "status" in binding) {
-      return binding;
-    }
-    const [result] = await db
-      .select({ versionId: maintenancePublicationResultVersion() })
-      .from(piMemoryPhase2Jobs)
-      .where(maintenancePublicationResultCondition(binding))
-      .limit(1);
-    signal.throwIfAborted();
-    if (result) {
-      const versionId = maintenancePublicationVersion(result);
-      if (versionId !== args.versionId) {
-        return notFound("Pi memory maintenance publication already committed");
-      }
-      const [version] = await db
-        .select({ id: storageVersions.id })
-        .from(storageVersions)
-        .where(
-          and(
-            eq(storageVersions.storageId, binding.memoryStorageId),
-            eq(storageVersions.id, args.versionId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      // Acknowledgement carries no new upload capability; a missing version
-      // cannot be recreated from the Job's historical result reference.
-      return version
-        ? {
-            status: 200 as const,
-            body: { versionId: args.versionId, existing: true },
-          }
-        : notFound("Pi memory maintenance publication version not found");
-    }
-    const [active] = await db
-      .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
-      .from(piMemoryPhase2Jobs)
-      .where(storageMaintenanceJobCondition(binding, nowDate()))
-      .limit(1)
-      .for("update", { of: piMemoryPhase2Jobs });
-    signal.throwIfAborted();
-    return active
-      ? undefined
-      : notFound("Active Pi memory maintenance publication not found");
   },
 );
 
@@ -727,22 +639,6 @@ export const prepareStorageUploadForAuth$ = command(
       return notFound("Active agent run not found");
     }
 
-    const maintenanceGuard = await set(
-      guardMaintenancePreparation$,
-      {
-        auth: args.auth,
-        storageId: args.storageId,
-        parentVersionId: args.parentVersionId,
-        versionId: computeContentHashFromHashes(args.storageId, args.files),
-        attestation: args.maintenanceAttestation,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (maintenanceGuard) {
-      return maintenanceGuard;
-    }
-
     const response = await set(
       prepareStorageUploadForStorage$,
       {
@@ -753,7 +649,6 @@ export const prepareStorageUploadForAuth$ = command(
         parentVersionId: args.parentVersionId,
         baseVersion: args.baseVersion,
         changes: args.changes,
-        maintenanceAttestation: args.maintenanceAttestation,
       },
       signal,
     );
@@ -763,7 +658,7 @@ export const prepareStorageUploadForAuth$ = command(
     }
 
     // This final observation authorizes only the response. Commit revalidates
-    // under its own run/storage/maintenance fences before any publication.
+    // under its own run/storage authorization before any publication.
     const current = await set(
       readMountedWritebackStorage$,
       { auth: args.auth, storageId: args.storageId },
@@ -805,27 +700,9 @@ const readSandboxLineage$ = command(
   },
 );
 
-function finalizedMaintenanceVersion(
-  mounted: MountedWritebackStorage,
-): string | undefined {
-  if (
-    !["completed", "failed", "cancelled"].includes(mounted.runStatus) ||
-    mounted.runResult === null
-  ) {
-    return undefined;
-  }
-  const result = runResultSchema.parse(mounted.runResult);
-  return result.storageOutputs?.find((output) => {
-    return (
-      output.name === mounted.storage.name &&
-      output.mountPath === PI_MEMORY_ROOT
-    );
-  })?.version;
-}
-
 export const commitSandboxStorageUpload$ = command(
   async (
-    { get, set },
+    { set },
     args: CommitStorageInput,
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
@@ -841,67 +718,6 @@ export const commitSandboxStorageUpload$ = command(
     signal.throwIfAborted();
     if ("status" in mounted) {
       return mounted;
-    }
-    const db = get(db$);
-    // Only attested retries use this shortcut; the publication plan admits live commits.
-    const [callback] = args.maintenanceAttestation
-      ? await db
-          .select({ payload: agentRunCallbacks.payload })
-          .from(agentRunCallbacks)
-          .where(maintenanceCallbackCondition(args.auth.runId))
-          .limit(1)
-      : [];
-    signal.throwIfAborted();
-    const binding = maintenancePublicationBinding(callback?.payload, {
-      auth: args.auth,
-      storageId: args.storageId,
-      versionId: args.versionId,
-      parentVersionId: args.parentVersionId,
-      attestation: args.maintenanceAttestation,
-    });
-    if (binding && "status" in binding) {
-      return binding;
-    }
-    const [result] = binding
-      ? await db
-          .select({ versionId: maintenancePublicationResultVersion() })
-          .from(piMemoryPhase2Jobs)
-          .where(maintenancePublicationResultCondition(binding))
-          .limit(1)
-      : [];
-    signal.throwIfAborted();
-    const finalizedVersionId = binding
-      ? finalizedMaintenanceVersion(mounted)
-      : undefined;
-    // Finalized Run output fixes this Run's accepted publication independently
-    // of a newer Job/HEAD. Generic version or lineage existence is not proof.
-    const publicationVersionId =
-      finalizedVersionId !== undefined
-        ? finalizedVersionId
-        : maintenancePublicationVersion(result);
-    if (publicationVersionId) {
-      if (
-        publicationVersionId !== args.versionId ||
-        computeContentHashFromHashes(args.storageId, args.files) !==
-          publicationVersionId
-      ) {
-        return notFound("Pi memory maintenance publication replay mismatch");
-      }
-      const version = await set(
-        findStorageVersion$,
-        { storageId: args.storageId, versionId: args.versionId },
-        signal,
-      );
-      signal.throwIfAborted();
-      return version
-        ? storageCommitSuccess({
-            storage: mounted.storage,
-            versionId: version.id,
-            size: Number(version.size),
-            fileCount: version.fileCount,
-            deduplicated: true,
-          })
-        : notFound("Pi memory maintenance publication version not found");
     }
     const terminalRetry = !sandboxStorageRunIsActive(mounted.runStatus);
     if (terminalRetry) {

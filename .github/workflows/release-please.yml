@@ -1181,8 +1181,8 @@ jobs:
           fi
           echo "✅ All build-phase jobs succeeded or were skipped."
 
-  # Build the API artifact, run required production migrations, and deploy that
-  # exact artifact from the same runner only after migrations succeed.
+  # Build the API artifact and apply its prerequisite migrations before serving.
+  # The final Pi memory contraction follows API cutover and outgoing-request drain.
   promote-api-production:
     needs: [release-please, builds-complete]
     if: >-
@@ -1302,10 +1302,14 @@ jobs:
           branch-name: release-smoke/migrate-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Run Production Migrations
+        id: production-migrations
         if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
         run: |
           echo "Running production migrations on production"
-          cd turbo && pnpm -F @okouai/db db:migrate
+          cd turbo
+          result_file="$RUNNER_TEMP/production-migration-result.json"
+          pnpm -F @okouai/db db:migrate --defer 1444_retire_pi_memory.sql --result-file "$result_file"
+          jq -r '"deferred_migration=\(.deferredMigration // "")"' "$result_file" >> "$GITHUB_OUTPUT"
         env:
           DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -1435,6 +1439,21 @@ jobs:
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           deployment-url: ${{ steps.deploy.outputs.url }}
+
+      # The preceding API still touches the retired tables during ordinary
+      # native memory publication. Keep them until production cutover and the
+      # outgoing artifact's enforced 300-second invocation limit have passed.
+      - name: Drain outgoing API before Pi memory contraction
+        if: ${{ steps.production-migrations.outputs.deferred_migration != '' }}
+        shell: bash
+        run: sleep 300
+
+      - name: Contract Pi memory storage after API drain
+        if: ${{ steps.production-migrations.outputs.deferred_migration != '' }}
+        working-directory: turbo
+        run: pnpm -F @okouai/db db:migrate
+        env:
+          DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
 
       - name: Finish GitHub Deployment
         if: ${{ always() && steps.deployment.outputs.deployment_id }}

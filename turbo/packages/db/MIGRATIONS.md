@@ -37,7 +37,7 @@ when investigating past migrations. This cleanup does not change migration SQL,
 snapshots, production rollout or rollback requirements, and does not certify a
 production backfill or operator cleanup.
 
-Migration runner timeout tests, smoke diagnostics, Pi-memory alert fixtures and
+Migration runner timeout tests, smoke diagnostics and
 the instruction-storage cleanup operator's native acceptance suite remain
 available as standalone commands. They are not prerequisites of schema
 consistency validation.
@@ -213,16 +213,15 @@ are enforced by the integration ingress tests.
   and Official binding invariants on both replayed and freshly generated
   schemas.
 
-- `scripts/test-pi-memory-storage-retirement-preparation.ts` replays writer
-  preparation and the actual compatibility-storage contraction. Unexpected
-  indexes, checks, views, routines, triggers, inheritance and foreign keys reject
-  deletion without advancing the migration journal. Matching compatibility
-  leases block contraction; real prepared leases, latest results, native history
-  and Storage content/lineage survive it. Keep this historical replay through
-  independent production contraction acceptance under #39171.
-  `scripts/test-pi-memory-job-permanent.ts` protects canonical Job statements,
-  root queries, ownership, claim/result constraints and published/no-diff/failure
-  outcomes against both replayed and freshly generated schemas.
+- `scripts/test-pi-memory-retirement.ts` exercises the final Pi-only table
+  contraction through the production migrator. It protects shared native memory,
+  history, versions, citations and settled billing; verifies one blob retain is
+  released per candidate; and proves active leases, callbacks, late usage,
+  accounting corruption and external dependencies prevent contraction without
+  advancing the journal. It also exercises pre-promotion deferral and ordinary
+  later migrations after the contraction. The production release applies this
+  contraction only after API traffic cutover and the outgoing 300-second request
+  bound; the main-owned rollback floor excludes APIs that still use the tables.
 
 - `scripts/test-run-checkpoint-retirement.ts` replays the generic checkpoint
   contraction against populated historical data and preserves Runs/results,

@@ -8,7 +8,7 @@ import { hostedSitePreviewGrantSchema } from "@okouai/api-contracts/contracts/ho
 import { env } from "../../lib/env";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
-import { hostedPreviewArtifactId } from "./hosted-preview.service";
+import { hostedPreviewArtifactIds } from "./hosted-preview.service";
 import { privateArtifactRecord$ } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
@@ -185,32 +185,31 @@ export const resolveHostedSitePreview$ = command(
       }
     }
     const preview = row.deployment.manifest.preview;
-    const cover = preview
-      ? await set(
-          privateArtifactRecord$,
-          hostedPreviewArtifactId(row.deployment.id, preview),
+    let image: { readonly url: string } | null = null;
+    if (preview) {
+      for (const id of hostedPreviewArtifactIds(row.deployment.id, preview)) {
+        const cover = await set(privateArtifactRecord$, id, signal);
+        if (!cover || cover.materializationStatus !== "ready") {
+          continue;
+        }
+        if (
+          cover.userId !== row.deployment.userId ||
+          cover.orgId !== row.deployment.orgId
+        ) {
+          throw new Error("Website cover belongs to another publication owner");
+        }
+        image = await set(
+          resolveArtifactPreviewUrl$,
+          {
+            bucket: cover.bucket,
+            key: cover.key,
+            signingDate: nowDate(),
+          },
           signal,
-        )
-      : null;
-    if (
-      cover &&
-      (cover.userId !== row.deployment.userId ||
-        cover.orgId !== row.deployment.orgId)
-    ) {
-      throw new Error("Website cover belongs to another publication owner");
+        );
+        break;
+      }
     }
-    const image =
-      cover?.materializationStatus === "ready"
-        ? await set(
-            resolveArtifactPreviewUrl$,
-            {
-              bucket: cover.bucket,
-              key: cover.key,
-              signingDate: nowDate(),
-            },
-            signal,
-          )
-        : null;
     const target =
       policy.visibility === "public"
         ? {

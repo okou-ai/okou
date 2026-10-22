@@ -1,11 +1,10 @@
-import {
-  AUTO_SELECTED_MODEL,
-  isAutoSelectedModel,
-  isAutoRunPreset,
-} from "@okouai/core/auto-run-model";
-import { AUTO_PI_RUNTIME_CAPABILITIES } from "@okouai/core/pi-runtime-capability";
-import { isOkouRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
+import type {
+  Api,
+  AssistantMessageEventStream,
+  Model,
+  TranscriptContext,
+} from "@earendil-works/pi-ai";
+import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { streamSimple as streamSimpleCompletions } from "@earendil-works/pi-ai/api/openai-completions";
 import {
@@ -15,26 +14,22 @@ import {
 import { buildBaseOptions } from "@earendil-works/pi-ai/api/simple-options";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
-import type {
-  Api,
-  AssistantMessageEventStream,
-  TranscriptContext,
-  Model,
-} from "@earendil-works/pi-ai";
-import { clampThinkingLevel } from "@earendil-works/pi-ai";
-
-import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
-import { piModelLimitOverride } from "./model-limits";
+import { isOkouRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
 import {
-  PI_MEMORY_PRESET,
-  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  memoryPresetPayload,
-} from "./memory-background-config";
+  AUTO_SELECTED_MODEL,
+  isAutoRunPreset,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
+import { AUTO_PI_RUNTIME_CAPABILITIES } from "@okouai/core/pi-runtime-capability";
+
+import { piModelLimitOverride } from "./model-limits";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
 } from "./stream-options";
+import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
 
@@ -132,10 +127,7 @@ function catalogSourceModel(
   provider: string,
   model: string,
 ): Model<Api> | undefined {
-  if (
-    provider === "openrouter" &&
-    (model === AUTO_SELECTED_MODEL || model === PI_MEMORY_STAGE1_BUILT_IN_MODEL)
-  ) {
+  if (provider === "openrouter" && model === AUTO_SELECTED_MODEL) {
     // Presets own routing. Pi owns protocol/context capabilities, not catalog alias metadata.
     // Display estimates are not settlement authority; usage settlement uses the Run capture.
     return {
@@ -277,7 +269,7 @@ export const piAgentRegisteredStream = (
   return piAgentStream(model, context, options);
 };
 
-/** Apply API-owned per-request policy to Sandbox and maintenance turns. */
+/** Apply API-owned per-request policy to Sandbox turns. */
 export function piAgentStreamForConfig(
   config: PiAgentStreamConfig,
 ): typeof piAgentRegisteredStream {
@@ -306,17 +298,6 @@ export function piAgentStreamForConfig(
         }
         return streamSimpleCompletions(model, context, {
           ...responseOptions,
-          ...(model.id === PI_MEMORY_PRESET
-            ? {
-                onPayload: async (payload: unknown) => {
-                  const shaped = responseOptions.onPayload
-                    ? ((await responseOptions.onPayload(payload, model)) ??
-                      payload)
-                    : payload;
-                  return memoryPresetPayload(shaped);
-                },
-              }
-            : {}),
           ...(config.sessionAffinityKey === undefined
             ? {}
             : { sessionId: config.sessionAffinityKey }),
@@ -359,15 +340,6 @@ export function piAgentStreamForConfig(
 }
 
 function capturedAutoCatalogIdentity(config: PiAgentModelConfig): string {
-  if (
-    config.provider === "openrouter" &&
-    config.model === PI_MEMORY_PRESET &&
-    config.dialect === "openai-completions" &&
-    (config.catalogModel === undefined ||
-      config.catalogModel === PI_MEMORY_STAGE1_BUILT_IN_MODEL)
-  ) {
-    return PI_MEMORY_STAGE1_BUILT_IN_MODEL;
-  }
   const identity = config.catalogModel ?? config.model;
   // Auto's capability class is platform-owned, not a second route.
   // The request still sends the immutable runtime model below.

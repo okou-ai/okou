@@ -35,9 +35,13 @@ import {
   requestHasPreviewAutomationBypassHeaderOrCookie,
   VERCEL_PROTECTION_BYPASS_HEADER,
 } from "./lib/preview-automation-bypass";
-import { now } from "./lib/time";
+import { monotonicNow, now } from "./lib/time";
 import { isSupportedWebClientVersion } from "./lib/web-client-compatibility";
-import { waitUntil } from "./signals/context/wait-until";
+import {
+  observeWaitUntilLifecycle,
+  waitUntil,
+  type WaitUntilLifecycleResult,
+} from "./signals/context/wait-until";
 import { honoSignalHandler } from "./signals/context/route";
 import {
   flushAxiom,
@@ -51,6 +55,7 @@ import {
   normalizeThrown,
   safeSync,
   safeUrlParse,
+  settleIncludingAbort,
 } from "./signals/utils";
 
 const L = logger("App");
@@ -532,6 +537,54 @@ function scheduleAxiomRequestLog(context: Context, startedAt: number): void {
   }
 }
 
+interface RequestLifecycleTiming {
+  readonly startedAt: number;
+  readonly startedMonotonicAt: number;
+  requestTimeMs: number;
+  foregroundTimeMs: number;
+  handlerFailed: boolean;
+}
+
+async function recordAxiomRequestLifecycle(
+  context: Context,
+  timing: RequestLifecycleTiming,
+  { taskCount, failureCount }: WaitUntilLifecycleResult,
+): Promise<void> {
+  const lifecycleTimeMs = Math.max(
+    0,
+    monotonicNow() - timing.startedMonotonicAt,
+  );
+  const ingested = safeSync(() => {
+    // Keep lifecycle events out of request-log so existing request RED queries
+    // continue to count exactly one event per request.
+    return ingestToAxiom(getDatasetName("web-logs"), [
+      {
+        ...axiomRequestLogEvent(context, timing.startedAt),
+        type: "request_lifecycle",
+        request_time_ms: timing.requestTimeMs,
+        lifecycle_time_ms: lifecycleTimeMs,
+        background_time_ms: Math.max(
+          0,
+          lifecycleTimeMs - timing.foregroundTimeMs,
+        ),
+        wait_until_task_count: taskCount,
+        wait_until_failure_count: failureCount,
+        lifecycle_error:
+          context.res.status >= 500 || timing.handlerFailed || failureCount > 0,
+      },
+    ]);
+  });
+  if (!("ok" in ingested) || !ingested.ok) {
+    return;
+  }
+  const flushed = safeSync(() => {
+    return flushAxiom({ client: "telemetry" });
+  });
+  if ("ok" in flushed) {
+    await flushed.ok;
+  }
+}
+
 function unhandledRequestErrorLogFields(
   error: unknown,
   context: Context,
@@ -604,9 +657,33 @@ export function createAppWithRoutes({
   });
 
   app.use("*", async (c, next) => {
-    const startedAt = now();
-    await next();
-    scheduleAxiomRequestLog(c, startedAt);
+    const timing: RequestLifecycleTiming = {
+      startedAt: now(),
+      startedMonotonicAt: monotonicNow(),
+      requestTimeMs: 0,
+      foregroundTimeMs: 0,
+      handlerFailed: false,
+    };
+    await observeWaitUntilLifecycle(
+      async () => {
+        const result = await settleIncludingAbort(next);
+        // Like existing request RED, this marks handler return, not the end
+        // of a streamed response body or its delivery to the client.
+        timing.requestTimeMs = Math.max(0, now() - timing.startedAt);
+        timing.foregroundTimeMs = Math.max(
+          0,
+          monotonicNow() - timing.startedMonotonicAt,
+        );
+        timing.handlerFailed = !result.ok;
+        if (!result.ok) {
+          throw result.error;
+        }
+        scheduleAxiomRequestLog(c, timing.startedAt);
+      },
+      (result) => {
+        return recordAxiomRequestLifecycle(c, timing, result);
+      },
+    );
   });
 
   app.use("*", previewAutomationBypassMiddleware);

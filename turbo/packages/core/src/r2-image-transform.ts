@@ -27,6 +27,8 @@ const R2_IMAGE_TRANSFORM_CONTENT_TYPES = new Set([
 const R2_IMAGE_TRANSFORM_QUALITY = 85;
 
 export interface R2ImageTransformOptions {
+  /** The caller has authorized an original-only source adapter, not a delivery grant. */
+  readonly authorizedSource?: boolean;
   /** A known source MIME type takes precedence over the URL extension. */
   readonly contentType?: string;
   readonly width?: number;
@@ -96,15 +98,21 @@ export function r2ImageTransformUrl(
   const parsed = parseAbsoluteUrl(url);
   // Unsupported or unknown input formats keep their original URL. A browser
   // can display formats such as BMP that Cloudflare cannot transform.
-  if (parsed === null || !isSupportedImageInput(parsed, options.contentType)) {
+  if (
+    parsed === null ||
+    (!options.authorizedSource &&
+      !isSupportedImageInput(parsed, options.contentType))
+  ) {
     return url;
   }
 
   if (
     remoteImageOrigin &&
-    parsed.protocol === "https:" &&
-    parsed.hostname.endsWith(".r2.cloudflarestorage.com") &&
-    parsed.searchParams.has("X-Amz-Signature")
+    ["https:", "http:"].includes(parsed.protocol) &&
+    (options.authorizedSource ||
+      (parsed.protocol === "https:" &&
+        parsed.hostname.endsWith(".r2.cloudflarestorage.com") &&
+        parsed.searchParams.has("X-Amz-Signature")))
   ) {
     // The signature covers the source URL. Preserve its encoded path and query
     // byte for byte instead of reconstructing it with URLSearchParams.

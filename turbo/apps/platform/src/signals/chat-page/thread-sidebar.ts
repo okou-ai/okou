@@ -3,7 +3,14 @@ import {
   createAttachmentPreviewSignals,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 
 import {
   createArtifactCatalogSignals,
@@ -20,7 +27,14 @@ import {
   createMarkdownPreviewTree,
   type MarkdownPreviewTreeComputed,
 } from "../markdown-preview-tree.ts";
-import type { MailDraftSignals } from "./mail-draft.ts";
+import type {
+  MailDraftCardSignalsRegistry,
+  MailDraftSignals,
+} from "./mail-draft.ts";
+import {
+  closeThreadMailLocation$,
+  threadMailLocation$,
+} from "./thread-mail-location.ts";
 import {
   classifyChatAttachment,
   previewAttachmentFromUrl,
@@ -188,7 +202,12 @@ export type ThreadSidebarTarget =
 
 export type ThreadSidebarOpenTarget = Exclude<
   ThreadSidebarTarget,
-  { readonly type: "artifact" }
+  { readonly type: "artifact" | "email-draft" }
+>;
+
+type NonMailThreadSidebarTarget = Exclude<
+  ThreadSidebarTarget,
+  { readonly type: "email-draft" }
 >;
 
 export interface ThreadSidebarSignals {
@@ -199,6 +218,8 @@ export interface ThreadSidebarSignals {
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
   readonly close$: Command<void, []>;
+  /** Clear presentation before another navigation owns the URL. */
+  readonly dismiss$: Command<void, []>;
   /**
    * Whether the current sidebar session should animate into the split layout.
    * The first IndexedDB-driven auto-open captures `false`; later opens capture
@@ -245,10 +266,34 @@ function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
   return { resetSidebarSessionSignal$, startSession$ };
 }
 
+function createThreadSidebarTarget(
+  threadId: string,
+  mailRegistry: MailDraftCardSignalsRegistry,
+  internalTarget$: State<NonMailThreadSidebarTarget | null>,
+) {
+  return computed((get): ThreadSidebarTarget | null => {
+    const location = get(threadMailLocation$);
+    if (location?.threadId === threadId && location.view === "detail") {
+      const signals = get(mailRegistry.values$).find((candidate) => {
+        return candidate.mailDraftId === location.mailDraftId;
+      });
+      return signals
+        ? {
+            type: "email-draft",
+            signals,
+            ...(location.fromList ? { fromMailList: true } : {}),
+          }
+        : null;
+    }
+    return get(internalTarget$);
+  });
+}
+
 export function createThreadSidebarSignals(
   threadId: string,
+  mailRegistry: MailDraftCardSignalsRegistry,
 ): ThreadSidebarSignals {
-  const internalTarget$ = state<ThreadSidebarTarget | null>(null);
+  const internalTarget$ = state<NonMailThreadSidebarTarget | null>(null);
   const internalEntryAnimationsEnabled$ = state(false);
   const internalAnimateEntry$ = state(false);
   const internalFullscreen$ = state(false);
@@ -266,7 +311,7 @@ export function createThreadSidebarSignals(
   );
 
   const publishTarget$ = command(
-    ({ get, set }, target: ThreadSidebarTarget): void => {
+    ({ get, set }, target: NonMailThreadSidebarTarget): void => {
       const current = get(internalTarget$);
       if (current === null) {
         set(internalAnimateEntry$, get(internalEntryAnimationsEnabled$));
@@ -279,6 +324,7 @@ export function createThreadSidebarSignals(
         set(artifactCatalog.selectArtifact$, target.source.artifactId);
       }
       set(internalTarget$, target);
+      set(closeThreadMailLocation$);
     },
   );
 
@@ -320,7 +366,7 @@ export function createThreadSidebarSignals(
     },
   );
 
-  const close$ = command(({ set }) => {
+  const dismiss$ = command(({ set }) => {
     set(resetSidebarSessionSignal$);
     set(internalTarget$, null);
     set(internalAnimateEntry$, false);
@@ -328,16 +374,23 @@ export function createThreadSidebarSignals(
     set(internalEditingAutomationId$, null);
     set(imageCanvas.reset$);
   });
+  const close$ = command(({ set }) => {
+    set(dismiss$);
+    set(closeThreadMailLocation$, threadId);
+  });
 
   return {
-    target$: computed((get) => {
-      return get(internalTarget$);
-    }),
+    target$: createThreadSidebarTarget(threadId, mailRegistry, internalTarget$),
     open$,
     openCatalogArtifact$,
     openAttachment$,
     close$,
+    dismiss$,
     animateEntry$: computed((get) => {
+      const location = get(threadMailLocation$);
+      if (location?.threadId === threadId && location.view === "detail") {
+        return false;
+      }
       return get(internalAnimateEntry$);
     }),
     enableEntryAnimations$: command(({ set }) => {

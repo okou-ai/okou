@@ -21,10 +21,6 @@ export const artifactOgTargetSchema = z.discriminatedUnion("kind", [
 ]);
 export type ArtifactOgTarget = z.infer<typeof artifactOgTargetSchema>;
 const c = initContract();
-const imageResponse = c.otherResponse({
-  contentType: "image/png",
-  body: c.type<Blob>(),
-});
 export const artifactOgContract = c.router({
   slackImage: {
     method: "GET",
@@ -34,11 +30,11 @@ export const artifactOgContract = c.router({
       signature: z.string().regex(/^[a-f0-9]{64}$/u),
     }),
     responses: {
-      200: imageResponse,
+      302: c.noBody(),
       400: apiErrorSchema,
       403: c.noBody(),
     },
-    summary: "Read a signed, size-limited thumbnail for a Slack link preview",
+    summary: "Redirect a signed Slack image capability to its original source",
   },
   metadata: {
     method: "GET",
@@ -63,13 +59,12 @@ export const artifactOgContract = c.router({
       }),
     ),
     responses: {
-      200: imageResponse,
       302: c.noBody(),
       400: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary:
-      "Read a version-bound cover only while anonymous publication remains authorized",
+      "Redirect to a version-bound original cover while anonymous publication remains authorized",
   },
   defaultImage: {
     method: "GET",
