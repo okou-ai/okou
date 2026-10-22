@@ -9,9 +9,7 @@ import {
 type PlanEntitlementProjection = ReturnType<typeof orgPlanEntitlementValues>;
 
 /** Preserve the existing duplicate-owner decision within the publication snapshot. */
-function paymentFailedSubscriptionSnapshotSql(
-  values: PlanEntitlementProjection,
-) {
+function stripeSubscriptionSnapshotSql(values: PlanEntitlementProjection) {
   const query = new QueryBuilder();
   const duplicateOwner = values.stripeSubscriptionId
     ? exists(
@@ -42,7 +40,7 @@ function paymentFailedSubscriptionSnapshotSql(
   };
 }
 
-function paymentFailedPlanEntitlementUpdateSet(
+function stripePlanEntitlementUpdateSet(
   values: PlanEntitlementProjection,
 ): SQL {
   const reset = orgPlanEntitlementUpdateValues(values);
@@ -63,10 +61,7 @@ function paymentFailedPlanEntitlementUpdateSet(
       reset.canBuyCredits,
       orgPlanEntitlements.canBuyCredits,
     ),
-    showUsagePack: sql.param(
-      reset.showUsagePack,
-      orgPlanEntitlements.showUsagePack,
-    ),
+    showUsagePack: sql`excluded.show_usage_pack`,
     autoRechargeAllowed: sql.param(
       reset.autoRechargeAllowed,
       orgPlanEntitlements.autoRechargeAllowed,
@@ -120,12 +115,16 @@ function paymentFailedPlanEntitlementUpdateSet(
 }
 
 /** Bind this capability projection only to the actual organization UPDATE result. */
-export function paymentFailedPlanEntitlementInsertSql(
+export function stripePlanEntitlementInsertSql(
   parentOrgIds: SQL,
   values: PlanEntitlementProjection,
+  showUsagePack: SQL = sql.param(
+    values.showUsagePack,
+    orgPlanEntitlements.showUsagePack,
+  ),
 ): SQL {
-  const updateSet = paymentFailedPlanEntitlementUpdateSet(values);
-  const snapshot = paymentFailedSubscriptionSnapshotSql(values);
+  const updateSet = stripePlanEntitlementUpdateSet(values);
+  const snapshot = stripeSubscriptionSnapshotSql(values);
   return sql`INSERT INTO ${orgPlanEntitlements} (
     ${sql.identifier(orgPlanEntitlements.orgId.name)},
     ${sql.identifier(orgPlanEntitlements.planKey.name)},
@@ -150,7 +149,7 @@ export function paymentFailedPlanEntitlementInsertSql(
     ${sql.identifier(orgPlanEntitlements.expiresAt.name)},
     ${sql.identifier(orgPlanEntitlements.sourceMetadata.name)},
     ${sql.identifier(orgPlanEntitlements.updatedAt.name)}
-  ) SELECT downgraded_plan_rows.org_id,
+  ) SELECT updated_plan_rows.org_id,
     ${sql.param(values.planKey, orgPlanEntitlements.planKey)},
     ${sql.param(values.planRank, orgPlanEntitlements.planRank)},
     ${sql.param(values.source, orgPlanEntitlements.source)},
@@ -158,7 +157,7 @@ export function paymentFailedPlanEntitlementInsertSql(
     ${sql.param(values.baseConcurrencyLimit, orgPlanEntitlements.baseConcurrencyLimit)},
     ${sql.param(values.canBuyConcurrency, orgPlanEntitlements.canBuyConcurrency)},
     ${sql.param(values.canBuyCredits, orgPlanEntitlements.canBuyCredits)},
-    ${sql.param(values.showUsagePack, orgPlanEntitlements.showUsagePack)},
+    ${showUsagePack},
     ${sql.param(values.autoRechargeAllowed, orgPlanEntitlements.autoRechargeAllowed)},
     ${sql.param(values.restrictedBuiltInModels, orgPlanEntitlements.restrictedBuiltInModels)},
     ${sql.param(values.workflowWebhookTriggerAllowed, orgPlanEntitlements.workflowWebhookTriggerAllowed)},
@@ -173,7 +172,7 @@ export function paymentFailedPlanEntitlementInsertSql(
     ${sql.param(values.expiresAt, orgPlanEntitlements.expiresAt)},
     ${snapshot.sourceMetadata},
     ${sql.param(values.updatedAt, orgPlanEntitlements.updatedAt)}
-  FROM (${parentOrgIds}) AS downgraded_plan_rows
+  FROM (${parentOrgIds}) AS updated_plan_rows
   WHERE true
   ON CONFLICT (${sql.identifier(orgPlanEntitlements.orgId.name)})
   DO UPDATE SET ${updateSet}`;

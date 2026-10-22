@@ -12,6 +12,7 @@ import { command } from "ccstate";
 import {
   and,
   eq,
+  exists,
   inArray,
   isNotNull,
   isNull,
@@ -69,7 +70,7 @@ import {
   type StripeSubscriptionSnapshotReconciliation,
 } from "./webhooks-stripe.service";
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
-import { paymentFailedPlanEntitlementInsertSql } from "./payment-failed-plan-projection";
+import { stripePlanEntitlementInsertSql } from "./subscription-plan-projection";
 import { canceledPlanEntitlementInsertSql } from "./subscription-deletion-projection";
 import {
   archivedSubscriptionHasSurvivingComponents,
@@ -780,9 +781,8 @@ const refreshRecoveredBillingCandidate$ = command(
       ? (tierForKnownPlanPrice(planItem.price) ?? undefined)
       : undefined;
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0124; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const changed = await tx
+    const changed = db.$with("recovered_billing_organization").as(
+      db
         .update(orgMetadata)
         .set({
           ...syncedFields,
@@ -791,74 +791,60 @@ const refreshRecoveredBillingCandidate$ = command(
         .where(currentBillingCandidateWhere(candidate))
         .returning({
           orgId: orgMetadata.orgId,
-        });
-      for (const row of changed) {
-        if (!tier) {
-          continue;
-        }
-        const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
-          {
-            orgId: row.orgId,
-            tier,
-            subscription,
-            stripeSubscriptionId: candidate.stripeSubscriptionId,
-            stripePriceId: priceId,
-            status: subscription.status,
-          },
-          false,
-        );
-        let showUsagePack = false;
-        if (
-          entitlementArgs.stripeSubscriptionId !== null &&
-          (entitlementArgs.tier === "pro" ||
-            entitlementArgs.tier === "team" ||
-            entitlementArgs.tier === "custom")
-        ) {
-          const [allocation] = await tx
-            .select({ id: usagePackAllocations.id })
-            .from(usagePackSubscriptions)
-            .innerJoin(
-              usagePackAllocations,
-              eq(
-                usagePackAllocations.usagePackSubscriptionId,
-                usagePackSubscriptions.id,
-              ),
-            )
-            .where(
-              planSnapshotAllocationCondition({
-                orgId: row.orgId,
-                stripeSubscriptionId: entitlementArgs.stripeSubscriptionId,
-              }),
-            )
-            .limit(1);
-          showUsagePack = allocation !== undefined;
-        }
-        const snapshotArgs = { ...entitlementArgs, showUsagePack };
-        const [owner] = snapshotArgs.stripeSubscriptionId
-          ? await tx
-              .select({ orgId: orgPlanEntitlements.orgId })
-              .from(orgPlanEntitlements)
-              .where(
+        }),
+    );
+    if (!tier) {
+      await db.with(changed).select().from(changed);
+      signal.throwIfAborted();
+      return;
+    }
+    const entitlementArgs = stripeSubscriptionPlanSnapshotArgs(
+      {
+        orgId: candidate.orgId,
+        tier,
+        subscription,
+        stripeSubscriptionId: candidate.stripeSubscriptionId,
+        stripePriceId: priceId,
+        status: subscription.status,
+      },
+      false,
+    );
+    const showUsagePack =
+      tier === "pro" || tier === "team"
+        ? exists(
+            db
+              .select({ id: usagePackAllocations.id })
+              .from(usagePackSubscriptions)
+              .innerJoin(
+                usagePackAllocations,
                 eq(
-                  orgPlanEntitlements.stripeSubscriptionId,
-                  snapshotArgs.stripeSubscriptionId,
+                  usagePackAllocations.usagePackSubscriptionId,
+                  usagePackSubscriptions.id,
                 ),
               )
-              .limit(1)
-          : [];
-        const values = orgPlanEntitlementValues(
-          snapshotArgs,
-          resolveStripeSubscriptionSnapshot(snapshotArgs, owner?.orgId ?? null),
-        );
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(values)
-          .onConflictDoUpdate({
-            target: orgPlanEntitlements.orgId,
-            set: orgPlanEntitlementUpdateValues(values),
-          });
-      }
-    });
+              .where(
+                planSnapshotAllocationCondition({
+                  orgId: candidate.orgId,
+                  stripeSubscriptionId: candidate.stripeSubscriptionId,
+                }),
+              )
+              .limit(1),
+          )
+        : sql`false`;
+    const values = orgPlanEntitlementValues(
+      entitlementArgs,
+      resolveStripeSubscriptionSnapshot(entitlementArgs),
+    );
+    const projected = db
+      .$with("refreshed_recovered_plan")
+      .as(
+        stripePlanEntitlementInsertSql(
+          db.select({ orgId: changed.orgId }).from(changed).getSQL(),
+          values,
+          showUsagePack,
+        ),
+      );
+    await db.with(changed, projected).select().from(changed);
     signal.throwIfAborted();
   },
 );
@@ -995,7 +981,7 @@ const downgradePaymentFailedBillingCandidate$ = command(
     const projected = db
       .$with("downgraded_payment_failed_plan", {})
       .as(
-        paymentFailedPlanEntitlementInsertSql(
+        stripePlanEntitlementInsertSql(
           db.select({ orgId: changed.orgId }).from(changed).getSQL(),
           values,
         ),
