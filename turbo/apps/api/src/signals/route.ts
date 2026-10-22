@@ -3,6 +3,7 @@ import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-m
 import type { RouteEntry } from "./route-entry";
 import { agentDraftRoutes } from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
+import { jobsRoutes } from "./routes/jobs";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -157,6 +158,7 @@ import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference"
 import {
   proactiveSuggestionsRoutes,
   proactiveActionRoutes,
+  proactiveJobsRoutes,
 } from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
@@ -308,6 +310,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
   ...suggestionsRoutes,
+  ...jobsRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,
@@ -420,6 +423,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
   ...proactiveActionRoutes,
+  ...proactiveJobsRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,

@@ -53,14 +53,23 @@ export const loadProactiveWorkflowsEligibility$ = command(
       FeatureSwitchKey.ProactiveAction,
       features,
     );
+    const jobsAvailable = isFeatureEnabled(
+      FeatureSwitchKey.ProactiveJobs,
+      features,
+    );
     const actionEnabled = preference?.actionEnabled ?? false;
-    const actionActive = actionAvailable && actionEnabled;
+    const actionActive = actionAvailable && actionEnabled && !jobsAvailable;
     const suggestionsAvailable = isFeatureEnabled(
       FeatureSwitchKey.AgentSuggestion,
       features,
     );
     const suggestionsEnabled = preference?.suggestionsEnabled ?? false;
     return {
+      jobs: {
+        available: jobsAvailable,
+        enabled: actionEnabled,
+        active: jobsAvailable && actionEnabled,
+      },
       action: {
         available: actionAvailable,
         enabled: actionEnabled,

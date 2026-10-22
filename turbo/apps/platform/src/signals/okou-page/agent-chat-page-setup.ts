@@ -38,6 +38,10 @@ import {
   subscribeAgentSuggestions$,
 } from "./agent-suggestions.ts";
 import {
+  enterEntrustedJobs$,
+  subscribeEntrustedJobs$,
+} from "./entrusted-jobs.ts";
+import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
@@ -58,6 +62,7 @@ export const setupAgentChatPage$ = command(
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
     set(enterAgentSuggestions$);
+    set(enterEntrustedJobs$);
     set(get(agentChatComposerSignals$).voice.setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
     const firstGreetingVisit = set(startChatGreetingVisit$);
@@ -131,6 +136,12 @@ export const setupAgentChatPage$ = command(
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
     set(subscribeAgentSuggestions$, signal);
+    set(subscribeEntrustedJobs$, signal);
+    detach(
+      set(get(agentChatComposerSignals$).taskChips.initializeHomeJobs$, signal),
+      Reason.Daemon,
+      "initial Jobs selection",
+    );
 
     await set(checkUnifiedSettingsParam$, signal);
 

@@ -11,6 +11,8 @@ import {
   PROACTIVE_WORKFLOW_DEFINITIONS,
   proactiveWorkflowKind,
 } from "./proactive-workflow-definitions";
+import { userJobs } from "@okouai/db/schema/user-job";
+import { jobOwnerCondition, runnableJobCondition } from "./user-jobs-query";
 
 import { writeDb$ } from "../external/db";
 import {
@@ -103,6 +105,23 @@ export const workflowAutomationCanFire$ = command(
       ) {
         return false;
       }
+      if (proactiveKind === "jobs") {
+        const [work] = await db
+          .select({ id: userJobs.id })
+          .from(userJobs)
+          .where(
+            and(
+              jobOwnerCondition({
+                orgId: automation.orgId,
+                userId: automation.ownerUserId,
+              }),
+              runnableJobCondition(),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!work) return false;
+      }
       // Agent and mode changes wait for the previous proactive check.
       // The current schedule already serializes its own occurrences.
       const [otherCheck] = await db
@@ -116,11 +135,15 @@ export const workflowAutomationCanFire$ = command(
             inArray(agentRuns.status, ["pending", "running"]),
             sql`${agentRuns.workflowAutomationId} IS DISTINCT FROM ${automation.id}::uuid`,
             or(
-              ...Object.values(PROACTIVE_WORKFLOW_DEFINITIONS).map(
-                (definition) => {
-                  return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
-                },
-              ),
+              ...(eligibility.jobs.available
+                ? [
+                    PROACTIVE_WORKFLOW_DEFINITIONS[proactiveKind],
+                    PROACTIVE_WORKFLOW_DEFINITIONS.action,
+                  ]
+                : Object.values(PROACTIVE_WORKFLOW_DEFINITIONS)
+              ).map((definition) => {
+                return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
+              }),
             ),
           ),
         )

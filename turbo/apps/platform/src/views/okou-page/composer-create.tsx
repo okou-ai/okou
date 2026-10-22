@@ -48,7 +48,7 @@ function ComposerSelectedTask({
     },
     { returnObjects: true },
   );
-  if (!task || task === "suggestions") {
+  if (!task || task === "suggestions" || task === "jobs") {
     return null;
   }
   const Icon = TASK_ICONS[task];

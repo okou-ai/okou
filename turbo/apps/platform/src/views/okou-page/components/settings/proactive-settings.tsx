@@ -22,6 +22,11 @@ import {
   reloadProactiveActionPreference$,
   updateProactiveActionPreference$,
 } from "../../../../signals/okou-page/settings/proactive-action.ts";
+import {
+  proactiveJobsPreference$,
+  reloadProactiveJobsPreference$,
+  updateProactiveJobsPreference$,
+} from "../../../../signals/okou-page/settings/proactive-jobs.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
 function preferenceStatusKey(
@@ -41,21 +46,32 @@ function preferenceStatusKey(
 
 function ProactivePreference({ kind }: { kind: ProactiveWorkflowKind }) {
   const { t } = useTranslation();
-  const key = kind === "action" ? "proactiveAction" : "proactiveSuggestions";
+  const key =
+    kind === "jobs"
+      ? "proactiveJobs"
+      : kind === "action"
+        ? "proactiveAction"
+        : "proactiveSuggestions";
   const preference = useLoadable(
-    kind === "action"
-      ? proactiveActionPreference$
-      : proactiveSuggestionsPreference$,
+    kind === "jobs"
+      ? proactiveJobsPreference$
+      : kind === "action"
+        ? proactiveActionPreference$
+        : proactiveSuggestionsPreference$,
   );
   const [mutation, update] = useLoadableSet(
-    kind === "action"
-      ? updateProactiveActionPreference$
-      : updateProactiveSuggestionsPreference$,
+    kind === "jobs"
+      ? updateProactiveJobsPreference$
+      : kind === "action"
+        ? updateProactiveActionPreference$
+        : updateProactiveSuggestionsPreference$,
   );
   const reload = useSet(
-    kind === "action"
-      ? reloadProactiveActionPreference$
-      : reloadProactiveSuggestionsPreference$,
+    kind === "jobs"
+      ? reloadProactiveJobsPreference$
+      : kind === "action"
+        ? reloadProactiveActionPreference$
+        : reloadProactiveSuggestionsPreference$,
   );
   const signal = useGet(pageSignal$);
   const value =
@@ -145,6 +161,8 @@ export function ProactiveSuggestionsSettings() {
 
 export function ProactiveActionSettings() {
   const flags = useLoadable(featureSwitch$);
+  if (flags.state === "hasData" && flags.data[FeatureSwitchKey.ProactiveJobs])
+    return <ProactivePreference kind="jobs" />;
   return flags.state === "hasData" &&
     flags.data[FeatureSwitchKey.ProactiveAction] ? (
     <ProactivePreference kind="action" />

@@ -1,3 +1,4 @@
+import { PROACTIVE_JOBS_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/proactive-jobs";
 import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import { isDeepStrictEqual } from "node:util";
 
@@ -159,6 +160,9 @@ function reconciledScheduleAnchor(
   automation: OfficialAutomationRow,
   nextRunAt: Date | null,
 ) {
+  // Jobs owns the empty idle/in-flight slot and its completion-based interval.
+  if (automation.officialBlueprintKey === PROACTIVE_JOBS_BLUEPRINT_KEY)
+    return automation.nextRunAt;
   if (
     automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
     nextRunAt === null

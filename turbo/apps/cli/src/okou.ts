@@ -97,12 +97,20 @@ const COMMAND_CAPABILITY_MAP: Record<
   seo: "seo:read",
   banking: "banking:read",
   suggestion: ["suggestion:read", "suggestion:write"],
+  job: ["job:read", "job:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion", "job"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "job",
+    description: "Manage work explicitly entrusted to Okou",
+    load: async () => {
+      return (await import("./commands/job/index")).jobCommand;
+    },
+  },
   {
     name: "suggestion",
     description: "Manage actionable next-step suggestions from Okou",

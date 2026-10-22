@@ -11,6 +11,7 @@ import {
   Presentation,
   Route,
   Lightbulb,
+  ListTodo,
 } from "lucide-react";
 import { Button, Tabs, TabsList, TabsContent } from "@okouai/ui";
 import {
@@ -18,6 +19,8 @@ import {
   visibleAgentSuggestions$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { AgentSuggestions } from "./agent-suggestions.tsx";
+import { EntrustedJobs } from "./entrusted-jobs.tsx";
+import { entrustedJobsEnabled$ } from "../../signals/okou-page/entrusted-jobs.ts";
 import { cn } from "@okouai/ui/lib/utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
@@ -109,6 +112,7 @@ const TASK_IDEA_CARD = [
   "[&_svg]:order-2 [&_svg]:mt-auto",
 ].join(" ");
 const TASK_ICONS = {
+  jobs: ListTodo,
   suggestions: Lightbulb,
   workflow: Route,
   presentation: Presentation,
@@ -675,6 +679,7 @@ function ComposerTaskPanel({
   if (selected === "suggestions") {
     return <AgentSuggestions />;
   }
+  if (selected === "jobs") return <EntrustedJobs />;
   return (
     <div
       key={selected}
@@ -737,7 +742,7 @@ function ComposerTaskTabs({
         const task = tasks.find((candidate) => {
           return candidate === value;
         });
-        if (task === "suggestions") {
+        if (task === "suggestions" || task === "jobs") {
           browseTask(task);
         } else if (task) {
           selectTask(task);
@@ -801,6 +806,8 @@ export function ComposerTaskChips({
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;
+  const jobs = useLoadable(entrustedJobsEnabled$);
+  const jobsEnabled = jobs.state === "hasData" && jobs.data;
   // Suggestions joins the row only once the pool has resolved with items. A
   // pending or failed read would add a tab and a placeholder that vanish again
   // whenever the pool turns out empty; a refresh keeps the last resolved pool.
@@ -809,7 +816,8 @@ export function ComposerTaskChips({
     suggestionsEnabled && items.state === "hasData" && items.data.length > 0;
   const current = useGet(signals.taskChips.task$);
   const selected =
-    current === "suggestions" && !showSuggestions
+    (current === "suggestions" && !showSuggestions) ||
+    (current === "jobs" && !jobsEnabled)
       ? null
       : (current ?? (showSuggestions ? "suggestions" : null));
   const selectTask = useSet(signals.taskChips.selectTask$);
@@ -821,6 +829,7 @@ export function ComposerTaskChips({
   );
   const tasks = (
     [
+      "jobs",
       "suggestions",
       "workflow",
       "presentation",
@@ -830,6 +839,7 @@ export function ComposerTaskChips({
       "visualization",
     ] as const
   ).filter((task) => {
+    if (task === "jobs") return jobsEnabled;
     if (task === "document") {
       return documentTemplatesEnabled;
     }
@@ -845,7 +855,10 @@ export function ComposerTaskChips({
   });
   // Suggestions is the starting panel; selecting a task moves its chip into
   // the composer and hides the choices in either rollout.
-  if (suggestionsEnabled && (selected === null || selected === "suggestions")) {
+  if (
+    (suggestionsEnabled || jobsEnabled) &&
+    (selected === null || selected === "suggestions" || selected === "jobs")
+  ) {
     return (
       <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
     );
