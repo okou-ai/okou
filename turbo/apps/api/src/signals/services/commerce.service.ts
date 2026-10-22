@@ -14,11 +14,11 @@ import type { AuthContext } from "../../types/auth";
 import { requestSignal$ } from "../context/hono";
 import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
 import {
-  checkManagedCredits$,
   recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 import { creditPolicyRunId } from "./official-workflow-policy.service";
+import { checkCommerceCredits$ } from "./commerce-credit-admission.service";
 
 const PROVIDER = "dataforseo";
 const CATEGORY = "provider_cost_usd_micros";
@@ -29,7 +29,7 @@ const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 // These admission estimates are not reservations or caller-enforced hard caps.
 const PREFLIGHT_MICROS = { search: 3300, inspect: 5000 } as const;
 
-type CommerceRequest =
+export type CommerceRequest =
   | { operation: "search"; body: CommerceSearchRequest }
   | { operation: "inspect"; body: CommerceInspectRequest };
 
@@ -73,7 +73,7 @@ const taskSchema = z
       .nullable(),
   })
   .passthrough();
-const providerSchema = z
+export const commerceProviderResponseSchema = z
   .object({
     status_code: z.number().int(),
     status_message: z.string(),
@@ -84,9 +84,12 @@ const providerSchema = z
   })
   .passthrough();
 
-type ProviderBody = z.infer<typeof providerSchema>;
+type ProviderBody = z.infer<typeof commerceProviderResponseSchema>;
 
-function projectItems(body: ProviderBody, request: CommerceRequest): unknown[] {
+export function projectCommerceItems(
+  body: ProviderBody,
+  request: CommerceRequest,
+): unknown[] {
   const pages = body.tasks.flatMap((task) => {
     return task.result ?? [];
   });
@@ -144,7 +147,9 @@ async function fetchCommerce(
           "DataForSEO commerce request failed",
         );
       }
-      const parsed = providerSchema.safeParse(safeJsonParse(text.text));
+      const parsed = commerceProviderResponseSchema.safeParse(
+        safeJsonParse(text.text),
+      );
       if (!parsed.success) {
         return error(
           502,
@@ -247,7 +252,7 @@ export const commerce$ = command(
       category: CATEGORY,
     };
     const creditError = await set(
-      checkManagedCredits$,
+      checkCommerceCredits$,
       {
         runId: creditPolicyRunId(args.auth),
         orgId: args.auth.orgId,
@@ -309,7 +314,7 @@ export const commerce$ = command(
         providerCostUsd: result.body.cost,
         creditsCharged,
         result: {
-          items: projectItems(result.body, request),
+          items: projectCommerceItems(result.body, request),
           source: result.body,
         },
       },
