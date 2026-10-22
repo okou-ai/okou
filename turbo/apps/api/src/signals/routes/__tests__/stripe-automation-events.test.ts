@@ -353,7 +353,7 @@ beforeEach(() => {
 });
 
 describe("Stripe automation event webhook", () => {
-  it("reprojects to the default account when the thread selection is cleared", async () => {
+  it("preserves an explicit Stripe selection across default changes and reprojects when cleared", async () => {
     const originalAccountId = `acct_stripe_clear_original_${randomUUID()}`;
     const threadAccountId = `acct_stripe_clear_thread_${randomUUID()}`;
     const defaultAccountId = `acct_stripe_clear_default_${randomUUID()}`;
@@ -387,6 +387,14 @@ describe("Stripe automation event webhook", () => {
       }),
       [200],
     );
+    await expect(readStripeAutomation(scenario)).resolves.toMatchObject({
+      enabled: true,
+      eventConfig: {
+        connectorId: defaultAccount.id,
+        stripeAccountId: defaultAccountId,
+        mode: "live",
+      },
+    });
     await accept(
       chatThreadConnectorSelectionsClient().update({
         headers: authHeaders(),
@@ -398,6 +406,26 @@ describe("Stripe automation event webhook", () => {
       }),
       [200],
     );
+    await expect(readStripeAutomation(scenario)).resolves.toMatchObject({
+      eventConfig: {
+        connectorId: threadAccount.id,
+        stripeAccountId: threadAccountId,
+        mode: "live",
+      },
+    });
+    await connectors.setDefaultBuiltinConnectorAccount(
+      scenario.actor,
+      "stripe",
+      scenario.connector.id,
+    );
+    await expect(readStripeAutomation(scenario)).resolves.toMatchObject({
+      enabled: true,
+      eventConfig: {
+        connectorId: threadAccount.id,
+        stripeAccountId: threadAccountId,
+        mode: "live",
+      },
+    });
     await accept(
       chatThreadConnectorSelectionsClient().clear({
         headers: authHeaders(),
@@ -409,8 +437,8 @@ describe("Stripe automation event webhook", () => {
 
     await expect(readStripeAutomation(scenario)).resolves.toMatchObject({
       eventConfig: {
-        connectorId: defaultAccount.id,
-        stripeAccountId: defaultAccountId,
+        connectorId: scenario.connector.id,
+        stripeAccountId: originalAccountId,
         mode: "live",
       },
     });
