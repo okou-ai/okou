@@ -11,6 +11,7 @@ use raw_http_test_support::clock::advance_timer_phase;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use tokio_tungstenite::tungstenite;
 use tracing::Level;
 use tracing_subscriber::prelude::*;
@@ -41,6 +42,7 @@ struct RenewalHarness {
     ws: MockAblyServer,
     release: Option<oneshot::Sender<()>>,
     initial_expires: i64,
+    initial_expires_at: Instant,
     http_requests: Arc<AtomicUsize>,
     stop_http: oneshot::Sender<()>,
     http_task: JoinHandle<()>,
@@ -52,11 +54,13 @@ impl RenewalHarness {
         let ws = MockAblyServer::start().await.unwrap();
         let mut config = test_config_with_timing(ws.port, http.port(), "ch", timing);
         let now = now_ms();
-        let initial_expires = now
-            + match trigger {
-                Trigger::Proactive => 8_000,
-                Trigger::ServerAuth => 3_600_000,
-            };
+        let initial_lifetime_ms = match trigger {
+            Trigger::Proactive => 8_000_u32,
+            Trigger::ServerAuth => 3_600_000,
+        };
+        let initial_expires = now + i64::from(initial_lifetime_ms);
+        let initial_expires_at =
+            Instant::now() + Duration::from_millis(u64::from(initial_lifetime_ms));
         let (entered_tx, entered_rx) = oneshot::channel();
         let (release_tx, release_rx) = oneshot::channel();
         let gate = Gate {
@@ -152,12 +156,22 @@ impl RenewalHarness {
         expect_named_message(&mut sub, "baseline").await;
         if matches!(trigger, Trigger::ServerAuth) {
             request_auth(&mut conn).await;
-        } else {
-            // The real handshake and baseline delivery prove the proactive
-            // timer is armed. Resume before it begins callback/HTTP work.
-            advance_timer_phase(Duration::from_secs(4)).await;
         }
-        wait_for_test_observation(entered_rx, "held token phase entered").await;
+        // Start the original observation budget before advancing the armed
+        // proactive timer; elapsed virtual time must consume that budget too.
+        let observed = tokio::time::timeout(TEST_IO_TIMEOUT, async {
+            if matches!(trigger, Trigger::Proactive) {
+                // The real handshake and baseline delivery prove admission.
+                // Resume before the timer begins callback/HTTP work.
+                advance_timer_phase(Duration::from_secs(4)).await;
+            }
+            entered_rx.await
+        })
+        .await;
+        assert!(
+            matches!(observed, Ok(Ok(()))),
+            "timed out or dropped observation signal for held token phase entered: {observed:?}",
+        );
 
         Self {
             sub,
@@ -165,6 +179,7 @@ impl RenewalHarness {
             ws,
             release: Some(release_tx),
             initial_expires,
+            initial_expires_at,
             http_requests,
             stop_http,
             http_task,
@@ -242,6 +257,10 @@ async fn delivery_during_renewal(trigger: Trigger, phase: HeldPhase) {
     .unwrap();
     expect_named_message(&mut harness.sub, "cancel").await;
     assert!(now_ms() < harness.initial_expires, "initial token expired");
+    assert!(
+        Instant::now() < harness.initial_expires_at,
+        "initial token expired in Tokio time"
+    );
 
     harness.release.take().unwrap().send(()).unwrap();
     let auth = expect_protocol_msg(&mut harness.conn, "renewed AUTH")
