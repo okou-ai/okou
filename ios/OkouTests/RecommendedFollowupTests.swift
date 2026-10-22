@@ -25,6 +25,24 @@ final class RecommendedFollowupTests: XCTestCase {
         $0.bounds.height >= 44 && $0.bounds.width <= rail.bounds.width * 0.72 + 1
       })
     XCTAssertGreaterThan(rail.contentSize.width, rail.bounds.width)
+    let viewport = rail.convert(rail.bounds, to: window)
+    XCTAssertEqual(viewport.minX, window.bounds.minX, accuracy: 1)
+    XCTAssertEqual(viewport.maxX, window.bounds.maxX, accuracy: 1)
+    let first = try XCTUnwrap(buttons.first)
+    let last = try XCTUnwrap(buttons.last)
+    XCTAssertEqual(
+      first.convert(first.bounds, to: window).minX, window.bounds.minX + 26, accuracy: 1)
+
+    // Cards scroll through the resting gutters all the way to the screen edges.
+    rail.setContentOffset(.zero, animated: false)
+    XCTAssertEqual(first.convert(first.bounds, to: window).minX, window.bounds.minX, accuracy: 1)
+    let endOffset = rail.contentSize.width - rail.bounds.width + rail.adjustedContentInset.right
+    rail.setContentOffset(CGPoint(x: endOffset - 20, y: 0), animated: false)
+    XCTAssertEqual(last.convert(last.bounds, to: window).maxX, window.bounds.maxX, accuracy: 1)
+    rail.setContentOffset(CGPoint(x: endOffset, y: 0), animated: false)
+    XCTAssertEqual(last.convert(last.bounds, to: window).maxX, window.bounds.maxX - 20, accuracy: 1)
+    rail.setContentOffset(CGPoint(x: -rail.adjustedContentInset.left, y: 0), animated: false)
+
     let input = try XCTUnwrap(input(in: host.view))
     buttons[0].sendActions(for: .touchUpInside)
     try await eventually {

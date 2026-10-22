@@ -162,6 +162,7 @@ struct MentionComposerHarness: View {
       Spacer(minLength: 0)
     }
     .safeAreaBar(edge: .bottom, spacing: 0) {
+      // Reference tests assert expanded geometry without sampling animation frames.
       let composer = workspace?.newComposer ?? state
       ChatComposerView(
         draft: Binding(get: { composer.text }, set: { composer.text = $0 }),
@@ -170,7 +171,12 @@ struct MentionComposerHarness: View {
         draftState: composer,
         submit: {
           if let workspace { await workspace.sendNewChat() } else { await conversation?.send() }
-        }, refresh: nil, mentionSource: source ?? workspace?.mentionTestSource)
+        }, refresh: nil, mentionSource: source ?? workspace?.mentionTestSource
+      )
+      .transaction {
+        $0.animation = nil
+        $0.disablesAnimations = true
+      }
     }
   }
 }
