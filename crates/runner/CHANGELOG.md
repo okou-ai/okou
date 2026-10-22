@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.236.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.6...runner-rs-v0.236.7) (2026-10-22)
+
+
+### Performance Improvements
+
+* **runner:** bound codex catalog response cache-policy inspection ([#42089](https://github.com/okou-ai/okou/issues/42089)) ([75acd68](https://github.com/okou-ai/okou/commit/75acd68bf4094fd65dd8c78b9329902aad8a8f29))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.5...runner-rs-v0.236.6) (2026-10-21)
 
 

@@ -12,6 +12,44 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1050.0](https://github.com/okou-ai/okou/compare/app-v0.1049.1...app-v0.1050.0) (2026-10-22)
+
+
+### Features
+
+* add monid social collections and direct amazon commerce ([#42137](https://github.com/okou-ai/okou/issues/42137)) ([4b8e2c9](https://github.com/okou-ai/okou/commit/4b8e2c91497de9b7bc78c6f07f46fda0b02520d8))
+* **app:** govern onrejection usage with loadables and lint ([#42063](https://github.com/okou-ai/okou/issues/42063)) ([1d6fe0b](https://github.com/okou-ai/okou/commit/1d6fe0bb09f1f41aae0c53206f09f65091609f3f))
+* **app:** refine remote connection and private network ui ([#41378](https://github.com/okou-ai/okou/issues/41378)) ([67bb550](https://github.com/okou-ai/okou/commit/67bb550beffbea4d209dbba5fa5b5c1b275eb562))
+
+
+### Bug Fixes
+
+* **app:** give the share menus a readable address and in-place copy confirmation ([#42098](https://github.com/okou-ai/okou/issues/42098)) ([54c70a9](https://github.com/okou-ai/okou/commit/54c70a9aa6a64f09a985c79c94dbe4c9f1d9a900))
+* **host:** isolate hosted browser sessions from clerk tokens ([#41850](https://github.com/okou-ai/okou/issues/41850)) ([3eb136c](https://github.com/okou-ai/okou/commit/3eb136cffafd07707533a96f047c5fd0ee97c522))
+
+
+### Refactoring
+
+* **app:** derive async card state from operations and notifications ([#42092](https://github.com/okou-ai/okou/issues/42092)) ([f894504](https://github.com/okou-ai/okou/commit/f89450480538b26738dec1a05ae2833b2fdf3864))
+* **app:** derive request loading and propagate initialization failures ([#42099](https://github.com/okou-ai/okou/issues/42099)) ([b9b45e5](https://github.com/okou-ai/okou/commit/b9b45e5af887aa50a3e8514fcd0c5970412e3db2))
+* **platform:** derive request feedback from real operations ([#42119](https://github.com/okou-ai/okou/issues/42119)) ([d9b34fa](https://github.com/okou-ai/okou/commit/d9b34fad4a93ecbcd933053511757faa5ffed636))
+* use saved-account existence for connector preflight ([#42090](https://github.com/okou-ai/okou/issues/42090)) ([3a7ebad](https://github.com/okou-ai/okou/commit/3a7ebad4390215bb553d7e0bf7bf5fdfff0e5d61))
+
+
+### Performance Improvements
+
+* **app:** isolate test owners and leaf subscriptions ([#42106](https://github.com/okou-ai/okou/issues/42106)) ([c9599a8](https://github.com/okou-ai/okou/commit/c9599a82d1d70bfd32cb054be010299388de3b45))
+* **app:** keep resources readiness primitive while paging ([#42109](https://github.com/okou-ai/okou/issues/42109)) ([e1fbae2](https://github.com/okou-ai/okou/commit/e1fbae2ffca3c5b5ba6b136a16111e7e20dfb145))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.585.0
+    * @okouai/core bumped to 8.776.0
+    * @okouai/ui bumped to 1.16.4
+
 ## [0.1049.1](https://github.com/okou-ai/okou/compare/app-v0.1049.0...app-v0.1049.1) (2026-10-21)
 
 

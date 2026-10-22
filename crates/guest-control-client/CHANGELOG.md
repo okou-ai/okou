@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.23.37](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.36...guest-control-client-v0.23.37) (2026-10-22)
+
+
+### Refactoring
+
+* **guest-control:** centralize bulk path reservations ([#42111](https://github.com/okou-ai/okou/issues/42111)) ([6930f0d](https://github.com/okou-ai/okou/commit/6930f0df477f98b5d35aa8e951fc4d47dfd33e3b))
+* **guest-control:** own pending request registration ([#42163](https://github.com/okou-ai/okou/issues/42163)) ([4e6668f](https://github.com/okou-ai/okou/commit/4e6668f9768f96c5af5d5a88648649d444bf59ed))
+
 ## [0.23.36](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.35...guest-control-client-v0.23.36) (2026-10-21)
 
 ## [0.23.35](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.34...guest-control-client-v0.23.35) (2026-10-21)

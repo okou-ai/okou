@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.3...runner-provider-v0.11.4) (2026-10-22)
+
+
+### Refactoring
+
+* remove expired runner claim compatibility gates ([#42164](https://github.com/okou-ai/okou/issues/42164)) ([f71adde](https://github.com/okou-ai/okou/commit/f71addebfc1456142f31af439e6750f67e42e938))
+
 ## [0.11.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.11.2...runner-provider-v0.11.3) (2026-10-21)
 
 

@@ -1,5 +1,33 @@
 # Changelog
 
+## [9.407.0](https://github.com/okou-ai/okou/compare/cli-v9.406.1...cli-v9.407.0) (2026-10-22)
+
+
+### Features
+
+* add monid social collections and direct amazon commerce ([#42137](https://github.com/okou-ai/okou/issues/42137)) ([4b8e2c9](https://github.com/okou-ai/okou/commit/4b8e2c91497de9b7bc78c6f07f46fda0b02520d8))
+
+
+### Bug Fixes
+
+* **cli:** derive builtin check status from canonical accounts ([#42126](https://github.com/okou-ai/okou/issues/42126)) ([8ffe09e](https://github.com/okou-ai/okou/commit/8ffe09eaf289d6da47e1ec8b17cbab9b221784ee))
+* **ios:** finish connector account reader retirement ([#42061](https://github.com/okou-ai/okou/issues/42061)) ([58b3610](https://github.com/okou-ai/okou/commit/58b361038c010829daed7946ddc601842127741f))
+
+
+### Refactoring
+
+* **cli:** retire connector json projections and response defaults ([#42153](https://github.com/okou-ai/okou/issues/42153)) ([6aed57a](https://github.com/okou-ai/okou/commit/6aed57adcc6b7bd8a478250f73cf665243e23bb5))
+* **cli:** retire legacy mcp status compatibility ([#42136](https://github.com/okou-ai/okou/issues/42136)) ([809d27a](https://github.com/okou-ai/okou/commit/809d27af7fc2ae8c5153cc13f9c1c123c389654b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.585.0
+    * @okouai/core bumped to 8.776.0
+    * @okouai/pi-agent-runtime bumped to 1.50.42
+
 ## [9.406.1](https://github.com/okou-ai/okou/compare/cli-v9.406.0...cli-v9.406.1) (2026-10-21)
 
 
