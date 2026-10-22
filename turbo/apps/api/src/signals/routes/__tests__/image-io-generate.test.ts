@@ -511,7 +511,7 @@ describe("POST /api/image-io/generate", () => {
       );
       expect(selected.body.selectedImageModel).toBeNull();
       expect(fixture.claim.appendSystemPrompt).toContain(
-        "Built-in image generation uses \u0060gpt-image-2.5-flare\u0060",
+        "Okou-managed image generation uses \u0060gpt-image-2.5-flare\u0060",
       );
     });
   });

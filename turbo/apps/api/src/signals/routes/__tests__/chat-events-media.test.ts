@@ -22,7 +22,7 @@ async function expectImageGuidance(
 ): Promise<void> {
   const run = await api.readRun(actor, runId);
   expect(run.appendSystemPrompt).toContain(
-    `Built-in image generation uses \`${model}\`, from the user's image model setting in Settings › Built-in tools.`,
+    `Okou-managed image generation uses \`${model}\`, from the user's image model setting in Settings › Built-in tools.`,
   );
 }
 
@@ -58,7 +58,7 @@ describe("CHAT-02: run image model through public prompts", () => {
       "The model cannot be changed per request. Do not pass `--model` to image generation commands.",
     );
     expect(prompt).toContain(
-      "Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.\n\n# Restricted Explicit Content",
+      "Codex-native image generation and connected third-party services choose their models separately; this setting applies only to Okou-managed image generation.\n\n# Restricted Explicit Content",
     );
     await cancelChatRun(actor, second.runId);
 
@@ -93,7 +93,7 @@ describe("CHAT-02: run image model through public prompts", () => {
     expect(
       (await api.readRun(actor, picked.runId)).appendSystemPrompt,
     ).toContain(
-      "Built-in image generation uses `flux-pro-1.1`, from the user's image model setting in Settings › Built-in tools.",
+      "Okou-managed image generation uses `flux-pro-1.1`, from the user's image model setting in Settings › Built-in tools.",
     );
     await cancelChatRun(actor, picked.runId);
   }, 90_000);
