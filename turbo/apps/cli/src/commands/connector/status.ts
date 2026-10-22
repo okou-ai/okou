@@ -210,11 +210,6 @@ function printRunConnectorDetails(connector: RunConnectorAccountEntry): void {
   console.log(
     `${"Current Status:".padEnd(LABEL_WIDTH)}${connector.account.metadata.connectionStatus}`,
   );
-  if (connector.account.metadata.setupStatus !== undefined) {
-    console.log(
-      `${"Setup Status:".padEnd(LABEL_WIDTH)}${connector.account.metadata.setupStatus}`,
-    );
-  }
   if (connector.account.metadata.missingRequiredFields.length > 0) {
     console.log(
       `${"Missing Fields:".padEnd(LABEL_WIDTH)}${connector.account.metadata.missingRequiredFields.join(", ")}`,

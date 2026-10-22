@@ -2143,7 +2143,8 @@ async function expectCustomAccountReadiness(
     readonly missingRequiredFields?: unknown;
     readonly connectionId?: unknown;
     readonly updatedAt?: unknown;
-    readonly setupStatus?: "complete" | "incomplete" | "invalid";
+    readonly connectionStatus?: BuiltinConnectorResponse["connectionStatus"];
+    readonly reconnectReason?: BuiltinConnectorResponse["reconnectReason"];
   },
 ): Promise<void> {
   const metadata = customConnectorResponseSchema.parse(definition);
@@ -2155,14 +2156,14 @@ async function expectCustomAccountReadiness(
     return candidate.isDefault;
   });
   if (expected.ready !== undefined) {
-    expect(
-      account?.connectionStatus === "connected" &&
-        account.setupStatus === "complete",
-    ).toBe(expected.ready);
+    expect(account?.connectionStatus === "connected").toBe(expected.ready);
   }
   if (account) {
-    if (expected.setupStatus !== undefined) {
-      expect(account.setupStatus).toBe(expected.setupStatus);
+    if (expected.connectionStatus !== undefined) {
+      expect(account.connectionStatus).toBe(expected.connectionStatus);
+    }
+    if (expected.reconnectReason !== undefined) {
+      expect(account.reconnectReason).toBe(expected.reconnectReason);
     }
     if (expected.configuredFieldKeys !== undefined) {
       expect(account.configuredFieldKeys).toStrictEqual(
@@ -2887,7 +2888,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       {
         ready: false,
         configuredFieldKeys: [],
-        setupStatus: "invalid",
+        connectionStatus: "reconnect-required",
+        reconnectReason: "configuration_invalid",
         missingRequiredFields: [],
       },
     );
@@ -3192,7 +3194,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       await own(() => {
         return connectorsApi.readCustomConnector(admin, created.id);
       }),
-      { ready: false, setupStatus: "invalid", missingRequiredFields: [] },
+      {
+        ready: false,
+        connectionStatus: "reconnect-required",
+        reconnectReason: "configuration_invalid",
+        missingRequiredFields: [],
+      },
     );
 
     const reconnectUrl = await own(() => {
@@ -4767,7 +4774,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       disconnected.find((connector) => {
         return connector.id === created.id;
       }),
-      { ready: false, setupStatus: "invalid", missingRequiredFields: [] },
+      {
+        ready: false,
+        connectionStatus: "reconnect-required",
+        reconnectReason: "configuration_invalid",
+        missingRequiredFields: [],
+      },
     );
 
     const nextAuthorizationUrl = await own(() => {
@@ -5042,7 +5054,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toStrictEqual([
       expect.objectContaining({
         connectionStatus: "connected",
-        setupStatus: "complete",
       }),
     ]);
     expectNoVisibleSecret(afterSecret, secretValue);
@@ -6335,7 +6346,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         {
           id: emptyComplete.connectionId,
           isDefault: true,
-          setupStatus: "complete",
           configuredFieldKeys: [],
           missingRequiredFields: [],
         },
@@ -7473,10 +7483,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         connectorId,
       );
       return accounts.some((account) => {
-        return (
-          account.connectionStatus === "connected" &&
-          account.setupStatus === "complete"
-        );
+        return account.connectionStatus === "connected";
       });
     }
 
@@ -7522,7 +7529,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toStrictEqual([
       expect.objectContaining({
         connectionStatus: "connected",
-        setupStatus: "complete",
       }),
     ]);
     expectNoVisibleSecret(adminList, "admin-secret-value");

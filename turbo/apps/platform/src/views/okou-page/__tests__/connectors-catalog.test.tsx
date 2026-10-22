@@ -457,7 +457,6 @@ function connectedShelfCatalog() {
       ? {
           ...connector,
           connected: true,
-          setupStatus: "complete" as const,
           connectionStatus: "connected" as const,
           connection: {
             authMethod: "oauth" as const,

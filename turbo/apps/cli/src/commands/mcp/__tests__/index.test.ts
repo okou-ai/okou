@@ -269,7 +269,7 @@ describe("okou mcp command", () => {
 
   it("preserves admitted account facts when runtime availability differs from management state", async () => {
     const setup = {
-      setupStatus: "invalid" as const,
+      reconnectReason: "configuration_invalid" as const,
       missingRequiredFields: [],
       configuredFieldKeys: ["token"],
       connectionStatus: "reconnect-required" as const,
@@ -317,7 +317,7 @@ describe("okou mcp command", () => {
             endpoint: "https://alpha-mcp.example.test/server",
             runtimeAvailable: false,
             connectionStatus: "connected",
-            setupStatus: "complete",
+            reconnectReason: null,
             missingRequiredFields: [],
             configuredFieldKeys: [],
           },
@@ -330,7 +330,7 @@ describe("okou mcp command", () => {
             endpoint: MCP_ENDPOINT,
             runtimeAvailable: true,
             connectionStatus: "connected",
-            setupStatus: "complete",
+            reconnectReason: null,
             missingRequiredFields: [],
             configuredFieldKeys: [],
           },

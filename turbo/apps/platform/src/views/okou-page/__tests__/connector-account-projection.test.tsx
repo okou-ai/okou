@@ -22,7 +22,6 @@ test.each(["set-default", "delete-default"] as const)(
       account: {
         missingRequiredFields: [],
         configuredFieldKeys: ["secret"],
-        setupStatus: "complete",
       },
     });
     const work = customConnectorAccount(connector.id, {

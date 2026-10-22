@@ -29,7 +29,6 @@ export function connectorAccount(
     oauthScopes: [],
     ...(target.kind === "builtin" ? { scopeMismatch: false } : {}),
     connectionStatus: "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: null,

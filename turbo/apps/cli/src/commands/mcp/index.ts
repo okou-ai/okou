@@ -99,7 +99,7 @@ const listCommand = new Command()
           endpoint: connector.endpoint,
           runtimeAvailable: connector.runtimeAvailable,
           connectionStatus: connector.connectionStatus,
-          setupStatus: connector.setupStatus,
+          reconnectReason: connector.reconnectReason,
           missingRequiredFields: connector.missingRequiredFields,
           configuredFieldKeys: connector.configuredFieldKeys,
         };

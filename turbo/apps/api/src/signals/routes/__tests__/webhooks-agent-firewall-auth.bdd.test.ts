@@ -1507,7 +1507,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
           expect.objectContaining({
             id: account.id,
             connectionStatus: connectionStatusAfterFailure,
-            setupStatus: "complete",
           }),
         );
         expect(

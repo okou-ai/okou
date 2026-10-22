@@ -77,7 +77,15 @@ import {
   resolveBuiltinConnectorCredentialAccess,
   resolveStoredBuiltinConnectorRuntimeMethod,
 } from "./builtin-connector-credential-access.service";
-import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
+import {
+  connectorAccountFieldMarkers,
+  prepareConnectorAccountDeletionWithTargetLocked,
+} from "./connector-account-lifecycle.service";
+import {
+  connectorAccountSetup,
+  connectorAccountSetupMarkerKey,
+  connectorAccountStatus,
+} from "./connector-account-setup";
 import {
   connectorAccountResolutionReadPlan,
   connectorAccountResolutionsFromRows,
@@ -472,6 +480,33 @@ function storedBuiltinConnectorRowWithRuntimeMethod(args: {
   };
 }
 
+function builtinConnectorAccountResponse(
+  connector: BuiltinConnectorWithRuntimeMethod,
+  row: StoredConnectorRow,
+  snapshot: ConnectorRuntimeLookup | null,
+  markers: ReadonlyMap<string, ReadonlySet<string>>,
+): BuiltinConnectorResponse {
+  const account = {
+    ...row,
+    connectorSlug: connector.runtimeMethod.connectorSlug,
+    definitionAuthMode: null,
+    definitionMcpTransport: null,
+    definitionStorageVersion: null,
+    definitionFields: [],
+  };
+  const setup = connectorAccountSetup(
+    account,
+    snapshot,
+    markers.get(connectorAccountSetupMarkerKey(account)) ?? new Set(),
+  );
+  const status = connectorAccountStatus(connector.response, setup);
+  return {
+    ...connector.response,
+    connectionStatus: status.connectionStatus,
+    reconnectReason: status.reconnectReason,
+  };
+}
+
 function manualGrantFieldsForAuthMethod(
   method: ConnectorAuthMethodRuntimeConfig,
 ): Record<string, ConnectorManualGrantFieldConfig> | null {
@@ -642,9 +677,9 @@ export function builtinConnectorList(args: {
   readonly orgId: string;
   readonly userId: string;
 }): Computed<Promise<BuiltinConnectorListResponse>> {
-  return computed(async (get): Promise<BuiltinConnectorListResponse> => {
+  const storedRows$ = computed(async (get) => {
     const db = get(db$);
-    const storedRows = await db
+    return await db
       .select({
         id: connectors.id,
         connectorSlug: sql`${connectors.connectorSlug}`
@@ -675,6 +710,18 @@ export function builtinConnectorList(args: {
           eq(connectors.isDefault, true),
         ),
       );
+  });
+  const markerScope$ = computed(async (get) => {
+    return {
+      ...args,
+      connectionIds: (await get(storedRows$)).map((row) => {
+        return row.id;
+      }),
+    };
+  });
+  const markers$ = connectorAccountFieldMarkers(markerScope$);
+  return computed(async (get): Promise<BuiltinConnectorListResponse> => {
+    const storedRows = await get(storedRows$);
     const snapshot = await get(
       loadStoredBuiltinConnectorRuntimeSelection(
         storedRows.map((row) => {
@@ -683,7 +730,7 @@ export function builtinConnectorList(args: {
       ),
     );
     const now = nowDate();
-    const storedConnectors: BuiltinConnectorWithRuntimeMethod[] =
+    const storedConnectors =
       snapshot === null
         ? []
         : storedRows.flatMap((row) => {
@@ -693,7 +740,7 @@ export function builtinConnectorList(args: {
               row,
               snapshot,
             });
-            return connector === null ? [] : [connector];
+            return connector === null ? [] : [{ ...connector, storedRow: row }];
           });
     const connectorProvidedBindings =
       snapshot === null
@@ -702,9 +749,18 @@ export function builtinConnectorList(args: {
             storedConnectors,
             snapshot,
           );
+    const markers =
+      storedConnectors.length > 0
+        ? await get(markers$)
+        : new Map<string, ReadonlySet<string>>();
     return {
       connectors: storedConnectors.map((connector) => {
-        return connector.response;
+        return builtinConnectorAccountResponse(
+          connector,
+          connector.storedRow,
+          snapshot,
+          markers,
+        );
       }),
       connectorProvidedBindings,
     };
@@ -827,7 +883,7 @@ export function builtinConnectorBySlug(
     return null;
   });
 
-  return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
+  const row$ = computed(async (get) => {
     const args = get(scope$);
     const snapshot = await get(snapshot$);
     if (snapshot === null) {
@@ -845,7 +901,18 @@ export function builtinConnectorBySlug(
         ),
       )
       .limit(1);
-    if (!row) {
+    return row ?? null;
+  });
+  const markerScope$ = computed(async (get) => {
+    const row = await get(row$);
+    return row ? { ...get(scope$), connectionIds: [row.id] } : null;
+  });
+  const markers$ = connectorAccountFieldMarkers(markerScope$);
+  return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
+    const args = get(scope$);
+    const snapshot = await get(snapshot$);
+    const row = await get(row$);
+    if (!row || snapshot === null) {
       return null;
     }
     const connector = storedBuiltinConnectorRowWithRuntimeMethod({
@@ -854,7 +921,14 @@ export function builtinConnectorBySlug(
       row,
       snapshot,
     });
-    return connector?.response ?? null;
+    return connector
+      ? builtinConnectorAccountResponse(
+          connector,
+          row,
+          snapshot,
+          await get(markers$),
+        )
+      : null;
   });
 }
 

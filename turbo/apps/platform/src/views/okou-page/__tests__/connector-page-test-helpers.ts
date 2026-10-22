@@ -72,7 +72,6 @@ export function customConnectorAccount(
     externalEmail: null,
     oauthScopes: null,
     connectionStatus: "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: null,
@@ -433,7 +432,6 @@ export function mcpCustomConnector(
     account: {
       missingRequiredFields: [],
       configuredFieldKeys: ["secret"],
-      setupStatus: "complete",
     },
     ...overrides,
   });
@@ -511,7 +509,6 @@ export function mockCustomConnectorStory(
             configuredFieldKeys: body.values.map((value) => {
               return value.key;
             }),
-            setupStatus: "complete",
           },
         });
         return updated;
@@ -531,7 +528,6 @@ export function mockCustomConnectorStory(
         externalEmail: null,
         oauthScopes: null,
         connectionStatus: "connected",
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: body.values.map((value) => {
           return value.key;
@@ -621,7 +617,6 @@ export function mockGithubAccounts(
       externalUsername: isDefault ? null : `octocat-${index}`,
       externalEmail: null,
       oauthScopes: [],
-      setupStatus: "complete",
       missingRequiredFields: [],
       configuredFieldKeys: [],
       connectionStatus: isDefault

@@ -260,7 +260,6 @@ describe("okou connector search command", () => {
         stubUserConnectors(AGENT_UUID, []),
         stubRunConnectorAccountInspection([
           {
-            setupStatus: "invalid",
             missingRequiredFields: [],
             configuredFieldKeys: [],
             kind: "available",
@@ -272,7 +271,7 @@ describe("okou connector search command", () => {
             externalUsername: null,
             externalEmail: null,
             connectionStatus: "reconnect-required",
-            reconnectReason: null,
+            reconnectReason: "configuration_invalid",
           },
         ]),
       );
@@ -290,7 +289,7 @@ describe("okou connector search command", () => {
               connectionId: RUN_CONNECTION_ID,
               metadata: {
                 connectionStatus: "reconnect-required",
-                setupStatus: "invalid",
+                reconnectReason: "configuration_invalid",
               },
             },
             availableForRun: false,
@@ -618,7 +617,6 @@ describe("okou connector search command", () => {
           ]),
           stubRunConnectorAccountInspection([
             {
-              setupStatus: "complete",
               missingRequiredFields: [],
               configuredFieldKeys: [],
               kind: "available",
@@ -759,10 +757,9 @@ describe("okou connector search command", () => {
   describe.each(["builtin", "custom"] as const)(
     "%s run account setup",
     (kind) => {
-      it.each(["incomplete", "invalid"] as const)(
-        "reports %s setup consistently in JSON and text",
-        async (setupStatus) => {
-          const needsReconnect = setupStatus === "invalid";
+      it.each(["configuration_incomplete", "configuration_invalid"] as const)(
+        "reports %s consistently in JSON and text",
+        async (reconnectReason) => {
           const custom = customConnector();
           const target =
             kind === "builtin"
@@ -794,11 +791,8 @@ describe("okou connector search command", () => {
                 externalId: null,
                 externalUsername: null,
                 externalEmail: null,
-                connectionStatus: needsReconnect
-                  ? "reconnect-required"
-                  : "connected",
-                reconnectReason: null,
-                setupStatus,
+                connectionStatus: "reconnect-required",
+                reconnectReason,
                 missingRequiredFields: ["apiKey"],
                 configuredFieldKeys: [],
               },
@@ -817,10 +811,8 @@ describe("okou connector search command", () => {
                 account: {
                   connectionId: RUN_CONNECTION_ID,
                   metadata: {
-                    connectionStatus: needsReconnect
-                      ? "reconnect-required"
-                      : "connected",
-                    setupStatus,
+                    connectionStatus: "reconnect-required",
+                    reconnectReason,
                   },
                 },
                 availableForRun: false,
@@ -829,11 +821,11 @@ describe("okou connector search command", () => {
             actions: [
               {
                 url: expect.stringContaining(
-                  kind === "builtin" && needsReconnect
+                  kind === "builtin"
                     ? `/connectors/openai/reconnect/${RUN_CONNECTION_ID}?`
                     : "http://localhost:3000/connectors?",
                 ),
-                supportsCallback: kind === "builtin" && needsReconnect,
+                supportsCallback: kind === "builtin",
               },
             ],
           });
@@ -842,12 +834,10 @@ describe("okou connector search command", () => {
           searchCommand.setOptionValue("json", false);
           await searchCommand.parseAsync(["node", "cli", slug]);
           const text = mockConsoleLog.mock.calls.flat().join("\n");
-          expect(text).toContain(
-            needsReconnect ? "no (reconnect needed)" : "no (setup incomplete)",
-          );
+          expect(text).toContain("no (reconnect needed)");
           expect(text).toContain("Run-selected account");
           expect(text).toContain(
-            kind === "builtin" && needsReconnect
+            kind === "builtin"
               ? `/connectors/openai/reconnect/${RUN_CONNECTION_ID}?`
               : "http://localhost:3000/connectors?",
           );
@@ -877,7 +867,6 @@ describe("okou connector search command", () => {
         ]),
         stubRunConnectorAccountInspection([
           {
-            setupStatus: "complete",
             missingRequiredFields: [],
             configuredFieldKeys: [],
             kind: "available",
@@ -924,7 +913,6 @@ describe("okou connector search command", () => {
         stubCustomConnectors([definition]),
         stubRunConnectorAccountInspection([
           {
-            setupStatus: "complete",
             missingRequiredFields: [],
             configuredFieldKeys: [],
             kind: "available",
@@ -969,7 +957,6 @@ describe("okou connector search command", () => {
         ]),
         stubRunConnectorAccountInspection([
           {
-            setupStatus: "complete",
             missingRequiredFields: [],
             configuredFieldKeys: [],
             kind: "available",

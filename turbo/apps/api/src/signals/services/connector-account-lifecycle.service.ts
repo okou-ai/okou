@@ -38,6 +38,7 @@ import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import {
   connectorAccountSetup,
+  connectorAccountStatus,
   connectorAccountFieldMarkerKeys,
   connectorAccountSetupMarkerKey,
 } from "./connector-account-setup";
@@ -218,7 +219,7 @@ function fieldMarkerContractSelection() {
   };
 }
 
-function connectorAccountFieldMarkers(
+export function connectorAccountFieldMarkers(
   scope$: Computed<
     | ConnectorAccountBatchScope
     | null
@@ -366,7 +367,7 @@ function builtinConnection(
   includeScopeMismatch = false,
 ): Omit<
   ConnectorAccountConnection,
-  keyof ReturnType<typeof connectorAccountSetup>
+  "missingRequiredFields" | "configuredFieldKeys"
 > {
   const parsedSlug = connectorSlugSchema.safeParse(row.connectorSlug);
   if (!parsedSlug.success) {
@@ -450,7 +451,7 @@ function customConnection(
   now: Date,
 ): Omit<
   ConnectorAccountConnection,
-  keyof ReturnType<typeof connectorAccountSetup>
+  "missingRequiredFields" | "configuredFieldKeys"
 > | null {
   if (
     row.customConnectorId === null ||
@@ -538,10 +539,12 @@ function projectConnection(
       now,
       includeBuiltinScopeMismatch,
     );
-    return { ...connection, ...setup };
+    return { ...connection, ...connectorAccountStatus(connection, setup) };
   }
   const connection = customConnection(row, now);
-  return connection ? { ...connection, ...setup } : null;
+  return connection
+    ? { ...connection, ...connectorAccountStatus(connection, setup) }
+    : null;
 }
 
 function accountAuthLookupFromCatalogRows(

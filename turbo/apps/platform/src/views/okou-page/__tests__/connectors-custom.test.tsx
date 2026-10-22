@@ -95,7 +95,6 @@ function customAccount(
     externalEmail: null,
     oauthScopes: null,
     connectionStatus: "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: null,
@@ -183,13 +182,13 @@ function mockCustomAgentAccess(
 test.each([
   {
     label: "required configuration is incomplete",
-    status: "incomplete" as const,
+    status: "configuration_incomplete" as const,
     message:
       "Error: This account needs additional setup. Review its connector settings and try again.",
   },
   {
     label: "configuration is invalid",
-    status: "invalid" as const,
+    status: "configuration_invalid" as const,
     message:
       "Error: This account needs additional setup. Review its connector settings and try again.",
   },
@@ -217,7 +216,8 @@ test.each([
     });
     context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
       account = customAccount(connector.id, connectionId, {
-        setupStatus: status,
+        connectionStatus: "reconnect-required",
+        reconnectReason: status,
         missingRequiredFields: ["secret"],
         configuredFieldKeys: [],
       });
@@ -368,7 +368,6 @@ test("Preserve revoked access when adding another account", async () => {
     account: {
       missingRequiredFields: [],
       configuredFieldKeys: ["secret"],
-      setupStatus: "complete",
     },
   });
   const existing = customAccount(connector.id, crypto.randomUUID(), {
@@ -484,7 +483,6 @@ test("Manage agent access and permissions for a custom connector", async () => {
     account: {
       missingRequiredFields: [],
       configuredFieldKeys: ["secret"],
-      setupStatus: "complete",
     },
   });
   const access = new Map<string, AgentCustomConnectorGrants>([
@@ -705,7 +703,6 @@ test("Complete a custom connector’s declared fields", async () => {
           account: {
             missingRequiredFields: [],
             configuredFieldKeys: ["api_token", "account_id", "backup_token"],
-            setupStatus: "complete",
           },
         }),
       ),
@@ -892,7 +889,6 @@ test("Manage a custom HTTP connector through rename and deletion", async () => {
       id: "66666666-6666-4666-8666-666666666666",
       missingRequiredFields: [],
       configuredFieldKeys: ["secret"],
-      setupStatus: "complete",
     },
   });
   mockCustomConnectorStory(context, [
@@ -1009,7 +1005,7 @@ test("Manage custom HTTP OAuth through creation", async () => {
       }
       connector = httpConnectorFixture({
         ...connector,
-        account: { missingRequiredFields: [], setupStatus: "complete" },
+        account: { missingRequiredFields: [] },
       });
       const connectedAccountId = requireConnectorFixtureAccount(connector).id;
       completedAttempts.set(oauthAttemptId, connectedAccountId);
@@ -1191,7 +1187,7 @@ test("Manage custom HTTP OAuth through configuration update and connection", asy
       }
       connector = httpConnectorFixture({
         ...connector,
-        account: { missingRequiredFields: [], setupStatus: "complete" },
+        account: { missingRequiredFields: [] },
       });
       const connectedAccountId = requireConnectorFixtureAccount(connector).id;
       completedAttempts.set(oauthAttemptId, connectedAccountId);
@@ -1305,7 +1301,6 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
         configuredFieldKeys: body.values.map((value) => {
           return value.key;
         }),
-        setupStatus: "complete",
       },
     });
     return respond(200, {
@@ -1691,7 +1686,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     account: {
       missingRequiredFields: [],
       configuredFieldKeys: [],
-      setupStatus: "complete",
     },
   });
   const work = customAccount(connector.id, crypto.randomUUID(), {
@@ -1995,7 +1989,7 @@ test("Add and optionally name a custom OAuth account", async () => {
       submitted = body.account;
       connector = httpConnectorFixture({
         ...connector,
-        account: { missingRequiredFields: [], setupStatus: "complete" },
+        account: { missingRequiredFields: [] },
       });
       account = customAccount(connector.id, connectionId, {
         authMethod: "oauth",
@@ -2149,7 +2143,8 @@ test("Do not grant access after an unsuccessful custom connection", async () => 
       });
     }
     account = customAccount(connector.id, crypto.randomUUID(), {
-      setupStatus: "incomplete",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "configuration_incomplete",
       missingRequiredFields: ["secret"],
     });
     return respond(200, { ...connector, connectionId: account.id });
@@ -2433,7 +2428,6 @@ test("Preserve custom connector grants when credentials are added", async () => 
             id: "66666666-6666-4666-8666-666666666666",
             missingRequiredFields: [],
             configuredFieldKeys: ["secret"],
-            setupStatus: "complete",
           },
         }),
       ),
@@ -2479,7 +2473,7 @@ test("Preserve custom connector grants when credentials are added", async () => 
 
 test("Read a custom target again when its account manager reopens", async () => {
   const connector = customConnector({
-    account: { missingRequiredFields: [], setupStatus: "complete" },
+    account: { missingRequiredFields: [] },
   });
   let account = customAccount(connector.id, crypto.randomUUID(), {
     displayName: "Original account",

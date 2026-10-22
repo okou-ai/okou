@@ -35,7 +35,6 @@ function accountMetadata(
   },
 ) {
   return {
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     kind: "available" as const,
@@ -119,7 +118,8 @@ describe("run connector account inspection", () => {
       selector: "incomplete manual setup",
       args: [],
       setup: {
-        setupStatus: "incomplete",
+        connectionStatus: "reconnect-required",
+        reconnectReason: "configuration_incomplete",
         missingRequiredFields: ["apiKey"],
         configuredFieldKeys: [],
       },
@@ -181,11 +181,12 @@ describe("run connector account inspection", () => {
       expect(output).toContain("Thread-selected work account");
       expect(output).toContain(PINNED_CONNECTION_ID);
       expect(output).toContain("Current Status:");
-      if (setup.setupStatus === "incomplete") {
-        expect(output).toMatch(/Setup Status:\s+incomplete/);
+      if (setup.reconnectReason === "configuration_incomplete") {
+        expect(output).toMatch(/Current Status:\s+reconnect-required/);
+        expect(output).toMatch(/Reconnect Reason:\s*configuration_incomplete/);
         expect(output).toMatch(/Missing Fields:\s+apiKey/);
       } else {
-        expect(output).toMatch(/Setup Status:\s+complete/);
+        expect(output).toMatch(/Current Status:\s+connected/);
       }
 
       mockConsoleLog.mockClear();

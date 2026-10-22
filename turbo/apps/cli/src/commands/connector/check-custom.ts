@@ -1,4 +1,3 @@
-import { connectorAccountSetupIsComplete } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
@@ -93,8 +92,8 @@ function printCurrentCustomConnectorStatus(
       `Current default account: ${connectorAccountCliInventoryLabel({ ...account, connectionId: account.id })}`,
     );
     console.log(`Default connection ID: ${account.id}`);
-    if (account.setupStatus !== undefined) {
-      console.log(`Setup status: ${account.setupStatus}`);
+    if (account.reconnectReason) {
+      console.log(`Reconnect reason: ${account.reconnectReason}`);
     }
     if (account.missingRequiredFields.length > 0) {
       console.log(
@@ -125,8 +124,8 @@ function printRunCustomConnectorStatus(
     case "available":
       console.log(`Account used by this run: ${account.label}`);
       console.log(`Connection ID: ${account.connectionId}`);
-      if (account.metadata.setupStatus !== undefined) {
-        console.log(`Setup status: ${account.metadata.setupStatus}`);
+      if (account.metadata.reconnectReason) {
+        console.log(`Reconnect reason: ${account.metadata.reconnectReason}`);
       }
       if (account.metadata.missingRequiredFields.length > 0) {
         console.log(
@@ -138,11 +137,6 @@ function printRunCustomConnectorStatus(
           "The account selected for this run needs to be reconnected.",
         );
         console.log("After reconnecting, start a new run.");
-      } else if (!connectorAccountSetupIsComplete(account.metadata)) {
-        console.log(
-          "The account selected for this run requires configuration review.",
-        );
-        console.log("After updating the account, start a new run.");
       } else {
         console.log("The account selected for this run is connected.");
       }
@@ -150,8 +144,7 @@ function printRunCustomConnectorStatus(
   }
   return (
     account.state !== "available" ||
-    account.metadata.connectionStatus === "reconnect-required" ||
-    !connectorAccountSetupIsComplete(account.metadata)
+    account.metadata.connectionStatus === "reconnect-required"
   );
 }
 

@@ -18,7 +18,6 @@ export type PlatformConnectorConnection = Pick<
 
 /** Active UI state derived from canonical accounts, never catalog wire status. */
 interface BuiltinConnectorAccountView {
-  readonly setupStatus: ConnectorAccountConnection["setupStatus"] | null;
   readonly connected: boolean;
   readonly connection: PlatformConnectorConnection | null;
   readonly connectionStatus: PlatformConnectorConnectionStatus | undefined;

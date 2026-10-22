@@ -27,7 +27,7 @@ import {
 type McpRuntimeConnector = Omit<
   McpConnector,
   | "connectionStatus"
-  | "setupStatus"
+  | "reconnectReason"
   | "missingRequiredFields"
   | "configuredFieldKeys"
 >;
@@ -177,7 +177,7 @@ function withAccountMetadata(
     return {
       ...connector,
       connectionStatus: "reconnect-required",
-      setupStatus: "invalid",
+      reconnectReason: "account_unavailable",
       missingRequiredFields: [],
       configuredFieldKeys: [],
     };
@@ -193,7 +193,7 @@ function withAccountMetadata(
   return {
     ...connector,
     connectionStatus: account.connectionStatus,
-    setupStatus: account.setupStatus,
+    reconnectReason: account.reconnectReason,
     missingRequiredFields: account.missingRequiredFields,
     configuredFieldKeys: account.configuredFieldKeys,
   };

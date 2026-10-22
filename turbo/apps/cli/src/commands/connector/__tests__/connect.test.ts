@@ -456,87 +456,10 @@ describe("okou connector connect command", () => {
         id: connectionId,
         target: { kind: "builtin", connectorSlug: "openai" },
         connectionStatus: "connected",
-        setupStatus: "complete",
       },
     });
     expect(output).not.toContain("secret-must-not-appear");
   });
-
-  it.each([
-    {
-      setupStatus: undefined,
-      connectionStatus: "connected",
-      reconnectReason: null,
-      ready: true,
-    },
-    {
-      setupStatus: "incomplete",
-      connectionStatus: "connected",
-      reconnectReason: null,
-      ready: false,
-    },
-    {
-      setupStatus: "invalid",
-      connectionStatus: "connected",
-      reconnectReason: null,
-      ready: false,
-    },
-    {
-      setupStatus: undefined,
-      connectionStatus: "reconnect-required",
-      reconnectReason: "configuration_incomplete",
-      ready: false,
-    },
-    {
-      setupStatus: undefined,
-      connectionStatus: "reconnect-required",
-      reconnectReason: "configuration_invalid",
-      ready: false,
-    },
-  ] as const)(
-    "confirms exact builtin readiness across API formats: %j",
-    async ({ setupStatus, connectionStatus, reconnectReason, ready }) => {
-      server.use(
-        http.post(
-          "http://localhost:3000/api/connectors/:connectorSlug/manual-grant",
-          () => {
-            return HttpResponse.json({ connectionId: DEFAULT_CONNECTION_ID });
-          },
-        ),
-        stubConnectorAccountDetails({
-          authMethod: "api-token",
-          setupStatus,
-          connectionStatus,
-          reconnectReason,
-        }),
-      );
-      const result = connectCommand.parseAsync([
-        "node",
-        "cli",
-        "openai",
-        "--add",
-        "--value",
-        "apiKey=secret-input",
-        "--json",
-      ]);
-      if (ready) {
-        await result;
-        const output = mockConsoleLog.mock.calls.flat().join("\n");
-        expect(JSON.parse(output)).toMatchObject({
-          connectionId: DEFAULT_CONNECTION_ID,
-          account: { id: DEFAULT_CONNECTION_ID, connectionStatus: "connected" },
-        });
-        expect(output).not.toContain("secret-input");
-      } else {
-        await expect(result).rejects.toThrow("process.exit called");
-        expect(mockExit).toHaveBeenCalledWith(1);
-        expect(mockConsoleLog).not.toHaveBeenCalled();
-        expect(mockConsoleError.mock.calls.flat().join("\n")).not.toContain(
-          "secret-input",
-        );
-      }
-    },
-  );
 
   it("renders canonical builtin completion from its exact verified account", async () => {
     const account = connectorAccount(
@@ -664,7 +587,6 @@ describe("okou connector connect command", () => {
         id: connectionId,
         target: { kind: "custom", customConnectorId: connector.id },
         connectionStatus: "connected",
-        setupStatus: "complete",
       },
     });
     expect(output).not.toContain("secret-must-not-appear");
@@ -715,7 +637,6 @@ describe("okou connector connect command", () => {
         id: DEFAULT_CONNECTION_ID,
         target: { kind: "custom", customConnectorId: connector.id },
         connectionStatus: "connected",
-        setupStatus: "complete",
       },
     });
     expect(output).not.toContain("secret-must-not-appear");

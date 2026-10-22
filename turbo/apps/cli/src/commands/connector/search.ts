@@ -1,9 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import {
-  connectorAccountSetupIsComplete,
-  connectorAccountTargetKey,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   listConnectorCatalog,
   listConnectedConnectors,
@@ -74,9 +71,7 @@ function renderRunAvailabilityCell(lookup: RunConnectorAccountLookup): string {
       if (lookup.metadata.connectionStatus === "reconnect-required") {
         return chalk.yellow("no (reconnect needed)");
       }
-      return connectorAccountSetupIsComplete(lookup.metadata)
-        ? chalk.green("yes")
-        : chalk.yellow(`no (setup ${lookup.metadata.setupStatus})`);
+      return chalk.green("yes");
     case "metadata-unavailable":
       return chalk.dim("no (metadata unavailable or deleted)");
     case "not-admitted":
@@ -353,9 +348,7 @@ Examples:
                   account.state === "context-unavailable"
                     ? null
                     : account.state === "available" &&
-                      account.metadata.connectionStatus !==
-                        "reconnect-required" &&
-                      connectorAccountSetupIsComplete(account.metadata),
+                      account.metadata.connectionStatus === "connected",
                 authorized: agentContext
                   ? isConnectorDiscoveryAuthorized(connector, agentContext)
                   : null,

@@ -7,10 +7,13 @@ import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
+  ACME_CONNECTOR_ID,
   builtinConnector,
   connectorAccount,
   DEEPWIKI_CONNECTOR_ID,
   mcpConnector,
+  httpConnector,
+  manualAuthMethod,
   OTHER_AGENT_ID,
   OTHER_THREAD_ID,
   SCOUT_AGENT_ID,
@@ -90,6 +93,141 @@ function githubAccounts(count = 2) {
     });
   });
 }
+
+test.each(["builtin", "custom"] as const)(
+  "Configuration attention keeps the %s default out of healthy account fallbacks",
+  async (kind) => {
+    const user = userEvent.setup({ delay: null });
+    const target: ConnectorAccountTarget =
+      kind === "builtin"
+        ? { kind, connectorSlug: "acme-cloud" }
+        : { kind, customConnectorId: ACME_CONNECTOR_ID };
+    const fields = [
+      {
+        key: "apiKey",
+        label: "API key",
+        kind: "secret" as const,
+        required: true,
+      },
+      {
+        key: "region",
+        label: "Region",
+        kind: "variable" as const,
+        required: true,
+      },
+    ];
+    const work = {
+      ...connectorAccount({
+        id: "f0000000-0000-4000-a000-000000000591",
+        target,
+        displayName: "Work",
+        isDefault: true,
+      }),
+      authMethod: kind === "builtin" ? "api-token" : "manual",
+      oauthScopes: null,
+      connectionStatus: "reconnect-required" as const,
+      reconnectReason: "configuration_incomplete" as const,
+      missingRequiredFields: ["region"],
+      configuredFieldKeys: ["apiKey"],
+    };
+    const personal = {
+      ...work,
+      id: "f0000000-0000-4000-a000-000000000592",
+      displayName: "Personal",
+      isDefault: false,
+      reconnectReason: "authorization_expired_or_revoked" as const,
+      missingRequiredFields: [],
+      configuredFieldKeys: ["apiKey", "region"],
+    };
+    installComposerConnectorFixture({
+      catalog:
+        kind === "builtin"
+          ? [
+              builtinConnector({
+                slug: "acme-cloud",
+                label: "Acme",
+                authMethods: [
+                  {
+                    ...manualAuthMethod(),
+                    manualFields: fields.map((field) => {
+                      return {
+                        id: field.key,
+                        label: field.label,
+                        required: true,
+                        placeholder: null,
+                        inputType:
+                          field.kind === "secret" ? "password" : "text",
+                      };
+                    }),
+                  },
+                ],
+              }),
+            ]
+          : [],
+      customConnectors:
+        kind === "custom"
+          ? [
+              {
+                ...httpConnector({
+                  id: ACME_CONNECTOR_ID,
+                  slug: "_acme-cloud",
+                  displayName: "Acme",
+                  hasAccount: true,
+                }),
+                fields,
+                headerInjections: [
+                  {
+                    name: "Authorization",
+                    valueTemplate: "Bearer {{secrets.apiKey}}",
+                  },
+                ],
+              },
+            ]
+          : [],
+      builtinAuthorizations:
+        kind === "builtin" ? { [SCOUT_AGENT_ID]: ["acme-cloud"] } : {},
+      customAuthorizations:
+        kind === "custom"
+          ? {
+              [SCOUT_AGENT_ID]: [
+                { customConnectorId: ACME_CONNECTOR_ID, permissionNames: [] },
+              ],
+            }
+          : {},
+      accounts: [work, personal],
+      threadSelections: {
+        [SCOUT_THREAD_ID]: [{ target, connectionId: personal.id }],
+      },
+      threadId: SCOUT_THREAD_ID,
+    });
+    await setupPage({
+      locale: "en-US",
+      context,
+      path: `/chats/${SCOUT_THREAD_ID}`,
+    });
+    await loadComposer();
+    await openConnectors();
+    const chooser = await openAccountChooser(
+      user,
+      "Acme · Selected account: Personal",
+    );
+    expect(
+      within(chooser).getByRole("option", {
+        name: /^Work.*Reconnect required/u,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(chooser).getByRole("option", {
+        name: /^Use default.*Work.*Reconnect required/u,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(chooser).getByRole("option", {
+        name: /^Personal.*No usable account/u,
+      }),
+    ).toHaveAttribute("aria-selected", "true");
+  },
+);
 
 async function openAgentScopedConnectors(pendingAuthorization: boolean) {
   const user = userEvent.setup({ delay: null });
