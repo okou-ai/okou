@@ -111,7 +111,6 @@ struct LiveRunnerPublishResources<'a> {
     mitm: &'a mut proxy::MitmProxy,
     kmsg_handle: kmsg_log::KmsgHandle,
     dns_handle: dns::DnsProxy,
-    memory_prefetch: &'a mut prefetch::MemoryPrefetchTasks,
     status: &'a StatusTracker,
 }
 
@@ -119,7 +118,6 @@ struct DnsStartupResources<'a> {
     runtime_provider: &'a dyn RuntimeProvider,
     mitm: &'a mut proxy::MitmProxy,
     kmsg_handle: kmsg_log::KmsgHandle,
-    memory_prefetch: &'a mut prefetch::MemoryPrefetchTasks,
     network_log_manager: NetworkLogManager,
     host_cpu_placement: sandbox::HostCpuPlacementConfig,
 }
@@ -143,7 +141,6 @@ where
         runtime_provider,
         mitm,
         kmsg_handle,
-        memory_prefetch,
         network_log_manager,
         host_cpu_placement,
     } = resources;
@@ -198,7 +195,7 @@ where
         }
     };
 
-    finish_dns_startup(runtime, dns_result, mitm, kmsg_handle, memory_prefetch).await
+    finish_dns_startup(runtime, dns_result, mitm, kmsg_handle).await
 }
 
 async fn finish_dns_startup(
@@ -206,7 +203,6 @@ async fn finish_dns_startup(
     dns_result: Result<dns::DnsProxy, DnsStartupFailure>,
     mitm: &mut proxy::MitmProxy,
     kmsg_handle: kmsg_log::KmsgHandle,
-    memory_prefetch: &mut prefetch::MemoryPrefetchTasks,
 ) -> RunnerResult<(Box<dyn SandboxRuntime>, dns::DnsProxy, kmsg_log::KmsgHandle)> {
     let (dns_handle, failure) = match dns_result {
         Ok(handle) => match runtime.activate_dns_readiness().await {
@@ -216,8 +212,6 @@ async fn finish_dns_startup(
         Err(error) => (None, error),
     };
 
-    memory_prefetch.cancel();
-    memory_prefetch.drain().await;
     if let Some(handle) = dns_handle
         && let Err(error) = handle.stop().await
     {
@@ -262,8 +256,6 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
     match crate::live_runner_instances::publish(home, metadata).await {
         Ok(handle) => Ok((handle, resources.kmsg_handle, resources.dns_handle)),
         Err(e) => {
-            resources.memory_prefetch.cancel();
-            resources.memory_prefetch.drain().await;
             resources.provider.shutdown().await;
             if let Err(error) = resources.dns_handle.stop().await {
                 warn!(%error, "failed to clean up network-log helper after startup failure");
@@ -569,8 +561,6 @@ async fn run_start_observed(
         })
         .collect::<RunnerResult<Vec<_>>>()?;
     let memory_prefetch_budget_mb = u64::from(budget.effective_memory_mb().min(host_memory_mb));
-    let mut memory_prefetch =
-        prefetch::MemoryPrefetchTasks::spawn(memory_prefetch_candidates, memory_prefetch_budget_mb);
 
     // Compute the smallest profile resources for budget pre-check.
     // When budget is exhausted for all profiles, we wait instead of polling.
@@ -673,7 +663,6 @@ async fn run_start_observed(
             runtime_provider,
             mitm: &mut mitm,
             kmsg_handle,
-            memory_prefetch: &mut memory_prefetch,
             network_log_manager: network_log_manager.clone(),
             host_cpu_placement,
         },
@@ -802,7 +791,6 @@ async fn run_start_observed(
                 mitm: &mut mitm,
                 kmsg_handle,
                 dns_handle,
-                memory_prefetch: &mut memory_prefetch,
                 status: status.as_ref(),
             },
         )
@@ -810,6 +798,12 @@ async fn run_start_observed(
 
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
+    // Accept optional reads only after fallible root setup has completed. The
+    // concrete reactor handoff below gives its startup owner custody before
+    // another await; startup rollback and normal teardown both join real IO
+    // while the root's image and base-directory locks remain held.
+    let memory_prefetch =
+        prefetch::MemoryPrefetchTasks::spawn(memory_prefetch_candidates, memory_prefetch_budget_mb);
     let config = RunConfig {
         sandbox_op_reporter: host_telemetry
             .as_ref()
