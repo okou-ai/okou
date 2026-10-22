@@ -1,7 +1,8 @@
 // The skill import prompt and its imported list, shared by the onboarding
 // skills step and the workflows page's import dialog.
 import type { Command } from "ccstate";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
@@ -16,11 +17,19 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { SkillImportGuide } from "./skill-import-guide.tsx";
 
 /** The prompt itself: long, read in full, and selectable where it stands. */
-function SkillImportPromptBody({ prompt }: { readonly prompt: string }) {
+function SkillImportPromptBody({
+  prompt,
+  signals,
+}: {
+  readonly prompt: string;
+  readonly signals: SkillImportSignals;
+}) {
   const { t } = useTranslation();
+  const displayed = useSet(signals.promptDisplayed$);
 
   return (
     <pre
+      ref={displayed}
       // A named, focusable scroll container: the prompt is long, so it is
       // read and selected where it stands. The session token and URLs are
       // single unbroken tokens, so they may wrap anywhere rather than widen
@@ -61,11 +70,10 @@ function SkillImportPromptPending() {
 function SkillImportPromptFailed({
   retry$,
 }: {
-  readonly retry$: Command<Promise<void>, [AbortSignal]>;
+  readonly retry$: Command<void, []>;
 }) {
   const { t } = useTranslation();
   const retry = useSet(retry$);
-  const pageSignal = useGet(pageSignal$);
 
   return (
     <div className="flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
@@ -79,7 +87,7 @@ function SkillImportPromptFailed({
         variant="outline"
         size="sm"
         onClick={() => {
-          detach(retry(pageSignal), Reason.DomCallback);
+          retry();
         }}
       >
         {t(($) => {
@@ -92,17 +100,16 @@ function SkillImportPromptFailed({
 
 /** Copies the prompt, and says whether the clipboard took it. */
 function SkillImportCopyButton({
-  copied,
   copyPrompt$,
   primary = false,
 }: {
-  readonly copied: boolean;
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
   /** Where copying is the one thing to do, it is the primary action. */
   readonly primary?: boolean;
 }) {
   const { t } = useTranslation();
-  const copyPrompt = useSet(copyPrompt$);
+  const [copyResult, copyPrompt] = useLoadableSet(copyPrompt$);
+  const copied = copyResult.state === "hasData" && copyResult.data;
   const pageSignal = useGet(pageSignal$);
 
   return (
@@ -111,6 +118,7 @@ function SkillImportCopyButton({
       variant={primary ? "default" : "outline"}
       size="sm"
       className="shrink-0 gap-1.5"
+      disabled={copyResult.state === "loading"}
       onClick={() => {
         detach(
           (async () => {
@@ -171,10 +179,9 @@ function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
 }
 
 /**
- * What the import has produced so far. The list is polled, so a skill appears
- * here on its own; until one does, the import says what it is waiting for.
+ * The authoritative results of this session, refreshed by server notifications.
  */
-export function ImportedSkillList({
+function ImportedSkillList({
   skills,
   scroll = false,
 }: {
@@ -216,6 +223,53 @@ export function ImportedSkillList({
       )}
     </div>
   );
+}
+
+/** A failed result read must not look like an empty import. */
+export function SkillImportResults({
+  signals,
+  scroll = false,
+}: {
+  readonly signals: SkillImportSignals;
+  readonly scroll?: boolean;
+}) {
+  const result = useLoadable(signals.imported$);
+  const retry = useSet(signals.reloadImported$);
+  const { t } = useTranslation();
+  if (result.state === "hasError") {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-start gap-2 text-sm text-muted-foreground"
+      >
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.resultsError;
+        })}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            return retry();
+          }}
+        >
+          {t(($) => {
+            return $.onboarding.sourcesFirst.skills.tryAgain;
+          })}
+        </Button>
+      </div>
+    );
+  }
+  if (result.state === "loading") {
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.loadingResults;
+        })}
+      </p>
+    );
+  }
+  return <ImportedSkillList skills={result.data} scroll={scroll} />;
 }
 
 /**
@@ -298,21 +352,21 @@ export function SkillImportPanel({
   signals,
   provider,
   providerName,
-  retry$,
   promptToggle,
 }: {
   readonly signals: SkillImportSignals;
   readonly provider: SkillImportProvider;
   readonly providerName: string;
-  /** Opens the session again, under whatever owns this import's lifetime. */
-  readonly retry$: Command<Promise<void>, [AbortSignal]>;
   readonly promptToggle?: SkillImportPromptToggle;
 }) {
-  const state = useGet(signals.state$);
+  const preparation = useLoadable(signals.session$);
+  const results = useLoadable(signals.imported$);
+  const session = preparation.state === "hasData" ? preparation.data : null;
+  const prompt = session?.prompt ?? null;
   const { t } = useTranslation();
   const pending =
-    state.status === "failed" ? (
-      <SkillImportPromptFailed retry$={retry$} />
+    preparation.state === "hasError" ? (
+      <SkillImportPromptFailed retry$={signals.retry$} />
     ) : (
       <SkillImportPromptPending />
     );
@@ -326,22 +380,24 @@ export function SkillImportPanel({
         stacked
         copyStep={{
           action:
-            state.prompt === null ? null : (
+            session === null ? null : (
               <SkillImportCopyButton
-                copied={state.copied}
+                key={session.id}
                 copyPrompt$={signals.copyPrompt$}
-                primary={state.imported.length === 0}
+                primary={
+                  results.state !== "hasData" || results.data.length === 0
+                }
               />
             ),
           detail:
-            state.prompt === null ? (
+            prompt === null ? (
               <div className="mt-2">{pending}</div>
             ) : (
               <>
                 <SkillImportFullPromptToggle toggle={promptToggle} />
                 {promptToggle.shown ? (
                   <div className="mt-2">
-                    <SkillImportPromptBody prompt={state.prompt} />
+                    <SkillImportPromptBody prompt={prompt} signals={signals} />
                   </div>
                 ) : null}
               </>
@@ -369,9 +425,9 @@ export function SkillImportPanel({
             })}
           </p>
         </div>
-        {state.prompt === null ? null : (
+        {session === null ? null : (
           <SkillImportCopyButton
-            copied={state.copied}
+            key={session.id}
             copyPrompt$={signals.copyPrompt$}
           />
         )}
@@ -380,10 +436,10 @@ export function SkillImportPanel({
         provider={provider}
         className="rounded-xl border border-border/60 bg-muted/30 p-4"
       />
-      {state.prompt === null ? (
+      {prompt === null ? (
         pending
       ) : (
-        <SkillImportPromptBody prompt={state.prompt} />
+        <SkillImportPromptBody prompt={prompt} signals={signals} />
       )}
     </div>
   );

@@ -53,9 +53,11 @@ import { and, eq, isNull, isNotNull, ne } from "drizzle-orm";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
+import { waitUntil } from "../context/wait-until";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
+import { publishSkillImportAfterCommit } from "../services/skill-import-telemetry";
 import {
   ApiDispatchTimingCollector,
   measureApiDispatchTiming,
@@ -282,6 +284,7 @@ export interface WorkflowCreationInput {
   readonly visibility: "public" | "private";
   /** Set only by the skill import, for the tool the skill came from. */
   readonly importSource?: WorkflowImportSource | null;
+  readonly importSessionId?: string | null;
 }
 
 function workflowCreationRowValues(
@@ -300,6 +303,7 @@ function workflowCreationRowValues(
     displayName: body.displayName ?? null,
     description: body.description ?? null,
     importSource: args.importSource ?? null,
+    importSessionId: args.importSessionId ?? null,
     createdBy: member.userId,
     updatedBy: member.userId,
     createdAt: currentTime,
@@ -534,10 +538,23 @@ const prepareAndCreateWorkflow$ = command(
           },
           signal,
         );
-        const publication = await settle(
-          set(commitPreparedWorkflow$, { ...args, workflowId, volume }, signal),
+        const pendingPublication = set(
+          commitPreparedWorkflow$,
+          { ...args, workflowId, volume },
           signal,
         );
+        // A committed import remains observable if its caller is cancelled.
+        if (args.importSource) {
+          waitUntil(
+            publishSkillImportAfterCommit(pendingPublication, {
+              userId: args.member.userId,
+              orgId: args.orgId,
+              sessionId: args.importSessionId ?? null,
+              provider: args.importSource,
+            }),
+          );
+        }
+        const publication = await settle(pendingPublication, signal);
         if (!publication.ok) {
           if (
             !isOrdinaryWorkflowNameConflict(publication.error, args.visibility)

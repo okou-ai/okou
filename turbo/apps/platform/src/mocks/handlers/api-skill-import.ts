@@ -13,6 +13,7 @@ import { mockApi } from "../msw-contract.ts";
 export const apiSkillImportHandlers = [
   mockApi(skillImportSessionsContract.create, ({ respond }) => {
     return respond(200, {
+      sessionId: "b0000000-0000-4000-a000-000000000001",
       uploadUrl: "https://api.okou.test/api/skill-import/skills",
       token: "vm0_skillimport_mock-session-token",
       expiresAt: new Date(
@@ -20,5 +21,8 @@ export const apiSkillImportHandlers = [
       ).toISOString(),
       limits: SKILL_IMPORT_LIMITS,
     });
+  }),
+  mockApi(skillImportSessionsContract.listSkills, ({ respond }) => {
+    return respond(200, []);
   }),
 ];

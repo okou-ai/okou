@@ -7280,7 +7280,6 @@ function useComposerAddMenuGroups(
   const fileInput = useGet(signals.draft.composerFileInput$);
   const template = useTemplatePickerTrigger(signals);
   const openSkillImportDialog = useSet(openSkillImportDialog$);
-  const pageSignal = useGet(pageSignal$);
   return [
     [
       {
@@ -7309,7 +7308,7 @@ function useComposerAddMenuGroups(
           return $.workflows.skillImport.action;
         }),
         onSelect: () => {
-          detach(openSkillImportDialog(pageSignal), Reason.DomCallback);
+          openSkillImportDialog();
         },
       },
     ],

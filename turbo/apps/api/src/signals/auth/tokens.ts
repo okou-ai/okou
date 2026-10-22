@@ -32,6 +32,8 @@ const PAT_TOKEN_PREFIX = "vm0_pat_";
 // only code that can accept them. They are never registered as a general auth
 // token type, so no other route can be reached with one.
 const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_";
+// Older APIs must reject these credentials rather than create unattributed rows.
+const TRACKED_SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 // Covers the runner's two-hour execution budget plus claim, startup,
 // finalization, and terminal report time.
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
@@ -127,6 +129,7 @@ const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
   orgId: z.string().min(1),
   agentId: z.string().min(1),
   provider: workflowImportSourceSchema,
+  sessionId: z.uuid().optional(),
 });
 
 export type SkillImportTokenPayload = z.infer<
@@ -429,11 +432,15 @@ function signOkouToken(claims: OkouTokenClaims): string {
 }
 
 export function verifySkillImportToken(token: string): SkillImportAuth | null {
+  const tracked = token.startsWith(TRACKED_SKILL_IMPORT_TOKEN_PREFIX);
   const parsed = skillImportTokenPayloadSchema.safeParse(
-    verifyPrefixedToken(token, SKILL_IMPORT_TOKEN_PREFIX),
+    verifyPrefixedToken(
+      token,
+      tracked ? TRACKED_SKILL_IMPORT_TOKEN_PREFIX : SKILL_IMPORT_TOKEN_PREFIX,
+    ),
   );
 
-  if (!parsed.success) {
+  if (!parsed.success || (tracked && !parsed.data.sessionId)) {
     return null;
   }
 
@@ -443,6 +450,7 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
     agentId: parsed.data.agentId,
     provider: parsed.data.provider,
     issuedAtSeconds: parsed.data.iat,
+    sessionId: parsed.data.sessionId ?? null,
   };
 }
 
@@ -451,6 +459,7 @@ export function generateSkillImportToken(
   orgId: string,
   agentId: string,
   provider: WorkflowImportSource,
+  sessionId: string,
 ): { readonly token: string; readonly expiresAt: Date } {
   const nowSeconds = Math.floor(now() / 1000);
   const expiresAtSeconds = nowSeconds + SKILL_IMPORT_SESSION_TTL_SECONDS;
@@ -460,12 +469,13 @@ export function generateSkillImportToken(
     orgId,
     agentId,
     provider,
+    sessionId,
     iat: nowSeconds,
     exp: expiresAtSeconds,
   };
 
   return {
-    token: SKILL_IMPORT_TOKEN_PREFIX + signJwt(payload),
+    token: TRACKED_SKILL_IMPORT_TOKEN_PREFIX + signJwt(payload),
     expiresAt: new Date(expiresAtSeconds * 1000),
   };
 }

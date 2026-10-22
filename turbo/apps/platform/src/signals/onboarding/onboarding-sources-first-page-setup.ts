@@ -34,7 +34,7 @@ import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
 import { promptHandoffParams } from "./onboarding-actions.ts";
 import { setupOnboardingPromptPage$ } from "./onboarding-page-setup.ts";
-import { enterSkillImport$ } from "./onboarding-skill-import.ts";
+import { watchOnboardingSkillImport$ } from "./onboarding-skill-import.ts";
 import { watchOnboardingRecommendation$ } from "./onboarding-recommendation.ts";
 import {
   claimSourcesFirstStartEvent$,
@@ -255,7 +255,7 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingSkillsPage,
-  enter: enterSkillImport$,
+  watch: [watchOnboardingSkillImport$],
 });
 
 /** Keep the inline phone connection current while this step is open. */

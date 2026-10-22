@@ -178,6 +178,93 @@ async function openSession(
 }
 
 describe("POST /api/skill-import/sessions", () => {
+  it("keeps parallel sessions and late uploads attributed to their own credentials", async () => {
+    const { actor, session: first } = await openSession();
+    const second = await accept(
+      sessionsClient().create({
+        headers: clerkHeaders(actor),
+        body: { provider: "codex" },
+      }),
+      [200],
+    );
+    expect(first.sessionId).toBeDefined();
+    expect(second.body.sessionId).toBeDefined();
+    expect(first.sessionId).not.toBe(second.body.sessionId);
+    expect(first.token).not.toBe(second.body.token);
+    const secondUpload = await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(second.body.token),
+        body: skillBody({ name: "new-session-skill" }),
+      }),
+      [201],
+    );
+    // The prompt copied earlier is still valid after another session opens.
+    const firstUpload = await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(first.token),
+        body: skillBody({ name: "late-old-session-skill" }),
+      }),
+      [201],
+    );
+    for (const [session, uploaded] of [
+      [first, firstUpload],
+      [second.body, secondUpload],
+    ] as const) {
+      if (!session.sessionId) {
+        throw new Error("Expected an attributed session");
+      }
+      const result = await accept(
+        sessionsClient().listSkills({
+          headers: clerkHeaders(actor),
+          params: { sessionId: session.sessionId },
+        }),
+        [200],
+      );
+      expect(
+        result.body.map((skill) => {
+          return skill.id;
+        }),
+      ).toStrictEqual([uploaded.body.workflowId]);
+    }
+  });
+
+  it("does not expose another member or organization's import results", async () => {
+    const { actor, session } = await openSession();
+    if (!session.sessionId) {
+      throw new Error("Expected an attributed session");
+    }
+    await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(session.token),
+        body: skillBody(),
+      }),
+      [201],
+    );
+    for (const other of [bdd.user({ orgId: actor.orgId }), bdd.user()]) {
+      const result = await accept(
+        sessionsClient().listSkills({
+          headers: clerkHeaders(other),
+          params: { sessionId: session.sessionId },
+        }),
+        [200],
+      );
+      expect(result.body).toStrictEqual([]);
+    }
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+      toAuth: () => {
+        return { userId: null, orgId: null };
+      },
+    });
+    await accept(
+      sessionsClient().listSkills({
+        headers: tokenHeaders(session.token),
+        params: { sessionId: session.sessionId },
+      }),
+      [401],
+    );
+  });
+
   it("issues an upload session for the org's default agent", async () => {
     const { session } = await openSession();
 
@@ -530,7 +617,19 @@ describe("POST /api/skill-import/skills", () => {
     "stops importing once the session cap is reached",
     { timeout: 120_000 },
     async () => {
-      const { session } = await openSession();
+      const { actor, agentId, session } = await openSession();
+      // Workflows created outside this credential cannot consume its quota.
+      await accept(
+        workflowListClient().create({
+          headers: clerkHeaders(actor),
+          body: {
+            agentId,
+            name: "unrelated-private-skill",
+            instruction: "Unrelated work",
+          },
+        }),
+        [201],
+      );
 
       for (
         let index = 0;
@@ -556,6 +655,20 @@ describe("POST /api/skill-import/skills", () => {
 
       expectApiError(response.body);
       expect(response.body.error.code).toBe("SKILL_IMPORT_LIMIT_REACHED");
+      const next = await accept(
+        sessionsClient().create({
+          headers: clerkHeaders(actor),
+          body: { provider: "claudeCode" },
+        }),
+        [200],
+      );
+      await accept(
+        uploadClient().upload({
+          headers: tokenHeaders(next.body.token),
+          body: skillBody({ name: "independent-session-skill" }),
+        }),
+        [201],
+      );
     },
   );
 });

@@ -5,6 +5,7 @@ import {
   RESERVED_SKILL_FILE,
   workflowImportSourceSchema,
   workflowNameSchema,
+  workflowSummarySchema,
 } from "./workflows";
 
 const c = initContract();
@@ -34,7 +35,7 @@ export const SKILL_IMPORT_SESSION_TTL_SECONDS = 24 * 60 * 60;
  * generated prompt states the same numbers the server enforces.
  */
 export const SKILL_IMPORT_LIMITS = {
-  /** Skills one session may create, counted from the token's issue time. */
+  /** Skills one session may create, attributed by its upload credential. */
   maxSkillsPerSession: 50,
   maxInstructionBytes: 256 * 1024,
   maxFilesPerSkill: 50,
@@ -65,6 +66,8 @@ export type SkillImportSessionRequest = z.infer<
 >;
 
 export const skillImportSessionResponseSchema = z.object({
+  /** Absent only on APIs predating session-attributed imports. */
+  sessionId: z.uuid().optional(),
   /** Absolute URL of the upload route the prompt posts each skill to. */
   uploadUrl: z.url(),
   token: z.string().min(1),
@@ -166,6 +169,19 @@ export const skillImportSessionsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Open a skill import session for the org's default agent",
+  },
+  listSkills: {
+    method: "GET",
+    path: "/api/skill-import/sessions/:sessionId/skills",
+    headers: authHeadersSchema,
+    pathParams: z.object({ sessionId: z.uuid() }),
+    responses: {
+      200: z.array(workflowSummarySchema),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Read the current member's workflows imported by one session",
   },
 });
 

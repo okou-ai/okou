@@ -49,6 +49,7 @@ const PROMPT_OPENING = "Import my local personal skills into Okou.";
 const WAITING_FOR_SKILLS = "Imported skills appear here as they arrive.";
 /** The token the mocked session hands out, which only the prompt carries. */
 const SESSION_TOKEN = "vm0_skillimport_mock-session-token";
+const SESSION_ID = "b0000000-0000-4000-a000-000000000001";
 const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const SKILL_DISPLAY_NAME = "Weekly report";
@@ -105,13 +106,21 @@ function otherAgentSkill(): WorkflowSummary {
 }
 
 /**
- * The workflow list the step polls, scoped by agent the way the route is: the
+ * The authoritative session results returned to the step: the
  * test decides what the user's own Codex or Claude Code session has written.
  */
 function mockAgentWorkflows(): {
   readonly write: (workflows: readonly WorkflowSummary[]) => void;
 } {
   let workflows: readonly WorkflowSummary[] = [];
+  context.mocks.api(skillImportSessionsContract.listSkills, ({ respond }) => {
+    return respond(
+      200,
+      workflows.filter((entry) => {
+        return entry.agentId === DEFAULT_AGENT_ID;
+      }),
+    );
+  });
   context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
     const agentId = query.agentId;
     return respond(
@@ -126,6 +135,7 @@ function mockAgentWorkflows(): {
   return {
     write: (next) => {
       workflows = next;
+      context.mocks.ably.trigger("skillImportChanged");
     },
   };
 }
@@ -138,6 +148,7 @@ function mockSessions(): { readonly providers: string[] } {
     return respond(200, {
       uploadUrl: "https://api.okou.test/api/skill-import/skills",
       token: SESSION_TOKEN,
+      sessionId: SESSION_ID,
       expiresAt: new Date(
         now() + SKILL_IMPORT_SESSION_TTL_SECONDS * 1000,
       ).toISOString(),
@@ -514,15 +525,7 @@ test("A skill the import writes appears without the step being asked again", asy
   expect(screen.queryByText(WAITING_FOR_SKILLS)).not.toBeInTheDocument();
   // The list is the org's default agent, not every workflow the user can see.
   expect(screen.queryByText(OTHER_AGENT_SKILL)).not.toBeInTheDocument();
-  expect(posthog.events).toStrictEqual(
-    expect.arrayContaining([
-      onboardingEvent("SkillImported", {
-        step_key: "skills",
-        imported_count: 1,
-      }),
-    ]),
-  );
-  // A skill's own name is the user's writing, so the funnel counts it instead.
+  // Skill names and contents remain outside client onboarding telemetry.
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_NAME);
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_DISPLAY_NAME);
 
@@ -553,6 +556,29 @@ test("The step can be left with nothing imported", async () => {
   expect(posthog.events).toStrictEqual(
     expect.arrayContaining([onboardingEvent("Skip", { step_key: "skills" })]),
   );
+});
+
+test("Back releases the subscription and returning retains the prompt and server results", async () => {
+  const workflows = mockAgentWorkflows();
+  mockSessions();
+  await openSkillsStep();
+  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
+  const original = prompt.textContent;
+  workflows.write([importedSkill()]);
+  await screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE });
+  click(getButtonByName("Back"));
+  await screen.findByRole("heading", { name: EXPERIENCE_QUESTION });
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("skillImportChanged"),
+    ).toBeFalsy();
+  });
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE });
+  expect(screen.getByRole("region", { name: PROMPT_LABEL }).textContent).toBe(
+    original,
+  );
+  expect(screen.getByText(SKILL_DISPLAY_NAME)).toBeInTheDocument();
 });
 
 test("A session that cannot be opened leaves the step passable", async () => {
