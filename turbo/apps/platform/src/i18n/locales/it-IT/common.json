@@ -444,8 +444,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Torna a {{brandName}}",
+      "continue": "Continua",
       "description": "Potrebbe essere privato o non più disponibile.",
       "help": "Chiedi alla persona che ha condiviso questo link di verificare l’accesso.",
+      "sessionExpiredDescription": "La sessione del sito è scaduta. Continua per verificare il tuo accesso.",
+      "sessionExpiredTitle": "Verifica di nuovo il tuo accesso",
       "signedInAs": "Accesso effettuato come {{email}}",
       "signedInDescription": "Potrebbe non esistere o essere condiviso con un altro account o un’altra organizzazione.",
       "signIn": "Accedi",
@@ -453,7 +456,10 @@
       "switchAccount": "Cambia account",
       "switchAccountFailed": "Impossibile aprire il selettore di account. Riprova.",
       "title": "Non puoi visualizzare questo artefatto",
-      "tryAgain": "Riprova"
+      "tryAgain": "Riprova",
+      "websiteTitle": "Non puoi visualizzare questo sito web",
+      "websiteUnavailableDescription": "Riprova tra poco.",
+      "websiteUnavailableTitle": "Questo sito web è temporaneamente non disponibile"
     },
     "actions": {
       "backToAll": "Torna a tutti gli artefatti",
@@ -612,7 +618,6 @@
         "text": "testo",
         "video": "video"
       },
-      "siteLabel": "Anteprima del sito per {{title}}",
       "slideTitle": "Diapositiva {{number}}",
       "unavailable": "{{kind}} anteprima non disponibile.",
       "videoLabel": "Anteprima video per {{filename}}"
@@ -1041,6 +1046,26 @@
       "saving": "Salvataggio...",
       "userFallback": "lì",
       "wouldLike": "Mi piacerebbe"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Concedi {{count}} autorizzazione",
+      "allowAll_many": "Concedi tutte le {{count}} autorizzazioni",
+      "allowAll_other": "Concedi tutte le {{count}} autorizzazioni",
+      "allowed": "Autorizzazioni concesse",
+      "allowedCount": "{{allowed}} autorizzazioni concesse su {{total}}",
+      "alwaysNote": "Queste autorizzazioni restano concesse finché non le modifichi o le revochi.",
+      "continue": "Continua",
+      "continued": "La conversazione è ripresa.",
+      "continueFailed": "Le autorizzazioni sono state concesse, ma non è stato possibile riprendere la conversazione. Prova di nuovo a continuare.",
+      "continuing": "Ripresa in corso…",
+      "details": "Visualizza i dettagli delle autorizzazioni",
+      "dismissed": "Nessuna autorizzazione è stata modificata.",
+      "invalid": "Questo link di autorizzazione non è valido o non è disponibile.",
+      "loadFailed": "Impossibile verificare tutte le autorizzazioni richieste. Nessuna autorizzazione può essere modificata.",
+      "loading": "Caricamento delle autorizzazioni",
+      "notNow": "Non ora",
+      "scopeNote": "Si applica a questo agente, non solo all’attività corrente.",
+      "title": "Concedi le seguenti autorizzazioni"
     }
   },
   "billing": {

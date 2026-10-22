@@ -1,7 +1,6 @@
 import {
   PreserveScrollAnchor,
   Button,
-  Card,
   IconButton,
   cn,
   buttonVariants,
@@ -16,7 +15,6 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   ArrowUpRight,
-  LockKeyhole,
   LogIn,
   Maximize2,
   Minimize2,
@@ -34,6 +32,7 @@ import {
   type SharedArtifactViewerSignals,
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { ResourceAccessCard } from "../components/resource-access-card.tsx";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { ArtifactPreviewBody } from "../okou-page/attachment-chips.tsx";
@@ -223,103 +222,73 @@ function ArtifactVisibilityLabel({
 function ArtifactAccessPage() {
   const { t } = useTranslation();
   const user = useLastResolved(currentUserInfo$);
-  const email = user?.primaryEmailAddress?.emailAddress;
   const pageSignal = useGet(pageSignal$);
   const [accessLoadable, openAccess] = useLoadableSet(
     user ? openClerkAddAccount$ : signInToSharedArtifact$,
   );
   return (
-    // `gray-50` is the dark theme's page background, so using the primitive
-    // directly left the card and its surround within eight points of each
-    // other. The semantic pair is the one the ramp designs a step between:
-    // `card` sits above `background` in dark, and `muted` sits above `card`.
-    <div className="flex min-h-full items-center justify-center bg-background px-5 py-10 sm:px-8">
-      <Card className="w-full max-w-[480px] rounded-3xl">
-        <div className="px-6 pb-8 pt-9 text-center sm:px-9 sm:pt-10">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-            <LockKeyhole size={24} strokeWidth={1.5} aria-hidden />
-          </div>
-          <h2 className="mt-6 text-2xl font-semibold leading-8 tracking-tight text-foreground">
-            {t(($) => {
-              return $.artifacts.access.title;
+    <ResourceAccessCard
+      title={t(($) => {
+        return $.artifacts.access.title;
+      })}
+      description={
+        user
+          ? t(($) => {
+              return $.artifacts.access.signedInDescription;
+            })
+          : t(($) => {
+              return $.artifacts.access.description;
+            })
+      }
+      help={t(($) => {
+        return $.artifacts.access.help;
+      })}
+      email={user?.primaryEmailAddress?.emailAddress}
+      error={
+        accessLoadable.state === "hasError"
+          ? user
+            ? t(($) => {
+                return $.artifacts.access.switchAccountFailed;
+              })
+            : t(($) => {
+                return $.artifacts.access.signInFailed;
+              })
+          : undefined
+      }
+    >
+      <Button
+        type="button"
+        variant={user ? "outline" : "default"}
+        disabled={accessLoadable.state === "loading"}
+        aria-busy={accessLoadable.state === "loading"}
+        onClick={() => {
+          detach(
+            openAccess(window.location.href, pageSignal),
+            Reason.DomCallback,
+          );
+        }}
+      >
+        {user ? <ArrowRightLeft aria-hidden /> : <LogIn aria-hidden />}
+        {user
+          ? t(($) => {
+              return $.artifacts.access.switchAccount;
+            })
+          : t(($) => {
+              return $.artifacts.access.signIn;
             })}
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            {user
-              ? t(($) => {
-                  return $.artifacts.access.signedInDescription;
-                })
-              : t(($) => {
-                  return $.artifacts.access.description;
-                })}
-            <br />
-            {t(($) => {
-              return $.artifacts.access.help;
-            })}
-          </p>
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
-            {/* The API answers every denial with one status so artifacts cannot
-                be enumerated, so a signed-in visitor's next step is a guess.
-                Only offer a primary action when it is known to help. */}
-            <Button
-              type="button"
-              variant={user ? "outline" : "default"}
-              disabled={accessLoadable.state === "loading"}
-              aria-busy={accessLoadable.state === "loading"}
-              onClick={() => {
-                detach(
-                  openAccess(window.location.href, pageSignal),
-                  Reason.DomCallback,
-                );
-              }}
-            >
-              {user ? <ArrowRightLeft aria-hidden /> : <LogIn aria-hidden />}
-              {user
-                ? t(($) => {
-                    return $.artifacts.access.switchAccount;
-                  })
-                : t(($) => {
-                    return $.artifacts.access.signIn;
-                  })}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                window.location.reload();
-              }}
-            >
-              {t(($) => {
-                return $.artifacts.access.tryAgain;
-              })}
-            </Button>
-          </div>
-          {accessLoadable.state === "hasError" && (
-            <p role="alert" className="mt-4 text-sm text-destructive">
-              {user
-                ? t(($) => {
-                    return $.artifacts.access.switchAccountFailed;
-                  })
-                : t(($) => {
-                    return $.artifacts.access.signInFailed;
-                  })}
-            </p>
-          )}
-        </div>
-        {email && (
-          <div className="border-t border-border/70 px-6 py-4 text-center text-xs leading-5 text-muted-foreground">
-            <p className="break-words">
-              {t(
-                ($) => {
-                  return $.artifacts.access.signedInAs;
-                },
-                { email },
-              )}
-            </p>
-          </div>
-        )}
-      </Card>
-    </div>
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          window.location.reload();
+        }}
+      >
+        {t(($) => {
+          return $.artifacts.access.tryAgain;
+        })}
+      </Button>
+    </ResourceAccessCard>
   );
 }
 

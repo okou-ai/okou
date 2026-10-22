@@ -108,6 +108,12 @@ export function findPermissionInMetadata(
 
 const internalUserPermissionGrantsReload$ = state(0);
 
+export const refreshUserPermissionGrants$ = command(({ set }) => {
+  set(internalUserPermissionGrantsReload$, (version) => {
+    return version + 1;
+  });
+});
+
 const onPermissionUpdated$ = command(({ set }) => {
   set(internalUserPermissionGrantsReload$, (version) => {
     return version + 1;

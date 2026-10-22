@@ -27,6 +27,7 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -46,6 +47,7 @@ import {
   and,
   desc,
   eq,
+  exists,
   gt,
   inArray,
   isNotNull,
@@ -59,6 +61,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import {
@@ -1144,6 +1147,45 @@ async function lockRunnerJob(
   return row;
 }
 
+/** Consume the eligible locked Run/claim clock before the Run transition. */
+function buildClaimThreadStartSql(): SQL {
+  const dialect = new PgDialect();
+  // Like native publication, an identity write arbitrates against slot release.
+  // Only the first executable claim may invalidate the previous native binding.
+  const threadOwner = dialect.buildUpdateQuery({
+    table: activeAgentRuns,
+    set: { runId: sql`${activeAgentRuns.runId}` },
+    from: sql`locked_run, claim_clock`,
+    joins: [],
+    where: and(
+      eq(activeAgentRuns.runId, sql`locked_run."id"`),
+      eq(activeAgentRuns.chatThreadId, sql`locked_run."chatThreadId"`),
+      eq(activeAgentRuns.userId, sql`locked_run."userId"`),
+      eq(activeAgentRuns.orgId, sql`locked_run."orgId"`),
+    ),
+    returning: [{ path: ["runId"], field: activeAgentRuns.runId }],
+  });
+  const threadStart = dialect.buildUpdateQuery({
+    table: chatThreads,
+    set: {
+      framework: sql`NULL`,
+      frameworkSessionId: sql`NULL`,
+      frameworkSessionRunId: sql`locked_run."id"`,
+    },
+    from: sql`locked_run, claimed_thread_owner`,
+    joins: [],
+    where: and(
+      eq(chatThreads.id, sql`locked_run."chatThreadId"`),
+      eq(chatThreads.userId, sql`locked_run."userId"`),
+      eq(chatThreads.agentId, sql`locked_run."agentId"`),
+      sql`claimed_thread_owner."run_id" = locked_run."id"`,
+    ),
+    returning: [{ path: ["id"], field: chatThreads.id }],
+  });
+  return sql`claimed_thread_owner AS (${threadOwner}),
+             started_thread AS (${threadStart})`;
+}
+
 function buildClaimTransitionSql(
   runId: string,
   runnerId: string | null,
@@ -1156,7 +1198,11 @@ function buildClaimTransitionSql(
           WITH locked_run AS MATERIALIZED (
             SELECT
               ${agentRuns.id} AS "id",
-              ${agentRuns.status} AS "status"
+              ${agentRuns.status} AS "status",
+              ${agentRuns.chatThreadId} AS "chatThreadId",
+              ${agentRuns.agentId} AS "agentId",
+              ${agentRuns.userId} AS "userId",
+              ${agentRuns.orgId} AS "orgId"
             FROM ${agentRuns}
             WHERE ${eq(agentRuns.id, runId)}
             FOR UPDATE
@@ -1183,6 +1229,7 @@ function buildClaimTransitionSql(
               locked_run."status" = 'pending'
               AND NOT locked_job."isExpired"
           ),
+          ${buildClaimThreadStartSql()},
           updated_run AS (
             UPDATE ${agentRuns}
             SET
@@ -1200,6 +1247,10 @@ function buildClaimTransitionSql(
             WHERE ${and(
               eq(agentRuns.id, sql`locked_run."id"`),
               eq(agentRuns.status, sql`'pending'`),
+              or(
+                isNull(sql`locked_run."chatThreadId"`),
+                exists(sql`(SELECT 1 FROM started_thread)`),
+              ),
             )}
             RETURNING ${agentRuns.id} AS "id", ${agentRuns.startedAt} AS "claimedAt"
           ),

@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "返回 {{brandName}}",
+      "continue": "繼續",
       "description": "它可能是私有的，也可能已不再可用。",
       "help": "可以聯絡分享這個連結的人確認訪問權限。",
+      "sessionExpiredDescription": "網站工作階段已過期，請繼續驗證你的存取權限。",
+      "sessionExpiredTitle": "請重新驗證存取權限",
       "signedInAs": "當前登入帳號：{{email}}",
       "signedInDescription": "它可能不存在，也可能分享給了其他帳號或組織。",
       "signIn": "登入",
@@ -439,7 +442,10 @@
       "switchAccount": "切換帳號",
       "switchAccountFailed": "無法開啟帳號切換器，請重試。",
       "title": "你沒有權限檢視這個成果",
-      "tryAgain": "重試"
+      "tryAgain": "重試",
+      "websiteTitle": "你無法查看此網站",
+      "websiteUnavailableDescription": "請稍後再試。",
+      "websiteUnavailableTitle": "此網站暫時無法使用"
     },
     "actions": {
       "backToAll": "返回全部成果",
@@ -595,7 +601,6 @@
         "text": "文字",
         "video": "影片"
       },
-      "siteLabel": "{{title}} 的站點預覽",
       "slideTitle": "第 {{number}} 頁",
       "unavailable": "無法預覽 {{kind}}。",
       "videoLabel": "{{filename}} 的影片預覽"
@@ -1021,6 +1026,24 @@
       "saving": "儲存中…",
       "userFallback": "朋友",
       "wouldLike": "希望進行以下操作"
+    },
+    "permissionBatch": {
+      "allowAll_other": "允許全部 {{count}} 項權限",
+      "allowed": "權限已允許",
+      "allowedCount": "已允許 {{allowed}} / {{total}} 項權限",
+      "alwaysNote": "這些權限會持續允許，直到你變更或撤銷為止。",
+      "continue": "繼續",
+      "continued": "對話已繼續。",
+      "continueFailed": "權限已允許，但無法繼續對話。請再試一次。",
+      "continuing": "正在繼續…",
+      "details": "查看權限詳情",
+      "dismissed": "未變更任何權限。",
+      "invalid": "此權限連結無效或無法使用。",
+      "loadFailed": "無法驗證所有請求的權限，因此無法變更任何權限。",
+      "loading": "正在載入權限",
+      "notNow": "暫不允許",
+      "scopeNote": "適用於此代理程式，而不僅限於目前的任務。",
+      "title": "允許以下權限"
     }
   },
   "billing": {

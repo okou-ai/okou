@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 
 import { createAuthedContractClient } from "../api-client-base";
 import { testContext } from "./test-helpers";
-import type { AuthTokenProvider } from "../../lib/auth-diagnostics.ts";
+import type { AuthTokenProvider } from "../../lib/auth-token-provider.ts";
 
 const context = testContext();
 
@@ -50,10 +50,7 @@ test("uses a matching bootstrap response once before falling back to the network
 
   const second = await client.get({ headers: {} });
   expect(second).toMatchObject({ status: 200, body: networkBody });
-  expect(getToken).toHaveBeenCalledExactlyOnceWith(
-    expect.any(Object),
-    undefined,
-  );
+  expect(getToken).toHaveBeenCalledExactlyOnceWith(undefined);
   expect(networkRequestCount).toBe(1);
 
   const third = await client.get({
@@ -61,10 +58,6 @@ test("uses a matching bootstrap response once before falling back to the network
     fetchOptions: { signal: context.signal },
   });
   expect(third).toMatchObject({ status: 200, body: networkBody });
-  expect(getToken).toHaveBeenNthCalledWith(
-    2,
-    expect.any(Object),
-    context.signal,
-  );
+  expect(getToken).toHaveBeenNthCalledWith(2, context.signal);
   expect(networkRequestCount).toBe(2);
 });

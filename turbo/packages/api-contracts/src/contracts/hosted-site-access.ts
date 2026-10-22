@@ -2,6 +2,34 @@ import { z } from "zod";
 
 export const HOSTED_SITE_AUTHORIZATION_PATH = "/hosted-site-authorize";
 export const HOSTED_SITE_AUTH_CALLBACK_PATH = "/.okou/auth/callback";
+export const HOSTED_SITE_AUTH_START_PATH = "/.okou/auth/start";
+export const HOSTED_SITE_ACCESS_PATH = "/hosted-site-access";
+export const hostedSiteAccessReasonSchema = z.enum([
+  "authenticate",
+  "denied",
+  "expired",
+  "unavailable",
+]);
+export type HostedSiteAccessReason = z.infer<
+  typeof hostedSiteAccessReasonSchema
+>;
+export const hostedSiteReturnPathSchema = z
+  .string()
+  .max(2048)
+  .refine((value) => {
+    if (
+      !value.startsWith("/") ||
+      value.startsWith("//") ||
+      value.includes("\\")
+    ) {
+      return false;
+    }
+    const target = new URL(value, "https://site.invalid");
+    return (
+      target.origin === "https://site.invalid" &&
+      !target.pathname.startsWith("/.okou/")
+    );
+  });
 export const hostedSiteAuthProofSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{43}$/u);

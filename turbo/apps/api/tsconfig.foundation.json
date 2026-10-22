@@ -36,6 +36,7 @@
     "src/signals/services/chat-session-continuity.service.ts",
     "src/signals/services/chat-thread-organization.service.ts",
     "src/signals/services/chat-thread-request-facts.ts",
+    "src/signals/services/commerce-job-settlement.ts",
     "src/signals/services/concurrency-subscription-write.ts",
     "src/signals/services/connector-account-mutation.service.ts",
     "src/signals/services/context-rowset.ts",

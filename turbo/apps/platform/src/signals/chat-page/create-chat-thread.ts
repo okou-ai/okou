@@ -219,6 +219,7 @@ import {
   type CardDescriptorBlock,
 } from "./parse-body-blocks.ts";
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
+import { createPermissionBatchCardSignalsRegistry } from "./permission-batch-signals.ts";
 import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
 import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
@@ -1465,6 +1466,9 @@ interface EventTreeRegistries {
   readonly permissionCardSignals: ReturnType<
     typeof createPermissionCardSignalsRegistry
   >;
+  readonly permissionBatchCardSignals: ReturnType<
+    typeof createPermissionBatchCardSignalsRegistry
+  >;
   readonly bankingCardSignals: ReturnType<
     typeof createBankingCardSignalsRegistry
   >;
@@ -1494,21 +1498,38 @@ interface EventTreeRegistries {
   readonly imageLoads: ImageLoadRegistry;
 }
 
-function createCardRefRegistrar({
-  subscriptionResetCardSignals,
-  connectorCardSignals,
-  connectorAccountActionCardSignals,
-  permissionCardSignals,
-  bankingCardSignals,
-  walletCardSignals,
-  browserUserActionCardSignals,
-  computerUseAuthorizationCardSignals,
-  browserAuthorizationCardSignals,
-  desktopShellAuthorizationCardSignals,
-  planUpgradeCardSignals,
-  mailDraftCardSignals,
-  browserSessionSignals,
-}: EventTreeRegistries): Command<MarkdownCardRef, [CardDescriptorBlock]> {
+type PermissionCardDescriptorBlock = Extract<
+  CardDescriptorBlock,
+  { type: "permission-action" | "permission-batch-action" }
+>;
+
+function createPermissionCardRefRegistrar(cards: EventTreeRegistries) {
+  return command(
+    ({ set }, descriptor: PermissionCardDescriptorBlock): MarkdownCardRef => {
+      if (descriptor.type === "permission-batch-action") {
+        return {
+          kind: descriptor.type,
+          signals: set(
+            cards.permissionBatchCardSignals.register$,
+            descriptor.descriptor,
+          ),
+        };
+      }
+      return {
+        kind: descriptor.type,
+        signals: set(
+          cards.permissionCardSignals.register$,
+          descriptor.descriptor,
+        ),
+      };
+    },
+  );
+}
+
+function createCardRefRegistrar(
+  cards: EventTreeRegistries,
+): Command<MarkdownCardRef, [CardDescriptorBlock]> {
+  const registerPermissionCardRef$ = createPermissionCardRefRegistrar(cards);
   return command(
     ({ set }, descriptor: CardDescriptorBlock): MarkdownCardRef => {
       switch (descriptor.type) {
@@ -1516,7 +1537,7 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(
-              subscriptionResetCardSignals.register$,
+              cards.subscriptionResetCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1524,44 +1545,48 @@ function createCardRefRegistrar({
         case "connector-action": {
           return {
             kind: descriptor.type,
-            signals: set(connectorCardSignals.register$, descriptor.descriptor),
+            signals: set(
+              cards.connectorCardSignals.register$,
+              descriptor.descriptor,
+            ),
           };
         }
         case "connector-account-action": {
           return {
             kind: descriptor.type,
             signals: set(
-              connectorAccountActionCardSignals.register$,
+              cards.connectorAccountActionCardSignals.register$,
               descriptor.descriptor,
             ),
           };
         }
-        case "permission-action": {
-          return {
-            kind: descriptor.type,
-            signals: set(
-              permissionCardSignals.register$,
-              descriptor.descriptor,
-            ),
-          };
+        case "permission-action":
+        case "permission-batch-action": {
+          return set(registerPermissionCardRef$, descriptor);
         }
         case "banking-action": {
           return {
             kind: descriptor.type,
-            signals: set(bankingCardSignals.register$, descriptor.descriptor),
+            signals: set(
+              cards.bankingCardSignals.register$,
+              descriptor.descriptor,
+            ),
           };
         }
         case "wallet-action": {
           return {
             kind: descriptor.type,
-            signals: set(walletCardSignals.register$, descriptor.descriptor),
+            signals: set(
+              cards.walletCardSignals.register$,
+              descriptor.descriptor,
+            ),
           };
         }
         case "browser-user-action": {
           return {
             kind: descriptor.type,
             signals: set(
-              browserUserActionCardSignals.register$,
+              cards.browserUserActionCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1573,7 +1598,7 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(
-              computerUseAuthorizationCardSignals.register$,
+              cards.computerUseAuthorizationCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1582,7 +1607,7 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(
-              browserAuthorizationCardSignals.register$,
+              cards.browserAuthorizationCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1591,7 +1616,7 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(
-              desktopShellAuthorizationCardSignals.register$,
+              cards.desktopShellAuthorizationCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1600,7 +1625,7 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(
-              planUpgradeCardSignals.register$,
+              cards.planUpgradeCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1608,11 +1633,17 @@ function createCardRefRegistrar({
         case "mail-draft": {
           return {
             kind: descriptor.type,
-            signals: set(mailDraftCardSignals.register$, descriptor.descriptor),
+            signals: set(
+              cards.mailDraftCardSignals.register$,
+              descriptor.descriptor,
+            ),
           };
         }
         case "browser-session": {
-          return { kind: descriptor.type, signals: browserSessionSignals };
+          return {
+            kind: descriptor.type,
+            signals: cards.browserSessionSignals,
+          };
         }
       }
       const exhaustive: never = descriptor;
@@ -1626,6 +1657,7 @@ interface EventTree {
   /** The same text and ID can switch from a streaming URL tail to final. */
   readonly requireUrlTerminator: boolean;
   readonly tree: Root | undefined;
+  readonly batchConnectorPermissions: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
   readonly diagramCodes?: readonly string[];
 }
@@ -1636,6 +1668,7 @@ interface RichEventTreePlan {
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
   readonly requireUrlTerminator: boolean;
+  readonly batchConnectorPermissions: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1688,6 +1721,7 @@ function planEventTreeUpdates(
   events: readonly ChatEvent[],
   current: ReadonlyMap<string, EventTree>,
   chatActionContext: ChatActionContext,
+  batchConnectorPermissions: boolean,
 ): {
   readonly next: Map<string, EventTree> | undefined;
   readonly richPlans: RichEventTreePlan[];
@@ -1703,11 +1737,16 @@ function planEventTreeUpdates(
     const cached = current.get(event.id);
     if (
       cached?.content === content &&
-      cached.requireUrlTerminator === requireUrlTerminator
+      cached.requireUrlTerminator === requireUrlTerminator &&
+      cached.batchConnectorPermissions === batchConnectorPermissions
     ) {
       continue;
     }
-    const plan = chatEventTreePlan(event, chatActionContext);
+    const plan = chatEventTreePlan(
+      event,
+      chatActionContext,
+      batchConnectorPermissions,
+    );
     if (plan === null) {
       continue;
     }
@@ -1719,6 +1758,7 @@ function planEventTreeUpdates(
       next.set(event.id, {
         content: plan.content,
         requireUrlTerminator: plan.requireUrlTerminator,
+        batchConnectorPermissions,
         tree: plainTree,
       });
       continue;
@@ -1728,9 +1768,10 @@ function planEventTreeUpdates(
     next.set(event.id, {
       content: plan.content,
       requireUrlTerminator: plan.requireUrlTerminator,
+      batchConnectorPermissions,
       tree: undefined,
     });
-    richPlans.push({ eventId: event.id, ...plan });
+    richPlans.push({ eventId: event.id, ...plan, batchConnectorPermissions });
   }
   return { next, richPlans };
 }
@@ -1783,6 +1824,8 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         if (
           pendingEntry?.content !== plan.content ||
           pendingEntry.requireUrlTerminator !== plan.requireUrlTerminator ||
+          pendingEntry.batchConnectorPermissions !==
+            plan.batchConnectorPermissions ||
           pendingEntry.tree !== undefined
         ) {
           continue;
@@ -1792,6 +1835,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         parsed.set(plan.eventId, {
           content: plan.content,
           requireUrlTerminator: plan.requireUrlTerminator,
+          batchConnectorPermissions: plan.batchConnectorPermissions,
           tree,
           diagramCodes,
         });
@@ -1822,6 +1866,8 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         events,
         current,
         chatActionContext,
+        get(featureSwitch$)[FeatureSwitchKey.BatchConnectorPermissions] ===
+          true,
       );
       if (next) {
         set(internalEventTrees$, next);
@@ -1871,6 +1917,7 @@ function createPagedEventResources({
   const connectorAccountActionCardSignals =
     createConnectorAccountActionCardSignalsRegistry(connector);
   const permissionCardSignals = createPermissionCardSignalsRegistry();
+  const permissionBatchCardSignals = createPermissionBatchCardSignalsRegistry();
   const bankingCardSignals = createBankingCardSignalsRegistry();
   const walletCardSignals = createWalletCardSignalsRegistry(chatActionContext);
   const browserUserActionCardSignals =
@@ -1893,6 +1940,7 @@ function createPagedEventResources({
       connectorCardSignals,
       connectorAccountActionCardSignals,
       permissionCardSignals,
+      permissionBatchCardSignals,
       bankingCardSignals,
       walletCardSignals,
       browserUserActionCardSignals,

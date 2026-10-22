@@ -1789,6 +1789,7 @@ assert.equal(upstreamFailure.response.headers.get("cache-control"), "no-store");
 for (const path of [
   "/artifacts/00000000000040008000000000000010.html",
   "/share/artifacts/00000000-0000-4000-8000-000000000010",
+  "/hosted-site-access?url=https%3A%2F%2Fdemo.okou.app%2F&reason=expired",
 ]) {
   const artifactHandoff = await worker.fetch(
     new Request(`https://app.okou.ai${path}`),

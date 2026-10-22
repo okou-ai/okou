@@ -65,6 +65,15 @@ release_jobs = release["jobs"]
 rollback_jobs = rollback["jobs"]
 release_controller_job = release_jobs["release-please"]
 worker_release_job = release_jobs["promote-app-worker-production"]
+host_worker_release_job = release_jobs["deploy-host-worker-production"]
+if "promote-app-worker-production" not in host_worker_release_job["needs"]:
+    raise RuntimeError("Host Worker recovery routes must wait for the App deployment")
+for fragment in (
+    "needs.release-please.outputs.app_deploy_required != 'true'",
+    "needs.promote-app-worker-production.result == 'success'",
+):
+    if fragment not in host_worker_release_job["if"]:
+        raise RuntimeError(f"Host Worker App dependency is missing: {fragment}")
 release_dashboard_job = release_jobs["update-rollback-dashboard"]
 rollback_verification_job = rollback_jobs["verify-production-domains"]
 

@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "返回 {{brandName}}",
+      "continue": "继续",
       "description": "它可能是私有的，也可能已不再可用。",
       "help": "可以联系分享这个链接的人确认访问权限。",
+      "sessionExpiredDescription": "网站会话已过期，请继续验证你的访问权限。",
+      "sessionExpiredTitle": "请重新验证访问权限",
       "signedInAs": "当前登录账号：{{email}}",
       "signedInDescription": "它可能不存在，也可能分享给了其他账号或组织。",
       "signIn": "登录",
@@ -439,7 +442,10 @@
       "switchAccount": "切换账号",
       "switchAccountFailed": "无法打开账号切换器，请重试。",
       "title": "你没有权限查看这个成果",
-      "tryAgain": "重试"
+      "tryAgain": "重试",
+      "websiteTitle": "你无法查看此网站",
+      "websiteUnavailableDescription": "请稍后重试。",
+      "websiteUnavailableTitle": "此网站暂时不可用"
     },
     "actions": {
       "backToAll": "返回全部成果",
@@ -595,7 +601,6 @@
         "text": "文本",
         "video": "视频"
       },
-      "siteLabel": "{{title}} 的站点预览",
       "slideTitle": "第 {{number}} 页",
       "unavailable": "无法预览 {{kind}}。",
       "videoLabel": "{{filename}} 的视频预览"
@@ -1021,6 +1026,24 @@
       "saving": "保存中…",
       "userFallback": "朋友",
       "wouldLike": "希望进行以下操作"
+    },
+    "permissionBatch": {
+      "allowAll_other": "允许全部 {{count}} 项权限",
+      "allowed": "权限已允许",
+      "allowedCount": "已允许 {{allowed}} / {{total}} 项权限",
+      "alwaysNote": "这些权限会持续允许，直到你更改或撤销为止。",
+      "continue": "继续",
+      "continued": "对话已继续。",
+      "continueFailed": "权限已允许，但未能继续对话。请重试继续。",
+      "continuing": "正在继续…",
+      "details": "查看权限详情",
+      "dismissed": "未更改任何权限。",
+      "invalid": "此权限链接无效或不可用。",
+      "loadFailed": "无法验证全部请求的权限，暂时无法更改权限。",
+      "loading": "正在加载权限",
+      "notNow": "暂不允许",
+      "scopeNote": "适用于此智能体，而不仅限于当前任务。",
+      "title": "允许以下权限"
     }
   },
   "billing": {

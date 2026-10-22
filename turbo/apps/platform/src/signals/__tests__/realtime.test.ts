@@ -49,10 +49,10 @@ beforeEach(() => {
   context.store.set(setApiClientRuntime$, {
     apiBaseUrl: location.origin,
     oauthApiBaseUrl: location.origin,
-    getToken: async (diagnostic, signal) => {
+    getToken: async (signal) => {
       const resolvedClerk = await clerk;
       signal?.throwIfAborted();
-      return await readClerkToken(resolvedClerk, signal, { diagnostic });
+      return await readClerkToken(resolvedClerk, signal);
     },
   });
 });

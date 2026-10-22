@@ -1,4 +1,10 @@
 import { priceUsageEvents } from "./credit-usage-pricing";
+import {
+  commerceJobQuery,
+  commerceJobsForUsageQuery,
+  COMMERCE_RESOURCE,
+  type CommerceSettlementJob,
+} from "./commerce-job-settlement";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -16,7 +22,26 @@ import {
   settlementPricingCondition,
   settlementPricingKeys,
   USAGE_SETTLEMENT_BATCH_SIZE,
+  type PendingUsageSnapshot,
 } from "./credit-usage-batch";
+
+function settlementRunIds(
+  events: readonly PendingUsageSnapshot[],
+  socialRunId: string | null | undefined,
+  commerce: readonly CommerceSettlementJob[],
+) {
+  return [
+    ...new Set([
+      ...events.flatMap(({ event }) => {
+        return event.billingRunId ? [event.billingRunId] : [];
+      }),
+      ...(socialRunId ? [socialRunId] : []),
+      ...commerce.flatMap((job) => {
+        return job.runId ? [job.runId] : [];
+      }),
+    ]),
+  ];
+}
 
 export const prepareUsageSettlementBatch$ = command(
   async (
@@ -25,6 +50,7 @@ export const prepareUsageSettlementBatch$ = command(
       readonly orgId: string;
       readonly idempotencyKeys?: readonly string[];
       readonly social?: SocialSettlementClaim;
+      readonly commerceJobId?: string;
     },
     signal: AbortSignal,
   ) => {
@@ -39,11 +65,19 @@ export const prepareUsageSettlementBatch$ = command(
           .limit(1)
       : [];
     signal.throwIfAborted();
-    const keys = args.social
-      ? job
-        ? [job.usageIdempotencyKey]
-        : []
-      : (args.idempotencyKeys ?? []);
+    const commerce = args.commerceJobId
+      ? await db.select().from(commerceJobQuery(args.orgId, args.commerceJobId))
+      : [];
+    signal.throwIfAborted();
+    const keys = args.commerceJobId
+      ? commerce.map((row) => {
+          return row.usageIdempotencyKey;
+        })
+      : args.social
+        ? job
+          ? [job.usageIdempotencyKey]
+          : []
+        : (args.idempotencyKeys ?? []);
     if (keys.length > USAGE_SETTLEMENT_BATCH_SIZE) {
       throw new Error("Usage settlement batch exceeds its event bound");
     }
@@ -65,20 +99,31 @@ export const prepareUsageSettlementBatch$ = command(
     const events = snapshots.filter(({ event }) => {
       return event.status === "pending";
     });
-    const pricingKeys = settlementPricingKeys(events);
+    const commerceKeys = events
+      .filter(({ event }) => {
+        return event.kind === "commerce";
+      })
+      .map(({ event }) => {
+        return event.idempotencyKey;
+      });
+    if (!args.social && !args.commerceJobId && commerceKeys.length > 0) {
+      commerce.push(
+        ...(await db
+          .select()
+          .from(commerceJobsForUsageQuery(args.orgId, commerceKeys))),
+      );
+      signal.throwIfAborted();
+    }
+    const pricingKeys = [
+      ...settlementPricingKeys(events),
+      ...(args.commerceJobId ? [COMMERCE_RESOURCE] : []),
+    ];
     const prices = await db
       .select()
       .from(usagePricing)
       .where(settlementPricingCondition(pricingKeys));
     signal.throwIfAborted();
-    const runIds = [
-      ...new Set([
-        ...events.flatMap(({ event }) => {
-          return event.billingRunId ? [event.billingRunId] : [];
-        }),
-        ...(job?.billingRunId ? [job.billingRunId] : []),
-      ]),
-    ];
+    const runIds = settlementRunIds(events, job?.billingRunId, commerce);
     const freeRuns =
       runIds.length === 0
         ? []
@@ -120,6 +165,7 @@ export const prepareUsageSettlementBatch$ = command(
       events,
       freeOfficialRunOwners,
       social,
+      commerce,
       prices,
       records,
       priced,

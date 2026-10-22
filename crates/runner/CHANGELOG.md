@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.236.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.17...runner-rs-v0.236.18) (2026-10-22)
+
+
+### Performance Improvements
+
+* **python:** bound authenticated codex etag signal acquisition ([#42378](https://github.com/okou-ai/okou/issues/42378)) ([f1748ab](https://github.com/okou-ai/okou/commit/f1748abc579d8f2850f9521d0c4d5daa21abe79d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.16...runner-rs-v0.236.17) (2026-10-22)
 
 ### Release Dependencies

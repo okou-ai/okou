@@ -9,6 +9,7 @@ import type { ComputerUseAuthorizationSignals } from "./computer-use-authorizati
 import type { DesktopShellAuthorizationSignals } from "./desktop-shell-authorization-block.ts";
 import type { MailDraftSignals } from "./mail-draft.ts";
 import type { PermissionSignals } from "./permission-card-signals.ts";
+import type { PermissionBatchSignals } from "./permission-batch-signals.ts";
 import type { PlanUpgradeSignals } from "./plan-upgrade-block.ts";
 import type { SubscriptionResetSignals } from "./subscription-reset-block.ts";
 import type { WalletActionSignals } from "./wallet-action-block.ts";
@@ -37,6 +38,10 @@ export type MarkdownCardRef =
       readonly signals: ConnectorAccountActionSignals;
     }
   | { readonly kind: "permission-action"; readonly signals: PermissionSignals }
+  | {
+      readonly kind: "permission-batch-action";
+      readonly signals: PermissionBatchSignals;
+    }
   | { readonly kind: "banking-action"; readonly signals: BankingSignals }
   | {
       readonly kind: "wallet-action";

@@ -3,7 +3,11 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
+import {
+  hostContract,
+  type HostedSiteFilesResponse,
+} from "@okouai/api-contracts/contracts/host";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadArtifactsContract,
   type UserMessageDocument,
@@ -703,6 +707,94 @@ test("A private site card uses its resolved screenshot even when the thread arti
     );
   });
 });
+
+test.each([false, true])(
+  "a hosted website uses its existing cover with visibility settings %s",
+  async (enabled) => {
+    const site = "https://report.okou.app/";
+    const previewUrl = `https://pv-${"c".repeat(48)}.okou.app/`;
+    const cover = `${R2_ORIGIN}/private/cover.png?X-Amz-Signature=site-cover`;
+    mockAttachmentChat(context, {
+      chatEvents: [assistantMessage(`![Website report](${site})`)],
+    });
+    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+      return respond(200, {
+        url: enabled ? previewUrl : site,
+        expiresAt: enabled ? "2099-01-01T00:00:00.000Z" : null,
+        previewImageUrl: cover,
+      });
+    });
+    await setupPage({
+      context,
+      host: "app.okou.ai",
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      featureSwitches: { [FeatureSwitchKey.HostedSiteVisibility]: enabled },
+    });
+    const card = await screen.findByTestId("attachment-preview-html");
+    const image = await within(card).findByTestId(
+      "attachment-preview-thumbnail",
+    );
+    expect(image).toHaveAttribute(
+      "src",
+      `${THUMBNAIL_PREFIX.replace("https://cdn.vm7.io/", "https://a.okou.io/")}${cover}`,
+    );
+    fireEvent.error(image);
+    expect(
+      within(card).getByTestId("attachment-preview-site-placeholder"),
+    ).toBeInTheDocument();
+    expect(card.querySelector("iframe")).toBeNull();
+    click(card);
+    await waitFor(() => {
+      expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
+        "src",
+        enabled ? previewUrl : site,
+      );
+    });
+  },
+);
+
+test.each([
+  { status: 404, sidebar: false },
+  { status: 500, sidebar: false },
+  { status: 404, sidebar: true },
+] as const)(
+  "a website preview failure ($status, sidebar=$sidebar) shows App recovery instead of an empty frame",
+  async ({ status, sidebar }) => {
+    const site = "https://unavailable-report.okou.app/";
+    mockAttachmentChat(context, {
+      chatEvents: [assistantMessage(`![Website report](${site})`)],
+    });
+    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+      return respond(status, {
+        error: {
+          code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+          message: "Website preview is unavailable",
+        },
+      });
+    });
+    await setupPage({
+      context,
+      host: "app.okou.ai",
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    });
+    click(await screen.findByTestId("attachment-preview-html"));
+    if (sidebar) {
+      click(await findNamedButton("Open in split view"));
+    }
+    const viewer = await screen.findByTestId(
+      sidebar ? "artifact-sidebar" : "attachment-lightbox",
+    );
+    await expect(
+      within(viewer).findByRole("heading", {
+        name:
+          status === 404
+            ? "You can’t view this website"
+            : "This website is temporarily unavailable",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(getNamedLink("Try again", viewer)).toBeInTheDocument();
+  },
+);
 
 test.each([
   { role: "user", referenceForm: "absolute" },

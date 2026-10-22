@@ -138,6 +138,7 @@ import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
 import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
 import * as socialKitDownloadJobSchema from "./schema/socialkit-download-job";
 import * as socialDataJobSchema from "./schema/social-data-job";
+import * as commerceJobSchema from "./schema/commerce-job";
 import * as bankingSchema from "./schema/banking";
 import * as linkWalletSchema from "./schema/link-wallet";
 import * as gmailEventSchema from "./schema/gmail-event";
@@ -305,6 +306,7 @@ export const schema = {
   ...builtInGenerationJobSchema,
   ...socialKitDownloadJobSchema,
   ...socialDataJobSchema,
+  ...commerceJobSchema,
   ...bankingSchema,
   ...linkWalletSchema,
   ...gmailEventSchema,

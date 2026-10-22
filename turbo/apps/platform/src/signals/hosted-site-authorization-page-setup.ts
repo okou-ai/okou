@@ -1,47 +1,78 @@
 import { command } from "ccstate";
-import { createElement } from "react";
 import { z } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import {
   HOSTED_SITE_AUTH_CALLBACK_PATH,
   hostedSiteAuthCodeSchema,
   hostedSiteAuthProofSchema,
+  hostedSiteReturnPathSchema,
 } from "@okouai/api-contracts/contracts/hosted-site-access";
-import { AuthV1LoadError } from "../views/auth-v1/auth-v1-load-error.tsx";
+import {
+  hostedSiteRecoveryTarget,
+  hostedSiteRecoveryUrl,
+} from "../lib/hosted-site-access.ts";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
-import { updatePage$ } from "./react-router.ts";
 import { searchParams$ } from "./route.ts";
+import { settle } from "./utils.ts";
 
 const requestSchema = z.object({
   siteId: z.uuid(),
   origin: z.url(),
   codeChallenge: hostedSiteAuthProofSchema,
   state: hostedSiteAuthProofSchema,
+  returnTo: hostedSiteReturnPathSchema.optional(),
 });
 
 /** General Clerk credentials stay on the trusted App; only a one-use code leaves it. */
 export const setupHostedSiteAuthorizationPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const input = requestSchema.safeParse(
       Object.fromEntries(get(searchParams$)),
     );
-    if (!input.success) {
-      set(updatePage$, createElement(AuthV1LoadError));
+    const target =
+      input.success && input.data.origin === new URL(input.data.origin).origin
+        ? hostedSiteRecoveryTarget(
+            new URL(input.data.returnTo ?? "/", input.data.origin).href,
+          )
+        : null;
+    if (!input.success || !target) {
+      window.location.replace(hostedSiteRecoveryUrl(null, "denied"));
       return;
     }
-    const { siteId, ...body } = input.data;
-    const response = await accept(
-      get(apiClient$)(hostContract).authorizeSiteSession({
-        params: { siteId },
-        body,
-        fetchOptions: { signal },
-      }),
-      [200, 401, 403],
+    const { siteId, origin, state, codeChallenge } = input.data;
+    const body = { origin, state, codeChallenge };
+    const result = await settle(
+      accept(
+        get(apiClient$)(hostContract).authorizeSiteSession({
+          params: { siteId },
+          body,
+          fetchOptions: { signal },
+        }),
+        [200, 401, 403, 500],
+        signal,
+      ),
+      signal,
     );
     signal.throwIfAborted();
+    if (!result.ok) {
+      window.location.replace(
+        hostedSiteRecoveryUrl(target.href, "unavailable"),
+      );
+      return;
+    }
+    const response = result.value;
     if (response.status !== 200) {
-      set(updatePage$, createElement(AuthV1LoadError));
+      window.location.replace(
+        hostedSiteRecoveryUrl(
+          target.href,
+          response.status === 401
+            ? "authenticate"
+            : response.status === 403
+              ? "denied"
+              : "unavailable",
+        ),
+      );
       return;
     }
     const callback = new URL(response.body.callbackUrl);
@@ -52,7 +83,10 @@ export const setupHostedSiteAuthorizationPage$ = command(
       !hostedSiteAuthCodeSchema.safeParse(callback.searchParams.get("code"))
         .success
     ) {
-      throw new Error("Invalid website authorization callback");
+      window.location.replace(
+        hostedSiteRecoveryUrl(target.href, "unavailable"),
+      );
+      return;
     }
     window.location.replace(callback.href);
   },

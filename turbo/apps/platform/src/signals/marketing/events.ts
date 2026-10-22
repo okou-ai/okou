@@ -29,7 +29,7 @@ const postEvent$ = command(
     if (!userId || !orgId) {
       throw new Error("Authenticated user and organization are required");
     }
-    const token = await get(apiClientRuntime$).getToken(undefined, signal);
+    const token = await get(apiClientRuntime$).getToken(signal);
     signal.throwIfAborted();
     if (
       clerk.user?.id !== userId ||
