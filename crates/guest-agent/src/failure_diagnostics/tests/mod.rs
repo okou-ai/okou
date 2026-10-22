@@ -1592,13 +1592,6 @@ fn cli_failure_reason_rejects_untrusted_or_near_miss_unsupported_model_envelopes
         ),
         (
             AgentFramework::Codex,
-            FailureDetailSource::CodexJsonl,
-            format!(
-                r#"{{"type":"error","status":400,"error":{{"type":"invalid_request_error","message":"{EXACT_MESSAGE}"}}}}"#
-            ),
-        ),
-        (
-            AgentFramework::Codex,
             FailureDetailSource::Stderr,
             format!(
                 r#"{{"type":"error","status":401,"error":{{"type":"invalid_request_error","message":"{EXACT_MESSAGE}"}}}}"#

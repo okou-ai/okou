@@ -530,6 +530,8 @@ impl AppServerState {
                     | Scenario::RuntimeOutputTokenLimitError
                     | Scenario::RuntimeTurnFailedRequestSend
                     | Scenario::RuntimeRequestSendError
+                    | Scenario::RuntimeTurnFailedUnsupportedModel
+                    | Scenario::RuntimeUnsupportedModelError
             ) {
                 write_json_line(
                     output,
@@ -542,6 +544,12 @@ impl AppServerState {
                                 | Scenario::RuntimeRequestSendError
                         ) {
                             "Partial answer before request sending failure"
+                        } else if matches!(
+                            self.scenario,
+                            Scenario::RuntimeTurnFailedUnsupportedModel
+                                | Scenario::RuntimeUnsupportedModelError
+                        ) {
+                            "Partial answer before unsupported model failure"
                         } else {
                             "Partial answer before output limit"
                         },
@@ -550,7 +558,9 @@ impl AppServerState {
             }
             if matches!(
                 self.scenario,
-                Scenario::RuntimeOutputTokenLimitError | Scenario::RuntimeRequestSendError
+                Scenario::RuntimeOutputTokenLimitError
+                    | Scenario::RuntimeRequestSendError
+                    | Scenario::RuntimeUnsupportedModelError
             ) {
                 write_json_line(
                     output,

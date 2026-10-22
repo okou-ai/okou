@@ -691,6 +691,9 @@ fn turn_failure_message(failure: TurnFailure) -> &'static str {
         TurnFailure::InvalidRequestFormat => {
             r#"{"error":{"message":"Invalid Format","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#
         }
+        TurnFailure::UnsupportedModel => {
+            r#"{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}}"#
+        }
         _ => "mock codex primary failure",
     }
 }
@@ -705,6 +708,7 @@ fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
         | TurnFailure::ProviderStreamServerError
         | TurnFailure::RemoteCompactionServerError
         | TurnFailure::RequestSend
+        | TurnFailure::UnsupportedModel
         | TurnFailure::RemoteCompactionRequestSend => Some(json!("other")),
         TurnFailure::HttpConnection | TurnFailure::HttpConnectionStderr => Some(json!({
             "httpConnectionFailed": { "httpStatusCode": 503 }

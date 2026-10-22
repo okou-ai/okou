@@ -101,6 +101,30 @@ pub(crate) fn is_codex_chatgpt_account_unsupported_model_message(message: &str) 
     !model.is_empty() && !model.contains('\'')
 }
 
+/// Match the exact upstream refusal envelope in a Codex failure message.
+/// Native terminal errors can retain this JSON as text with a generic `other`
+/// discriminator. Callers must establish the failure source, not scan output.
+pub(crate) fn is_codex_chatgpt_account_unsupported_model_run_error(error_message: &str) -> bool {
+    let mut search_start = 0;
+    while let Some((value, end_index)) = parse_next_json_object(error_message, search_start) {
+        if value.as_ref().is_some_and(|value| {
+            value.get("type").and_then(Value::as_str) == Some("error")
+                && value.get("status").and_then(Value::as_u64) == Some(400)
+                && value.get("error").is_some_and(|error| {
+                    error.get("type").and_then(Value::as_str) == Some("invalid_request_error")
+                        && error
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .is_some_and(is_codex_chatgpt_account_unsupported_model_message)
+                })
+        }) {
+            return true;
+        }
+        search_start = end_index;
+    }
+    false
+}
+
 /// Whether a failure message carries an exact content-policy rejection envelope.
 ///
 /// Codex passes the upstream provider response through as the failure message,

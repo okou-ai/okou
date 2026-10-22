@@ -8,9 +8,9 @@ use crate::env::{Framework, GuestConfig};
 use crate::error::AgentError;
 use crate::failure_patterns::{
     has_exact_codex_oauth_connector, is_codex_chatgpt_account_unsupported_model_message,
-    is_codex_context_window_exceeded_message, is_codex_model_capacity_message,
-    is_codex_output_token_limit_message, is_codex_provider_server_error_message,
-    is_content_policy_rejection_message,
+    is_codex_chatgpt_account_unsupported_model_run_error, is_codex_context_window_exceeded_message,
+    is_codex_model_capacity_message, is_codex_output_token_limit_message,
+    is_codex_provider_server_error_message, is_content_policy_rejection_message,
 };
 use crate::http::{HttpAttemptObserver, HttpClient};
 use crate::masker::SecretMasker;
@@ -417,7 +417,10 @@ fn codex_error_failure_reason(event: &Value, error: Option<&Value>) -> Option<Fa
     }
     if codex_error_message(Some(error))
         .as_deref()
-        .is_some_and(is_codex_chatgpt_account_unsupported_model_message)
+        .is_some_and(|message| {
+            is_codex_chatgpt_account_unsupported_model_message(message)
+                || is_codex_chatgpt_account_unsupported_model_run_error(message)
+        })
     {
         return Some(FailureReason::UnsupportedModel);
     }
@@ -1312,6 +1315,53 @@ mod tests {
                 evidence: None,
             })
         );
+    }
+
+    #[test]
+    fn codex_terminal_unsupported_model_envelope_retains_reason_and_native_precedence() {
+        let message = r#"{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}}"#;
+        for (info, expected_reason) in [
+            (serde_json::Value::Null, FailureReason::UnsupportedModel),
+            (serde_json::json!("other"), FailureReason::UnsupportedModel),
+            (
+                serde_json::json!("unauthorized"),
+                FailureReason::InvalidCredentials,
+            ),
+        ] {
+            let error = serde_json::json!({"message": message, "codex_error_info": info});
+            for event in [
+                serde_json::json!({"type": "error", "message": message, "error": error}),
+                serde_json::json!({
+                    "type": "turn.completed",
+                    "turn": {"status": "failed", "error": error}
+                }),
+            ] {
+                let diagnostic =
+                    masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                        .expect("native terminal error must retain a diagnostic");
+                assert_eq!(diagnostic.message, message);
+                assert_eq!(diagnostic.failure_reason, Some(expected_reason), "{event}");
+            }
+        }
+    }
+
+    #[test]
+    fn codex_unsupported_model_envelope_requires_a_terminal_failure() {
+        let message = r#"{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}}"#;
+        let error = serde_json::json!({"message": message, "codex_error_info": "other"});
+        for event in [
+            serde_json::json!({"type": "error", "will_retry": true, "message": message, "error": error}),
+            serde_json::json!({"type": "turn.completed", "turn": {"status": "completed", "error": error}}),
+            serde_json::json!({"type": "item.completed", "item": {"type": "agent_message", "text": message}}),
+            serde_json::json!({"type": "item.completed", "item": {
+                "type": "command_execution", "aggregated_output": message, "exit_code": 0
+            }}),
+        ] {
+            assert!(
+                masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none(),
+                "{event}"
+            );
+        }
     }
 
     #[test]

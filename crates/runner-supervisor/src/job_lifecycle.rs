@@ -448,18 +448,31 @@ mod tests {
 
     #[test]
     fn completion_reason_uses_diagnostic_for_generic_failure() {
-        let diagnostic = FailureDiagnostic::new(
-            FailureClass::CliNonzero,
-            AgentFramework::ClaudeCode,
-            PromptMetadata::from_prompt("plain prompt"),
-        )
-        .with_failure_reason(FailureReason::UsageLimit);
-        let failure = executor::ExecutionFailure::new(1, "usage limit", Some(diagnostic));
+        for (framework, reason, expected) in [
+            (
+                AgentFramework::ClaudeCode,
+                FailureReason::UsageLimit,
+                RequestFailureReason::UsageLimit,
+            ),
+            (
+                AgentFramework::Codex,
+                FailureReason::UnsupportedModel,
+                RequestFailureReason::UnsupportedModel,
+            ),
+        ] {
+            let diagnostic = FailureDiagnostic::new(
+                FailureClass::CliNonzero,
+                framework,
+                PromptMetadata::from_prompt("plain prompt"),
+            )
+            .with_failure_reason(reason);
+            let failure = executor::ExecutionFailure::new(1, reason.as_str(), Some(diagnostic));
 
-        assert_eq!(
-            completion_failure_reason(1, false, Some(&failure)),
-            Some(RequestFailureReason::UsageLimit)
-        );
+            assert_eq!(
+                completion_failure_reason(1, false, Some(&failure)),
+                Some(expected)
+            );
+        }
     }
 
     #[test]
