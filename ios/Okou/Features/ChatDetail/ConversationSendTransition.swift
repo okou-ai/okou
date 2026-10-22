@@ -59,7 +59,8 @@ final class ConversationSendTransition {
 
   private func keyboardWillChange(duration: Double, curve: UInt) {
     guard isActive else { return }
-    deadline = CACurrentMediaTime() + duration
+    // Later zero-duration keyboard geometry must not cut a visible send short.
+    deadline = max(deadline, CACurrentMediaTime() + duration)
     options = UIView.AnimationOptions(rawValue: curve << 16)
     switch curve {
     case 0: composerAnimation = .easeInOut(duration: duration)
