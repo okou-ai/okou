@@ -71,6 +71,7 @@ import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materializ
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
+import { cronReconcileImageGenerationsRoutes } from "./routes/cron-reconcile-image-generations";
 import { cronProcessUsageEventsRoutes } from "./routes/cron-process-usage-events";
 import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-event-search";
 import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage-presigned-urls";
@@ -230,6 +231,7 @@ import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-sessio
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
 import { runnersStartupRoutes } from "./routes/runners-startup";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
+import { webhooksOpenaiImagesRoutes } from "./routes/webhooks-openai-images";
 import { webhooksClerkRoutes } from "./routes/webhooks-clerk";
 import { webhooksGithubRoutes } from "./routes/webhooks-github";
 import { webhooksGmailRoutes } from "./routes/webhooks-gmail";
@@ -255,8 +257,10 @@ export const ROUTES: readonly RouteEntry[] = [
   ...githubOauthRoutes,
   ...userExportRoutes,
   ...cronProcessBackgroundJobsRoutes,
+  ...cronReconcileImageGenerationsRoutes,
   ...webhooksClerkRoutes,
   ...webhooksBuiltInGenerationRoutes,
+  ...webhooksOpenaiImagesRoutes,
   ...webhooksGithubRoutes,
   ...webhooksGmailRoutes,
   ...webhooksGoogleFormsRoutes,

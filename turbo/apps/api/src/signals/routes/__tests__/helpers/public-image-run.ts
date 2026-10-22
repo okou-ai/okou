@@ -12,6 +12,7 @@ import { settleIncludingAbort } from "../../../utils";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { billingStatusRoutes } from "../../billing-status";
 import { builtInGenerationRoutes } from "../../built-in-generation";
+import { cronReconcileImageGenerationsRoutes } from "../../cron-reconcile-image-generations";
 import { imageIoGenerateRoutes } from "../../image-io-generate";
 import { usageRecordRoutes } from "../../usage-record";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
@@ -54,6 +55,7 @@ export function createImageIoTestApp(
     signal: context.signal,
     routes: [
       ...builtInGenerationRoutes,
+      ...cronReconcileImageGenerationsRoutes,
       ...imageIoGenerateRoutes,
       ...webhooksBuiltInGenerationRoutes,
       ...billingStatusRoutes,

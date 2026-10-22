@@ -695,6 +695,19 @@ export {
   cronPruneStoragePresignedUrlsResponseSchema,
 };
 
+export const cronReconcileImageGenerationsContract = c.router({
+  process: {
+    method: "GET",
+    path: "/api/cron/reconcile-image-generations",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({ processed: z.number(), receipts: z.number() }),
+      401: apiErrorSchema,
+    },
+    summary: "Advance a bounded batch of durable OpenAI image responses",
+  },
+});
+
 /** Durable jobs are claimed with short leases; every invocation has a fixed work budget. */
 export const cronProcessBackgroundJobsContract = c.router({
   process: {

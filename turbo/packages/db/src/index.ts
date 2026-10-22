@@ -136,6 +136,7 @@ import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
 import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
+import * as openaiImageWebhookReceiptSchema from "./schema/openai-image-webhook-receipt";
 import * as socialKitDownloadJobSchema from "./schema/socialkit-download-job";
 import * as socialDataJobSchema from "./schema/social-data-job";
 import * as bankingSchema from "./schema/banking";
@@ -303,6 +304,7 @@ export const schema = {
   ...sharedThreadSchema,
   ...userArtifactFavoriteSchema,
   ...builtInGenerationJobSchema,
+  ...openaiImageWebhookReceiptSchema,
   ...socialKitDownloadJobSchema,
   ...socialDataJobSchema,
   ...bankingSchema,

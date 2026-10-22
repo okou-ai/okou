@@ -28,9 +28,10 @@ import {
 const IMAGE_GENERATION_POLL_INTERVAL_MS = 2_000;
 const IMAGE_GENERATION_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 
-type ImageGenerationAcceptedResponse = BuiltInGenerationAcceptedResponse & {
-  readonly type: "image";
-};
+export type ImageGenerationAcceptedResponse =
+  BuiltInGenerationAcceptedResponse & {
+    readonly type: "image";
+  };
 
 type ImageGenerationResponse = Omit<
   BuiltInGenerationResponse,
@@ -545,30 +546,28 @@ async function waitForImageGenerationResult(args: {
   );
 }
 
-async function readImageGenerationResponse(args: {
-  readonly response: Response;
-  readonly baseUrl: string;
-  readonly token: string;
-  readonly fallback: string;
-}): Promise<GenerateWebImageResult> {
-  const body: unknown = await args.response.json();
-  if (isImageGenerationAcceptedResponse(body)) {
-    const result = await waitForImageGenerationResult({
-      accepted: body,
-      baseUrl: args.baseUrl,
-      token: args.token,
-      fallback: args.fallback,
-    });
-    return result;
+export async function getBuiltInGeneration(
+  generationId: string,
+): Promise<BuiltInGenerationResponse> {
+  const token = await getActiveToken();
+  if (!token) {
+    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
-  if (args.response.status === 202) {
-    throw new ApiRequestError(
-      `${args.fallback} returned an invalid generation response`,
-      "INVALID_GENERATION_RESPONSE",
-      502,
+  const response = await fetch(
+    new URL(
+      `/api/built-in-generations/${encodeURIComponent(generationId)}`,
+      await getBaseUrl(),
+    ),
+    { headers: authenticatedJsonHeaders(token) },
+  );
+  if (!response.ok) {
+    const { message, code } = await parseErrorBody(
+      response,
+      "Failed to get generation status",
     );
+    throw new ApiRequestError(message, code, response.status);
   }
-  return body as GenerateWebImageResult;
+  return (await response.json()) as BuiltInGenerationResponse;
 }
 
 /**
@@ -714,6 +713,26 @@ export async function uploadWebFile(
 export async function generateWebImage(
   options: GenerateWebImageOptions,
 ): Promise<GenerateWebImageResult> {
+  const submitted = await submitWebImage(options);
+  if (!isImageGenerationAcceptedResponse(submitted)) {
+    return submitted;
+  }
+  const token = await getActiveToken();
+  if (!token) {
+    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
+  }
+  return waitForImageGenerationResult({
+    accepted: submitted,
+    baseUrl: await getBaseUrl(),
+    token,
+    fallback: "Failed to generate image",
+  });
+}
+
+/** Submit once without polling; older APIs can return a completed image. */
+export async function submitWebImage(
+  options: GenerateWebImageOptions,
+): Promise<ImageGenerationAcceptedResponse | GenerateWebImageResult> {
   const baseUrl = await getBaseUrl();
   const token = await getActiveToken();
   if (!token) {
@@ -775,10 +794,16 @@ export async function generateWebImage(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return readImageGenerationResponse({
-    response,
-    baseUrl,
-    token,
-    fallback: "Failed to generate image",
-  });
+  const body: unknown = await response.json();
+  if (isImageGenerationAcceptedResponse(body)) {
+    return body;
+  }
+  if (response.status === 202) {
+    throw new ApiRequestError(
+      "Failed to generate image returned an invalid generation response",
+      "INVALID_GENERATION_RESPONSE",
+      502,
+    );
+  }
+  return body as GenerateWebImageResult;
 }

@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { imageCommand } from "./image";
+import { getGenerationCommand } from "./get";
 import { imageBatchCommand } from "./image-batch";
 import {
   dashboardDesignCommand,
@@ -66,7 +67,8 @@ Routing:
 
 Execution:
   - Use --provider built-in for Okou execution or --provider <connector> for connector skill-invocation guidance where offered.
-  - After starting an Okou generation, wait for it to finish and use the returned artifact. Do not launch a duplicate or recreate the result because generation is taking time.
+  - Image generation returns a durable job receipt immediately. Use "okou generate get <generation-id>" to query it, optionally with --out <path> to download a completed image; use image --wait only when explicit waiting is desired. Do not submit a duplicate to check progress.
+  - For other Okou generations, wait for completion and use the returned artifact. Do not recreate the result because generation is taking time.
   - Media and connector-backed generation types may expose --provider for Okou or connector execution guidance.
   - HTML artifact types use registry-backed --design-system and --template selection.`;
 }
@@ -77,6 +79,7 @@ export const generateCommand = new Command()
     "Generate assets via Okou's built-in pipelines or get connector skill-invocation guidance",
   )
   .addCommand(imageCommand)
+  .addCommand(getGenerationCommand)
   .addCommand(imageBatchCommand)
   .addCommand(presentationCommand)
   .addCommand(reportCommand)

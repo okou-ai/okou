@@ -274,6 +274,14 @@ function isStuckBuiltInGenerationJob(
   if (!isActiveBuiltInGenerationStatus(job.status)) {
     return false;
   }
+  // Responses jobs are recovered by their provider identity and durable cron;
+  // reading status must not turn an interrupted settlement into a lost result.
+  if (
+    readBuiltInGenerationRequestInternal(job.request).providerTask ===
+    "image-response"
+  ) {
+    return false;
+  }
   return (
     job.updatedAt <= builtInGenerationTimeoutCutoff(job.type, referenceTime)
   );

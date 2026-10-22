@@ -456,7 +456,7 @@ export interface ImageOptions {
   readonly imagePromptStrength: number | undefined;
 }
 
-interface ParsedImageGeneration {
+export interface ParsedImageGeneration {
   readonly model: ImageModel;
   readonly provider: ImageProvider;
   readonly imageBytes: Buffer;
@@ -477,7 +477,7 @@ interface ParsedImageGeneration {
   readonly imagePromptStrength: number | undefined;
 }
 
-interface RecordedImage {
+export interface RecordedImage {
   readonly id: string;
   readonly filename: string;
   readonly contentType: string;
@@ -506,7 +506,7 @@ interface RecordedImage {
   readonly imagePromptStrength: number | undefined;
 }
 
-interface ImageBillingEntry {
+export interface ImageBillingEntry {
   readonly category: ImagePricingCategory;
   readonly quantity: number;
 }
@@ -2176,7 +2176,7 @@ interface RecordGeneratedImageArgs {
   readonly generationId: string;
 }
 
-export const recordGeneratedImage$ = command(
+export const storeGeneratedImage$ = command(
   async (
     { set },
     params: RecordGeneratedImageArgs,
@@ -2188,6 +2188,7 @@ export const recordGeneratedImage$ = command(
         userId: params.userId,
         orgId: params.orgId,
         privateArtifacts: params.privateArtifacts,
+        identity: { id: params.generationId, variant: "image" },
         filenamePrefix: "image",
         extension: extensionForFormat(params.generation.outputFormat),
         body: params.generation.imageBytes,
@@ -2217,6 +2218,34 @@ export const recordGeneratedImage$ = command(
     );
     signal.throwIfAborted();
 
+    const creditAccess = await set(
+      officialWorkflowCreditAccess$,
+      {
+        orgId: params.orgId,
+        userId: params.userId,
+        runId: params.billingRunId ?? params.runId,
+      },
+      signal,
+    );
+    return recordedImage(
+      params,
+      { fileId, filename, contentType, artifact, url },
+      creditAccess === "standard",
+    );
+  },
+);
+
+export const settleGeneratedImageUsage$ = command(
+  async (
+    { set },
+    params: Omit<
+      RecordGeneratedImageArgs,
+      "generation" | "pricing" | "privateArtifacts"
+    > & {
+      readonly generation: Pick<ParsedImageGeneration, "model" | "billing">;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
     const usageRows = params.generation.billing.filter((row) => {
       return row.quantity > 0;
     });
@@ -2262,53 +2291,68 @@ export const recordGeneratedImage$ = command(
       signal,
     );
     signal.throwIfAborted();
+  },
+);
 
-    const creditAccess = await set(
-      officialWorkflowCreditAccess$,
-      {
-        orgId: params.orgId,
-        userId: params.userId,
-        runId: params.billingRunId ?? params.runId,
-      },
-      signal,
-    );
-    return {
-      id: fileId,
-      filename,
-      contentType,
-      size: params.generation.imageBytes.byteLength,
-      url,
-      privateArtifacts: artifact.isPrivate,
-      // Models such as seedream4 only emit PNG. Serving the stored object
-      // through Cloudflare Image Resizing negotiates AVIF/WebP per request, so
-      // pages embedding this image download a fraction of the PNG bytes.
-      embedUrl: artifact.isPrivate ? undefined : r2ImageTransformUrl(url, {}),
-      creditsCharged:
-        creditAccess === "standard"
-          ? estimateImageCredits(
-              params.generation.model,
-              params.generation.billing,
-              params.pricing,
-            )
-          : 0,
-      model: params.generation.model,
-      provider: params.generation.provider,
-      imageSize: params.generation.imageSize,
-      quality: params.generation.quality,
-      background: params.generation.background,
-      outputFormat: params.generation.outputFormat,
-      outputCompression: params.generation.outputCompression,
-      moderation: params.generation.moderation,
-      safetyTolerance: params.generation.safetyTolerance,
-      revisedPrompt: params.generation.revisedPrompt,
-      billingCategory: params.generation.billing[0]?.category,
-      billingQuantity: params.generation.billing[0]?.quantity,
-      sourceUrl: artifact.isPrivate ? undefined : params.generation.sourceUrl,
-      seed: params.generation.seed,
-      sourceImageUrls: params.generation.sourceImageUrls,
-      maskImageUrl: params.generation.maskImageUrl,
-      inputFidelity: params.generation.inputFidelity,
-      imagePromptStrength: params.generation.imagePromptStrength,
-    };
+function recordedImage(
+  params: RecordGeneratedImageArgs,
+  stored: {
+    readonly fileId: string;
+    readonly filename: string;
+    readonly contentType: string;
+    readonly artifact: { readonly isPrivate: boolean };
+    readonly url: string;
+  },
+  chargeCredits: boolean,
+): RecordedImage {
+  const { fileId, filename, contentType, artifact, url } = stored;
+  return {
+    id: fileId,
+    filename,
+    contentType,
+    size: params.generation.imageBytes.byteLength,
+    url,
+    privateArtifacts: artifact.isPrivate,
+    // Models such as seedream4 only emit PNG. Serving the stored object
+    // through Cloudflare Image Resizing negotiates AVIF/WebP per request, so
+    // pages embedding this image download a fraction of the PNG bytes.
+    embedUrl: artifact.isPrivate ? undefined : r2ImageTransformUrl(url, {}),
+    creditsCharged: chargeCredits
+      ? estimateImageCredits(
+          params.generation.model,
+          params.generation.billing,
+          params.pricing,
+        )
+      : 0,
+    model: params.generation.model,
+    provider: params.generation.provider,
+    imageSize: params.generation.imageSize,
+    quality: params.generation.quality,
+    background: params.generation.background,
+    outputFormat: params.generation.outputFormat,
+    outputCompression: params.generation.outputCompression,
+    moderation: params.generation.moderation,
+    safetyTolerance: params.generation.safetyTolerance,
+    revisedPrompt: params.generation.revisedPrompt,
+    billingCategory: params.generation.billing[0]?.category,
+    billingQuantity: params.generation.billing[0]?.quantity,
+    sourceUrl: artifact.isPrivate ? undefined : params.generation.sourceUrl,
+    seed: params.generation.seed,
+    sourceImageUrls: params.generation.sourceImageUrls,
+    maskImageUrl: params.generation.maskImageUrl,
+    inputFidelity: params.generation.inputFidelity,
+    imagePromptStrength: params.generation.imagePromptStrength,
+  };
+}
+
+export const recordGeneratedImage$ = command(
+  async (
+    { set },
+    params: RecordGeneratedImageArgs,
+    signal: AbortSignal,
+  ): Promise<RecordedImage> => {
+    const result = await set(storeGeneratedImage$, params, signal);
+    await set(settleGeneratedImageUsage$, params, signal);
+    return result;
   },
 );

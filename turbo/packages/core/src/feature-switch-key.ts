@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  DurableOpenAiImageGeneration = "durableOpenAiImageGeneration",
   JsonTreePreview = "jsonTreePreview",
   HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",

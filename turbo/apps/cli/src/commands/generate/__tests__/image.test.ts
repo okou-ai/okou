@@ -83,6 +83,7 @@ describe("okou generate image command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     imageCommand.setOptionValue("visibility", undefined);
+    imageCommand.setOptionValue("wait", undefined);
   });
 
   afterEach(() => {
@@ -117,6 +118,7 @@ describe("okou generate image command", () => {
         "A watercolor fox",
         "--visibility",
         visibility,
+        "--wait",
         "--json",
       ]);
 
@@ -154,6 +156,7 @@ describe("okou generate image command", () => {
         "A watercolor fox",
         "--visibility",
         "only-me",
+        "--wait",
       ]),
     ).rejects.toThrow("process.exit called");
     expect(generated).toBe(false);
@@ -785,6 +788,31 @@ describe("okou generate image command", () => {
     expect(stderr).toContain("--style can only be used with --compile");
   });
 
+  it("returns a durable job receipt without waiting for completion", async () => {
+    const receipt = {
+      generationId: IMAGE_GENERATION_ID,
+      type: "image",
+      status: "queued",
+      realtime: { channelName: "user:user-1", eventName: "completed" },
+    };
+    server.use(
+      http.post(IMAGE_URL, () => {
+        return HttpResponse.json(receipt, { status: 202 });
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "okou",
+      "image",
+      "--raw-prompt",
+      "A watercolor fox",
+      "--json",
+    ]);
+    expect(JSON.parse(mockConsoleLog.mock.calls.flat().join("\n"))).toEqual(
+      receipt,
+    );
+  });
+
   it.each([IMAGE_RESULT.url, "https://app.okou.ai/artifacts/abcxyz1234.png"])(
     "waits for an async generation and prints a complete URL for %s",
     async (url) => {
@@ -837,6 +865,7 @@ describe("okou generate image command", () => {
         "image",
         "--raw-prompt",
         "Async please",
+        "--wait",
       ]);
 
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
@@ -909,6 +938,7 @@ describe("okou generate image command", () => {
       "image",
       "--raw-prompt",
       "A watercolor fox",
+      "--wait",
     ]);
     await aborted.promise;
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
@@ -961,6 +991,7 @@ describe("okou generate image command", () => {
       "image",
       "--raw-prompt",
       "A watercolor fox",
+      "--wait",
     ]);
     const client = await ablyRealtimeFake.created.promise;
     await pendingRead.promise;
@@ -1022,6 +1053,7 @@ describe("okou generate image command", () => {
         "image",
         "--raw-prompt",
         "A safe landscape",
+        "--wait",
       ]);
     }).rejects.toThrow("process.exit called");
 
@@ -1123,6 +1155,7 @@ describe("okou generate image command", () => {
           "image",
           "--raw-prompt",
           "A safe landscape",
+          "--wait",
         ]);
       }).rejects.toThrow("process.exit called");
 
