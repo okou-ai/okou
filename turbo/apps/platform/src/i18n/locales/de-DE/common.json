@@ -1127,19 +1127,10 @@
     "invoices": {
       "amount": "Betrag",
       "date": "Datum",
-      "downloadDescription": "Wählen Sie bis zu 3 aufeinanderfolgende Monate. Quittungs-PDFs in diesem Bereich werden in einer ZIP-Datei gebündelt.",
       "downloadInvoice": "Laden Sie die Rechnung {{month}} herunter",
-      "downloadReceipts": "Quittungen herunterladen",
-      "downloadZip": "ZIP herunterladen",
       "empty": "Noch keine Rechnungen.",
-      "from": "Von",
       "invoice": "Rechnung",
-      "loading": "Rechnungen werden geladen",
-      "monthAria": "{{label}} Monat",
-      "preparingReceipts": "Belege vorbereiten...",
-      "rangeError": "Wählen Sie einen Bereich von nicht mehr als 3 aufeinanderfolgenden Monaten.",
-      "selectMonth": "Monat auswählen",
-      "to": "Bis"
+      "loading": "Rechnungen werden geladen"
     },
     "paymentMethods": {
       "description": "Verwalte die in Stripe für die Abrechnung verwendeten Zahlungsmethoden.",
@@ -1294,7 +1285,6 @@
       "downgradeScheduledDate": "Downgrade geplant. Ihr aktueller Plan bleibt bis {{date}} aktiv.",
       "downgradeScheduledPeriod": "Downgrade geplant. Ihr aktueller Plan bleibt bis zum Ende des Abrechnungszeitraums aktiv.",
       "planRestored": "Plan wiederhergestellt. Ihr Abonnement verlängert sich normal.",
-      "receiptsDownloaded": "Quittungen heruntergeladen",
       "subscriptionChangeConfirmed": "Die Abonnementänderung wurde bestätigt."
     },
     "usage": {

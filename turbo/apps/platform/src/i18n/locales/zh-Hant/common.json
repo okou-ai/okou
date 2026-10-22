@@ -1126,19 +1126,10 @@
     "invoices": {
       "amount": "金額",
       "date": "日期",
-      "downloadDescription": "最多選擇連續 3 個月，該區間內的收據 PDF 會打包成一個 ZIP 檔案。",
       "downloadInvoice": "下載{{month}}的帳單",
-      "downloadReceipts": "下載收據",
-      "downloadZip": "下載 ZIP",
       "empty": "還沒有帳單。",
-      "from": "從",
       "invoice": "帳單",
-      "loading": "正在載入帳單",
-      "monthAria": "{{label}}月份",
-      "preparingReceipts": "正在準備收據…",
-      "rangeError": "請選擇不超過連續 3 個月的區間。",
-      "selectMonth": "選擇月份",
-      "to": "到"
+      "loading": "正在載入帳單"
     },
     "paymentMethods": {
       "description": "在 Stripe 中管理用於扣款的支付方式。",
@@ -1293,7 +1284,6 @@
       "downgradeScheduledDate": "降級已安排。當前套餐在 {{date}} 前仍然有效。",
       "downgradeScheduledPeriod": "降級已安排。當前套餐在本個帳單週期結束前仍然有效。",
       "planRestored": "套餐已恢復，訂閱將正常續費。",
-      "receiptsDownloaded": "收據已下載",
       "subscriptionChangeConfirmed": "訂閱變更已確認。"
     },
     "usage": {

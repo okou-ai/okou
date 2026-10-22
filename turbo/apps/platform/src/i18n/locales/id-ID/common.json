@@ -1126,19 +1126,10 @@
     "invoices": {
       "amount": "Jumlah",
       "date": "Tanggal",
-      "downloadDescription": "Pilih hingga 3 bulan berturut-turut. PDF tanda terima dalam rentang itu akan digabung menjadi satu file ZIP.",
       "downloadInvoice": "Unduh faktur {{month}}",
-      "downloadReceipts": "Unduh tanda terima",
-      "downloadZip": "Unduh ZIP",
       "empty": "Belum ada faktur.",
-      "from": "Dari",
       "invoice": "Faktur",
-      "loading": "Memuat faktur",
-      "monthAria": "Bulan {{label}}",
-      "preparingReceipts": "Menyiapkan tanda terima...",
-      "rangeError": "Pilih rentang yang tidak lebih dari 3 bulan berturut-turut.",
-      "selectMonth": "Pilih bulan",
-      "to": "Ke"
+      "loading": "Memuat faktur"
     },
     "paymentMethods": {
       "description": "Kelola metode pembayaran yang digunakan untuk penagihan di Stripe.",
@@ -1293,7 +1284,6 @@
       "downgradeScheduledDate": "Penurunan paket dijadwalkan. Paket Anda saat ini tetap aktif hingga {{date}}.",
       "downgradeScheduledPeriod": "Penurunan paket dijadwalkan. Paket Anda saat ini tetap aktif hingga periode tagihan berakhir.",
       "planRestored": "Paket dipulihkan. Langganan Anda akan diperbarui seperti biasa.",
-      "receiptsDownloaded": "Struk diunduh",
       "subscriptionChangeConfirmed": "Perubahan langganan dikonfirmasi."
     },
     "usage": {
