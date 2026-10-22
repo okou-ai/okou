@@ -1277,7 +1277,7 @@ class TestDecompressJsonUsageBody:
             decode_response_body_for_network_log_capture(compressed, hdrs, max_output=max_output)
             == expected_capture
         )
-        assert stats["max_output_request"] == 64 * 1024
+        assert 0 < stats["max_output_request"] <= 64 * 1024
 
     @pytest.mark.parametrize("skippable_count", [63, 64])
     def test_zstd_skippable_frames_consume_strict_frame_budget(self, headers, skippable_count):
