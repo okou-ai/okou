@@ -2549,6 +2549,13 @@
       "when": 1792657329490,
       "tag": "1441_proactive_action_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 1442,
+      "version": "7",
+      "when": 1792663928007,
+      "tag": "1442_commerce_async_jobs",
+      "breakpoints": true
     }
   ]
 }
