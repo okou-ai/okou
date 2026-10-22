@@ -1,12 +1,18 @@
-import { command, state } from "ccstate";
+import { command, computed, state } from "ccstate";
+import { pageVersion$ } from "./page-signal.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
 } from "./hosted-site-url-changes.ts";
 
-export const hostedSiteVisibilityChanges$ = state<
-  ReadonlyMap<string, string | null>
->(new Map());
+const changesState$ = computed((get) => {
+  get(pageVersion$);
+  return state<Readonly<Record<string, string | null>>>({});
+});
+
+export const hostedSiteVisibilityChanges$ = computed((get) => {
+  return get(get(changesState$));
+});
 
 /** Invalidate previews after observing a new persisted policy revision. */
 export const recordHostedSiteVisibilityChange$ = command(
@@ -14,14 +20,14 @@ export const recordHostedSiteVisibilityChange$ = command(
     { get, set },
     change: { readonly url: string; readonly revision: string | null },
   ) => {
-    const revisions = new Map(get(hostedSiteVisibilityChanges$));
     const currentUrl = currentHostedSiteUrl(
       change.url,
       get(hostedSiteUrlChanges$),
     );
-    for (const url of [change.url, currentUrl]) {
-      revisions.set(new URL(url).origin, change.revision);
-    }
-    set(hostedSiteVisibilityChanges$, revisions);
+    set(get(changesState$), {
+      ...get(hostedSiteVisibilityChanges$),
+      [new URL(change.url).origin]: change.revision,
+      [new URL(currentUrl).origin]: change.revision,
+    });
   },
 );

@@ -142,7 +142,7 @@ function createAttachmentPresignedToken$(
         return currentHostedSiteUrl(source.href, get(hostedSiteUrlChanges$));
       });
       const revision$ = computed((get) => {
-        return get(hostedSiteVisibilityChanges$).get(source.origin) ?? null;
+        return get(hostedSiteVisibilityChanges$)[source.origin] ?? null;
       });
       return computed(async (get) => {
         get(revision$);
