@@ -353,7 +353,7 @@ function sanitizedAxiomErrorDetail(
       /\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|authorization|password|secret|token)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;<>]+)/giu,
       "$1=[redacted]",
     )
-    .replace(/\bhttps?:\/\/[^\s<>"']+/giu, "[url]")
+    .replace(/\bhttps?:\/\/[^\s<>"]+/giu, "[url]")
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, "[email]");
   return boundedAxiomIngestFailureError(redacted);
 }

@@ -64,7 +64,7 @@ describe("Axiom ingest HTTP error diagnostics", () => {
         const token = "xaat-private-error-diagnostic-token";
         mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", token);
         const privateEcho = "private-echoed-metric-payload";
-        const message = `no healthy upstream; ${token}; Bearer another-private-token; password="private password"; https://provider.example/private;private-signed-url-path?token=secret; owner@example.test; ${"upstream context ".repeat(40)}`;
+        const message = `no healthy upstream; ${token}; Bearer another-private-token; password="private password"; https://provider.example/private;private-signed-url-path?token=secret; https://provider.example/O'Reilly-private-apostrophe-path?signature=private-url-signature; owner@example.test; ${"upstream context ".repeat(40)}`;
         let requestBytes = 0;
         server.use(
           http.post(
@@ -150,6 +150,8 @@ describe("Axiom ingest HTTP error diagnostics", () => {
           "another-private-token",
           "private password",
           "private-signed-url-path",
+          "private-apostrophe-path",
+          "private-url-signature",
           "owner@example.test",
           privateEcho,
         ]) {
