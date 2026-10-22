@@ -92,20 +92,14 @@ impl FactoryCleanupTaskKind {
     }
 }
 
-#[derive(Clone)]
 struct FactoryCleanupTaskRecord {
-    kind: FactoryCleanupTaskKind,
-    label: String,
-}
-
-struct FactoryCleanupTaskFinished {
     kind: FactoryCleanupTaskKind,
     label: String,
 }
 
 struct FactoryCleanupTaskHandle {
     record: FactoryCleanupTaskRecord,
-    handle: JoinHandle<FactoryCleanupTaskFinished>,
+    handle: JoinHandle<()>,
 }
 
 impl FactoryCleanupTaskHandle {
@@ -119,21 +113,6 @@ impl FactoryCleanupTaskHandle {
 
     fn record(&self) -> &FactoryCleanupTaskRecord {
         &self.record
-    }
-}
-
-impl Future for FactoryCleanupTaskHandle {
-    type Output = (
-        FactoryCleanupTaskRecord,
-        Result<FactoryCleanupTaskFinished, JoinError>,
-    );
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let result = match Pin::new(&mut self.handle).poll(cx) {
-            Poll::Ready(result) => result,
-            Poll::Pending => return Poll::Pending,
-        };
-        Poll::Ready((self.record.clone(), result))
     }
 }
 
@@ -240,12 +219,7 @@ impl FactoryCleanupBatch<'_> {
             .collect()
     }
 
-    async fn next_finished(
-        &mut self,
-    ) -> Option<(
-        FactoryCleanupTaskRecord,
-        Result<FactoryCleanupTaskFinished, JoinError>,
-    )> {
+    async fn next_finished(&mut self) -> Option<(FactoryCleanupTaskRecord, Result<(), JoinError>)> {
         std::future::poll_fn(|cx| {
             let mut index = 0;
             while index < self.tasks.len() {
@@ -253,12 +227,12 @@ impl FactoryCleanupBatch<'_> {
                     let Some(task) = self.tasks.get_mut(index) else {
                         break;
                     };
-                    Pin::new(task).poll(cx)
+                    Pin::new(&mut task.handle).poll(cx)
                 };
                 match poll_result {
                     Poll::Ready(result) => {
-                        self.tasks.swap_remove(index);
-                        return Poll::Ready(Some(result));
+                        let task = self.tasks.swap_remove(index);
+                        return Poll::Ready(Some((task.record, result)));
                     }
                     Poll::Pending => {
                         index += 1;
@@ -596,8 +570,7 @@ impl FactoryCleanupGroup {
         label: String,
         cleanup: F,
         done_tx: tokio::sync::oneshot::Sender<FactoryCleanupTaskOutcome>,
-    ) -> FactoryCleanupTaskFinished
-    where
+    ) where
         F: Future<Output = ()> + Send + 'static,
     {
         let result = AssertUnwindSafe(cleanup).catch_unwind().await;
@@ -614,7 +587,6 @@ impl FactoryCleanupGroup {
                 let _ = done_tx.send(FactoryCleanupTaskOutcome::Panicked(payload));
             }
         }
-        FactoryCleanupTaskFinished { kind, label }
     }
 
     fn reap_completed_locked(state: &mut FactoryCleanupGroupState) {
@@ -631,9 +603,9 @@ impl FactoryCleanupGroup {
             let mut task = state.tasks.swap_remove(index);
             let waker = noop_waker_ref();
             let mut cx = Context::from_waker(waker);
-            match Pin::new(&mut task).poll(&mut cx) {
-                Poll::Ready((record, result)) => {
-                    Self::handle_join_result(record, result, false);
+            match Pin::new(&mut task.handle).poll(&mut cx) {
+                Poll::Ready(result) => {
+                    Self::handle_join_result(task.record, result, false);
                 }
                 Poll::Pending => {
                     state.tasks.insert(index, task);
@@ -645,15 +617,15 @@ impl FactoryCleanupGroup {
 
     fn handle_join_result(
         record: FactoryCleanupTaskRecord,
-        result: Result<FactoryCleanupTaskFinished, JoinError>,
+        result: Result<(), JoinError>,
         after_abort: bool,
     ) {
         match result {
-            Ok(finished) => {
+            Ok(()) => {
                 if after_abort {
                     info!(
-                        kind = finished.kind.as_str(),
-                        label = %finished.label,
+                        kind = record.kind.as_str(),
+                        label = %record.label,
                         "factory cleanup task completed while shutdown abort was in progress"
                     );
                 }
