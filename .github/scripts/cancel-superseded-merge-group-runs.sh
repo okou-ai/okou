@@ -85,18 +85,7 @@ fi
 
 poll_seconds=${SUPERSEDED_RUN_POLL_SECONDS:-2}
 timeout_seconds=${SUPERSEDED_RUN_TIMEOUT_SECONDS:-180}
-# Discovery and the terminal-state barrier wait for different things, so they
-# get different ceilings. Force-cancel only *requests* termination: when a
-# superseded job is wedged in a step that never returns, GitHub reaps it on its
-# own hard-kill schedule, bounded at five minutes from when cancellation began,
-# and force-cancel does not shorten that. Superseded runs that wind down
-# normally still clear this barrier in a couple of seconds, so the larger
-# ceiling only covers the wedged case instead of relaxing the healthy one.
-if [ "$owner_scope" = "superseded" ]; then
-  completion_timeout_seconds=${SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS:-420}
-else
-  completion_timeout_seconds=${SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS:-$timeout_seconds}
-fi
+completion_timeout_seconds=${SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS:-$timeout_seconds}
 if [[ ! "$poll_seconds" =~ ^[0-9]+$ ||
   ! "$timeout_seconds" =~ ^[0-9]+$ ||
   ! "$completion_timeout_seconds" =~ ^[0-9]+$ ]]; then
@@ -206,8 +195,8 @@ else
 fi
 printf '%s\n' "$selected_runs"
 
-# Both phases share the existing completion budget. API acceptance alone must
-# never let an image disappear underneath a still-running consumer.
+# Closed-PR cleanup retains its completion barrier. Superseded runs return
+# after cancellation requests without reading their individual statuses.
 started_at=$SECONDS
 
 read_run_status() {
@@ -223,7 +212,7 @@ read_run_status() {
   esac
 }
 
-await_phase() {
+process_phase() {
   local records=$1 phase_label=$2 run_record run_id cancel_error cancel_status current_status
   local run_ids=() pending_runs=()
   [ -n "$records" ] || return 0
@@ -232,22 +221,23 @@ await_phase() {
     run_id=${run_record%%$'\t'*}
     if $cancel_selected_runs; then
       # Stop always()-guarded jobs as well as ordinary steps. A 409 may race
-      # with cancellation elsewhere; keep this owner in the completion barrier.
+      # with cancellation elsewhere; do not read or await the run afterward.
       if ! cancel_error=$(gh api --method POST \
         "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" --include 2>&1); then
-        current_status=$(read_run_status "$run_id")
         cancel_status=$(awk '/^HTTP\// { print $2; exit }' <<<"$cancel_error")
-        if [ "$current_status" != "completed" ]; then
-          if [ "$cancel_status" != "409" ]; then
-            echo "failed to cancel active ${selected_run_label} ${run_id}: ${cancel_error}" >&2
-            return 1
-          fi
-          echo "Cancellation conflict for ${selected_run_label} ${run_id}; awaiting completion (status: ${current_status})."
+        if [ "$cancel_status" != "409" ]; then
+          echo "failed to cancel ${selected_run_label} ${run_id}: ${cancel_error}" >&2
+          return 1
         fi
+        echo "Cancellation conflict for ${selected_run_label} ${run_id}; continuing without waiting."
       fi
     fi
     run_ids+=("$run_id")
   done <<<"$records"
+
+  if $cancel_selected_runs; then
+    return 0
+  fi
 
   while true; do
     pending_runs=()
@@ -273,10 +263,10 @@ await_phase() {
 if $cancel_selected_runs; then
   consumers=$(awk -F '\t' '$7 != ".github/workflows/runner-image.yml"' <<<"$selected_runs")
   producers=$(awk -F '\t' '$7 == ".github/workflows/runner-image.yml"' <<<"$selected_runs")
-  await_phase "$consumers" "superseded runner consumers"
-  await_phase "$producers" "superseded runner image producers"
+  process_phase "$consumers" "superseded runner consumers"
+  process_phase "$producers" "superseded runner image producers"
+  echo "Requested cancellation of ${selected_runs_label}; continuing without waiting for completion."
 else
-  await_phase "$selected_runs" "$selected_runs_label"
+  process_phase "$selected_runs" "$selected_runs_label"
+  echo "All ${selected_runs_label} completed before ${completion_boundary}."
 fi
-
-echo "All ${selected_runs_label} completed before ${completion_boundary}."
