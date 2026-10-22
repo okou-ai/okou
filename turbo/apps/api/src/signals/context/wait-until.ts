@@ -73,15 +73,16 @@ export async function observeWaitUntilLifecycle(
   onComplete: (result: WaitUntilLifecycleResult) => void | Promise<void>,
 ): Promise<void> {
   const lifecycle: WaitUntilLifecycle = { pending: [] };
-  const handler = waitUntilLifecycle().run(lifecycle, () => {
+  const result = await waitUntilLifecycle().run(lifecycle, () => {
     return settleIncludingAbort(work);
   });
 
-  // Register outside the request scope: the observer and its telemetry flush
-  // must not wait on themselves or be counted as application work.
+  // The foreground is still owned by the awaited HTTP handler. Register its
+  // finalizer only once that work finishes, so background drains do not wait
+  // for other requests whose foreground work is still in progress.
+  // Register outside the request scope to exclude the observer's own delivery.
   registerWaitUntil(
     (async () => {
-      await handler;
       let taskCount = 0;
       let failureCount = 0;
       while (lifecycle.pending.length > 0) {
@@ -97,7 +98,6 @@ export async function observeWaitUntilLifecycle(
     })(),
   );
 
-  const result = await handler;
   if (!result.ok) {
     throw result.error;
   }
