@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { chatThreadUsageContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { socialDataContract } from "@okouai/api-contracts/contracts/social-data";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +11,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { billingStatusRoutes } from "../billing-status";
 import { chatThreadUsageRoutes } from "../chat-threads-usage";
 import { socialDataRoutes } from "../social-data";
@@ -22,7 +20,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createPublicBillingScenario } from "./helpers/public-billing-scenario";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -53,8 +50,7 @@ function authenticate(actor: ApiTestUser): Headers {
 }
 
 async function scenario() {
-  const orgId = createUniqueStaffOrgIdFixture();
-  const actor = createBddApi(context).user({ orgId });
+  const actor = createBddApi(context).user();
   const billing = createPublicBillingScenario(context);
   let restoreSetup: (() => void) | undefined;
   billing.releaseBeforeDrain(() => {
@@ -71,15 +67,6 @@ async function scenario() {
   });
   restoreSetup = undefined;
   mockEnv("OKOU_SOCIAL_MONID_API_KEY", "social-ownership-test-key");
-  await billing.run(() => {
-    return updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.SocialDataExpansion]: true,
-      },
-    );
-  });
   const app = setupApp({ context, routes: ROUTES });
   return {
     actor,
