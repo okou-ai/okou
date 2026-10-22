@@ -292,6 +292,10 @@ impl Case {
         self.write_event("NATIVE_FIXED_RESTORE_WITNESS ", phase, evidence)
     }
 
+    pub fn running_restore_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_RUNNING_RESTORE_WITNESS ", phase, evidence)
+    }
+
     pub fn final_exec_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_FINAL_EXEC_WITNESS ", phase, evidence)
     }

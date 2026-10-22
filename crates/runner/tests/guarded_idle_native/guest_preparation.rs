@@ -30,6 +30,7 @@ use super::*;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {
     FixedRestore,
+    RunningRestore(bool),
     FinalExec,
     Quiesce,
 }
@@ -37,7 +38,7 @@ pub(super) enum Kind {
 impl Kind {
     fn request(self) -> RequestKind {
         match self {
-            Self::FixedRestore => RequestKind::GuestStateRestore,
+            Self::FixedRestore | Self::RunningRestore(_) => RequestKind::GuestStateRestore,
             Self::FinalExec => RequestKind::Exec,
             Self::Quiesce => RequestKind::Quiesce,
         }
@@ -50,10 +51,21 @@ impl Kind {
         quiesce: &'static str,
     ) -> &'static str {
         match self {
-            Self::FixedRestore => restore,
+            Self::FixedRestore | Self::RunningRestore(_) => restore,
             Self::FinalExec => final_exec,
             Self::Quiesce => quiesce,
         }
+    }
+
+    fn running(self) -> Option<bool> {
+        match self {
+            Self::RunningRestore(allow) => Some(allow),
+            _ => None,
+        }
+    }
+
+    fn restore(self) -> bool {
+        matches!(self, Self::FixedRestore | Self::RunningRestore(_))
     }
 }
 
@@ -67,6 +79,17 @@ pub(super) struct Selection {
 
 impl Selection {
     pub fn label(self) -> String {
+        if let Some(allow) = self.kind.running() {
+            return format!(
+                "RunningRestore-{}-{}",
+                if allow { "allow" } else { "deny" },
+                if self.fault == native_unpark::Fault::Drop {
+                    "drop"
+                } else {
+                    "observer-unwind"
+                }
+            );
+        }
         format!(
             "{}-{}-{}",
             self.kind.field("FixedRestore", "FinalExec", "Quiesce"),
@@ -82,6 +105,7 @@ impl Selection {
     pub fn witness(self, proof: &evidence::Case, phase: &str, value: Value) -> io::Result<()> {
         match self.kind {
             Kind::FixedRestore => proof.fixed_restore_witness(phase, value),
+            Kind::RunningRestore(_) => proof.running_restore_witness(phase, value),
             Kind::FinalExec => proof.final_exec_witness(phase, value),
             Kind::Quiesce => proof.quiesce_witness(phase, value),
         }
@@ -161,6 +185,10 @@ pub(super) struct Request<'a> {
 struct FixedRestoreUncertain;
 
 #[derive(Debug, thiserror::Error)]
+#[error("running restore retains original uncertainty; required saving is incomplete")]
+struct RunningRestoreUncertain;
+
+#[derive(Debug, thiserror::Error)]
 #[error("final exec retains original uncertainty; required saving is incomplete")]
 struct FinalExecUncertain;
 
@@ -214,14 +242,25 @@ async fn lose(
     let witness = |phase, value| request.selection.witness(request.proof, phase, value);
     let kind = request.selection.kind;
     let started = evidence::clocks()?.0;
+    let controller = Arc::new(tokio::sync::Mutex::new(None));
+    request.proof.retain(controller.clone());
+    let retained_controller = controller.clone();
     let mut preparation: futures_util::future::BoxFuture<'_, Result<(), String>> = match kind {
-        Kind::FixedRestore => Box::pin(owner.prepare(operation, |sandbox, _, _| {
-            Box::pin(async move {
-                runner_executor::executor::restore_guest_state_with_timezone(sandbox, "UTC")
-                    .await
-                    .map_err(|error| error.to_string())
-            })
-        })),
+        Kind::FixedRestore | Kind::RunningRestore(_) => {
+            Box::pin(owner.prepare(operation, move |sandbox, _, _| {
+                Box::pin(async move {
+                    if kind.running().is_some() {
+                        let independent = running_restore::Owner::start(sandbox)
+                            .await
+                            .map_err(|error| error.to_string())?;
+                        *retained_controller.lock().await = Some(independent);
+                    }
+                    runner_executor::executor::restore_guest_state_with_timezone(sandbox, "UTC")
+                        .await
+                        .map_err(|error| error.to_string())
+                })
+            }))
+        }
         Kind::FinalExec | Kind::Quiesce => Box::pin(owner.repark(fixture::IMAGE_BYTES)),
     };
     let captured = tokio::time::timeout(Duration::from_secs(90),async {
@@ -238,7 +277,7 @@ async fn lose(
         .get(guest_control_proto::HEADER_SIZE + guest_control_proto::MIN_BODY_SIZE..)
         .ok_or_else(|| io::Error::other("fixed request header truncated"))?;
     match kind {
-        Kind::FixedRestore => {
+        Kind::FixedRestore | Kind::RunningRestore(_) => {
             let decoded = guest_control_proto::decode_guest_state_restore_request(payload)?;
             if captured.message_type() != MSG_GUEST_STATE_RESTORE
                 || decoded.entropy.len() != 256
@@ -266,6 +305,41 @@ async fn lose(
         "original_full_lease_active":true,"allocated":request.context.budget.allocated()}),
     )?;
     let mut terminal = None;
+    let mut running = controller.lock().await;
+    let mut waiting_control = None;
+    if let Some(control) = running.as_mut() {
+        hold.dispatch
+            .take()
+            .ok_or_else(|| io::Error::other("running dispatch missing"))?
+            .send(())
+            .map_err(|_| io::Error::other("running dispatch lost"))?;
+        let event = tokio::select! {
+            result = control.command(json!({"op":"observe"})) => result?,
+            result = preparation.as_mut() => return Err(io::Error::other(format!("prepare completed before live event: {result:?}")).into()),
+        };
+        control.check_event(&event)?;
+        let decoded = guest_control_proto::decode_guest_state_restore_request(payload)?;
+        if running_restore::field(&event, &["argv"])?
+            != &json!([
+                "/sbin/guest-state-restore",
+                "--restore-state",
+                decoded.unix_seconds.to_string(),
+                decoded.unix_nanoseconds.to_string(),
+                "required",
+                "UTC"
+            ])
+            || !matches!(
+                hold.response.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            )
+        {
+            return Err(io::Error::other(
+                "running canonical helper identity or unfinished boundary changed",
+            )
+            .into());
+        }
+        waiting_control = Some(control.record());
+    }
     if request.selection.terminal {
         hold.dispatch
             .take()
@@ -284,11 +358,14 @@ async fn lose(
     cleanup_progress::pending(std::pin::Pin::new(&mut preparation), &mut completed).await?;
     witness(
         "observation_waiting",
-        json!({"boundary":if request.selection.terminal {"terminal"} else {"capture"},
+        running_restore::with_control(
+            json!({"boundary":if kind.running().is_some() {"running"} else if request.selection.terminal {"terminal"} else {"capture"},
         "request":frame(&captured),"response":terminal.as_ref().map(frame),
         (kind.field("public_restore_polled_pending", "public_repark_polled_pending", "public_repark_polled_pending")):true,
-        (kind.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")):false,
+        (kind.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")):kind.running().is_some(),
         "original_full_lease_active":true,"allocated":request.context.budget.allocated()}),
+            waiting_control,
+        ),
     )?;
     let lost = evidence::clocks()?.0;
     if request.selection.fault == native_unpark::Fault::ObserverUnwind {
@@ -302,6 +379,22 @@ async fn lose(
     } else {
         drop(preparation);
     }
+    let held_control = if let Some(control) = running.as_mut() {
+        let status = control.command(json!({"op":"status"})).await?;
+        if running_restore::field(&status, &["held"])? != &json!(true)
+            || !matches!(
+                hold.response.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            )
+        {
+            return Err(
+                io::Error::other("running helper was lost after observation cancellation").into(),
+            );
+        }
+        Some(control.record())
+    } else {
+        None
+    };
     if owner.state() != SpeculativeActivationState::Uncertain
         || !owner.matches_source_claim(
             Some(&request.context.reuse_key),
@@ -325,10 +418,13 @@ async fn lose(
     live(request).await?;
     witness(
         "observation_lost",
-        json!({"lost_ns":lost,"observer_unwound":request.selection.fault==native_unpark::Fault::ObserverUnwind,
+        running_restore::with_control(
+            json!({"lost_ns":lost,"observer_unwound":request.selection.fault==native_unpark::Fault::ObserverUnwind,
         "state":"Uncertain","commit_refused":true,"repark_refused":true,"incoming_refused":true,
         "original_metadata_preserved":true,"pool_empty":request.context.pool.lock().await.is_empty(),
         "original_full_lease_active":true,"original_exit_polled_pending":true,"allocated":request.context.budget.allocated()}),
+            held_control,
+        ),
     )?;
     let pool = request.context.pool.lock().await;
     let held = evidence::clocks()?.0;
@@ -391,6 +487,17 @@ async fn lose(
             .send(())
             .map_err(|_| io::Error::other("fixed dispatch lost"))?;
     }
+    if let Some(control) = running.as_mut() {
+        let allow = kind
+            .running()
+            .ok_or_else(|| io::Error::other("running decision missing"))?;
+        let decision = control
+            .command(json!({"op":"decide","event_id":1,"allow":allow}))
+            .await?;
+        if running_restore::field(&decision, &["event_descriptors_closed"])? != &json!(true) {
+            return Err(io::Error::other("running event descriptors were not retired").into());
+        }
+    }
     let response = match terminal {
         Some(response) => response,
         None => tokio::time::timeout(Duration::from_secs(90), &mut hold.response).await??,
@@ -403,7 +510,7 @@ async fn lose(
         .get(guest_control_proto::HEADER_SIZE + guest_control_proto::MIN_BODY_SIZE..)
         .ok_or_else(|| io::Error::other("fixed result header truncated"))?;
     let decoded = match kind {
-        Kind::FixedRestore => {
+        Kind::FixedRestore | Kind::RunningRestore(_) => {
             if response.message_type() != MSG_GUEST_STATE_RESTORE_RESULT {
                 return Err(io::Error::other("fixed terminal type changed").into());
             }
@@ -424,7 +531,10 @@ async fn lose(
         }
     };
     if let Some(decoded) = decoded
-        && (decoded.termination != (ExecTermination::Exited { exit_code: 0 })
+        && (decoded.termination
+            != (ExecTermination::Exited {
+                exit_code: if kind.running() == Some(false) { 1 } else { 0 },
+            })
             || !decoded.diagnostic.is_empty()
             || !matches!(
                 decoded.stderr,
@@ -435,6 +545,23 @@ async fn lose(
             ))
     {
         return Err(io::Error::other("real canonical helper did not complete successfully").into());
+    }
+    if kind.running() == Some(false) {
+        let decoded = guest_control_proto::decode_guest_state_restore_result(payload)?;
+        let guest_control_proto::ExecCapturedOutput::Captured {
+            bytes,
+            truncated: false,
+        } = decoded.stderr
+        else {
+            return Err(io::Error::other("denied helper stderr missing").into());
+        };
+        let diagnostic = std::str::from_utf8(bytes)?;
+        if !diagnostic.contains("guest timezone sync failed") || !diagnostic.contains("os error 1")
+        {
+            return Err(
+                io::Error::other("deny was not the actual timezone permission failure").into(),
+            );
+        }
     }
     let producer_unwind = request.selection.fault == native_unpark::Fault::ProducerUnwind;
     let delivered = evidence::clocks()?.0;
@@ -476,17 +603,26 @@ async fn lose(
             return Err(io::Error::other("live native connection already ended").into());
         }
     }
+    let completed_control = if let Some(control) = running.as_mut() {
+        control.retire().await?;
+        Some(control.record())
+    } else {
+        None
+    };
     live(request).await?;
     witness(
         "actual_terminal_drained",
-        json!({"request":frame(&captured),"response":frame(&response),
+        running_restore::with_control(
+            json!({"request":frame(&captured),"response":frame(&response),
         "delivery_requested_ns":delivered,"joined_ns":evidence::clocks()?.0,
-        (kind.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero", "canonical_quiesce_acknowledged")):true,
+        (kind.field("canonical_helper_exited_zero", "canonical_final_exec_exited_zero", "canonical_quiesce_acknowledged")):kind.running() != Some(false),
         (kind.field("helper_stdin_stderr_joined", "exec_stdin_stdout_stderr_joined", "guest_dispatcher_completed")):true,
         "exchange_joined":!producer_unwind,"transport_producer_unwound":producer_unwind,
         "connection_retained_pending":!producer_unwind,
-        (kind.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")):false,
+        (kind.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")):kind.running().is_some(),
         "ordinary_reuse_reopened":false,"original_full_lease_active":true,"allocated":request.context.budget.allocated()}),
+            completed_control,
+        ),
     )?;
     Ok(())
 }
@@ -522,7 +658,7 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
         let snapshot = context.pool.lock().await.status_snapshot();
         context.status.set_idle_snapshot(snapshot).await?;
         let current=owner.as_mut().ok_or_else(||io::Error::other("original capsule absent"))?;
-        if request.selection.kind != Kind::FixedRestore {
+        if !request.selection.kind.restore() {
             current.prepare(operation, |sandbox, _, _| Box::pin(async move {
                 runner_executor::executor::restore_guest_state_with_timezone(sandbox, "UTC")
                     .await.map_err(|error| error.to_string())
@@ -603,21 +739,26 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
         "original_full_lease_active":true,"original_exit_polled_pending":true,"allocated":context.budget.allocated(),
         "tracker_joined":true,"heartbeat_provider_peer_joined":true,"accounting":cleanup_progress::accounting(&accounting),
         "required_saving_complete":false,"cleanup_complete":false,"physical_relief_proven":false,"memory_credit":false,
-        (request.selection.kind.field("running_helper_boundary", "running_exec_boundary", "native_busy_resume_boundary")):"blocked",
+        (request.selection.kind.field("running_helper_boundary", "running_exec_boundary", "native_busy_resume_boundary")):if request.selection.kind.running().is_some() {"observed"} else {"blocked"},
         "preterminal_acceptance_boundary":"blocked",
         "original_cleanup_io_progress":request.selection.kind.field("blocked_not_parkable", "blocked_not_parkable", "blocked_dirty")}))?;
     match request.selection.kind {
         Kind::FixedRestore => Err(FixedRestoreUncertain.into()),
+        Kind::RunningRestore(_) => Err(RunningRestoreUncertain.into()),
         Kind::FinalExec => Err(FinalExecUncertain.into()),
         Kind::Quiesce => Err(QuiesceUncertain.into()),
     }
 }
 
 pub(super) async fn selected(kind: Kind, prefix: &str) -> TestResult<()> {
-    let terminal = match std::env::var(format!("{prefix}_BOUNDARY"))?.as_str() {
-        "capture" => false,
-        "terminal" => true,
-        _ => return Err(io::Error::other("fixed boundary invalid").into()),
+    let terminal = if kind.running().is_some() {
+        false
+    } else {
+        match std::env::var(format!("{prefix}_BOUNDARY"))?.as_str() {
+            "capture" => false,
+            "terminal" => true,
+            _ => return Err(io::Error::other("fixed boundary invalid").into()),
+        }
     };
     let restored = match std::env::var(format!("{prefix}_MODE"))?.as_str() {
         "fresh" => false,
@@ -630,6 +771,9 @@ pub(super) async fn selected(kind: Kind, prefix: &str) -> TestResult<()> {
         "producer-unwind" => native_unpark::Fault::ProducerUnwind,
         _ => return Err(io::Error::other("fixed fault invalid").into()),
     };
+    if kind.running().is_some() && fault == native_unpark::Fault::ProducerUnwind {
+        return Err(io::Error::other("running transport unwind is a separate authority").into());
+    }
     measured_selected_corpora(
         &[NativeScope::Batch(IdleRetirementBatchScope::All)],
         &[Corpus::GuestPreparation(Selection {

@@ -13,6 +13,30 @@ dedicated test vsock owner and an opt-in canonical-helper allow/deny fixture.
 It qualifies actual Guest capability and joined wire/controller completion;
 the broader Runner capsule, saving, lease and matrix gates remain required.
 
+## Running fixed restore inside the original Runner capsule
+
+`running_restore::native_running_restore_loss_retains_original_uncertainty`
+starts the delivered independent controller inside the actual speculative
+prepare callback after unpark and before production restore. Its process waiter
+and control stream remain owned outside cancelled preparation observation.
+Original inode/live kernel PIDFD/executable/argv and absent terminal identify
+the actual unfinished canonical helper. Independent held-state acknowledgement,
+explicit allow/deny, real helper/exchange/controller joins preserve the original
+Runner capsule/data/full lease and sticky Uncertain/NotParkable cleanup refusal.
+
+Select `OKOU_TEST_RUNNING_RESTORE_DECISION=allow|deny`,
+`OKOU_TEST_RUNNING_RESTORE_FAULT=drop|observer-unwind` and
+`OKOU_TEST_RUNNING_RESTORE_MODE=fresh|snapshot`. Use exact committed Host/all
+current Guests, a newly matching snapshot, unchanged supplied policy/P1 and the
+existing native collector. Preserve original failed driver101/collector1 and
+complete retained image after confirmed containment; run
+`running_restore_report.py <p1-directory>` against those originals. The strict
+reader checks raw control/request/terminal and complete original data, with
+ordinary synthetic/real CLI regressions in `running_restore_report_test.py`.
+This running boundary does not establish positive saving, private-runtime
+removal, full-lease release, cleanup IO/physical relief or the parent's remaining
+final-exec/quiesce/production-recovery matrices. Containment remains containment.
+
 ## Guest quiesce cancellation and retained Dirty custody
 
 `quiesce::native_quiesce_loss_retains_original_uncertainty` exercises the
