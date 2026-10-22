@@ -1,7 +1,9 @@
 import { computed, type Computed } from "ccstate";
 import { Axiom } from "@axiomhq/js";
+import { serializeError } from "@okouai/core/log-utils";
 import { delay } from "signal-timers";
 
+import { createAxiomFetch } from "../../lib/axiom-fetch";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
@@ -40,13 +42,15 @@ function logClientError(
     client,
     ...(dataset === undefined ? {} : { dataset }),
     failureKind: error.name === "TimeoutError" ? "timeout" : "transport_error",
-    error,
+    api_commit_sha: env("GIT_COMMIT_SHA"),
+    error: serializeError(error),
   });
 }
 
 const sessionsAxiomQueryClient = singleton(() => {
   return new Axiom({
     token: env("AXIOM_TOKEN_SESSIONS"),
+    fetch: createAxiomFetch(),
     onError: (error) => {
       logClientError("sessions", error);
     },
@@ -56,6 +60,7 @@ const sessionsAxiomQueryClient = singleton(() => {
 const telemetryAxiomQueryClient = singleton(() => {
   return new Axiom({
     token: env("AXIOM_TOKEN_TELEMETRY"),
+    fetch: createAxiomFetch(),
     onError: (error) => {
       logClientError("telemetry", error);
     },
@@ -98,6 +103,7 @@ function axiomClientForDataset(dataset: string): Axiom | null {
 
   const client = new Axiom({
     token,
+    fetch: createAxiomFetch(),
     onError: (error) => {
       logClientError(clientName, error, dataset);
     },
@@ -571,7 +577,8 @@ export async function flushAxiom(
       L.error("Axiom client flush failed", {
         client: flushes[index]?.client ?? "unknown",
         dataset: flushes[index]?.dataset ?? "unknown",
-        error: result.reason,
+        api_commit_sha: env("GIT_COMMIT_SHA"),
+        error: serializeError(result.reason),
       });
     }
   }
