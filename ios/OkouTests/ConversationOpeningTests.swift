@@ -1,11 +1,41 @@
 import ChatDomain
 import SwiftUI
+import Synchronization
 import XCTest
 
 @testable import Okou
 
 @MainActor
 final class ConversationOpeningTests: XCTestCase {
+  func testCompletedRowsStayVisibleWhenCancelledLoadingDelayResumes() async throws {
+    let delay = LoadingDelay()
+    let message = ChatMessage(
+      id: "loaded-answer", role: .assistant, text: "The conversation is ready.",
+      createdAt: .distantPast, isQueued: false, isError: false)
+    let list = try mount(
+      [message], cache: ConversationMeasurementCache(),
+      markdown: MessageMarkdownCache(baseURL: URL(string: "https://app.example.invalid")!),
+      sleep: { _ in await delay.sleep() })
+    defer {
+      delay.resume()
+      list.close()
+    }
+    try await eventually {
+      delay.isWaiting && delay.isCancelled && list.itemCount == 1
+        && !list.collection.visibleCells.isEmpty
+    }
+    XCTAssertFalse(list.loading.isAnimating)
+
+    // A deadline can finish before cancellation while its main-actor continuation is still queued.
+    delay.resume()
+    try await eventually { delay.didResume }
+    XCTAssertEqual(list.itemCount, 1)
+    XCTAssertGreaterThan(list.collection.contentSize.height, 0)
+    XCTAssertFalse(
+      list.loading.isAnimating, "A stale delayed wake must not cover rendered messages")
+    XCTAssertTrue(list.loading.isHidden)
+  }
+
   func testReopeningShowsPreparedRowsImmediatelyAndRemeasuresChangedGeometry() async throws {
     let cache = ConversationMeasurementCache()
     let markdown = MessageMarkdownCache(baseURL: URL(string: "https://app.example.invalid")!)
@@ -67,7 +97,8 @@ final class ConversationOpeningTests: XCTestCase {
 
   private func mount(
     _ messages: [ChatMessage], cache: ConversationMeasurementCache, markdown: MessageMarkdownCache,
-    width: CGFloat = 390, category: UIContentSizeCategory = .large
+    width: CGFloat = 390, category: UIContentSizeCategory = .large,
+    sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) throws -> MountedOpeningList {
     let rows = messages.map {
       ConversationCollectionRow.message(
@@ -80,7 +111,7 @@ final class ConversationOpeningTests: XCTestCase {
       content: { row, _ in
         Text(row.message?.text ?? "").padding(12).frame(maxWidth: .infinity, alignment: .leading)
       })
-    let controller = ConversationCollectionController(source: source)
+    let controller = ConversationCollectionController(source: source, sleep: sleep)
     controller.traitOverrides.preferredContentSizeCategory = category
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     let window = UIWindow(windowScene: scene)
@@ -95,6 +126,29 @@ final class ConversationOpeningTests: XCTestCase {
       controller.view.subviews.compactMap { $0 as? UIActivityIndicatorView }.first)
     return MountedOpeningList(
       window: window, collection: collection, loading: loading, stop: { controller.stop() })
+  }
+}
+
+@MainActor
+private final class LoadingDelay {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private nonisolated let cancelled = Mutex(false)
+  private(set) var didResume = false
+  var isWaiting: Bool { continuation != nil }
+  var isCancelled: Bool { cancelled.withLock { $0 } }
+
+  func sleep() async {
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation = $0 }
+      didResume = true
+    } onCancel: {
+      self.cancelled.withLock { $0 = true }
+    }
+  }
+
+  func resume() {
+    continuation?.resume()
+    continuation = nil
   }
 }
 

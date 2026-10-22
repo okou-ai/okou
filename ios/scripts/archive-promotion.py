@@ -11,9 +11,8 @@ import re
 import subprocess
 import tarfile
 import time
-from pathlib import Path, PurePosixPath
-
 import tomllib
+from pathlib import Path, PurePosixPath
 
 INPUT_PATHS = (
     "ios",
@@ -294,15 +293,33 @@ def github_record(record, required_step):
         or not run["head_branch"].startswith("gh-readonly-queue/main/")
     ):
         raise ValueError("Expected an exact main merge-group iOS builder")
-    pages = json.loads(
-        command("gh", "api", f"{route}/jobs?per_page=100", "--paginate", "--slurp")
-    )
     job_name = {
         ARCHIVE_STEP: "build-archive",
         TEST_STEP: "build-test",
         PACKAGE_STEP: "test-packages",
     }[required_step]
-    jobs = [job for page in pages for job in page["jobs"] if job["name"] == job_name]
+    # The Jobs API can lag behind needs.*. Bound pending-result retries to seven
+    # minutes; terminal results still need the exact successful job and test step.
+    deadline = time.monotonic() + 420
+    delay = 1
+    while True:
+        pages = json.loads(
+            command("gh", "api", f"{route}/jobs?per_page=100", "--paginate", "--slurp")
+        )
+        jobs = [
+            job for page in pages for job in page["jobs"] if job["name"] == job_name
+        ]
+        if not (
+            len(jobs) == 1
+            and jobs[0]["conclusion"] is None
+            and jobs[0].get("status") in ("queued", "in_progress")
+        ):
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(delay, remaining))
+        delay = min(delay * 2, 30)
     if (
         len(jobs) != 1
         or jobs[0]["conclusion"] != "success"
