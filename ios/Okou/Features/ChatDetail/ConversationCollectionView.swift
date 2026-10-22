@@ -239,10 +239,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     guard !publishesViewport else { return }
     publishesViewport = true
     source.anchor.layoutDidChange()
+    // Preserve intent before a width/font snapshot can replace its geometry.
+    // This callback only updates the non-observable anchor, not SwiftUI state.
+    if !isScrolling { source.anchor.viewportDidChange?() }
     DispatchQueue.main.async { [weak self] in
       guard let self, !stopped else { return }
       publishesViewport = false
-      if !isScrolling { source.anchor.viewportDidChange?() }
     }
   }
 

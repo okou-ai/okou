@@ -13,7 +13,9 @@ func savedReadingPositionMatchesViewport(_ conversation: ConversationStore, in v
       conversation.readingPosition?.messageID ?? "<missing>", conversation: conversation, view: view
     )
   ) {
-    guard let saved = conversation.readingPosition,
+    guard let scroll = markers(in: view).first?.enclosingScrollView,
+      !scroll.isScrollAnimating, !scroll.isTracking, !scroll.isDragging, !scroll.isDecelerating,
+      let saved = conversation.readingPosition,
       let actual = offset(of: saved.messageID, in: view)
     else { return false }
     return abs(actual - saved.offset) < 1

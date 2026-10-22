@@ -151,7 +151,7 @@ final class AuthenticationStartupTests: XCTestCase {
 
   func testSignOutDuringMembershipReadRejectsOldScopeAndStaleResponse() async throws {
     let h = try await harness()
-    h.start()
+    try await h.start()
     try await assertChat(h)
     let scope = try XCTUnwrap(h.authentication.scopeID)
     let previous = await h.fixture.memberships.count
@@ -169,7 +169,7 @@ final class AuthenticationStartupTests: XCTestCase {
 
   func testAccountChangeCannotReuseOldMembershipsWhileNewMembershipsArePending() async throws {
     let h = try await harness()
-    h.start()
+    try await h.start()
     try await assertChat(h)
     let scope = try XCTUnwrap(h.authentication.scopeID)
     let previous = await h.fixture.memberships.count
@@ -369,8 +369,13 @@ private final class AuthenticationStartupHarness {
     return task
   }
 
-  func start() {
+  func start() async throws {
     tasks.append(Task { await authentication.start() })
+    // Finish restoration before starting the separate native chat-mount assertion.
+    // The long-lived event subscription remains owned by this harness.
+    try await eventually(message: "Initial session and workspace restoration did not finish") {
+      self.authentication.scopeID != nil && !self.authentication.isLoading
+    }
   }
 
   func close() async throws {
