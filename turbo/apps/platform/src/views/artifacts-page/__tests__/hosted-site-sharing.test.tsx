@@ -83,7 +83,7 @@ async function openShare(label = "Share") {
     expect(queryButtonByName(label)).toBeDefined();
   });
   click(getButtonByName(label));
-  await screen.findByText("Published");
+  await screen.findByRole("dialog", { name: label });
 }
 
 test("opening a site preloads its share URL and shows a skeleton until the current address is ready", async () => {
@@ -511,7 +511,8 @@ test.each([
       name: sidebar ? "Share artifact" : "Share",
     });
     expect(!!queryButtonByName("Customize URL", menu)).toBe(urlEditing);
-    expect(siteAddress("weekly-report.okou.app")).toBeInTheDocument();
+    expect(within(menu).getByText("Who can access")).toBeInTheDocument();
+    expect(siteAddress("weekly-report.okou.app")).toBeUndefined();
     expect(clipboard.writes).toStrictEqual([]);
     click(getButtonByName("Copy link", menu));
     await waitFor(() => {

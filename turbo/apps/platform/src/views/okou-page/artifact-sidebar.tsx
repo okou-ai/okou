@@ -1,4 +1,9 @@
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
+import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
+import {
+  hostedSiteRecoveryTarget,
+  hostedSiteRecoveryReason,
+} from "../../lib/hosted-site-access.ts";
 import type { ReactNode } from "react";
 import {
   ArrowLeft,
@@ -219,7 +224,8 @@ export function ArtifactSidebarContent({
   useTranslation();
   const fullscreen = fullscreenState.active;
   const toggleFullscreen = fullscreenState.toggle;
-  const resourceUrl = useLastResolved(artifactRef.resourceUrl$) ?? null;
+  const resource = useLastLoadable(artifactRef.resourceUrl$);
+  const resourceUrl = resource.state === "hasData" ? resource.data : null;
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
   const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
   const display = {
@@ -234,9 +240,19 @@ export function ArtifactSidebarContent({
       onSyncSuccess,
       threadId,
     });
+  const recoveryTarget =
+    display.kind === "html" ? hostedSiteRecoveryTarget(display.url) : null;
+  const recovery =
+    resource.state === "hasError" && recoveryTarget ? (
+      <HostedSiteAccessCard
+        target={recoveryTarget}
+        reason={hostedSiteRecoveryReason(resource.error)}
+      />
+    ) : null;
 
   return (
     <ArtifactSidebarResolvedContent
+      recovery={recovery}
       resourceUrl={resourceUrl}
       shareUrl={shareUrl}
       closePreview={onClose}
@@ -254,6 +270,7 @@ export function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
+  readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
   readonly closePreview: () => void;
@@ -269,6 +286,7 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
+  recovery,
   resourceUrl,
   shareUrl,
   closePreview,
@@ -315,19 +333,21 @@ function ArtifactSidebarResolvedContent({
         onClose={closePreview}
       />
       <div className="min-h-0 flex-1 overflow-hidden bg-background">
-        <ArtifactBody
-          resourceUrl={resourceUrl}
-          shareUrl={shareUrl}
-          url={display.url}
-          kind={display.kind}
-          filename={display.filename}
-          artifactKind={display.artifactKind}
-          imageNavigation={imageNavigation}
-          imageCanvasSignals={imageCanvasSignals}
-          fullscreen={fullscreen}
-          markdownTree$={markdownTree$}
-          text$={text$}
-        />
+        {recovery ?? (
+          <ArtifactBody
+            resourceUrl={resourceUrl}
+            shareUrl={shareUrl}
+            url={display.url}
+            kind={display.kind}
+            filename={display.filename}
+            artifactKind={display.artifactKind}
+            imageNavigation={imageNavigation}
+            imageCanvasSignals={imageCanvasSignals}
+            fullscreen={fullscreen}
+            markdownTree$={markdownTree$}
+            text$={text$}
+          />
+        )}
       </div>
     </FullscreenPanel>
   );

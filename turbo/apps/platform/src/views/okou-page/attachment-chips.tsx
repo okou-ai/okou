@@ -4,6 +4,11 @@ import {
   DialogIconButton,
 } from "./artifact-preview-dialog-frame.tsx";
 import type { ReactNode } from "react";
+import {
+  hostedSiteRecoveryTarget,
+  hostedSiteRecoveryReason,
+} from "../../lib/hosted-site-access.ts";
+import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
 import { Button, DialogBody, cn } from "@okouai/ui";
 import {
   useGet,
@@ -1107,8 +1112,18 @@ function ArtifactDialogHtmlBody({
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
-  const src = useLastResolved(preview.resourceUrl$) ?? null;
+  const resource = useLastLoadable(preview.resourceUrl$);
+  const src = resource.state === "hasData" ? resource.data : null;
   const isPresentationHtml = artifact?.artifactKind === "presentation-html";
+  const target = hostedSiteRecoveryTarget(preview.url);
+  if (resource.state === "hasError" && target) {
+    return (
+      <HostedSiteAccessCard
+        target={target}
+        reason={hostedSiteRecoveryReason(resource.error)}
+      />
+    );
+  }
 
   if (src === null) {
     // A blank panel is indistinguishable from an artifact that rendered

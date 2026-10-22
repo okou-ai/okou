@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "返回 {{brandName}}",
+      "continue": "繼續",
       "description": "它可能是私有的，也可能已不再可用。",
       "help": "可以聯絡分享這個連結的人確認訪問權限。",
+      "sessionExpiredDescription": "網站工作階段已過期，請繼續驗證你的存取權限。",
+      "sessionExpiredTitle": "請重新驗證存取權限",
       "signedInAs": "當前登入帳號：{{email}}",
       "signedInDescription": "它可能不存在，也可能分享給了其他帳號或組織。",
       "signIn": "登入",
@@ -439,7 +442,10 @@
       "switchAccount": "切換帳號",
       "switchAccountFailed": "無法開啟帳號切換器，請重試。",
       "title": "你沒有權限檢視這個成果",
-      "tryAgain": "重試"
+      "tryAgain": "重試",
+      "websiteTitle": "你無法查看此網站",
+      "websiteUnavailableDescription": "請稍後再試。",
+      "websiteUnavailableTitle": "此網站暫時無法使用"
     },
     "actions": {
       "backToAll": "返回全部成果",
@@ -595,7 +601,6 @@
         "text": "文字",
         "video": "影片"
       },
-      "siteLabel": "{{title}} 的站點預覽",
       "slideTitle": "第 {{number}} 頁",
       "unavailable": "無法預覽 {{kind}}。",
       "videoLabel": "{{filename}} 的影片預覽"

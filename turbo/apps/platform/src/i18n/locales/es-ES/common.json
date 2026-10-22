@@ -444,8 +444,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Volver a {{brandName}}",
+      "continue": "Continuar",
       "description": "Puede que sea privado o que ya no esté disponible.",
       "help": "Pide a la persona que compartió este enlace que revise el acceso.",
+      "sessionExpiredDescription": "Tu sesión en el sitio ha caducado. Continúa para verificar tu acceso.",
+      "sessionExpiredTitle": "Verifica tu acceso de nuevo",
       "signedInAs": "Sesión iniciada como {{email}}",
       "signedInDescription": "Puede que no exista o que se haya compartido con otra cuenta u organización.",
       "signIn": "Iniciar sesión",
@@ -453,7 +456,10 @@
       "switchAccount": "Cambiar de cuenta",
       "switchAccountFailed": "No se pudo abrir el selector de cuentas. Inténtalo de nuevo.",
       "title": "No puedes ver este artefacto",
-      "tryAgain": "Intentar de nuevo"
+      "tryAgain": "Intentar de nuevo",
+      "websiteTitle": "No puedes ver este sitio web",
+      "websiteUnavailableDescription": "Vuelve a intentarlo en un momento.",
+      "websiteUnavailableTitle": "Este sitio web no está disponible temporalmente"
     },
     "actions": {
       "backToAll": "Volver a todos los artefactos",
@@ -612,7 +618,6 @@
         "text": "Texto",
         "video": "Vídeo"
       },
-      "siteLabel": "Vista previa del sitio para {{title}}",
       "slideTitle": "Diapositiva {{number}}",
       "unavailable": "Vista previa de {{kind}} no disponible.",
       "videoLabel": "Vista previa de vídeo para {{filename}}"

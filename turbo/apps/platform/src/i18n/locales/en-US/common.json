@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Back to {{brandName}}",
+      "continue": "Continue",
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
+      "sessionExpiredDescription": "Your website session has expired. Continue to verify your access.",
+      "sessionExpiredTitle": "Verify your access again",
       "signedInAs": "Signed in as {{email}}",
       "signedInDescription": "It may not exist, or it may be shared with a different account or organization.",
       "signIn": "Sign in",
@@ -439,7 +442,10 @@
       "switchAccount": "Switch account",
       "switchAccountFailed": "Could not open the account switcher. Please try again.",
       "title": "You can’t view this artifact",
-      "tryAgain": "Try again"
+      "tryAgain": "Try again",
+      "websiteTitle": "You can’t view this website",
+      "websiteUnavailableDescription": "Try again in a moment.",
+      "websiteUnavailableTitle": "This website is temporarily unavailable"
     },
     "actions": {
       "backToAll": "Back to all artifacts",
@@ -596,7 +602,6 @@
         "text": "text",
         "video": "video"
       },
-      "siteLabel": "Site preview for {{title}}",
       "slideTitle": "Slide {{number}}",
       "unavailable": "{{kind}} preview unavailable.",
       "videoLabel": "Video preview for {{filename}}"

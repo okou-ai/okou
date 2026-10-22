@@ -453,7 +453,7 @@ function HostedSiteShareBody({
   const visibilityEnabled = switches[FeatureSwitchKey.HostedSiteVisibility];
   return (
     <>
-      <SiteStatus link={link} loading={loading} />
+      {!visibilityEnabled && <SiteStatus link={link} loading={loading} />}
       {visibilityEnabled && !editing && (
         <HostedSitePermissions session={session} />
       )}

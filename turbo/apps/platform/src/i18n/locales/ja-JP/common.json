@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "{{brandName}} に戻る",
+      "continue": "続行",
       "description": "非公開か、利用できなくなった可能性があります。",
       "help": "リンクを共有した人にアクセス権の確認を依頼してください。",
+      "sessionExpiredDescription": "ウェブサイトのセッションの有効期限が切れました。続行してアクセス権を確認してください。",
+      "sessionExpiredTitle": "アクセス権を再確認してください",
       "signedInAs": "{{email}} としてログイン中",
       "signedInDescription": "存在しないか、別のアカウントまたは組織に共有されている可能性があります。",
       "signIn": "ログイン",
@@ -439,7 +442,10 @@
       "switchAccount": "アカウントを切り替える",
       "switchAccountFailed": "アカウント切り替え画面を開けませんでした。もう一度お試しください。",
       "title": "このアーティファクトを表示できません",
-      "tryAgain": "再試行"
+      "tryAgain": "再試行",
+      "websiteTitle": "このウェブサイトは表示できません",
+      "websiteUnavailableDescription": "しばらくしてからもう一度お試しください。",
+      "websiteUnavailableTitle": "このウェブサイトは一時的に利用できません"
     },
     "actions": {
       "backToAll": "すべてのアーティファクトに戻る",
@@ -595,7 +601,6 @@
         "text": "テキスト",
         "video": "ビデオ"
       },
-      "siteLabel": "{{title}} のサイト プレビュー",
       "slideTitle": "スライド {{number}}",
       "unavailable": "{{kind}} プレビューは利用できません。",
       "videoLabel": "{{filename}} のビデオ プレビュー"

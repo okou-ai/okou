@@ -317,33 +317,17 @@ export function SitePreviewCard({
   );
 }
 
-/** The site itself, scaled down to fill a card's frame. */
-export function SitePreviewViewport({
-  src,
-  title,
-}: {
-  readonly src: string | undefined;
-  readonly title: string;
-}) {
-  const { t } = useTranslation();
+/** Thread cards never execute publisher code before the viewer opens them. */
+export function SitePreviewPlaceholder({ title }: { readonly title: string }) {
   return (
     <div
-      data-testid="attachment-preview-html-viewport"
-      className="pointer-events-none absolute left-0 top-0 h-[400%] w-[400%] origin-top-left scale-[0.25]"
+      data-testid="attachment-preview-site-placeholder"
+      className="absolute inset-0 flex items-center justify-center bg-muted/30"
     >
-      <iframe
-        src={src}
-        title={t(
-          ($) => {
-            return $.artifacts.preview.siteLabel;
-          },
-          { title },
-        )}
-        sandbox="allow-same-origin allow-scripts"
-        tabIndex={-1}
-        loading="lazy"
-        scrolling="no"
-        className="pointer-events-none h-full w-full bg-background"
+      <FilePreviewIcon
+        filename={title}
+        contentType="text/html"
+        testId="attachment-preview-site-icon"
       />
     </div>
   );
@@ -395,7 +379,6 @@ function HtmlSitePreviewCard({
       title={title}
     >
       <SitePreviewContent
-        resourceUrl$={preview.resourceUrl$}
         title={title}
         previewImageLoad={previewImageLoad}
         previewImagePending={previewImagePending}
@@ -407,13 +390,11 @@ function HtmlSitePreviewCard({
 
 /** Shared visual content; the enclosing surface owns navigation and actions. */
 export function SitePreviewContent({
-  resourceUrl$,
   title,
   previewImageLoad,
   previewImagePending,
   previewImageUrl,
 }: {
-  resourceUrl$: AttachmentPreviewSignals["resourceUrl$"];
   title: string;
   previewImageLoad?: ImageLoadSignals;
   previewImagePending?: boolean;
@@ -425,9 +406,7 @@ export function SitePreviewContent({
       load={previewImageLoad}
       testId="attachment-preview-thumbnail"
       className="absolute inset-0 h-full w-full object-cover"
-      fallback={
-        <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
-      }
+      fallback={<SitePreviewPlaceholder title={title} />}
     />
   ) : previewImagePending ? (
     <span
@@ -435,19 +414,8 @@ export function SitePreviewContent({
       data-testid="attachment-preview-thumbnail-pending"
     />
   ) : (
-    <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
+    <SitePreviewPlaceholder title={title} />
   );
-}
-
-function HtmlSitePreviewViewport({
-  resourceUrl$,
-  title,
-}: {
-  resourceUrl$: AttachmentPreviewSignals["resourceUrl$"];
-  title: string;
-}) {
-  const resourceUrl = useLastResolved(resourceUrl$);
-  return <SitePreviewViewport src={resourceUrl} title={title} />;
 }
 
 function DocumentThumbnailPreview({

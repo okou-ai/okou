@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "返回 {{brandName}}",
+      "continue": "继续",
       "description": "它可能是私有的，也可能已不再可用。",
       "help": "可以联系分享这个链接的人确认访问权限。",
+      "sessionExpiredDescription": "网站会话已过期，请继续验证你的访问权限。",
+      "sessionExpiredTitle": "请重新验证访问权限",
       "signedInAs": "当前登录账号：{{email}}",
       "signedInDescription": "它可能不存在，也可能分享给了其他账号或组织。",
       "signIn": "登录",
@@ -439,7 +442,10 @@
       "switchAccount": "切换账号",
       "switchAccountFailed": "无法打开账号切换器，请重试。",
       "title": "你没有权限查看这个成果",
-      "tryAgain": "重试"
+      "tryAgain": "重试",
+      "websiteTitle": "你无法查看此网站",
+      "websiteUnavailableDescription": "请稍后重试。",
+      "websiteUnavailableTitle": "此网站暂时不可用"
     },
     "actions": {
       "backToAll": "返回全部成果",
@@ -595,7 +601,6 @@
         "text": "文本",
         "video": "视频"
       },
-      "siteLabel": "{{title}} 的站点预览",
       "slideTitle": "第 {{number}} 页",
       "unavailable": "无法预览 {{kind}}。",
       "videoLabel": "{{filename}} 的视频预览"

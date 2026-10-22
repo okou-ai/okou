@@ -2,6 +2,7 @@ import { createClerkClient } from "@clerk/backend";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
 import { artifactOgHtml } from "@okouai/core/artifact-og";
 import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifact-og-metadata";
+import { HOSTED_SITE_ACCESS_PATH } from "@okouai/api-contracts/contracts/hosted-site-access";
 
 import posthogClientMetadata from "../assets/posthog-metadata.json" with { type: "json" };
 
@@ -1146,7 +1147,8 @@ export function createWorker(
       const result = withAppHeaders(response, requestUrl);
       if (
         requestUrl.pathname.startsWith("/artifacts/") ||
-        requestUrl.pathname.startsWith("/share/artifacts/")
+        requestUrl.pathname.startsWith("/share/artifacts/") ||
+        requestUrl.pathname === HOSTED_SITE_ACCESS_PATH
       ) {
         const headers = new Headers(result.headers);
         headers.set("Cache-Control", "private, no-store");
