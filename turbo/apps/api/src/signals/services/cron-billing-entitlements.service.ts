@@ -748,7 +748,7 @@ const reconcileCanceledBillingCandidate$ = command(
     // A stale candidate returns no identity, so it cannot change entitlements.
     // The capability upsert and organization transition commit or fail together.
     const projected = db
-      .$with("reconciled_canceled_plan")
+      .$with("reconciled_canceled_plan", {})
       .as(
         canceledPlanEntitlementInsertSql(
           db.select({ orgId: changed.orgId }).from(changed).getSQL(),
