@@ -11,7 +11,7 @@ final class NativeProcessTests: XCTestCase {
     return collector
   }
 
-  private func fixture(_ source: String) throws -> (CommandExecutor, URL) {
+  private func nativeFixture(_ source: String) throws -> (NativeProcess, URL) {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let executable = directory.appendingPathComponent("helper")
@@ -23,6 +23,11 @@ final class NativeProcessTests: XCTestCase {
       await helper.stop()
       try FileManager.default.removeItem(at: directory)
     }
+    return (helper, directory)
+  }
+
+  private func fixture(_ source: String) throws -> (CommandExecutor, URL) {
+    let (helper, directory) = try nativeFixture(source)
     return (CommandExecutor(helper: helper), directory)
   }
 
@@ -257,6 +262,42 @@ final class NativeProcessTests: XCTestCase {
     let event = try XCTUnwrap(collector.events().first)
     XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "response_limit")
     XCTAssertTrue(try collector.attachments(for: event).isEmpty)
+  }
+
+  func testCoalescedResponsesKeepSuccessfulContentOutOfTheFailureAttachment() async throws {
+    let collector = try telemetry()
+    let (helper, _) = try nativeFixture(
+      #"""
+      #!/usr/bin/python3
+      import json, sys
+      requests = [json.loads(sys.stdin.readline()), json.loads(sys.stdin.readline())]
+      good = next(request for request in requests if request['kind'] == 'first')
+      content = ('0123456789abcdefghijklmnopqrstuvwxyz' * 44738)[:1610565]
+      response = {'id': good['id'], 'status': 'succeeded', 'result': {'content': content}}
+      sys.stdout.buffer.write(json.dumps(response).encode() + b'\n' + b'invalid-second-response\n')
+      sys.stdout.buffer.flush()
+      for line in sys.stdin:
+          pass
+      """#)
+
+    async let good = helper.request(.object(["kind": .string("first")]))
+    async let bad = helper.request(.object(["kind": .string("second")]))
+    let succeeded = try await good
+    XCTAssertEqual(succeeded["status"].string, "succeeded")
+    let expected = String(
+      String(repeating: "0123456789abcdefghijklmnopqrstuvwxyz", count: 44738).prefix(1610565))
+    XCTAssertEqual(succeeded["result"]["content"].string, expected)
+    do {
+      _ = try await bad
+      XCTFail("The malformed second response must fail its pending request")
+    } catch let failure as DesktopFailure {
+      XCTAssertEqual(failure.code, "accessibility_unavailable")
+    }
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 1)
+    let event = try XCTUnwrap(events.first)
+    let attachments = try collector.attachments(for: event)
+    XCTAssertEqual(attachments["native-helper-response.bin"], Data("invalid-second-response".utf8))
   }
 
   func testUnexpectedHelperExitIsDeliveredToSentry() async throws {

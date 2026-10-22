@@ -139,10 +139,12 @@ public actor NativeProcess {
     if readFragments.count > NativeHelperDiagnostics.maximumReadFragments {
       omittedReadsThrough = readFragments.removeFirst().endOffset
     }
-    buffer.append(data)
-    while let newline = buffer.firstIndex(of: 10) {
-      let line = Data(buffer.prefix(upTo: newline))
-      buffer.removeSubrange(...newline)
+    var start = data.startIndex
+    while let newline = data[start...].firstIndex(of: 10) {
+      buffer.append(data[start..<newline])
+      let line = buffer
+      buffer = Data()
+      start = data.index(after: newline)
       let frameStart = responseStart
       responseStart += line.count + 1
       let response: JSONValue
@@ -164,6 +166,7 @@ public actor NativeProcess {
       timeouts.removeValue(forKey: responseId)?.cancel()
       pending.removeValue(forKey: responseId)?.resume(returning: response)
     }
+    buffer.append(data[start...])
   }
   private func protocolFailure(
     _ failure: NativeHelperFailure, reason: String, response: Data, responseStart: Int,

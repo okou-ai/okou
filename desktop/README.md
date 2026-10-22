@@ -42,6 +42,7 @@ read fragments with their read sequence and offsets in parser order. This can
 identify framing boundaries without treating them as the established cause.
 The transport sequences reads before parsing and bounds queued plus partial
 output to 32 MiB before decoding, including when a read contains a newline.
+Framing scans only newly received bytes for delimiters.
 
 These attachments can contain screenshots, page content, and decoder excerpts.
 They inherit Sentry's project and attachment access controls and retention;
