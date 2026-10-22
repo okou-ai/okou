@@ -44,20 +44,20 @@ final class ConversationSendTransition {
     keyboardObserver = NotificationCenter.default.addObserver(
       forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
     ) { [weak self] notification in
-      MainActor.assumeIsolated { self?.keyboardWillChange(notification) }
+      guard
+        let duration =
+          (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
+          .doubleValue,
+        let curve =
+          (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?
+          .uintValue
+      else { return }
+      MainActor.assumeIsolated { self?.keyboardWillChange(duration: duration, curve: curve) }
     }
   }
 
-  private func keyboardWillChange(_ notification: Notification) {
+  private func keyboardWillChange(duration: Double, curve: UInt) {
     guard isActive else { return }
-    guard
-      let duration =
-        (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
-        .doubleValue,
-      let curve =
-        (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?
-        .uintValue
-    else { return }
     deadline = CACurrentMediaTime() + duration
     options = UIView.AnimationOptions(rawValue: curve << 16)
     switch curve {
