@@ -2546,11 +2546,18 @@ async function prepareConnectorTokenConnectionCleanup(
   return { pendingTokenRevoke, pendingGoogleCalendarWatchStop };
 }
 
-export async function resolveBuiltinConnectorTokenConnectionMutation(
-  args: CommitBuiltinConnectorTokenConnectionArgs,
-  signal: AbortSignal,
-): Promise<ConnectorConnectionMutationResolution> {
-  const resolution = await resolveConnectorConnectionMutation(args.db, {
+export function builtinConnectorTokenMutationValues(
+  args: Pick<
+    PreparedBuiltinConnectorTokenConnection,
+    | "orgId"
+    | "userId"
+    | "runtimeMethod"
+    | "account"
+    | "matchExistingExternalIdentity"
+    | "userInfo"
+  >,
+): Parameters<typeof resolveConnectorConnectionMutation>[1] {
+  return {
     orgId: args.orgId,
     userId: args.userId,
     target: {
@@ -2564,9 +2571,7 @@ export async function resolveBuiltinConnectorTokenConnectionMutation(
       matchExistingExternalIdentity: args.matchExistingExternalIdentity,
       externalId: args.userInfo.id,
     }),
-  });
-  signal.throwIfAborted();
-  return resolution;
+  };
 }
 export async function commitBuiltinConnectorTokenConnection(
   args: ResolvedBuiltinConnectorTokenConnectionArgs,
@@ -2871,10 +2876,17 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
           .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
       }
       const write = { ...prepared, db: tx };
-      const resolution = await resolveBuiltinConnectorTokenConnectionMutation(
-        write,
-        signal,
-      );
+      const mutationInput = write;
+      const mutationSignal = signal;
+      const resolution = await (async () => {
+        const { db, ...connection } = mutationInput;
+        const resolution = await resolveConnectorConnectionMutation(
+          db,
+          builtinConnectorTokenMutationValues(connection),
+        );
+        mutationSignal.throwIfAborted();
+        return resolution;
+      })();
       return await commitBuiltinConnectorTokenConnection(
         { ...write, resolution },
         signal,
