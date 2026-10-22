@@ -958,10 +958,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "No se pudo continuar. Inténtalo de nuevo.",
+      "allow": "Permitir",
+      "allowed": "Permitido",
+      "callbackPrompt": "El navegador en la nube está activado. Continúa con la tarea anterior.",
+      "cardDescription": "Activa el navegador en la nube para este chat y continúa automáticamente. Esto desconecta el uso del ordenador.",
       "description": "{{assistantName}} usará un perfil aislado de navegador en la nube para este hilo de chat. Activarlo desconecta el uso del ordenador para el hilo.",
       "enable": "Habilitar este hilo",
       "enabled": "Navegador en la nube habilitado",
       "linkExpires": "El enlace caduca {{date}}.",
+      "retry": "Reintentar",
       "title": "Activar el navegador en la nube",
       "unavailableDescription": "Este enlace de autorización para navegador en la nube es inválido, caducado o no está disponible para este espacio de trabajo.",
       "unavailableTitle": "Enlace de autorización no disponible"

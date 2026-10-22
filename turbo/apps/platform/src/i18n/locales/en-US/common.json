@@ -941,10 +941,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "Couldn't continue. Try again.",
+      "allow": "Allow",
+      "allowed": "Allowed",
+      "callbackPrompt": "The cloud browser is enabled. Please continue the previous task.",
+      "cardDescription": "Use a cloud browser for this chat and continue automatically. This disconnects Computer Use.",
       "description": "{{assistantName}} will use an isolated cloud browser profile for this chat thread. Enabling it disconnects Computer Use for the thread.",
       "enable": "Enable for this thread",
       "enabled": "Cloud browser enabled",
       "linkExpires": "Link expires {{date}}.",
+      "retry": "Retry",
       "title": "Enable cloud browser",
       "unavailableDescription": "This cloud browser authorization link is invalid, expired, or not available for this workspace.",
       "unavailableTitle": "Authorization link unavailable"

@@ -958,10 +958,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "Não foi possível continuar. Tente novamente.",
+      "allow": "Permitir",
+      "allowed": "Permitido",
+      "callbackPrompt": "O navegador na nuvem está ativado. Continue a tarefa anterior.",
+      "cardDescription": "Ative o navegador na nuvem para este chat e continue automaticamente. Isso desconecta o uso do computador.",
       "description": "O {{assistantName}} usará um perfil isolado de navegador na nuvem para esta conversa. Ao ativá-lo, o Computer Use será desconectado da conversa.",
       "enable": "Ativar para esta conversa",
       "enabled": "Navegador na nuvem ativado",
       "linkExpires": "O link expira em {{date}}.",
+      "retry": "Tentar novamente",
       "title": "Ativar navegador na nuvem",
       "unavailableDescription": "Este link de autorização do navegador na nuvem é inválido, expirou ou não está disponível para este workspace.",
       "unavailableTitle": "Link de autorização indisponível"

@@ -941,10 +941,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "Fortfahren fehlgeschlagen. Bitte erneut versuchen.",
+      "allow": "Zulassen",
+      "allowed": "Zugelassen",
+      "callbackPrompt": "Der Cloud-Browser ist aktiviert. Bitte setzen Sie die vorherige Aufgabe fort.",
+      "cardDescription": "Aktivieren Sie den Cloud-Browser für diesen Chat und fahren Sie automatisch fort. Die Computersteuerung wird getrennt.",
       "description": "{{assistantName}} wird für diesen Chat-Thread ein isoliertes Cloud-Browser-Profil verwenden. Durch die Aktivierung wird die Computernutzung für den Thread getrennt.",
       "enable": "Für diesen Thread aktivieren",
       "enabled": "Cloud-Browser aktiviert",
       "linkExpires": "Link läuft am {{date}} ab.",
+      "retry": "Erneut versuchen",
       "title": "Cloud-Browser aktivieren",
       "unavailableDescription": "Dieser Cloud-Browser-Autorisierungslink ist ungültig, abgelaufen oder für diesen Arbeitsbereich nicht verfügbar.",
       "unavailableTitle": "Autorisierungslink nicht verfügbar"

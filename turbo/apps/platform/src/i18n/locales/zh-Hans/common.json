@@ -940,10 +940,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "未能继续，请重试。",
+      "allow": "允许",
+      "allowed": "已允许",
+      "callbackPrompt": "浏览器已启用，请继续完成刚才的任务。",
+      "cardDescription": "为当前聊天启用云浏览器并自动继续任务。这会断开电脑操作。",
       "description": "{{assistantName}} 会在这个聊天会话中使用独立的云端浏览器环境。启用后，该会话的 Computer Use 会断开。",
       "enable": "为这个会话启用",
       "enabled": "云端浏览器已启用",
       "linkExpires": "链接将于{{date}}过期。",
+      "retry": "重试",
       "title": "启用云端浏览器",
       "unavailableDescription": "这个云端浏览器授权链接无效、已过期，或不适用于当前工作区。",
       "unavailableTitle": "授权链接不可用"

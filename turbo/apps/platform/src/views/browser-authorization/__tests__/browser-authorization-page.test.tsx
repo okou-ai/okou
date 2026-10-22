@@ -16,6 +16,8 @@ const REQUEST_TOKEN = "browser-request-token";
 function mockPendingAuthorization(): void {
   context.mocks.api(browserAuthorizationRequestsContract.get, ({ respond }) => {
     return respond(200, {
+      id: "a0000000-0000-4000-a000-000000000001",
+      chatThreadId: "b0000000-0000-4000-a000-000000000001",
       expiresAt: "2099-09-01T10:00:00.000Z",
       completedAt: null,
       cloudBrowserEnabled: false,

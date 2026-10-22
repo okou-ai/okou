@@ -72,6 +72,7 @@ import {
 } from "../../signals/okou-page/attachment-chips.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
+import { BrowserAuthorizationCard } from "./browser-authorization-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
 import { DesktopShellAuthorizationCard } from "./desktop-shell-authorization-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
@@ -340,6 +341,9 @@ export function MarkdownCardView({
     }
     case "computer-use-authorization": {
       return <ComputerUseAuthorizationCard signals={card.signals} />;
+    }
+    case "browser-authorization": {
+      return <BrowserAuthorizationCard signals={card.signals} />;
     }
     case "desktop-shell-authorization": {
       return <DesktopShellAuthorizationCard signals={card.signals} />;

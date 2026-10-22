@@ -940,10 +940,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "계속할 수 없습니다. 다시 시도해 주세요.",
+      "allow": "허용",
+      "allowed": "허용됨",
+      "callbackPrompt": "클라우드 브라우저가 활성화되었습니다. 이전 작업을 계속해 주세요.",
+      "cardDescription": "이 채팅에서 클라우드 브라우저를 활성화하고 작업을 자동으로 계속합니다. 컴퓨터 사용 연결이 해제됩니다.",
       "description": "{{assistantName}}는 이 채팅 스레드에 대해 격리된 클라우드 브라우저 프로필을 사용합니다. 활성화하면 스레드의 컴퓨터 사용이 연결 해제됩니다.",
       "enable": "이 스레드에 대해 활성화",
       "enabled": "클라우드 브라우저 활성화됨",
       "linkExpires": "링크는 {{date}}에 만료됩니다.",
+      "retry": "다시 시도",
       "title": "클라우드 브라우저 활성화",
       "unavailableDescription": "이 클라우드 브라우저 인증 링크는 유효하지 않거나 만료되었거나 이 워크스페이스에서 사용할 수 없습니다.",
       "unavailableTitle": "인증 링크를 사용할 수 없음"

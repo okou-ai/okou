@@ -33,6 +33,8 @@ type CreateBrowserAuthorizationRequestResult =
 type ReadBrowserAuthorizationRequestResult =
   | {
       readonly status: "found";
+      readonly id: string;
+      readonly chatThreadId: string;
       readonly expiresAt: string;
       readonly completedAt: string | null;
       readonly cloudBrowserEnabled: boolean;
@@ -223,6 +225,8 @@ export const readBrowserAuthorizationRequest$ = command(
     }
     return {
       status: "found",
+      id: loaded.request.id,
+      chatThreadId: loaded.request.chatThreadId,
       expiresAt: loaded.request.expiresAt.toISOString(),
       completedAt: loaded.request.completedAt?.toISOString() ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
