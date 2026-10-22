@@ -31,6 +31,8 @@ use crate::test_fixtures::execution_context::execution_context_for_test;
 const MIB: u64 = 1024 * 1024;
 const WAIT: Duration = Duration::from_secs(5);
 
+mod http_claim;
+
 struct Source {
     path: PathBuf,
     gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
