@@ -297,6 +297,8 @@ pub(crate) struct FactoryOverrideState {
     /// FIFO queue of create results consumed by every factory built with
     /// these overrides. Empty queue → default Ok(()).
     pub(crate) create_results: Mutex<VecDeque<Result<()>>>,
+    /// Explicit provider backing generations shared across created factories.
+    pub(crate) create_backings: Mutex<VecDeque<Arc<dyn SandboxBackingProcess>>>,
     /// Sandbox create configs observed across factories built with these overrides.
     pub(crate) create_configs: Mutex<Vec<SandboxConfig>>,
     /// Optional gate that records and blocks every factory `create()` entry until released.
@@ -875,6 +877,15 @@ impl MockSandboxOverrides {
             .create_results
             .lock_ignoring_poison()
             .push_back(result);
+    }
+
+    /// Attach the next exact provider-owned backing across runtime factories.
+    /// Stop/destroy never invent its terminal child-wait observation.
+    pub fn push_create_backing(&self, backing: Arc<dyn SandboxBackingProcess>) {
+        self.factory
+            .create_backings
+            .lock_ignoring_poison()
+            .push_back(backing);
     }
 
     /// Return sandbox create configs observed by factories using this override

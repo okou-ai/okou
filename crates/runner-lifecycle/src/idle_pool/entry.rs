@@ -1,10 +1,11 @@
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use sandbox::{
-    DeviceRateLimits, Sandbox, SandboxFactory, SandboxFinalExecParkHandoffPoint, SandboxId,
+    DeviceRateLimits, Sandbox, SandboxBackingProcess, SandboxFactory,
+    SandboxFinalExecParkHandoffPoint, SandboxId,
 };
 
 use crate::guest_timezone::GuestTimezoneIntent;
@@ -473,6 +474,22 @@ pub enum DestroyOutcome {
     Uncertain,
 }
 
+/// Require bounded positive provider-owned child-wait proof after retirement.
+/// Missing capability, failed/lost wait, timeout and panic remain unconfirmed.
+pub async fn confirm_backing_exit(backing: Option<Arc<dyn SandboxBackingProcess>>) -> bool {
+    let Some(backing) = backing else {
+        return false;
+    };
+    matches!(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            AssertUnwindSafe(backing.exit_confirmed()).catch_unwind(),
+        )
+        .await,
+        Ok(Ok(true))
+    )
+}
+
 /// Reusable sandbox state handed to the executor after a successful unpark.
 ///
 /// The budget lease is intentionally not part of this payload. The outer job
@@ -809,6 +826,20 @@ impl IdleDestroyJob {
             home_cache_promoted: result.home_cache_promoted,
             budget_lease,
         }
+    }
+
+    /// Retain capacity until this exact backing's exit is positively observed.
+    /// A normal factory return alone does not prove physical retirement.
+    pub async fn run_retaining_lease_with_confirmed_exit(
+        self,
+        context: &'static str,
+    ) -> RetainedIdleDestroyResult {
+        let backing = self.payload.resources.sandbox.backing_process();
+        let mut result = self.run_retaining_lease(context).await;
+        if result.outcome == DestroyOutcome::Completed && !confirm_backing_exit(backing).await {
+            result.outcome = DestroyOutcome::Uncertain;
+        }
+        result
     }
 
     pub fn into_retiring_parts(self) -> (IdleDestroyPayload, BudgetLease) {

@@ -1,4 +1,4 @@
-//! Report the settled Run resource independently of observability uploads.
+//! Report the authenticated Agent-ready resource independently of observability uploads.
 
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ const STARTUP_REPORT_TIMEOUT: Duration = Duration::from_secs(2);
 const STARTUP_REPORT_MAX_ATTEMPTS: usize = 3;
 const STARTUP_REPORT_RETRY_DELAY: Duration = Duration::from_secs(2);
 
-/// Owned delivery of the settled startup fact, independent of Run finalization.
+/// Owned delivery of the authenticated Agent-ready fact, independent of Run finalization.
 ///
 /// The supervisor joins this task after releasing the Run's resources. Dropping
 /// the owner aborts delivery, including an in-flight HTTP request.

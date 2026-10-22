@@ -45,7 +45,7 @@ pub use activation_cleanup::{
 };
 pub use entry::{
     DestroyOutcome, FinalizingHandoffCandidate, IdleDestroyPayload, IdleDestroyResult,
-    RetainedIdleDestroyResult,
+    RetainedIdleDestroyResult, confirm_backing_exit,
 };
 pub use entry::{
     IdleDestroyJob, IdleEntry, IdleSandboxIdentity, IdleSandboxKind, IdleUnparkResult,

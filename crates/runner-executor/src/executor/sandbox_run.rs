@@ -17,8 +17,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::agent_run::{
-    AgentExecutionResult, PreparedGuestRuntime, PreparedRunInputs, ProcessCancelTimeouts,
-    RunControls, RunStart, run_in_sandbox_with_process_cancel_timeouts,
+    AgentExecutionResult, AgentRunLifecycle, PreparedGuestRuntime, PreparedRunInputs,
+    ProcessCancelTimeouts, RunControls, RunStart, run_in_sandbox_with_process_cancel_timeouts,
 };
 use super::cli_framework::{
     EffectiveCliFramework, effective_cli_framework, normalized_cli_agent_type,
@@ -545,7 +545,11 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     };
     controls.pre_spawn_admission_lease = Some(admission_lease);
     let prepare_started = Instant::now();
-    let mut home_image = prepare_home_image(context, sandbox_id, config, params, telemetry).await;
+    let mut home_image = if preparation == FreshPreparation::DiskReplacement {
+        None
+    } else {
+        prepare_home_image(context, sandbox_id, config, params, telemetry).await
+    };
     let prepared_storage = prepare_storage(
         context,
         home_image
@@ -572,8 +576,8 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         .as_ref()
         .filter(|image| image.is_cache_hit())
         .and_then(|image| image.history_proof_binding().cloned());
-    let mut used_retry = preparation == FreshPreparation::WithoutCodexPrefetchReplacement;
-    let mut used_home_fallback = false;
+    let mut used_retry = preparation != FreshPreparation::Initial;
+    let mut used_home_fallback = preparation == FreshPreparation::DiskReplacement;
     let mut codex_model_catalog_prefetch = preparation == FreshPreparation::Initial;
     let mut dns_replacement: Option<DnsReadinessReplacement> = None;
     let prepared = 'preparation: {
@@ -608,6 +612,11 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 Ok(prepared) => break 'preparation prepared,
                 Err(failure) => failure,
             };
+            if !failure.cleanup_completed
+                && let Some(recovery) = controls.sandbox_recovery.as_ref()
+            {
+                recovery.uncertain(context.run_id, sandbox_id);
+            }
 
             let cache_hit = home_image
                 .as_ref()
@@ -710,17 +719,19 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             }
 
             if cache_hit {
+                let reason = if retry_guest_dns {
+                    "guest_dns_replacement"
+                } else if retry_without_codex_prefetch {
+                    "codex_prefetch_replacement"
+                } else {
+                    "home_preparation_failed"
+                };
+                telemetry.set_home_non_reuse_reason(reason);
                 if let Some(image) = &home_image {
                     telemetry.observe_home(image.consumption_observation(
                         Some(context.run_id),
                         runner_host::home_observation::HomeObservationOutcome::Fallback,
-                        Some(if retry_guest_dns {
-                            "guest_dns_replacement"
-                        } else if retry_without_codex_prefetch {
-                            "codex_prefetch_replacement"
-                        } else {
-                            "home_preparation_failed"
-                        }),
+                        Some(reason),
                     ));
                 }
                 used_home_fallback = true;
@@ -784,7 +795,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             .and_then(HomeImageLease::source_identity),
     );
 
-    let mut outcome = execute_prepared_sandbox_run(
+    let attempt = execute_prepared_sandbox_attempt(
         prepared,
         context,
         config,
@@ -805,6 +816,25 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         PreparedRunInputs::new(controls, prepared_run_payload),
     )
     .await;
+    if preparation != FreshPreparation::DiskReplacement && attempt.retry_inputs.is_some() {
+        return Ok(Box::pin(replace_disk_full_sandbox(
+            factory,
+            context,
+            config,
+            params,
+            telemetry,
+            DiskReplacement {
+                dispatch: NewSandboxDispatch {
+                    id: sandbox_id,
+                    reuse_result,
+                },
+                attempt,
+                home_image,
+            },
+        ))
+        .await);
+    }
+    let mut outcome = attempt.outcome;
     outcome.home_image = home_image;
     Ok(outcome)
 }
@@ -841,8 +871,10 @@ pub(super) struct NewSandboxHooks<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum FreshPreparation {
     Initial,
-    /// The blank has already consumed the only replacement attempt.
+    /// The blank has already consumed the prefetch preparation replacement.
     WithoutCodexPrefetchReplacement,
+    /// A confirmed pre-Agent disk failure already spent the replacement budget.
+    DiskReplacement,
 }
 
 struct StartSandboxOptions<'a> {
@@ -1365,6 +1397,7 @@ pub(super) async fn destroy_sandbox_panic_safe(
     factory: &dyn SandboxFactory,
     sandbox: Box<dyn Sandbox>,
 ) -> DestroySandboxOutcome {
+    let backing = sandbox.backing_process();
     if AssertUnwindSafe(factory.destroy(sandbox))
         .catch_unwind()
         .await
@@ -1372,11 +1405,217 @@ pub(super) async fn destroy_sandbox_panic_safe(
     {
         warn!("sandbox destroy panicked after start failure");
         DestroySandboxOutcome::Uncertain
+    } else if backing.is_some() && !crate::idle_pool::confirm_backing_exit(backing).await {
+        warn!("sandbox destroy returned without confirmed backing exit");
+        DestroySandboxOutcome::Uncertain
     } else {
         DestroySandboxOutcome::Completed
     }
 }
 
+pub(super) struct PreparedSandboxAttempt {
+    pub(super) outcome: ExecuteOutcome,
+    pub(super) retry_inputs: Option<Box<PreparedRunInputs>>,
+}
+
+pub(super) struct DiskReplacement {
+    pub(super) dispatch: NewSandboxDispatch,
+    pub(super) attempt: PreparedSandboxAttempt,
+    pub(super) home_image: Option<HomeImageLease>,
+}
+
+pub(super) async fn replace_disk_full_sandbox(
+    factory: &dyn SandboxFactory,
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+    params: &JobParams,
+    telemetry: &mut JobTelemetry,
+    replacement: DiskReplacement,
+) -> ExecuteOutcome {
+    let DiskReplacement {
+        dispatch,
+        mut attempt,
+        home_image,
+    } = replacement;
+    let Some(mut inputs) = attempt.retry_inputs.take() else {
+        return attempt.outcome;
+    };
+    let diagnostics = attempt
+        .outcome
+        .failure
+        .as_ref()
+        .and_then(|failure| failure.resource_diagnostics.as_ref());
+    let home_full = diagnostics.is_some_and(super::diagnostics::home_is_clearly_full);
+    let rootfs_full = diagnostics.is_some_and(super::diagnostics::rootfs_is_clearly_full);
+    let reason = match (home_full, rootfs_full) {
+        (true, true) => "bootstrap_home_and_rootfs_disk_full",
+        (true, false) => "bootstrap_home_disk_full",
+        (false, true) => "bootstrap_rootfs_disk_full",
+        (false, false) => "bootstrap_disk_full",
+    };
+    if let Some(image) = home_image.as_ref().filter(|image| image.is_cache_hit()) {
+        telemetry.observe_home(image.consumption_observation(
+            Some(context.run_id),
+            runner_host::home_observation::HomeObservationOutcome::Failed,
+            Some(reason),
+        ));
+    }
+    // Checkout already revoked the consumed generation's discoverability. Purge
+    // only that lease, never a newer cache baseline or an unrelated miss.
+    if home_full {
+        invalidate_home_cache_hit(home_image.as_ref(), context.run_id, reason).await;
+    }
+    drop(home_image);
+    if let Some(log) = attempt.outcome.network_log_session.take() {
+        log.close_for_upload(context.run_id, &config.network_log_drain)
+            .await;
+    }
+    let destroyed = match attempt.outcome.sandbox.take() {
+        Some(sandbox) => {
+            let has_backing = sandbox.backing_process().is_some();
+            destroy_sandbox_panic_safe(factory, sandbox)
+                .await
+                .is_completed()
+                && has_backing
+        }
+        None => false,
+    };
+    if !destroyed || inputs.controls.cancel.is_cancelled() {
+        if !destroyed && let Some(source) = inputs.controls.sandbox_recovery.as_ref() {
+            source.uncertain(context.run_id, dispatch.id);
+        }
+        telemetry.record_with_outcome(
+            "runner_bootstrap_disk_replacement",
+            Duration::ZERO,
+            false,
+            None,
+            Some(if destroyed {
+                "cancelled"
+            } else {
+                "cleanup_uncertain"
+            }),
+        );
+        if inputs.controls.cancel.is_cancelled() {
+            attempt.outcome.mark_cancelled();
+        }
+        return attempt.outcome;
+    }
+    // The old burst lease must not deadlock reacquisition by the pristine VM.
+    drop(inputs.controls.pre_spawn_admission_lease.take());
+    if let Some(source) = inputs.controls.sandbox_recovery.as_ref()
+        && let Err(error) = source.retired(context.run_id, dispatch.id).await
+    {
+        return ExecuteOutcome::preparation_failure(error);
+    }
+    telemetry.set_home_startup_source(None);
+    let try_blank = !inputs.controls.disk_recovery;
+    if !inputs.controls.disk_recovery {
+        telemetry.set_home_non_reuse_reason(reason);
+    }
+    inputs.controls.disk_recovery = true;
+    telemetry.record_with_outcome(
+        "runner_bootstrap_disk_replacement",
+        Duration::ZERO,
+        true,
+        None,
+        Some(reason),
+    );
+    let cancel = inputs.controls.cancel.clone();
+    if try_blank && let Some(source) = inputs.controls.sandbox_recovery.as_ref() {
+        let acquired = source
+            .acquire(context.run_id, dispatch.id, cancel.clone())
+            .await;
+        match acquired {
+            Ok(Some(blank)) => {
+                let sandbox_id = blank.sandbox_id();
+                let parts = blank.into_parts();
+                telemetry.record_with_outcome(
+                    "runner_disk_replacement_blank",
+                    Duration::ZERO,
+                    true,
+                    None,
+                    Some("available"),
+                );
+                return Box::pin(super::reused_sandbox::execute_reused_sandbox(
+                    super::reused_sandbox::ReusedSandboxRun {
+                        sandbox_id,
+                        factory,
+                        params,
+                        sandbox: parts.sandbox,
+                        source_ip: parts.source_ip,
+                        home_image: None,
+                        kind: crate::idle_pool::IdleSandboxKind::Blank,
+                    },
+                    context,
+                    config,
+                    RunStart {
+                        restore_guest_state: params.restore_guest_state,
+                        reuse_result: dispatch.reuse_result,
+                        home_reuse_result: HomeReuseResult::SandboxPrepareFallback,
+                        sandbox_startup_path: runner_types::types::SandboxStartupPath::Blank,
+                        prev_storage: None,
+                    },
+                    telemetry,
+                    PreparedRunInputs::new(
+                        inputs
+                            .controls
+                            .with_guest_state_prepared(parts.guest_state_prepared),
+                        inputs.run_payload,
+                    ),
+                ))
+                .await;
+            }
+            Ok(None) => telemetry.record_with_outcome(
+                "runner_disk_replacement_blank",
+                Duration::ZERO,
+                false,
+                None,
+                Some("unavailable"),
+            ),
+            Err(error) => {
+                telemetry.record_with_outcome(
+                    "runner_disk_replacement_blank",
+                    Duration::ZERO,
+                    false,
+                    None,
+                    Some("activation_unsafe"),
+                );
+                let mut outcome = ExecuteOutcome::preparation_failure(error);
+                if cancel.is_cancelled() {
+                    outcome.mark_cancelled();
+                }
+                return outcome;
+            }
+        }
+    }
+    let prepared_notifier = inputs
+        .controls
+        .sandbox_recovery
+        .as_ref()
+        .and_then(|source| source.prepared.clone());
+    let mut outcome = execute_new_sandbox_with_prepared_notifier(
+        factory,
+        context,
+        dispatch,
+        config,
+        params,
+        telemetry,
+        NewSandboxHooks {
+            preparation: FreshPreparation::DiskReplacement,
+            controls: inputs.controls.with_guest_state_prepared(false),
+            prepared_run_payload: inputs.run_payload,
+            sandbox_prepared: prepared_notifier.as_ref(),
+        },
+    )
+    .await
+    .unwrap_or_else(ExecuteOutcome::preparation_failure);
+    if cancel.is_cancelled() {
+        outcome.mark_cancelled();
+    }
+    outcome
+}
+
+#[cfg(test)]
 pub(super) async fn execute_prepared_sandbox_run(
     run: PreparedSandboxRun,
     context: &ExecutionContext,
@@ -1385,7 +1624,20 @@ pub(super) async fn execute_prepared_sandbox_run(
     telemetry: &mut JobTelemetry,
     inputs: PreparedRunInputs,
 ) -> ExecuteOutcome {
-    execute_prepared_sandbox_run_with_process_cancel_timeouts(
+    execute_prepared_sandbox_attempt(run, context, config, start, telemetry, inputs)
+        .await
+        .outcome
+}
+
+pub(super) async fn execute_prepared_sandbox_attempt(
+    run: PreparedSandboxRun,
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+    start: RunStart<'_>,
+    telemetry: &mut JobTelemetry,
+    inputs: PreparedRunInputs,
+) -> PreparedSandboxAttempt {
+    execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
         run,
         context,
         config,
@@ -1397,6 +1649,7 @@ pub(super) async fn execute_prepared_sandbox_run(
     .await
 }
 
+#[cfg(test)]
 pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     run: PreparedSandboxRun,
     context: &ExecutionContext,
@@ -1406,6 +1659,28 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     inputs: PreparedRunInputs,
     process_cancel_timeouts: ProcessCancelTimeouts,
 ) -> ExecuteOutcome {
+    execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
+        run,
+        context,
+        config,
+        start,
+        telemetry,
+        inputs,
+        process_cancel_timeouts,
+    )
+    .await
+    .outcome
+}
+
+async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
+    run: PreparedSandboxRun,
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+    start: RunStart<'_>,
+    telemetry: &mut JobTelemetry,
+    inputs: PreparedRunInputs,
+    process_cancel_timeouts: ProcessCancelTimeouts,
+) -> PreparedSandboxAttempt {
     let PreparedSandboxRun {
         sandbox,
         source_ip,
@@ -1419,20 +1694,10 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context, &cleanup_cancel));
     let reuse_result = start.reuse_result;
     let home_reuse_result = start.home_reuse_result;
-    let sandbox_startup_path = start.sandbox_startup_path;
-    telemetry.set_sandbox_startup_path(sandbox_startup_path);
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
-    // The actual resource has settled. Transfer this bounded task to the caller
-    // without holding execution, successor handoff, or resource release on HTTP.
-    let startup_report = super::StartupReport::spawn(
-        config.http.clone(),
-        context.run_id,
-        context.sandbox_token.clone(),
-        sandbox_startup_path,
-        cleanup_cancel.clone(),
-    );
+    let mut lifecycle = AgentRunLifecycle::new(process_cancel_timeouts);
     let result = run_in_sandbox_with_process_cancel_timeouts(
         sandbox.as_ref(),
         context,
@@ -1440,7 +1705,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         start,
         telemetry,
         inputs,
-        process_cancel_timeouts,
+        &mut lifecycle,
     )
     .await;
 
@@ -1449,18 +1714,21 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         None => Ok(()),
     };
 
-    let pre_process_resource_diagnostics = match result.as_ref() {
-        Err(error) if explicit_enospc_evidence([error.to_string().as_str()]) => {
-            collect_agent_abnormal_exit_diagnostics(
-                sandbox.as_ref(),
-                context.run_id,
-                sandbox.id(),
-                reuse_result,
-                1,
-            )
-            .await
-        }
-        Ok(_) | Err(_) => None,
+    let collect_pre_process_diagnostics = result
+        .as_ref()
+        .err()
+        .is_some_and(|error| explicit_enospc_evidence([error.to_string().as_str()]));
+    let pre_process_resource_diagnostics = if collect_pre_process_diagnostics {
+        collect_agent_abnormal_exit_diagnostics(
+            sandbox.as_ref(),
+            context.run_id,
+            sandbox.id(),
+            reuse_result,
+            1,
+        )
+        .await
+    } else {
+        None
     };
 
     let stdout_stream_diagnostics = result.as_ref().map_or_else(
@@ -1487,6 +1755,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         Err(e) => AgentExecutionResult::failure_from_error(e.to_string())
             .with_resource_diagnostics(pre_process_resource_diagnostics),
     };
+    let cleanup_completed = remote_cleanup.is_ok() && cleanup_result.is_ok();
     if let Err(error) = remote_cleanup {
         if agent_result.failure.is_none() {
             agent_result.failure = Some(ExecutionFailure::from_error(error.to_string()));
@@ -1510,33 +1779,41 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     }
 
     // Read the CLI-generated session ID after execution only when no ID was supplied.
-    let discovered_cli_agent_session_id = if context.cli_agent_session_id().is_none() {
-        let id = read_guest_cli_agent_session_id(sandbox.as_ref(), context.run_id)
-            .await
-            .and_then(|id| normalize_guest_cli_agent_session_id(context, id));
-        if let Some(ref sid) = id {
-            info!(
-                run_id = %context.run_id,
-                session_id = %sid,
-                "read guest CLI agent session ID after execution"
-            );
-        }
-        id
-    } else {
-        None
-    };
+    let retry_inputs = agent_result
+        .pre_agent_retry
+        .take()
+        .filter(|_| cleanup_completed);
+    let discovered_cli_agent_session_id =
+        if retry_inputs.is_none() && context.cli_agent_session_id().is_none() {
+            let id = read_guest_cli_agent_session_id(sandbox.as_ref(), context.run_id)
+                .await
+                .and_then(|id| normalize_guest_cli_agent_session_id(context, id));
+            if let Some(ref sid) = id {
+                info!(
+                    run_id = %context.run_id,
+                    session_id = %sid,
+                    "read guest CLI agent session ID after execution"
+                );
+            }
+            id
+        } else {
+            None
+        };
 
-    ExecuteOutcome {
-        failure: agent_result.failure,
-        sandbox_reuse_disposition: agent_result.sandbox_reuse_disposition,
-        sandbox: Some(sandbox),
-        source_ip,
-        network_log_session: Some(network_log_session),
-        home_image: None,
-        home_reuse_result: Some(home_reuse_result),
-        startup_report: Some(startup_report),
-        discovered_cli_agent_session_id,
-        restored_session_identity,
+    PreparedSandboxAttempt {
+        retry_inputs,
+        outcome: ExecuteOutcome {
+            failure: agent_result.failure,
+            sandbox_reuse_disposition: agent_result.sandbox_reuse_disposition,
+            sandbox: Some(sandbox),
+            source_ip,
+            network_log_session: Some(network_log_session),
+            home_image: None,
+            home_reuse_result: lifecycle.startup_report.as_ref().map(|_| home_reuse_result),
+            startup_report: lifecycle.startup_report,
+            discovered_cli_agent_session_id,
+            restored_session_identity,
+        },
     }
 }
 

@@ -2011,10 +2011,13 @@ async fn execute_inner_rejects_invalid_run_payload_before_private_writes() {
 }
 
 #[tokio::test]
-async fn execute_inner_run_payload_enospc_collects_resources_without_starting_agent() {
+async fn execute_inner_run_payload_enospc_inspects_resources_then_starts_one_fresh_agent() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (completion, backing) = sandbox_mock::MockBackingProcess::channel();
+    completion.confirm_exit();
+    overrides.push_create_backing(backing);
     overrides.push_private_write_files_result(Err(sandbox_write_file_error(
         "No space left on device (os error 28)",
     )));
@@ -2030,24 +2033,23 @@ async fn execute_inner_run_payload_enospc_collects_resources_without_starting_ag
         .await
         .unwrap();
 
-    assert_eq!(outcome.exit_code(), 1);
-    let failure = outcome.failure.as_ref().expect("expected failure");
-    assert!(
-        failure
-            .error
-            .contains("No space left on device (os error 28)"),
-        "got: {failure:?}"
-    );
-    assert_eq!(
-        failure
-            .resource_diagnostics
-            .expect("expected resource diagnostics")
-            .failure_kind,
-        Some(ResourceFailureKind::GuestRootFilesystemFull)
-    );
+    assert_eq!(outcome.exit_code(), 0);
+    assert_eq!(overrides.create_configs().len(), 2);
+    assert_eq!(overrides.destroy_call_count(), 1);
     assert!(overrides.private_write_file_calls().is_empty());
     let private_batches = overrides.private_write_files_calls();
-    assert_eq!(private_batches.len(), 1);
+    assert_eq!(private_batches.len(), 2);
+    for (original, replacement) in private_batches[0]
+        .files
+        .iter()
+        .zip(&private_batches[1].files)
+    {
+        assert_eq!(original.path, replacement.path);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&original.content).unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&replacement.content).unwrap()
+        );
+    }
     assert_eq!(private_batches[0].files.len(), 3);
     assert!(
         private_batches[0].files[0]
@@ -2063,9 +2065,12 @@ async fn execute_inner_run_payload_enospc_collects_resources_without_starting_ag
         "got: {}",
         private_batches[0].files[2].path
     );
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
     assert!(
-        overrides.start_agent_process_calls().is_empty(),
-        "agent must not start after run payload write failure"
+        overrides
+            .exec_calls()
+            .iter()
+            .any(|call| call.cmd.ends_with("recover-disk-space rootfs"))
     );
     assert_eq!(
         overrides

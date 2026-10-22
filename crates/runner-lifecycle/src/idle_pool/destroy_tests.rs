@@ -91,6 +91,40 @@ async fn idle_destroy_payload_kill_error_completes_after_destroy() {
 }
 
 #[tokio::test]
+async fn replacement_retirement_requires_positive_child_wait_and_retains_capacity() {
+    for evidence in ["confirmed", "failed_wait", "missing_wait", "lost_producer"] {
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        if evidence != "missing_wait" {
+            let (completion, backing) = sandbox_mock::MockBackingProcess::channel();
+            match evidence {
+                "confirmed" => completion.confirm_exit(),
+                "failed_wait" => completion.fail_wait(),
+                _ => drop(completion),
+            }
+            overrides.push_create_backing(backing);
+        }
+        let (budget, lease) = reserved_budget_lease();
+        let job = make_idle_destroy_job(overrides.clone(), lease).await;
+        let result = job
+            .run_retaining_lease_with_confirmed_exit("replacement_retirement")
+            .await;
+        assert_eq!(
+            result.outcome,
+            if evidence == "confirmed" {
+                DestroyOutcome::Completed
+            } else {
+                DestroyOutcome::Uncertain
+            },
+            "{evidence}"
+        );
+        assert_eq!(overrides.destroy_call_count(), 1);
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        drop(result.budget_lease);
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+}
+
+#[tokio::test]
 async fn idle_destroy_payload_kill_panic_is_uncertain_after_destroy() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.push_kill_panic("simulated idle kill panic");

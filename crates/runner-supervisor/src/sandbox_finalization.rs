@@ -1417,7 +1417,7 @@ mod tests {
     use std::time::Duration;
 
     use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
-    use guest_contracts::reuse_preparation::{ReusePreparationReport, RootFilesystemCapacity};
+    use guest_contracts::reuse_preparation::{FilesystemCapacity, ReusePreparationReport};
     use guest_contracts::session_history_identity::{
         SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind,
         SessionHistorySourceRef,
@@ -1930,15 +1930,16 @@ mod tests {
         let run_id = RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let report = ReusePreparationReport {
-            before: RootFilesystemCapacity {
+            before: FilesystemCapacity {
                 available_bytes: 256 * 1024 * 1024,
                 available_inodes: 2048,
             },
-            after: RootFilesystemCapacity {
+            after: FilesystemCapacity {
                 available_bytes: 384 * 1024 * 1024,
                 available_inodes: 4096,
             },
             removed_entries: 7,
+            home: runner_lifecycle::idle_reuse_preparation::healthy_reuse_preparation_report().home,
         };
         let overrides = Arc::new(MockSandboxOverrides::new());
         overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
@@ -2076,15 +2077,17 @@ mod tests {
             pattern: "prepare-for-reuse".into(),
             exit_code: 0,
             stdout: serde_json::to_vec(&ReusePreparationReport {
-                before: RootFilesystemCapacity {
+                before: FilesystemCapacity {
                     available_bytes: 64 * 1024 * 1024,
                     available_inodes: 4096,
                 },
-                after: RootFilesystemCapacity {
+                after: FilesystemCapacity {
                     available_bytes: 64 * 1024 * 1024,
                     available_inodes: 4096,
                 },
                 removed_entries: 0,
+                home: runner_lifecycle::idle_reuse_preparation::healthy_reuse_preparation_report()
+                    .home,
             })
             .unwrap(),
             stderr: Vec::new(),

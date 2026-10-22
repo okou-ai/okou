@@ -29,7 +29,8 @@ class FinalExecReportTests(unittest.TestCase):
         self.collector["metadata"]["native_final_exec_policy_json"] = raw
         self.request = self.make_request()
         self.result = {"before":{"availableBytes":256*1024**2,"availableInodes":2048},
-                       "after":{"availableBytes":256*1024**2,"availableInodes":2048},"removedEntries":0}
+                       "after":{"availableBytes":256*1024**2,"availableInodes":2048},
+                       "home":{"availableBytes":256*1024**2,"availableInodes":2048},"removedEntries":0}
         self.response = self.make_result()
         for value, old, new in (
             (self.values[2],"canonical_fixed_helper","canonical_final_exec"),

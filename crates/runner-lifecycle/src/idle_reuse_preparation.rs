@@ -160,6 +160,23 @@ impl IdleReusePreparation {
                 )
             })?;
         let low_bytes = report.after.available_bytes < MIN_REUSE_ROOTFS_AVAILABLE_BYTES;
+        if let Some(reason) = report.home.home_rejection_reason() {
+            log_report(
+                &self.sandbox_id,
+                self.operation_run_id,
+                reason,
+                result,
+                report,
+                false,
+            );
+            return Err(IdleReusePreparationFailure {
+                error: format!(
+                    "guest home below reuse reserve: {} bytes and {} inodes available",
+                    report.home.available_bytes, report.home.available_inodes
+                ),
+                expected_capacity_rejection: true,
+            });
+        }
         let low_inodes = report.after.available_inodes < MIN_REUSE_ROOTFS_AVAILABLE_INODES;
         if low_bytes || low_inodes {
             let reason = if low_bytes && low_inodes {
@@ -200,24 +217,28 @@ impl IdleReusePreparation {
 
 fn compose_reuse_preparation_command(helper_command: &str, mount_command: &str) -> String {
     format!(
-        "set -e\n{helper_command}\nset +e\n(\nset -eu\n{mount_command}\n) >/dev/null\nmount_status=$?\nset -e\nif [ \"$mount_status\" -ne 0 ]; then\n  exit {REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED}\nfi"
+        "set +e\n(\nset -eu\n{mount_command}\n) </dev/null >/dev/null\nmount_status=$?\nset -e\nif [ \"$mount_status\" -ne 0 ]; then\n  exit {REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED}\nfi\n{helper_command}"
     )
 }
 
 #[cfg(any(test, feature = "test-support"))]
 pub fn healthy_reuse_preparation_report() -> ReusePreparationReport {
-    use guest_contracts::reuse_preparation::RootFilesystemCapacity;
+    use guest_contracts::reuse_preparation::FilesystemCapacity;
 
     ReusePreparationReport {
-        before: RootFilesystemCapacity {
+        before: FilesystemCapacity {
             available_bytes: 256 * 1024 * 1024,
             available_inodes: 2048,
         },
-        after: RootFilesystemCapacity {
+        after: FilesystemCapacity {
             available_bytes: 256 * 1024 * 1024,
             available_inodes: 2048,
         },
         removed_entries: 0,
+        home: FilesystemCapacity {
+            available_bytes: 256 * 1024 * 1024,
+            available_inodes: 2048,
+        },
     }
 }
 
@@ -332,6 +353,8 @@ fn log_report(
             removed_entries = report.removed_entries,
             before_available_bytes = report.before.available_bytes,
             after_available_bytes = report.after.available_bytes,
+            home_available_bytes = report.home.available_bytes,
+            home_available_inodes = report.home.available_inodes,
             reclaimed_bytes,
             before_available_inodes = report.before.available_inodes,
             after_available_inodes = report.after.available_inodes,
@@ -347,6 +370,8 @@ fn log_report(
             removed_entries = report.removed_entries,
             before_available_bytes = report.before.available_bytes,
             after_available_bytes = report.after.available_bytes,
+            home_available_bytes = report.home.available_bytes,
+            home_available_inodes = report.home.available_inodes,
             reclaimed_bytes,
             before_available_inodes = report.before.available_inodes,
             after_available_inodes = report.after.available_inodes,
@@ -373,18 +398,19 @@ mod tests {
         before_inodes: u64,
         after_inodes: u64,
     ) -> ReusePreparationReport {
-        use guest_contracts::reuse_preparation::RootFilesystemCapacity;
+        use guest_contracts::reuse_preparation::FilesystemCapacity;
 
         ReusePreparationReport {
-            before: RootFilesystemCapacity {
+            before: FilesystemCapacity {
                 available_bytes: before_bytes,
                 available_inodes: before_inodes,
             },
-            after: RootFilesystemCapacity {
+            after: FilesystemCapacity {
                 available_bytes: after_bytes,
                 available_inodes: after_inodes,
             },
             removed_entries: 3,
+            home: healthy_reuse_preparation_report().home,
         }
     }
 
@@ -440,6 +466,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn full_home_rejects_idle_admission_with_independent_capacity_reason() {
+        for (bytes, inodes, reason) in [
+            (0, 2048, "home_low_bytes"),
+            (256 * 1024 * 1024, 0, "home_low_inodes"),
+            (0, 0, "home_low_bytes_and_inodes"),
+        ] {
+            let mut report = healthy_reuse_preparation_report();
+            report.home.available_bytes = bytes;
+            report.home.available_inodes = inodes;
+            let sandbox = MockSandbox::new("full-home");
+            sandbox.push_exec_result(Ok(ExecResult::new(
+                0,
+                serde_json::to_vec(&report).unwrap(),
+                Vec::new(),
+            )));
+            let (result, events) = capture_preparation(&sandbox, RunId::new_v4()).await;
+            assert!(result.unwrap_err().is_expected_capacity_rejection());
+            let event = captured_event(&events, "sandbox rejected from idle reuse");
+            assert_eq!(event.fields.get("reason").map(String::as_str), Some(reason));
+            assert_eq!(
+                event.fields.get("home_available_bytes"),
+                Some(&bytes.to_string())
+            );
+            assert_eq!(
+                event.fields.get("home_available_inodes"),
+                Some(&inodes.to_string())
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn preparation_sends_canonical_current_and_retained_runtime_directories() {
         let sandbox = MockSandbox::new("reuse-request");
         sandbox.push_exec_result(Ok(ExecResult::new(
@@ -471,7 +528,10 @@ mod tests {
             .cmd
             .find(HOME_MOUNT_PATH)
             .expect("home mount command");
-        assert!(helper_position < mount_position);
+        assert!(
+            mount_position < helper_position,
+            "capacity must describe the mounted home"
+        );
         let request: ReusePreparationRequest = serde_json::from_slice(
             calls[0]
                 .stdin_bytes
@@ -616,12 +676,12 @@ mod tests {
             REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
             REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED,
         ] {
-            let (output, mount_ran) = run_composed_command(helper_exit_code, 1);
+            let (output, mount_ran) = run_composed_command(helper_exit_code, 0);
 
             assert_eq!(output.status.code(), Some(helper_exit_code));
             assert!(
-                !mount_ran,
-                "mount stage ran after helper status {helper_exit_code}"
+                mount_ran,
+                "mount identity must be established before helper status {helper_exit_code}"
             );
         }
 
@@ -630,7 +690,29 @@ mod tests {
             output.status.code(),
             Some(REUSE_PREPARATION_EXIT_HOME_MOUNT_FAILED)
         );
-        assert!(mount_ran, "mount stage should run after helper success");
+        assert!(mount_ran, "mount failure must stop before preparation");
+    }
+
+    #[test]
+    fn mount_validation_cannot_consume_the_preparation_request_stdin() {
+        use std::io::Write;
+        let command = compose_reuse_preparation_command("cat", "cat >/dev/null");
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"current preparation request")
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"current preparation request");
     }
 
     #[test]

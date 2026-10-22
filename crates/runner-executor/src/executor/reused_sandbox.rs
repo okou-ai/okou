@@ -7,10 +7,10 @@ use tracing::{info, warn};
 
 use super::agent_run::{PreparedGuestRuntime, PreparedRunInputs, RunStart};
 use super::sandbox_run::{
-    FreshPreparation, NewSandboxHooks, PreparedSandboxRun, SANDBOX_PROXY_REGISTER_FAILED,
-    cancel_prepared_storage, destroy_sandbox_panic_safe,
-    execute_new_sandbox_with_prepared_notifier, execute_prepared_sandbox_run, prepare_storage,
-    register_proxy, unregister_proxy_registry,
+    DiskReplacement, FreshPreparation, NewSandboxHooks, PreparedSandboxRun,
+    SANDBOX_PROXY_REGISTER_FAILED, cancel_prepared_storage, destroy_sandbox_panic_safe,
+    execute_new_sandbox_with_prepared_notifier, execute_prepared_sandbox_attempt, prepare_storage,
+    register_proxy, replace_disk_full_sandbox, unregister_proxy_registry,
 };
 use super::{ExecuteOutcome, ExecutionFailure, ExecutorConfig, JobParams, NewSandboxDispatch};
 use crate::error::RunnerError;
@@ -39,6 +39,7 @@ pub(super) async fn execute_reused_sandbox(
     telemetry: &mut JobTelemetry,
     mut inputs: PreparedRunInputs,
 ) -> ExecuteOutcome {
+    let disk_recovery = inputs.controls.disk_recovery;
     info!(run_id = %context.run_id, sandbox_id = %run.sandbox.id(), "reusing kept-alive sandbox");
     let prepare_started = Instant::now();
     let prepared_storage = prepare_storage(
@@ -79,12 +80,38 @@ pub(super) async fn execute_reused_sandbox(
                 false,
                 Some(&error.to_string()),
             );
-            return ExecuteOutcome::reused_sandbox_failure(
+            let outcome = ExecuteOutcome::reused_sandbox_failure(
                 ExecutionFailure::from_error(error.to_string()),
                 run.sandbox,
-                run.source_ip,
+                run.source_ip.clone(),
                 run.home_image,
             );
+            if disk_recovery
+                && unregister_proxy_registry(config, &run.source_ip, context.run_id)
+                    .await
+                    .is_ok()
+            {
+                return Box::pin(replace_disk_full_sandbox(
+                    run.factory,
+                    context,
+                    config,
+                    run.params,
+                    telemetry,
+                    DiskReplacement {
+                        dispatch: NewSandboxDispatch {
+                            id: run.sandbox_id,
+                            reuse_result: start.reuse_result,
+                        },
+                        attempt: super::sandbox_run::PreparedSandboxAttempt {
+                            outcome,
+                            retry_inputs: Some(Box::new(inputs)),
+                        },
+                        home_image: None,
+                    },
+                ))
+                .await;
+            }
+            return outcome;
         }
     };
     telemetry.record(
@@ -129,7 +156,8 @@ pub(super) async fn execute_reused_sandbox(
         )
         .await;
     }
-    let mut outcome = execute_prepared_sandbox_run(
+    let reuse_result = start.reuse_result;
+    let attempt = execute_prepared_sandbox_attempt(
         PreparedSandboxRun {
             prepared_guest_runtime,
             ..prepared
@@ -141,6 +169,25 @@ pub(super) async fn execute_reused_sandbox(
         inputs,
     )
     .await;
+    if attempt.retry_inputs.is_some() {
+        return replace_disk_full_sandbox(
+            run.factory,
+            context,
+            config,
+            run.params,
+            telemetry,
+            DiskReplacement {
+                dispatch: NewSandboxDispatch {
+                    id: run.sandbox_id,
+                    reuse_result,
+                },
+                attempt,
+                home_image: run.home_image,
+            },
+        )
+        .await;
+    }
+    let mut outcome = attempt.outcome;
     outcome.home_image = run.home_image;
     outcome
 }
@@ -183,10 +230,19 @@ async fn replace_unusable_blank(
         .network_log_session
         .close_for_upload(context.run_id, &config.network_log_drain)
         .await;
+    let has_required_backing =
+        !inputs.controls.disk_recovery || prepared.sandbox.backing_process().is_some();
     let destroy_completed = destroy_sandbox_panic_safe(factory, prepared.sandbox)
         .await
-        .is_completed();
+        .is_completed()
+        && has_required_backing;
     if !unregister_completed || !destroy_completed {
+        if !destroy_completed
+            && inputs.controls.disk_recovery
+            && let Some(source) = inputs.controls.sandbox_recovery.as_ref()
+        {
+            source.uncertain(context.run_id, sandbox_id);
+        }
         telemetry.record(
             BLANK_PREFETCH_REPLACEMENT,
             Duration::ZERO,
@@ -208,12 +264,23 @@ async fn replace_unusable_blank(
         outcome.mark_cancelled();
         return outcome;
     }
+    if inputs.controls.disk_recovery
+        && let Some(source) = inputs.controls.sandbox_recovery.as_ref()
+        && let Err(error) = source.retired(context.run_id, sandbox_id).await
+    {
+        return ExecuteOutcome::preparation_failure(error);
+    }
     // Like the fresh retry action, this records admission to the replacement
     // attempt. Fresh preparation and Agent execution retain their own outcomes.
     telemetry.record(BLANK_PREFETCH_REPLACEMENT, Duration::ZERO, true, None);
     info!(run_id = %context.run_id, %sandbox_id,
         "retrying retired blank with Codex prefetch disabled");
     let cancel = inputs.controls.cancel.clone();
+    let prepared_notifier = inputs
+        .controls
+        .sandbox_recovery
+        .as_ref()
+        .and_then(|source| source.prepared.clone());
     let result = execute_new_sandbox_with_prepared_notifier(
         factory,
         context,
@@ -225,10 +292,14 @@ async fn replace_unusable_blank(
         params,
         telemetry,
         NewSandboxHooks {
-            preparation: FreshPreparation::WithoutCodexPrefetchReplacement,
+            preparation: if inputs.controls.disk_recovery {
+                FreshPreparation::DiskReplacement
+            } else {
+                FreshPreparation::WithoutCodexPrefetchReplacement
+            },
             controls: inputs.controls.with_guest_state_prepared(false),
             prepared_run_payload: inputs.run_payload,
-            sandbox_prepared: None,
+            sandbox_prepared: prepared_notifier.as_ref(),
         },
     )
     .await;

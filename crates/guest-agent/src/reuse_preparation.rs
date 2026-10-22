@@ -54,9 +54,9 @@ use guest_contracts::process_containment::{
     WorkloadResourcePolicy,
 };
 use guest_contracts::reuse_preparation::{
-    REUSE_PREPARATION_EXIT_CLEANUP_FAILED, REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED,
-    REUSE_PREPARATION_EXIT_INSPECTION_FAILED, REUSE_PREPARATION_EXIT_INVALID_REQUEST,
-    ReusePreparationReport, ReusePreparationRequest, RootFilesystemCapacity,
+    FilesystemCapacity, REUSE_PREPARATION_EXIT_CLEANUP_FAILED,
+    REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED, REUSE_PREPARATION_EXIT_INSPECTION_FAILED,
+    REUSE_PREPARATION_EXIT_INVALID_REQUEST, ReusePreparationReport, ReusePreparationRequest,
 };
 
 use crate::nofollow_fs::{Dir, FileIdentity};
@@ -82,6 +82,8 @@ const TEST_CONTAINMENT_CURRENT_GROUP_ENV: &str = "OKOU_TEST_PROCESS_CONTAINMENT_
 const TEST_CODEX_HOME_DIR_ENV: &str = "OKOU_TEST_CODEX_HOME_DIR";
 #[cfg(debug_assertions)]
 const TEST_CACHE_RUNTIME_PARENT_ENV: &str = "OKOU_TEST_CACHE_RUNTIME_PARENT";
+#[cfg(debug_assertions)]
+const TEST_HOME_CAPACITY_ROOT_ENV: &str = "OKOU_TEST_HOME_CAPACITY_ROOT";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RuntimeRetention {
@@ -328,11 +330,13 @@ fn prepare(
         }
     }
     let after = rootfs_capacity().map_err(ReusePreparationError::Inspection)?;
+    let home = home_capacity().map_err(ReusePreparationError::Inspection)?;
     Ok(
         guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
             cleanup: ReusePreparationReport {
                 before,
                 after,
+                home,
                 removed_entries,
             },
             history_proof,
@@ -801,7 +805,7 @@ fn invalid_path(message: &'static str) -> ReusePreparationError {
     ReusePreparationError::InvalidRequest(io::Error::new(io::ErrorKind::InvalidInput, message))
 }
 
-fn rootfs_capacity() -> io::Result<RootFilesystemCapacity> {
+fn rootfs_capacity() -> io::Result<FilesystemCapacity> {
     let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
     // SAFETY: the path is a static NUL-terminated string and `stats` points to
     // writable memory for the duration of the call.
@@ -811,8 +815,24 @@ fn rootfs_capacity() -> io::Result<RootFilesystemCapacity> {
     }
     // SAFETY: successful `statvfs` initialized the full structure.
     let stats = unsafe { stats.assume_init() };
-    Ok(RootFilesystemCapacity {
+    Ok(FilesystemCapacity {
         available_bytes: stats.f_bavail.saturating_mul(stats.f_frsize),
         available_inodes: stats.f_favail,
+    })
+}
+
+fn home_capacity() -> io::Result<FilesystemCapacity> {
+    let home = PathBuf::from(
+        api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR,
+    );
+    #[cfg(debug_assertions)]
+    let home = std::env::var_os(TEST_HOME_CAPACITY_ROOT_ENV)
+        .filter(|path| !path.is_empty())
+        .map_or(home, PathBuf::from);
+    let home = Dir::open_absolute(&home)?;
+    let (available_bytes, available_inodes) = home.available_capacity()?;
+    Ok(FilesystemCapacity {
+        available_bytes,
+        available_inodes,
     })
 }

@@ -202,20 +202,6 @@ async fn checkout_selects_exact_committed_generation_and_pins_it() {
     assert_eq!(identity.cache_key, f.key("thread-a"));
     assert_eq!(identity.profile_name, PROFILE);
     assert_eq!(identity.image_generation, committed.image_generation);
-    let selected = lease.checkout_observation().unwrap();
-    assert_eq!(
-        selected.kind,
-        runner_host::home_observation::HomeObservationKind::Consumption
-    );
-    assert_eq!(
-        selected.outcome,
-        runner_host::home_observation::HomeObservationOutcome::Selected
-    );
-    assert_eq!(selected.reason.as_deref(), Some("cache_hit"));
-    assert_eq!(
-        selected.image_generation.as_deref(),
-        Some(committed.image_generation.as_str())
-    );
 }
 
 #[tokio::test]

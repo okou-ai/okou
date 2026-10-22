@@ -24,7 +24,6 @@ use std::time::Duration;
 use futures_util::future::BoxFuture;
 use guest_contracts::diagnostics::FailureDiagnostic;
 use sandbox::{Sandbox, SandboxFactory, SandboxId};
-#[cfg(test)]
 use tokio_util::sync::CancellationToken;
 
 mod active_input;
@@ -243,7 +242,91 @@ impl SandboxPreparedNotifier {
     }
 }
 
+type BlankAcquisitionCallback = dyn Fn(
+        RunId,
+        SandboxId,
+        CancellationToken,
+    ) -> BoxFuture<'static, RunnerResult<Option<ReusableIdleSandbox>>>
+    + Send
+    + Sync;
+
+/// Replacement resource acquisition and its Supervisor ownership boundaries.
+///
+/// The caller keeps the active job's capacity lease. The supplier must commit
+/// physical identity/status, retire failed activation with its own lease, and
+/// release duplicate capacity only after the old sandbox is confirmed destroyed.
+/// Executor consumes blank acquisition at most once and retains the lifecycle
+/// callbacks through the final cold attempt.
+#[derive(Clone)]
+pub struct SandboxRecoveryHooks {
+    callback: Arc<BlankAcquisitionCallback>,
+    retired: Option<SandboxPreparedNotifier>,
+    prepared: Option<SandboxPreparedNotifier>,
+    uncertain: Option<Arc<dyn Fn(RunId, SandboxId) + Send + Sync>>,
+}
+
+impl SandboxRecoveryHooks {
+    pub fn new(
+        callback: impl Fn(
+            RunId,
+            SandboxId,
+            CancellationToken,
+        ) -> BoxFuture<'static, RunnerResult<Option<ReusableIdleSandbox>>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self {
+            callback: Arc::new(callback),
+            retired: None,
+            prepared: None,
+            uncertain: None,
+        }
+    }
+
+    pub fn with_retired_notifier(mut self, notifier: SandboxPreparedNotifier) -> Self {
+        self.retired = Some(notifier);
+        self
+    }
+
+    pub fn with_prepared_notifier(mut self, notifier: SandboxPreparedNotifier) -> Self {
+        self.prepared = Some(notifier);
+        self
+    }
+
+    pub fn with_uncertain_notifier(
+        mut self,
+        notifier: impl Fn(RunId, SandboxId) + Send + Sync + 'static,
+    ) -> Self {
+        self.uncertain = Some(Arc::new(notifier));
+        self
+    }
+
+    fn uncertain(&self, run_id: RunId, sandbox_id: SandboxId) {
+        if let Some(notifier) = &self.uncertain {
+            notifier(run_id, sandbox_id);
+        }
+    }
+
+    async fn retired(&self, run_id: RunId, sandbox_id: SandboxId) -> RunnerResult<()> {
+        match &self.retired {
+            Some(notifier) => notifier.notify(run_id, sandbox_id).await,
+            None => Ok(()),
+        }
+    }
+
+    async fn acquire(
+        &self,
+        run_id: RunId,
+        retired_id: SandboxId,
+        cancel: CancellationToken,
+    ) -> RunnerResult<Option<ReusableIdleSandbox>> {
+        (self.callback)(run_id, retired_id, cancel).await
+    }
+}
+
 pub struct ExecutionHooks {
+    pub sandbox_recovery: Option<SandboxRecoveryHooks>,
     pub sandbox_prepared: Option<SandboxPreparedNotifier>,
     pub active_input_source: Option<ActiveInputSource>,
     pub pre_spawn_timing: Option<RunnerPreSpawnTiming>,
@@ -253,6 +336,7 @@ impl ExecutionHooks {
     #[cfg(test)]
     fn none() -> Self {
         Self {
+            sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: None,
@@ -378,7 +462,8 @@ pub struct ExecuteOutcome {
     pub source_ip: String,
     pub network_log_session: Option<NetworkLogSession>,
     pub home_image: Option<HomeImageLease>,
-    /// Final home-reuse outcome, when execution reached `RunStart`.
+    /// Actual home-reuse outcome after authenticated Agent ready.
+    /// Pre-start failures retain diagnostics without a provisional reuse result.
     pub home_reuse_result: Option<HomeReuseResult>,
     /// Owned startup-fact delivery. Join after finalization and resource release.
     pub startup_report: Option<StartupReport>,
@@ -663,6 +748,7 @@ pub async fn execute_job_with_prepared_notifier(
     hooks: ExecutionHooks,
 ) -> (ExecuteOutcome, JobTelemetry) {
     let ExecutionHooks {
+        sandbox_recovery,
         sandbox_prepared,
         active_input_source,
         pre_spawn_timing,
@@ -695,6 +781,7 @@ pub async fn execute_job_with_prepared_notifier(
                 NewSandboxHooks {
                     preparation: FreshPreparation::Initial,
                     controls: RunControls::from_cancellation(cancellation, active_input_source)
+                        .with_sandbox_recovery(sandbox_recovery)
                         .with_spawn_timing(spawn_timing),
                     prepared_run_payload,
                     sandbox_prepared: sandbox_prepared.as_ref(),
@@ -771,6 +858,7 @@ pub async fn execute_job_reuse_with_hooks(
         reuse_result,
     } = dispatch;
     let ExecutionHooks {
+        sandbox_recovery,
         sandbox_prepared: _,
         active_input_source,
         pre_spawn_timing,
@@ -917,6 +1005,7 @@ pub async fn execute_job_reuse_with_hooks(
                 &mut telemetry,
                 PreparedRunInputs::new(
                     RunControls::from_cancellation(cancellation, active_input_source)
+                        .with_sandbox_recovery(sandbox_recovery)
                         .with_spawn_timing(spawn_timing)
                         .with_guest_state_prepared(guest_state_prepared),
                     prepared_run_payload,

@@ -638,6 +638,33 @@ impl StatusTracker {
         Ok(true)
     }
 
+    /// Transfer a retired run resource to another physical sandbox while also
+    /// publishing the inventory from which that replacement was reserved.
+    pub async fn replace_run_sandbox_if_matching(
+        &self,
+        run_id: RunId,
+        expected: SandboxId,
+        replacement: SandboxId,
+        idle_snapshot: IdlePoolSnapshot,
+    ) -> StatusResult<bool> {
+        let snapshot = {
+            let mut state = self.state.lock().await;
+            let Some(current) = state.active_runs.get_mut(&run_id) else {
+                return Ok(false);
+            };
+            if current.sandbox_id != expected {
+                return Ok(false);
+            }
+            current.sandbox_id = replacement;
+            current.phase = ActiveRunPhase::Preparing;
+            current.phase_started_at = Utc::now();
+            apply_idle_snapshot(&mut state, idle_snapshot);
+            self.capture_changed_snapshot(&mut state)
+        };
+        self.persist_snapshot(snapshot).await?;
+        Ok(true)
+    }
+
     /// Drop an active run only if it still points at the expected sandbox.
     ///
     /// Returns `false` if another task already removed the run or reused the
@@ -1403,6 +1430,67 @@ mod tests {
         assert_eq!(runs[0]["phase"], "preparing");
         let phase_started_at = runs[0]["phase_started_at"].as_str().unwrap();
         assert!(chrono::DateTime::parse_from_rfc3339(phase_started_at).is_ok());
+    }
+
+    #[tokio::test]
+    async fn resource_replacement_updates_only_the_current_owner_and_stale_cleanup_cannot_remove_it()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("status.json");
+        let tracker = StatusTracker::new(path.clone(), 4, None, None);
+        let run_id = RunId::new_v4();
+        let original = SandboxId::new_v4();
+        let replacement = SandboxId::new_v4();
+        tracker.add_run(run_id, original).await.unwrap();
+        let snapshot =
+            crate::idle_pool::IdlePool::new(crate::idle_pool::IdlePoolConfig { max_idle: 0 })
+                .status_snapshot();
+        assert!(
+            !tracker
+                .replace_run_sandbox_if_matching(run_id, replacement, original, snapshot.clone())
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            read_status(&path)["active_runs"][0]["sandbox_id"],
+            original.to_string()
+        );
+        assert!(
+            tracker
+                .replace_run_sandbox_if_matching(run_id, original, replacement, snapshot)
+                .await
+                .unwrap()
+        );
+        let status = read_status(&path);
+        assert_eq!(
+            status["active_runs"][0]["sandbox_id"],
+            replacement.to_string()
+        );
+        assert_eq!(status["active_runs"][0]["phase"], "preparing");
+        assert!(
+            !tracker
+                .remove_run_if_matching(run_id, original)
+                .await
+                .unwrap()
+        );
+        assert!(
+            tracker
+                .mark_run_running_if_matching(run_id, replacement)
+                .await
+                .unwrap()
+        );
+        assert!(
+            tracker
+                .remove_run_if_matching(run_id, replacement)
+                .await
+                .unwrap()
+        );
+        assert!(
+            read_status(&path)["active_runs"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

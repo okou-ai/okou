@@ -32,6 +32,39 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 const REUSE_PREPARATION_HELPER_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[tokio::test]
+async fn prepare_for_reuse_rejects_a_symlinked_home_capacity_root() -> TestResult {
+    let (request, _runtime) = reusable_request()?;
+    let containment = ContainmentFixture::new()?;
+    let home = tempfile::tempdir()?;
+    let alias = home.path().join("home-alias");
+    symlink(home.path(), &alias)?;
+    let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
+    command
+        .env_clear()
+        .env("OKOU_TEST_PROCESS_CONTAINMENT_ROOT", &containment.root)
+        .env(
+            "OKOU_TEST_PROCESS_CONTAINMENT_CURRENT_GROUP",
+            "/vm0-exec/exec-current/workload",
+        )
+        .env("OKOU_TEST_CODEX_HOME_DIR", home.path().join(".codex"))
+        .env("OKOU_TEST_HOME_CAPACITY_ROOT", alias)
+        .arg("prepare-for-reuse");
+    let output = common::command_output_with_stdin_timeout(
+        &mut command,
+        &serde_json::to_vec(&request)?,
+        REUSE_PREPARATION_HELPER_TIMEOUT,
+        "home capacity inspection exceeded its test budget",
+    )
+    .await?;
+    assert_eq!(
+        output.status.code(),
+        Some(guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INSPECTION_FAILED)
+    );
+    assert!(output.stdout.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
 async fn prepare_for_reuse_removes_managed_codex_auth() -> TestResult {
     let (request, _runtime) = reusable_request()?;
     let home = tempfile::tempdir()?;
@@ -52,6 +85,9 @@ async fn prepare_for_reuse_removes_managed_codex_auth() -> TestResult {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!auth_path.exists());
+    let report: ReusePreparationReport = serde_json::from_slice(&output.stdout)?;
+    assert!(report.home.available_bytes > 0);
+    assert!(report.home.available_inodes > 0);
     Ok(())
 }
 
@@ -1265,6 +1301,7 @@ async fn run_cache_helper(
         )
         .env("OKOU_TEST_CODEX_HOME_DIR", codex_home)
         .env("OKOU_TEST_CACHE_RUNTIME_PARENT", runtime_parent)
+        .env("OKOU_TEST_HOME_CAPACITY_ROOT", runtime_parent)
         .env(
             "OKOU_TEST_HOME_CACHE_HISTORY_PROOF_PATH",
             runtime_parent
@@ -1350,12 +1387,16 @@ async fn run_helper_with_current_group_and_codex_home(
     current_group: &str,
     codex_home: &Path,
 ) -> Result<Output, Box<dyn std::error::Error>> {
+    let home_capacity_root = codex_home
+        .parent()
+        .ok_or_else(|| std::io::Error::other("fixture Codex home has no parent"))?;
     let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
     command
         .env_clear()
         .env("OKOU_TEST_PROCESS_CONTAINMENT_ROOT", &containment.root)
         .env("OKOU_TEST_PROCESS_CONTAINMENT_CURRENT_GROUP", current_group)
         .env("OKOU_TEST_CODEX_HOME_DIR", codex_home)
+        .env("OKOU_TEST_HOME_CAPACITY_ROOT", home_capacity_root)
         .arg("prepare-for-reuse");
     let request = serde_json::to_vec(request)?;
     Ok(common::command_output_with_stdin_timeout(
@@ -1383,6 +1424,7 @@ async fn run_helper_with_bind_mount(
             "/vm0-exec/exec-current/workload",
         )
         .env("OKOU_TEST_CODEX_HOME_DIR", home.path().join(".codex"))
+        .env("OKOU_TEST_HOME_CAPACITY_ROOT", home.path())
         .env("OKOU_MOUNT_SOURCE", mount_source)
         .env("OKOU_MOUNT_TARGET", mount_target)
         .env("OKOU_HELPER", env!("CARGO_BIN_EXE_guest-agent"))

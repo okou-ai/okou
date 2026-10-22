@@ -85,7 +85,7 @@ pub(in crate::executor::tests) fn spawn_run_in_sandbox_test_with_timeouts(
             },
             &mut telemetry,
             PreparedRunInputs::new(RunControls::new(cancel, None), prepared_run_payload),
-            process_cancel_timeouts,
+            &mut crate::executor::agent_run::AgentRunLifecycle::new(process_cancel_timeouts),
         )
         .await
     })
@@ -117,7 +117,7 @@ pub(in crate::executor::tests) fn spawn_run_in_sandbox_test_with_cancellation(
                 RunControls::from_cancellation(cancellation, None),
                 prepared_run_payload,
             ),
-            process_cancel_timeouts,
+            &mut crate::executor::agent_run::AgentRunLifecycle::new(process_cancel_timeouts),
         )
         .await
     })

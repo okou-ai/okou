@@ -112,8 +112,8 @@
 //!
 //! On success, the helper serializes
 //! [`ReusePreparationReport`](guest_contracts::reuse_preparation::ReusePreparationReport) to stdout.
-//! Its `before` and `after` values are
-//! [`RootFilesystemCapacity`](guest_contracts::reuse_preparation::RootFilesystemCapacity) records, and
+//! Its rootfs `before`/`after` and post-cleanup `home` values are
+//! [`FilesystemCapacity`](guest_contracts::reuse_preparation::FilesystemCapacity) records, and
 //! `removedEntries` reports the number of unprotected direct children removed.
 //! Helper failures are written to stderr and use these stable exit codes:
 //!
@@ -122,7 +122,7 @@
 //! - [`REUSE_PREPARATION_EXIT_INVALID_REQUEST`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INVALID_REQUEST)
 //!   means stdin, size, JSON, or protected-path validation failed.
 //! - [`REUSE_PREPARATION_EXIT_INSPECTION_FAILED`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_INSPECTION_FAILED)
-//!   means rootfs capacity could not be inspected.
+//!   means rootfs or home capacity could not be inspected.
 //! - [`REUSE_PREPARATION_EXIT_CLEANUP_FAILED`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_CLEANUP_FAILED)
 //!   means protected state or stale runtime state could not be safely handled.
 //! - [`REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED`](guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED)

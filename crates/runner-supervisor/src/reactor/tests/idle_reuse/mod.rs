@@ -1,6 +1,7 @@
 mod blank_pool;
 mod blank_prefetch;
 mod device_limits;
+mod disk_recovery;
 mod drain;
 mod home_cache;
 mod home_cache_recovery;

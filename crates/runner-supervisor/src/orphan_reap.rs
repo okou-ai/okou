@@ -20,10 +20,10 @@ struct OrphanedActiveRun {
     sandbox_id: SandboxId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OrphanedActiveRunState {
     sandbox_id: SandboxId,
     absent_scans: u8,
+    retained_budget: Option<crate::resource_budget::BudgetLease>,
 }
 
 /// Claimed runs whose outer task is gone but whose sandbox ownership is uncertain.
@@ -41,22 +41,70 @@ impl OrphanedActiveRuns {
         self.lock().is_empty()
     }
 
+    pub(crate) fn has_retained_budget(&self, run_id: RunId, sandbox_id: SandboxId) -> bool {
+        self.lock()
+            .get(&run_id)
+            .is_some_and(|state| state.sandbox_id == sandbox_id && state.retained_budget.is_some())
+    }
+
     pub(crate) fn insert(&self, run_id: RunId, sandbox_id: SandboxId) {
+        let mut runs = self.lock();
+        if let Some(current) = runs.get_mut(&run_id)
+            && current.sandbox_id == sandbox_id
+        {
+            current.absent_scans = 0;
+            return;
+        }
+        if runs
+            .get(&run_id)
+            .is_some_and(|current| current.retained_budget.is_some())
+        {
+            warn!(%run_id, %sandbox_id, "retaining unresolved blank recovery capacity for its original physical owner");
+            return;
+        }
         let state = OrphanedActiveRunState {
             sandbox_id,
             absent_scans: 0,
+            retained_budget: None,
         };
-        self.lock().insert(run_id, state);
+        runs.insert(run_id, state);
+    }
+
+    /// Keep failed blank activation capacity until ordinary orphan discovery
+    /// proves this physical sandbox absent or owned by the idle pool.
+    pub(crate) fn insert_retaining_budget(
+        &self,
+        run_id: RunId,
+        sandbox_id: SandboxId,
+        lease: crate::resource_budget::BudgetLease,
+    ) {
+        let mut runs = self.lock();
+        runs.insert(
+            run_id,
+            OrphanedActiveRunState {
+                sandbox_id,
+                absent_scans: 0,
+                retained_budget: Some(lease),
+            },
+        );
     }
 
     pub(crate) fn remove_if_matching(&self, run_id: RunId, sandbox_id: SandboxId) -> bool {
-        let mut runs = self.lock();
-        let removed =
-            matches!(runs.get(&run_id), Some(current) if current.sandbox_id == sandbox_id);
-        if removed {
-            runs.remove(&run_id);
+        let removed = {
+            let mut runs = self.lock();
+            if matches!(runs.get(&run_id), Some(current) if current.sandbox_id == sandbox_id) {
+                runs.remove(&run_id)
+            } else {
+                None
+            }
+        };
+        match removed {
+            Some(mut state) => {
+                drop(state.retained_budget.take());
+                true
+            }
+            None => false,
         }
-        removed
     }
 
     fn reset_absent_scans_if_matching(&self, run_id: RunId, sandbox_id: SandboxId) {
@@ -586,6 +634,30 @@ mod tests {
             active_runs.sort_unstable();
             (idle_sandboxes, active_runs)
         }
+    }
+
+    #[tokio::test]
+    async fn uncertain_blank_capacity_is_released_only_after_confirmed_absence() {
+        let fixture = OrphanReapFixture::new();
+        let run_id = RunId::new_v4();
+        let sandbox_id = SandboxId::new_v4();
+        fixture.add_active_orphan(run_id, sandbox_id).await;
+        let budget = Arc::new(ResourceBudget::new(4, 8192, 1.0, 2));
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        fixture
+            .orphans
+            .insert_retaining_budget(run_id, sandbox_id, lease);
+        fixture.orphans.insert(run_id, sandbox_id);
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        fixture
+            .reap_current_orphans_with_firecrackers(&[], false, 2)
+            .await;
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        fixture
+            .reap_current_orphans_with_firecrackers(&[], false, 2)
+            .await;
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        assert!(fixture.orphans.is_empty());
     }
 
     #[tokio::test]
