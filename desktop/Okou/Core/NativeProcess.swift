@@ -29,6 +29,12 @@ public actor NativeProcess {
   private var standardError = NativeHelperStandardError()
   private var timeouts: [Int: Task<Void, Never>] = [:]
   private var buffer = Data()
+  private var readFragments: [NativeHelperReadFragment] = []
+  private var receivedBytes = 0
+  private var responseStart = 0
+  private var omittedReadsThrough = 0
+  private var diagnosticWindowStart = ContinuousClock.now
+  private var diagnosticsInWindow = 0
   private var sequence = 0
   private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
   private var generation = 0
@@ -46,6 +52,7 @@ public actor NativeProcess {
     let stdout = Pipe()
     let stderr = Pipe()
     let standardError = NativeHelperStandardError()
+    let reader = NativeHelperOutputReader()
     child.executableURL = executable
     child.arguments = ["serve"]
     child.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value
@@ -54,8 +61,8 @@ public actor NativeProcess {
     child.standardOutput = stdout
     child.standardError = stderr
     stdout.fileHandleForReading.readabilityHandler = { handle in
-      let data = handle.availableData
-      Task { await self.receive(data, generation: current) }
+      let read = reader.read(handle)
+      Task { await self.receive(read.data, sequence: read.sequence, generation: current) }
     }
     stderr.fileHandleForReading.readabilityHandler = { handle in
       let data = handle.availableData
@@ -99,26 +106,40 @@ public actor NativeProcess {
       Task { await self.cancel(id) }
     }
   }
-  private func receive(_ data: Data, generation current: Int) {
+  private func receive(_ data: Data, sequence: Int, generation current: Int) {
     guard current == generation else { return }
     if data.isEmpty {
       output?.readabilityHandler = nil
       return
     }
+    readFragments.append(
+      NativeHelperReadFragment(sequence: sequence, streamOffset: receivedBytes, byteCount: data.count))
+    receivedBytes += data.count
+    if readFragments.count > NativeHelperDiagnostics.maximumReadFragments {
+      omittedReadsThrough = readFragments.removeFirst().endOffset
+    }
     buffer.append(data)
     while let newline = buffer.firstIndex(of: 10) {
-      let line = buffer.prefix(upTo: newline)
+      let line = Data(buffer.prefix(upTo: newline))
       buffer.removeSubrange(...newline)
+      let frameStart = responseStart
+      responseStart += line.count + 1
       let response: JSONValue
+      let decodeStarted = ContinuousClock.now
       do { response = try JSONDecoder().decode(JSONValue.self, from: line) } catch {
-        protocolFailure(.invalidJSON, reason: "invalid JSON", responseBytes: line.count)
+        protocolFailure(
+          .invalidJSON, reason: "invalid JSON", response: line, responseStart: frameStart,
+          decoderError: error, decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
         return
       }
       guard let number = response["id"].number, let responseId = Int(exactly: number) else {
         protocolFailure(
-          .missingRequestID, reason: "missing or invalid request ID", responseBytes: line.count)
+          .missingRequestID, reason: "missing or invalid request ID", response: line,
+          responseStart: frameStart, decoderError: nil,
+          decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
         return
       }
+      readFragments.removeAll { $0.endOffset <= responseStart }
       timeouts.removeValue(forKey: responseId)?.cancel()
       pending.removeValue(forKey: responseId)?.resume(returning: response)
     }
@@ -127,12 +148,27 @@ public actor NativeProcess {
       stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
     }
   }
-  private func protocolFailure(_ failure: NativeHelperFailure, reason: String, responseBytes: Int) {
-    // Never include helper output or decoder descriptions: either can contain private app data.
-    let diagnostics = "responseBytes=\(responseBytes), \(standardError.summary)"
+  private func protocolFailure(
+    _ failure: NativeHelperFailure, reason: String, response: Data, responseStart: Int,
+    decoderError: Error?, decodeDurationMs: Double
+  ) {
+    // Raw app data belongs only in the bounded, event-local Sentry attachments.
+    let diagnostics = "responseBytes=\(response.count), \(standardError.summary)"
     let message = "Native helper protocol failure: \(reason) (\(diagnostics))."
     logger.error("\(message, privacy: .public)")
-    reportFailure(failure, responseBytes: responseBytes)
+    if diagnosticWindowStart.duration(to: .now) >= .seconds(3600) {
+      diagnosticWindowStart = .now
+      diagnosticsInWindow = 0
+    }
+    var attachments: NativeHelperDiagnostics?
+    if diagnosticsInWindow < 3 {
+      diagnosticsInWindow += 1
+      attachments = NativeHelperDiagnostics(
+        response: response, reason: failure, generation: generation, pendingIDs: pending.keys.sorted(),
+        responseStart: responseStart, reads: readFragments, omittedThrough: omittedReadsThrough,
+        decoderError: decoderError, decodeDurationMs: decodeDurationMs)
+    }
+    reportFailure(failure, responseBytes: response.count, attachments: attachments)
     stop(
       error: DesktopFailure(
         "accessibility_unavailable",
@@ -154,11 +190,12 @@ public actor NativeProcess {
     stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
   }
   private func reportFailure(
-    _ reason: NativeHelperFailure, responseBytes: Int? = nil, exitStatus: Int32? = nil
+    _ reason: NativeHelperFailure, responseBytes: Int? = nil, exitStatus: Int32? = nil,
+    attachments: NativeHelperDiagnostics? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
       reason, pendingRequests: pending.count, stderrBytes: standardError.count,
-      responseBytes: responseBytes, exitStatus: exitStatus)
+      responseBytes: responseBytes, exitStatus: exitStatus, attachments: attachments)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(error: Error) {
@@ -177,6 +214,10 @@ public actor NativeProcess {
     errors = nil
     standardError = NativeHelperStandardError()
     buffer.removeAll()
+    readFragments.removeAll()
+    receivedBytes = 0
+    responseStart = 0
+    omittedReadsThrough = 0
     for timeout in timeouts.values { timeout.cancel() }
     timeouts.removeAll()
     let requests = pending

@@ -26,6 +26,7 @@ final class SentryHTTPCollector {
               if self.headers.get('Content-Encoding') == 'gzip':
                   body = gzip.decompress(body)
               header, _, remaining = body.partition(b'\n')
+              envelope = json.loads(header)
               while remaining:
                   line, _, remaining = remaining.partition(b'\n')
                   item = json.loads(line)
@@ -37,6 +38,11 @@ final class SentryHTTPCollector {
                       temporary = target.with_suffix('.tmp')
                       temporary.write_bytes(payload)
                       temporary.replace(target)
+                  elif item['type'] == 'attachment':
+                      directory = root / envelope['event_id']
+                      directory.mkdir(exist_ok=True)
+                      target = directory / pathlib.Path(item['filename']).name
+                      target.write_bytes(payload)
               self.send_response(200)
               self.send_header('Content-Type', 'application/json')
               self.send_header('Content-Length', '2')
@@ -73,6 +79,17 @@ final class SentryHTTPCollector {
     return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
       .filter { $0.pathExtension == "json" }
       .map { try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: $0)) }
+  }
+
+  func attachments(for event: JSONValue) throws -> [String: Data] {
+    SentrySDK.flush(timeout: 5)
+    let id = try XCTUnwrap(event["event_id"].string)
+    let location = directory.appendingPathComponent(id)
+    guard FileManager.default.fileExists(atPath: location.path) else { return [:] }
+    let files = try FileManager.default.contentsOfDirectory(
+      at: location, includingPropertiesForKeys: nil)
+    return try Dictionary(
+      uniqueKeysWithValues: files.map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
   }
 
   func close() throws {

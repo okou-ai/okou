@@ -93,6 +93,19 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertEqual(event["contexts"]["nativeHelper"]["responseBytes"].number, 26)
     XCTAssertEqual(event["contexts"]["nativeHelper"]["stderrBytes"].number, 65_536)
     XCTAssertFalse(event.formatted.contains("private-app-content"))
+    let attachments = try collector.attachments(for: event)
+    XCTAssertEqual(
+      attachments["native-helper-response.bin"], Data("stdout-private-app-content".utf8))
+    let details = String(
+      decoding: try XCTUnwrap(attachments["native-helper-diagnostics.txt"]), as: UTF8.self)
+    XCTAssertTrue(details.contains("failure=invalid_json"))
+    XCTAssertTrue(details.contains("decoderError="))
+    XCTAssertTrue(details.contains("readSequence="))
+
+    DesktopTelemetry.captureStartupFailure()
+    let startup = try XCTUnwrap(
+      collector.events().first { $0["event_id"] != event["event_id"] })
+    XCTAssertTrue(try collector.attachments(for: startup).isEmpty)
   }
 
   func testMissingRequestIDRemainsDistinctFromMalformedJSON() async throws {
@@ -119,6 +132,102 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertTrue(message.contains("stderrBytes=0"))
     let event = try XCTUnwrap(collector.events().first)
     XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "missing_request_id")
+    let attachments = try collector.attachments(for: event)
+    let raw = try XCTUnwrap(attachments["native-helper-response.bin"])
+    let response = try JSONDecoder().decode(JSONValue.self, from: raw)
+    XCTAssertEqual(response["status"].string, "succeeded")
+    XCTAssertEqual(response["result"]["apps"].array, [])
+  }
+
+  func testLargeMalformedResponsePreservesBinaryBytesInTheSentryAttachment() async throws {
+    let collector = try telemetry()
+    let (executor, directory) = try fixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, pathlib, sys
+      root = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY'])
+      for line in sys.stdin:
+          request = json.loads(line)
+          if request['kind'] == 'permissions.state':
+              print(json.dumps({'id': request['id'], 'status': 'succeeded',
+                                'result': {'accessibility': True, 'screenRecording': True}}), flush=True)
+          else:
+              payload = (b'{"id":' + str(request['id']).encode() +
+                         b',"status":"succeeded","result":{"content":"' +
+                         b'x' * 1610565 + b'\xff"}')
+              (root / 'malformed-response.bin').write_bytes(payload)
+              sys.stdout.buffer.write(payload + b'\n')
+              sys.stdout.buffer.flush()
+      """#)
+
+    let failed = await listApps(executor)
+    XCTAssertEqual(failed["status"].string, "failed")
+    let event = try XCTUnwrap(collector.events().first)
+    let attachments = try collector.attachments(for: event)
+    let expected = try Data(contentsOf: directory.appendingPathComponent("malformed-response.bin"))
+    XCTAssertEqual(attachments["native-helper-response.bin"], expected)
+    XCTAssertFalse(event.formatted.contains("content"))
+    let details = String(
+      decoding: try XCTUnwrap(attachments["native-helper-diagnostics.txt"]), as: UTF8.self)
+    XCTAssertTrue(details.contains("responseBytes=\(expected.count)"))
+    XCTAssertTrue(details.contains("responseTruncated=false"))
+    XCTAssertTrue(details.contains("DecodingError"))
+    XCTAssertTrue(details.contains("readTraceComplete="))
+    XCTAssertTrue(details.contains("readSequence="))
+  }
+
+  func testProtocolAttachmentsAreBoundedAcrossHelperRestartsWithoutDroppingErrorEvents() async throws {
+    let collector = try telemetry()
+    let (executor, _) = try fixture(
+      #"""
+      #!/usr/bin/python3
+      import json, os, pathlib, sys
+      attempts = pathlib.Path(os.environ['OKOU_NATIVE_TEST_DIRECTORY']) / 'attempts'
+      for line in sys.stdin:
+          request = json.loads(line)
+          if request['kind'] == 'permissions.state':
+              print(json.dumps({'id': request['id'], 'status': 'succeeded',
+                                'result': {'accessibility': True, 'screenRecording': True}}), flush=True)
+          else:
+              count = int(attempts.read_text()) if attempts.exists() else 0
+              attempts.write_text(str(count + 1))
+              payload = b'x' * (4 * 1024 * 1024 + 4096) if count == 0 else b'broken-response'
+              sys.stdout.buffer.write(payload + b'\n')
+              sys.stdout.buffer.flush()
+      """#)
+
+    for _ in 0..<4 {
+      let failed = await listApps(executor)
+      XCTAssertEqual(failed["status"].string, "failed")
+    }
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 4)
+    var attached = 0
+    var limited = 0
+    for event in events {
+      let attachments = try collector.attachments(for: event)
+      if event["contexts"]["nativeHelper"]["diagnosticAttachments"].string == "rate_limited" {
+        limited += 1
+        XCTAssertTrue(attachments.isEmpty)
+      } else {
+        attached += 1
+        let raw = try XCTUnwrap(attachments["native-helper-response.bin"])
+        XCTAssertLessThanOrEqual(raw.count, 4 * 1024 * 1024)
+        let report = try XCTUnwrap(attachments["native-helper-diagnostics.txt"])
+        XCTAssertLessThan(report.count, 65_536)
+        let details = String(decoding: report, as: UTF8.self)
+        XCTAssertLessThanOrEqual(
+          details.components(separatedBy: "\n").filter { $0.hasPrefix("readSequence=") }.count, 256)
+        if event["contexts"]["nativeHelper"]["responseBytes"].number
+          == Double(4 * 1024 * 1024 + 4096)
+        {
+          XCTAssertEqual(raw, Data(repeating: 120, count: 4 * 1024 * 1024))
+          XCTAssertTrue(details.contains("responseTruncated=true"))
+        }
+      }
+    }
+    XCTAssertEqual(attached, 3)
+    XCTAssertEqual(limited, 1)
   }
 
   func testUnexpectedHelperExitIsDeliveredToSentry() async throws {
