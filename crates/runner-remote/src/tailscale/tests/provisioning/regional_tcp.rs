@@ -4,6 +4,7 @@
 mod capacity;
 mod common;
 mod kdc;
+mod liveness;
 mod vnc;
 mod vnc_shared;
 

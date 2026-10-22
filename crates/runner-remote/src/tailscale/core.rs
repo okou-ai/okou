@@ -86,13 +86,17 @@ impl Core {
     }
 
     pub(super) fn relay_peers(&self) -> Vec<(ts_keys::NodePublicKey, Option<ts_derp::RegionId>)> {
+        #[cfg(test)]
+        let _projection = super::tests::relay_projection::Projection::start();
+
         self.peers
             .relay_peers()
             .into_iter()
             .filter(|(key, _)| {
                 self.active
                     .iter()
-                    .any(|active| active.binding.live() && active.binding.peer_key() == *key)
+                    // Unrelated peers must not read this binding's cancellation state.
+                    .any(|active| active.binding.peer_key() == *key && active.binding.live())
             })
             .collect()
     }
