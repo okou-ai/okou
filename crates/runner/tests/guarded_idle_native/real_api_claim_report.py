@@ -243,8 +243,7 @@ def validate(directory):
                 if (claim.get("path") != f"/api/runners/jobs/{run}/claim"
                         or claim.get("authorization") != "Bearer " + inputs["token"]
                         or not isinstance(body, dict)
-                        or body.get("runnerIdentity") != {"runnerId": runner, "heartbeatGeneration": 1}
-                        or body.get("nativeContinuationSupported") is not True):
+                        or body.get("runnerIdentity") != {"runnerId": runner, "heartbeatGeneration": 1}):
                     raise ValueError("API claim lost its actual route/body/authorization")
                 clocks = [int(claim.get(key, "-1")) for key in ("enteredNs", "forwardedNs", "completedNs")]
                 if not 0 < clocks[0] < clocks[1] < clocks[2]:

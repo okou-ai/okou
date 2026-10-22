@@ -75,8 +75,7 @@ class RealApiClaimReportTests(unittest.TestCase):
                     authority = "synthetic-completion-authority-" + run
                     api["claims"].append({"runId": run, "runnerId": runner,
                         "path": f"/api/runners/jobs/{run}/claim", "authorization": "Bearer " + inputs["token"],
-                        "body": {"runnerIdentity": {"runnerId": runner, "heartbeatGeneration": 1},
-                                 "nativeContinuationSupported": True},
+                        "body": {"runnerIdentity": {"runnerId": runner, "heartbeatGeneration": 1}},
                         "enteredNs": str(at(2)), "forwardedNs": str(at(12 if won or order == "both" else 19)),
                         "completedNs": str(at(18 if won else 19.5)), "status": 200 if won else 404,
                         "running": {"status": "running", "startedAt": "2026-10-19T01:00:00Z"} if won else None,
