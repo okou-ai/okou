@@ -5300,6 +5300,10 @@
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
       "title": "內建工具",
       "tools": {
+        "data-search": {
+          "description": "補充職業資料，研究公司、流量、廣告、創作者及其他商業資料。",
+          "name": "進階資料研究"
+        },
         "finance": {
           "description": "查詢公司、行情和市場資料。",
           "name": "金融資料"
@@ -5995,18 +5999,10 @@
   "usage": {
     "displayNames": {
       "avatar": "數字人",
-      "finance": "金融",
+      "dataSearch": "資料搜尋",
       "imageRecognition": "影像識別",
-      "maps": "地圖",
-      "peopleSearch": "人物搜尋",
-      "productData": "商品資料",
-      "seo": "SEO",
-      "socialSearch": "社群資料",
       "translation": "翻譯",
-      "usage": "用量",
-      "weather": "天氣",
-      "webFetch": "網頁抓取",
-      "webSearch": "網頁搜尋"
+      "usage": "用量"
     },
     "kinds": {
       "connector": "連接器",

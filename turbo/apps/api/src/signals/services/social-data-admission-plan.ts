@@ -3,6 +3,7 @@ import type {
   SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { dataSearchJobs } from "@okouai/db/schema/data-search-job";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
@@ -135,10 +136,24 @@ export function socialCapacityExceeded(): ErrorResponse {
 }
 
 export function socialReservationPlan(orgId: string) {
+  const dataReservation = new QueryBuilder()
+    .select({
+      total:
+        sql`COALESCE(${sum(dataSearchJobs.reservedCredits)}, 0)::bigint`.mapWith(
+          pgInt8ToSafeIntegerDecoder,
+        ),
+    })
+    .from(dataSearchJobs)
+    .where(
+      and(
+        eq(dataSearchJobs.orgId, orgId),
+        isNull(dataSearchJobs.creditsCharged),
+      ),
+    );
   return {
     columns: {
       credits:
-        sql`COALESCE(sum(${socialDataJobs.reservedCredits}), 0)::bigint`.mapWith(
+        sql`(COALESCE(${sum(socialDataJobs.reservedCredits)}, 0) + (${dataReservation}))::bigint`.mapWith(
           pgInt8ToSafeIntegerDecoder,
         ),
       jobs: sql`count(*)::bigint`.mapWith(pgInt8ToSafeIntegerDecoder),

@@ -1,0 +1,119 @@
+{
+  "_review": {
+    "sourceUrl": "https://www.firecrawl.dev/alexandria/agents/providers/similarweb/openapi.json",
+    "reviewedAt": "2026-10-22",
+    "sourceFile": "similarweb-openapi.json",
+    "sourceSha256": "d9351c2998dce3ab9e723ae0ed6b198b76645fd5006616018a9ff14e907ab0fe"
+  },
+  "x-firecrawl-credit-cost": {
+    "min": 110,
+    "max": 550
+  },
+  "x-firecrawl-capabilities": [
+    {
+      "key": "web/traffic",
+      "billing": {
+        "unitLabel": "metric returned",
+        "maxCredits": 550,
+        "description": "110 Firecrawl credits per metric returned. Multiply by the number of requested metrics returned. Empty data costs zero. The contract ceiling is 550 credits. The reservation for a request depends on its inputs. Unused credits are released after a valid response. Monthly usage includes unresolved reservations and is not the final charge for this call.",
+        "requestUnits": {
+          "option": "metrics",
+          "kind": "csv-count",
+          "default": 5,
+          "max": 5
+        }
+      },
+      "credits_per_unit": 110
+    }
+  ],
+  "paths": {
+    "/v2/scrape": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["alexandria"],
+                "properties": {
+                  "alexandria": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "required": ["provider", "capability", "options"],
+                        "properties": {
+                          "provider": {
+                            "type": "string",
+                            "const": "similarweb"
+                          },
+                          "capability": {
+                            "type": "string",
+                            "const": "web/traffic"
+                          },
+                          "options": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "domain": {
+                                "type": "string",
+                                "description": "Lowercase bare domain without www. or a URL path.",
+                                "example": "<domain>"
+                              },
+                              "start_date": {
+                                "type": "string",
+                                "description": "Requested month as YYYY-MM; initial contract supports one complete month.",
+                                "example": "<start_date>"
+                              },
+                              "end_date": {
+                                "type": "string",
+                                "description": "Same month as start_date, as YYYY-MM.",
+                                "example": "<end_date>"
+                              },
+                              "granularity": {
+                                "type": "string",
+                                "description": "Monthly observations.",
+                                "example": "monthly",
+                                "enum": ["monthly"]
+                              },
+                              "country": {
+                                "type": "string",
+                                "description": "Two-letter lowercase country code or ww.",
+                                "example": "<country>"
+                              },
+                              "web_source": {
+                                "type": "string",
+                                "description": "Device scope.",
+                                "example": "total",
+                                "enum": ["desktop", "mobile_web", "total"]
+                              },
+                              "main_domain_only": {
+                                "type": "boolean",
+                                "description": "Exclude subdomains when true.",
+                                "example": false
+                              },
+                              "metrics": {
+                                "type": "string",
+                                "description": "Comma-separated metrics: visits, average_visit_duration, pages_per_visit, bounce_rate, unique_visitors.",
+                                "example": "<metrics>"
+                              }
+                            },
+                            "required": [
+                              "domain",
+                              "start_date",
+                              "end_date",
+                              "metrics"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

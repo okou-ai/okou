@@ -90,15 +90,7 @@ describe("Okou CLI program", () => {
       "presentation",
       "presentation-template",
       "user-template",
-      "maps",
-      "weather",
-      "scrape",
-      "web-search",
-      "people-search",
-      "social",
-      "commerce",
-      "finance",
-      "seo",
+      "data",
       "banking",
       "wallet",
     ];
@@ -131,8 +123,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 54 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(54);
+  it("advertises the canonical data namespace in root help", () => {
+    expect(program.helpInformation()).toContain("data");
     expect(canonicalCommandNames).toContain("subscription");
   });
 });
@@ -261,20 +253,20 @@ describe("Okou CLI lazy command loading", () => {
     },
     {
       label: "Commerce help invocation",
-      argv: ["node", "okou", "commerce", "--help"],
-      expectedName: "commerce",
+      argv: ["node", "okou", "data", "commerce", "--help"],
+      expectedName: "data",
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
       label: "direct canonical invocation",
-      argv: ["node", "okou", "social", "--help"],
-      expectedName: "social",
+      argv: ["node", "okou", "data", "social", "--help"],
+      expectedName: "data",
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
       label: "canonical help invocation",
-      argv: ["node", "okou", "help", "social"],
-      expectedName: "social",
+      argv: ["node", "okou", "help", "data"],
+      expectedName: "data",
       expectedHelpCode: "commander.help",
     },
   ])(
@@ -309,11 +301,15 @@ describe("Okou CLI lazy command loading", () => {
       expect(prog.commands).toHaveLength(1);
       const loadedCommand = prog.commands[0];
       expect(loadedCommand?.name()).toBe(expectedName);
-      loadedCommand?.exitOverride().configureOutput({
-        writeOut: (text: string) => {
-          helpOutput += text;
-        },
-      });
+      function captureHelp(command: Command) {
+        command.exitOverride().configureOutput({
+          writeOut: (text: string) => {
+            helpOutput += text;
+          },
+        });
+        command.commands.forEach(captureHelp);
+      }
+      if (loadedCommand) captureHelp(loadedCommand);
       await expect(prog.parseAsync(argv)).rejects.toMatchObject({
         code: expectedHelpCode,
       });

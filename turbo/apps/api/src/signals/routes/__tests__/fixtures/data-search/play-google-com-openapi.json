@@ -1,0 +1,76 @@
+{
+  "_review": {
+    "sourceUrl": "https://www.firecrawl.dev/alexandria/agents/providers/play-google-com/openapi.json",
+    "reviewedAt": "2026-10-22",
+    "sourceFile": "play-google-com-openapi.json",
+    "sourceSha256": "7aad5e5dd652adb9019e0412a6663161635d10cfe024edee285dedac42fc550d"
+  },
+  "x-firecrawl-credit-cost": {
+    "min": 5,
+    "max": 5
+  },
+  "x-firecrawl-capabilities": [
+    {
+      "key": "media/app",
+      "credits_per_call": 5
+    }
+  ],
+  "paths": {
+    "/v2/scrape": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["alexandria"],
+                "properties": {
+                  "alexandria": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "required": ["provider", "capability", "options"],
+                        "properties": {
+                          "provider": {
+                            "type": "string",
+                            "const": "play-google-com"
+                          },
+                          "capability": {
+                            "type": "string",
+                            "const": "media/app"
+                          },
+                          "options": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "country": {
+                                "type": "string",
+                                "description": "Storefront country (`gl`), ISO 3166-1 alpha-2. Default US. Selects availability, prices and which reviews the store shows. Pattern: ^[A-Za-z]{2}$.",
+                                "example": "<country>"
+                              },
+                              "language": {
+                                "type": "string",
+                                "description": "UI language (`hl`), e.g. en_US, en, de. Default en_US. Selects the language of titles, descriptions and labels; app reviews come back in the storefront language only. Pattern: ^[A-Za-z]{2}([_-][A-Za-z]{2,4})?$.",
+                                "example": "<language>"
+                              },
+                              "package": {
+                                "type": "string",
+                                "description": "Android package name (`com.whatsapp`, `org.telegram.messenger`); the `id` of a /store/apps/details URL (a pasted details URL is accepted). Pattern: ^(https://play\\.google\\.com/.*[?&]id=)?[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+.*$.",
+                                "example": "com.whatsapp"
+                              }
+                            },
+                            "required": ["package"]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

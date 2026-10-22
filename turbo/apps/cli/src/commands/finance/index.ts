@@ -164,10 +164,10 @@ export const financeCommand = new Command()
     "after",
     `
 Examples:
-  Search instruments:  okou finance search "Tencent"
-  Company profile:     okou finance profile AAPL
-  Latest quote:        okou finance quote 0700.HK --json
-  Historical chart:   okou finance chart AAPL --range 1y --interval 1d
+  Search instruments:  okou data finance search "Tencent"
+  Company profile:     okou data finance profile AAPL
+  Latest quote:        okou data finance quote 0700.HK --json
+  Historical chart:   okou data finance chart AAPL --range 1y --interval 1d
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires finance:read capability) or a CLI token

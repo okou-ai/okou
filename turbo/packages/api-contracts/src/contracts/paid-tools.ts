@@ -5,6 +5,7 @@ import { apiErrorSchema } from "./errors";
 export const AVAILABLE_PAID_TOOL_IDS = [
   "web-search",
   "people-search",
+  "data-search",
   "scrape",
   "finance",
   "maps",

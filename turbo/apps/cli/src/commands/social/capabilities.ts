@@ -314,7 +314,7 @@ function collectionDetails(tool: ManagedSocialKitTool) {
               supported: true,
               checkpoint: "--checkpoint <file>",
               resume:
-                "okou social resume <file> --limit <count> [--json|--stream]",
+                "okou data social resume <file> --limit <count> [--json|--stream]",
               version: 1,
               lifetimeHours: 24,
               context: "same OKOU_TOKEN and API endpoint",
@@ -358,7 +358,7 @@ function detailsFor(entry: ReturnType<typeof socialOperationBindings>[number]) {
   return {
     operation: entry.operation,
     variant: entry.variant,
-    command: `okou social ${entry.operation} --help`,
+    command: `okou data social ${entry.operation} --help`,
     inputs: {
       ...inputConstraints(
         tool?.inputSchema ?? socialKitDownloadRequestSchema,
@@ -418,7 +418,7 @@ function jobSection(selected: SocialCommandPlatform) {
     maxResults: SOCIAL_DATA_MAX_RESULTS,
     details: jobCapabilities[selected] ?? [],
     note: "Explicit job controls select these capabilities. Existing commands without them use the standard capabilities above. Deployment availability is checked by the free quote API; unsupported inputs fail before execution.",
-    recovery: "okou social jobs get <job-id> --wait --json",
+    recovery: "okou data social jobs get <job-id> --wait --json",
     ...(selected === "douyin" || selected === "weibo"
       ? {
           targetConstraints:
@@ -426,9 +426,9 @@ function jobSection(selected: SocialCommandPlatform) {
               ? "Full public HTTPS douyin.com/user/<id> or douyin.com/video/<numeric-id>; no query strings, fragments, or share links"
               : "Full public HTTPS weibo.com/u/<numeric-id>, weibo.com/n/<name> (inspect only), or weibo.com/<numeric-user-id>/<numeric-post-id>; no query strings, fragments, or share links",
           continuation: {
-            quote: "okou social jobs continue <job-id> --dry-run --json",
+            quote: "okou data social jobs continue <job-id> --dry-run --json",
             create:
-              "okou social jobs continue <job-id> --max-credits <credits> [--async] --json",
+              "okou data social jobs continue <job-id> --max-credits <credits> [--async] --json",
             note: "Explicit one-page successor job only when continuationAvailable; immutable target, filters, and total collection limit; independent budget and request ID. No automatic recursion or retries.",
           },
           downloads: false,

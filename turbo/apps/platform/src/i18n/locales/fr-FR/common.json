@@ -5379,6 +5379,10 @@
       "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
       "title": "Outils intégrés",
       "tools": {
+        "data-search": {
+          "description": "Enrichissez les profils professionnels et étudiez les entreprises, le trafic, les publicités, les créateurs et d’autres données commerciales.",
+          "name": "Recherche de données avancée"
+        },
         "finance": {
           "description": "Consultez les entreprises, les cours et les données de marché.",
           "name": "Données financières"
@@ -6084,18 +6088,10 @@
   "usage": {
     "displayNames": {
       "avatar": "Avatar",
-      "finance": "Finance",
+      "dataSearch": "Recherche de données",
       "imageRecognition": "Reconnaissance d'images",
-      "maps": "Cartes",
-      "peopleSearch": "Recherche de personnes",
-      "productData": "Données produits",
-      "seo": "SEO",
-      "socialSearch": "Données des réseaux sociaux",
       "translation": "Traduction",
-      "usage": "Utilisation",
-      "weather": "Météo",
-      "webFetch": "Récupération Web",
-      "webSearch": "Recherche Web"
+      "usage": "Utilisation"
     },
     "kinds": {
       "connector": "Connecteurs",

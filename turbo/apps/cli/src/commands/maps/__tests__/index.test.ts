@@ -37,7 +37,7 @@ function groundedResponse(model = "gemini-3.1-flash-lite") {
   };
 }
 
-describe("okou maps command", () => {
+describe("okou data maps command", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);

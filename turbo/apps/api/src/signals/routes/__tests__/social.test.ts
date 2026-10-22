@@ -3409,7 +3409,7 @@ describe("managed SocialKit route", () => {
         message: "Another social media download is already in progress",
         recovery: {
           downloadId: first.body.downloadId,
-          resumeCommand: `okou social download --resume ${first.body.downloadId}`,
+          resumeCommand: `okou data social download --resume ${first.body.downloadId}`,
         },
       });
       expect(first.body.status).toBe("processing");
@@ -3981,7 +3981,7 @@ describe("managed SocialKit route", () => {
           downloadId: created.body.downloadId,
           status: "artifact_failed",
           request: { url: "https://youtu.be/public-video" },
-          resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+          resumeCommand: `okou data social download --resume ${created.body.downloadId}`,
           billing: { quantity: 2, creditsCharged: 6 },
         },
       ]);

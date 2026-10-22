@@ -7,7 +7,7 @@ import { weatherCommand } from "../index";
 const WEATHER_ATTRIBUTION = "Source: Includes weather data from Google";
 const AIR_QUALITY_ATTRIBUTION = "Source: Includes air quality data from Google";
 
-describe("okou weather command", () => {
+describe("okou data weather command", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);

@@ -16,7 +16,7 @@ export interface CommerceJobOptions extends SocialExportOptions {
 }
 
 function recoveryCommand(id: string): string {
-  return `okou commerce job ${id} --wait --json`;
+  return `okou data commerce job ${id} --wait --json`;
 }
 
 function printJob(job: CommerceJob, compact: boolean): void {
@@ -115,7 +115,7 @@ export async function printCommerceResult(
       options.overwrite)
   ) {
     throw new InvalidArgumentError(
-      "--async does not support --output, --select, --format, or --overwrite; retrieve the job with okou commerce job <id> --wait --json",
+      "--async does not support --output, --select, --format, or --overwrite; retrieve the job with okou data commerce job <id> --wait --json",
     );
   }
   await withSocialOutput(

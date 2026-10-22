@@ -127,7 +127,7 @@ Transcript export:
   SRT preserves source cue text; reader markup support varies. Choose vtt for escaped literal markup.
   SRT rejects timestamp-like cue-text lines; choose vtt to preserve literal timing text.
   On failure, save plain text from the recovered stdout JSON without repeating the request.
-  Example: okou social transcript https://youtu.be/<id> --format srt --output captions.srt`,
+  Example: okou data social transcript https://youtu.be/<id> --format srt --output captions.srt`,
     );
   }
 }

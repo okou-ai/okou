@@ -400,13 +400,13 @@ test("Credit usage formats unknown image-provider names for people to read", asy
   expect(screen.getByText("Acme Vision Pro")).toBeInTheDocument();
 });
 
-test("Credit usage merges Social and Product Data by kind while preserving model and legacy rows", async () => {
+test("Credit usage merges historical data services and new enrichment while preserving model and connector rows", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000805",
     "a0000000-0000-4000-a000-000000000805",
     {
       version: 1,
-      totalCredits: 137,
+      totalCredits: 170,
       settledAt: "2026-08-14T12:00:02.000Z",
       breakdown: [
         {
@@ -472,20 +472,39 @@ test("Credit usage merges Social and Product Data by kind while preserving model
           credits: 4,
           providers: [{ provider: "apidojo", credits: 4 }],
         },
+        {
+          kind: "maps",
+          credits: 6,
+          providers: [{ provider: "google-maps", credits: 6 }],
+        },
+        {
+          kind: "data-search/monid/apollo/provider_cost_usd_micros",
+          credits: 10,
+          providers: [{ provider: "monid/apollo", credits: 10 }],
+        },
+        ...(
+          [
+            ["people-search", "perplexity", 3],
+            ["web-search", "perplexity", 2],
+            ["scrape", "firecrawl", 4],
+            ["seo", "dataforseo", 3],
+            ["weather", "google-weather", 5],
+          ] as const
+        ).map(([kind, provider, credits]) => {
+          return { kind, credits, providers: [{ provider, credits }] };
+        }),
       ],
     },
   );
 
-  await openUsage("137");
+  await openUsage("170");
 
   const details = screen.getByRole("dialog");
   for (const [label, credits] of [
-    // Managed kinds collapse independently; the X connector remains separate.
+    // Every data service merges once; the X connector remains separate.
     ["X", "12"],
-    ["Social Data", "80"],
-    ["Product Data", "18"],
+    ["Data Search", "135"],
     ["Legacy Data", "8"],
-    ["Finance", "4"],
     ["GPT 5.6 Sol", "6"],
     ["GPT 5.6 Luna", "9"],
   ]) {
@@ -493,7 +512,7 @@ test("Credit usage merges Social and Product Data by kind while preserving model
       `${label}${credits}`,
     );
   }
-  expect(within(details).getByText("137")).toBeInTheDocument();
+  expect(within(details).getByText("170")).toBeInTheDocument();
   expect(within(details).queryByText(/dataforseo/iu)).not.toBeInTheDocument();
   expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
   expect(within(details).queryByText(/socialkit/iu)).not.toBeInTheDocument();
@@ -671,8 +690,7 @@ test.each(["en-US", "zh-Hans"] as const)(
     await openUsage("99");
     const details = screen.getByRole("dialog");
     for (const [label, credits] of [
-      ["Social Data", "4"],
-      ["Product Data", "17"],
+      ["Data Search", "21"],
       ["Auto", "15"],
       ["GPT 6 Luna", "13"],
       ["Claude Sonnet 4.6", "27"],

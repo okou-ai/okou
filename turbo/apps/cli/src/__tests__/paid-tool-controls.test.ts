@@ -115,16 +115,19 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   }
 
   it.each([
-    { tool: "web-search", args: ["web-search", "example"] },
-    { tool: "people-search", args: ["people-search", "example"] },
-    { tool: "scrape", args: ["scrape", "https://example.com"] },
-    { tool: "finance", args: ["finance", "quote", "AAPL"] },
+    { tool: "web-search", args: ["data", "web", "search", "example"] },
+    { tool: "people-search", args: ["data", "people", "search", "example"] },
+    { tool: "scrape", args: ["data", "web", "scrape", "https://example.com"] },
+    { tool: "finance", args: ["data", "finance", "quote", "AAPL"] },
     {
       tool: "maps",
-      args: ["maps", "search", "coffee near Union Square"],
+      args: ["data", "maps", "search", "coffee near Union Square"],
     },
-    { tool: "seo", args: ["seo", "serp", "example"] },
-    { tool: "social", args: ["social", "inspect", "https://x.com/example"] },
+    { tool: "seo", args: ["data", "seo", "serp", "example"] },
+    {
+      tool: "social",
+      args: ["data", "social", "inspect", "https://x.com/example"],
+    },
     {
       tool: "image-generation",
       args: [
@@ -150,6 +153,237 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(errors).toContain("http://localhost:3000/?settings=tools");
     expect(requests).toEqual([]);
     expect(await readdir(directory)).toEqual([]);
+  });
+
+  it.each([
+    ["people", "enrich", "--id", "professional-123"],
+    ["people", "search", "marketing leaders", "--backend", "prospect"],
+    ["company", "search", "--domains", "example.com"],
+    ["company", "inspect", "--domain", "example.com"],
+    ["traffic", "overview", "example.com", "--month", "2025-01"],
+    ["ads", "search", "business software"],
+    ["trends", "related", "business software"],
+    ["creators", "search", "--name", "Jordan"],
+    ["affiliate", "search", "software"],
+    ["apps", "profile", "com.example.app"],
+    ["podcasts", "search", "business"],
+    ["web", "history", "https://example.com"],
+    ["finance", "company-profile", "--ticker", "AAPL", "--exchange", "NASDAQ"],
+  ])("blocks advanced data execution for %j", async (...args) => {
+    for (const policy of ['["data-search"]', "invalid"]) {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
+      errors = "";
+      await expect(
+        run(["data", ...args, "--max-credits", "100", "--json"]),
+      ).rejects.toThrow("process.exit(1)");
+      expect(errors).toContain(
+        policy === "invalid"
+          ? "Paid tool configuration is invalid"
+          : 'Paid tool "data-search" is disabled',
+      );
+      expect(requests).toEqual([]);
+    }
+  });
+
+  it("also honors the historical people preference for prospect search", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["people-search"]');
+    await expect(
+      run([
+        "data",
+        "people",
+        "search",
+        "marketing leaders",
+        "--backend",
+        "prospect",
+        "--max-credits",
+        "100",
+      ]),
+    ).rejects.toThrow("process.exit(1)");
+    expect(errors).toContain('Paid tool "people-search" is disabled');
+    expect(requests).toEqual([]);
+  });
+
+  it.each(['["data-search", "people-search"]', "invalid"])(
+    "permits free advanced discovery, quotes, saved reads and cancellation under %s",
+    async (policy) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
+      const jobId = "1c71bda8-a995-4a03-8099-a7af141c943d";
+      const job = {
+        jobId,
+        requestId: "93768b3c-4d64-4e1b-b9b0-ce60ce620ea6",
+        capability: "company.search",
+        status: "completed",
+        data: { items: [] },
+        billing: {
+          state: "settled",
+          creditsCharged: 10,
+          reservedCredits: 10,
+          maxCredits: 20,
+        },
+        createdAt: "2026-10-22T00:00:00Z",
+        updatedAt: "2026-10-22T00:00:01Z",
+      };
+      const operations: string[] = [];
+      server.use(
+        http.get("http://localhost:3000/api/data/capabilities", () => {
+          operations.push("capabilities");
+          return HttpResponse.json({ capabilities: [] });
+        }),
+        http.post(
+          "http://localhost:3000/api/data/quote",
+          async ({ request }) => {
+            const body = (await request.json()) as { capability: string };
+            operations.push(`quote:${body.capability}`);
+            return HttpResponse.json({
+              capability: body.capability,
+              estimatedCredits: 10,
+              maxCredits: 20,
+              quantity: 1,
+              unit: "request",
+            });
+          },
+        ),
+        http.get("http://localhost:3000/api/data/jobs", () => {
+          operations.push("list");
+          return HttpResponse.json({ jobs: [job], nextCursor: null });
+        }),
+        http.get("http://localhost:3000/api/data/jobs/:jobId", () => {
+          operations.push("get");
+          return HttpResponse.json(job);
+        }),
+        http.post("http://localhost:3000/api/data/jobs/:jobId/cancel", () => {
+          operations.push("cancel");
+          return HttpResponse.json(job);
+        }),
+      );
+      await run(["data", "capabilities", "--json"]);
+      await run([
+        "data",
+        "company",
+        "search",
+        "--domains",
+        "example.com",
+        "--dry-run",
+        "--json",
+      ]);
+      await run([
+        "data",
+        "people",
+        "search",
+        "marketing leaders",
+        "--backend",
+        "prospect",
+        "--dry-run",
+        "--json",
+      ]);
+      await run(["data", "jobs", "list", "--json"]);
+      await run(["data", "jobs", "get", jobId, "--json"]);
+      await run(["data", "jobs", "cancel", jobId, "--json"]);
+      expect(operations).toEqual([
+        "capabilities",
+        "quote:company.search",
+        "quote:people.search",
+        "list",
+        "get",
+        "cancel",
+      ]);
+      expect(errors).toBe("");
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it.each(['["social"]', "invalid"])(
+    "permits free social job quotes and saved-job recovery under %s",
+    async (policy) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
+      const jobId = "e36218c1-94a9-4728-9a4d-d41c4c73a720";
+      const job = {
+        jobId,
+        requestId: "d835e249-b217-4c41-9c41-48da45d592b0",
+        platform: "facebook",
+        operation: "comments",
+        status: "completed",
+        data: { items: [] },
+        billing: {
+          state: "settled",
+          creditsCharged: 7,
+          reservedCredits: 0,
+          maxCredits: 9,
+        },
+        createdAt: "2026-09-20T00:00:00.000Z",
+        updatedAt: "2026-09-20T00:00:01.000Z",
+      };
+      server.use(
+        http.post("http://localhost:3000/api/social/data/quote", () => {
+          return HttpResponse.json({
+            platform: "facebook",
+            operation: "comments",
+            estimatedCredits: 7,
+            maxCredits: 9,
+            quantity: 1,
+            unit: "request",
+          });
+        }),
+        http.get("http://localhost:3000/api/social/data/jobs", () => {
+          return HttpResponse.json({ jobs: [job], nextCursor: null });
+        }),
+        http.get("http://localhost:3000/api/social/data/jobs/:jobId", () => {
+          return HttpResponse.json(job);
+        }),
+        http.post(
+          "http://localhost:3000/api/social/data/jobs/:jobId/cancel",
+          () => {
+            return HttpResponse.json(job);
+          },
+        ),
+      );
+      await run([
+        "data",
+        "social",
+        "comments",
+        "https://www.facebook.com/example/posts/123",
+        "--dry-run",
+        "--json",
+      ]);
+      expect(output).toContain('"kind":"quote"');
+      await run(["data", "social", "jobs", "list", "--json"]);
+      await run(["data", "social", "jobs", "get", jobId, "--json"]);
+      await run(["data", "social", "jobs", "cancel", jobId, "--json"]);
+      expect(output).toContain(jobId);
+      expect(errors).toBe("");
+      expect(requests).toEqual([]);
+      await expect(
+        run([
+          "data",
+          "social",
+          "jobs",
+          "continue",
+          jobId,
+          "--max-credits",
+          "9",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit(1)");
+      expect(errors).toContain(
+        policy === "invalid"
+          ? "Paid tool configuration is invalid"
+          : 'Paid tool "social" is disabled',
+      );
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it("keeps historical research independent from the advanced preference", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["data-search"]');
+    server.use(
+      http.post("http://localhost:3000/api/web-search", () => {
+        return HttpResponse.json(webSearchResponse);
+      }),
+    );
+    await run(["data", "web", "search", "example", "--json"]);
+    expect(output).toContain('"results":[]');
+    expect(errors).toBe("");
+    expect(requests).toEqual([]);
   });
 
   it.each(["start", "__run"])(
@@ -267,7 +501,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       vi.stubEnv("OKOU_API_BACKEND_URL", api);
       vi.stubEnv("OKOU_APP_URL", app);
       vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["web-search"]');
-      await expect(run(["web-search", "example"])).rejects.toThrow(
+      await expect(run(["data", "web", "search", "example"])).rejects.toThrow(
         "process.exit(1)",
       );
       expect(errors).toContain(expected);
@@ -286,7 +520,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
           return HttpResponse.json(webSearchResponse);
         }),
       );
-      await run(["web-search", "example", "--json"]);
+      await run(["data", "web", "search", "example", "--json"]);
       expect(paidRequests).toBe(1);
       expect(output).toContain('"results":[]');
       expect(errors).toBe("");
@@ -297,12 +531,12 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     "rejects paid execution but permits free discovery for malformed policy %s",
     async (policy) => {
       vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
-      await expect(run(["web-search", "example"])).rejects.toThrow(
+      await expect(run(["data", "web", "search", "example"])).rejects.toThrow(
         "process.exit(1)",
       );
       expect(errors).toContain("Paid tool configuration is invalid");
       expect(errors).toContain(DISABLED_PAID_TOOLS_ENV_VAR);
-      await run(["social", "capabilities", "--json"]);
+      await run(["data", "social", "capabilities", "--json"]);
       expect(output).toContain('"capabilities"');
       expect(requests).toEqual([]);
     },
@@ -316,7 +550,9 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(output).toContain("Disabled paid tools in this run: maps.");
     expect(output).not.toContain("future-tool");
     output = "";
-    await expect(run(["maps", "search", "--help"])).rejects.toMatchObject({
+    await expect(
+      run(["data", "maps", "search", "--help"]),
+    ).rejects.toMatchObject({
       code: "commander.helpDisplayed",
     });
     expect(output).toContain("Disabled paid tools in this run: maps.");
@@ -325,7 +561,9 @@ describe("personal paid-tool controls through the CLI entry point", () => {
 
   it("keeps help available with malformed policy", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, "invalid");
-    await expect(run(["web-search", "--help"])).rejects.toMatchObject({
+    await expect(
+      run(["data", "web", "search", "--help"]),
+    ).rejects.toMatchObject({
       code: "commander.helpDisplayed",
     });
     expect(output).toContain("paid-tool configuration is invalid");
@@ -335,7 +573,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   it("blocks a Maps search before issuing a request", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["maps"]');
     await expect(
-      run(["maps", "search", "coffee near Union Square"]),
+      run(["data", "maps", "search", "coffee near Union Square"]),
     ).rejects.toThrow("process.exit(1)");
     expect(requests).toEqual([]);
   });
@@ -366,7 +604,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
             : operation === "download"
               ? ["https://youtu.be/example", "--max-duration", "600"]
               : ["https://youtu.be/example"];
-      await expect(run(["social", operation, ...args])).rejects.toThrow(
+      await expect(run(["data", "social", operation, ...args])).rejects.toThrow(
         "process.exit(1)",
       );
       expect(errors).toContain('Paid tool "social" is disabled');
@@ -377,7 +615,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
 
   it("keeps offline social capabilities available", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["social"]');
-    await run(["social", "capabilities", "--json"]);
+    await run(["data", "social", "capabilities", "--json"]);
     expect(output).toContain('"capabilities"');
     expect(requests).toEqual([]);
   });
@@ -404,8 +642,8 @@ describe("personal paid-tool controls through the CLI entry point", () => {
         return HttpResponse.json({ downloads: [], nextCursor: null });
       }),
     );
-    await run(["social", "status", "--json"]);
-    await run(["social", "downloads", "--json"]);
+    await run(["data", "social", "status", "--json"]);
+    await run(["data", "social", "downloads", "--json"]);
     expect(reads).toEqual(["status", "downloads"]);
     expect(requests).toEqual([]);
   });
@@ -420,6 +658,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
       }),
     );
     await run([
+      "data",
       "social",
       "download",
       "--resume",
@@ -430,6 +669,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(output).toContain("example.mp4");
     await expect(
       run([
+        "data",
         "social",
         "download",
         "https://youtu.be/example",

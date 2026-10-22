@@ -86,21 +86,38 @@ const COMMAND_CAPABILITY_MAP: Record<
   artifact: ["artifact:read", "artifact:write", "file:read"],
   presentation: null,
   "presentation-template": "presentation-template:write",
-  maps: "maps:read",
-  weather: "weather:read",
-  scrape: "scrape:read",
-  "people-search": "people-search:read",
-  "web-search": "web-search:read",
-  social: "social:read",
-  commerce: "commerce:read",
-  finance: "finance:read",
-  seo: "seo:read",
+  data: [
+    "data-search:read",
+    "data-enrichment:read",
+    "maps:read",
+    "weather:read",
+    "scrape:read",
+    "people-search:read",
+    "web-search:read",
+    "social:read",
+    "commerce:read",
+    "finance:read",
+    "seo:read",
+  ],
   banking: "banking:read",
   suggestion: ["suggestion:read", "suggestion:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
 const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion"]);
+
+// Hidden rollout aliases for older API-generated prompts; remove after 2026-11-21.
+const LEGACY_DATA_PATHS: Readonly<Record<string, readonly string[]>> = {
+  "web-search": ["web", "search"],
+  scrape: ["web", "scrape"],
+  "people-search": ["people", "search"],
+  social: ["social"],
+  finance: ["finance"],
+  maps: ["maps"],
+  weather: ["weather"],
+  seo: ["seo"],
+  commerce: ["commerce"],
+};
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -430,69 +447,23 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
-    name: "maps",
-    description: "Search places and routes with Google Maps grounding",
+    name: "data",
+    description: "Search and retrieve managed research data",
     load: async () => {
-      return (await import("./commands/maps")).mapsCommand;
+      return (await import("./commands/data")).dataCommand;
     },
   },
-  {
-    name: "weather",
-    description: "Use managed Okou weather services",
-    load: async () => {
-      return (await import("./commands/weather")).weatherCommand;
-    },
-  },
-  {
-    name: "scrape",
-    description: "Scrape public web pages through managed Okou scrape",
-    load: async () => {
-      return (await import("./commands/scrape")).scrapeCommand;
-    },
-  },
-  {
-    name: "people-search",
-    description: "Find professionals through managed Okou people search",
-    load: async () => {
-      return (await import("./commands/people-search")).peopleSearchCommand;
-    },
-  },
-  {
-    name: "web-search",
-    description: "Search the public web through managed Okou web search",
-    load: async () => {
-      return (await import("./commands/web-search")).webSearchCommand;
-    },
-  },
-  {
-    name: "social",
-    description: "Retrieve public social data through managed Okou services",
-    load: async () => {
-      return (await import("./commands/social")).socialCommand;
-    },
-  },
-  {
-    name: "commerce",
-    description:
-      "Retrieve public Amazon product data through managed Okou Commerce",
-    load: async () => {
-      return (await import("./commands/commerce")).commerceCommand;
-    },
-  },
-  {
-    name: "finance",
-    description: "Query financial instruments through managed Okou finance",
-    load: async () => {
-      return (await import("./commands/finance")).financeCommand;
-    },
-  },
-  {
-    name: "seo",
-    description: "Query managed SEO data through DataForSEO",
-    load: async () => {
-      return (await import("./commands/seo")).seoCommand;
-    },
-  },
+  ...Object.entries(LEGACY_DATA_PATHS).map(([name, canonicalPath]) => {
+    return {
+      name,
+      description: `Use okou data ${canonicalPath.join(" ")}`,
+      load: async () => {
+        const { createLegacyDataCommand } =
+          await import("./commands/data/legacy");
+        return createLegacyDataCommand(name, canonicalPath);
+      },
+    };
+  }),
   {
     name: "wallet",
     description: "Connect Link and request purchase approval",
@@ -527,7 +498,7 @@ function shouldHideCommand(
   name: string,
   payload: SandboxTokenPayload | undefined,
 ): boolean {
-  if (name.startsWith("__")) return true;
+  if (name.startsWith("__") || name in LEGACY_DATA_PATHS) return true;
   if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
   const requiredCap = COMMAND_CAPABILITY_MAP[name];
@@ -629,6 +600,14 @@ function commandExampleIfVisible(
   return shouldHideCommand(name, payload) ? [] : [example];
 }
 
+function dataExampleIfVisible(
+  capability: string,
+  example: string,
+  payload: SandboxTokenPayload | undefined,
+): string[] {
+  return payload && !payload.capabilities.includes(capability) ? [] : [example];
+}
+
 export function buildHelpText(
   payload: SandboxTokenPayload | undefined = decodeSandboxTokenPayload(),
 ): string {
@@ -717,44 +696,44 @@ export function buildHelpText(
       "  Artifact visibility?   okou artifact --help",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "maps",
-      '  Search maps?          okou maps search "coffee near Union Square" --json',
+    ...dataExampleIfVisible(
+      "maps:read",
+      '  Search maps?          okou data maps search "coffee near Union Square" --json',
       payload,
     ),
-    ...commandExampleIfVisible(
-      "weather",
-      "  Check weather?        okou weather current --lat 39.9042 --lng 116.4074 --json",
+    ...dataExampleIfVisible(
+      "weather:read",
+      "  Check weather?        okou data weather current --lat 39.9042 --lng 116.4074 --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "scrape",
-      "  Scrape a web page?    okou scrape https://example.com --json",
+    ...dataExampleIfVisible(
+      "scrape:read",
+      "  Scrape a web page?    okou data web scrape https://example.com --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "web-search",
-      '  Search the public web? okou web-search "latest news" --json',
+    ...dataExampleIfVisible(
+      "web-search:read",
+      '  Search the public web? okou data web search "latest news" --json',
       payload,
     ),
-    ...commandExampleIfVisible(
-      "social",
-      "  Analyze social data?   okou social transcript https://youtu.be/dQw4w9WgXcQ --json",
+    ...dataExampleIfVisible(
+      "social:read",
+      "  Analyze social data?   okou data social transcript https://youtu.be/dQw4w9WgXcQ --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "finance",
-      "  Get a market quote?   okou finance quote AAPL --json",
+    ...dataExampleIfVisible(
+      "finance:read",
+      "  Get a market quote?   okou data finance quote AAPL --json",
       payload,
     ),
-    ...commandExampleIfVisible(
-      "seo",
-      '  Research SEO data?    okou seo serp "technical seo" --json',
+    ...dataExampleIfVisible(
+      "seo:read",
+      '  Research SEO data?    okou data seo serp "technical seo" --json',
       payload,
     ),
-    ...commandExampleIfVisible(
-      "people-search",
-      '  Find a professional?   okou people-search "platform engineering leaders" --json',
+    ...dataExampleIfVisible(
+      "people-search:read",
+      '  Find a professional?   okou data people search "platform engineering leaders" --json',
       payload,
     ),
     ...commandExampleIfVisible(

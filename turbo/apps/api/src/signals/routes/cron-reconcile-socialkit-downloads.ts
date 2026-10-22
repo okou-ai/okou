@@ -2,6 +2,7 @@ import { cronReconcileSocialKitDownloadsContract } from "@okouai/api-contracts/c
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
+import { reconcileDataSearchJobs$ } from "../services/data-search.service";
 import { joinAll } from "../utils";
 import {
   reconcileSocialDataJobs$,
@@ -18,7 +19,7 @@ const reconcileSocialKitDownloadsRoute$ = command(
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
-    const [downloads, jobs] = await joinAll([
+    const [downloads, jobs, dataJobs] = await joinAll([
       set(
         reconcileSocialKitDownloads$,
         AbortSignal.any([
@@ -33,11 +34,15 @@ const reconcileSocialKitDownloadsRoute$ = command(
           AbortSignal.timeout(SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS),
         ]),
       ),
+      set(
+        reconcileDataSearchJobs$,
+        AbortSignal.any([signal, AbortSignal.timeout(240_000)]),
+      ),
     ]);
     signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: { success: true as const, processed: downloads + jobs },
+      body: { success: true as const, processed: downloads + jobs + dataJobs },
     };
   },
 );

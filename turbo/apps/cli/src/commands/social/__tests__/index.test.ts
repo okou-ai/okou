@@ -137,7 +137,7 @@ function failedDownload(status: "artifact_failed" | "provider_failed") {
   };
 }
 
-describe("okou social command", () => {
+describe("okou data social command", () => {
   const originalExitCode = process.exitCode;
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const mockConsoleError = vi
@@ -1534,7 +1534,7 @@ describe("okou social command", () => {
                 quality: "720p",
                 format: "mp4",
               },
-              resumeCommand: `okou social download --resume ${task.downloadId}`,
+              resumeCommand: `okou data social download --resume ${task.downloadId}`,
             },
           ],
           nextCursor: null,
@@ -1596,7 +1596,7 @@ describe("okou social command", () => {
                 quality: "720p",
                 format: "mp4",
               },
-              resumeCommand: `okou social download --resume ${task.downloadId}`,
+              resumeCommand: `okou data social download --resume ${task.downloadId}`,
             },
           ],
           nextCursor: task.downloadId,
@@ -1619,7 +1619,7 @@ describe("okou social command", () => {
       downloads: [
         { status: "artifact_failed", error: { billed: true, retryable: true } },
       ],
-      nextCommand: `okou social downloads --limit 1 --cursor ${task.downloadId} --status active --json`,
+      nextCommand: `okou data social downloads --limit 1 --cursor ${task.downloadId} --status active --json`,
     });
   });
 
@@ -1634,7 +1634,7 @@ describe("okou social command", () => {
       downloads: [],
       nextCursor: null,
       nextCommand: null,
-      message: expect.stringContaining("okou social download --help"),
+      message: expect.stringContaining("okou data social download --help"),
     });
   });
 
@@ -1665,7 +1665,7 @@ describe("okou social command", () => {
     async (json) => {
       const recovery = {
         downloadId: completedDownload().downloadId,
-        resumeCommand: `okou social download --resume ${completedDownload().downloadId}`,
+        resumeCommand: `okou data social download --resume ${completedDownload().downloadId}`,
       };
       server.use(
         http.post("http://localhost:3000/api/social/downloads", () => {
@@ -4960,7 +4960,7 @@ describe("okou social command", () => {
                 quality: "1080p",
                 format: "mp3",
               },
-              resumeCommand: `okou social download --resume ${completed.downloadId}`,
+              resumeCommand: `okou data social download --resume ${completed.downloadId}`,
             },
           ],
           nextCursor: null,
@@ -5014,7 +5014,7 @@ describe("okou social command", () => {
           requested: completed.requested,
           delivered: completed.delivered,
           artifact: completed.artifact,
-          resumeCommand: `okou social download --resume ${completed.downloadId}`,
+          resumeCommand: `okou data social download --resume ${completed.downloadId}`,
         },
       ],
       nextCommand: null,
@@ -5369,7 +5369,7 @@ describe("okou social command", () => {
       },
       recovery: {
         downloadId: initial.downloadId,
-        resumeCommand: `okou social download --resume ${initial.downloadId}`,
+        resumeCommand: `okou data social download --resume ${initial.downloadId}`,
       },
     });
     expect(polls).toBe(1);
@@ -5410,7 +5410,7 @@ describe("okou social command", () => {
       expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
         recovery: {
           downloadId,
-          resumeCommand: `okou social download --resume ${downloadId}`,
+          resumeCommand: `okou data social download --resume ${downloadId}`,
         },
       });
     },
@@ -5467,7 +5467,7 @@ describe("okou social command", () => {
       error: {
         kind: "invalid_input",
         message: expect.stringContaining(
-          "okou social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
+          "okou data social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
         ),
       },
     });
@@ -5559,7 +5559,7 @@ describe("okou social command", () => {
           signal,
           downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
           resumeCommand:
-            "okou social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
+            "okou data social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
         },
       });
       expect(process.exitCode).toBe(exitCode);

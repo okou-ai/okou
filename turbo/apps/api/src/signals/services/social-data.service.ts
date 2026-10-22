@@ -277,16 +277,12 @@ const checkSocialDataAdmission$ = command(
   },
 );
 
-export const createSocialDataJob$ = command(
+const reserveSocialDataJob$ = command(
   async (
     { set },
     args: SocialAdmissionArgs,
     signal: AbortSignal,
   ): Promise<CreatedResponse | ErrorResponse> => {
-    const early = await set(checkSocialDataAdmission$, args, signal);
-    if (early) {
-      return early;
-    }
     const db = set(writeDb$);
     const result = await settle(
       (async () => {
@@ -399,12 +395,29 @@ export const createSocialDataJob$ = command(
             .values(socialAdmissionValues({ ...args, plan, estimate }, budget))
             .returning();
           signal.throwIfAborted();
+          // Publish the financial reservation against the wallet version too,
+          // so concurrent Data Search admission CAS cannot accept an old budget.
+          await tx
+            .update(orgMetadata)
+            .set({ updatedAt: nowDate() })
+            .where(eq(orgMetadata.orgId, orgId));
           return createdSocialDataJob(job);
         });
       })(),
       signal,
     );
     return result.ok ? result.value : providerErrorResponse(result.error);
+  },
+);
+
+export const createSocialDataJob$ = command(
+  async (
+    { set },
+    args: SocialAdmissionArgs,
+    signal: AbortSignal,
+  ): Promise<CreatedResponse | ErrorResponse> => {
+    const existing = await set(checkSocialDataAdmission$, args, signal);
+    return existing ?? (await set(reserveSocialDataJob$, args, signal));
   },
 );
 

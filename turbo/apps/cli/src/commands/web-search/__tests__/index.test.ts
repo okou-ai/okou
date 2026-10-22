@@ -32,7 +32,7 @@ const responseBody = {
   ],
 } as const;
 
-describe("okou web-search command", () => {
+describe("okou data web search command", () => {
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   const mockConsoleError = vi
     .spyOn(console, "error")

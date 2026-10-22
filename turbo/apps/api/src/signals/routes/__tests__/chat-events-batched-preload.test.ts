@@ -53,14 +53,18 @@ describe("batched identity preload through chat entry", () => {
       { cloudBrowserEnabledByDefault: false },
       [200],
     );
-    await accept(
-      setupApp({ context, routes: paidToolsRoutes })(paidToolsContract).update({
-        headers,
-        params: { toolId: "social" },
-        body: { disabled: true },
-      }),
-      [200],
-    );
+    for (const toolId of ["data-search", "social"] as const) {
+      await accept(
+        setupApp({ context, routes: paidToolsRoutes })(
+          paidToolsContract,
+        ).update({
+          headers,
+          params: { toolId },
+          body: { disabled: true },
+        }),
+        [200],
+      );
+    }
     const member = bdd.user({
       orgId: owner.actor.orgId,
       orgRole: "org:member",
@@ -89,7 +93,7 @@ describe("batched identity preload through chat entry", () => {
       {
         actor: owner.actor,
         agentId: owner.agentId,
-        disabled: ["social"],
+        disabled: ["data-search", "social"],
         cloudBrowserEnabled: false,
       },
       { actor: member, agentId, disabled: [], cloudBrowserEnabled: true },

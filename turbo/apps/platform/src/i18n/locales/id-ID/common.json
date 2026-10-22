@@ -5300,6 +5300,10 @@
       "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
       "title": "Alat bawaan",
       "tools": {
+        "data-search": {
+          "description": "Perkaya profil profesional dan teliti perusahaan, trafik, iklan, kreator, serta data bisnis lainnya.",
+          "name": "Riset data lanjutan"
+        },
         "finance": {
           "description": "Cari perusahaan, harga, dan data pasar.",
           "name": "Data keuangan"
@@ -5995,18 +5999,10 @@
   "usage": {
     "displayNames": {
       "avatar": "Avatar",
-      "finance": "Keuangan",
+      "dataSearch": "Pencarian data",
       "imageRecognition": "Pengenalan Gambar",
-      "maps": "Peta",
-      "peopleSearch": "Pencarian Orang",
-      "productData": "Data produk",
-      "seo": "SEO",
-      "socialSearch": "Data media sosial",
       "translation": "Terjemahan",
-      "usage": "Penggunaan",
-      "weather": "Cuaca",
-      "webFetch": "Pengambilan Web",
-      "webSearch": "Pencarian Web"
+      "usage": "Penggunaan"
     },
     "kinds": {
       "connector": "Konektor",

@@ -80,7 +80,7 @@ export async function getSocialStatus(
   }
   handlePublicSocialError(
     result,
-    "Social status is unavailable; use okou social capabilities for offline discovery",
+    "Social status is unavailable; use okou data social capabilities for offline discovery",
   );
 }
 

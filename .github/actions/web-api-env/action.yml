@@ -415,6 +415,8 @@ runs:
           add_secret "OKOU_${suffix}" "OKOU_${suffix}"
         done
         if [[ "$INPUT_APP" == "api" ]]; then
+          # Optional explicit Firecrawl credit valuation; missing values fail closed.
+          add_var OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT OKOU_DATA_FIRECRAWL_USD_MICROS_PER_CREDIT
           add_secret OKOU_SOCIAL_MONID_API_KEY OKOU_SOCIAL_MONID_API_KEY
           add_secret OKOU_SOCIAL_SOCIALKIT_TOKEN OKOU_SOCIAL_SOCIALKIT_TOKEN
           add_secret OKOU_SEO_DATAFORSEO_LOGIN OKOU_SEO_DATAFORSEO_LOGIN

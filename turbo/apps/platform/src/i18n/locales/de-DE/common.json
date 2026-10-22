@@ -5317,6 +5317,10 @@
       "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
       "title": "Integrierte Tools",
       "tools": {
+        "data-search": {
+          "description": "Berufsprofile ergänzen und Unternehmen, Traffic, Anzeigen, Creator und weitere Geschäftsdaten recherchieren.",
+          "name": "Erweiterte Datenrecherche"
+        },
         "finance": {
           "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
           "name": "Finanzdaten"
@@ -6016,18 +6020,10 @@
   "usage": {
     "displayNames": {
       "avatar": "Avatar",
-      "finance": "Finanzen",
+      "dataSearch": "Datensuche",
       "imageRecognition": "Bilderkennung",
-      "maps": "Karten",
-      "peopleSearch": "Personensuche",
-      "productData": "Produktdaten",
-      "seo": "SEO",
-      "socialSearch": "Social-Media-Daten",
       "translation": "Übersetzung",
-      "usage": "Nutzung",
-      "weather": "Wetter",
-      "webFetch": "Webabruf",
-      "webSearch": "Websuche"
+      "usage": "Nutzung"
     },
     "kinds": {
       "connector": "Integrationen",

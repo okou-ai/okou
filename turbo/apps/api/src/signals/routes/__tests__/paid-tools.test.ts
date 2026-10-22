@@ -82,6 +82,7 @@ test("lets an ordinary member disable and re-enable a tool idempotently", async 
 });
 
 test.each([
+  "data-search",
   "image-generation",
   "video-generation",
   "voice-generation",

@@ -197,6 +197,7 @@ import { slackInteractiveRoutes } from "./routes/slack-interactive";
 import { slackOauthRoutes } from "./routes/slack-oauth";
 import { socialRoutes } from "./routes/social";
 import { socialDataRoutes } from "./routes/social-data";
+import { dataSearchRoutes } from "./routes/data-search";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { teamsBotRoutes } from "./routes/teams-bot";
@@ -371,6 +372,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webSearchRoutes,
   ...socialRoutes,
   ...socialDataRoutes,
+  ...dataSearchRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
   ...chatRemoteAccessRoutes,

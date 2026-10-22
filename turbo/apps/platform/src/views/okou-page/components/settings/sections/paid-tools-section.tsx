@@ -44,6 +44,7 @@ import { SettingsSectionHeading } from "../settings-section-heading.tsx";
 const TOOL_ICONS = {
   "web-search": Search,
   "people-search": Users,
+  "data-search": Search,
   scrape: FileText,
   finance: ChartNoAxesCombined,
   maps: MapPin,

@@ -5300,6 +5300,10 @@
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
       "title": "組み込みツール",
       "tools": {
+        "data-search": {
+          "description": "職業プロフィールを補完し、企業、トラフィック、広告、クリエイターなどのビジネスデータを調査します。",
+          "name": "高度なデータ調査"
+        },
         "finance": {
           "description": "企業、株価、市場データを調べます。",
           "name": "金融データ"
@@ -5995,18 +5999,10 @@
   "usage": {
     "displayNames": {
       "avatar": "アバター",
-      "finance": "金融",
+      "dataSearch": "データ検索",
       "imageRecognition": "画像認識",
-      "maps": "地図",
-      "peopleSearch": "人物検索",
-      "productData": "商品データ",
-      "seo": "SEO",
-      "socialSearch": "ソーシャルデータ",
       "translation": "翻訳",
-      "usage": "使用量",
-      "weather": "天気",
-      "webFetch": "ウェブフェッチ",
-      "webSearch": "ウェブ検索"
+      "usage": "使用量"
     },
     "kinds": {
       "connector": "コネクター",

@@ -17,12 +17,13 @@ import {
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
+import { dataSearchJobs } from "@okouai/db/schema/data-search-job";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
-import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, sql, sum } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 
 import {
@@ -128,6 +129,20 @@ const checkManagedCreditBalance$ = command(
           ),
         ),
     );
+    const dataSearchReservation = writeDb
+      .select({
+        total:
+          sql`COALESCE(${sum(dataSearchJobs.reservedCredits)}, 0)::bigint`.mapWith(
+            pgInt8ToBigIntDecoder,
+          ),
+      })
+      .from(dataSearchJobs)
+      .where(
+        and(
+          eq(dataSearchJobs.orgId, args.orgId),
+          isNull(dataSearchJobs.creditsCharged),
+        ),
+      );
     const rows = await writeDb
       .with(expired)
       .select({
@@ -135,6 +150,11 @@ const checkManagedCreditBalance$ = command(
           nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
         ),
         unsettledExpired: expired.total,
+        // A durable data job has not debited the wallet yet. Every managed
+        // service must leave that capacity available for its confirmed receipt.
+        dataSearchReserved: sql`(${dataSearchReservation})`.mapWith(
+          pgInt8ToBigIntDecoder,
+        ),
         unitPrice: sql`${usagePricing.unitPrice}`.mapWith(
           nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
         ),
@@ -167,7 +187,8 @@ const checkManagedCreditBalance$ = command(
     const quantity = args.resource.quantity ?? 1;
     const requiredCredits =
       estimatedCredits(row.unitPrice, row.unitSize, quantity) +
-      BigInt(args.reservedCredits ?? 0);
+      BigInt(args.reservedCredits ?? 0) +
+      row.dataSearchReserved;
     const capabilities = await set(
       loadOrgPlanCapabilities$,
       args.orgId,

@@ -5379,6 +5379,10 @@
       "timing": "Los cambios se aplican a las próximas ejecuciones. Las tareas en curso o ya preparadas pueden mantener los ajustes anteriores.",
       "title": "Herramientas integradas",
       "tools": {
+        "data-search": {
+          "description": "Enriquece perfiles profesionales e investiga empresas, tráfico, anuncios, creadores y otros datos empresariales.",
+          "name": "Investigación avanzada de datos"
+        },
         "finance": {
           "description": "Consulta empresas, cotizaciones y datos del mercado.",
           "name": "Datos financieros"
@@ -6084,18 +6088,10 @@
   "usage": {
     "displayNames": {
       "avatar": "Avatar",
-      "finance": "Finanzas",
+      "dataSearch": "Búsqueda de datos",
       "imageRecognition": "Reconocimiento de imágenes",
-      "maps": "Mapas",
-      "peopleSearch": "Búsqueda de personas",
-      "productData": "Datos de productos",
-      "seo": "SEO",
-      "socialSearch": "Datos de redes sociales",
       "translation": "Traducción",
-      "usage": "Uso",
-      "weather": "Tiempo",
-      "webFetch": "Búsqueda web",
-      "webSearch": "Búsqueda web"
+      "usage": "Uso"
     },
     "kinds": {
       "connector": "Conectores",

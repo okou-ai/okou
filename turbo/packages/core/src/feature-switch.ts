@@ -356,6 +356,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
     enabled: false,
   },
+  [FeatureSwitchKey.DataSearch]: {
+    maintainer: "ethan@okou.ai",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
     description:

@@ -84,7 +84,7 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
   click(button("Tools", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
-  expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
+  expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
   expect(
     within(dialog).getByText(
       "These settings apply only to you in Research team.",
@@ -134,6 +134,28 @@ test("Paid tools toggles save inverted enabled state and can re-enable a tool", 
     { toolId: "web-search", disabled: false },
     { toolId: "web-search", disabled: true },
   ]);
+});
+
+test("Advanced data research saves independently from historical research preferences", async () => {
+  const updates: { toolId: string; disabled: boolean }[] = [];
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["data-search", "people-search"] });
+  });
+  context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+    updates.push({ toolId: params.toolId, disabled: body.disabled });
+    return respond(200, { toolId: params.toolId, disabled: body.disabled });
+  });
+  await openPaidTools();
+  const advanced = await readySwitch("Advanced data research");
+  const people = await readySwitch("People search");
+  expect(advanced).not.toBeChecked();
+  expect(people).not.toBeChecked();
+  click(advanced);
+  await waitFor(() => {
+    return expect(advanced).toBeChecked();
+  });
+  expect(people).not.toBeChecked();
+  expect(updates).toStrictEqual([{ toolId: "data-search", disabled: false }]);
 });
 
 test("A failed load shows no assumed enabled tools and can be retried", async () => {
