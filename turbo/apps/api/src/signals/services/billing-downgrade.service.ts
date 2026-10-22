@@ -748,6 +748,7 @@ const publishDowngrade$ = command(
           )
         : null;
     // Keep a nonempty result even when either guarded update returns zero.
+    // Each update is PK-bound, so a total of two requires both to succeed.
     // This statement's sole division then rolls back every publication write.
     const carrier = sql`(VALUES (1)) AS downgrade_publication`;
     const publication = await settle(
@@ -756,11 +757,10 @@ const publishDowngrade$ = command(
             .with(...publications, canceled, scheduled)
             .select({
               complete: sql`1 / CASE WHEN ${eq(
-                db.select({ count: count() }).from(canceled),
-                1,
-              )} AND ${eq(
-                db.select({ count: count() }).from(scheduled),
-                1,
+                sql`${db.select({ count: count() }).from(canceled)} + ${db
+                  .select({ count: count() })
+                  .from(scheduled)}`,
+                2,
               )} THEN 1 ELSE 0 END`.mapWith(pgIntegerDecoder),
             })
             .from(carrier)
