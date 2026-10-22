@@ -313,7 +313,14 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
         _ => error
             .get("message")
             .and_then(Value::as_str)
-            .and_then(text_failure_reason),
+            .and_then(text_failure_reason)
+            .or_else(|| {
+                error
+                    .get("code")
+                    .and_then(Value::as_u64)
+                    .and_then(|code| u16::try_from(code).ok())
+                    .and_then(http_failure_reason)
+            }),
     }
 }
 

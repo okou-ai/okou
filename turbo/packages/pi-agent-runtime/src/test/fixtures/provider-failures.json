@@ -1,5 +1,33 @@
 [
   {
+    "message": "{\"error\":{\"code\":429,\"message\":\"Specific upstream rate failure\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":529,\"message\":\"Specific upstream load failure\"}}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "{\"error\":{\"code\":502,\"message\":\"Specific upstream generation failure\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":503,\"type\":\"content_policy_violation\",\"message\":\"Specific upstream policy failure\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"code\":503,\"message\":\"Provider finish_reason: content_filter\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"code\":503,\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\"}}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "Provider finish_reason: error",
+    "reason": null
+  },
+  {
     "message": "413: {\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}",
     "reason": "provider_image_too_large"
   },

@@ -95,10 +95,86 @@ index 7f146126800d7446fd7e2493fd9b05d455d7ad95..3aa7449674a47c888b6de15fee96def8
  //# sourceMappingURL=openai-completions.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
-index a60f39352b776d71497e55b33b3334bacfbeb2f5..296ae769718dcaac61532e5a820d2ad665e42177 100644
+index a60f39352b776d71497e55b33b3334bacfbeb2f5..50b0ad6f6844e640f4586cef9e8cd88c01cad301 100644
 --- a/dist/api/openai-completions.js
 +++ b/dist/api/openai-completions.js
-@@ -1342,4 +1342,9 @@ function getCompat(model) {
+@@ -16,6 +16,31 @@ import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copi
+ import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
+ import { buildBaseOptions, clampThinkingBudgetToAnswerRoom, resolveSamplingParams, thinkingBudgetForLevel, } from "./simple-options.js";
+ import { transformMessages } from "./transform-messages.js";
++// Keep optional upstream failure details at the adapter that owns their result.
++// Metadata/raw payloads may contain prompts or credentials and are not error text.
++const OKOU_GENERIC_STREAM_ERROR = "Provider finish_reason: error";
++function okouProviderErrorToken(value) {
++    return typeof value === "string" && value.length > 0 && value.length <= 128 ? value : undefined;
++}
++function okouProviderStreamFailure(error, nativeFinishReason) {
++    const detail = {};
++    if (error && typeof error === "object" && !Array.isArray(error)) {
++        const code = typeof error.code === "number" && Number.isSafeInteger(error.code)
++            ? error.code : okouProviderErrorToken(error.code);
++        const type = okouProviderErrorToken(error.type);
++        // A UTF-16 cut can split a character; Rust rejects its unpaired surrogate.
++        const message = typeof error.message === "string" ? error.message.slice(0, 2000).toWellFormed() : undefined;
++        if (code !== undefined) detail.code = code;
++        if (type !== undefined) detail.type = type;
++        if (message?.trim()) detail.message = message;
++    }
++    const native = okouProviderErrorToken(nativeFinishReason);
++    if (Object.keys(detail).length === 0 && native === undefined) return undefined;
++    return JSON.stringify({
++        error: Object.keys(detail).length === 0 ? { message: OKOU_GENERIC_STREAM_ERROR } : detail,
++        ...(native === undefined ? {} : { native_finish_reason: native }),
++    });
++}
+ /**
+  * Check if conversation messages contain tool calls or tool results.
+  * This is needed because Anthropic (via proxy) requires the tools param
+@@ -372,11 +397,19 @@ export const stream = (model, context, options) => {
+                     output.usage = parseChunkUsage(choice.usage, model);
+                 }
+                 if (choice.finish_reason) {
++                    const previousError = output.rawStopReason === "error" ? output.errorMessage : undefined;
+                     output.rawStopReason = choice.finish_reason;
+                     const finishReasonResult = mapStopReason(choice.finish_reason);
+                     output.stopReason = finishReasonResult.stopReason;
+                     if (finishReasonResult.errorMessage) {
+-                        output.errorMessage = finishReasonResult.errorMessage;
++                        // The accounting chunk repeats the terminal reason without
++                        // its error object. Retain the actual failed choice.
++                        output.errorMessage = choice.finish_reason === "error"
++                            ? (!choice.error && previousError && previousError !== OKOU_GENERIC_STREAM_ERROR
++                                ? previousError
++                                : (okouProviderStreamFailure(choice.error, choice.native_finish_reason)
++                                    ?? previousError ?? finishReasonResult.errorMessage))
++                            : finishReasonResult.errorMessage;
+                     }
+                     hasFinishReason = true;
+                 }
+@@ -500,12 +533,20 @@ export const stream = (model, context, options) => {
+                 delete block.streamIndex;
+             }
+             output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+-            output.errorMessage = formatProviderError(normalizeProviderError(error));
++            // OpenAI throws top-level SSE errors before the provider event hook.
++            // HTTP 200 stream errors have no error status; normal formatting
++            // would retain only their message and discard the provider code.
++            // Connection/abort errors have no provider payload and retain their
++            // owner. An SSE payload with no allowed detail stays generic; never
++            // fall back to formatting its arbitrary metadata or output.
++            const streamFailure = output.stopReason === "error" && error instanceof OpenAI.APIError && error.status === undefined && error.error !== undefined
++                ? (okouProviderStreamFailure(error.error) ?? OKOU_GENERIC_STREAM_ERROR) : undefined;
++            output.errorMessage = streamFailure ?? formatProviderError(normalizeProviderError(error));
+             // Some providers via OpenRouter give additional information in this field.
+             // normalizeProviderError already stringifies the parsed body (error.error)
+             // into errorMessage, so only append the raw metadata when it is not already
+             // present to avoid double-printing it.
+-            const rawMetadata = error?.error?.metadata?.raw;
++            const rawMetadata = streamFailure === undefined ? error?.error?.metadata?.raw : undefined;
+             if (rawMetadata && !output.errorMessage.includes(String(rawMetadata))) {
+                 output.errorMessage += `\n${rawMetadata}`;
+             }
+@@ -1342,4 +1383,9 @@ function getCompat(model) {
          vllmPriority: model.compat.vllmPriority,
      };
  }
@@ -108,7 +184,6 @@ index a60f39352b776d71497e55b33b3334bacfbeb2f5..296ae769718dcaac61532e5a820d2ad6
 +    return buildParams(model, normalizedContext, options);
 +}
  //# sourceMappingURL=openai-completions.js.map
-\ No newline at end of file
 diff --git a/dist/api/openai-responses.d.ts b/dist/api/openai-responses.d.ts
 index 41267bd50904069aa0879cc8634ea94bc1045236..3d7e30ebc76cf507b88a2a1a2926c38c8ff6d58d 100644
 --- a/dist/api/openai-responses.d.ts
@@ -209,7 +284,7 @@ index 5960cf7f5e992eef7d1b96530cea66c6f616a6d2..a2f2c47b1cb76f1faac44f80b0e08715
      if (shouldRetry === "true")
          return true;
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..af2e4b6135d0d4ae02171b7f2986f972689bf16f 100644
+index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..880c8b1beddf09178dd5b8eb436007b84dc573a1 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,4 @@
@@ -217,7 +292,7 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..af2e4b6135d0d4ae02171b7f2986f972
  function buildProviderErrorPattern(patterns) {
      return new RegExp(patterns.join("|"), "i");
  }
-@@ -176,6 +177,59 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+@@ -176,6 +177,73 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
          await callbacks?.onRetryAttemptStart?.();
      }
  }
@@ -274,10 +349,24 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..af2e4b6135d0d4ae02171b7f2986f972
 +    }
 +    return undefined;
 +}
++function okouProviderRetryText(message) {
++    if (message.api !== "openai-completions" || !message.errorMessage.startsWith('{"error":'))
++        return message.errorMessage;
++    try {
++        const error = JSON.parse(message.errorMessage).error;
++        // Native finish details and unknown codes are diagnostic evidence, not
++        // retry prose. Known codes use the structured model-request verdict.
++        return typeof error?.message === "string" ? error.message : "";
++    }
++    catch {
++        // Other existing provider errors can be JSON-looking or truncated text.
++        return message.errorMessage;
++    }
++}
  /**
   * Classifies whether a failed assistant message looks like a transient provider
   * or transport error, so callers can decide if the last assistant turn should be
-@@ -189,8 +243,15 @@ export function isRetryableAssistantError(message) {
+@@ -189,8 +257,17 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;
@@ -285,11 +374,14 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..af2e4b6135d0d4ae02171b7f2986f972
 +        return false;
      if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))
          return false;
+-    return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
 +    // After both terminal guards, so a known-terminal body stays terminal, and
 +    // before the text patterns, which the structured verdict supersedes.
 +    const requestRetryDecision = okouModelRequestRetryDecision(message);
 +    if (requestRetryDecision !== undefined)
 +        return requestRetryDecision;
-     return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
++    // Preserve the existing terminal guards' code/type evidence. Only positive
++    // retry prose matching excludes native details and unknown provider codes.
++    return RETRYABLE_PROVIDER_ERROR_PATTERN.test(okouProviderRetryText(message));
  }
  //# sourceMappingURL=retry.js.map

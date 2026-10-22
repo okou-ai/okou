@@ -68,7 +68,12 @@ export function classifyProviderFailure(
   )
     return reason;
 
-  const errorMessage = payload && (object(payload.error) ?? payload).message;
+  const error = payload && (object(payload.error) ?? payload);
+  const errorMessage = error?.message;
+  // A streaming provider can report a status-like code after HTTP 200. Keep
+  // semantic terminal evidence ahead of that code, as with an actual HTTP error.
+  const providerStatus =
+    typeof error?.code === "number" ? error.code : undefined;
   const normalized = (typeof errorMessage === "string" ? errorMessage : message)
     .trim()
     .toLowerCase()
@@ -76,7 +81,10 @@ export function classifyProviderFailure(
   const textReason = providerTextFailureReason(normalized);
   return textReason === "provider_queue_timeout"
     ? textReason
-    : (reason ?? textReason ?? classifyProviderHttpFailure(httpStatus));
+    : (reason ??
+        textReason ??
+        classifyProviderHttpFailure(providerStatus) ??
+        classifyProviderHttpFailure(httpStatus));
 }
 
 function providerTextFailureReason(
