@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { vi } from "vitest";
+import type { AppRouter } from "@okouai/api-contracts/contracts/trpc-contract";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
@@ -163,10 +164,15 @@ const runRoutes = [
 ] as const;
 
 function runApp(context: TestContext) {
-  return setupAppWithRoutes({
-    context,
-    routes: runRoutes,
-  });
+  return <TContract extends AppRouter>(contract: TContract) => {
+    const selectedRoutes = new Set(Object.values(contract));
+    return setupAppWithRoutes({
+      context,
+      routes: runRoutes.filter(({ route }) => {
+        return selectedRoutes.has(route);
+      }),
+    })(contract);
+  };
 }
 
 function clerkUserProfile(actor: ApiTestUser): ClerkUserProfile {

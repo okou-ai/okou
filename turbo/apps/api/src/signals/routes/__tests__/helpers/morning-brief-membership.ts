@@ -8,10 +8,7 @@ import {
   type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import {
-  workflowAutomationsContract,
-  workflowsCollectionContract,
-} from "@okouai/api-contracts/contracts/workflows";
+import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { expect } from "vitest";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -21,7 +18,6 @@ import { createCronOfficialWorkflowCatalogRoutes } from "../../cron-official-wor
 import { morningBriefPreferenceRoutes } from "../../morning-brief-preference";
 import { userPreferencesRoutes } from "../../user-preferences";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
-import { workflowsRoutes } from "../../workflows";
 import { createBddApi } from "./api-bdd";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import {
@@ -117,25 +113,25 @@ export async function pauseBriefForMembershipFailure(context: TestContext) {
     ).update({ headers: authHeaders(), body: { enabled: true } }),
     [200],
   );
-  const installations = await accept(
+  const entries = await accept(
     setupApp({
       context,
-      routes: workflowsRoutes.filter(({ route }) => {
-        return route === workflowsCollectionContract.list;
+      routes: workflowAutomationsRoutes.filter(({ route }) => {
+        return route === workflowAutomationsContract.listWorkspace;
       }),
-    })(workflowsCollectionContract).list({ headers: authHeaders(), query: {} }),
+    })(workflowAutomationsContract).listWorkspace({ headers: authHeaders() }),
     [200],
   );
-  const installation = installations.body.find((workflow) => {
+  const installation = entries.body.find(({ workflow }) => {
     return (
       workflow.official?.definitionName ===
       MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
     );
   });
   if (!installation) {
-    throw new Error("Expected the existing Morning Brief installation");
+    throw new Error("Expected the existing Morning Brief automation");
   }
-  const installationId = installation.id;
+  const installationId = installation.workflow.id;
   async function readAutomations() {
     const result = await accept(
       setupApp({
@@ -151,10 +147,7 @@ export async function pauseBriefForMembershipFailure(context: TestContext) {
     );
     return result.body;
   }
-  const [before] = await readAutomations();
-  if (!before) {
-    throw new Error("Expected its existing automation");
-  }
+  const before = installation.automation;
   expect(before).toMatchObject({
     enabled: true,
     official: { intendedEnabled: true, reconciliationStatus: "current" },

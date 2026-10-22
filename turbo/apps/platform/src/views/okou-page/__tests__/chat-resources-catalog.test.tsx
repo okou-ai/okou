@@ -423,3 +423,36 @@ test("Copy link tooltips follow resource focus and close when their row collapse
     "https://files.example.test/report-1.pdf",
   ]);
 });
+
+test("Copy the focused resource after moving between open copy tooltips", async () => {
+  const user = userEvent.setup();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const { panel } = await setupOverflowResources(4, { withLinks: false });
+  const artifacts = within(panel).getByRole("region", { name: "Artifacts" });
+  click(buttonNamed("Show more", artifacts));
+  await within(artifacts).findByText("report-4.pdf");
+  const firstRow = artifactEntryNamed("report-1.pdf", artifacts).closest("li");
+  const lastRow = artifactEntryNamed("report-4.pdf", artifacts).closest("li");
+  if (!firstRow || !lastRow) {
+    throw new Error("Expected both resource rows");
+  }
+  const firstCopy = buttonNamed("Copy link", firstRow);
+  const lastCopy = buttonNamed("Copy link", lastRow);
+
+  firstCopy.focus();
+  expect(firstCopy).toHaveFocus();
+  await expect(screen.findByText("Copy link")).resolves.toBeVisible();
+  lastCopy.focus();
+  expect(lastCopy).toHaveFocus();
+  await waitFor(() => {
+    expect(screen.getAllByText("Copy link")).toHaveLength(1);
+    expect(screen.getByText("Copy link")).toBeVisible();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByText("Link copied");
+  expect(clipboard.writes).toStrictEqual([
+    "https://files.example.test/report-4.pdf",
+  ]);
+  expect(lastCopy).toHaveFocus();
+});

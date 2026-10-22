@@ -267,14 +267,12 @@ function ResourceOutputRow({
   onCopy,
   copyLabel,
   copyGlyph,
-  copyTooltip,
 }: {
   readonly artifact: ArtifactSummary;
   readonly onOpen: (artifactId: string) => void;
   readonly onCopy: (artifactId: string) => void;
   readonly copyLabel: string;
   readonly copyGlyph: ReactNode;
-  readonly copyTooltip: ReactNode;
 }) {
   return (
     <li className="group/resource-row flex min-w-0 items-center gap-1">
@@ -294,24 +292,21 @@ function ResourceOutputRow({
         <HoverScrollTitle title={artifact.title} />
       </Button>
       <TooltipProvider delay={200}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="quiet"
-                size="icon-xs"
-                aria-label={copyLabel}
-                className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
-                onClick={() => {
-                  onCopy(artifact.id);
-                }}
-              >
-                {copyGlyph}
-              </Button>
-            }
-          />
-          {copyTooltip}
-        </Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="quiet"
+              size="icon-xs"
+              aria-label={copyLabel}
+              className="shrink-0 hover:bg-state-hover focus-visible:bg-state-hover [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
+              onClick={() => {
+                onCopy(artifact.id);
+              }}
+            >
+              {copyGlyph}
+            </Button>
+          }
+        />
       </TooltipProvider>
     </li>
   );
@@ -479,23 +474,28 @@ function ChatResourcesBody({
         controls={artifactsId}
       >
         {data && (
-          <ul id={artifactsId} className="m-0 list-none p-0">
-            {data.artifacts
-              .slice(0, expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT)
-              .map((artifact) => {
-                return (
-                  <ResourceOutputRow
-                    key={artifact.id}
-                    artifact={artifact}
-                    onOpen={onOpen}
-                    onCopy={onCopy}
-                    copyLabel={copyLabel}
-                    copyGlyph={copyGlyph}
-                    copyTooltip={copyTooltip}
-                  />
-                );
-              })}
-          </ul>
+          <Tooltip>
+            <ul id={artifactsId} className="m-0 list-none p-0">
+              {data.artifacts
+                .slice(
+                  0,
+                  expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT,
+                )
+                .map((artifact) => {
+                  return (
+                    <ResourceOutputRow
+                      key={artifact.id}
+                      artifact={artifact}
+                      onOpen={onOpen}
+                      onCopy={onCopy}
+                      copyLabel={copyLabel}
+                      copyGlyph={copyGlyph}
+                    />
+                  );
+                })}
+            </ul>
+            {copyTooltip}
+          </Tooltip>
         )}
       </ChatResourceArtifacts>
       <ChatResourcesStatus thread={thread} />
