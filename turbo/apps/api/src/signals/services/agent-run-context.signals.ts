@@ -87,10 +87,10 @@ import {
   contextProjectionSchema,
 } from "./context-rowset";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
-import { createExecutionMemberContext } from "./execution-member-context.service";
+import { createExecutionOrgMemberContext } from "./execution-org-member-context.signals";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
-  createExecutionOrgRows,
+  type ExecutionOrgRows,
   executionExpiredCredits,
   executionOrgAttached,
   executionOrgMetadata,
@@ -132,7 +132,7 @@ export interface AgentRunContextSignals {
   readonly orgId: string;
   readonly agentId: string;
   readonly agent$: Computed<Promise<BootstrapAgent | null>>;
-  readonly orgRows$: ReturnType<typeof createExecutionOrgRows>;
+  readonly orgRows$: Computed<Promise<ExecutionOrgRows>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
   readonly concurrencyCapacity$: Computed<Promise<number>>;
@@ -311,43 +311,6 @@ function hasGlobalModelOwner(
   return globalModelOwner in context;
 }
 
-function createModelSourceGroups(
-  orgId: string,
-  userId: string,
-  memberContext: ReturnType<typeof createExecutionMemberContext>,
-  supplied?: AgentRunContextSignals,
-) {
-  const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
-  const sharedMember = sharedOrg?.userId === userId ? sharedOrg : undefined;
-  // Unshared member sources ride on the member statement read before enqueue.
-  const providers = sharedMember ?? {
-    memberModels$: memberContext.memberModels$,
-  };
-  const globalReferences = supplied
-    ? hasGlobalModelOwner(supplied)
-      ? {
-          managedModelKeys$: supplied.managedModelKeys$,
-          modelPricing$: supplied.modelPricing$,
-          catalog$: supplied[globalModelOwner],
-        }
-      : undefined
-    : createGlobalModelContext();
-  if (!globalReferences) {
-    throw new Error("Agent run context has no global reference owner");
-  }
-  return {
-    memberModels$: providers.memberModels$,
-    memberRoutes$:
-      sharedMember?.memberRoutes$ ??
-      computed(async (get) => {
-        return (await get(providers.memberModels$)).member;
-      }),
-    managedModelKeys$: globalReferences.managedModelKeys$,
-    modelPricing$: globalReferences.modelPricing$,
-    globalReferences,
-  };
-}
-
 /** The agent row rides on an unshared org statement; both gate enqueue. */
 function contextAgentRowSql(agentId: string) {
   return sql`SELECT ${contextJsonProjection(contextAgentSelection())}
@@ -379,19 +342,55 @@ function requirePreparedContextAgent(agent: BootstrapAgent | null): void {
   }
 }
 
+function createOrgContextReferences(
+  scope: { readonly orgId: string; readonly userId: string },
+  supplied: AgentRunContextSignals | undefined,
+) {
+  const sharedOrg = supplied?.orgId === scope.orgId ? supplied : undefined;
+  const sharedMember =
+    sharedOrg?.userId === scope.userId ? sharedOrg : undefined;
+  const globalReferences = supplied
+    ? hasGlobalModelOwner(supplied)
+      ? {
+          managedModelKeys$: supplied.managedModelKeys$,
+          modelPricing$: supplied.modelPricing$,
+          catalog$: supplied[globalModelOwner],
+        }
+      : undefined
+    : createGlobalModelContext();
+  if (!globalReferences) {
+    throw new Error("Agent run context has no global reference owner");
+  }
+  return { sharedOrg, sharedMember, globalReferences };
+}
+
 function createOrgContext(
   orgId: string,
   userId: string,
   agentId: string,
-  memberContext: ReturnType<typeof createExecutionMemberContext>,
   supplied?: AgentRunContextSignals,
 ) {
-  const { globalReferences, memberModels$, ...modelSources } =
-    createModelSourceGroups(orgId, userId, memberContext, supplied);
-  const sharedOrg = supplied?.orgId === orgId ? supplied : undefined;
-  const orgRows$ =
-    sharedOrg?.orgRows$ ??
-    createExecutionOrgRows(orgId, contextAgentRowSql(agentId));
+  const memberContext = createExecutionOrgMemberContext(
+    { userId, orgId },
+    supplied?.orgId === orgId ? undefined : contextAgentRowSql(agentId),
+  );
+  const { sharedOrg, sharedMember, globalReferences } =
+    createOrgContextReferences({ orgId, userId }, supplied);
+  // Unshared member sources ride on the member statement read before enqueue.
+  const providers = sharedMember ?? {
+    memberModels$: memberContext.memberModels$,
+  };
+  const memberModels$ = providers.memberModels$;
+  const modelSources = {
+    memberRoutes$:
+      sharedMember?.memberRoutes$ ??
+      computed(async (get) => {
+        return (await get(memberModels$)).member;
+      }),
+    managedModelKeys$: globalReferences.managedModelKeys$,
+    modelPricing$: globalReferences.modelPricing$,
+  };
+  const orgRows$ = sharedOrg?.orgRows$ ?? memberContext.orgRows$;
   // A shared org statement was issued for another agent; read this one alone.
   const agentRow$ = sharedOrg
     ? createRunAgentRow(agentId)
@@ -432,6 +431,7 @@ function createOrgContext(
       return modelFactsFromSnapshot(orgId, capabilities, org, catalog);
     });
   return {
+    memberContext,
     orgRows$,
     agentRow$,
     orgMetadata$,
@@ -467,8 +467,8 @@ function createIdentityContext(
   supplied?: AgentRunContextSignals,
 ): OwnedAgentRunContext {
   const scope = { userId, orgId, agentId };
-  const memberContext = createExecutionMemberContext(scope);
   const {
+    memberContext,
     orgRows$,
     agentRow$,
     orgMetadata$,
@@ -478,7 +478,7 @@ function createIdentityContext(
     globalReferences,
     memberModels$,
     modelSources,
-  } = createOrgContext(orgId, userId, agentId, memberContext, supplied);
+  } = createOrgContext(orgId, userId, agentId, supplied);
   const sharedMember =
     supplied?.orgId === orgId && supplied.userId === userId
       ? supplied

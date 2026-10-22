@@ -90,14 +90,12 @@ function createCapturedClaimObjects(
     context,
     claim.requestFacts,
   );
-  const orgHasCapacity$ = createOrgHasCapacity(context);
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
   const orgHasCapacityAfterRelease$ = createOrgHasCapacity(context);
   return {
     ...preparation,
     context,
-    orgHasCapacity$,
     orgHasCapacityAfterRelease$,
   };
 }

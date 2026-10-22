@@ -23,6 +23,7 @@ describe("thread connector selection", () => {
       runnerGroup,
       run: own,
       sendChatRun,
+      sendWaitingChatInput,
       claimChatRun,
     } = await publicChatActor(context);
     await own(() => {
@@ -143,6 +144,13 @@ describe("thread connector selection", () => {
       sourceType: "connector",
       sourceId: runtimeConnection.id,
     });
+    // The active run keeps its own account snapshot, but queued input must
+    // observe thread selections at its later successful claim, not enqueue.
+    const waiting = await sendWaitingChatInput(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "Use the selections current when this queued input is picked",
+    });
     await own(() => {
       return accept(
         selectionsClient().clear({
@@ -170,6 +178,28 @@ describe("thread connector selection", () => {
     ]);
     await own(() => {
       return cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    });
+    const promoted = await own(() => {
+      return waiting.launchedRun();
+    });
+    expect(promoted.threadId).toBe(thread.id);
+    const next = await claimChatRun(runnerGroup, promoted.runId);
+    expect(next.claim.environment).toMatchObject({
+      OPENAI_TOKEN: "thread-openai-key",
+      RUNTIME_API_KEY: "thread-runtime-key",
+    });
+    expect(next.claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+      sourceType: "connector",
+      sourceId: defaultConnection.id,
+    });
+    expect(
+      next.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+    ).toMatchObject({
+      sourceType: "connector",
+      sourceId: runtimeConnection.id,
+    });
+    await own(() => {
+      return cancelChatRun(actor, promoted.runId, next.sandboxHeaders);
     });
   });
 });
