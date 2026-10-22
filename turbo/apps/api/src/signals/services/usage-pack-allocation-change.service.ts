@@ -1255,46 +1255,51 @@ const persistUsagePackChangePreview$ = command(
   ): Promise<UsagePackAllocationChangeRow | undefined> => {
     const { context, source, args, preview } = input;
     const db = set(writeDb$);
+    // A quote is not accepted financial intent. Existing uniqueness handles
+    // competing quotes; confirmation revalidates before claiming payment.
+    const [root] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.orgId, args.orgId),
+          eq(usagePackSubscriptions.id, context.subscription.id),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !root ||
+      !usagePackPreviewSubscriptionMatches(context.subscription, root)
+    ) {
+      return undefined;
+    }
+    // A Plan preview may have committed while Stripe prepared these prices.
+    // This observation rejects an already-visible competing quote; it is not
+    // cross-table payment arbitration.
+    const [planChange] = await db
+      .select({ id: usagePackSubscriptionChanges.id })
+      .from(usagePackSubscriptionChanges)
+      .where(
+        and(
+          eq(usagePackSubscriptionChanges.orgId, args.orgId),
+          inArray(usagePackSubscriptionChanges.status, [
+            "previewed",
+            "applying",
+            "pending_payment",
+          ]),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (planChange) {
+      return undefined;
+    }
+    // Expiry retirement and replacement publication must roll back together.
+    // The source read needs a fresh snapshot after a possibly waiting expiry
+    // update, so a completed competing change cannot publish a stale quote.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0266; new non-billing transactions are prohibited.
     const [change] = await db.transaction(async (tx) => {
-      // A quote is not accepted financial intent. Existing uniqueness handles
-      // competing quotes; confirmation revalidates before claiming payment.
-      const [root] = await tx
-        .select()
-        .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.orgId, args.orgId),
-            eq(usagePackSubscriptions.id, context.subscription.id),
-          ),
-        )
-        .limit(1);
-      if (
-        !root ||
-        !usagePackPreviewSubscriptionMatches(context.subscription, root)
-      ) {
-        return [];
-      }
-      // A Plan preview may have committed while Stripe prepared these prices.
-      // This observation rejects an already-visible competing quote; it is not
-      // cross-table payment arbitration.
-      const [planChange] = await tx
-        .select({ id: usagePackSubscriptionChanges.id })
-        .from(usagePackSubscriptionChanges)
-        .where(
-          and(
-            eq(usagePackSubscriptionChanges.orgId, args.orgId),
-            inArray(usagePackSubscriptionChanges.status, [
-              "previewed",
-              "applying",
-              "pending_payment",
-            ]),
-          ),
-        )
-        .limit(1);
-      if (planChange) {
-        return [];
-      }
       await tx
         .update(usagePackAllocationChanges)
         .set({

@@ -3327,6 +3327,189 @@ describe("usage pack allocation management", () => {
     },
   );
 
+  it("replaces an expired member quote with one competing preview and rejects the old quote", async () => {
+    const lifecycle = createPublicBillingScenario(context);
+    const {
+      purchaseManagedUsagePack,
+      managedUsagePackSubscription,
+      mockUsagePackChangePreviews,
+      readManagedUsagePacks,
+    } = createManagedUsagePackHelpers(lifecycle);
+    return await withNowScopeForTest(() => {
+      return lifecycle.run(async () => {
+        mockNow(new Date("2035-01-16T00:00:00.000Z"));
+        const userId = `user_${randomUUID()}`;
+        const fixture = await purchaseManagedUsagePack([
+          { userId, usagePackUsd: 20 },
+        ]);
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          managedUsagePackSubscription(
+            fixture,
+            new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+          ),
+        );
+        mockUsagePackChangePreviews(1500, 5000);
+        lifecycle.captureExternalState();
+        const client = setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        );
+        const preview = (targetUsagePackUsd: 20 | 50 | 100 | 200) => {
+          return lifecycle.run(() => {
+            return client.previewChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: { memberId: userId, targetUsagePackUsd },
+            });
+          });
+        };
+        const original = await accept(preview(50), [200]);
+        const expiry = Date.parse(original.body.expiresAt);
+        mockNow(expiry - 1);
+        await accept(preview(100), [409]);
+        mockNow(expiry);
+        const results = await Promise.all([preview(50), preview(100)]);
+        expect(
+          results
+            .map((result) => {
+              return result.status;
+            })
+            .sort(),
+        ).toStrictEqual([200, 409]);
+        const winner = results.find((result) => {
+          return result.status === 200;
+        });
+        if (!winner || winner.status !== 200) {
+          throw new Error("Expected one accepted replacement quote");
+        }
+        expect(winner.body.changeId).not.toBe(original.body.changeId);
+        expect(Date.parse(winner.body.expiresAt)).toBe(expiry + 15 * 60_000);
+        const replay = await accept(
+          preview(winner.body.targetUsagePackUsd),
+          [200],
+        );
+        expect(replay.body).toStrictEqual(winner.body);
+        await accept(
+          lifecycle.run(() => {
+            return client.confirmChange({
+              params: { changeId: original.body.changeId },
+              headers: { authorization: "Bearer clerk-session" },
+              body: {},
+            });
+          }),
+          [409],
+        );
+        expect(
+          (await readManagedUsagePacks(fixture)).allocations,
+        ).toStrictEqual([
+          expect.objectContaining({
+            memberId: userId,
+            usagePackUsd: 20,
+            pendingChange: null,
+          }),
+        ]);
+      });
+    });
+  });
+
+  it.each(["subscription changes", "a Plan quote is published"] as const)(
+    "rejects a prepared member quote when %s during Stripe pricing",
+    async (change) => {
+      const lifecycle = createPublicBillingScenario(context);
+      const {
+        purchaseManagedUsagePack,
+        managedUsagePackSubscription,
+        mockUsagePackChangePreviews,
+        mockUsagePackSubscriptionChangePreviews,
+        postManagedUsagePackEvent,
+        readManagedUsagePacks,
+      } = createManagedUsagePackHelpers(lifecycle);
+      return await lifecycle.run(async () => {
+        const userId = `user_${randomUUID()}`;
+        const fixture = await purchaseManagedUsagePack([
+          { userId, usagePackUsd: 20 },
+        ]);
+        const subscription = managedUsagePackSubscription(
+          fixture,
+          new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+        );
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          subscription,
+        );
+        mockUsagePackChangePreviews(1500, 5000);
+        const providerPreview =
+          context.mocks.stripe.invoices.createPreview.getMockImplementation();
+        if (!providerPreview) {
+          throw new Error("Expected configured Stripe preview response");
+        }
+        const client = setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        );
+        let changed = false;
+        context.mocks.stripe.invoices.createPreview.mockImplementation(
+          async (input) => {
+            const response = await providerPreview(input);
+            if (!changed) {
+              changed = true;
+              if (change === "subscription changes") {
+                const endingSubscription = {
+                  ...subscription,
+                  cancel_at_period_end: true,
+                };
+                context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+                  endingSubscription,
+                );
+                lifecycle.captureExternalState();
+                await postManagedUsagePackEvent(
+                  "customer.subscription.updated",
+                  endingSubscription,
+                );
+              } else {
+                mockUsagePackSubscriptionChangePreviews(8000, 16_000);
+                const planPreview = await accept(
+                  lifecycle.run(() => {
+                    return client.previewSubscriptionChange({
+                      headers: { authorization: "Bearer clerk-session" },
+                      body: {
+                        targetTier: "team",
+                        memberUsagePacks: [
+                          { memberId: userId, usagePackUsd: 20 },
+                        ],
+                      },
+                    });
+                  }),
+                  [200],
+                );
+                expect(planPreview.body.targetTier).toBe("team");
+              }
+            }
+            return response;
+          },
+        );
+        lifecycle.captureExternalState();
+        const rejected = await accept(
+          lifecycle.run(() => {
+            return client.previewChange({
+              headers: { authorization: "Bearer clerk-session" },
+              body: { memberId: userId, targetUsagePackUsd: 50 },
+            });
+          }),
+          [409],
+        );
+        expect(rejected.body.error.message).toBe(
+          "Another usage pack billing change is in progress",
+        );
+        expect(
+          (await readManagedUsagePacks(fixture)).allocations,
+        ).toStrictEqual([
+          expect.objectContaining({
+            memberId: userId,
+            usagePackUsd: 20,
+            pendingChange: null,
+          }),
+        ]);
+      });
+    },
+  );
+
   // Original scenario: B050.
   it("rejects an allocation downgrade when the Plan starts ending after preview", async () => {
     const lifecycle = createPublicBillingScenario(context);
