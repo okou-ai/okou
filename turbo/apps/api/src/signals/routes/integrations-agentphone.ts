@@ -114,7 +114,8 @@ function unavailable() {
     status: 503 as const,
     body: {
       error: {
-        message: "Verification text could not be sent",
+        message:
+          "Unable to confirm the verification text was sent. Wait a minute before trying again.",
         code: "PROVIDER_UNAVAILABLE",
       },
     },
@@ -127,7 +128,7 @@ function tooManyVerificationTexts() {
     body: {
       error: {
         message:
-          "Verification text was just sent. Wait a minute before trying again.",
+          "A verification text was recently requested. Wait a minute before trying again.",
         code: "TOO_MANY_REQUESTS",
       },
     },
@@ -324,9 +325,10 @@ const sendAgentPhoneVerificationText$ = command(
     signal: AbortSignal,
   ) => {
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0019; new non-billing transactions are prohibited.
-    const sendResult = await set(writeDb$).transaction(async (tx) => {
-      const sentAt = new Date(now());
-      const cooldownCutoff = sentAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS;
+    const cooldownResult = await set(writeDb$).transaction(async (tx) => {
+      const attemptedAt = new Date(now());
+      const cooldownCutoff =
+        attemptedAt.getTime() - VERIFICATION_SEND_COOLDOWN_MS;
 
       for (const key of params.cooldownKeys) {
         await tx
@@ -360,34 +362,10 @@ const sendAgentPhoneVerificationText$ = command(
         }
       }
 
-      const sent =
-        (await tapError(
-          sendAgentPhoneVerificationMessage(
-            {
-              config: params.config,
-              toNumber: params.phoneHandle,
-              body: `Confirm this phone number for ${BRAND_PRESENTATION.brandName}: ${params.connectUrl}`,
-            },
-            signal,
-          ),
-          (error) => {
-            log.error("AgentPhone verification text send failed", {
-              agentphoneAgentId: params.config.agentphoneAgentId,
-              phoneHandle: maskPhoneHandle(params.phoneHandle),
-              error,
-            });
-          },
-        )) ?? false;
-      signal.throwIfAborted();
-
-      if (!sent) {
-        return { ok: false as const, response: unavailable() };
-      }
-
       for (const key of params.cooldownKeys) {
         await tx
           .update(agentphoneVerificationSendCooldowns)
-          .set({ lastSentAt: sentAt, updatedAt: sentAt })
+          .set({ lastSentAt: attemptedAt, updatedAt: attemptedAt })
           .where(
             and(
               eq(agentphoneVerificationSendCooldowns.scope, key.scope),
@@ -395,12 +373,40 @@ const sendAgentPhoneVerificationText$ = command(
             ),
           );
       }
+      signal.throwIfAborted();
 
       return { ok: true as const };
     });
     signal.throwIfAborted();
 
-    return sendResult;
+    if (!cooldownResult.ok) {
+      return cooldownResult;
+    }
+
+    // Keep the committed cooldown even if delivery fails or is uncertain.
+    const sent =
+      (await tapError(
+        sendAgentPhoneVerificationMessage(
+          {
+            config: params.config,
+            toNumber: params.phoneHandle,
+            body: `Confirm this phone number for ${BRAND_PRESENTATION.brandName}: ${params.connectUrl}`,
+          },
+          signal,
+        ),
+        (error) => {
+          log.error("AgentPhone verification text send failed", {
+            agentphoneAgentId: params.config.agentphoneAgentId,
+            phoneHandle: maskPhoneHandle(params.phoneHandle),
+            error,
+          });
+        },
+      )) ?? false;
+    signal.throwIfAborted();
+
+    return sent
+      ? { ok: true as const }
+      : { ok: false as const, response: unavailable() };
   },
 );
 
