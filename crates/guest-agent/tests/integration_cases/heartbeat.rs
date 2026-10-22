@@ -82,6 +82,8 @@ async fn heartbeat_first_success() {
 
 #[tokio::test]
 async fn agentphone_typing_refresh_repeats_without_making_failures_fatal() {
+    const CONTROL_INTERVAL: Duration = Duration::from_secs(14);
+
     let api = SharedApiMock::new().await;
     let server = api.server();
     let observer = MockCallObserver::default();
@@ -91,36 +93,79 @@ async fn agentphone_typing_refresh_repeats_without_making_failures_fatal() {
         when.method(POST).path("/api/webhooks/agent/heartbeat");
         then.respond_with(move |_req| match observer_for_mock.record() {
             1 => json_http_response(200, json!({"ok": true, "typingRefreshIntervalSeconds": 3})),
-            _ => json_http_response(401, json!({"error": {"message": "temporary"}})),
+            // Four typing failures exceed the control path's fatal threshold of three.
+            2..=5 => json_http_response(401, json!({"error": {"message": "temporary"}})),
+            _ => http_status(200),
         });
     });
 
     let shutdown = CancellationToken::new();
     let shutdown_clone = shutdown.clone();
-    let handle = tokio::spawn(async move {
-        guest_agent::heartbeat::heartbeat_loop_for_run(
-            TEST_RUN_ID.to_string(),
-            http_client!(),
-            shutdown_clone,
-        )
-        .await
-    });
+    let heartbeat = guest_agent::heartbeat::heartbeat_loop_for_run_with_interval(
+        TEST_RUN_ID.to_string(),
+        http_client!(),
+        shutdown_clone,
+        CONTROL_INTERVAL,
+    );
+    tokio::pin!(heartbeat);
+    let started_at = Instant::now();
 
-    observer
-        .wait_for(2, Duration::from_secs(10), "typing refresh")
+    // The first refresh proves that the initial response was consumed and the
+    // typing timer is armed. Keep real socket work on running time.
+    tokio::select! {
+        result = &mut heartbeat => panic!("heartbeat stopped before the first typing refresh: {result:?}"),
+        () = observer.wait_for(2, MOCK_CALL_TIMEOUT, "first typing refresh") => {},
+    }
+    assert!(started_at.elapsed() < Duration::from_secs(6));
+
+    for (scheduled_seconds, expected_calls, next_deadline_seconds, context) in [
+        (6, 3, 9, "second typing refresh"),
+        (9, 4, 12, "third typing refresh"),
+        (12, 5, 14, "fourth typing refresh"),
+        (
+            14,
+            6,
+            15,
+            "ordinary control heartbeat after four typing failures",
+        ),
+        (
+            15,
+            7,
+            18,
+            "typing refresh after the successful control heartbeat",
+        ),
+    ] {
+        // This test owns the unspawned heartbeat future, so advancing time
+        // cannot poll its HTTP work until the clock has been resumed.
+        tokio::time::pause();
+        tokio::time::advance(
+            Duration::from_secs(scheduled_seconds).saturating_sub(started_at.elapsed()),
+        )
         .await;
+        tokio::time::resume();
+
+        tokio::select! {
+            result = &mut heartbeat => panic!("heartbeat stopped before {context}: {result:?}"),
+            () = observer.wait_for(expected_calls, MOCK_CALL_TIMEOUT, context) => {},
+        }
+        assert!(
+            started_at.elapsed() < Duration::from_secs(next_deadline_seconds),
+            "{context} must arrive before the next cadence can satisfy the request count",
+        );
+    }
+
+    // The last refresh can start only after the control 200 was consumed.
     shutdown.cancel();
-    let result = tokio::time::timeout(Duration::from_secs(5), handle)
+    let result = tokio::time::timeout(Duration::from_secs(5), &mut heartbeat)
         .await
-        .expect("typing refresh should stop promptly")
-        .expect("heartbeat task should not panic");
+        .expect("typing refresh should stop promptly");
     mock.delete_async().await;
 
     assert!(
         result.is_ok(),
         "typing refresh failure must not stop the run"
     );
-    assert_eq!(observer.calls(), 2);
+    assert_eq!(observer.calls(), 7);
 }
 
 #[tokio::test(start_paused = true)]
