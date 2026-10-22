@@ -2,6 +2,7 @@ import { gunzipSync } from "node:zlib";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
+import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { accept, testContext } from "../../__tests__/test-context";
 
@@ -63,7 +64,7 @@ describe("Axiom ingest HTTP error diagnostics", () => {
         const token = "xaat-private-error-diagnostic-token";
         mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", token);
         const privateEcho = "private-echoed-metric-payload";
-        const message = `no healthy upstream; ${token}; Bearer another-private-token; password="private password"; https://provider.example/private?token=secret; owner@example.test; ${"upstream context ".repeat(40)}`;
+        const message = `no healthy upstream; ${token}; Bearer another-private-token; password="private password"; https://provider.example/private;private-signed-url-path?token=secret; owner@example.test; ${"upstream context ".repeat(40)}`;
         let requestBytes = 0;
         server.use(
           http.post(
@@ -88,7 +89,7 @@ describe("Axiom ingest HTTP error diagnostics", () => {
                     { status: 503, headers },
                   )
                 : new HttpResponse(
-                    `<html><body>${responseMessage.replaceAll('"', "&quot;").replace("Bearer another-private-token", "<span>Bearer&#32;another-private-token</span>")}</body></html>`,
+                    `<html><body>${encodeHTML(responseMessage).replace(encodeHTML("Bearer another-private-token"), "<span>Bearer&#32;another-private-token</span>")}</body></html>`,
                     {
                       status: 503,
                       headers: { ...headers, "content-type": "text/html" },
@@ -148,6 +149,7 @@ describe("Axiom ingest HTTP error diagnostics", () => {
           token,
           "another-private-token",
           "private password",
+          "private-signed-url-path",
           "owner@example.test",
           privateEcho,
         ]) {
