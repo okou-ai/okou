@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.765.0](https://github.com/okou-ai/okou/compare/api-v1.764.2...api-v1.765.0) (2026-10-22)
+
+
+### Features
+
+* add hourly proactive action workflow ([#42325](https://github.com/okou-ai/okou/issues/42325)) ([584988e](https://github.com/okou-ai/okou/commit/584988edb99d1d6cff61b67ee7fb67cbff1282e9))
+
+
+### Refactoring
+
+* remove bulk invoice receipt zip downloads ([#42329](https://github.com/okou-ai/okou/issues/42329)) ([7ca4cc0](https://github.com/okou-ai/okou/commit/7ca4cc036f4d99b14d7a742293bb715f7e42a875))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.0
+    * @okouai/core bumped to 8.778.0
+    * @okouai/db bumped to 1.357.0
+    * @okouai/pi-agent-runtime bumped to 1.50.51
+
 ## [1.764.2](https://github.com/okou-ai/okou/compare/api-v1.764.1...api-v1.764.2) (2026-10-22)
 
 
