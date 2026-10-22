@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.39](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.38...guest-control-client-v0.23.39) (2026-10-22)
+
+
+### Refactoring
+
+* **guest-control:** converge terminal copy retirement ([#42234](https://github.com/okou-ai/okou/issues/42234)) ([cf8b23d](https://github.com/okou-ai/okou/commit/cf8b23da3b490b7402fdb36d97b50c1f22cd328f))
+
 ## [0.23.38](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.37...guest-control-client-v0.23.38) (2026-10-22)
 
 
