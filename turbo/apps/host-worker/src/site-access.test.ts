@@ -42,7 +42,10 @@ async function login(path = "/report?view=summary") {
   requireSession();
   const response = (
     await authorizeSiteRequest(
-      new Request(origin + path, { headers: { Accept: "text/html" } }),
+      new Request(
+        `${origin}/.okou/auth/start?${new URLSearchParams({ returnTo: path })}`,
+        { headers: { Accept: "text/html" } },
+      ),
       env,
       endpoint,
     )
@@ -112,9 +115,11 @@ it("exchanges a browser-bound code, sets only a site cookie and returns to the c
   expect([...bridge.searchParams.keys()].sort()).toEqual([
     "codeChallenge",
     "origin",
+    "returnTo",
     "siteId",
     "state",
   ]);
+  expect(bridge.searchParams.get("returnTo")).toBe("/report?view=summary");
   expect(response.headers.getSetCookie()[0]).toMatch(
     /Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=600$/u,
   );
@@ -223,6 +228,98 @@ it("keeps parallel tab login proofs separate", async () => {
   expect(first.pendingCookie.split("=")[0]).not.toBe(
     second.pendingCookie.split("=")[0],
   );
+});
+
+it("sends document requests without a site session to App recovery without issuing credentials", async () => {
+  requireSession();
+  const access = await authorizeSiteRequest(
+    new Request(`${origin}/report?view=summary`, {
+      headers: { "Sec-Fetch-Dest": "document" },
+    }),
+    env,
+    endpoint,
+  );
+  expect(access.response?.status).toBe(302);
+  const location = new URL(access.response!.headers.get("Location")!);
+  expect(location.origin).toBe("https://app.okou.ai");
+  expect(location.pathname).toBe("/hosted-site-access");
+  expect(location.searchParams.get("url")).toBe(
+    `${origin}/report?view=summary`,
+  );
+  expect(location.searchParams.get("reason")).toBe("authenticate");
+  expect(access.response!.headers.getSetCookie()).toStrictEqual([]);
+});
+
+it("recovers an expired site credential on the App while resource requests remain 401", async () => {
+  requireSession();
+  const headers = {
+    Cookie: `__Host-okou-site-session=okou_site_${"b".repeat(64)}`,
+  };
+  const document = await authorizeSiteRequest(
+    new Request(`${origin}/report`, {
+      headers: { ...headers, "Sec-Fetch-Dest": "document" },
+    }),
+    env,
+    endpoint,
+  );
+  expect(
+    new URL(document.response!.headers.get("Location")!).searchParams.get(
+      "reason",
+    ),
+  ).toBe("expired");
+  const resource = await authorizeSiteRequest(
+    new Request(`${origin}/app.js`, {
+      headers: { ...headers, "Sec-Fetch-Dest": "script" },
+    }),
+    env,
+    endpoint,
+  );
+  expect(resource.response?.status).toBe(401);
+  expect(resource.response?.headers.has("Location")).toBe(false);
+});
+
+it("expired callbacks recover on App without forwarding their code or state", async () => {
+  const access = await authorizeSiteRequest(
+    new Request(
+      `${origin}/.okou/auth/callback?code=${"b".repeat(64)}&state=${"a".repeat(43)}`,
+      { headers: { "Sec-Fetch-Dest": "document" } },
+    ),
+    env,
+    endpoint,
+  );
+  const location = new URL(access.response!.headers.get("Location")!);
+  expect(location.pathname).toBe("/hosted-site-access");
+  expect(Object.fromEntries(location.searchParams)).toStrictEqual({
+    url: `${origin}/`,
+    reason: "expired",
+  });
+  expect(access.response?.headers.get("Cache-Control")).toBe(
+    "private, no-store",
+  );
+});
+
+it.each([
+  "//attacker.example/",
+  String.raw`/\attacker.example/`,
+  "/\n/attacker.example/",
+  "/\t/attacker.example/",
+  "/.okou/auth/start",
+])("a sign-in restart rejects the unsafe return path %s", async (returnTo) => {
+  requireSession();
+  const access = await authorizeSiteRequest(
+    new Request(
+      `${origin}/.okou/auth/start?${new URLSearchParams({ returnTo })}`,
+      {
+        headers: { "Sec-Fetch-Dest": "document" },
+      },
+    ),
+    env,
+    endpoint,
+  );
+  expect(new URL(access.response!.headers.get("Location")!).origin).toBe(
+    "https://app.okou.ai",
+  );
+  expect(access.response!.headers.getSetCookie()).toStrictEqual([]);
 });
 
 it("rejects an invalid session without overwriting a newer tab's cookie", async () => {

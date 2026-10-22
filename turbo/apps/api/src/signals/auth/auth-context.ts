@@ -19,7 +19,6 @@ import {
 } from "./tokens";
 import { clerkSessionAuth$ } from "./clerk-session";
 import { mcpServerConfig } from "../../lib/mcp-server-config";
-import { logTemporaryAuthFailure$ } from "./temporary-auth-diagnostics";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { AgentAuthContext, AuthContext, CliAuth } from "../../types/auth";
 import {
@@ -420,11 +419,9 @@ export const requiredAuthContext$ = command(
         };
       }
       if (options.requireOrganization && !authContext.orgId) {
-        const status = options.missingOrganizationStatus ?? 400;
-        if (status === 401) {
-          await set(logTemporaryAuthFailure$, authContext, signal);
-        }
-        return missingOrganizationError(status);
+        return missingOrganizationError(
+          options.missingOrganizationStatus ?? 400,
+        );
       }
       return authContext;
     }
@@ -436,7 +433,6 @@ export const requiredAuthContext$ = command(
       }
     }
 
-    await set(logTemporaryAuthFailure$, null, signal);
     return {
       status: 401 as const,
       body: {

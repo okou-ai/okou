@@ -430,8 +430,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Back to {{brandName}}",
+      "continue": "Continue",
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
+      "sessionExpiredDescription": "Your website session has expired. Continue to verify your access.",
+      "sessionExpiredTitle": "Verify your access again",
       "signedInAs": "Signed in as {{email}}",
       "signedInDescription": "It may not exist, or it may be shared with a different account or organization.",
       "signIn": "Sign in",
@@ -439,7 +442,10 @@
       "switchAccount": "Switch account",
       "switchAccountFailed": "Could not open the account switcher. Please try again.",
       "title": "You can’t view this artifact",
-      "tryAgain": "Try again"
+      "tryAgain": "Try again",
+      "websiteTitle": "You can’t view this website",
+      "websiteUnavailableDescription": "Try again in a moment.",
+      "websiteUnavailableTitle": "This website is temporarily unavailable"
     },
     "actions": {
       "backToAll": "Back to all artifacts",
@@ -596,7 +602,6 @@
         "text": "text",
         "video": "video"
       },
-      "siteLabel": "Site preview for {{title}}",
       "slideTitle": "Slide {{number}}",
       "unavailable": "{{kind}} preview unavailable.",
       "videoLabel": "Video preview for {{filename}}"
@@ -1022,6 +1027,25 @@
       "saving": "Saving...",
       "userFallback": "there",
       "wouldLike": "Would like to"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Allow {{count}} permission",
+      "allowAll_other": "Allow all {{count}} permissions",
+      "allowed": "Permissions allowed",
+      "allowedCount": "{{allowed}} of {{total}} permissions allowed",
+      "alwaysNote": "These permissions stay allowed until you change or revoke them.",
+      "continue": "Continue",
+      "continued": "The conversation has continued.",
+      "continueFailed": "Permissions allowed, but could not continue. Try continuing again.",
+      "continuing": "Continuing…",
+      "details": "View permission details",
+      "dismissed": "No permissions were changed.",
+      "invalid": "This permission link is invalid or unavailable.",
+      "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
+      "loading": "Loading permissions",
+      "notNow": "Not now",
+      "scopeNote": "Applies to this agent, not only the current task.",
+      "title": "Allow the following permissions"
     }
   },
   "billing": {

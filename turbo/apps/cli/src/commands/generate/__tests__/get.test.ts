@@ -108,61 +108,41 @@ describe("okou generate get", () => {
     },
   );
 
-  it("can still query an owned job on an older API without the reconcile endpoint", async () => {
-    const job = { generationId, type: "image", status: "running" };
-    const calls: string[] = [];
-    server.use(
-      http.post(`${statusUrl}/reconcile`, () => {
-        calls.push("refresh");
-        return HttpResponse.text("404 Not Found", { status: 404 });
-      }),
-      http.get(statusUrl, () => {
-        calls.push("get");
-        return HttpResponse.json(job);
-      }),
-    );
-    await generateCommand.parseAsync([
-      "node",
-      "okou",
-      "get",
-      generationId,
-      "--refresh",
-      "--json",
-    ]);
-    expect(calls).toEqual(["refresh", "get"]);
-    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual(job);
-  });
-
-  it("does not retry or query after an uncertain refresh failure", async () => {
-    let refreshes = 0;
-    let queries = 0;
-    server.use(
-      http.post(`${statusUrl}/reconcile`, () => {
-        refreshes++;
-        return HttpResponse.json(
-          { error: { code: "UNAVAILABLE", message: "Refresh unavailable" } },
-          { status: 503 },
-        );
-      }),
-      http.get(statusUrl, () => {
-        queries++;
-        return HttpResponse.json({});
-      }),
-    );
-    await expect(
-      generateCommand.parseAsync([
-        "node",
-        "okou",
-        "get",
-        generationId,
-        "--refresh",
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(refreshes).toBe(1);
-    expect(queries).toBe(0);
-    expect(error.mock.calls.flat().join("\n")).toContain("Refresh unavailable");
-  });
+  it.each([404, 503])(
+    "does not retry or query after a refresh %s failure",
+    async (status) => {
+      let refreshes = 0;
+      let queries = 0;
+      server.use(
+        http.post(`${statusUrl}/reconcile`, () => {
+          refreshes++;
+          return HttpResponse.json(
+            { error: { code: "UNAVAILABLE", message: "Refresh unavailable" } },
+            { status },
+          );
+        }),
+        http.get(statusUrl, () => {
+          queries++;
+          return HttpResponse.json({});
+        }),
+      );
+      await expect(
+        generateCommand.parseAsync([
+          "node",
+          "okou",
+          "get",
+          generationId,
+          "--refresh",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(refreshes).toBe(1);
+      expect(queries).toBe(0);
+      expect(error.mock.calls.flat().join("\n")).toContain(
+        "Refresh unavailable",
+      );
+    },
+  );
 
   it("downloads a completed image to the requested path", async () => {
     const job = {

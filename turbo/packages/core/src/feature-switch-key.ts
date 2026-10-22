@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   DurableOpenAiImageGeneration = "durableOpenAiImageGeneration",
+  BatchConnectorPermissions = "batchConnectorPermissions",
   JsonTreePreview = "jsonTreePreview",
   HostedSiteVisibility = "hostedSiteVisibility",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",

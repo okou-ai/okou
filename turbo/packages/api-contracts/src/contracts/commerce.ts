@@ -81,6 +81,8 @@ export const commerceSearchRequestSchema = z
       }, "Use commerce inspect for Amazon product URLs, not keyword search"),
     marketplace: amazonMarketplaceSchema.default("amazon.com"),
     limit: z.number().int().min(1).max(48).default(48),
+    async: z.boolean().optional(),
+    requestId: z.uuid().optional(),
   })
   .strict();
 
@@ -88,6 +90,8 @@ export const commerceInspectRequestSchema = z
   .object({
     target: z.string().trim().min(1).max(2048),
     marketplace: amazonMarketplaceSchema.optional(),
+    async: z.boolean().optional(),
+    requestId: z.uuid().optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -125,6 +129,17 @@ export const commerceResponseSchema = z.object({
   }),
 });
 
+export const commerceJobSchema = z.object({
+  id: z.uuid(),
+  status: z.enum(["pending", "running", "completed", "failed"]),
+  operation: z.enum(["search", "inspect"]),
+  provider: z.literal("dataforseo"),
+  marketplace: amazonMarketplaceSchema,
+  result: commerceResponseSchema.nullable(),
+  error: z.object({ code: z.string(), message: z.string() }).nullable(),
+});
+export type CommerceJob = z.infer<typeof commerceJobSchema>;
+
 export type CommerceSearchRequest = z.infer<typeof commerceSearchRequestSchema>;
 export type CommerceInspectRequest = z.infer<
   typeof commerceInspectRequestSchema
@@ -132,16 +147,34 @@ export type CommerceInspectRequest = z.infer<
 export type CommerceResponse = z.infer<typeof commerceResponseSchema>;
 
 const responses = {
+  // Temporary rollout compatibility: callers without async still receive 200.
   200: commerceResponseSchema,
+  202: commerceJobSchema,
   400: apiErrorSchema,
   401: apiErrorSchema,
   402: apiErrorSchema,
   403: apiErrorSchema,
+  409: apiErrorSchema,
   502: apiErrorSchema,
   503: apiErrorSchema,
 } as const;
 
 export const commerceContract = c.router({
+  getJob: {
+    method: "GET",
+    path: "/api/commerce/jobs/:id",
+    headers: authHeadersSchema,
+    pathParams: z.object({ id: z.uuid() }),
+    responses: {
+      200: commerceJobSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Read a Commerce job without starting another paid operation",
+  },
   search: {
     method: "POST",
     path: "/api/commerce/search",

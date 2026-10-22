@@ -8,6 +8,9 @@ import { hostedSitePreviewGrantSchema } from "@okouai/api-contracts/contracts/ho
 import { env } from "../../lib/env";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
+import { hostedPreviewArtifactId } from "./hosted-preview.service";
+import { privateArtifactRecord$ } from "./private-artifact-storage.service";
+import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { db$, writeDb$ } from "../external/db";
@@ -171,29 +174,65 @@ export const resolveHostedSitePreview$ = command(
     if (!policy) {
       return null;
     }
-    if (policy.visibility === "public") {
-      return { url: expected.href, expiresAt: null };
+    if (policy.visibility !== "public") {
+      const access = await set(
+        checkHostedSiteAccess$,
+        { siteId: row.site.id, userId: args.userId },
+        signal,
+      );
+      if (!access.allowed) {
+        return null;
+      }
     }
-    const access = await set(
-      checkHostedSiteAccess$,
-      { siteId: row.site.id, userId: args.userId },
-      signal,
-    );
-    if (!access.allowed) {
-      return null;
+    const preview = row.deployment.manifest.preview;
+    const cover = preview
+      ? await set(
+          privateArtifactRecord$,
+          hostedPreviewArtifactId(row.deployment.id, preview),
+          signal,
+        )
+      : null;
+    if (
+      cover &&
+      (cover.userId !== row.deployment.userId ||
+        cover.orgId !== row.deployment.orgId)
+    ) {
+      throw new Error("Website cover belongs to another publication owner");
     }
-    return set(
-      createHostedSitePreviewGrant$,
-      {
-        siteId: row.site.id,
-        deploymentId: row.deployment.id,
-        prefix: row.deployment.r2Prefix,
-        revision: policy.revision,
-        ...(row.deployment.manifest.immutableContent === true
-          ? { immutableContent: true as const }
-          : {}),
-      },
-      signal,
-    );
+    const image =
+      cover?.materializationStatus === "ready"
+        ? await set(
+            resolveArtifactPreviewUrl$,
+            {
+              bucket: cover.bucket,
+              key: cover.key,
+              signingDate: nowDate(),
+            },
+            signal,
+          )
+        : null;
+    const target =
+      policy.visibility === "public"
+        ? {
+            url: expected.href,
+            expiresAt: null,
+          }
+        : await set(
+            createHostedSitePreviewGrant$,
+            {
+              siteId: row.site.id,
+              deploymentId: row.deployment.id,
+              prefix: row.deployment.r2Prefix,
+              revision: policy.revision,
+              ...(row.deployment.manifest.immutableContent === true
+                ? { immutableContent: true as const }
+                : {}),
+            },
+            signal,
+          );
+    return {
+      ...target,
+      ...(image ? { previewImageUrl: image.url } : {}),
+    };
   },
 );

@@ -11,7 +11,10 @@ import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og"
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import type { HostedSitePrepareResponse } from "@okouai/api-contracts/contracts/host";
+import {
+  hostContract,
+  type HostedSitePrepareResponse,
+} from "@okouai/api-contracts/contracts/host";
 import { http, HttpResponse } from "msw";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
@@ -23,6 +26,7 @@ import { server } from "../../../mocks/server";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactOgRoutes } from "../artifact-og";
+import { hostRoutes } from "../host";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
@@ -42,16 +46,23 @@ function previewStorage(
   options: { readonly failStagingDeleteOnce?: boolean } = {},
 ) {
   let failStagingDelete = options.failStagingDeleteOnce ?? false;
+  const fileSigner = context.mocks.s3.getSignedUrl.getMockImplementation();
   host.captureHostedSitesS3();
   const baseSend = context.mocks.s3.send.getMockImplementation();
   const baseSign = context.mocks.s3.getSignedUrl.getMockImplementation();
-  if (!baseSend || !baseSign) {
+  if (!baseSend || !baseSign || !fileSigner) {
     throw new Error("Missing object-storage fixture");
   }
   const objects = new Map<string, Buffer>();
   const grants = new Map<string, string>();
   context.mocks.s3.getSignedUrl.mockImplementation(
     (client, command, options) => {
+      if (
+        command instanceof GetObjectCommand &&
+        command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
+      ) {
+        return fileSigner(client, command, options);
+      }
       if (
         command instanceof PutObjectCommand &&
         command.input.Bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") &&
@@ -159,6 +170,84 @@ async function upload(prepared: HostedSitePrepareResponse, bytes: Buffer) {
 }
 
 describe("sandbox hosted previews", () => {
+  it("resolves published covers with visibility settings disabled and authorizes them through the current Site policy", async () => {
+    const owner = createBddApi(context).user();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    const headers = { authorization: "Bearer clerk-session" };
+    const mocks = createRouteMocks(context);
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const features = setupAppWithRoutes({
+      context,
+      routes: featureSwitchesRoutes,
+    })(featureSwitchesContract);
+    await accept(
+      features.update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.HostedSiteVisibility]: false } },
+      }),
+      [200],
+    );
+    previewStorage();
+    const bytes = await image();
+    const prepared = await host.prepareHostedSite(actor, {
+      site: `cover-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>Website</main>")],
+      preview: preview(bytes),
+    });
+    await upload(prepared, bytes);
+    const completed = await host.completeHostedSite(
+      actor,
+      prepared.deploymentId,
+    );
+    expect(completed.previewImageUrl).toBeDefined();
+    const api = setupAppWithRoutes({ context, routes: hostRoutes })(
+      hostContract,
+    );
+    const request = {
+      headers,
+      params: { publicSlug: prepared.publicSlug },
+      query: { hostname: `${prepared.publicSlug}.okou.app` },
+    };
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const first = await accept(api.sitePreview(request), [200]);
+    expect(first.body.expiresAt).toBeNull();
+    expect(first.body.previewImageUrl).toBeDefined();
+    expect(
+      new URL(first.body.previewImageUrl!).searchParams.get("object"),
+    ).toContain("test-private-artifacts/private-artifacts/");
+    expect((await accept(api.sitePreview(request), [200])).body).toStrictEqual(
+      first.body,
+    );
+    await accept(
+      features.update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.HostedSiteVisibility]: true } },
+      }),
+      [200],
+    );
+    await accept(
+      api.updateSiteVisibility({
+        headers,
+        params: { siteId: prepared.siteId },
+        body: { visibility: "private", expectedRevision: null },
+      }),
+      [200],
+    );
+    const privatePreview = await accept(api.sitePreview(request), [200]);
+    expect(privatePreview.body.previewImageUrl).toBe(
+      first.body.previewImageUrl,
+    );
+    expect(privatePreview.body.url).toMatch(/^https:\/\/pv-/u);
+    const outsider = createBddApi(context).user();
+    mocks.clerk.session(outsider.userId, outsider.orgId);
+    await accept(api.sitePreview(request), [404]);
+  });
+
   it("reads authored HTML metadata with the hosted-sites credentials even without an uploaded cover", async () => {
     const owner = createBddApi(context).user();
     if (!owner.orgId) {

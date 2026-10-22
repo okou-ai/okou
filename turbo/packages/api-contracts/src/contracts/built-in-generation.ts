@@ -28,6 +28,9 @@ export const builtInGenerationAcceptedResponseSchema = z.object({
   type: builtInGenerationTypeSchema,
   status: z.literal("queued"),
   realtime: builtInGenerationRealtimeSubscriptionSchema,
+  // Present only for jobs supporting explicit owner-driven advancement.
+  // Legacy jobs continue through their existing worker/webhook and GET flow.
+  clientReconciliation: z.literal(true).optional(),
 });
 
 export const builtInGenerationErrorSchema = z.object({

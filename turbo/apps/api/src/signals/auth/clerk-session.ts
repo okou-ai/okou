@@ -33,10 +33,6 @@ const requestState$ = computed((get) => {
   return authenticateClerkSession(request.raw);
 });
 
-export const clerkSessionFailureReason$ = computed(async (get) => {
-  return (await get(requestState$)).failureReason;
-});
-
 export const clerkSessionAuth$: Computed<
   Promise<ClerkSessionAuthContext | null>
 > = computed(async (get): Promise<ClerkSessionAuthContext | null> => {

@@ -444,8 +444,11 @@
   "artifacts": {
     "access": {
       "backToBrand": "Retour à {{brandName}}",
+      "continue": "Continuer",
       "description": "Il est peut-être privé ou n’est plus disponible.",
       "help": "Demandez à la personne qui a partagé ce lien de vérifier l’accès.",
+      "sessionExpiredDescription": "Votre session sur le site a expiré. Continuez pour vérifier votre accès.",
+      "sessionExpiredTitle": "Vérifiez à nouveau votre accès",
       "signedInAs": "Connecté en tant que {{email}}",
       "signedInDescription": "Il n’existe peut-être pas, ou il est partagé avec un autre compte ou une autre organisation.",
       "signIn": "Se connecter",
@@ -453,7 +456,10 @@
       "switchAccount": "Changer de compte",
       "switchAccountFailed": "Impossible d’ouvrir le sélecteur de compte. Veuillez réessayer.",
       "title": "Vous ne pouvez pas consulter cet artefact",
-      "tryAgain": "Réessayer"
+      "tryAgain": "Réessayer",
+      "websiteTitle": "Vous ne pouvez pas consulter ce site web",
+      "websiteUnavailableDescription": "Réessayez dans un instant.",
+      "websiteUnavailableTitle": "Ce site web est temporairement indisponible"
     },
     "actions": {
       "backToAll": "Retour à tous les artéfacts",
@@ -612,7 +618,6 @@
         "text": "texte",
         "video": "vidéo"
       },
-      "siteLabel": "Aperçu du site pour {{title}}",
       "slideTitle": "Slide {{number}}",
       "unavailable": "Aperçu {{kind}} indisponible.",
       "videoLabel": "Aperçu vidéo pour {{filename}}"
@@ -1041,6 +1046,26 @@
       "saving": "Enregistrement...",
       "userFallback": "là",
       "wouldLike": "Souhaite"
+    },
+    "permissionBatch": {
+      "allowAll_one": "Accorder {{count}} autorisation",
+      "allowAll_many": "Accorder les {{count}} autorisations",
+      "allowAll_other": "Accorder les {{count}} autorisations",
+      "allowed": "Autorisations accordées",
+      "allowedCount": "{{allowed}} autorisations accordées sur {{total}}",
+      "alwaysNote": "Ces autorisations restent accordées jusqu’à ce que vous les modifiiez ou les révoquiez.",
+      "continue": "Continuer",
+      "continued": "La conversation a repris.",
+      "continueFailed": "Les autorisations ont été accordées, mais la conversation n’a pas pu reprendre. Réessayez de continuer.",
+      "continuing": "Reprise en cours…",
+      "details": "Voir le détail des autorisations",
+      "dismissed": "Aucune autorisation n’a été modifiée.",
+      "invalid": "Ce lien d’autorisation est invalide ou indisponible.",
+      "loadFailed": "Impossible de vérifier toutes les autorisations demandées. Aucune autorisation ne peut être modifiée.",
+      "loading": "Chargement des autorisations",
+      "notNow": "Pas maintenant",
+      "scopeNote": "S’applique à cet agent, pas uniquement à la tâche en cours.",
+      "title": "Accorder les autorisations suivantes"
     }
   },
   "billing": {

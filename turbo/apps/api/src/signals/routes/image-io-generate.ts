@@ -130,6 +130,7 @@ function imageRequestRecord(options: ImageOptions): Record<string, unknown> {
 function acceptedImageResponse(
   generationId: string,
   realtime: BuiltInGenerationRealtimeSubscription,
+  clientReconciliation: boolean,
 ) {
   return {
     status: 202 as const,
@@ -138,6 +139,7 @@ function acceptedImageResponse(
       type: "image" as const,
       status: "queued" as const,
       realtime,
+      ...(clientReconciliation ? { clientReconciliation: true as const } : {}),
     },
   };
 }
@@ -420,7 +422,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return submitError;
   }
 
-  return acceptedImageResponse(generationId, realtime);
+  return acceptedImageResponse(generationId, realtime, useResponses);
 });
 
 export const imageIoGenerateRoutes: readonly RouteEntry[] = [

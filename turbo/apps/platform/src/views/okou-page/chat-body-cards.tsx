@@ -11,6 +11,7 @@ import type {
 } from "../../signals/chat-page/connector-action-block.ts";
 import { contentTypeForBodyPreviewKind } from "../../signals/chat-page/parse-body-blocks.ts";
 import type { PermissionSignals } from "../../signals/chat-page/permission-card-signals.ts";
+import { PermissionBatchContent } from "../permission-allow/permission-batch-content.tsx";
 import type { PlanUpgradeSignals } from "../../signals/chat-page/plan-upgrade-block.ts";
 import type {
   PlatformConnectorPermissionMetadata,
@@ -329,6 +330,16 @@ export function MarkdownCardView({
     }
     case "permission-action": {
       return <PermissionActionCard signals={card.signals} />;
+    }
+    case "permission-batch-action": {
+      return (
+        <ChatCard
+          data-testid="permission-batch-action-card"
+          className="h-[640px] w-full p-4"
+        >
+          <PermissionBatchContent signals={card.signals} />
+        </ChatCard>
+      );
     }
     case "banking-action": {
       return <BankingActionCard signals={card.signals} />;
@@ -1385,7 +1396,12 @@ function PermissionActionCardForTarget({
     expiresInByScope[durationScope] ??
     signals.expiresIn ??
     DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN;
-  const permissionMetadataLoadable = useLoadable(signals.metadata$);
+  const lastPermissionMetadata = useLastLoadable(signals.metadata$);
+  const currentPermissionMetadata = useLoadable(signals.metadata$);
+  const permissionMetadataLoadable =
+    currentPermissionMetadata.state === "hasError"
+      ? currentPermissionMetadata
+      : lastPermissionMetadata;
   const [grantLoadable, applyGrant] = useLoadableSet(
     applyPermissionAndResumeChat$,
   );
@@ -1480,7 +1496,10 @@ function PermissionActionCardState({
   signals: PermissionSignals;
 }) {
   const agentLoadable = useLastLoadable(signals.agent$);
-  const userGrantsLoadable = useLoadable(signals.grants$);
+  const lastUserGrants = useLastLoadable(signals.grants$);
+  const currentUserGrants = useLoadable(signals.grants$);
+  const userGrantsLoadable =
+    currentUserGrants.state === "hasError" ? currentUserGrants : lastUserGrants;
   const agent = agentLoadable.state === "hasData" ? agentLoadable.data : null;
   return (
     <PermissionActionCardForTarget

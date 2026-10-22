@@ -777,15 +777,17 @@ def test_indexed_matching_skips_unrelated_literal_rule_path_checks(monkeypatch):
         )
     }
     compiled = compile_firewalls_or_fail(firewalls)
-    path_match_count = 0
-    original_allowed_match = matching._match_compiled_path_segments
+    discovery_path_match_count = 0
+    original_discovery_match = matching._compiled_path_segments_match
 
-    def counting_allowed_match(path_segs, pattern_segs):
-        nonlocal path_match_count
-        path_match_count += 1
-        return original_allowed_match(path_segs, pattern_segs)
+    # The allow result cannot expose unrelated discovery scans. Parameter
+    # capture is bounded separately by the same-specificity fallback guard.
+    def counting_discovery_match(path_segs, pattern_segs):
+        nonlocal discovery_path_match_count
+        discovery_path_match_count += 1
+        return original_discovery_match(path_segs, pattern_segs)
 
-    monkeypatch.setattr(matching, "_match_compiled_path_segments", counting_allowed_match)
+    monkeypatch.setattr(matching, "_compiled_path_segments_match", counting_discovery_match)
 
     result = matching.match_compiled_firewall_request(
         "https://api.example.com/items/target",
@@ -796,7 +798,7 @@ def test_indexed_matching_skips_unrelated_literal_rule_path_checks(monkeypatch):
 
     assert isinstance(result, matching.FirewallAllow)
     assert result.permission == "target"
-    assert path_match_count == 1
+    assert discovery_path_match_count == 1
 
 
 @pytest.mark.parametrize(

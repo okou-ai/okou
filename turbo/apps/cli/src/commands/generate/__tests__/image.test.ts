@@ -797,11 +797,59 @@ describe("okou generate image command", () => {
     expect(stderr).toContain("--style can only be used with --compile");
   });
 
+  it("observes legacy worker-managed jobs without requesting client reconciliation", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.post(IMAGE_URL, () => {
+        calls.push("submit");
+        return HttpResponse.json(
+          {
+            generationId: IMAGE_GENERATION_ID,
+            type: "image",
+            status: "queued",
+            realtime: {},
+          },
+          { status: 202 },
+        );
+      }),
+      http.post(`${IMAGE_STATUS_URL}/reconcile`, () => {
+        calls.push("unexpected-refresh");
+        return HttpResponse.json(
+          { error: { message: "Not requested by this job" } },
+          { status: 400 },
+        );
+      }),
+      http.get(IMAGE_STATUS_URL, () => {
+        calls.push("get");
+        return HttpResponse.json({
+          generationId: IMAGE_GENERATION_ID,
+          type: "image",
+          status: "completed",
+          result: IMAGE_RESULT,
+        });
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "okou",
+      "image",
+      "--raw-prompt",
+      "A fox",
+      "--wait",
+      "--json",
+    ]);
+    expect(calls).toEqual(["submit", "get"]);
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject(IMAGE_RESULT);
+  });
+
   it("returns a durable job receipt without waiting for completion", async () => {
     const receipt = {
       generationId: IMAGE_GENERATION_ID,
       type: "image",
       status: "queued",
+      clientReconciliation: true,
       realtime: {
         channelName: "user:user-1",
         eventName: "completed",
@@ -890,6 +938,7 @@ describe("okou generate image command", () => {
               generationId: IMAGE_GENERATION_ID,
               type: "image",
               status: "queued",
+              clientReconciliation: true,
               realtime: {},
             },
             { status: 202 },
@@ -955,6 +1004,7 @@ describe("okou generate image command", () => {
             generationId: IMAGE_GENERATION_ID,
             type: "image",
             status: "queued",
+            clientReconciliation: true,
             realtime: {},
           },
           { status: 202 },
@@ -1017,6 +1067,7 @@ describe("okou generate image command", () => {
               generationId: IMAGE_GENERATION_ID,
               type: "image",
               status: "queued",
+              clientReconciliation: true,
               realtime: {
                 channelName: "user:user-1",
                 eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
@@ -1081,6 +1132,7 @@ describe("okou generate image command", () => {
             generationId: IMAGE_GENERATION_ID,
             type: "image",
             status: "queued",
+            clientReconciliation: true,
             realtime: {
               channelName: "user:user-1",
               eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
@@ -1165,6 +1217,7 @@ describe("okou generate image command", () => {
             generationId: IMAGE_GENERATION_ID,
             type: "image",
             status: "queued",
+            clientReconciliation: true,
             realtime: {
               channelName: "user:user-1",
               eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
@@ -1219,6 +1272,7 @@ describe("okou generate image command", () => {
             generationId: IMAGE_GENERATION_ID,
             type: "image",
             status: "queued",
+            clientReconciliation: true,
             realtime: {
               channelName: "user:user-1",
               eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
@@ -1275,6 +1329,7 @@ describe("okou generate image command", () => {
             generationId: IMAGE_GENERATION_ID,
             type: "image",
             status: "queued",
+            clientReconciliation: true,
             realtime: {
               channelName: "user:user-1",
               eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
@@ -1381,6 +1436,7 @@ describe("okou generate image command", () => {
               generationId: IMAGE_GENERATION_ID,
               type: "image",
               status: "queued",
+              clientReconciliation: true,
               realtime: {
                 channelName: "user:user-1",
                 eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,

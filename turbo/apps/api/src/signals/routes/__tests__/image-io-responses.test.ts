@@ -143,8 +143,10 @@ describe("durable OpenAI Responses image generation", () => {
       const provider = mockOpenAiImageResponses();
       const response = await fixture.generate();
       expect(response.status).toBe(202);
+      const accepted: unknown = await response.json();
+      expect(accepted).toMatchObject({ clientReconciliation: true });
       const generationId = readAcceptedGenerationId(
-        await response.json(),
+        accepted,
         "image",
         fixture.actor.userId,
       );

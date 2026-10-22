@@ -53,6 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use background Responses image jobs with durable recovery. Preview validation only until image-tool accounting is verified.",
     enabled: false,
   },
+  [FeatureSwitchKey.BatchConnectorPermissions]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Batch connector permissions",
+    description: "Approve up to 20 connector permissions together.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PwaKeyboardViewport]: {
     maintainer: "bingjie@okou.ai",
     displayName: "PWA keyboard viewport",

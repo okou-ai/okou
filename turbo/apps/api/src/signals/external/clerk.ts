@@ -555,66 +555,6 @@ export interface ClerkSessionIdentity {
 
 export interface ClerkSessionAuthentication {
   readonly identity: ClerkSessionIdentity | null;
-  readonly failureReason: string | null;
-}
-
-// Temporary #36177 diagnostics: allowlist SDK codes, never its free-form
-// message or the request state, which can contain credentials.
-const clerkSessionFailureReasons: readonly string[] = Object.freeze([
-  ...Object.values(TokenVerificationErrorReason),
-  "client-uat-but-no-session-token",
-  "dev-browser-missing",
-  "dev-browser-sync",
-  "primary-responds-to-syncing",
-  "primary-domain-cross-origin-sync",
-  "satellite-needs-syncing",
-  "session-token-and-uat-missing",
-  "session-token-missing",
-  "session-token-expired",
-  "session-token-iat-before-client-uat",
-  "session-token-nbf",
-  "session-token-iat-in-the-future",
-  "session-token-but-no-client-uat",
-  "active-organization-mismatch",
-  "token-type-mismatch",
-  "unexpected-error",
-]);
-
-// @clerk/backend@3.13.1 decorates an expired token's reason with its
-// refresh outcome. POST requests cannot refresh, so the fixed allowlist above
-// would report their expired Bearer tokens only as `unknown`. The SDK can also
-// append a provider-defined error code: never include an unchecked suffix.
-const expiredSessionRefreshPrefix = "session-token-expired-refresh-";
-const knownExpiredSessionRefreshOutcomes: readonly string[] = Object.freeze([
-  "non-eligible-no-refresh-cookie",
-  "non-eligible-non-get",
-  "invalid-session-token",
-  "missing-api-client",
-  "missing-session-token",
-  "missing-refresh-token",
-  "expired-session-token-decode-failed",
-  "expired-session-token-missing-sid-claim",
-  "fetch-error",
-  "unexpected-sdk-error",
-  "unexpected-bapi-error",
-]);
-
-function safeClerkSessionFailureReason(reason: unknown): string {
-  // Diagnostics must never turn an unauthenticated request into a 500 when
-  // Clerk omits a reason (or changes the rejection payload at runtime).
-  if (typeof reason !== "string") {
-    return "unknown";
-  }
-  if (clerkSessionFailureReasons.includes(reason)) {
-    return reason;
-  }
-  if (reason.startsWith(expiredSessionRefreshPrefix)) {
-    const outcome = reason.slice(expiredSessionRefreshPrefix.length);
-    return knownExpiredSessionRefreshOutcomes.includes(outcome)
-      ? `${expiredSessionRefreshPrefix}${outcome}`
-      : `${expiredSessionRefreshPrefix}other`;
-  }
-  return "unknown";
 }
 
 /** The only two fields the Clerk webhook route reads off an event. */
@@ -753,7 +693,7 @@ export const clerk$: Computed<ClerkClient> = computed((): ClerkClient => {
 /**
  * Clerk's `RequestState` is a wide union whose members disagree about what
  * `toAuth()` returns, so it is collapsed here rather than mirrored: callers
- * keep the signed-in identity and an allowlisted rejection code.
+ * keep only the signed-in identity.
  */
 export async function authenticateClerkSession(
   request: Request,
@@ -765,10 +705,7 @@ export async function authenticateClerkSession(
   });
 
   if (!requestState.isAuthenticated) {
-    return {
-      identity: null,
-      failureReason: safeClerkSessionFailureReason(requestState.reason),
-    };
+    return { identity: null };
   }
 
   const auth = requestState.toAuth();
@@ -776,10 +713,7 @@ export async function authenticateClerkSession(
   if (typeof party === "string") {
     const origin = z.url().safeParse(party);
     if (!origin.success) {
-      return {
-        identity: null,
-        failureReason: "token-invalid-authorized-parties",
-      };
+      return { identity: null };
     }
     const hostname = new URL(origin.data).hostname.replace(/\.$/u, "");
     // User-hosted origins are never general App clients, including credentials
@@ -792,15 +726,12 @@ export async function authenticateClerkSession(
         },
       )
     ) {
-      return {
-        identity: null,
-        failureReason: "token-invalid-authorized-parties",
-      };
+      return { identity: null };
     }
   }
   const userId: unknown = auth.userId;
   if (typeof userId !== "string" || userId.length === 0) {
-    return { identity: null, failureReason: null };
+    return { identity: null };
   }
 
   return {
@@ -813,7 +744,6 @@ export async function authenticateClerkSession(
       orgId: auth.orgId ?? null,
       orgRole: auth.orgRole ?? null,
     },
-    failureReason: null,
   };
 }
 

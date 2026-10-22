@@ -1,6 +1,10 @@
 import { z } from "zod";
 import {
   HOSTED_SITE_AUTH_CALLBACK_PATH,
+  HOSTED_SITE_AUTH_START_PATH,
+  HOSTED_SITE_ACCESS_PATH,
+  hostedSiteReturnPathSchema,
+  type HostedSiteAccessReason,
   hostedSiteAccessDecisionSchema,
   hostedSiteAuthCodeSchema,
   hostedSiteAuthProofSchema,
@@ -69,6 +73,54 @@ function navigation(request: Request) {
   );
 }
 
+/** Recovery UI belongs to the trusted App, never to publisher-controlled origins. */
+export function hostedSiteRecoveryResponse(
+  request: Request,
+  env: SiteAuthEnv,
+  response: Response,
+  reason?: HostedSiteAccessReason,
+  returnTo?: string,
+): Response {
+  if (
+    !navigation(request) ||
+    ![400, 401, 403, 404, 503].includes(response.status)
+  )
+    return response;
+  const source = new URL(request.url);
+  if (
+    source.protocol !== "https:" ||
+    !source.hostname.endsWith(`.${env.OKOU_HOST_DOMAIN}`) ||
+    /^(?:pv|ps|sh)-/u.test(source.hostname) ||
+    !env.HOSTED_SITE_AUTH_URL ||
+    !URL.canParse(env.HOSTED_SITE_AUTH_URL)
+  )
+    return response;
+  const target = new URL(HOSTED_SITE_ACCESS_PATH, env.HOSTED_SITE_AUTH_URL);
+  if (target.protocol !== "https:" || target.origin === source.origin)
+    return response;
+  // Callback query parameters contain a one-use credential, not a destination.
+  const path =
+    returnTo ??
+    (source.pathname.startsWith("/.okou/")
+      ? "/"
+      : `${source.pathname}${source.search}`);
+  target.searchParams.set("url", new URL(path, source.origin).href);
+  target.searchParams.set(
+    "reason",
+    reason ??
+      (response.status === 503
+        ? "unavailable"
+        : response.status === 401
+          ? "authenticate"
+          : "denied"),
+  );
+  const headers = authHeaders();
+  for (const value of response.headers.getSetCookie())
+    headers.append("Set-Cookie", value);
+  headers.set("Location", target.href);
+  return new Response(null, { status: 302, headers });
+}
+
 function siteIdOf(endpoint: URL) {
   const siteId = /^\/api\/host\/(?:sites|delivery)\/([^/]+)\//u.exec(
     endpoint.pathname,
@@ -82,6 +134,7 @@ async function beginLogin(
   env: SiteAuthEnv,
   endpoint: URL,
   headers: Headers,
+  returnTo: string,
 ) {
   const url = new URL(request.url);
   if (!navigation(request)) {
@@ -100,9 +153,6 @@ async function beginLogin(
   }
   const verifier = randomProof();
   const state = randomProof();
-  const returnTo = `${url.pathname}${url.search}`;
-  if (returnTo.length > 2048)
-    return new Response("Website URL is too long", { status: 400, headers });
   const challenge = base64url(
     new Uint8Array(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
@@ -124,6 +174,7 @@ async function beginLogin(
   bridge.searchParams.set("origin", url.origin);
   bridge.searchParams.set("codeChallenge", challenge);
   bridge.searchParams.set("state", state);
+  bridge.searchParams.set("returnTo", returnTo);
   headers.set("Location", bridge.href);
   return new Response(null, { status: 302, headers });
 }
@@ -131,12 +182,7 @@ async function beginLogin(
 const pendingLoginSchema = z.object({
   siteId: z.uuid(),
   verifier: hostedSiteAuthProofSchema,
-  returnTo: z
-    .string()
-    .max(2048)
-    .refine((value) => {
-      return value.startsWith("/") && !value.startsWith("//");
-    }),
+  returnTo: hostedSiteReturnPathSchema,
 });
 
 function pendingLogin(value: string | undefined) {
@@ -180,10 +226,16 @@ export async function hostedSiteAuthCallback(
     !code.success ||
     !pending
   ) {
-    return new Response("Sign-in link expired. Open the website again.", {
-      status: 400,
-      headers,
-    });
+    return hostedSiteRecoveryResponse(
+      request,
+      env,
+      new Response("Sign-in link expired. Open the website again.", {
+        status: 400,
+        headers,
+      }),
+      "expired",
+      pending?.returnTo,
+    );
   }
   const exchange = new URL(
     `/api/host/sites/${pending.siteId}/sessions`,
@@ -202,10 +254,16 @@ export async function hostedSiteAuthCallback(
     signal: AbortSignal.any([request.signal, AbortSignal.timeout(5000)]),
   });
   if (response.status === 401) {
-    return new Response("Sign-in link expired. Open the website again.", {
-      status: 401,
-      headers,
-    });
+    return hostedSiteRecoveryResponse(
+      request,
+      env,
+      new Response("Sign-in link expired. Open the website again.", {
+        status: 401,
+        headers,
+      }),
+      "expired",
+      pending.returnTo,
+    );
   }
   if (response.status !== 200)
     throw new Error("Hosted site sign-in is unavailable");
@@ -279,6 +337,39 @@ export async function authorizeSiteRequest(
   const completed = await hostedSiteAuthCallback(request, env);
   if (completed) return { response: completed };
   const anonymous = await decision(request, env, endpoint);
+  const url = new URL(request.url);
+  if (url.pathname === HOSTED_SITE_AUTH_START_PATH) {
+    const returnTo = hostedSiteReturnPathSchema.safeParse(
+      url.searchParams.get("returnTo"),
+    );
+    if (!returnTo.success)
+      return {
+        response: hostedSiteRecoveryResponse(
+          request,
+          env,
+          new Response("Invalid website return path", {
+            status: 400,
+            headers: authHeaders(),
+          }),
+          "expired",
+        ),
+      };
+    if (anonymous.allowed) {
+      const headers = authHeaders();
+      headers.set("Location", new URL(returnTo.data, url.origin).href);
+      return { response: new Response(null, { status: 303, headers }) };
+    }
+    if (anonymous.decision === "authenticate")
+      return {
+        response: await beginLogin(
+          request,
+          env,
+          endpoint,
+          authHeaders(),
+          returnTo.data,
+        ),
+      };
+  }
   if (anonymous.allowed)
     return { headers: new Headers({ "Cache-Control": "private, no-store" }) };
   if (anonymous.decision === "deny")
@@ -297,13 +388,25 @@ export async function authorizeSiteRequest(
     if (authenticated.allowed) return { headers };
     if (authenticated.decision === "deny") {
       return {
-        response: new Response("Access denied", { status: 403, headers }),
+        response: hostedSiteRecoveryResponse(
+          request,
+          env,
+          new Response("Access denied", { status: 403, headers }),
+          "denied",
+        ),
       };
     }
     // An older request must not delete a newer login completed in another tab.
     // Invalid handles stay rejected on the server until the next login replaces them.
   }
-  return { response: await beginLogin(request, env, endpoint, headers) };
+  return {
+    response: hostedSiteRecoveryResponse(
+      request,
+      env,
+      new Response("Authentication required", { status: 401, headers }),
+      token.success ? "expired" : "authenticate",
+    ),
+  };
 }
 
 export async function withHostedSiteAccess(

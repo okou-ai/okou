@@ -10,7 +10,6 @@ import { initializeAppVersion$ } from "./app-version.ts";
 import { initLocale$, syncLocalePreference$ } from "./locale.ts";
 import { setRootSignal$ } from "./root-signal.ts";
 import { setApiClientRuntime$ } from "./api-client-runtime.ts";
-import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
 import { readClerkToken } from "./clerk-token.ts";
 import { setupSharedDatabaseBridge$ } from "./shared-database-browser.ts";
 import { listenSharedWorkerFailure$ } from "./shared-worker-failure.ts";
@@ -85,7 +84,9 @@ import {
 } from "./auth-v1-page-setup.ts";
 import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
 import { setupHostedSiteAuthorizationPage$ } from "./hosted-site-authorization-page-setup.ts";
+import { setupHostedSiteAccessPage$ } from "./hosted-site-access-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
+import { setupPermissionBatchPage$ } from "./permission-allow/permission-batch-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
 import { initSlackOrg$ as handleSlackRedirect$ } from "./okou-page/slack.ts";
@@ -221,6 +222,11 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupHostedSiteAuthorizationPage$),
     analytics: false,
   },
+  {
+    path: ROUTES.hostedSiteAccess,
+    setup: setupPageWrapper(setupHostedSiteAccessPage$),
+    analytics: false,
+  },
 
   // --- New routes ---
   {
@@ -322,6 +328,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.agentChat,
     setup: setupAuthPageWrapper(setupAgentChatPage$),
+  },
+  {
+    path: "/agents/:agentId/permissions/batch",
+    setup: setupAuthPageWrapper(setupPermissionBatchPage$),
   },
   {
     path: ROUTES.agentPermissions,
@@ -630,13 +640,10 @@ export const bootstrap$ = command(
       getCapturedPreviewBypassForTarget(apiBaseUrl);
     const clerk = get(clerk$);
     set(setApiClientRuntime$, {
-      authDiagnosticContext: createBrowserAuthDiagnosticContext(),
-      getToken: async (diagnostic, requestSignal) => {
+      getToken: async (requestSignal) => {
         const resolvedClerk = await clerk;
         requestSignal?.throwIfAborted();
-        return await readClerkToken(resolvedClerk, requestSignal, {
-          diagnostic,
-        });
+        return await readClerkToken(resolvedClerk, requestSignal);
       },
       apiBaseUrl,
       oauthApiBaseUrl: resolveOAuthApiBase(),

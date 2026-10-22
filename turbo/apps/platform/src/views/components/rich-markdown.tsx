@@ -47,7 +47,7 @@ import {
   shouldUseNativeAnchorNavigation,
   SitePreviewCard,
   SitePreviewContent,
-  SitePreviewViewport,
+  SitePreviewPlaceholder,
 } from "../okou-page/attachment-preview.tsx";
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
@@ -419,7 +419,7 @@ function MarkdownSitePreview({ site }: { readonly site: HostedSiteCard }) {
       openInNewTab
       title={title}
     >
-      <SitePreviewViewport src={site.url} title={title} />
+      <SitePreviewPlaceholder title={title} />
     </SitePreviewCard>
   );
 }
@@ -582,7 +582,6 @@ export function SharedThreadArtifactCard({
         </span>
       ) : signals.kind === "html" ? (
         <SitePreviewContent
-          resourceUrl$={signals.resourceUrl$}
           title={title}
           previewImageLoad={signals.previewImageLoad}
           previewImagePending={previewImage.state === "loading"}

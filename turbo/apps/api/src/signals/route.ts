@@ -187,6 +187,7 @@ import { runsCancelRoutes } from "./routes/runs-cancel";
 import { scrapeRoutes } from "./routes/scrape";
 import { seoRoutes } from "./routes/seo";
 import { commerceRoutes } from "./routes/commerce";
+import { cronReconcileCommerceJobRoutes } from "./routes/cron-reconcile-commerce-jobs";
 import { sharedThreadRoutes } from "./routes/shared-threads";
 import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
@@ -354,6 +355,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...financeRoutes,
   ...seoRoutes,
   ...commerceRoutes,
+  ...cronReconcileCommerceJobRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,

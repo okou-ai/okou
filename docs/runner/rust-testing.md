@@ -544,7 +544,10 @@ Advance only after the timed task is armed, then assert its observable result.
 When a timer case also uses real sockets, complete the peer's observable I/O on
 running time before pausing just the timer phase. Keep a deliberately unpolled
 future owned, advance to its unchanged deadline, and resume before polling it or
-performing socket cleanup. Do not auto-advance through real I/O setup.
+performing socket cleanup. For an exact-deadline admission check, one explicit
+manual poll may inspect synchronous rejection at the paused instant; resume
+before awaiting a `Pending` future or performing socket cleanup. Do not
+auto-advance through real I/O setup or waits.
 For a spawned timer owner, the test-support
 [`advance_timer_phase`](../../crates/raw-http-test-support/src/clock.rs) helper
 resumes the clock before Tokio's advance yield can schedule awakened I/O. Observe

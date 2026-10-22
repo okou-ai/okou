@@ -433,10 +433,15 @@ export const hostContract = c.router({
     query: z.object({ hostname: z.string().max(253) }),
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ url: z.url(), expiresAt: z.iso.datetime().nullable() }),
+      200: z.object({
+        url: z.url(),
+        expiresAt: z.iso.datetime().nullable(),
+        previewImageUrl: z.url().optional(),
+      }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
+      500: apiErrorSchema,
     },
     summary:
       "Resolve a website preview to an anonymous or expiring resource address",

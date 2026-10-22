@@ -1,13 +1,20 @@
 import {
+  commerceJobQuery,
+  type CommerceSettlementJob,
+  commerceClaimUnavailable,
+  commercePlan,
+  commerceReceiptPlan,
+  requireCommerceSettlement,
+} from "./commerce-job-settlement";
+import { priceUsageEvents } from "./credit-usage-pricing";
+import {
   OrgCreditExpirationConflict,
-  orgCreditExpirationOutcome,
-  orgCreditExpirationOutcomeRow,
-  orgCreditExpirationSql,
+  orgCreditExpirationOutcome as expirationOutcome,
+  orgCreditExpirationOutcomeRow as expirationRow,
+  orgCreditExpirationSql as expirationSql,
   pendingOrgCreditExpirationQuery,
   requireCompleteOrgCreditExpiration,
 } from "./org-credit-expiration";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { eq } from "drizzle-orm";
 import {
   usageCashQueries,
   usageCashExpiryLotsQuery,
@@ -71,7 +78,7 @@ import {
   freeUsageSettlementSql,
   memberGrantDeductionsSql,
   planMemberGrantDeductions,
-  planExpiryLotDeductions,
+  planExpiryLotDeductions as planLots,
   expiryLotDeductionsSql,
   requireConditionalDeductions,
   orgDebitPlan,
@@ -99,12 +106,41 @@ interface UsageSettlementArgs {
   readonly orgId: string;
   readonly idempotencyKeys?: readonly string[];
   readonly social?: SocialSettlementClaim;
+  readonly commerceJobId?: string;
 }
 
 interface SettlementBatchArgs extends UsageSettlementArgs {
   readonly batch: PreparedUsageBatch;
   readonly financial?: PreparedUsageFinancialPlan;
   readonly at: Date;
+}
+
+function settlementJobPlan(
+  args: SettlementBatchArgs,
+  socialJob:
+    | (typeof socialDataJobs.$inferSelect & { readonly xmin: string })
+    | undefined,
+  commerceJob: CommerceSettlementJob | undefined,
+) {
+  if (
+    socialClaimUnavailable(args.social, socialJob) ||
+    commerceClaimUnavailable(args.commerceJobId, commerceJob)
+  ) {
+    return null;
+  }
+  const social = socialPlan(args.batch.social, socialJob);
+  return {
+    managed: commercePlan(args.batch.commerce, commerceJob) ?? social.usage,
+    processPending: commerceJob !== undefined || social.processPending,
+    jobScoped: socialJob !== undefined || commerceJob !== undefined,
+  };
+}
+
+function noStandaloneEvents(
+  events: readonly { readonly id: string }[],
+  args: UsageSettlementArgs,
+) {
+  return hasNoStandaloneUsage(events, args.social) && !args.commerceJobId;
 }
 
 /** Social jobs create their event identity at commit; their prepared price
@@ -116,7 +152,24 @@ function batchFinancialPlan(
   return (
     args.financial ??
     usageFinancialPlan(
-      preparedSettlementPrices(args, args.batch, events),
+      args.commerceJobId
+        ? priceUsageEvents(
+            events.map((event) => {
+              return {
+                ...event,
+                creditChargePolicy:
+                  event.billingRunId &&
+                  args.batch.freeOfficialRunOwners.get(event.billingRunId) ===
+                    event.userId
+                    ? ("official_workflow_free" as const)
+                    : ("standard" as const),
+              };
+            }),
+            args.batch.prices,
+            args.orgId,
+            false,
+          )
+        : preparedSettlementPrices(args, args.batch, events),
       args.at,
     )
   );
@@ -170,16 +223,20 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, batch, at } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
-    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: usage claims, credit deductions, debt audit and Social receipts must commit together; single-statement alternative: the dependent validated cash plan and later fresh expiration snapshot require precommit whole-batch rollback.
+    // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: usage publication/claims, credit deductions, debt audit and Social/Commerce receipts must commit together; single-statement alternative: the dependent validated cash plan, receipt CAS and later fresh expiration snapshot require precommit whole-batch rollback.
     const result = await set(writeDb$).transaction(async (tx) => {
       work.lockWaitMs = 0;
       const [job] = args.social
         ? await tx.select().from(socialJobQuery(orgId, args.social))
         : [];
-      if (socialClaimUnavailable(args.social, job)) {
+      const [commerceJob] = args.commerceJobId
+        ? await tx.select().from(commerceJobQuery(orgId, args.commerceJobId))
+        : [];
+      const plan = settlementJobPlan(args, job, commerceJob);
+      if (!plan) {
         return null;
       }
-      const { usage: managed, processPending } = socialPlan(batch.social, job);
+      const { managed, processPending, jobScoped } = plan;
       if (managed) {
         const runId = managed.actor.runId;
         const [run] = await tx.select().from(runQuery(runId));
@@ -203,17 +260,19 @@ const commitUsageBatch$ = command(
             .where(claimUsageWhere(orgId, batch.events, key))
             .returning()
         : [];
-      requireCompleteUsageClaim(batch.events.length, events.length, !!job);
+      requireCompleteUsageClaim(batch.events.length, events.length, jobScoped);
       Object.assign(work, { pendingEvents: events.length });
-      if (hasNoStandaloneUsage(events, args.social)) {
+      if (noStandaloneEvents(events, args)) {
         return emptySettlementReceipt(work);
       }
+      // Includes actual events claimed by the global processor, not just GET.
+      const commerceReceipts = commerceReceiptPlan(batch.commerce, events, at);
       const { priced, charges, freeOnly } = batchFinancialPlan(args, events);
       let amount = 0;
       let afterCredits = 0;
       if (freeOnly) {
-        // Only free Social usage reaches this branch: its job receipt below
-        // must commit with the claim. Standalone free usage settles above.
+        // Free Social/Commerce usage also needs its durable job receipt in this
+        // transaction. Standalone free usage can settle above in one statement.
         await tx.execute(settledEventsSql(charges, at));
       } else {
         const cash = usageCashQueries(orgId, charges.byUser, at);
@@ -223,15 +282,11 @@ const commitUsageBatch$ = command(
         const deduction = planMemberGrantDeductions(charges.byUser, grants);
         if (deduction.sharedCredits > 0) {
           // Cash writers acquire the wallet before grant/expiry-lot locks.
-          await tx
-            .select({ orgId: orgMetadata.orgId })
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, orgId))
-            .for("update");
-          const outcome = orgCreditExpirationOutcome(
+          await tx.select().from(cash.wallet);
+          const outcome = expirationOutcome(
             parseRows(
-              orgCreditExpirationOutcomeRow,
-              await tx.execute(orgCreditExpirationSql(orgId, at)),
+              expirationRow,
+              await tx.execute(expirationSql(orgId, at)),
             ),
           );
           // A later statement snapshot distinguishes remaining expired lots
@@ -251,11 +306,7 @@ const commitUsageBatch$ = command(
           deduction.sharedCredits > 0
             ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
             : [];
-        const expiry = planExpiryLotDeductions(
-          lots,
-          deduction.sharedCredits,
-          at,
-        );
+        const expiry = planLots(lots, deduction.sharedCredits, at);
         await tx.execute(settledEventsSql(charges, at));
         const grantSql = memberGrantDeductionsSql(deduction.updates);
         const granted = (await tx.execute(grantSql)).rowCount;
@@ -282,6 +333,10 @@ const commitUsageBatch$ = command(
           }
           afterCredits = metadata.credits;
         }
+      }
+      if (commerceReceipts.expected > 0) {
+        const { rowCount } = await tx.execute(commerceReceipts.sql);
+        requireCommerceSettlement(commerceReceipts.expected, rowCount);
       }
       if (args.social && job) {
         const [receipt] = managed
@@ -310,11 +365,12 @@ const commitUsageBatch$ = command(
 export const settleOrgUsage$ = command(
   async ({ set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
-    const financial = args.social
-      ? undefined
-      : usageFinancialPlan(batch.priced, nowDate());
+    const financial =
+      args.social || args.commerceJobId
+        ? undefined
+        : usageFinancialPlan(batch.priced, nowDate());
     const outcome = await settle(
-      financial?.freeOnly
+      financial?.freeOnly && batch.commerce.length === 0
         ? set(
             commitFreeUsageBatch$,
             { orgId: args.orgId, batch, financial },

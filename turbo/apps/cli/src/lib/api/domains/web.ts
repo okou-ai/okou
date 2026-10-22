@@ -422,7 +422,25 @@ function isImageGenerationAcceptedResponse(
     typeof value.generationId === "string" &&
     value.status === "queued" &&
     value.type === "image" &&
-    isRecord(value.realtime)
+    isRecord(value.realtime) &&
+    (value.clientReconciliation === undefined ||
+      value.clientReconciliation === true)
+  );
+}
+
+function invalidImageGenerationReceipt(
+  body: unknown,
+): ImageGenerationWaitError {
+  const generationId =
+    isRecord(body) && typeof body.generationId === "string"
+      ? body.generationId
+      : undefined;
+  return new ImageGenerationWaitError(
+    `Failed to generate image returned an invalid generation response${generationId ? ` (generationId: ${generationId})` : ""}; do not submit another job.`,
+    "INVALID_GENERATION_RESPONSE",
+    502,
+    generationId,
+    false,
   );
 }
 
@@ -456,10 +474,7 @@ async function reconcileBuiltInGeneration(
     body: {},
     fetchOptions: { signal: generationRequestSignal(signal) },
   });
-  // Older APIs do not expose this optional accelerator. The caller still GETs
-  // the owned job, so a missing/private generation remains an error there. Never
-  // hide auth/server failures or resubmit to compensate for a missing endpoint.
-  if (result.status !== 200 && result.status !== 404) {
+  if (result.status !== 200) {
     handleError(result, "Failed to refresh generation status");
   }
 }
@@ -524,10 +539,21 @@ function statusForBuiltInGenerationError(code: string): number {
   return 500;
 }
 
+export class ImageGenerationWaitError extends ApiRequestError {
+  constructor(
+    message: string,
+    code: string,
+    status: number,
+    readonly generationId: string | undefined,
+    readonly terminalFailure: boolean,
+  ) {
+    super(message, code, status);
+    this.name = "ImageGenerationWaitError";
+  }
+}
+
 async function waitForImageGenerationResult(args: {
   readonly accepted: ImageGenerationAcceptedResponse;
-  readonly baseUrl: string;
-  readonly token: string;
   readonly fallback: string;
 }): Promise<GenerateWebImageResult> {
   let notifier: RealtimeNotifier | null = null;
@@ -539,21 +565,30 @@ async function waitForImageGenerationResult(args: {
   let notifierCreated = false;
   const startedAt = Date.now();
   const timeoutMs = IMAGE_GENERATION_WAIT_TIMEOUT_MS;
+  let terminalFailure = false;
 
   try {
+    const token = await getActiveToken();
+    if (!token) {
+      throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
+    }
+    const baseUrl = await getBaseUrl();
     while (!signal.aborted && Date.now() - startedAt < timeoutMs) {
-      await reconcileBuiltInGeneration(
-        args.baseUrl,
-        args.token,
-        args.accepted.generationId,
-        signal,
-      );
+      if (args.accepted.clientReconciliation) {
+        await reconcileBuiltInGeneration(
+          baseUrl,
+          token,
+          args.accepted.generationId,
+          signal,
+        );
+      }
       const status = await getImageGenerationStatus(
-        args.baseUrl,
-        args.token,
+        baseUrl,
+        token,
         args.accepted.generationId,
         signal,
       );
+      terminalFailure = status.status === "failed";
       const result = readImageGenerationResult(status, args.fallback);
       if (result) {
         return result;
@@ -578,7 +613,7 @@ async function waitForImageGenerationResult(args: {
       // transport failure must preserve the ID so the caller can recover it.
       const requestTimedOut =
         error instanceof Error && error.name === "TimeoutError";
-      const failure = new ApiRequestError(
+      const failure = new ImageGenerationWaitError(
         `${error instanceof Error ? error.message : `${args.fallback} wait failed`} (generationId: ${args.accepted.generationId}). Retrieve this job with okou generate get ${args.accepted.generationId} --refresh --json; do not submit another job.`,
         requestTimedOut
           ? "GENERATION_REQUEST_TIMEOUT"
@@ -590,6 +625,8 @@ async function waitForImageGenerationResult(args: {
           : error instanceof ApiRequestError
             ? error.status
             : 502,
+        args.accepted.generationId,
+        terminalFailure,
       );
       failure.cause = error;
       throw failure;
@@ -599,10 +636,12 @@ async function waitForImageGenerationResult(args: {
     await notifier?.close();
   }
 
-  throw new ApiRequestError(
+  throw new ImageGenerationWaitError(
     `${args.fallback} timed out (generationId: ${args.accepted.generationId}). Retrieve this job with okou generate get ${args.accepted.generationId} --refresh --json; do not submit another job.`,
     "GENERATION_TIMEOUT",
     504,
+    args.accepted.generationId,
+    false,
   );
 }
 
@@ -776,14 +815,8 @@ export async function generateWebImage(
   if (!isImageGenerationAcceptedResponse(submitted)) {
     return submitted;
   }
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
   return waitForImageGenerationResult({
     accepted: submitted,
-    baseUrl: await getBaseUrl(),
-    token,
     fallback: "Failed to generate image",
   });
 }
@@ -858,11 +891,7 @@ export async function submitWebImage(
     return body;
   }
   if (response.status === 202) {
-    throw new ApiRequestError(
-      "Failed to generate image returned an invalid generation response",
-      "INVALID_GENERATION_RESPONSE",
-      502,
-    );
+    throw invalidImageGenerationReceipt(body);
   }
   return body as GenerateWebImageResult;
 }

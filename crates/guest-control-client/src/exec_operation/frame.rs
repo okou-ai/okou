@@ -31,6 +31,7 @@ use std::sync::Arc;
 
 use guest_control_proto::{ExecControlStatus, MSG_EXEC_CANCEL, MSG_EXEC_START};
 use tokio::sync::oneshot;
+use tokio::time::Instant;
 
 use crate::connection::{FrameWriteDecision, FrameWriteTiming};
 use crate::{
@@ -258,33 +259,43 @@ pub(in crate::exec_operation) async fn write_frame(
     .await
 }
 
+pub(in crate::exec_operation) struct ExecStartWriteAdmission {
+    pub(in crate::exec_operation) deadline: Instant,
+    pub(in crate::exec_operation) observer: FrameWriteObserver,
+}
+
 /// Write an exec-start frame through the serialized frame-write lifecycle.
 ///
-/// Admission and write observers run in the pre-write callback while the writer lock is held and
-/// before the partial-write guard is armed. They therefore describe the write boundary rather
-/// than successful completion.
+/// The original deadline is checked under the writer lock before admission, tracking, or write
+/// observers. Expiry returns `Skip` without arming the partial-write guard or emitting bytes.
+/// Observers therefore describe an admitted write boundary rather than successful completion.
 pub(in crate::exec_operation) async fn write_exec_start_frame(
     shared: &Arc<Shared>,
     route_id: RouteId,
     payload: &[u8],
     diagnostic: &ExecOperationDiagnostic,
     tracks_normal_operation: bool,
-    write_admission: FrameWriteObserver,
+    write_admission: ExecStartWriteAdmission,
     write_observer: FrameWriteObserver,
-) -> io::Result<()> {
+) -> io::Result<FrameWriteDecision> {
     let seq = route_id.wire_seq();
-    write_frame_with_pre_write(
+    write_frame_with_pre_write_decision(
         shared,
         MSG_EXEC_START,
         seq,
         payload,
         Some(diagnostic.frame("start")),
         || {
-            write_admission.record_write_start()?;
+            // timeout_at polls a ready writer before observing its elapsed timer.
+            if Instant::now() >= write_admission.deadline {
+                return Ok(FrameWriteDecision::Skip);
+            }
+            write_admission.observer.record_write_start()?;
             if tracks_normal_operation {
                 mark_exec_operation_possible_guest_write(shared, route_id)?;
             }
-            write_observer.record_write_start()
+            write_observer.record_write_start()?;
+            Ok(FrameWriteDecision::Write)
         },
     )
     .await

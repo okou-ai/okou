@@ -303,6 +303,22 @@ export const cronProcessUsageEventsContract = c.router({
   },
 });
 
+export const cronReconcileCommerceJobsContract = c.router({
+  reconcile: {
+    method: "GET",
+    path: "/api/cron/reconcile-commerce-jobs",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        success: z.literal(true),
+        processed: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Advance a bounded batch of managed Commerce jobs",
+  },
+});
+
 export const cronReconcileSocialKitDownloadsContract = c.router({
   reconcile: {
     method: "GET",

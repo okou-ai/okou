@@ -101,6 +101,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/reconcile-commerce-jobs",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/reconcile-billing-entitlements",
       "schedule": "0 * * * *"
     },

@@ -27,11 +27,6 @@ import {
 } from "./protocol.ts";
 import { logger } from "../signals/log.ts";
 import {
-  recordAuthDiagnostic,
-  startAuthDiagnosticMeasurement,
-} from "../lib/auth-diagnostics.ts";
-import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
-import {
   createDeferredPromise,
   onDomEventFn,
   setLoop,
@@ -317,35 +312,14 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
       { readonly type: "get-token" }
     >,
   ): Promise<void> {
-    const diagnostic = createBrowserAuthDiagnosticContext({
-      tokenAttemptId: message.requestId,
-    });
-    const measurement = startAuthDiagnosticMeasurement();
-    recordAuthDiagnostic({
-      stage: "tab_token_received",
-      context: diagnostic,
-      outcome: "started",
-    });
     const result = await settle(
-      this.getToken(diagnostic, this.bridgeSignal),
+      this.getToken(this.bridgeSignal),
       this.bridgeSignal,
     );
-    recordAuthDiagnostic({
-      stage: "tab_token_read_finished",
-      context: diagnostic,
-      measurement,
-      ownerAborted: this.bridgeSignal.aborted,
-      ...(result.ok ? { token: result.value } : { outcome: "error" }),
-    });
     if (this.closed) {
       return;
     }
     if (result.ok) {
-      recordAuthDiagnostic({
-        stage: "tab_token_reply",
-        context: diagnostic,
-        token: result.value,
-      });
       this.emit({
         type: "token-result",
         requestId: message.requestId,
@@ -353,11 +327,6 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
       });
       return;
     }
-    recordAuthDiagnostic({
-      stage: "tab_token_reply",
-      context: diagnostic,
-      outcome: "error",
-    });
     this.emit({
       type: "token-error",
       requestId: message.requestId,

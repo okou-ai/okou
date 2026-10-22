@@ -54,6 +54,7 @@ import type { z } from "zod";
 
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
+import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
@@ -585,6 +586,7 @@ export function createRunsApi(context: TestContext) {
       options: {
         readonly customerId?: string;
         readonly subscriptionId?: string;
+        readonly isolatePg?: boolean;
         readonly tier?: "pro" | "team";
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
@@ -729,8 +731,11 @@ export function createRunsApi(context: TestContext) {
       }
       // Retain the exact provider boundary if accepted setup outlives mock reset.
       options.onExternalStateReady?.(restoreWebhook);
+      const app = options.isolatePg
+        ? await setupApp({ context, routes: runRoutes, isolatePg: true })
+        : runApp(context);
       await run(() => {
-        const client = runApp(context)(webhookStripeContract);
+        const client = app(webhookStripeContract);
         return accept(
           client.post({
             body: payload,
@@ -742,7 +747,7 @@ export function createRunsApi(context: TestContext) {
 
       const billingStatus = await run(() => {
         return accept(
-          runApp(context)(billingStatusContract).get({
+          app(billingStatusContract).get({
             headers: authenticate(context, actor),
           }),
           [200],
