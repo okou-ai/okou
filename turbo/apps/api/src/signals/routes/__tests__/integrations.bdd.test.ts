@@ -6268,7 +6268,8 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(unavailable.body).toStrictEqual({
       error: {
-        message: "Verification text could not be sent",
+        message:
+          "Unable to confirm the verification text was sent. Wait a minute before trying again.",
         code: "PROVIDER_UNAVAILABLE",
       },
     });
