@@ -22,7 +22,6 @@ import type {
   PlatformUserPermissionGrant,
 } from "../connector-domain.ts";
 import { DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN } from "../permission-allow/permission-grant-expiration.ts";
-import { withCleanup } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -104,12 +103,14 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
   } | null>(null);
   const continued$ = state(false);
   const dismissed$ = state(false);
-  const saving$ = state<Promise<void> | null>(null);
-  const continuing$ = state<Promise<void> | null>(null);
+  // Hooks observe the returned operation; these private slots only own
+  // synchronous execution exclusion across consumers.
+  const savingInFlight$ = state<Promise<void> | null>(null);
+  const continuingInFlight$ = state<Promise<void> | null>(null);
   const callbackIds$ = state<ChatActionCallbackIds | null>(null);
   const setExpiresIn$ = command(
     ({ get, set }, value: UserPermissionGrantExpiresIn) => {
-      if (!get(saving$)) {
+      if (!get(savingInFlight$)) {
         set(expiresIn$, value);
       }
     },
@@ -123,8 +124,8 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
     savedSnapshot$,
     continued$,
     dismissed$,
-    saving$,
-    continuing$,
+    savingInFlight$,
+    continuingInFlight$,
     callbackIds$,
     setExpiresIn$,
     dismiss$,
@@ -284,14 +285,24 @@ function createBatchSaveCommand(
     },
   );
   return command(({ get, set }, signal: AbortSignal): Promise<void> => {
-    const running = get(local.saving$);
+    const running = get(local.savingInFlight$);
     if (running) {
       return running;
     }
-    const operation = withCleanup(set(performSave$, signal), () => {
-      set(local.saving$, null);
-    });
-    set(local.saving$, operation);
+    const execute = async () => {
+      // Acquire the slot synchronously before any operation code can re-enter.
+      await Promise.resolve();
+      // Observe settlement to release execution ownership, not request feedback.
+      const [outcome] = await Promise.allSettled([set(performSave$, signal)]);
+      if (get(local.savingInFlight$) === operation) {
+        set(local.savingInFlight$, null);
+      }
+      if (outcome.status === "rejected") {
+        throw outcome.reason;
+      }
+    };
+    const operation = execute();
+    set(local.savingInFlight$, operation);
     return operation;
   });
 }
@@ -345,14 +356,24 @@ function createBatchContinueCommand(
     },
   );
   return command(({ get, set }, signal: AbortSignal): Promise<void> => {
-    const running = get(local.continuing$);
+    const running = get(local.continuingInFlight$);
     if (running) {
       return running;
     }
-    const operation = withCleanup(set(performContinue$, signal), () => {
-      set(local.continuing$, null);
-    });
-    set(local.continuing$, operation);
+    const execute = async () => {
+      // Acquire the slot synchronously before any operation code can re-enter.
+      await Promise.resolve();
+      // Observe settlement to release execution ownership, not request feedback.
+      const [outcome] = await Promise.allSettled([set(performContinue$, signal)]);
+      if (get(local.continuingInFlight$) === operation) {
+        set(local.continuingInFlight$, null);
+      }
+      if (outcome.status === "rejected") {
+        throw outcome.reason;
+      }
+    };
+    const operation = execute();
+    set(local.continuingInFlight$, operation);
     return operation;
   });
 }
@@ -378,7 +399,14 @@ export function createPermissionBatchSignals(
     descriptor,
     href: permissionBatchActionResourceKey(descriptor),
     ...resources,
-    ...local,
+    expiresIn$: local.expiresIn$,
+    saved$: local.saved$,
+    savedSnapshot$: local.savedSnapshot$,
+    continued$: local.continued$,
+    dismissed$: local.dismissed$,
+    callbackIds$: local.callbackIds$,
+    setExpiresIn$: local.setExpiresIn$,
+    dismiss$: local.dismiss$,
     save$,
     continue$,
     confirm$,

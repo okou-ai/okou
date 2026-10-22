@@ -101,18 +101,10 @@ function activeGrant(
   };
 }
 
-function installMetadata(unavailableSlug?: string): void {
+function installMetadata(): void {
   context.mocks.api(
     connectorCatalogContract.permissions,
     ({ params, respond }) => {
-      if (params.connectorSlug === unavailableSlug) {
-        return respond(403, {
-          error: {
-            code: "FORBIDDEN",
-            message: "Permission details unavailable",
-          },
-        });
-      }
       return respond(200, {
         permissions: permissionMetadata({
           connectorSlug: params.connectorSlug,
@@ -248,16 +240,117 @@ test("Review full scopes grouped by connector and apply the selected duration to
   ]);
 });
 
+test("Review every scope in a large batch as metadata and grants arrive separately", async () => {
+  const metadataResponse = context.mocks.deferred<void>();
+  const grantsResponse = context.mocks.deferred<void>();
+  const largeBatch = Array.from({ length: 20 }, (_, index) => {
+    return {
+      connectorSlug: index < 10 ? "calendar-service" : "reports-service",
+      permission: `records:read:download_record_${index + 1}`,
+    };
+  });
+  context.mocks.api(
+    connectorCatalogContract.permissions,
+    async ({ params, respond }) => {
+      await metadataResponse.promise;
+      return respond(200, {
+        permissions: permissionMetadata({
+          connectorSlug: params.connectorSlug,
+          label:
+            params.connectorSlug === "calendar-service"
+              ? "Calendar Service"
+              : "Reports Service",
+          permissions: largeBatch
+            .filter((item) => {
+              return item.connectorSlug === params.connectorSlug;
+            })
+            .map((item) => {
+              return item.permission;
+            }),
+        }),
+      });
+    },
+  );
+  context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
+    await grantsResponse.promise;
+    return respond(200, []);
+  });
+  installConversation(batchUrl({ rows: largeBatch }));
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches,
+  });
+  await readyChat();
+  const card = await screen.findByTestId("permission-batch-action-card");
+  await expect(
+    within(card).findByLabelText("Loading permissions"),
+  ).resolves.toBeInTheDocument();
+  expect(getButton("Allow all 20 permissions", card)).toBeDisabled();
+
+  metadataResponse.resolve(undefined);
+  const scopes = within(card).getByRole("region", {
+    name: "Applies to this agent, not only the current task.",
+  });
+  await expect(
+    within(scopes).findByText(largeBatch[19]!.permission, { exact: true }),
+  ).resolves.toBeInTheDocument();
+  for (const item of largeBatch) {
+    expect(
+      within(scopes).getByText(item.permission, { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      within(scopes).getByText(`Use ${item.permission}.`),
+    ).toBeInTheDocument();
+  }
+  expect(getButton("Allow all 20 permissions", card)).toBeDisabled();
+
+  grantsResponse.resolve(undefined);
+  await waitFor(() => {
+    expect(getButton("Allow all 20 permissions", card)).toBeEnabled();
+  });
+  const duration = within(card).getByRole("combobox", {
+    name: "Permission duration",
+  });
+  click(duration);
+  click(await screen.findByRole("option", { name: "Always" }));
+  await expect(
+    within(card).findByText(
+      "These permissions stay allowed until you change or revoke them.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(duration).toHaveTextContent("Always");
+  expect(getButton("Allow all 20 permissions", card)).toBeEnabled();
+});
+
 test("Retry only the callback after batch approval succeeds but sending fails", async () => {
   installMetadata();
-  const applied = installGrants();
+  const saveResponse = context.mocks.deferred<void>();
+  const callbackResponse = context.mocks.deferred<void>();
+  const grants: UserPermissionGrantResponse[] = [];
+  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
+    return respond(200, grants);
+  });
+  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
+  context.mocks.api(
+    userPermissionGrantsContract.applyBatch,
+    async ({ body, respond }) => {
+      applied.push(body);
+      await saveResponse.promise;
+      grants.push(...items.map(activeGrant));
+      return respond(200, grants);
+    },
+  );
   installConversation(
     batchUrl({ callbackPrompt: "Continue preparing the report" }),
   );
   const sends: ChatEventSendBody[] = [];
   let available = false;
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
     sends.push(body);
+    await callbackResponse.promise;
     return available
       ? respond(201, { threadId: RUN_THREAD_ID })
       : respond(500, {
@@ -277,7 +370,19 @@ test("Retry only the callback after batch approval succeeds but sending fails", 
     expect(getButton("Allow all 3 permissions", card)).toBeEnabled();
   });
   click(getButton("Allow all 3 permissions", card));
+  await waitFor(() => {
+    expect(getButton("Saving...", card)).toBeDisabled();
+  });
+  expect(within(card).getByText(items[2]!.permission)).toBeInTheDocument();
 
+  saveResponse.resolve(undefined);
+  await expect(
+    within(card).findByText("Permissions allowed"),
+  ).resolves.toBeInTheDocument();
+  expect(getButton("Continuing…", card)).toBeDisabled();
+  expect(within(card).getByText(items[2]!.permission)).toBeInTheDocument();
+
+  callbackResponse.resolve(undefined);
   await expect(
     within(card).findByText(
       "Permissions allowed, but could not continue. Try continuing again.",
@@ -442,8 +547,31 @@ test("Approve only missing scopes without reapplying or extending active grants"
   ]);
 });
 
-test("Keep the whole batch unavailable when one connector's authoritative metadata cannot load", async () => {
-  installMetadata("reports-service");
+test("Keep the whole batch unavailable when one connector's delayed authoritative metadata fails", async () => {
+  const metadataResponse = context.mocks.deferred<void>();
+  context.mocks.api(
+    connectorCatalogContract.permissions,
+    async ({ params, respond }) => {
+      await metadataResponse.promise;
+      if (params.connectorSlug === "reports-service") {
+        return respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Permission details unavailable",
+          },
+        });
+      }
+      return respond(200, {
+        permissions: permissionMetadata({
+          connectorSlug: params.connectorSlug,
+          label: "Calendar Service",
+          permissions: items.slice(0, 2).map((item) => {
+            return item.permission;
+          }),
+        }),
+      });
+    },
+  );
   const applied = installGrants();
   installConversation(batchUrl());
 
@@ -455,7 +583,21 @@ test("Keep the whole batch unavailable when one connector's authoritative metada
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
+  await expect(
+    within(card).findByLabelText("Loading permissions"),
+  ).resolves.toBeInTheDocument();
+  expect(getButton("Allow all 3 permissions", card)).toBeDisabled();
+
+  metadataResponse.resolve(undefined);
   await expect(within(card).findByRole("alert")).resolves.toBeInTheDocument();
+  expect(
+    within(card).getByText("Allow the following permissions"),
+  ).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("link", card).find((link) => {
+      return link.textContent?.trim() === "View permission details";
+    }),
+  ).toBeInTheDocument();
   expect(getButton("Allow all 3 permissions", card)).toBeDisabled();
   expect(applied).toHaveLength(0);
 });

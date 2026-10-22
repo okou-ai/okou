@@ -1,7 +1,9 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui";
+import { ScrollArea } from "@base-ui/react/scroll-area";
+import { Button, ScrollBar } from "@okouai/ui";
+import type { ReactNode } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Check, Loader2 } from "lucide-react";
 import type { PermissionBatchSignals } from "../../signals/chat-page/permission-batch-signals.ts";
@@ -482,6 +484,31 @@ function BatchActions({
   );
 }
 
+function BatchScrollRegion({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <ScrollArea.Root className="relative min-h-0 min-w-0">
+      <ScrollArea.Viewport
+        data-slot="scroll-area-viewport"
+        role="region"
+        aria-label={label}
+        tabIndex={0}
+        className="h-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
+        <ScrollArea.Content className="flex min-w-0 flex-col gap-4 pr-3 break-words">
+          {children}
+        </ScrollArea.Content>
+      </ScrollArea.Viewport>
+      <ScrollBar />
+    </ScrollArea.Root>
+  );
+}
+
 function BatchContent({
   signals,
   standalone,
@@ -500,22 +527,53 @@ function BatchContent({
       </p>
     );
   }
+  if (!standalone) {
+    // Reserve every async slot from the first render, including terminal states.
+    // Long scopes and localized feedback scroll inside their own bounded rows;
+    // the approval/continuation action and direct destination stay reachable.
+    return (
+      <div className="grid h-full min-h-0 w-full min-w-0 grid-rows-[104px_minmax(0,1fr)_160px_36px_40px] gap-3">
+        <BatchScrollRegion
+          label={t(($) => {
+            return $.authorization.permissionBatch.title;
+          })}
+        >
+          <BatchHeader batch={batch} standalone={false} />
+        </BatchScrollRegion>
+        <BatchScrollRegion
+          label={t(($) => {
+            return $.authorization.permissionBatch.scopeNote;
+          })}
+        >
+          <BatchPermissionDetails batch={batch} />
+        </BatchScrollRegion>
+        <BatchScrollRegion
+          label={t(($) => {
+            return $.authorization.permission.durationLabel;
+          })}
+        >
+          <BatchFeedback batch={batch} />
+        </BatchScrollRegion>
+        <div className="min-w-0">
+          <BatchActions batch={batch} standalone={false} />
+        </div>
+        <a
+          href={signals.href}
+          className="overflow-y-auto break-words text-sm text-muted-foreground underline underline-offset-4"
+        >
+          {t(($) => {
+            return $.authorization.permissionBatch.details;
+          })}
+        </a>
+      </div>
+    );
+  }
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">
       <BatchHeader batch={batch} standalone={standalone} />
       <BatchPermissionDetails batch={batch} />
       <BatchFeedback batch={batch} />
       <BatchActions batch={batch} standalone={standalone} />
-      {!standalone && (
-        <a
-          href={signals.href}
-          className="text-sm text-muted-foreground underline underline-offset-4"
-        >
-          {t(($) => {
-            return $.authorization.permissionBatch.details;
-          })}
-        </a>
-      )}
     </div>
   );
 }

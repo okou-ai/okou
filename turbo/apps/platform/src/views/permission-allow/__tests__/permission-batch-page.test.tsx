@@ -7,10 +7,11 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   userPermissionGrantsContract,
+  type ApplyUserPermissionGrantsBatchRequest,
   type UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
@@ -187,6 +188,135 @@ test("A user allows grouped permissions once and retries only a failed continuat
   expect(sent).toHaveLength(2);
   expect(sent[1]).toStrictEqual(sent[0]);
 });
+
+test.each(["dismissed", "continued"] as const)(
+  "Navigating from a %s batch isolates the next agent's permissions and continuation",
+  async (firstOutcome) => {
+    const nextAgentId = "10000000-0000-4000-a000-000000000002";
+    const nextThreadId = "20000000-0000-4000-a000-000000000002";
+    const grants = installResources();
+    const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
+    const sent: ChatEventSendBody[] = [];
+    context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
+      return respond(200, {
+        isDefaultAgent: false,
+        agentId: params.id,
+        ownerId: "test-user-123",
+        displayName: params.id === nextAgentId ? "Next Bot" : "Research Bot",
+        description: null,
+        sound: null,
+        avatarUrl: null,
+        visibility: "private",
+      });
+    });
+    context.mocks.api(
+      userPermissionGrantsContract.list,
+      ({ query, respond }) => {
+        return respond(
+          200,
+          grants.filter((grant) => {
+            return grant.agentId === query.agentId;
+          }),
+        );
+      },
+    );
+    context.mocks.api(
+      userPermissionGrantsContract.applyBatch,
+      ({ body, respond }) => {
+        applied.push(body);
+        const saved = body.groups.flatMap((group) => {
+          return group.grants.map((grant) => {
+            return {
+              agentId: body.agentId,
+              connectorSlug: group.connectorSlug,
+              permission: grant.permission,
+              action: "allow" as const,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              createdAt: "2030-01-01T00:00:00.000Z",
+              updatedAt: "2030-01-01T00:00:00.000Z",
+            };
+          });
+        });
+        grants.push(...saved);
+        return respond(200, saved);
+      },
+    );
+    context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+      return respond(200, {
+        id: params.id,
+        agentId: params.id === nextThreadId ? nextAgentId : AGENT_ID,
+        title: "Review",
+        selectedModel: null,
+        modelSettings: {},
+        serviceTier: null,
+        pinnedAt: null,
+        archived: false,
+        muted: false,
+        computerUseHostId: null,
+        cloudBrowserEnabled: false,
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      sent.push(body);
+      return respond(201, { threadId: body.threadId ?? THREAD_ID });
+    });
+
+    await openPage({ callback: true });
+    await waitFor(() => {
+      expect(button("Allow all 2 permissions")).toBeEnabled();
+    });
+    click(screen.getByRole("combobox", { name: "Permission duration" }));
+    click(await screen.findByRole("option", { name: "24 hours" }));
+    if (firstOutcome === "dismissed") {
+      click(button("Not now"));
+      await screen.findByText("No permissions were changed.");
+    } else {
+      click(button("Allow all 2 permissions"));
+      await screen.findByText("The conversation has continued.");
+    }
+
+    const nextParams = new URLSearchParams({
+      items: JSON.stringify([items[1]]),
+      action: "allow",
+      threadId: nextThreadId,
+      callbackPrompt: "Continue the next agent's review",
+    });
+    act(() => {
+      window.history.pushState(
+        null,
+        "",
+        `/agents/${nextAgentId}/permissions/batch?${nextParams}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    await screen.findByText("Next Bot");
+    await waitFor(() => {
+      expect(button("Allow 1 permission")).toBeEnabled();
+    });
+    expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
+    expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
+      "1 hour",
+    );
+    click(button("Allow 1 permission"));
+    await screen.findByText("The conversation has continued.");
+    expect(applied.at(-1)).toStrictEqual({
+      agentId: nextAgentId,
+      groups: [
+        {
+          connectorSlug: "github",
+          grants: [
+            { permission: "issues:read", action: "allow", expiresIn: "1h" },
+          ],
+        },
+      ],
+    });
+    expect(sent.at(-1)).toMatchObject({
+      threadId: nextThreadId,
+      prompt: "Continue the next agent's review",
+    });
+  },
+);
 
 test("A fresh revoked grant list supersedes save success after a callback failure", async () => {
   const grants = installResources();
