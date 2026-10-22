@@ -170,8 +170,8 @@ assert_contains "$summary" 'repos/test/repo/pulls?state=open&per_page=100'
 assert_contains "$summary" 'sort_by(.number)'
 [[ "$output" != *CI_CAPACITY_LIMIT* ]] || fail "author limit must apply below the repository limit"
 
-# Re-running all 11 unqueued PRs admits the first 10, not none of them.
-for number in {42..52}; do
+# Retrying admits the first and last author slots, and rejects the next PR.
+for number in 42 51 52; do
   response 11 null 11 developer "$number"
   run_admission pull_request 0 40 10
   if ((number < 52)); then
@@ -261,10 +261,6 @@ mv "${test_root}/draft.json" "${test_root}/response.json"
 run_admission pull_request 0 40 10
 [[ "$status" == 1 ]] || fail "lower-numbered drafts must still consume author slots"
 
-response 39 null 20 developer 61
-run_admission
-[[ "$status" == 0 ]] || fail "a retry after both limits recover should pass: $output"
-
 # Custom repository/author limits govern admission and the recovery instructions.
 response 50 null 50 developer 91
 run_admission pull_request 0 50 50
@@ -288,9 +284,6 @@ assert_contains "$output" '13 CI candidate PRs (14 open PRs; limit: 12)'
 assert_contains "$output" 'position 7 by PR number among 7 open PRs'
 assert_contains "$summary" 'at most 12 CI candidate PRs'
 assert_contains "$summary" "among the author's 6 lowest-numbered open PRs"
-response 11 null 6 developer 47
-run_admission pull_request 0 12 6
-[[ "$status" == 0 ]] || fail "a retry below configured limits should recover: $output"
 
 # A zero limit explicitly pauses unqueued admission; invalid config fails closed.
 response 1

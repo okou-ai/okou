@@ -39,11 +39,12 @@ if case.get("transport_failure") == probe:
 env = os.environ.copy()
 fake_bin = Path(os.environ["INVENTORY_TEST_BIN"])
 if probe == "runtime":
+    env["INVENTORY_TEST_FAILED_COMMAND"] = case.get("failed_command", "")
     for name in args[4::2]:
         if case.get("unavailable") == name:
             continue
         version = fake_bin / name
-        version.write_text("#!" + sys.executable + "\n" + os.environ["INVENTORY_TEST_VERSION_SOURCE"])
+        version.write_text(os.environ["INVENTORY_TEST_VERSION_SOURCE"])
         version.chmod(0o755)
     env["PATH"] = str(fake_bin) + ":" + os.environ["PATH"]
     if case.get("unavailable"):
@@ -62,21 +63,20 @@ else:
 sys.exit(subprocess.call(args, env=env))
 '''
 
-VERSION_FIXTURE = r'''
-import json
-import os
-from pathlib import Path
-import sys
-
-name = Path(sys.argv[0]).name
-with open(os.environ["INVENTORY_TEST_VERSIONS"], "a") as log:
-    log.write(json.dumps([name, *sys.argv[1:]]) + "\n")
-case = json.loads(os.environ["INVENTORY_TEST_CASE"])
-if case.get("failed_command") == name:
-    print("version-looking stdout from failed command", flush=True)
-    print("required version failure", file=sys.stderr, flush=True)
-    sys.exit(42)
-print("fixture " + name + " version", file=sys.stderr if name == "javac" else sys.stdout, flush=True)
+VERSION_FIXTURE = r'''#!/bin/sh
+set -eu
+name=${0##*/}
+printf '%s\n' "$name" >> "$INVENTORY_TEST_VERSIONS"
+if [ "$name" = "$INVENTORY_TEST_FAILED_COMMAND" ]; then
+    printf 'version-looking stdout from failed command\n'
+    printf 'required version failure\n' >&2
+    exit 42
+fi
+if [ "$name" = javac ]; then
+    printf 'fixture %s version\n' "$name" >&2
+else
+    printf 'fixture %s version\n' "$name"
+fi
 '''
 
 
@@ -111,7 +111,7 @@ class InventoryTest(unittest.TestCase):
             env=env, capture_output=True, text=True, timeout=15,
         )
         invocations = [json.loads(line) for line in invocation_log.read_text().splitlines()]
-        versions = [json.loads(line) for line in version_log.read_text().splitlines()] if version_log.exists() else []
+        versions = version_log.read_text().splitlines() if version_log.exists() else []
         return result, invocations, versions
 
     def assert_failure(self, result, diagnostic):
@@ -123,7 +123,7 @@ class InventoryTest(unittest.TestCase):
         result, invocations, versions = self.run_case({})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(versions), 21)
-        self.assertEqual(len({item[0] for item in versions}), 21)
+        self.assertEqual(len(set(versions)), 21)
         self.assertEqual([item["root"] for item in invocations], [False, False, True])
         self.assertEqual([item["probe"] for item in invocations], ["runtime", "user", "root"])
         for label in ["user", "root"]:
@@ -138,7 +138,7 @@ class InventoryTest(unittest.TestCase):
                 self.assertIn("version-looking stdout from failed command", result.stderr)
                 self.assertIn("required version failure", result.stderr)
                 self.assertEqual(len(invocations), 1)
-                self.assertEqual(versions[-1][0], command)
+                self.assertEqual(versions[-1], command)
 
     def test_unavailable_runtime_fails_the_scenario(self):
         result, invocations, _ = self.run_case({"unavailable": "redis-server"})
