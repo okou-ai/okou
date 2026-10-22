@@ -47,6 +47,24 @@ pub(in crate::tailscale::tests) fn remote(ip: u8) -> SocketAddr {
     SocketAddr::new(peer_ip(ip), 22)
 }
 
+pub(in crate::tailscale::tests) fn initiation(
+    keys: NodeKeyPair,
+    client: ts_keys::NodePublicKey,
+) -> PacketMut {
+    let mut endpoint = ts_tunnel::Endpoint::new(keys);
+    let peer = ts_tunnel::PeerId(1);
+    endpoint.upsert_peer(ts_tunnel::PeerConfig::new(peer, client, [0; 32]));
+    let mut generated = endpoint.send(
+        std::time::Instant::now(),
+        [(peer, vec![PacketMut::from(&b"late-peer-initiation"[..])])],
+    );
+    let mut packets = generated.to_peers.remove(&peer).unwrap();
+    assert_eq!(packets.len(), 1);
+    let packet = packets.remove(0);
+    assert_eq!(&packet.as_ref()[..4], &[1, 0, 0, 0]);
+    packet
+}
+
 pub(super) fn syn(source: SocketAddr, destination: SocketAddr) -> PacketMut {
     let header = if source.is_ipv4() { 20 } else { 40 };
     let mut bytes = vec![0; header + 20];
