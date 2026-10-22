@@ -95,7 +95,7 @@ index 7f146126800d7446fd7e2493fd9b05d455d7ad95..3aa7449674a47c888b6de15fee96def8
  //# sourceMappingURL=openai-completions.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
-index a60f39352b776d71497e55b33b3334bacfbeb2f5..f8c8f0e004ddd043d7c593052efb7a3c582cf6c9 100644
+index a60f39352b776d71497e55b33b3334bacfbeb2f5..50b0ad6f6844e640f4586cef9e8cd88c01cad301 100644
 --- a/dist/api/openai-completions.js
 +++ b/dist/api/openai-completions.js
 @@ -16,6 +16,31 @@ import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copi
@@ -151,7 +151,7 @@ index a60f39352b776d71497e55b33b3334bacfbeb2f5..f8c8f0e004ddd043d7c593052efb7a3c
                      }
                      hasFinishReason = true;
                  }
-@@ -500,12 +533,17 @@ export const stream = (model, context, options) => {
+@@ -500,12 +533,20 @@ export const stream = (model, context, options) => {
                  delete block.streamIndex;
              }
              output.stopReason = options?.signal?.aborted ? "aborted" : "error";
@@ -159,8 +159,11 @@ index a60f39352b776d71497e55b33b3334bacfbeb2f5..f8c8f0e004ddd043d7c593052efb7a3c
 +            // OpenAI throws top-level SSE errors before the provider event hook.
 +            // HTTP 200 stream errors have no error status; normal formatting
 +            // would retain only their message and discard the provider code.
-+            const streamFailure = output.stopReason === "error" && error instanceof OpenAI.APIError && error.status === undefined
-+                ? okouProviderStreamFailure(error.error) : undefined;
++            // Connection/abort errors have no provider payload and retain their
++            // owner. An SSE payload with no allowed detail stays generic; never
++            // fall back to formatting its arbitrary metadata or output.
++            const streamFailure = output.stopReason === "error" && error instanceof OpenAI.APIError && error.status === undefined && error.error !== undefined
++                ? (okouProviderStreamFailure(error.error) ?? OKOU_GENERIC_STREAM_ERROR) : undefined;
 +            output.errorMessage = streamFailure ?? formatProviderError(normalizeProviderError(error));
              // Some providers via OpenRouter give additional information in this field.
              // normalizeProviderError already stringifies the parsed body (error.error)
@@ -171,7 +174,7 @@ index a60f39352b776d71497e55b33b3334bacfbeb2f5..f8c8f0e004ddd043d7c593052efb7a3c
              if (rawMetadata && !output.errorMessage.includes(String(rawMetadata))) {
                  output.errorMessage += `\n${rawMetadata}`;
              }
-@@ -1342,4 +1380,9 @@ function getCompat(model) {
+@@ -1342,4 +1383,9 @@ function getCompat(model) {
          vllmPriority: model.compat.vllmPriority,
      };
  }

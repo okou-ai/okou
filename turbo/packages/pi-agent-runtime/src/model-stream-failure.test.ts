@@ -200,6 +200,30 @@ describe("Chat Completions upstream stream failures", () => {
     ]);
   });
 
+  it.each([false, true])(
+    "keeps a detail-free failure generic without publishing raw metadata (top-level: %s)",
+    async (topLevel) => {
+      server.use(
+        http.post(endpoint, () => {
+          return response({
+            topLevel,
+            error: {
+              message: "",
+              metadata: { raw: "private-payload-sentinel".repeat(500) },
+              output: "private-answer-sentinel",
+            },
+          });
+        }),
+      );
+      const result = await stream().result();
+      expect(result.stopReason).toBe("error");
+      expect(result.errorMessage).toBe("Provider finish_reason: error");
+      expect(piModelFailureReason(result)).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain("private-payload-sentinel");
+      expect(JSON.stringify(result)).not.toContain("private-answer-sentinel");
+    },
+  );
+
   it("bounds unknown provider detail while keeping it out of diagnostics", async () => {
     const message = "Specific unknown provider detail ".repeat(200);
     server.use(
