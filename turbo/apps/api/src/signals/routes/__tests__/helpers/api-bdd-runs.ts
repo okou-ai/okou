@@ -729,7 +729,7 @@ export function createRunsApi(context: TestContext) {
       }
       // Retain the exact provider boundary if accepted setup outlives mock reset.
       options.onExternalStateReady?.(restoreWebhook);
-      await run(async () => {
+      await run(() => {
         const client = runApp(context)(webhookStripeContract);
         return accept(
           client.post({
