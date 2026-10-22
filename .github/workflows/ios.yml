@@ -1,11 +1,7 @@
-name: iOS
+name: iOS Preparation Study
 
+# Temporary research branch only. Runs no build/test/publish or cache writes.
 on:
-  pull_request:
-  merge_group:
-    types: [checks_requested]
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,120 +10,42 @@ permissions:
 
 env:
   npm_config_audit: "false"
-  # SwiftPM clones hit HTTP/2 stream resets on the hosted image.
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: http.version
   GIT_CONFIG_VALUE_0: HTTP/1.1
 
-concurrency:
-  group: ios-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  detect:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      needed: ${{ steps.changes.outputs.needed }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # PR merge parents and the bounded queue group contain the event base.
-          fetch-depth: 32
-          sparse-checkout: |
-            /ios/scripts/ci-changed.sh
-            /.github/scripts/checks/changed-base-ref.sh
-          sparse-checkout-cone-mode: false
-      - name: Detect iOS changes
-        id: changes
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_REF: ${{ github.head_ref }}
-          CHECKOUT_REF: ${{ github.ref }}
-          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          needed=$(bash ios/scripts/ci-changed.sh)
-          echo "needed=$needed" >> "$GITHUB_OUTPUT"
-
-  script-checks:
+  sources:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
-      - name: Verify CI change detection and promotion contracts
-        run: |
-          bash -n ios/scripts/*.sh
-          shellcheck ios/scripts/*.sh
-          bash ios/scripts/test-ci.sh
-          node --test ios/scripts/testflight.test.mjs
-          python3 ios/scripts/archive-proof.test.py
-          python3 ios/scripts/archive-promotion.test.py
-          python3 ios/scripts/preboot-simulator.test.py
-          python3 ios/scripts/prepare-package-sources.test.py
-          python3 ios/scripts/run-ci-tests.test.py
-          python3 ios/scripts/build-cache.test.py
-
-  test-packages:
-    needs: detect
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
-    runs-on: xcode-27
-    timeout-minutes: 15
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Run isolated Swift package tests
-        run: bash ios/scripts/ci-package-test.sh
-      - name: Capture package test inputs
-        if: github.event_name == 'merge_group'
-        run: |
-          python3 ios/scripts/archive-promotion.py toolchain "$RUNNER_TEMP/package-toolchain.json"
-          python3 ios/scripts/archive-promotion.py inputs --toolchain "$RUNNER_TEMP/package-toolchain.json" --output "$RUNNER_TEMP/package-inputs.json"
-      - name: Transfer package test inputs
-        if: github.event_name == 'merge_group'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/package-inputs.json
-          if-no-files-found: error
-          retention-days: 7
-
-  prepare-package-sources:
-    needs: detect
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Fetch locked package revisions
+          persist-credentials: false
+      - name: Fetch the locked revisions once for all arms
         id: sources
         run: |
           mkdir "$RUNNER_TEMP/package-inputs"
           sources=$(python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/package-inputs")
           echo "path=$sources" >> "$GITHUB_OUTPUT"
-      - name: Transfer locked source repositories
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          # Sources remain identical when only failed downstream jobs are rerun.
-          name: ios-package-sources-${{ github.sha }}
-          overwrite: true
+          name: preparation-study-sources
           path: ${{ steps.sources.outputs.path }}
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
 
-  build-test:
-    needs: [detect, prepare-package-sources]
-    # Main pushes consume previously built archives in release-please; never rebuild/test.
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+  measure:
+    needs: sources
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        mode: [parallel, resolve-first, boot-first, resolve-only]
+        repetition: [1, 2]
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
@@ -135,188 +53,36 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Keep the bounded squash-group ancestry, not the entire repository history.
-          fetch-depth: 32
-      - name: Configure archive workspace
+          persist-credentials: false
+      - name: Configure experiment directories
         run: |
-          echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+          echo "STUDY_DIR=$RUNNER_TEMP/preparation-study" >> "$GITHUB_ENV"
           echo "IOS_PACKAGE_SOURCES_DIR=$RUNNER_TEMP/ios-package-sources" >> "$GITHUB_ENV"
-      - name: Restore native build caches
-        id: build-cache
+      - name: Restore the same locked source cache
+        id: cache
         uses: ./.github/actions/setup-ios-build-cache
-      - name: Receive locked source repositories
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ios-package-sources-${{ github.sha }}
+          restore-compilation: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: preparation-study-sources
           path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
-      - name: Configure locked package sources
+      - name: Configure the same local source mirrors as normal CI
         run: |
           mkdir -p "$RUNNER_TEMP/okou-ios-ci"
           python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
-          # Expose locked sources to Xcode's SCM helper on this ephemeral runner.
           printf '\n' >> "$HOME/.gitconfig"
           cat "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig" >> "$HOME/.gitconfig"
-      - name: Capture promotion inputs
-        run: |
-          mkdir "$IOS_ARCHIVE_DIR"
-          cp "${{ steps.build-cache.outputs.toolchain-file }}" "$IOS_ARCHIVE_DIR/toolchain.json"
-          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
-      - name: Classify the whole merge group
-        id: release-only
-        if: github.event_name == 'merge_group'
+      - name: Measure preparation on a fresh runner
         env:
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-        run: |
-          release_only=$(python3 ios/scripts/archive-promotion.py release-only --base "$MERGE_GROUP_BASE_SHA")
-          echo "release_only=$release_only" >> "$GITHUB_OUTPUT"
-      - name: Install AWS CLI
-        if: github.event_name == 'merge_group' && steps.release-only.outputs.release_only == 'true'
-        run: |
-          if ! command -v aws >/dev/null; then
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
-          fi
-          aws --version
-      - name: Resolve exact-input test evidence
-        id: evidence
-        if: github.event_name == 'merge_group'
-        env:
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
-        run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
-      - name: Check Swift formatting and property lists
-        run: |
-          xcodebuild -version
-          xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests
-          plutil -lint ios/Okou/Resources/Info.plist ios/Okou.xcodeproj/project.pbxproj
-      - name: Build app and run isolated simulator tests
-        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
-        run: bash ios/scripts/run-ci-tests.sh
-      - name: Record simulator inputs and test decision
-        if: github.event_name == 'merge_group'
-        run: |
-          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/test-inputs.json"
-          echo "${{ steps.evidence.outputs.run_tests }}" > "$IOS_ARCHIVE_DIR/ran-tests.txt"
-      - name: Transfer simulator inputs and evidence
-        if: github.event_name == 'merge_group'
+          STUDY_MODE: ${{ matrix.mode }}
+          STUDY_DEPENDENCY_HIT: ${{ steps.cache.outputs.dependencies-hit }}
+        run: python3 ops/ios-preparation-study.py "$STUDY_MODE"
+      - name: Retain source-timed measurements and stack samples
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
-          path: |
-            ${{ env.IOS_ARCHIVE_DIR }}/test-inputs.json
-            ${{ env.IOS_ARCHIVE_DIR }}/test-evidence.json
-            ${{ env.IOS_ARCHIVE_DIR }}/ran-tests.txt
+          name: preparation-study-${{ matrix.mode }}-${{ matrix.repetition }}
+          path: ${{ env.STUDY_DIR }}
           if-no-files-found: error
           retention-days: 7
-      - name: Upload failed test results
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ios-test-results-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/okou-ios-ci/*.xcresult
-          if-no-files-found: ignore
-          retention-days: 7
-
-  build-archive:
-    # Compile in parallel with simulator validation to stay inside the queue deadline.
-    needs: detect
-    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
-    runs-on: xcode-27
-    timeout-minutes: 15
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Configure archive workspace
-        run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
-      - name: Capture archive toolchain
-        run: |
-          mkdir "$IOS_ARCHIVE_DIR"
-          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
-      - name: Build unsigned device Release archive
-        run: |
-          bash ios/scripts/build-archive.sh
-          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
-      - name: Transfer unsigned archive and inputs
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
-          path: |
-            ${{ env.IOS_ARCHIVE_DIR }}/archive.tar.gz
-            ${{ env.IOS_ARCHIVE_DIR }}/archive-sha256.txt
-            ${{ env.IOS_ARCHIVE_DIR }}/inputs.json
-          if-no-files-found: error
-          retention-days: 7
-
-  publish-archive:
-    needs: [detect, script-checks, test-packages, build-test, build-archive]
-    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-      GH_TOKEN: ${{ github.token }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: auto
-      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Keep queue ancestry; older evidence commits are fetched by exact SHA.
-          fetch-depth: 32
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ios-promotion-${{ github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/okou-ios-promotion
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ios-tests-${{ github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/okou-ios-promotion
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ios-package-tests-${{ github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/okou-ios-promotion
-      - name: Publish immutable archive and readiness
-        run: |
-          aws --version
-          IOS_RAN_TESTS="$(<"$RUNNER_TEMP/okou-ios-promotion/ran-tests.txt")"
-          export IOS_RAN_TESTS
-          python3 ios/scripts/archive-promotion.py publish "$RUNNER_TEMP/okou-ios-promotion"
-
-  ci-gate-ios:
-    needs:
-      [
-        detect,
-        script-checks,
-        test-packages,
-        build-test,
-        build-archive,
-        publish-archive,
-      ]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: /ios/scripts/ci-gate.sh
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-      - name: Validate iOS check results
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          DETECT_RESULT: ${{ needs.detect.result }}
-          SCRIPT_CHECKS_RESULT: ${{ needs.script-checks.result }}
-          IOS_NEEDED: ${{ needs.detect.outputs.needed }}
-          PACKAGES_RESULT: ${{ needs.test-packages.result }}
-          BUILD_RESULT: ${{ needs.build-test.result }}
-          ARCHIVE_RESULT: ${{ needs.build-archive.result }}
-          PUBLISH_RESULT: ${{ needs.publish-archive.result }}
-        run: bash ios/scripts/ci-gate.sh
