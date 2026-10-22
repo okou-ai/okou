@@ -78,6 +78,7 @@ impl FrameStamp {
         self.generation.upgrade().is_some_and(|generation| {
             generation.live.load(Ordering::Acquire)
                 && generation.epoch.load(Ordering::Acquire) == self.epoch
+                && !self.bindings.is_empty()
                 && self
                     .bindings
                     .iter()
@@ -852,11 +853,14 @@ impl Peers {
         source: NodePublicKey,
         packet: PacketMut,
     ) -> Result<Option<Incoming>, Failure> {
-        if !self.peers.values().any(|peer| {
-            peer.identity.key == source
-                && peer.identity.tailnet == self.local.tailnet
-                && !peer.identity.expired()
-        }) {
+        // Control-plane membership alone does not own crypto or relay work.
+        // Reject inactive peers before they can create SDK handshake sessions.
+        if !self
+            .bindings
+            .iter()
+            .filter_map(|held| held.binding.upgrade())
+            .any(|binding| binding.identity.key == source && self.current(&binding).is_ok())
+        {
             return Ok(None);
         }
         self.observe_peer(source, super::evidence::Flow::LabelledInput, 1);
@@ -1045,59 +1049,65 @@ impl Peers {
             output.clear();
             return Err(Failure::Cancelled);
         }
-        let Some((_, endpoint, _)) = output.packets.front() else {
-            return Ok(None);
-        };
-        let destination = endpoint.as_derp().ok_or(Failure::DomainFailed)?;
-        let peer = self
-            .peers
-            .values()
-            .find(|peer| {
-                peer.identity.key == destination
-                    && peer.identity.tailnet == self.local.tailnet
-                    && !peer.identity.expired()
-            })
-            .ok_or(Failure::Cancelled)?;
-        let expires = [self.local.expires, peer.identity.expires]
-            .into_iter()
-            .flatten()
-            .min();
-        let bindings = self
-            .bindings
-            .iter()
-            .filter_map(|held| held.binding.upgrade())
-            .filter(|binding| binding.identity.key == destination && self.current(binding).is_ok())
-            .map(|binding| Arc::downgrade(&binding))
-            .collect::<Vec<_>>();
-        let cancelled = bindings
-            .iter()
-            .filter_map(Weak::upgrade)
-            .map(|binding| binding.cancelled())
-            .collect::<Vec<_>>();
-        let permit = output
-            .permit
-            .as_mut()
-            .and_then(|permit| permit.split(1))
-            .ok_or(Failure::DomainFailed)?;
-        let (_, _, bytes) = output.packets.pop_front().ok_or(Failure::DomainFailed)?;
-        Ok(Some(Outbound {
-            destination,
-            bytes,
-            permit,
-            stamp: FrameStamp {
-                diagnostics: self.diagnostics,
-                generation: Arc::downgrade(&self.generation),
-                epoch: self.frame_epoch,
-                expires,
-                node: self.local.key,
-                peer: destination,
-                bindings,
-                readers: [
-                    frame_watcher(self.frame_cancelled.clone(), expires, cancelled.clone()),
-                    frame_watcher(self.frame_cancelled.clone(), expires, cancelled),
-                ],
-            },
-        }))
+        while let Some((_, endpoint, bytes)) = output.packets.pop_front() {
+            let permit = output
+                .permit
+                .as_mut()
+                .and_then(|permit| permit.split(1))
+                .ok_or(Failure::DomainFailed)?;
+            let destination = endpoint.as_derp().ok_or(Failure::DomainFailed)?;
+            let peer = self
+                .peers
+                .values()
+                .find(|peer| {
+                    peer.identity.key == destination
+                        && peer.identity.tailnet == self.local.tailnet
+                        && !peer.identity.expired()
+                })
+                .ok_or(Failure::Cancelled)?;
+            let expires = [self.local.expires, peer.identity.expires]
+                .into_iter()
+                .flatten()
+                .min();
+            let bindings = self
+                .bindings
+                .iter()
+                .filter_map(|held| held.binding.upgrade())
+                .filter(|binding| {
+                    binding.identity.key == destination && self.current(binding).is_ok()
+                })
+                .map(|binding| Arc::downgrade(&binding))
+                .collect::<Vec<_>>();
+            if bindings.is_empty() {
+                // Release this packet's capacity and inspect the next frame;
+                // an inactive peer must not block another peer's live output.
+                continue;
+            }
+            let cancelled = bindings
+                .iter()
+                .filter_map(Weak::upgrade)
+                .map(|binding| binding.cancelled())
+                .collect::<Vec<_>>();
+            return Ok(Some(Outbound {
+                destination,
+                bytes,
+                permit,
+                stamp: FrameStamp {
+                    diagnostics: self.diagnostics,
+                    generation: Arc::downgrade(&self.generation),
+                    epoch: self.frame_epoch,
+                    expires,
+                    node: self.local.key,
+                    peer: destination,
+                    bindings,
+                    readers: [
+                        frame_watcher(self.frame_cancelled.clone(), expires, cancelled.clone()),
+                        frame_watcher(self.frame_cancelled.clone(), expires, cancelled),
+                    ],
+                },
+            }));
+        }
+        Ok(None)
     }
 
     /// Only immediate, nonblocking IO belongs in this callback. A queued/async
@@ -1245,6 +1255,7 @@ impl Peers {
                 .iter()
                 .any(|item| item.handle == handle && !item.retired)
             {
+                self.plane.ur_out.table.remove(&handle);
                 reset.insert(handle);
             }
         }

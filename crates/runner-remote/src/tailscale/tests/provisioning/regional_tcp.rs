@@ -198,40 +198,56 @@ impl Peers {
 
 #[tokio::test]
 async fn configured_regions_keep_original_b_tcp_after_a_partial_tls_writer_is_retired() {
-    independent_b(0).await;
+    independent_b(Scenario::PartialWriter).await;
 }
 
 #[tokio::test]
 async fn failed_peer_region_closes_only_a_and_keeps_original_b_tcp_and_home_relay() {
-    independent_b(1).await;
+    independent_b(Scenario::FailedPeer).await;
 }
 
 #[tokio::test]
 async fn authenticated_map_withdrawal_cuts_a_partial_regional_writer_and_preserves_original_b_tcp()
 {
-    independent_b(2).await;
+    independent_b(Scenario::WithdrawPeer).await;
 }
 
 #[tokio::test]
 async fn failed_home_region_physically_retires_both_established_tcp_flows_and_all_owned_io() {
-    independent_b(3).await;
+    independent_b(Scenario::FailedHome).await;
 }
 
 #[tokio::test]
 async fn authenticated_peer_server_change_drops_partial_old_tls_and_preserves_both_tcp_flows() {
-    independent_b(4).await;
+    independent_b(Scenario::ReplacePeer).await;
 }
 
 #[tokio::test]
 async fn authenticated_home_server_change_drops_partial_old_tls_and_preserves_both_tcp_flows() {
-    independent_b(5).await;
+    independent_b(Scenario::ReplaceHome).await;
 }
 
-async fn independent_b(retirement: u8) {
+#[tokio::test]
+async fn retired_peer_handshake_preserves_original_sibling_tcp_and_normal_node_logout() {
+    independent_b(Scenario::RetiredPeer).await;
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scenario {
+    PartialWriter,
+    FailedPeer,
+    WithdrawPeer,
+    FailedHome,
+    ReplacePeer,
+    ReplaceHome,
+    RetiredPeer,
+}
+
+async fn independent_b(scenario: Scenario) {
     let api = Api::secure(None).await;
     let home = Server::secure().await;
     let other = Server::secure().await;
-    let replacement = if retirement >= 4 {
+    let replacement = if matches!(scenario, Scenario::ReplacePeer | Scenario::ReplaceHome) {
         Some(Server::secure().await)
     } else {
         None
@@ -258,6 +274,12 @@ async fn independent_b(retirement: u8) {
         false,
     )
     .await;
+    if scenario == Scenario::RetiredPeer {
+        control.set_logout_reply(
+            hyper::StatusCode::OK,
+            br#"{"NodeKeyExpired":true}"#.to_vec(),
+        );
+    }
     let gates = [WriteGate::new(), WriteGate::new(), WriteGate::new()];
     let mut servers = vec![&home, &other];
     if let Some(replacement) = &replacement {
@@ -307,7 +329,7 @@ async fn independent_b(retirement: u8) {
             },
         ],
         sides: vec![
-            wire::DerpSide::new(a, client, 2),
+            wire::DerpSide::new(a.clone(), client, 2),
             wire::DerpSide::new(b, client, 3),
         ],
         // Region 1 is our home and B's home; region 2 is A's home.
@@ -366,8 +388,42 @@ async fn independent_b(retirement: u8) {
     // reconnect can open TCP on a reused loopback port without completing
     // TLS/DERP or replacing either original TCP flow.
     assert_eq!(descriptors.lock().unwrap().len(), 2);
+    if scenario == Scenario::RetiredPeer {
+        drop(ca);
+        // The actual regional TLS/raw socket closes only after Core retires A
+        // and removes its active route. B keeps the native node and home alive.
+        peers.finish(gates[1].destroyed()).await;
+        peers.services[0].enqueue(a.public, wire::initiation(a.clone(), client));
+        // The late initiation is ordered before B's replies on the same home
+        // connection. Original B's complete transfer proves native progress
+        // beyond that input, rather than merely waiting for a quiet interval.
+        tokio::select! { biased;
+            result = native.physical() => panic!(
+                "shared native node stopped after retired-peer input: {result:?}; evidence={}",
+                serde_json::to_value(source.evidence.layers().snapshot()).unwrap()
+            ),
+            _ = peers.transfer(&mut cb, &mut sb) => {}
+        }
+        assert!(source.evidence.layers().snapshot().unwrap().root.is_none());
+        assert_eq!(descriptors.lock().unwrap().len(), 2);
+        run.close();
+        bounded(native.physical()).await.unwrap();
+        bounded(run.shutdown_native()).await.unwrap();
+        bounded(gates[0].destroyed()).await;
+        assert_eq!(control.logout_count(), 1);
+        control.assert_control_closed();
+        dial.assert_closed(2);
+        api.assert_contract(1, 0);
+        api.finish().await;
+        control.finish().await;
+        return;
+    }
     if let Some(replacement) = replacement {
-        let index = if retirement == 5 { 0 } else { 1 };
+        let index = if scenario == Scenario::ReplaceHome {
+            0
+        } else {
+            1
+        };
         gates[index].pause_after(12);
         let bytes = b"server-authority-replacement";
         if index == 0 {
@@ -423,7 +479,7 @@ async fn independent_b(retirement: u8) {
         control.finish().await;
         return;
     }
-    if retirement == 3 {
+    if scenario == Scenario::FailedHome {
         // Both genuine TCP flows have transferred before the actual home TLS
         // socket disappears. Its single-use listener is gone; bounded owned
         // reconnects really fail rather than being injected into Root state.
@@ -457,7 +513,7 @@ async fn independent_b(retirement: u8) {
         control.finish().await;
         return;
     }
-    if retirement == 1 {
+    if scenario == Scenario::FailedPeer {
         // Close the actual external A-region TLS/raw socket. Its single-use
         // listener is gone, so owned reconnect attempts also genuinely fail.
         peers.services[1].frames.take();
@@ -473,7 +529,7 @@ async fn independent_b(retirement: u8) {
         gates[1].pause_after(12);
         ca.write_all(b"retired-region-A-bytes").await.unwrap();
         peers.finish(gates[1].pending()).await;
-        if retirement == 2 {
+        if scenario == Scenario::WithdrawPeer {
             // This travels through the real authenticated HTTP2/Noise map
             // stream. The fixture does not touch any application peer state.
             control
@@ -500,7 +556,7 @@ async fn independent_b(retirement: u8) {
         "original home/B relay was replaced"
     );
     assert!(peers.services.iter().all(|service| service.packets > 0));
-    if retirement != 1 {
+    if scenario != Scenario::FailedPeer {
         // Cancellation and map withdrawal must not start replacement IO.
         assert_eq!(
             descriptors.lock().unwrap().len(),
