@@ -42,6 +42,14 @@ the instruction-storage cleanup operator's native acceptance suite remain
 available as standalone commands. They are not prerequisites of schema
 consistency validation.
 
+`scripts/test-pi-memory-stage1-cost.ts` retains the current Stage 1 cost
+query and CLI contracts on isolated current-schema clones: the raw/hourly
+scale census, attribution dry-run output, exact large-integer cost, missing-price
+and billing-error counts, and scoped CLI report. Fixtures publish their
+billing anchors explicitly under current constraints. Its pre-D capture replay,
+1141/1142 transition and held-validation-lock probe are retired historical
+coverage; the script does not assert migration-lock compatibility.
+
 ## Historical transition validators
 
 - `scripts/test-vnc-native-network-storage.ts` preserves existing VNC rows,
