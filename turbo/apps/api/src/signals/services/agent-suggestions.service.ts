@@ -25,7 +25,7 @@ import { chatThreadOrganizationPredicate } from "./chat-thread-organization.serv
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { loadProactiveSuggestionsEligibility$ } from "./proactive-suggestions-eligibility.service";
+import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 
 interface Owner {
   readonly userId: string;
@@ -119,13 +119,12 @@ export const suggestionAccess$ = command(
         })
       ) {
         const preference = await set(
-          loadProactiveSuggestionsEligibility$,
+          loadProactiveWorkflowsEligibility$,
           auth,
           signal,
         );
         if (
-          !preference.available ||
-          !preference.enabled ||
+          !preference.suggestions.active ||
           preference.agentId !== run.agentId
         ) {
           return resourceUnavailable(

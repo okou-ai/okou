@@ -160,6 +160,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ProactiveAction]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Proactive action",
+    description:
+      "Let Okou take useful next steps hourly in a visible chat instead of generating proactive suggestions.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.BuiltinDocumentTemplates]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Built-in document templates",

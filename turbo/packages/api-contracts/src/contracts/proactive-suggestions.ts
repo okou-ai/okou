@@ -1,15 +1,12 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { proactivePreferenceSchema } from "./proactive";
 
 export const PROACTIVE_SUGGESTIONS_DEFINITION_NAME = "agent-suggestions";
 export const PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY = "hourly-check";
 
-const preferenceSchema = z.object({
-  enabled: z.boolean(),
-  status: z.enum(["preparing", "enabled", "paused", "error"]),
-  unavailableReason: z.enum(["missing-default-agent"]).nullable(),
-});
+const preferenceSchema = proactivePreferenceSchema;
 export type ProactiveSuggestionsPreference = z.infer<typeof preferenceSchema>;
 
 const c = initContract();

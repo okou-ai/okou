@@ -5463,9 +5463,19 @@
         "retryMessage": "Morning Brief settings could not be loaded or updated. Retry to continue.",
         "title": "Morning brief"
       },
+      "proactiveAction": {
+        "description": "Let Okou take the next step every hour and show its work in a Chat. Pauses proactive suggestions while enabled.",
+        "missingDefaultAgent": "Choose a usable default Agent to enable proactive actions.",
+        "preparationFailed": "Temporarily unavailable. Okou will retry automatically.",
+        "preparing": "Preparing hourly actions. You can turn this off at any time.",
+        "retry": "Retry",
+        "retryMessage": "Proactive action settings could not be loaded or updated. Retry to continue.",
+        "title": "Proactive action"
+      },
       "proactiveSuggestions": {
         "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
         "missingDefaultAgent": "Choose a usable default Agent to receive proactive suggestions.",
+        "pausedForAction": "Paused while Proactive action is on. Your preference is saved.",
         "preparationFailed": "Temporarily unavailable. Okou will retry automatically.",
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
         "retry": "Retry",
