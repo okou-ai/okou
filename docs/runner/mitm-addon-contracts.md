@@ -26,6 +26,12 @@ Retain exact version gates and real protocol coverage for necessary adaptations.
 Re-audit private integration when upgrading dependencies, and remove a bridge when
 a supported public API provides the required capability.
 
+The official pinned Linux standalone requires glibc 2.36 or newer on both host
+architectures. Establish that host prerequisite before deployment. Runner uses
+its own interception CA and explicitly selects the host system bundle for
+upstream verification; a bundled certifi update does not update host trust.
+The optional `emudhra` and `emudhra_old` signing modes remain disabled.
+
 ## Cooperative response inspection
 
 Model HTTP JSON inspectors, SSE scanners and opted-in connector parsers use
@@ -62,7 +68,7 @@ until consumed, but rejected expansion overshoot is released before yielding.
 This does not introduce a byte-exact Brotli allocation guarantee. This is not a
 lifetime row limit, a billing cutoff, or an alternate price/count fallback.
 
-The exact mitmproxy 12.2.3 compatibility bridge provides two ownership boundaries:
+The exact mitmproxy 12.3.0 compatibility bridge provides two ownership boundaries:
 it pauses the HTTP stream before its next body event, and joins the checkpoint's
 complete native hook task outside the connection event lock in the reader's
 `drain_writers()` boundary before the connection reads again. The native read loop
@@ -649,7 +655,7 @@ decoding. The log schema and terminal flow cleanup are unchanged. Old runners
 retain their previous embedded-addon policy until updated.
 
 Zstd request capture admits at most 128 KiB of retained compressed input before
-constructing its initial cross-frame reader or complete-frame validator. Empty
+constructing its initial cross-frame decoder or complete-frame validator. Empty
 frames produce no decoded bytes, so the decoded-output limit alone cannot bound
 that initial traversal. Larger inputs omit capture with the same `binary`
 failure representation, even when a decoded prefix could otherwise be retained.
@@ -658,6 +664,18 @@ frame overhead. Within it, the existing hard decoded-output limit, strict
 64-frame budget, malformed/truncated classifications, and bounded-prefix policy
 remain effective. Response capture and JSON-usage decoding keep their existing
 policies.
+
+Production zstd decoding uses `compression.zstd` on Python 3.14 and
+`backports.zstd` on the supported Python 3.12/3.13 source floor. Every
+`decompress` call supplies a positive `max_length`, bounded by both the remaining
+output allowance and 64 KiB. Buffered output is drained with empty input until
+`needs_input` permits another chunk. Prefix decoding feeds at most 1 KiB at a
+time, and strict validation feeds at most 32 bytes, bounding copied unused tails
+across frame transitions. Both prefix decoding for strict consumers and complete
+validation retain a 64-frame limit, including skippable frames. Prefix
+completion alone does not establish complete
+compressed input: capture and JSON usage retain their separate complete-frame
+validation and failure policies.
 
 These budgets bound repeated decoder construction and zstd compressed input;
 they are not general CPU deadlines for every compression pattern within a frame
@@ -964,7 +982,7 @@ diagnostic state without emitting a record.
 connection class is already installed, and rejects an unexpected unmarked
 mitmproxy connection class. `mitm_addon.load()` installs the adaptation through
 the [exact-version compatibility gate](../../crates/runner/mitm-addon/src/mitmproxy_compat.py)
-before registering addon options. The gate requires mitmproxy `12.2.3` and
+before registering addon options. The gate requires mitmproxy `12.3.0` and
 wsproto `1.3.2`; the [runner dependency contract](../../crates/runner/src/deps.rs)
 and the addon `pyproject.toml`/`uv.lock` keep those pins aligned.
 

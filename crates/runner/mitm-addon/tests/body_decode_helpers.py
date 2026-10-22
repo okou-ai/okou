@@ -3,7 +3,13 @@
 import zlib
 
 import brotli
-import zstandard
+
+import body_decoding
+
+
+def zstd_skippable_frame(data: bytes = b"") -> bytes:
+    """Encode an RFC 8878 skippable frame independently of the decoder."""
+    return b"\x50\x2a\x4d\x18" + len(data).to_bytes(4, "little") + data
 
 
 def track_zlib_decompressor(
@@ -73,48 +79,49 @@ def track_zlib_decompressor(
     return stats
 
 
-def track_zstd_reader(monkeypatch, max_output: int) -> dict[str, int]:
-    """Track initial input and enforce an output budget while retaining real decoding."""
-    real_factory = zstandard.ZstdDecompressor
+def track_zstd_decompressor(monkeypatch, max_output: int) -> dict[str, int]:
+    """Retain real codec work and verify every allocation request is bounded."""
+    real_factory = body_decoding.zstd.ZstdDecompressor
     stats = {
-        "max_read": 0,
+        "max_output_request": 0,
         "output_bytes": 0,
-        "readers": 0,
+        "objects": 0,
         "input_bytes": 0,
-        "validation_objects": 0,
+        "max_input": 0,
     }
 
-    class BoundedReader:
-        def __init__(self, wrapped):
-            self._wrapped = wrapped
+    class NonConcatenableUnusedData(bytes):
+        def __add__(self, _other: object) -> bytes:
+            raise TypeError("zstd unused data must not be concatenated")
 
-        def __enter__(self):
-            self._wrapped.__enter__()
-            return self
+    class TrackingDecompressor:
+        def __init__(self):
+            stats["objects"] += 1
+            self._wrapped = real_factory()
 
-        def __exit__(self, exc_type, exc_value, traceback):
-            return self._wrapped.__exit__(exc_type, exc_value, traceback)
-
-        def read(self, size: int = -1) -> bytes:
-            assert size >= 0, "zstd read must be bounded"
-            assert size <= max_output - stats["output_bytes"], "zstd read exceeds output budget"
-            stats["max_read"] = max(stats["max_read"], size)
-            output = self._wrapped.read(size)
-            assert len(output) <= size
+        def decompress(self, data, max_length=-1):
+            assert 0 < max_length <= max_output, "zstd output allocation must be bounded"
+            stats["input_bytes"] += len(data)
+            stats["max_input"] = max(stats["max_input"], len(data))
+            stats["max_output_request"] = max(stats["max_output_request"], max_length)
+            output = self._wrapped.decompress(data, max_length=max_length)
+            assert len(output) <= max_length
             stats["output_bytes"] += len(output)
             return output
 
-    class TrackingDecompressor:
-        def stream_reader(self, data, *args, **kwargs):
-            stats["readers"] += 1
-            stats["input_bytes"] += len(data)
-            return BoundedReader(real_factory().stream_reader(data, *args, **kwargs))
+        @property
+        def needs_input(self):
+            return self._wrapped.needs_input
 
-        def decompressobj(self, *args, **kwargs):
-            stats["validation_objects"] += 1
-            return real_factory().decompressobj(*args, **kwargs)
+        @property
+        def eof(self):
+            return self._wrapped.eof
 
-    monkeypatch.setattr("body_decoding.zstandard.ZstdDecompressor", TrackingDecompressor)
+        @property
+        def unused_data(self):
+            return NonConcatenableUnusedData(self._wrapped.unused_data)
+
+    monkeypatch.setattr("body_decoding.zstd.ZstdDecompressor", TrackingDecompressor)
     return stats
 
 

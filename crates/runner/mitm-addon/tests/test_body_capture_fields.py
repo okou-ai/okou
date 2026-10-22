@@ -10,7 +10,7 @@ import zstandard
 
 from body_capture import add_capture_fields
 from body_limits import BODY_CAPTURE_LIMIT
-from tests.body_decode_helpers import pseudo_random_ascii
+from tests.body_decode_helpers import pseudo_random_ascii, track_zstd_decompressor
 
 
 def _track_zlib_max_input(monkeypatch) -> dict[str, int]:
@@ -37,34 +37,6 @@ def _track_zlib_max_input(monkeypatch) -> dict[str, int]:
         return TrackingDecompressionObj(real_factory(*args, **kwargs))
 
     monkeypatch.setattr("body_decoding.zlib.decompressobj", factory)
-    return stats
-
-
-def _track_zstd_max_read(monkeypatch) -> dict[str, int]:
-    real_factory = zstandard.ZstdDecompressor
-    stats = {"max_read": 0, "read_across_frames": 0}
-
-    class TrackingReader:
-        def __init__(self, wrapped):
-            self._wrapped = wrapped
-
-        def __enter__(self):
-            self._wrapped.__enter__()
-            return self
-
-        def __exit__(self, exc_type, exc_value, traceback):
-            return self._wrapped.__exit__(exc_type, exc_value, traceback)
-
-        def read(self, size=-1):
-            stats["max_read"] = max(stats["max_read"], size)
-            return self._wrapped.read(size)
-
-    class TrackingDecompressor:
-        def stream_reader(self, *args, **kwargs):
-            stats["read_across_frames"] = int(kwargs.get("read_across_frames") is True)
-            return TrackingReader(real_factory().stream_reader(*args, **kwargs))
-
-    monkeypatch.setattr("body_decoding.zstandard.ZstdDecompressor", TrackingDecompressor)
     return stats
 
 
@@ -547,7 +519,7 @@ class TestAddCaptureFields:
 
     def test_response_zstd_zip_bomb_bounds_decoded_output(self, real_flow, monkeypatch):
         compressed = zstandard.ZstdCompressor().compress(b"x" * (BODY_CAPTURE_LIMIT * 4))
-        stats = _track_zstd_max_read(monkeypatch)
+        stats = track_zstd_decompressor(monkeypatch, BODY_CAPTURE_LIMIT + 1)
         flow = real_flow(
             method="POST",
             host="api.example.com",
@@ -561,10 +533,8 @@ class TestAddCaptureFields:
 
         assert entry["response_body_truncated"] is True
         assert len(entry["response_body"]) == BODY_CAPTURE_LIMIT
-        assert stats == {
-            "max_read": BODY_CAPTURE_LIMIT + 1,
-            "read_across_frames": 1,
-        }
+        assert 0 < stats["max_output_request"] <= BODY_CAPTURE_LIMIT + 1
+        assert stats["output_bytes"] == BODY_CAPTURE_LIMIT + 1
 
     def test_request_decompression_error_marks_body_binary(self, real_flow):
         # Request capture decodes the captured stream buffer or raw_content with the

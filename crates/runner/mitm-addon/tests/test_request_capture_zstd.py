@@ -12,7 +12,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 from body_limits import BODY_CAPTURE_LIMIT
 from tests.aws_sigv4_helpers import RESOLVED_AWS_ACCESS_KEY_ID
-from tests.body_decode_helpers import track_zstd_reader
+from tests.body_decode_helpers import track_zstd_decompressor
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.test_request_handler_aws_sigv4_body import (
     _header_auth_flow,
@@ -62,22 +62,20 @@ async def test_buffered_sigv4_request_capture_bounds_initial_zstd_work(
         assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
         assert aws_sigv4_body_admission.state_for_tests() == (1, len(body))
 
-        stats = track_zstd_reader(monkeypatch, max_output=BODY_CAPTURE_LIMIT + 2)
+        stats = track_zstd_decompressor(monkeypatch, max_output=BODY_CAPTURE_LIMIT + 2)
         flow.response = http.Response.make(400, b"synthetic upstream rejection")
         assert mitm_addon.response(flow) is None
 
     get_headers.assert_awaited_once()
-    # Count bytes offered to the initial native reader, not just the later
-    # validator's already-bounded decoder construction. Oversized capture must
-    # stop before either pass; the small control retains real codec execution.
+    # Oversized capture must stop before either decoding pass. The admitted
+    # control retains real decoding, with bounded input and output allocations.
     if capture_body and not many_frames:
-        assert stats["readers"] == 1
-        assert stats["input_bytes"] == len(body)
-        assert stats["validation_objects"] == 64
+        assert stats["objects"] <= 128
+        assert stats["input_bytes"] <= 2 * len(body) + stats["objects"] * 1024
+        assert 0 < stats["max_input"] <= 1024
     else:
-        assert stats["readers"] == 0
+        assert stats["objects"] == 0
         assert stats["input_bytes"] == 0
-        assert stats["validation_objects"] == 0
     assert flow.request.raw_content == body
     assert flow.request.headers["Content-Encoding"] == "zstd"
     assert flow.response.status_code == 400

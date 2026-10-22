@@ -34,7 +34,7 @@ import websocket_retention
 # the runner artifact and Python test dependency. Re-audit the private
 # imports, generators, and WebSocket extension behavior before accepting
 # another version.
-_SUPPORTED_MITMPROXY_VERSION = "12.2.3"
+_SUPPORTED_MITMPROXY_VERSION = "12.3.0"
 _SUPPORTED_WSPROTO_VERSION = "1.3.2"
 _BRIDGE_MARKER_ATTRIBUTE = "_request_end_stream_bridge"
 _REQUEST_END_STREAM_METADATA = "_request_end_stream"
@@ -181,7 +181,7 @@ def _install_request_end_stream_bridge() -> None:
 def _install_response_inspection_bridge() -> None:
     """Pause the stream AND its connection reader, outside the event lock.
 
-    In 12.2.3, handle_connection catches cancellation in drain_writers, but not
+    In 12.3.0, handle_connection catches cancellation in drain_writers, but not
     in DataReceived dispatch. Join reader checkpoints in that native boundary
     so cancellation still closes the connection and completes its HTTP flows.
     A hook alone does not backpressure those reads. Join the complete hook task

@@ -19,8 +19,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import zstandard
 
 from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
+from tests.body_decode_helpers import zstd_skippable_frame
 from tests.control_helpers import (
     control_connection,
     exchange,
@@ -279,7 +281,8 @@ def test_packaged_registry_receipt_matches_catalog_and_http_enforcement(tmp_path
             proxy.close()
 
 
-def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_path):
+@pytest.mark.parametrize("encoding", ["identity", "zstd"])
+def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_path, encoding):
     api = UsageWebhookServer()
     release = threading.Event()
     api.queue_response(
@@ -287,25 +290,35 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
         headers=[("Content-Type", "application/json")],
         body=json.dumps(firewall_auth_success_response({}, expires_at=time.time() + 3600)).encode(),
     )
+    payload = json.dumps(
+        {
+            "id": "resp_control",
+            "object": "response",
+            "model": "gpt-5.5",
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "synthetic response"}],
+                }
+            ],
+            "usage": {"input_tokens": 5, "output_tokens": 3},
+        }
+    ).encode()
+    wire_body = payload
+    if encoding == "zstd":
+        compressor = zstandard.ZstdCompressor(write_content_size=False)
+        split = len(payload) // 2
+        wire_body = (
+            compressor.compress(payload[:split])
+            + zstd_skippable_frame(b"synthetic metadata")
+            + compressor.compress(payload[split:])
+        )
     api.queue_response(
         200,
-        headers=[("Content-Type", "application/json")],
-        body=json.dumps(
-            {
-                "id": "resp_control",
-                "object": "response",
-                "model": "gpt-5.5",
-                "status": "completed",
-                "output": [
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": "synthetic response"}],
-                    }
-                ],
-                "usage": {"input_tokens": 5, "output_tokens": 3},
-            }
-        ).encode(),
+        headers=[("Content-Type", "application/json"), ("Content-Encoding", encoding)],
+        body=wire_body,
     )
     api.queue_response(400, release_event=release)
     with api.run(), launch(tmp_path, "generation-1", api_url=api.api_url) as (directory, port):
@@ -319,6 +332,7 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                         "127.0.0.1": {
                             "runId": run_id,
                             "cliAgentType": "codex",
+                            "captureNetworkBodies": True,
                             "sandboxToken": "synthetic-run-token",
                             "encryptedSecrets": "synthetic-ciphertext",
                             "modelUsageProvider": "gpt-5.5",
@@ -367,6 +381,25 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
             response = proxy.getresponse()
             body = response.read()
             assert response.status == 200, body
+            assert body == wire_body
+            # Buffered JSON inspection may finish after all wire bytes arrive.
+            # Observe terminal ownership through control before waking delivery.
+            deadline = time.monotonic() + 3
+            while True:
+                observed = result_data(
+                    exchange(
+                        directory,
+                        status_request()
+                        | {
+                            "method": "usage.snapshot",
+                            "params": {"runId": run_id},
+                        },
+                    )
+                )
+                assert observed["state"] == "available"
+                if observed["outstandingResponses"] == 0:
+                    break
+                assert time.monotonic() < deadline, observed
             flush = status_request() | {"method": "delivery.flush"}
             assert result_data(exchange(directory, flush))["state"] == "admitted"
             assert api.wait_for_request_count(3)
@@ -378,17 +411,6 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                 exchange(directory, status_request() | {"method": "delivery.status"})
             )
             assert state["reports"] == 1
-            observed = result_data(
-                exchange(
-                    directory,
-                    status_request()
-                    | {
-                        "method": "usage.snapshot",
-                        "params": {"runId": run_id},
-                    },
-                )
-            )
-            assert observed["state"] == "available"
             assert observed["totals"]["total"] == 8
             assert observed["observedResponses"] == 1
             assert observed["outstandingResponses"] == 0
@@ -399,9 +421,13 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                 result_data(exchange(directory, log_flush_request(log_path, run_id)))["state"]
                 == "processed"
             )
-            assert any(
-                json.loads(line).get("status") == 200 for line in log_path.read_text().splitlines()
-            )
+            [entry] = [
+                entry
+                for line in log_path.read_text().splitlines()
+                if (entry := json.loads(line)).get("status") == 200
+            ]
+            assert entry["response_body"] == payload.decode()
+            assert entry["response_body_encoding"] == "utf-8"
             # Publication/application and enforcement still progress before API delivery returns.
             path.write_text(json.dumps({"sandboxes": {}, "updatedAt": 2}))
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
