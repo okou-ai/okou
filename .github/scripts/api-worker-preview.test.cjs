@@ -1,9 +1,11 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
+const childProcess = require("node:child_process");
 const {
   packSecrets,
   parseEnvironment,
   request,
+  command,
 } = require("./api-worker-preview.cjs");
 
 test("encrypted environment chunks preserve multibyte values and stay below the per-secret limit", () => {
@@ -33,6 +35,27 @@ test("resolver literal environment records preserve multiline credentials and eq
     TOKEN: "a=b=c",
     EMPTY: "",
   });
+});
+
+test("deployment failures expose numeric diagnostics without printing credentials or provider messages", (t) => {
+  const secret = "postgres://secret:password@database";
+  t.mock.method(childProcess, "spawnSync", () => ({
+    status: 1,
+    stdout: Buffer.from(`runtime configuration: ${secret}`),
+    stderr: Buffer.from(
+      `Uncaught TypeError: ${secret}\n at worker.js:12:345 [code: 10021]\nAuthorization: Bearer secret-value`,
+    ),
+  }));
+  assert.throws(
+    () => command("Deploy API Worker preview", [], {}, process.cwd()),
+    (error) => {
+      assert.equal(
+        error.message,
+        "Deploy API Worker preview failed (Cloudflare code 10021; startup TypeError; worker.js:12:345) (output withheld to protect credentials)",
+      );
+      return true;
+    },
+  );
 });
 
 test("control-plane failures never expose provider response bodies or native credential-bearing errors", async (t) => {

@@ -114,6 +114,30 @@ async function request(base, token, method, route, body, allowMissing = false) {
   }
 }
 
+// Emit only fixed classifications and bounded numeric metadata. Raw diagnostics
+// can include database URLs, SQL, runtime secrets, or provider response bodies.
+function commandDiagnostics(result) {
+  const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  const details = new Set();
+  for (const match of output.matchAll(/\[code:\s*(\d{1,8})\]/g)) {
+    details.add(`Cloudflare code ${match[1]}`);
+    if (details.size === 3) break;
+  }
+  const exception = output.match(
+    /\bUncaught (TypeError|ReferenceError|SyntaxError|RangeError|Error)\b/,
+  );
+  if (exception) details.add(`startup ${exception[1]}`);
+  for (const match of output.matchAll(/\bworker\.js:(\d{1,8}):(\d{1,8})\b/g)) {
+    details.add(`worker.js:${match[1]}:${match[2]}`);
+    if (details.size >= 8) break;
+  }
+  if (output.includes("exceeded the size limit"))
+    details.add("Worker size limit exceeded");
+  if (output.includes("startup time limit"))
+    details.add("Worker startup time limit exceeded");
+  return [...details].join("; ");
+}
+
 function command(label, args, env, cwd) {
   console.log(label);
   const result = childProcess.spawnSync("pnpm", args, {
@@ -125,8 +149,12 @@ function command(label, args, env, cwd) {
   });
   // Migration/Wrangler diagnostics can echo URLs, SQL parameters or secret files.
   // Do not print raw subprocess diagnostics, including on failure.
-  if (result.error || result.status !== 0)
-    throw new Error(`${label} failed (output withheld to protect credentials)`);
+  if (result.error || result.status !== 0) {
+    const diagnostics = commandDiagnostics(result);
+    throw new Error(
+      `${label} failed${diagnostics ? ` (${diagnostics})` : ""} (output withheld to protect credentials)`,
+    );
+  }
 }
 
 async function main(mode) {
@@ -378,7 +406,14 @@ async function main(mode) {
   }
 }
 
-module.exports = { identities, parseEnvironment, packSecrets, request, main };
+module.exports = {
+  identities,
+  parseEnvironment,
+  packSecrets,
+  request,
+  command,
+  main,
+};
 if (require.main === module) {
   main(process.argv[2])
     .catch((error) => {
