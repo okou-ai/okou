@@ -1,7 +1,11 @@
 use std::io::Write;
 use std::net::Shutdown;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use guest_control_proto::{
     GuestDnsReadinessTermination, MSG_GUEST_DNS_READINESS, MSG_GUEST_DNS_READINESS_RESULT,
@@ -47,6 +51,31 @@ fn read_result(stream: &mut impl std::io::Read, seq: u32) -> TestResult {
 
 fn slow_program(pid_path: &Path) -> String {
     format!("printf '%s' \"$$\" > '{}'; sleep 60", pid_path.display())
+}
+
+fn start_with_timeout_gate(
+    program: PathBuf,
+) -> (
+    thread::JoinHandle<std::io::Result<()>>,
+    UnixStream,
+    mpsc::Receiver<u32>,
+) {
+    let (timeout_tx, timeout_rx) = mpsc::sync_channel(0);
+    let (guest, mut host) = UnixStream::pair().unwrap();
+    let handle = thread::spawn(move || {
+        guest_control_server::handle_connection_with_test_dns_readiness_timeout_gate(
+            guest, program, timeout_tx,
+        )
+    });
+    read_guest_ready(&mut host);
+    (handle, host, timeout_rx)
+}
+
+fn assert_helper_reaped(pid: u32) {
+    assert!(
+        !Path::new(&format!("/proc/{pid}")).exists(),
+        "guest DNS readiness helper {pid} must be reaped before completion"
+    );
 }
 
 #[test]
@@ -126,17 +155,74 @@ head -c 1100 /dev/zero | tr '\000' x
 fn guest_dns_readiness_timeout_kills_and_reaps_process_group() {
     let pid_path = unique_pid_path("dns-readiness-timeout");
     let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
-    let (_directory, program) = create_program(&slow_program(Path::new(pid_path.as_str())));
-    let (handle, mut host_stream) = start_guest_connection_with_dns_readiness_program(program);
+    let (_directory, program) = create_program(&format!(
+        "sleep 60 & printf '%s' \"$$\" > '{}'; wait",
+        pid_path.as_str()
+    ));
+    let (handle, mut host_stream, timeout_gate) = start_with_timeout_gate(program);
 
     send_request(&mut host_stream, 304, 20, "timeout.invalid");
     let pid = process_guard.read_pid();
+    assert_eq!(
+        timeout_gate.recv_timeout(Duration::from_secs(3)).unwrap(),
+        pid
+    );
     let result = read_result(&mut host_stream, 304);
 
     assert_eq!(result.termination, GuestDnsReadinessTermination::TimedOut);
     wait_for_pid_exit(pid, "guest DNS readiness timeout");
+    assert_helper_reaped(pid);
     process_guard.disarm();
     finish_guest_connection(handle, host_stream);
+}
+
+#[test]
+fn guest_dns_readiness_timeout_before_helper_readiness_kills_and_reaps_process_group() {
+    let pid_path = unique_pid_path("dns-readiness-not-ready");
+    let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
+    let fifo = unique_tmp_path("dns-readiness-not-ready", ".fifo");
+    let (_directory, program) = create_program(&format!(
+        "mkfifo '{}'; read -r ready < '{}'; {}",
+        fifo.as_str(),
+        fifo.as_str(),
+        slow_program(Path::new(pid_path.as_str()))
+    ));
+    let (handle, mut host_stream, timeout_gate) = start_with_timeout_gate(program);
+
+    send_request(&mut host_stream, 313, 20, "not-ready.invalid");
+    // No FIFO writer exists, so the helper cannot publish readiness even if
+    // scheduled immediately. Observe the owned PID independently of its body.
+    let pid = timeout_gate.recv_timeout(Duration::from_secs(3)).unwrap();
+    process_guard.observe_pid(pid);
+    let result = read_result(&mut host_stream, 313);
+
+    assert_eq!(result.termination, GuestDnsReadinessTermination::TimedOut);
+    assert!(!Path::new(pid_path.as_str()).exists());
+    wait_for_pid_exit(pid, "guest DNS readiness timeout before helper readiness");
+    assert_helper_reaped(pid);
+    process_guard.disarm();
+    finish_guest_connection(handle, host_stream);
+}
+
+#[test]
+fn guest_dns_readiness_abandoned_timeout_gate_allows_connection_cleanup() {
+    let pid_path = unique_pid_path("dns-readiness-abandoned-gate");
+    let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
+    let (_directory, program) = create_program(&format!(
+        "sleep 60 & printf '%s' \"$$\" > '{}'; wait",
+        pid_path.as_str()
+    ));
+    let (handle, mut host_stream, timeout_gate) = start_with_timeout_gate(program);
+
+    send_request(&mut host_stream, 314, 60_000, "abandoned.invalid");
+    let pid = process_guard.read_pid();
+    drop(timeout_gate);
+    drop(host_stream);
+    join_guest_connection(handle);
+
+    wait_for_pid_exit(pid, "abandoned guest DNS readiness timeout gate");
+    assert_helper_reaped(pid);
+    process_guard.disarm();
 }
 
 #[test]
