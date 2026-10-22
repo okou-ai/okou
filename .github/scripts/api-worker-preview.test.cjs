@@ -43,11 +43,19 @@ test("control-plane failures never expose provider response bodies or native cre
     async () => new Response(secret, { status: 400 }),
   );
   await assert.rejects(
-    request("https://example.invalid", secret, "POST", "/configs", {
-      password: secret,
-    }),
+    request(
+      "https://example.invalid",
+      secret,
+      "POST",
+      `/configs?token=${secret}`,
+      {
+        password: secret,
+      },
+    ),
     (error) =>
-      !error.message.includes(secret) && error.message.includes("HTTP 400"),
+      !error.message.includes(secret) &&
+      error.message.includes("example.invalid POST /configs") &&
+      error.message.includes("HTTP 400"),
   );
   globalThis.fetch = async () => {
     throw new globalThis.Error(secret);

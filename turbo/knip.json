@@ -32,7 +32,7 @@
         "src/signals/routes/__tests__/runners-competing-claims.native.ts"
       ],
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["clerk"],
+      "ignoreDependencies": ["clerk", "cloudflare"],
       "ignoreBinaries": ["openssl"]
     },
     "apps/platform": {

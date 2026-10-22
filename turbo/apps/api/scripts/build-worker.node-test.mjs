@@ -26,7 +26,7 @@ const { outputFiles } = await build({
 });
 const runtimeRequire = createRequire(import.meta.url);
 function load(forceNative = false) {
-  const module = { exports: {} };
+  const commonJsModule = { exports: {} };
   // Isolate pg's native-selection input without changing the test process env.
   const runtimeProcess = {
     ...process,
@@ -34,11 +34,11 @@ function load(forceNative = false) {
   };
   new Function("require", "module", "exports", "process", outputFiles[0].text)(
     runtimeRequire,
-    module,
-    module.exports,
+    commonJsModule,
+    commonJsModule.exports,
     runtimeProcess,
   );
-  return module.exports;
+  return commonJsModule.exports;
 }
 
 test("Worker pg shim preserves real JS client initialization without connecting", () => {

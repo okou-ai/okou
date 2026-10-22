@@ -82,6 +82,9 @@ function packSecrets(runtime) {
 }
 
 async function request(base, token, method, route, body, allowMissing = false) {
+  // Routes are internally constructed resource paths. Exclude query strings,
+  // bodies, headers and provider messages while preserving the failed operation.
+  const operation = `${new URL(base).hostname} ${method} ${route.split(/[?#]/u)[0]}`;
   let response;
   try {
     response = await fetch(`${base}${route}`, {
@@ -96,12 +99,14 @@ async function request(base, token, method, route, body, allowMissing = false) {
   } catch {
     // Native fetch errors and provider responses may contain request credentials.
     throw new Error(
-      `Control-plane ${method} failed; outcome may be uncertain, not retried`,
+      `Control-plane ${operation} failed; outcome may be uncertain, not retried`,
     );
   }
   if (allowMissing && response.status === 404) return null;
   if (!response.ok)
-    throw new Error(`Control-plane ${method} failed (HTTP ${response.status})`);
+    throw new Error(
+      `Control-plane ${operation} failed (HTTP ${response.status})`,
+    );
   try {
     return await response.json();
   } catch {
