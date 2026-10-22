@@ -1,8 +1,6 @@
 import { command } from "ccstate";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
-import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
 import { setResHeader$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
@@ -20,39 +18,30 @@ const noStore$ = command(({ set }) => {
   set(setResHeader$, "Referrer-Policy", "no-referrer");
 });
 
-function imageResponse(bytes: Buffer | null, variant?: "slack"): Response {
-  if (bytes === null) {
+function imageResponse(url: string | null): Response {
+  if (url === null) {
     return new Response(null, {
       status: 302,
       headers: {
-        Location:
-          variant === "slack"
-            ? r2ImageTransformUrl(ARTIFACT_OG_BRAND.imageUrl, {
-                height: SLACK_PREVIEW_IMAGE_HEIGHT,
-              })
-            : ARTIFACT_OG_BRAND.imageUrl,
+        Location: ARTIFACT_OG_BRAND.imageUrl,
       },
     });
   }
-  return new Response(new Uint8Array(bytes), {
-    headers: { "Content-Type": "image/png" },
-  });
+  return new Response(null, { status: 302, headers: { Location: url } });
 }
 
 export const artifactOgRoutes: readonly RouteEntry[] = [
   {
     route: artifactOgContract.slackImage,
-    handler: command(async ({ get, set }, signal: AbortSignal) => {
+    handler: command(({ get, set }, signal: AbortSignal) => {
       set(noStore$);
-      const bytes = await set(
+      const url = set(
         slackPreviewImage$,
         get(queryOf(artifactOgContract.slackImage)),
         signal,
       );
-      return bytes
-        ? new Response(new Uint8Array(bytes), {
-            headers: { "Content-Type": "image/png" },
-          })
+      return url
+        ? new Response(null, { status: 302, headers: { Location: url } })
         : new Response(null, { status: 403 });
     }),
   },
@@ -65,6 +54,7 @@ export const artifactOgRoutes: readonly RouteEntry[] = [
         body: await set(
           artifactOgMetadata$,
           get(queryOf(artifactOgContract.metadata)),
+          undefined,
           signal,
         ),
       };
@@ -75,14 +65,8 @@ export const artifactOgRoutes: readonly RouteEntry[] = [
     handler: command(async ({ get, set }, signal: AbortSignal) => {
       set(noStore$);
       const query = get(queryOf(artifactOgContract.image));
-      const bytes = await set(
-        artifactOgImage$,
-        query,
-        query.version,
-        query.variant,
-        signal,
-      );
-      return imageResponse(bytes, query.variant);
+      const url = await set(artifactOgImage$, query, query.version, signal);
+      return imageResponse(url);
     }),
   },
   {

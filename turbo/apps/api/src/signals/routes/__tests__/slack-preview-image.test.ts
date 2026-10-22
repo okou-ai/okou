@@ -1,8 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { escapeAttribute } from "entities/escape";
 import { http, HttpResponse } from "msw";
-import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -23,7 +22,6 @@ const integrations = createBddIntegrationApi(context);
 const imageClient = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
   artifactOgContract,
 );
-const maxBytes = 5 * 1024 * 1024;
 const authorSlackUserId = "U_THUMBNAIL_SHARER";
 
 async function fixture() {
@@ -109,10 +107,19 @@ async function previewUrls(teamId: string, sources: readonly string[]) {
   });
 }
 
-function readImage(url: URL | null | undefined) {
+function signedSource(url: URL | null | undefined) {
   if (!url) {
-    throw new Error("Expected a signed thumbnail URL");
+    throw new Error("Expected a transformed image URL");
   }
+  expect(url.origin).toBe(env("OKOU_PUBLIC_ARTIFACTS_BASE_URL"));
+  expect(url.pathname).toContain(
+    "/cdn-cgi/image/width=320,height=112,fit=scale-down,format=auto,quality=85,metadata=none/",
+  );
+  expect(url.href.length).toBeLessThanOrEqual(3000);
+  return new URL(url.href.split("metadata=none/")[1]!);
+}
+
+function readImage(url: URL) {
   expect(url.origin).toBe(
     new URL(z.string().parse(env("OKOU_API_BACKEND_URL"))).origin,
   );
@@ -125,170 +132,104 @@ function readImage(url: URL | null | undefined) {
   });
 }
 
-async function expectEmptyImage(url: URL | null | undefined) {
-  const response = await accept(readImage(url), [200]);
-  expect(response.headers.get("location")).toBeNull();
-  const bytes = Buffer.from(await response.body.arrayBuffer());
-  const decoded = await sharp(bytes)
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  expect(decoded.info).toMatchObject({ width: 1, height: 1, channels: 4 });
-  expect([...decoded.data]).toStrictEqual([0, 0, 0, 0]);
-}
-
-async function png(width: number, height: number) {
-  return await sharp({
-    create: { width, height, channels: 4, background: "red" },
-  })
-    .png()
-    .toBuffer();
-}
-
-describe("Slack preview thumbnails", () => {
-  it("fits every aspect ratio inside 320 by 112 pixels without enlarging small images", async () => {
+describe("Slack preview image URLs", () => {
+  it("delivers a direct transformation URL whose signed source redirects to the literal original", async () => {
     const f = await fixture();
-    const cases = [
-      { width: 1280, height: 640, output: [224, 112] },
-      { width: 1200, height: 120, output: [320, 32] },
-      { width: 120, height: 960, output: [14, 112] },
-      { width: 24, height: 12, output: [24, 12] },
-    ];
-    const origins = [
-      "https://images.example.com",
-      "http://10.0.0.1",
-      "http://[fd00::1]",
-      "https://internal.local",
-    ];
-    const sources = origins.map((origin, index) => {
-      return `${origin}/${index}.png`;
-    });
-    const requests: Request[] = [];
-    for (const [index, dimensions] of cases.entries()) {
-      const bytes = await png(dimensions.width, dimensions.height);
-      server.use(
-        http.get(new RegExp(`/${index}\\.png$`, "u"), ({ request }) => {
-          expect(request.url).toBe(sources[index]);
-          requests.push(request);
-          return new HttpResponse(new Uint8Array(bytes), {
-            headers: { "content-type": "image/png" },
-          });
-        }),
-      );
-    }
-    const urls = await previewUrls(f.teamId, sources);
-    for (const [index, url] of urls.entries()) {
-      const response = await accept(readImage(url), [200]);
-      expect(response.headers.get("content-type")).toBe("image/png");
-      expect(response.headers.get("cache-control")).toBe("private, no-store");
-      const bytes = Buffer.from(await response.body.arrayBuffer());
-      const decoded = await sharp(bytes)
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      expect([decoded.info.width, decoded.info.height]).toStrictEqual(
-        cases[index]!.output,
-      );
-      expect(bytes.length).toBeLessThanOrEqual(maxBytes);
-    }
-    expect(requests).toHaveLength(cases.length);
-    for (const request of requests) {
-      expect(request.headers.get("authorization")).toBeNull();
-      expect(request.headers.get("cookie")).toBeNull();
-      expect(request.headers.get("accept-encoding")).toBe("identity");
-    }
+    const source =
+      "https://images.example.com/original?token=a%2Fb%2Bc&size=large";
+    const [url] = await previewUrls(f.teamId, [source]);
+    const adapter = signedSource(url);
+    expect(adapter.searchParams.get("url")).toBe(source);
+    const response = await accept(readImage(adapter), [302]);
+    expect(response.headers.get("location")).toBe(source);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("cdn-cache-control")).toBe("no-store");
+    expect(response.headers.get("cloudflare-cdn-cache-control")).toBe(
+      "no-store",
+    );
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
 
-  it("bounds declared and streamed bytes, input pixels and invalid image formats", async () => {
+  it("uses the existing policy-gated thumbnail URL for first-party file grants", async () => {
     const f = await fixture();
-    const small = await png(20, 10);
-    const tooManyPixels = await png(4097, 4096);
-    const cases = [
-      { body: small, headers: { "content-length": String(maxBytes + 1) } },
-      { body: Buffer.alloc(maxBytes + 1), headers: {} },
-      { body: Buffer.alloc(maxBytes + 1), headers: { "content-length": "1" } },
-      { body: tooManyPixels, headers: {} },
-      { body: Buffer.from("invalid image"), headers: {} },
-      {
-        body: Buffer.from(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>',
-        ),
-        headers: { "content-type": "image/svg+xml" },
-      },
-      { body: small, headers: { "content-encoding": "gzip" } },
-      { body: small, headers: { "content-type": "text/html" } },
-    ];
-    const sources = cases.map((_, index) => {
-      return `https://images.example.com/bad-${index}.png`;
+    const [url] = await previewUrls(f.teamId, [
+      "https://a.okou.io/0123456789.png",
+    ]);
+    expect(url?.origin).toBe("https://a.okou.io");
+    expect(url?.pathname).toBe("/0123456789.png");
+    expect(Object.fromEntries(url?.searchParams ?? [])).toStrictEqual({
+      thumbnail: "1",
+      width: "320",
+      height: "112",
+      fit: "scale-down",
+      quality: "85",
     });
-    for (const [index, source] of sources.entries()) {
-      const testCase = cases[index]!;
-      server.use(
-        http.get(source, () => {
-          return new HttpResponse(new Uint8Array(testCase.body), {
-            headers: { "content-type": "image/png", ...testCase.headers },
-          });
-        }),
-      );
-    }
-    const urls = await previewUrls(f.teamId, sources);
-    expect(urls).toHaveLength(cases.length);
-    for (const url of urls) {
-      await expectEmptyImage(url);
-    }
   });
 
-  it("never follows redirects or fetches sources on non-default ports", async () => {
+  it("resolves republished nested CF images to their original instead of another derivative", async () => {
+    const f = await fixture();
+    const original = "https://images.example.com/cover?signature=a%2Fb";
+    const wrapped = `https://a.okou.io/cdn-cgi/image/width=500/https://cdn.vm7.io/cdn-cgi/image/height=200/${original}`;
+    const [url] = await previewUrls(f.teamId, [wrapped]);
+    const adapter = signedSource(url);
+    const response = await accept(readImage(adapter), [302]);
+    expect(response.headers.get("location")).toBe(original);
+  });
+
+  it("preserves HTTP, IPv6 and internal-host image sources for Cloudflare delivery", async () => {
     const f = await fixture();
     const sources = [
-      "https://images.example.com/redirect.png",
-      "https://images.example.com:4444/cover.png",
+      "http://10.0.0.1/cover.png",
+      "http://[fd00::1]/cover.png",
+      "https://internal.local/cover.png",
     ];
-    const requests: string[] = [];
-    server.use(
-      http.get("*", ({ request }) => {
-        requests.push(request.url);
-        return new HttpResponse(null, {
-          status: 302,
-          headers: { location: "http://127.0.0.1/private" },
-        });
-      }),
-    );
     const urls = await previewUrls(f.teamId, sources);
-    for (const url of urls) {
-      await expectEmptyImage(url);
+    for (const [index, url] of urls.entries()) {
+      const response = await accept(readImage(signedSource(url)), [302]);
+      expect(response.headers.get("location")).toBe(sources[index]);
     }
-    expect(requests).toStrictEqual([sources[0]]);
   });
 
-  it("rejects tampered signatures before network access and avoids nested or oversized thumbnail URLs", async () => {
+  it("keeps already-issued literal-URL HMAC capabilities resolving to originals", async () => {
+    const original = "https://images.example.com/legacy.png?token=a%2Fb";
+    const source = `https://a.okou.io/cdn-cgi/image/height=112/${original}`;
+    // Fixture from the deployed v1 issuer: the HMAC binds the literal CF URL.
+    const signature = createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
+      .update("slack-preview-image:v1\0")
+      .update(source)
+      .digest("hex");
+    const response = await accept(
+      imageClient.slackImage({
+        query: { url: source, signature },
+      }),
+      [302],
+    );
+    expect(response.headers.get("location")).toBe(original);
+  });
+
+  it("rejects modified signed capabilities and does not create nested adapters or unbounded Slack URLs", async () => {
     const f = await fixture();
     const [url] = await previewUrls(f.teamId, [
       "https://images.example.com/cover.png",
     ]);
-    if (!url) {
-      throw new Error("Expected a signed image URL");
-    }
-    const requests: string[] = [];
-    server.use(
-      http.get("https://images.example.com/*", ({ request }) => {
-        requests.push(request.url);
-        return new HttpResponse(null, { status: 500 });
-      }),
-    );
-    const changedSource = new URL(url);
+    const adapter = signedSource(url);
+    const changedSource = new URL(adapter);
     changedSource.searchParams.set(
       "url",
       "https://images.example.com/different.png",
     );
     await accept(readImage(changedSource), [403]);
-    const changedSignature = new URL(url);
+    const changedSignature = new URL(adapter);
     changedSignature.searchParams.set("signature", "0".repeat(64));
     await accept(readImage(changedSignature), [403]);
-    expect(requests).toStrictEqual([]);
     await expect(
       previewUrls(f.teamId, [
-        url.href,
+        adapter.href,
+        `https://a.okou.io/cdn-cgi/image/width=500/${url!.href}`,
         `https://images.example.com/${"x".repeat(2048)}.png`,
+        "https://images.example.com:4444/cover.png",
+        `${env("APP_URL")}/artifacts/example.png`,
       ]),
-    ).resolves.toStrictEqual([null, null]);
+    ).resolves.toStrictEqual([null, null, null, null, null]);
   });
 });

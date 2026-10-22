@@ -9,6 +9,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.765.2](https://github.com/okou-ai/okou/compare/api-v1.765.1...api-v1.765.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **host:** show access recovery pages and static website covers ([#42371](https://github.com/okou-ai/okou/issues/42371)) ([e56611e](https://github.com/okou-ai/okou/commit/e56611ee7374ad6f62cba34a0382bdaad8f950b5))
+
+
+### Refactoring
+
+* **api:** batch agentphone verification cooldown updates ([#42363](https://github.com/okou-ai/okou/issues/42363)) ([50e1bfe](https://github.com/okou-ai/okou/commit/50e1bfee4a4ec365cf0e5aedca35de04ec08563c))
+* **api:** record thread predecessor when execution starts ([#42384](https://github.com/okou-ai/okou/issues/42384)) ([317594c](https://github.com/okou-ai/okou/commit/317594cad4127d69bc31910a7714ea284b4ce9fb))
+* **api:** shorten usage pack preview transaction ([#42388](https://github.com/okou-ai/okou/issues/42388)) ([c28b2a4](https://github.com/okou-ai/okou/commit/c28b2a4e8ab073770f328433fd90b16e6076dd04))
+
+
+### Performance Improvements
+
+* **platform:** shorten voice transcription windows to fifteen seconds ([#42351](https://github.com/okou-ai/okou/issues/42351)) ([d3438d7](https://github.com/okou-ai/okou/commit/d3438d7dc0941efd09106a785b1355e48a7c6144))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.1
+    * @okouai/core bumped to 8.779.1
+    * @okouai/db bumped to 1.357.2
+    * @okouai/pi-agent-runtime bumped to 1.50.53
+
 ## [1.765.1](https://github.com/okou-ai/okou/compare/api-v1.765.0...api-v1.765.1) (2026-10-22)
 
 

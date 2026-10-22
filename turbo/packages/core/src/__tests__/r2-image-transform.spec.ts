@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { r2ImageTransformUrl } from "../r2-image-transform";
 
 describe("r2ImageTransformUrl", () => {
+  it("wraps an authorized original-only adapter without changing its signed query", () => {
+    const source =
+      "https://api.okou.ai/api/artifact-og/image?kind=reference&id=abc123def0.png&version=a%2Fb%2Bc";
+    expect(
+      r2ImageTransformUrl(
+        source,
+        {
+          authorizedSource: true,
+          width: 320,
+          height: 112,
+        },
+        "https://a.okou.io",
+      ),
+    ).toBe(
+      `https://a.okou.io/cdn-cgi/image/width=320,height=112,fit=scale-down,format=auto,quality=85,metadata=none/${source}`,
+    );
+  });
+
   it("wraps a complete R2 presign without changing its path or signature", () => {
     const url =
       `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/photo%20%2B.png` +

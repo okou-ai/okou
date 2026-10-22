@@ -485,11 +485,12 @@ function createPushStateMock(signal: AbortSignal, initialUrl: URL): void {
     );
   mockReplaceState(replaceFn, signal);
 
-  vi.spyOn(window.history, "back").mockImplementation(() => {
-    if (currentEntryIndex <= 0) {
+  function moveHistory(delta: number): void {
+    const nextIndex = currentEntryIndex + delta;
+    if (nextIndex < 0 || nextIndex >= entries.length) {
       return;
     }
-    currentEntryIndex -= 1;
+    currentEntryIndex = nextIndex;
     const entry = entries[currentEntryIndex];
     if (!entry) {
       return;
@@ -497,9 +498,16 @@ function createPushStateMock(signal: AbortSignal, initialUrl: URL): void {
     updateLocation(entry);
     const event = new PopStateEvent("popstate", { state: entry.data });
     Object.defineProperty(event, "hasUAVisualTransition", {
-      value: swipingBack,
+      value: delta < 0 && swipingBack,
     });
     window.dispatchEvent(event);
+  }
+
+  vi.spyOn(window.history, "back").mockImplementation(() => {
+    moveHistory(-1);
+  });
+  vi.spyOn(window.history, "forward").mockImplementation(() => {
+    moveHistory(1);
   });
 }
 

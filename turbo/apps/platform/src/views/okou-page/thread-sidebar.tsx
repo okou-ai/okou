@@ -2,7 +2,7 @@ import type { UIEvent as ReactUIEvent } from "react";
 import { ArrowLeft, ExternalLink, Maximize, Minimize, X } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Button, FullscreenPanel, cn } from "@okouai/ui";
+import { Button, FullscreenPanel, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -10,10 +10,7 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  openThreadArtifacts$,
-  navigateThreadMail$,
-} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { openThreadArtifacts$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ThreadSidebarArtifactSource,
@@ -28,6 +25,7 @@ import {
 } from "../artifacts-page/artifact-catalog-page.tsx";
 import { BrowserSessionSidebar } from "./browser-session-sidebar.tsx";
 import { MailDraftPanel } from "./mail-draft-panel.tsx";
+import { ThreadMailLink } from "./thread-mail.tsx";
 import type { MailDraftSignals } from "../../signals/chat-page/mail-draft.ts";
 import {
   ArtifactSidebar,
@@ -470,11 +468,12 @@ function ThreadMailDraftPanel({
   readonly fromMailList?: true;
 }) {
   const close = useSet(thread.sidebar.close$);
-  const [navigation, navigate] = useLoadableSet(navigateThreadMail$);
-  const signal = useGet(pageSignal$);
+  const backLinkRef = useSet(thread.mail.backLinkRef$);
   const listOpen = useGet(thread.mail.open$);
+  const managerEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadEmailManager];
   const { t } = useTranslation();
-  if (!fromMailList) {
+  if (!fromMailList || !managerEnabled) {
     return <MailDraftPanel signals={signals} onClose={close} />;
   }
   return (
@@ -485,20 +484,17 @@ function ThreadMailDraftPanel({
       )}
     >
       <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 py-3">
-        <Button
-          variant="quiet"
-          size="sm"
-          autoFocus
-          disabled={navigation.state === "loading"}
-          onClick={() => {
-            detach(navigate(thread, null, signal), Reason.DomCallback);
-          }}
+        <ThreadMailLink
+          ref={backLinkRef}
+          thread={thread}
+          destination={{ view: "list" }}
+          className={buttonVariants({ variant: "quiet", size: "sm" })}
         >
           <ArrowLeft size={16} />
           {t(($) => {
             return $.chat.mail.manager.back;
           })}
-        </Button>
+        </ThreadMailLink>
         <Button
           showTooltip
           type="button"

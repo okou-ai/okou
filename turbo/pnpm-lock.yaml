@@ -210,6 +210,9 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      file-type:
+        specifier: ^21.3.4
+        version: 21.3.4
       fontkit:
         specifier: 2.0.4
         version: 2.0.4
@@ -243,9 +246,6 @@ importers:
       saxes:
         specifier: 6.0.0
         version: 6.0.0
-      sharp:
-        specifier: ^0.35.5
-        version: 0.35.5(@types/node@24.3.0)
       signal-timers:
         specifier: ^1.0.4
         version: 1.0.4

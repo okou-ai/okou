@@ -2,6 +2,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
 import {
   Button,
+  buttonVariants,
   Checkbox,
   cn,
   Dialog,
@@ -20,6 +21,7 @@ import {
 } from "@okouai/ui";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { ComponentProps } from "react";
 import {
   ChevronRight,
   Loader2,
@@ -33,10 +35,61 @@ import { useTranslation } from "react-i18next";
 
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type { ThreadMailFilter } from "../../signals/chat-page/thread-mail.ts";
+import {
+  navigateThreadMail$,
+  openThreadMailList$,
+} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import {
+  threadMailParams,
+  type ThreadMailDestination,
+} from "../../signals/chat-page/thread-mail-location.ts";
+import { hash$, pathname$, searchParams$ } from "../../signals/route.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { navigateThreadMail$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
+
+export function ThreadMailLink({
+  thread,
+  destination,
+  disabled = false,
+  onClick,
+  className,
+  ...props
+}: Omit<ComponentProps<"a">, "href"> & {
+  readonly thread: ChatPanelSignals;
+  readonly destination: ThreadMailDestination;
+  readonly disabled?: boolean;
+}) {
+  const pathname = useGet(pathname$);
+  const searchParams = useGet(searchParams$);
+  const hash = useGet(hash$);
+  const signal = useGet(pageSignal$);
+  const navigate = useSet(navigateThreadMail$);
+  const params = threadMailParams(searchParams, thread.threadId, destination);
+  return (
+    <a
+      {...props}
+      href={`${pathname}?${params.toString()}${hash}`}
+      aria-disabled={disabled || undefined}
+      tabIndex={disabled ? -1 : props.tabIndex}
+      className={cn(className, disabled && "pointer-events-none opacity-50")}
+      onClick={(event) => {
+        onClick?.(event);
+        if (disabled) {
+          event.preventDefault();
+          return;
+        }
+        if (shouldHandleLinkClick(event)) {
+          // Only plain activation updates this page; modified links retain
+          // their native destination and browsing context.
+          event.preventDefault();
+          detach(navigate(thread, destination, signal), Reason.DomCallback);
+        }
+      }}
+    />
+  );
+}
 
 export function ThreadMailButton({
   thread,
@@ -56,14 +109,17 @@ function ThreadMailButtonInner({
   const { t } = useTranslation();
   const mails = useLastLoadable(thread.mail.mails$);
   const open = useGet(thread.mail.open$);
-  const setOpen = useSet(thread.mail.setOpen$);
+  const openList = useSet(openThreadMailList$);
+  const close = useSet(thread.mail.close$);
   const target = useGet(thread.sidebar.target$);
   const pending = useGet(thread.mail.pending$);
-  const [confirmation, confirm] = useLoadableSet(thread.mail.confirm$);
-  const signal = useGet(pageSignal$);
-  const busy = confirmation.state === "loading";
   // Keep an already-open empty list usable after its last draft is deleted.
-  if (!open && (mails.state !== "hasData" || mails.data.length === 0)) {
+  if (
+    !open &&
+    pending === null &&
+    mails.state === "hasData" &&
+    mails.data.length === 0
+  ) {
     return null;
   }
   return (
@@ -75,7 +131,11 @@ function ThreadMailButtonInner({
             details.cancel();
             return;
           }
-          setOpen(next);
+          if (next) {
+            openList(thread);
+          } else {
+            close();
+          }
         }}
       >
         <PopoverTrigger
@@ -112,33 +172,21 @@ function ThreadMailButtonInner({
             "[html:active-view-transition-type(thread-mail)_&]:transition-none [html:active-view-transition-type(thread-mail)_&]:data-starting-style:opacity-100 [html:active-view-transition-type(thread-mail)_&]:data-starting-style:[transform:none] [html:active-view-transition-type(thread-mail)_&]:data-ending-style:opacity-100 [html:active-view-transition-type(thread-mail)_&]:data-ending-style:[transform:none]",
           )}
         >
-          <ThreadMailList thread={thread} busy={busy} />
+          <ThreadMailList thread={thread} />
         </PopoverContent>
       </Popover>
-      <ThreadMailConfirmation
-        thread={thread}
-        busy={busy}
-        onConfirm={() => {
-          detach(confirm(signal), Reason.DomCallback);
-        }}
-      />
+      <ThreadMailConfirmation thread={thread} />
     </>
   );
 }
 
-function ThreadMailList({
-  thread,
-  busy,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly busy: boolean;
-}) {
+function ThreadMailList({ thread }: { readonly thread: ChatPanelSignals }) {
   return (
     <>
       <ThreadMailHeader thread={thread} />
-      <ThreadMailSelection thread={thread} busy={busy} />
-      <ThreadMailRows thread={thread} busy={busy} />
-      <ThreadMailFooter thread={thread} busy={busy} />
+      <ThreadMailSelection thread={thread} />
+      <ThreadMailRows thread={thread} />
+      <ThreadMailFooter thread={thread} />
     </>
   );
 }
@@ -148,8 +196,8 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   const manager = thread.mail;
   const mails = useLastLoadable(manager.mails$);
   const query = useGet(manager.query$);
-  const setQuery = useSet(manager.query$);
-  const setOpen = useSet(manager.setOpen$);
+  const setQuery = useSet(manager.setQuery$);
+  const close = useSet(manager.close$);
   return (
     <div className="shrink-0 space-y-3 border-b border-border/60 p-4">
       <div className="flex items-center gap-2">
@@ -166,9 +214,7 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           type="button"
           variant="quiet"
           size="icon-sm"
-          onClick={() => {
-            setOpen(false);
-          }}
+          onClick={close}
           aria-label={t(($) => {
             return $.chat.mail.manager.close;
           })}
@@ -204,7 +250,7 @@ function ThreadMailFilters({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const mails = useLastLoadable(thread.mail.mails$);
   const filter = useGet(thread.mail.filter$);
-  const setFilter = useSet(thread.mail.filter$);
+  const setFilter = useSet(thread.mail.setFilter$);
   const allMails = mails.state === "hasData" ? mails.data : [];
   const filters: readonly {
     readonly value: ThreadMailFilter;
@@ -266,10 +312,8 @@ function ThreadMailFilters({ thread }: { readonly thread: ChatPanelSignals }) {
 
 function ThreadMailSelection({
   thread,
-  busy,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly busy: boolean;
 }) {
   const { t } = useTranslation();
   const filtered = useLastLoadable(thread.mail.filtered$);
@@ -292,7 +336,7 @@ function ThreadMailSelection({
         id={`mail-select-all-${thread.threadId}`}
         checked={allSelected}
         indeterminate={someSelected && !allSelected}
-        disabled={busy || pending !== null || rows.length === 0}
+        disabled={pending !== null || rows.length === 0}
         onCheckedChange={(checked) => {
           detach(selectAll(checked, signal), Reason.DomCallback);
         }}
@@ -317,13 +361,7 @@ function ThreadMailSelection({
   );
 }
 
-function ThreadMailRows({
-  thread,
-  busy,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly busy: boolean;
-}) {
+function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const filtered = useLastLoadable(thread.mail.filtered$);
   const query = useGet(thread.mail.query$);
@@ -367,12 +405,7 @@ function ThreadMailRows({
       ) : (
         rows.map((mail) => {
           return (
-            <ThreadMailRow
-              key={mail.mailDraftId}
-              thread={thread}
-              mail={mail}
-              busy={busy}
-            />
+            <ThreadMailRow key={mail.mailDraftId} thread={thread} mail={mail} />
           );
         })
       )}
@@ -412,13 +445,7 @@ function ThreadMailRowsSkeleton() {
   );
 }
 
-function ThreadMailFooter({
-  thread,
-  busy,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly busy: boolean;
-}) {
+function ThreadMailFooter({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const drafts = useLastLoadable(thread.mail.selectedDrafts$);
   const pending = useGet(thread.mail.pending$);
@@ -429,7 +456,7 @@ function ThreadMailFooter({
   if (draftCount === 0) {
     return null;
   }
-  const disabled = busy || pending !== null;
+  const disabled = pending !== null;
   return (
     <div className="shrink-0 space-y-3 border-t border-border/60 p-4">
       <p className="text-xs text-muted-foreground" role="status">
@@ -482,18 +509,14 @@ function ThreadMailFooter({
 function ThreadMailRow({
   thread,
   mail,
-  busy,
 }: {
   readonly thread: ChatPanelSignals;
   readonly mail: ThreadMailSummary;
-  readonly busy: boolean;
 }) {
   const { t } = useTranslation();
   const selected = useGet(thread.mail.selected$);
   const pending = useGet(thread.mail.pending$);
   const select = useSet(thread.mail.select$);
-  const [navigation, navigate] = useLoadableSet(navigateThreadMail$);
-  const signal = useGet(pageSignal$);
   const subject =
     mail.subject ||
     t(($) => {
@@ -508,7 +531,7 @@ function ThreadMailRow({
     >
       <Checkbox
         checked={selected.has(mail.mailDraftId)}
-        disabled={busy || pending !== null}
+        disabled={pending !== null}
         aria-label={t(
           ($) => {
             return $.chat.mail.manager.selectEmail;
@@ -519,20 +542,24 @@ function ThreadMailRow({
           select(mail.mailDraftId, checked);
         }}
       />
-      <Button
-        type="button"
-        variant="quiet"
-        disabled={busy || pending !== null || navigation.state === "loading"}
-        className="h-auto min-w-0 flex-1 justify-start rounded-none py-4 text-left"
+      <ThreadMailLink
+        thread={thread}
+        destination={{
+          view: "detail",
+          mailDraftId: mail.mailDraftId,
+          fromList: true,
+        }}
+        disabled={pending !== null}
+        className={cn(
+          buttonVariants({ variant: "quiet" }),
+          "h-auto min-w-0 flex-1 justify-start rounded-none py-4 text-left",
+        )}
         aria-label={t(
           ($) => {
             return $.chat.mail.manager.openEmail;
           },
           { subject },
         )}
-        onClick={() => {
-          detach(navigate(thread, mail, signal), Reason.DomCallback);
-        }}
       >
         <div className="min-w-0 flex-1 space-y-1">
           <p className="truncate text-sm font-medium">{subject}</p>
@@ -550,23 +577,22 @@ function ThreadMailRow({
               })}
         </span>
         <ChevronRight size={14} className="text-muted-foreground" />
-      </Button>
+      </ThreadMailLink>
     </div>
   );
 }
 
 function ThreadMailConfirmation({
   thread,
-  busy,
-  onConfirm,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly busy: boolean;
-  readonly onConfirm: () => void;
 }) {
   const { t } = useTranslation();
   const pending = useGet(thread.mail.pending$);
   const cancel = useSet(thread.mail.cancel$);
+  const [confirmation, confirm] = useLoadableSet(thread.mail.confirm$);
+  const busy = confirmation.state === "loading";
+  const signal = useGet(pageSignal$);
   const sending = pending?.action === "send";
   const count = pending?.mails.length ?? 0;
   return (
@@ -630,7 +656,9 @@ function ThreadMailConfirmation({
           <Button
             variant={sending ? "default" : "destructive"}
             disabled={busy}
-            onClick={onConfirm}
+            onClick={() => {
+              detach(confirm(signal), Reason.DomCallback);
+            }}
           >
             {busy ? (
               <Loader2

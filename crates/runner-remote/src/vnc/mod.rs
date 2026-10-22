@@ -207,48 +207,22 @@ impl VncRuntime {
 
 impl runner_provider::AblySideMessageHandler for VncRuntime {
     fn handle(&self, message: &ably_subscriber::Message) -> bool {
-        use api_contracts::generated::types::runners::{ssh, vnc};
         let ssh = match message.name.as_deref() {
             Some("vnc-authority-invalidated") => false,
             Some("ssh-authority-invalidated") => true,
             _ => return false,
         };
-        // Generated response DTOs ignore unknown fields and default a missing
-        // Option to None. Match the strict event schema before decoding so only
-        // an explicit null in a valid notification can select every connection.
-        if !message.data.as_object().is_some_and(|data| {
-            data.len() == 2 && data.contains_key("runId") && data.contains_key("connectionId")
-        }) {
+        let Some(notification) = crate::authority_invalidation::parse(&message.data) else {
             return true;
-        }
-        let notification = if ssh {
-            serde_json::from_value::<ssh::InvalidateNotification>(message.data.clone())
-                .map(|value| (value.run_id, value.connection_id))
-        } else {
-            serde_json::from_value::<vnc::InvalidateNotification>(message.data.clone())
-                .map(|value| (value.run_id, value.connection_id))
-        };
-        let Ok((run, connection)) = notification else {
-            return true;
-        };
-        let Ok(run) = run.parse::<RunId>() else {
-            return true;
-        };
-        let connection = match connection {
-            Some(value) => match value.parse::<uuid::Uuid>() {
-                Ok(connection) => Some(connection),
-                Err(_) => return true,
-            },
-            None => None,
         };
         let owner = self
             .runs
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .get(&run)
+            .get(&notification.run)
             .and_then(Weak::upgrade);
         if let Some(owner) = owner {
-            owner.invalidate(connection, ssh);
+            owner.invalidate(notification.connection, ssh);
         }
         true
     }

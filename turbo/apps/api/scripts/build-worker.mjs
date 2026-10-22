@@ -55,12 +55,11 @@ try {
             }
           });
           const unsupportedPackages = new Map([
-            ["sharp", "sharp"],
             ["pg-native", "pg-native"],
             ["@react-email/render", "react-email"],
           ]);
           builder.onResolve(
-            { filter: /^(sharp|pg-native|@react-email\/render)$/ },
+            { filter: /^(pg-native|@react-email\/render)$/ },
             ({ path }) => {
               return {
                 path: resolve(

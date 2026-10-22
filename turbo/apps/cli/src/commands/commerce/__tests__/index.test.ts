@@ -2,6 +2,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type {
+  AmazonMarketplace,
+  CommerceJob,
+  CommerceResponse,
+} from "@okouai/api-contracts/contracts/commerce";
 import type { Command } from "commander";
 import { http, HttpResponse } from "msw";
 import {
@@ -20,7 +25,12 @@ import { commerceCommand } from "../index";
 const api = "http://localhost:3000/api/commerce";
 const product = { asin: "B0D1XD1ZV3", title: "Standing desk", price: 149.99 };
 
-function response(operation: "inspect" | "search", marketplace = "amazon.com") {
+const jobId = "06a77350-1ee0-44db-9305-07d366bab7dc";
+
+function response(
+  operation: "inspect" | "search",
+  marketplace: AmazonMarketplace = "amazon.com",
+): CommerceResponse {
   return {
     operation,
     marketplace,
@@ -33,6 +43,25 @@ function response(operation: "inspect" | "search", marketplace = "amazon.com") {
       items: [product],
       source: { status_code: 20000, cost: 0.01, tasks: [] },
     },
+  };
+}
+
+function job(
+  status: CommerceJob["status"],
+  operation: CommerceJob["operation"] = "search",
+  marketplace: AmazonMarketplace = "amazon.com",
+): CommerceJob {
+  return {
+    id: jobId,
+    status,
+    operation,
+    provider: "dataforseo",
+    marketplace,
+    result: status === "completed" ? response(operation, marketplace) : null,
+    error:
+      status === "failed"
+        ? { code: "COMMERCE_PROVIDER_ERROR", message: "Provider task failed" }
+        : null,
   };
 }
 
@@ -89,7 +118,11 @@ describe("managed Commerce commands", () => {
           platform: "amazon",
           operations: ["inspect", "search"],
           search: { maxResults: 48, maxPages: 1 },
-          billing: { mode: "synchronous" },
+          jobs: {
+            providerPriority: 2,
+            get: "okou commerce job <id> [--wait] --json",
+          },
+          billing: { mode: "asynchronous" },
           export: { formats: ["json", "csv"] },
         },
       ],
@@ -101,7 +134,12 @@ describe("managed Commerce commands", () => {
     server.use(
       http.post(`${api}/search`, async ({ request }) => {
         body = await request.json();
-        return HttpResponse.json(response("search", "amazon.co.uk"));
+        return HttpResponse.json(job("running", "search", "amazon.co.uk"), {
+          status: 202,
+        });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed", "search", "amazon.co.uk"));
       }),
     );
     await commerceCommand.parseAsync([
@@ -121,6 +159,8 @@ describe("managed Commerce commands", () => {
       query: "standing desk",
       marketplace: "amazon.co.uk",
       limit: 20,
+      async: true,
+      requestId: expect.any(String),
     });
     expect(output()).toMatchObject({
       kind: "result",
@@ -139,7 +179,18 @@ describe("managed Commerce commands", () => {
         http.post(`${api}/inspect`, async ({ request }) => {
           body = await request.json();
           return HttpResponse.json(
-            response(
+            job(
+              "running",
+              "inspect",
+              target.startsWith("https:") ? "amazon.de" : "amazon.com",
+            ),
+            { status: 202 },
+          );
+        }),
+        http.get(`${api}/jobs/${jobId}`, () => {
+          return HttpResponse.json(
+            job(
+              "completed",
               "inspect",
               target.startsWith("https:") ? "amazon.de" : "amazon.com",
             ),
@@ -155,7 +206,11 @@ describe("managed Commerce commands", () => {
         "amazon",
         "--json",
       ]);
-      expect(body).toEqual({ target });
+      expect(body).toEqual({
+        target,
+        async: true,
+        requestId: expect.any(String),
+      });
       expect(output()).toMatchObject({
         kind: "result",
         operation: "inspect",
@@ -167,7 +222,10 @@ describe("managed Commerce commands", () => {
   it("writes selected product rows to a local CSV and leaves billing in the stdout receipt", async () => {
     server.use(
       http.post(`${api}/search`, () => {
-        return HttpResponse.json(response("search"));
+        return HttpResponse.json(job("running"), { status: 202 });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed"));
       }),
     );
     const destination = join(directory, "products.csv");
@@ -204,7 +262,10 @@ describe("managed Commerce commands", () => {
   it("saves a full inspect JSON envelope with source and billing intact", async () => {
     server.use(
       http.post(`${api}/inspect`, () => {
-        return HttpResponse.json(response("inspect"));
+        return HttpResponse.json(job("running", "inspect"), { status: 202 });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed", "inspect"));
       }),
     );
     const destination = join(directory, "product.json");
@@ -227,6 +288,349 @@ describe("managed Commerce commands", () => {
     expect(output()).toMatchObject({
       kind: "export",
       export: { path: destination, format: "json" },
+    });
+  });
+
+  it.each(["search", "inspect"] as const)(
+    "waits for an asynchronous %s and preserves the existing final result envelope",
+    async (operation) => {
+      server.use(
+        http.post(`${api}/${operation}`, () => {
+          return HttpResponse.json(job("pending", operation), { status: 202 });
+        }),
+        http.get(`${api}/jobs/${jobId}`, () => {
+          return HttpResponse.json(job("completed", operation));
+        }),
+      );
+      await commerceCommand.parseAsync([
+        "node",
+        "okou",
+        operation,
+        operation === "search" ? "standing desk" : "B0D1XD1ZV3",
+        "--platform",
+        "amazon",
+        "--json",
+      ]);
+      expect(output()).toMatchObject({
+        kind: "result",
+        operation,
+        creditsCharged: 12,
+        data: { items: [product], source: { status_code: 20000 } },
+      });
+    },
+  );
+
+  it("returns an async job receipt with its recovery command", async () => {
+    server.use(
+      http.post(`${api}/search`, () => {
+        return HttpResponse.json(job("pending"), { status: 202 });
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "standing desk",
+      "--platform",
+      "amazon",
+      "--async",
+      "--json",
+    ]);
+    expect(output()).toMatchObject({
+      id: jobId,
+      status: "pending",
+      result: null,
+      recoveryCommand: `okou commerce job ${jobId} --wait --json`,
+    });
+  });
+
+  it("reads a saved job without starting a new paid operation", async () => {
+    server.use(
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed"));
+      }),
+    );
+    await commerceCommand.parseAsync(["node", "okou", "job", jobId, "--json"]);
+    expect(output()).toMatchObject({
+      id: jobId,
+      status: "completed",
+      result: { creditsCharged: 12 },
+    });
+  });
+
+  it("keeps polling running checkpoints until a saved job settles", async () => {
+    let reads = 0;
+    server.use(
+      http.get(`${api}/jobs/${jobId}`, () => {
+        reads += 1;
+        return HttpResponse.json(job(reads < 3 ? "running" : "completed"));
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "job",
+      jobId,
+      "--wait",
+      "--json",
+    ]);
+    expect(output()).toMatchObject({
+      id: jobId,
+      status: "completed",
+      result: { result: { items: [product] } },
+    });
+  });
+
+  it("exports the settled asynchronous result using the existing CSV contract", async () => {
+    server.use(
+      http.post(`${api}/search`, () => {
+        return HttpResponse.json(job("running"), { status: 202 });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("completed"));
+      }),
+    );
+    const destination = join(directory, "async-products.csv");
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "standing desk",
+      "--platform",
+      "amazon",
+      "--select",
+      "title,price",
+      "--format",
+      "csv",
+      "--output",
+      destination,
+      "--json",
+    ]);
+    expect(await readFile(destination, "utf8")).toBe(
+      '"title","price"\r\n"Standing desk",149.99\r\n',
+    );
+    expect(output()).toMatchObject({
+      kind: "export",
+      creditsCharged: 12,
+      export: { path: destination, format: "csv" },
+    });
+  });
+
+  it("rejects async export options before a paid submission", async () => {
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "standing desk",
+      "--platform",
+      "amazon",
+      "--async",
+      "--output",
+      join(directory, "receipt.csv"),
+      "--json",
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
+      status: "error",
+      error: { message: expect.stringContaining("--async does not support") },
+    });
+  });
+
+  it("reports an old API's strict-body rejection with upgrade guidance and no paid fallback", async () => {
+    let submissions = 0;
+    server.use(
+      http.post(`${api}/search`, () => {
+        submissions += 1;
+        return HttpResponse.json(
+          {
+            error: {
+              code: "INVALID_ARGUMENT",
+              message: "Unrecognized key: async",
+            },
+          },
+          { status: 400 },
+        );
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "standing desk",
+      "--platform",
+      "amazon",
+      "--json",
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(submissions).toBe(1);
+    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: expect.stringContaining("upgrade the API"),
+      },
+    });
+  });
+
+  it("recovers an uncertain transport submission by its generated request UUID", async () => {
+    let requestId = "";
+    let submissions = 0;
+    server.use(
+      http.post(`${api}/inspect`, async ({ request }) => {
+        submissions += 1;
+        const body: unknown = await request.json();
+        if (
+          typeof body === "object" &&
+          body !== null &&
+          "requestId" in body &&
+          typeof body.requestId === "string"
+        ) {
+          requestId = body.requestId;
+        }
+        return HttpResponse.error();
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "inspect",
+      "B0D1XD1ZV3",
+      "--platform",
+      "amazon",
+      "--json",
+    ]);
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(submissions).toBe(1);
+    expect(process.exitCode).toBe(1);
+    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
+      error: {
+        code: "COMMERCE_SUBMISSION_UNCERTAIN",
+        message: expect.stringContaining(
+          `okou commerce job ${requestId} --wait --json`,
+        ),
+      },
+    });
+  });
+
+  it("reports an uncertain provider submission as failed with read-only recovery guidance", async () => {
+    server.use(
+      http.post(`${api}/search`, () => {
+        return HttpResponse.json(
+          {
+            ...job("failed"),
+            error: {
+              code: "COMMERCE_SUBMISSION_UNCERTAIN",
+              message:
+                "Provider submission outcome is unknown; no automatic resubmission",
+            },
+          },
+          { status: 202 },
+        );
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "standing desk",
+      "--platform",
+      "amazon",
+      "--json",
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
+      error: {
+        code: "COMMERCE_SUBMISSION_UNCERTAIN",
+        retryable: false,
+        message: expect.stringContaining(
+          `Read it with: okou commerce job ${jobId}`,
+        ),
+      },
+    });
+  });
+
+  it("prints a failed saved job and exits unsuccessfully when waiting", async () => {
+    server.use(
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(job("failed"));
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "job",
+      jobId,
+      "--wait",
+      "--json",
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(output()).toMatchObject({
+      id: jobId,
+      status: "failed",
+      error: { code: "COMMERCE_PROVIDER_ERROR" },
+    });
+  });
+
+  it("retains the job ID when a status read fails", async () => {
+    server.use(
+      http.post(`${api}/search`, () => {
+        return HttpResponse.json(job("pending"), { status: 202 });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "Temporarily unavailable",
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "standing desk",
+      "--platform",
+      "amazon",
+      "--json",
+    ]);
+    expect(process.exitCode).toBe(1);
+    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
+      error: {
+        code: "COMMERCE_JOB_READ_FAILED",
+        message: expect.stringContaining(
+          `okou commerce job ${jobId} --wait --json`,
+        ),
+      },
+    });
+  });
+
+  it("interrupts local waiting while preserving read-only recovery guidance", async () => {
+    server.use(
+      http.post(`${api}/search`, () => {
+        return HttpResponse.json(job("pending"), { status: 202 });
+      }),
+      http.get(`${api}/jobs/${jobId}`, () => {
+        process.emit("SIGINT");
+        return HttpResponse.json(job("running"));
+      }),
+    );
+    await commerceCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "standing desk",
+      "--platform",
+      "amazon",
+      "--json",
+    ]);
+    expect(process.exitCode).toBe(130);
+    expect(JSON.parse(stderr.mock.calls.flat().join("\n"))).toMatchObject({
+      status: "interrupted",
+      jobId,
+      recoveryCommand: `okou commerce job ${jobId} --wait --json`,
     });
   });
 
