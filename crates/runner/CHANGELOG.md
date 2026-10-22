@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.236.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.12...runner-rs-v0.236.13) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** recover disk-full startup through blank and cold ([#42289](https://github.com/okou-ai/okou/issues/42289)) ([b7a350a](https://github.com/okou-ai/okou/commit/b7a350adb56582cb54d7dfcbc22ec34a224bd162))
+
+
+### Refactoring
+
+* **rust:** retire native continuation claim advertisement ([#42287](https://github.com/okou-ai/okou/issues/42287)) ([67a9608](https://github.com/okou-ai/okou/commit/67a9608c675eaa99eb19323b5c6fd3033955baaa))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.236.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.236.11...runner-rs-v0.236.12) (2026-10-22)
 
 ### Release Dependencies

@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.764.0](https://github.com/okou-ai/okou/compare/api-v1.763.4...api-v1.764.0) (2026-10-22)
+
+
+### Features
+
+* **host:** gate cli visibility and default new sites to private ([#42294](https://github.com/okou-ai/okou/issues/42294)) ([0298226](https://github.com/okou-ai/okou/commit/0298226ebb177137ffada92fa03d4c0b40d24142))
+
+
+### Refactoring
+
+* **api:** localize stripe account projection queries ([#42292](https://github.com/okou-ai/okou/issues/42292)) ([782cfe6](https://github.com/okou-ai/okou/commit/782cfe6d79b54a70341794287690689864089caa))
+* **api:** own custom oauth stored connection reads ([#42284](https://github.com/okou-ai/okou/issues/42284)) ([e6aa153](https://github.com/okou-ai/okou/commit/e6aa153e6566d56aceb74e976bd0d2f6fe0e3077))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.0
+    * @okouai/core bumped to 8.777.5
+    * @okouai/db bumped to 1.356.0
+    * @okouai/pi-agent-runtime bumped to 1.50.48
+
 ## [1.763.4](https://github.com/okou-ai/okou/compare/api-v1.763.3...api-v1.763.4) (2026-10-22)
 
 

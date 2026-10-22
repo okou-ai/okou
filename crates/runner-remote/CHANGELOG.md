@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.17](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.16...runner-remote-v0.29.17) (2026-10-22)
+
+
+### Performance Improvements
+
+* **rust:** move outbound tailscale tcp packet buffers ([#42290](https://github.com/okou-ai/okou/issues/42290)) ([2cbe7b2](https://github.com/okou-ai/okou/commit/2cbe7b2b320d6db609ef9a2a54734395a1a59fe5))
+
 ## [0.29.16](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.15...runner-remote-v0.29.16) (2026-10-22)
 
 ## [0.29.15](https://github.com/okou-ai/okou/compare/runner-remote-v0.29.14...runner-remote-v0.29.15) (2026-10-22)

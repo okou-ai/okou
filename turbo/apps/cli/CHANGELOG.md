@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.408.0](https://github.com/okou-ai/okou/compare/cli-v9.407.5...cli-v9.408.0) (2026-10-22)
+
+
+### Features
+
+* **host:** gate cli visibility and default new sites to private ([#42294](https://github.com/okou-ai/okou/issues/42294)) ([0298226](https://github.com/okou-ai/okou/commit/0298226ebb177137ffada92fa03d4c0b40d24142))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.587.0
+    * @okouai/core bumped to 8.777.5
+    * @okouai/pi-agent-runtime bumped to 1.50.48
+
 ## [9.407.5](https://github.com/okou-ai/okou/compare/cli-v9.407.4...cli-v9.407.5) (2026-10-22)
 
 
