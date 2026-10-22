@@ -27,8 +27,22 @@ import {
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -625,62 +639,11 @@ function stripeConnectionFromRow(
   return builtinConnectorCredentialConnectionFromRow(plan.input, row);
 }
 
-function stripeMatchingHealthPlan(
-  row: StripeInvoiceFanoutCandidate,
-  receivedAt: Date,
-) {
-  const values = {
-    lastMatchingEventReceivedAt: receivedAt,
-    updatedAt: receivedAt,
-  };
-  return {
-    values: { automationId: row.automation.id, ...values },
-    conflict: {
-      target: stripeWorkflowAutomationHealth.automationId,
-      set: values,
-    },
-  };
-}
-
-function stripeInvoiceDeliveryValues(
-  row: StripeInvoiceFanoutCandidate,
-  snapshot: StripeAutomationEventSnapshot,
-  receivedAt: Date,
-) {
-  return {
-    automationId: row.automation.id,
-    connectorId: row.connectorId,
-    stripeAccountId: snapshot.event.connectedAccountId,
-    livemode: true,
-    stripeEventId: snapshot.event.id,
-    stripeEventCreatedAt: new Date(snapshot.event.createdAt),
-    billingReason: snapshot.invoice.billingReason,
-    snapshot,
-    nextAttemptAt: receivedAt,
-    receivedAt,
-    createdAt: receivedAt,
-    updatedAt: receivedAt,
-  };
-}
-
-function stripeLatestHealthPlan(
-  row: StripeInvoiceFanoutCandidate,
-  delivery: { readonly id: string },
-  receivedAt: Date,
-) {
-  return {
-    values: {
-      latestDeliveryId: delivery.id,
-      latestDeliveryStatus: "pending" as const,
-      latestDeliveryStatusAt: receivedAt,
-      updatedAt: receivedAt,
-    },
-    condition: eq(
-      stripeWorkflowAutomationHealth.automationId,
-      row.automation.id,
-    ),
-  };
-}
+const stripeFanoutCountsSchema = z.object({
+  matched: z.number().int().nonnegative(),
+  filtered: z.number().int().nonnegative(),
+  queued: z.number().int().nonnegative(),
+});
 
 function stripeFanoutResult(
   mappedConnectors: number,
@@ -690,140 +653,304 @@ function stripeFanoutResult(
   return { mappedConnectors, candidates, ...counts };
 }
 
+interface PreparedStripeFanoutCandidate {
+  readonly row: StripeInvoiceFanoutCandidate;
+  readonly storageVersion: number;
+  readonly liveMode: NonNullable<ReturnType<typeof stripeLiveModeValuesPlan>>;
+  readonly deliver: boolean;
+}
+
+interface StripeFanoutPreparation {
+  readonly mappedConnectors: number;
+  readonly candidateCount: number;
+  readonly candidates: readonly PreparedStripeFanoutCandidate[];
+  readonly receivedAt: Date;
+}
+
+const prepareStripeInvoiceFanout$ = command(
+  async (
+    { get },
+    snapshot: StripeAutomationEventSnapshot,
+    signal: AbortSignal,
+  ): Promise<StripeFanoutPreparation | null> => {
+    const db = get(db$);
+    const accountId = snapshot.event.connectedAccountId;
+    const mappedPlan = stripeMappedConnectorsReadPlan(accountId);
+    const mappedConnectors = await db
+      .select(mappedPlan.columns)
+      .from(connectors)
+      .where(mappedPlan.condition)
+      .orderBy(mappedPlan.order);
+    signal.throwIfAborted();
+    if (mappedConnectors.length === 0) {
+      return null;
+    }
+    const candidatePlan = stripeFanoutCandidatesPlan(mappedConnectors);
+    const rows = await db
+      .select(candidatePlan.columns)
+      .from(connectors)
+      .innerJoin(workflowAutomations, candidatePlan.join)
+      .where(candidatePlan.condition)
+      .orderBy(candidatePlan.order);
+    signal.throwIfAborted();
+
+    const candidates: PreparedStripeFanoutCandidate[] = [];
+    const receivedAt = nowDate();
+    const billingReason = knownBillingReason(snapshot.invoice.billingReason);
+    for (const row of rows) {
+      const config = stripeInvoiceFanoutConfig(row, accountId);
+      if (config === null) {
+        signal.throwIfAborted();
+        continue;
+      }
+      const featurePlan = stripeFanoutFeaturePlan(row);
+      const enabled = await (async () => {
+        const featureRows = await db
+          .select(featurePlan.columns)
+          .from(userFeatureSwitches)
+          .where(featurePlan.condition);
+        return stripeInvoicePaidFeatureEnabledFromRows(
+          featurePlan.owner,
+          featureRows,
+        );
+      })();
+      signal.throwIfAborted();
+      if (!enabled) {
+        continue;
+      }
+
+      const catalogPlan = stripeFanoutCatalogPlan();
+      const catalog = await (async () => {
+        const catalogRows = await db
+          .select(catalogPlan.columns)
+          .from(connectorCatalog)
+          .leftJoin(connectorCatalogEntries, catalogPlan.join)
+          .where(connectorCatalogCurrentWhere());
+        // Materialization errors retain priority over the original abort barrier.
+        return stripeFanoutCatalogFromRows(catalogPlan, catalogRows);
+      })();
+      signal.throwIfAborted();
+
+      const connectionPlan = stripeFanoutConnectionPlan(row, catalog);
+      const loaded = await (async () => {
+        const [connectionRow] = await db
+          .select(connectionPlan.columns)
+          .from(connectors)
+          .where(connectionPlan.condition)
+          .limit(1);
+        return stripeConnectionFromRow(connectionPlan, connectionRow);
+      })();
+      signal.throwIfAborted();
+      const ready = stripeBindingConnectionReadiness(loaded);
+      if (ready.kind !== "ok") {
+        continue;
+      }
+
+      const valuesPlan = stripeLiveModeValuesPlan(ready.connection);
+      const valueRows =
+        valuesPlan === null
+          ? []
+          : await db
+              .select(valuesPlan.secretColumns)
+              .from(secrets)
+              .where(valuesPlan.secretCondition)
+              .unionAll(
+                db
+                  .select(valuesPlan.variableColumns)
+                  .from(variables)
+                  .where(valuesPlan.variableCondition),
+              );
+      const values = builtinConnectorVariableValuesFromRows(valueRows);
+      signal.throwIfAborted();
+      if (
+        valuesPlan === null ||
+        !stripeLiveBindingMatches(ready, config, values)
+      ) {
+        continue;
+      }
+      candidates.push({
+        row,
+        storageVersion: ready.connection.storageVersion,
+        liveMode: valuesPlan,
+        deliver: filterMatches(config.billingReasons, billingReason),
+      });
+    }
+    signal.throwIfAborted();
+    return {
+      mappedConnectors: mappedConnectors.length,
+      candidateCount: rows.length,
+      candidates,
+      receivedAt,
+    };
+  },
+);
+
+function stripeFanoutPublicationSql(
+  snapshot: StripeAutomationEventSnapshot,
+  preparation: StripeFanoutPreparation,
+) {
+  const builder = new QueryBuilder();
+  const accountId = snapshot.event.connectedAccountId;
+  const { candidates: prepared, receivedAt } = preparation;
+  // Retain connector-before-automation arbitration in the publication
+  // statement. Preparation owns no locks; disabled, deleted or rebound
+  // targets cannot publish from its earlier reads.
+  const connectionQuery = builder
+    .select()
+    .from(connectors)
+    .where(stripeMappedConnectorsReadPlan(accountId).condition)
+    .orderBy(asc(connectors.id))
+    .for("update");
+  const lockedConnections = builder
+    .$with("stripe_fanout_connections")
+    .as(connectionQuery);
+  const deliverIds = prepared
+    .filter((candidate) => {
+      return candidate.deliver;
+    })
+    .map((candidate) => {
+      return candidate.row.automation.id;
+    });
+  const matchedQuery = builder
+    .select({
+      automationId: workflowAutomations.id,
+      connectorId: lockedConnections.id,
+      deliver: inArray(workflowAutomations.id, deliverIds).mapWith(
+        pgBooleanDecoder,
+      ),
+    })
+    .from(workflowAutomations)
+    .innerJoin(
+      lockedConnections,
+      and(
+        eq(workflowAutomations.orgId, lockedConnections.orgId),
+        eq(workflowAutomations.ownerUserId, lockedConnections.userId),
+        eq(workflowAutomations.eventConnectorId, lockedConnections.id),
+      ),
+    )
+    .where(
+      and(
+        // Consume all ordered connection locks before taking any automation
+        // lock: a materialized CTE alone can still be read on demand.
+        sql`(SELECT ${count()} FROM ${lockedConnections}) >= 0`,
+        eq(workflowAutomations.kind, "event"),
+        eq(workflowAutomations.eventType, "stripe-invoice-paid"),
+        eq(workflowAutomations.enabled, true),
+        eq(lockedConnections.needsReconnect, false),
+        or(
+          ...prepared.map(({ row, storageVersion, liveMode }) => {
+            return and(
+              eq(workflowAutomations.id, row.automation.id),
+              eq(workflowAutomations.orgId, row.automation.orgId),
+              eq(workflowAutomations.ownerUserId, row.automation.ownerUserId),
+              eq(
+                workflowAutomations.eventConfig,
+                sql.param(
+                  row.automation.eventConfig,
+                  workflowAutomations.eventConfig,
+                ),
+              ),
+              eq(lockedConnections.id, row.connectorId),
+              eq(lockedConnections.storageVersion, storageVersion),
+              exists(
+                builder
+                  .select({ id: variables.id })
+                  .from(variables)
+                  .where(
+                    and(
+                      liveMode.variableCondition,
+                      eq(variables.value, "true"),
+                    ),
+                  ),
+              ),
+            );
+          }),
+        ),
+      ),
+    )
+    .orderBy(asc(workflowAutomations.id))
+    .for("update", { of: workflowAutomations });
+  const at = sql`${receivedAt.toISOString()}::timestamp`;
+  const eventCreatedAt = sql`${snapshot.event.createdAt}::timestamp`;
+  // INSERT SELECT with an explicit subset of defaulted columns and a
+  // data-modifying CTE is not expressible by the installed insert builder.
+  // Actual dedupe winners supply the health projection; both writes commit
+  // together, including filtered receipts and duplicates without a reset.
+  return sql`
+        WITH stripe_fanout_connections AS (${connectionQuery}),
+        matched(automation_id, connector_id, deliver) AS (${matchedQuery}),
+        deliveries AS (
+          INSERT INTO ${stripeWorkflowDeliveries}
+            (automation_id, connector_id, stripe_account_id, livemode,
+             stripe_event_id, stripe_event_created_at, billing_reason, snapshot,
+             next_attempt_at, received_at, created_at, updated_at)
+          SELECT automation_id, connector_id, ${accountId}, true,
+            ${snapshot.event.id}, ${eventCreatedAt}, ${snapshot.invoice.billingReason},
+            ${sql.param(snapshot, stripeWorkflowDeliveries.snapshot)}, ${at}, ${at}, ${at}, ${at}
+          FROM matched WHERE deliver
+          ORDER BY automation_id
+          ON CONFLICT DO NOTHING
+          RETURNING id, automation_id
+        ),
+        health AS (
+          INSERT INTO ${stripeWorkflowAutomationHealth}
+            (automation_id, last_matching_event_received_at, latest_delivery_id,
+             latest_delivery_status, latest_delivery_status_at, updated_at)
+          SELECT matched.automation_id, ${at}, deliveries.id,
+            CASE WHEN deliveries.id IS NOT NULL THEN 'pending' END,
+            CASE WHEN deliveries.id IS NOT NULL THEN ${at} END, ${at}
+          FROM matched LEFT JOIN deliveries USING (automation_id)
+          ORDER BY matched.automation_id
+          ON CONFLICT (automation_id) DO UPDATE SET
+            last_matching_event_received_at = EXCLUDED.last_matching_event_received_at,
+            latest_delivery_id = COALESCE(EXCLUDED.latest_delivery_id, ${stripeWorkflowAutomationHealth.latestDeliveryId}),
+            latest_delivery_status = COALESCE(EXCLUDED.latest_delivery_status, ${stripeWorkflowAutomationHealth.latestDeliveryStatus}),
+            latest_delivery_status_at = COALESCE(EXCLUDED.latest_delivery_status_at, ${stripeWorkflowAutomationHealth.latestDeliveryStatusAt}),
+            updated_at = EXCLUDED.updated_at
+        )
+        SELECT (SELECT ${count()}::int FROM matched) AS matched,
+          (SELECT ${count()}::int FROM matched WHERE NOT deliver) AS filtered,
+          (SELECT ${count()}::int FROM deliveries) AS queued
+      `;
+}
+
 const recordStripeInvoiceFanout$ = command(
   async (
     { set },
     event: z.infer<typeof stripeInvoicePaidEventSchema>,
     signal: AbortSignal,
   ): Promise<StripeInvoiceFanoutResult> => {
-    const db = set(writeDb$);
-    // Invoice arrays have no size bound; normalize them before opening the transaction.
+    // Normalize and validate every candidate before publishing any receipts.
     const snapshot = invoiceSnapshot(event);
-    // Candidate locks, delivery receipts and their health writes commit together.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0255; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const accountId = snapshot.event.connectedAccountId;
-      const mappedPlan = stripeMappedConnectorsReadPlan(accountId);
-      const mappedConnectors = await tx
-        .select(mappedPlan.columns)
-        .from(connectors)
-        .where(mappedPlan.condition)
-        .orderBy(mappedPlan.order)
-        .for("update");
-      signal.throwIfAborted();
-      if (mappedConnectors.length === 0) {
-        return stripeFanoutResult(0, 0);
-      }
-      const candidatePlan = stripeFanoutCandidatesPlan(mappedConnectors);
-      const rows = await tx
-        .select(candidatePlan.columns)
-        .from(connectors)
-        .innerJoin(workflowAutomations, candidatePlan.join)
-        .where(candidatePlan.condition)
-        .orderBy(candidatePlan.order)
-        .for("update", { of: workflowAutomations });
-      signal.throwIfAborted();
-
-      const counts = { matched: 0, filtered: 0, queued: 0, duplicates: 0 };
-      const receivedAt = nowDate();
-      const billingReason = knownBillingReason(snapshot.invoice.billingReason);
-      for (const row of rows) {
-        const config = stripeInvoiceFanoutConfig(row, accountId);
-        if (config === null) {
-          signal.throwIfAborted();
-          continue;
-        }
-        const featurePlan = stripeFanoutFeaturePlan(row);
-        const featureRows = await tx
-          .select(featurePlan.columns)
-          .from(userFeatureSwitches)
-          .where(featurePlan.condition);
-        if (
-          !stripeInvoicePaidFeatureEnabledFromRows(
-            featurePlan.owner,
-            featureRows,
-          )
-        ) {
-          signal.throwIfAborted();
-          continue;
-        }
-        signal.throwIfAborted();
-
-        const catalogPlan = stripeFanoutCatalogPlan();
-        const catalogRows = await tx
-          .select(catalogPlan.columns)
-          .from(connectorCatalog)
-          .leftJoin(connectorCatalogEntries, catalogPlan.join)
-          .where(connectorCatalogCurrentWhere());
-        // Materialization errors retain priority over the original abort barrier.
-        const catalog = stripeFanoutCatalogFromRows(catalogPlan, catalogRows);
-        signal.throwIfAborted();
-
-        const connectionPlan = stripeFanoutConnectionPlan(row, catalog);
-        const [connectionRow] = await tx
-          .select(connectionPlan.columns)
-          .from(connectors)
-          .where(connectionPlan.condition)
-          .limit(1);
-        const loaded = stripeConnectionFromRow(connectionPlan, connectionRow);
-        signal.throwIfAborted();
-        const ready = stripeBindingConnectionReadiness(loaded);
-        if (ready.kind !== "ok") {
-          continue;
-        }
-
-        const valuesPlan = stripeLiveModeValuesPlan(ready.connection);
-        const valueRows =
-          valuesPlan === null
-            ? []
-            : await tx
-                .select(valuesPlan.secretColumns)
-                .from(secrets)
-                .where(valuesPlan.secretCondition)
-                .unionAll(
-                  tx
-                    .select(valuesPlan.variableColumns)
-                    .from(variables)
-                    .where(valuesPlan.variableCondition),
-                );
-        const values = builtinConnectorVariableValuesFromRows(valueRows);
-        signal.throwIfAborted();
-        if (!stripeLiveBindingMatches(ready, config, values)) {
-          continue;
-        }
-        counts.matched += 1;
-
-        const matchingHealth = stripeMatchingHealthPlan(row, receivedAt);
-        await tx
-          .insert(stripeWorkflowAutomationHealth)
-          .values(matchingHealth.values)
-          .onConflictDoUpdate(matchingHealth.conflict);
-        signal.throwIfAborted();
-
-        if (!filterMatches(config.billingReasons, billingReason)) {
-          counts.filtered += 1;
-          continue;
-        }
-        const [delivery] = await tx
-          .insert(stripeWorkflowDeliveries)
-          .values(stripeInvoiceDeliveryValues(row, snapshot, receivedAt))
-          .onConflictDoNothing()
-          .returning({ id: stripeWorkflowDeliveries.id });
-        signal.throwIfAborted();
-        if (!delivery) {
-          counts.duplicates += 1;
-          continue;
-        }
-        const latestHealth = stripeLatestHealthPlan(row, delivery, receivedAt);
-        await tx
-          .update(stripeWorkflowAutomationHealth)
-          .set(latestHealth.values)
-          .where(latestHealth.condition);
-        signal.throwIfAborted();
-        counts.queued += 1;
-      }
-      return stripeFanoutResult(mappedConnectors.length, rows.length, counts);
-    });
+    const prepared = await set(prepareStripeInvoiceFanout$, snapshot, signal);
+    if (prepared === null) {
+      return stripeFanoutResult(0, 0);
+    }
+    if (prepared.candidates.length === 0) {
+      return stripeFanoutResult(
+        prepared.mappedConnectors,
+        prepared.candidateCount,
+      );
+    }
+    signal.throwIfAborted();
+    const [counts] = parseRawRows(
+      stripeFanoutCountsSchema,
+      await set(writeDb$).execute(
+        stripeFanoutPublicationSql(snapshot, prepared),
+      ),
+    );
+    signal.throwIfAborted();
+    if (!counts) {
+      throw new Error("Stripe invoice fanout returned no counts");
+    }
+    return stripeFanoutResult(
+      prepared.mappedConnectors,
+      prepared.candidateCount,
+      {
+        ...counts,
+        duplicates: counts.matched - counts.filtered - counts.queued,
+      },
+    );
   },
 );
 
@@ -1314,11 +1441,12 @@ const finishDelivery$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     signal.throwIfAborted();
-    // Fence the terminal outcome and commit its health together, delivery first.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0257; new non-billing transactions are prohibited.
-    const finished = await set(writeDb$).transaction(async (tx) => {
-      const currentTime = nowDate();
-      const [updated] = await tx
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    // Only the current claim can publish a terminal outcome. Its health write
+    // depends on that UPDATE's actual result in the same atomic statement.
+    const terminal = db.$with("finished_stripe_delivery").as(
+      db
         .update(stripeWorkflowDeliveries)
         .set({
           status: args.status,
@@ -1330,12 +1458,10 @@ const finishDelivery$ = command(
           updatedAt: currentTime,
         })
         .where(deliveryClaimCondition(args.delivery))
-        .returning({ id: stripeWorkflowDeliveries.id });
-      signal.throwIfAborted();
-      if (!updated) {
-        return false;
-      }
-      await tx
+        .returning({ id: stripeWorkflowDeliveries.id }),
+    );
+    const health = db.$with("finished_stripe_delivery_health").as(
+      db
         .update(stripeWorkflowAutomationHealth)
         .set({
           latestDeliveryStatus: args.status,
@@ -1344,6 +1470,7 @@ const finishDelivery$ = command(
         })
         .where(
           and(
+            exists(db.select({ id: terminal.id }).from(terminal)),
             eq(
               stripeWorkflowAutomationHealth.automationId,
               args.delivery.automationId,
@@ -1353,12 +1480,17 @@ const finishDelivery$ = command(
               args.delivery.id,
             ),
           ),
-        );
-      signal.throwIfAborted();
-      return true;
-    });
+        )
+        .returning({
+          automationId: stripeWorkflowAutomationHealth.automationId,
+        }),
+    );
+    const [finished] = await db
+      .with(terminal, health)
+      .select({ id: terminal.id })
+      .from(terminal);
     signal.throwIfAborted();
-    return finished;
+    return finished !== undefined;
   },
 );
 

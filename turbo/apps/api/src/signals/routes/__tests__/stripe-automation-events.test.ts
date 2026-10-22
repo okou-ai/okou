@@ -603,9 +603,8 @@ describe("Stripe automation event webhook", () => {
     const scenario = await setupScenario({
       billingReasons: ["subscription_cycle"],
     });
-    await postStripeAutomationEvent(
-      invoicePaidEvent({ accountId: scenario.accountId }),
-    );
+    const event = invoicePaidEvent({ accountId: scenario.accountId });
+    await postStripeAutomationEvent(event);
     const pendingHealth = {
       lastMatchingEventReceivedAt: receivedAt,
       lastDeliveryStatus: "pending",
@@ -646,6 +645,26 @@ describe("Stripe automation event webhook", () => {
     expect((await readStripeAutomation(scenario)).health).toStrictEqual(
       skippedHealth,
     );
+
+    // A replay after re-enabling still observes the permanent receipt. It must
+    // update matching-event health without resurrecting terminal delivery work.
+    await setAutomationEnabled(scenario, true);
+    const replayedAt = "2026-08-07T08:01:00.000Z";
+    mockNow(Date.parse(replayedAt));
+    await Promise.all([
+      postStripeAutomationEvent(event),
+      postStripeAutomationEvent(event),
+    ]);
+    expect((await readStripeAutomation(scenario)).health).toStrictEqual({
+      ...skippedHealth,
+      lastMatchingEventReceivedAt: replayedAt,
+    });
+    const terminalReplay = await accept(cron.execute({ headers }), [200]);
+    expect(terminalReplay.body).toStrictEqual({
+      success: true,
+      executed: 0,
+      skipped: 0,
+    });
   });
 
   it("accepts concurrent Live Stripe snapshots and exposes pending delivery health", async () => {
