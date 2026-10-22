@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.18.0](https://github.com/okou-ai/okou/compare/ios-v0.17.1...ios-v0.18.0) (2026-10-22)
+
+
+### Features
+
+* **ios:** add native chat actions menu ([#42002](https://github.com/okou-ai/okou/issues/42002)) ([ab20a1a](https://github.com/okou-ai/okou/commit/ab20a1a6f88fa71f1aa6bd05c6e9d9199fd3c714))
+* **ios:** add native chat and agent mentions ([#42038](https://github.com/okou-ai/okou/issues/42038)) ([a3f9341](https://github.com/okou-ai/okou/commit/a3f93419202b07f2c96d44566b98c365d045aaaa))
+* **ios:** add native workflow search and insertion ([#42035](https://github.com/okou-ai/okou/issues/42035)) ([97ac686](https://github.com/okou-ai/okou/commit/97ac68666f3b87831c15e1a6dad78e51f87d1fea))
+* **ios:** preview generated results and share authorized files ([#42001](https://github.com/okou-ai/okou/issues/42001)) ([6804acb](https://github.com/okou-ai/okou/commit/6804acbd74b680dbb8f39879c283226262c95584))
+
+
+### Bug Fixes
+
+* **ios:** finish connector account reader retirement ([#42061](https://github.com/okou-ai/okou/issues/42061)) ([58b3610](https://github.com/okou-ai/okou/commit/58b361038c010829daed7946ddc601842127741f))
+* **ios:** finish workspace restoration before leaving startup ([#41994](https://github.com/okou-ai/okou/issues/41994)) ([e6bd0be](https://github.com/okou-ai/okou/commit/e6bd0be67b22a6263e09dc3097a42e3b45778056))
+* **ios:** prepare caches with the system bash ([#42123](https://github.com/okou-ai/okou/issues/42123)) ([008aa4f](https://github.com/okou-ai/okou/commit/008aa4f296a279ebb0f1e7243c7437b24791977b))
+
+
+### CI
+
+* **ios:** upgrade xcode 27.1 and share native build caches ([#42069](https://github.com/okou-ai/okou/issues/42069)) ([87ef43d](https://github.com/okou-ai/okou/commit/87ef43d58247fbd09b5d9ebd1c9a0f1c1d7fff45))
+
 ## [0.17.1](https://github.com/okou-ai/okou/compare/ios-v0.17.0...ios-v0.17.1) (2026-10-21)
 
 

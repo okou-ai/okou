@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ably-subscriber"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.107.25"
+version = "0.107.26"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2050,7 +2050,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.31"
+version = "0.1.32"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2090,7 +2090,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.36"
+version = "0.23.37"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2117,7 +2117,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.29"
+version = "0.24.30"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2134,7 +2134,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.91"
+version = "0.12.92"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.15"
+version = "0.20.16"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -4043,7 +4043,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.236.6"
+version = "0.236.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4115,7 +4115,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.15.5"
+version = "0.15.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4249,7 +4249,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.11.3"
+version = "0.11.4"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4286,7 +4286,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.29.11"
+version = "0.29.12"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4429,7 +4429,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.20.5"
+version = "0.20.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4750,7 +4750,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.18"
+version = "0.53.19"
 dependencies = [
  "api-contracts",
  "async-trait",

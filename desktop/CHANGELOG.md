@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.3](https://github.com/okou-ai/okou/compare/desktop-v0.54.2...desktop-v0.54.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* **desktop:** keep automatic update relaunches in the background ([#42072](https://github.com/okou-ai/okou/issues/42072)) ([35344bd](https://github.com/okou-ai/okou/commit/35344bdfc243a66512f012314ede74d45a1dbe14))
+
 ## [0.54.2](https://github.com/okou-ai/okou/compare/desktop-v0.54.1...desktop-v0.54.2) (2026-10-21)
 
 

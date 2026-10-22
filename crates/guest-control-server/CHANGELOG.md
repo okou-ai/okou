@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.30](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.29...guest-control-server-v0.24.30) (2026-10-22)
+
+
+### Refactoring
+
+* **guest-control:** share frame send failure shutdown ([#42142](https://github.com/okou-ai/okou/issues/42142)) ([ec04722](https://github.com/okou-ai/okou/commit/ec047224fe563b0c978c4059b921c23692d8ee89))
+
 ## [0.24.29](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.28...guest-control-server-v0.24.29) (2026-10-21)
 
 ## [0.24.28](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.27...guest-control-server-v0.24.28) (2026-10-21)

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.13](https://github.com/okou-ai/okou/compare/host-worker-v1.7.12...host-worker-v1.7.13) (2026-10-22)
+
+
+### Bug Fixes
+
+* **host:** isolate hosted browser sessions from clerk tokens ([#41850](https://github.com/okou-ai/okou/issues/41850)) ([3eb136c](https://github.com/okou-ai/okou/commit/3eb136cffafd07707533a96f047c5fd0ee97c522))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.585.0
+    * @okouai/core bumped to 8.776.0
+
 ## [1.7.12](https://github.com/okou-ai/okou/compare/host-worker-v1.7.11...host-worker-v1.7.12) (2026-10-21)
 
 

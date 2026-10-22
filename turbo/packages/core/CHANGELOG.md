@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.776.0](https://github.com/okou-ai/okou/compare/core-v8.775.1...core-v8.776.0) (2026-10-22)
+
+
+### Features
+
+* add monid social collections and direct amazon commerce ([#42137](https://github.com/okou-ai/okou/issues/42137)) ([4b8e2c9](https://github.com/okou-ai/okou/commit/4b8e2c91497de9b7bc78c6f07f46fda0b02520d8))
+* **app:** refine remote connection and private network ui ([#41378](https://github.com/okou-ai/okou/issues/41378)) ([67bb550](https://github.com/okou-ai/okou/commit/67bb550beffbea4d209dbba5fa5b5c1b275eb562))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.585.0
+
 ## [8.775.1](https://github.com/okou-ai/okou/compare/core-v8.775.0...core-v8.775.1) (2026-10-21)
 
 

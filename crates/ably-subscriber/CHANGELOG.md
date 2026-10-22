@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.1...ably-subscriber-v2.0.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** shorten silent ably detection and bound reuse polling ([#42036](https://github.com/okou-ai/okou/issues/42036)) ([7300aee](https://github.com/okou-ai/okou/commit/7300aeeec02ce6fe67a8b191c5f2588df111a085))
+
 ## [2.0.1](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.0...ably-subscriber-v2.0.1) (2026-10-21)
 
 
