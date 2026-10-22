@@ -30,6 +30,7 @@ import {
   remoteNetworkScopeChange$,
   remoteNetworkScopeImpact$,
   remoteNetworkScopeStatus$,
+  remoteNetworkScopeOperation$,
   cancelRemoteNetworkScope$,
   acknowledgeRemoteNetworkScope$,
   approveRemoteNetworkScope$,
@@ -181,6 +182,8 @@ function useScopeReview() {
   const pending = useGet(remoteNetworkScopeChange$);
   const impact = useLoadable(remoteNetworkScopeImpact$);
   const status = useGet(remoteNetworkScopeStatus$);
+  const operation = useLoadable(remoteNetworkScopeOperation$);
+  const busy = operation.state === "loading";
   const restricting = pending?.scope === "personal";
   const preview = impact.state === "hasData" ? impact.data : null;
   const needsAck = restricting && (preview?.otherHostCount ?? 0) > 0;
@@ -192,7 +195,7 @@ function useScopeReview() {
       ? "conflict"
       : null);
   const blocked =
-    status.busy ||
+    busy ||
     !!error ||
     (restricting &&
       (!preview || preview.expectedRevision !== pending?.config.revision)) ||
@@ -206,6 +209,7 @@ function useScopeReview() {
     blocked,
     error,
     impact,
+    busy,
   };
 }
 
@@ -228,15 +232,12 @@ function ScopeChangeError({
   ) : null;
 }
 
-function ScopeImpactContent({
-  review,
-}: {
-  readonly review: ReturnType<typeof useScopeReview>;
-}) {
+function ScopeImpactContent() {
   const { t } = useTranslation();
   const organization = useRemoteNetworkOrganization();
   const acknowledge = useSet(acknowledgeRemoteNetworkScope$);
-  const { pending, status, preview, needsAck, error, impact } = review;
+  const { pending, status, preview, needsAck, error, impact, busy } =
+    useScopeReview();
   if (!pending) {
     return null;
   }
@@ -286,7 +287,7 @@ function ScopeImpactContent({
           </p>
           <label className="flex items-start gap-2">
             <Checkbox
-              disabled={status.busy || !!status.error}
+              disabled={busy || !!status.error}
               checked={status.acknowledged === preview.impactSnapshot}
               onCheckedChange={(checked) => {
                 acknowledge(checked ? preview.impactSnapshot : null);
@@ -314,7 +315,7 @@ export function RemoteNetworkScopeConfirmation({
 }) {
   const { t } = useTranslation();
   const review = useScopeReview();
-  const { pending, status, restricting, blocked } = review;
+  const { pending, status, restricting, blocked, busy } = review;
   const draft = useGet(remoteNetworkScopeDraft$);
   const cancel = useSet(cancelRemoteNetworkScope$);
   const approve = useSet(approveRemoteNetworkScope$);
@@ -354,12 +355,12 @@ export function RemoteNetworkScopeConfirmation({
             })}
           </DialogTitle>
         </DialogHeader>
-        <ScopeImpactContent review={review} />
+        <ScopeImpactContent />
         <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-4">
           <Button
             type="button"
             variant="quiet"
-            disabled={status.busy}
+            disabled={busy}
             onClick={cancel}
           >
             {t(($) => {

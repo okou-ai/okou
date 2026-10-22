@@ -18,8 +18,7 @@ import { useGet } from "ccstate-react";
 import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
 import { CircleHelp } from "lucide-react";
 
-export const REMOTE_PAGE_ACTION =
-  "min-h-10 bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed";
+export const REMOTE_PAGE_ACTION = "min-h-10";
 
 export function RemoteEditorFrame({
   inline,

@@ -34,6 +34,12 @@ export const thinkingSpinnerImg =
 export const computerUseIllustrationImg = pageAssetUrl(
   "assets/computer-use-illustration-eecea534a3ac.png?v=568fa471",
 );
+export const computerUseInstallIllustrationImg = pageAssetUrl(
+  "assets/computer-use-install-sign-in-95dbf88a9019.webp",
+);
+export const computerUsePermissionsIllustrationImg = pageAssetUrl(
+  "assets/computer-use-permissions-online-adca1d72ee25.webp",
+);
 export const noConnectorImg = pageAssetUrl("assets/no-connector.webp");
 export const noPermissionIllustration = pageAssetUrl(
   "assets/no-permission-illustration.webp",

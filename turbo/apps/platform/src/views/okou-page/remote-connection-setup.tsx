@@ -1,16 +1,25 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, Check, Monitor, Terminal } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Laptop,
+  Monitor,
+  Terminal,
+} from "lucide-react";
 import { Button } from "@okouai/ui";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   chooseRemoteProtocol$,
+  closeRemoteComputerUseSetup$,
   goBackRemoteSetup$,
   leaveRemoteSetup$,
   openRemoteLogin$,
   remoteSetup$,
+  remoteSetupSavedName$,
   saveRemoteSsh$,
   saveRemoteVnc$,
   type RemoteSetup,
@@ -18,19 +27,67 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
-import {
-  tailscaleEnabled$,
-  tailscaleSettingsEnabled$,
-} from "../../signals/tailscale.ts";
+import { tailscaleEnabled$ } from "../../signals/tailscale.ts";
+import { OKOU_DESKTOP_DOWNLOAD_URL } from "../../signals/okou-page/computer-use-hosts.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { SshDialog } from "./ssh-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
-import {
-  ConnectMyComputer,
-  RemoteComputerNetwork,
-} from "./remote-computer-setup.tsx";
+import { RemoteComputerNetwork } from "./remote-computer-setup.tsx";
+import { ComputerUseDownloadDialog } from "./computer-use-download-dialog.tsx";
+
+function ComputerUseChoice() {
+  const { t } = useTranslation();
+  const params = useGet(searchParams$);
+  const closeComputerUse = useSet(closeRemoteComputerUseSetup$);
+  return (
+    <>
+      <Link
+        pathname="/connectors"
+        options={{
+          searchParams: new URLSearchParams({
+            scope: "remote-control",
+            setup: "computer-use",
+            computerUseStep: "install",
+          }),
+        }}
+        className={cn(
+          buttonVariants({ variant: "outline" }),
+          "h-auto min-h-24 justify-start gap-4 whitespace-normal rounded-xl border-divider p-5 text-left",
+        )}
+      >
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-nested-fill">
+          <Laptop size={22} aria-hidden />
+        </span>
+        <span className="grid min-w-0 flex-1 gap-1.5">
+          <span className="text-base font-semibold">
+            {t(($) => {
+              return $.remoteControlSetup.computerUse;
+            })}
+          </span>
+          <span className="text-sm font-normal leading-relaxed text-muted-foreground">
+            {t(($) => {
+              return $.remoteControlSetup.computerUseDescription;
+            })}
+          </span>
+        </span>
+        <ArrowRight size={16} className="shrink-0" aria-hidden />
+      </Link>
+      {params.get("setup") === "computer-use" && (
+        <ComputerUseDownloadDialog
+          open
+          downloadUrl={OKOU_DESKTOP_DOWNLOAD_URL}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeComputerUse();
+            }
+          }}
+        />
+      )}
+    </>
+  );
+}
 
 function ProtocolChoice({
   setup,
@@ -79,14 +136,15 @@ function ProtocolChoice({
       : []),
   ];
   return (
-    <div className={cn("grid gap-4", options.length > 1 && "sm:grid-cols-2")}>
+    <div className="grid gap-3">
+      {!setup.sourceNetwork && <ComputerUseChoice />}
       {options.map((option) => {
         return (
           <Button
             key={option.value}
             variant="outline"
             disabled={opening.state === "loading"}
-            className="h-auto min-h-28 justify-start gap-4 whitespace-normal rounded-xl border-divider p-5 text-left"
+            className="h-auto min-h-24 justify-start gap-4 whitespace-normal rounded-xl border-divider p-5 text-left"
             onClick={() => {
               choose(option.value);
               detach(open(signal), Reason.DomCallback);
@@ -101,7 +159,7 @@ function ProtocolChoice({
                 {option.description}
               </span>
             </span>
-            <ArrowRight size={16} aria-hidden />
+            <ArrowRight size={16} className="shrink-0" aria-hidden />
           </Button>
         );
       })}
@@ -123,8 +181,6 @@ function SetupEntry({
   readonly vncEnabled: boolean;
 }) {
   const { t } = useTranslation();
-  const params = useGet(searchParams$);
-  const computerAvailable = useGet(tailscaleSettingsEnabled$);
   return (
     <div className="grid gap-6">
       <header className="grid gap-1.5">
@@ -143,32 +199,7 @@ function SetupEntry({
           </p>
         )}
       </header>
-      {setup.sourceNetwork || !computerAvailable ? (
-        <ProtocolChoice setup={setup} vncEnabled={vncEnabled} />
-      ) : (
-        <>
-          <ConnectMyComputer />
-          <details
-            open={
-              params.get("setup") === "ssh" || params.get("setup") === "vnc"
-            }
-          >
-            <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-              {t(($) => {
-                return $.remoteComputerSetup.advanced;
-              })}
-            </summary>
-            <div className="grid gap-4 pt-4">
-              <p className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.remoteComputerSetup.advancedDescription;
-                })}
-              </p>
-              <ProtocolChoice setup={setup} vncEnabled={vncEnabled} />
-            </div>
-          </details>
-        </>
-      )}
+      <ProtocolChoice setup={setup} vncEnabled={vncEnabled} />
     </div>
   );
 }
@@ -199,6 +230,32 @@ function RemoteSetupSaved({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const leave = useSet(leaveRemoteSetup$);
+  const name = useLoadable(remoteSetupSavedName$);
+  if (name.state !== "hasData" || name.data === null) {
+    return (
+      <div className="grid justify-items-center gap-4 py-12">
+        <p
+          role={name.state === "loading" ? "status" : "alert"}
+          className="text-sm text-muted-foreground"
+        >
+          {t(($) => {
+            return name.state === "loading"
+              ? $.remoteControlSetup.loading
+              : name.state === "hasError"
+                ? setup.protocol === "ssh"
+                  ? $.ssh.loadFailed
+                  : $.vnc.loadFailed
+                : $.remoteControlSetup.resourceUnavailable;
+          })}
+        </p>
+        <Button variant="neutral" onClick={leave}>
+          {t(($) => {
+            return $.remoteControlSetup.cancel;
+          })}
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="mx-auto grid w-full max-w-xl justify-items-center gap-5 py-12 text-center">
       <span className="rounded-full bg-gray-50 p-3">
@@ -209,7 +266,7 @@ function RemoteSetupSaved({ setup }: { readonly setup: RemoteSetup }) {
           return $.remoteControlSetup.saved;
         })}
       </h2>
-      <p className="font-medium">{setup.savedName}</p>
+      <p className="font-medium">{name.data}</p>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
           return $.remoteControlSetup.savedHelp;

@@ -1552,7 +1552,7 @@ export function ConnectorsPage() {
   const remoteSetup = useGet(remoteSetup$);
   const remoteResource = useGet(remoteResource$);
   const credentialsPage = useGet(remoteCredentialsPage$);
-  const networkPage = useLastResolved(remoteNetworkPage$);
+  const networkPage = useGet(remoteNetworkPage$);
   if (networkPage) {
     return <RemoteNetworkPage />;
   }

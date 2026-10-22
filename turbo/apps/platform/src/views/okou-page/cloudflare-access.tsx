@@ -17,12 +17,12 @@ import { remoteNetworkScopeStatus$ } from "../../signals/remote-network-scope.ts
 import {
   RemoteEditorFrame,
   useRemoteNetworkEditorVisible,
-  REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { RemoteFormFooter } from "./remote-form-footer.tsx";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import {
@@ -453,15 +453,11 @@ function useCloudflareAccessDialogCopy(
   }
 }
 
-function CloudflareAccessSaveNotice({
-  isSaving,
-}: {
-  readonly isSaving: boolean;
-}) {
+function CloudflareAccessSaveNotice() {
   const { t } = useTranslation();
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
   const message = useGet(cloudflareAccessSaveMessage$);
-  if (isSaving || (!uncertain && !message)) {
+  if (!uncertain && !message) {
     return null;
   }
   return (
@@ -475,70 +471,6 @@ function CloudflareAccessSaveNotice({
             return $.cloudflareAccess.invalidInput;
           }))}
     </p>
-  );
-}
-
-function CloudflareAccessFormActions({
-  isSaving,
-  blocked,
-  destructive,
-  title,
-  inline,
-}: {
-  readonly isSaving: boolean;
-  readonly blocked: boolean;
-  readonly destructive: boolean;
-  readonly title: string;
-  readonly inline?: boolean;
-}) {
-  const { t } = useTranslation();
-  const guided = useGet(remoteControlGuidedEnabled$);
-  const saveLabel = useRemoteNetworkSaveLabel();
-  const close = useSet(closeCloudflareAccessDialog$);
-  const uncertain = useGet(cloudflareAccessSaveUncertain$);
-  return (
-    <div
-      className={
-        inline
-          ? "mt-2 flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-5"
-          : "flex shrink-0 justify-end gap-2"
-      }
-    >
-      {!inline && (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isSaving}
-          onClick={close}
-        >
-          {t(($) => {
-            return $.cloudflareAccess.cancel;
-          })}
-        </Button>
-      )}
-      <Button
-        type="submit"
-        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
-        disabled={isSaving || (!uncertain && blocked)}
-        variant={destructive ? "destructive" : "default"}
-      >
-        {isSaving
-          ? t(($) => {
-              return $.connectors.actions.saving;
-            })
-          : uncertain
-            ? t(($) => {
-                return $.cloudflareAccess.retry;
-              })
-            : destructive
-              ? title
-              : guided
-                ? saveLabel
-                : t(($) => {
-                    return $.cloudflareAccess.save;
-                  })}
-      </Button>
-    </div>
   );
 }
 
@@ -679,6 +611,9 @@ export function CloudflareAccessDialog({
   readonly inline?: boolean;
   readonly saveAction?: typeof saveCloudflareAccess$;
 } = {}) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const saveLabel = useRemoteNetworkSaveLabel();
   const dialog = useLastResolved(cloudflareAccessDialog$);
   const close = useSet(closeCloudflareAccessDialog$);
   const [saving, save] = useLoadableSet(saveAction);
@@ -722,18 +657,40 @@ export function CloudflareAccessDialog({
             disabled={isSaving || uncertain}
           />
           <CloudflareAccessConflictReview />
-          <CloudflareAccessSaveNotice isSaving={isSaving} />
+          {!isSaving && <CloudflareAccessSaveNotice />}
           <RemoteNetworkScopeConfirmation
             provider="cloudflare"
             configId={dialog.config?.id}
           />
         </DialogBody>
-        <CloudflareAccessFormActions
-          isSaving={isSaving}
-          inline={inline}
-          blocked={isSaving || !!conflict || !!scopeStatus.error}
+        <RemoteFormFooter
+          separated={inline}
+          onCancel={inline ? undefined : close}
+          cancelLabel={t(($) => {
+            return $.cloudflareAccess.cancel;
+          })}
+          cancelDisabled={isSaving}
+          submitDisabled={
+            isSaving || (!uncertain && (!!conflict || !!scopeStatus.error))
+          }
           destructive={destructive}
-          title={title}
+          submitLabel={
+            isSaving
+              ? t(($) => {
+                  return $.connectors.actions.saving;
+                })
+              : uncertain
+                ? t(($) => {
+                    return $.cloudflareAccess.retry;
+                  })
+                : destructive
+                  ? title
+                  : guided
+                    ? saveLabel
+                    : t(($) => {
+                        return $.cloudflareAccess.save;
+                      })
+          }
         />
       </form>
     </RemoteEditorFrame>
@@ -897,18 +854,10 @@ export function CloudflareAccessPromotionDialog() {
   );
 }
 
-function CloudflareAccessDeletionReview({
-  isSaving,
-  error,
-}: {
-  readonly isSaving: boolean;
-  readonly error: string | null;
-}) {
+function CloudflareAccessDeletionReview() {
   const { t } = useTranslation();
   const preview = useLoadable(cloudflareAccessDeletionPreview$);
   const impact = preview.state === "hasData" ? preview.data : null;
-  const acknowledged = useGet(cloudflareAccessDeletionAcknowledged$);
-  const acknowledge = useSet(acknowledgeCloudflareAccessDeletion$);
   return (
     <>
       {preview.state === "loading" && (
@@ -939,23 +888,6 @@ function CloudflareAccessDeletionReview({
           })}
         </p>
       )}
-      {impact && impact.otherHostCount > 0 && (
-        <div className="grid gap-3 rounded-lg border p-4 text-sm">
-          <PrivateNetworkAffectedMembers preview={impact} />
-          <label className="flex items-start gap-2">
-            <Checkbox
-              checked={acknowledged === impact.impactSnapshot}
-              disabled={isSaving || !!error || impact.ownHostCount > 0}
-              onCheckedChange={(checked) => {
-                return acknowledge(checked ? impact.impactSnapshot : null);
-              }}
-            />
-            {t(($) => {
-              return $.vnc.native.impactConfirm;
-            })}
-          </label>
-        </div>
-      )}
     </>
   );
 }
@@ -965,6 +897,7 @@ export function CloudflareAccessDeletionDialog() {
   const dialog = useLoadable(cloudflareAccessDeletionDialog$);
   const preview = useLoadable(cloudflareAccessDeletionPreview$);
   const acknowledged = useGet(cloudflareAccessDeletionAcknowledged$);
+  const acknowledge = useSet(acknowledgeCloudflareAccessDeletion$);
   const error = useGet(cloudflareAccessDeletionError$);
   const close = useSet(closeCloudflareAccessDeletion$);
   const review = useSet(reviewCloudflareAccessDeletion$);
@@ -1000,7 +933,24 @@ export function CloudflareAccessDeletionDialog() {
         </DialogHeader>
         <DialogBody className="grid gap-4">
           <p className="font-medium">{current.name}</p>
-          <CloudflareAccessDeletionReview isSaving={isSaving} error={error} />
+          <CloudflareAccessDeletionReview />
+          {impact && impact.otherHostCount > 0 && (
+            <div className="grid gap-3 rounded-lg border p-4 text-sm">
+              <PrivateNetworkAffectedMembers preview={impact} />
+              <label className="flex items-start gap-2">
+                <Checkbox
+                  checked={acknowledged === impact.impactSnapshot}
+                  disabled={isSaving || !!error || impact.ownHostCount > 0}
+                  onCheckedChange={(checked) => {
+                    return acknowledge(checked ? impact.impactSnapshot : null);
+                  }}
+                />
+                {t(($) => {
+                  return $.vnc.native.impactConfirm;
+                })}
+              </label>
+            </div>
+          )}
           {error && (
             <p role="alert">
               {error === "uncertain"

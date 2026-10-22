@@ -1,7 +1,7 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Laptop, Network } from "lucide-react";
+import { ArrowRight, Network } from "lucide-react";
 import {
   Button,
   Card,
@@ -23,46 +23,7 @@ import {
 import { retryTailscale$ } from "../../signals/tailscale.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { searchParams$ } from "../../signals/route.ts";
-import { Link } from "../router/link.tsx";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
-
-export function ConnectMyComputer() {
-  const { t } = useTranslation();
-  const params = new URLSearchParams(useGet(searchParams$));
-  params.set("scope", "remote-control");
-  params.set("setup", "computer");
-  params.delete("remoteResource");
-  params.delete("networkConnections");
-  return (
-    <Link
-      pathname="/connectors"
-      options={{ searchParams: params }}
-      className={surfaceVariants({
-        interactive: true,
-        className:
-          "flex min-h-24 items-center gap-4 p-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      })}
-    >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-nested-fill">
-        <Laptop size={22} aria-hidden />
-      </span>
-      <span className="grid min-w-0 flex-1 gap-1.5">
-        <span className="text-base font-semibold">
-          {t(($) => {
-            return $.remoteComputerSetup.title;
-          })}
-        </span>
-        <span className="text-sm font-normal leading-relaxed text-muted-foreground">
-          {t(($) => {
-            return $.remoteComputerSetup.description;
-          })}
-        </span>
-      </span>
-      <ArrowRight size={18} className="shrink-0" aria-hidden />
-    </Link>
-  );
-}
 
 function ComputerNetworkSelection() {
   const { t } = useTranslation();

@@ -195,18 +195,16 @@ test.each([
     ).toBeNull();
     expect(queryAllByRoleFast("tab")).toHaveLength(0);
     expect(queryAction("button", "Add credential")).toBeNull();
-    expect(queryAction("button", "Add connection")).toBeNull();
-    click(getAction("button", "Add your first device"));
-    await screen.findByRole("heading", { name: "Add remote connection" });
     expect(
-      screen.getByText("Connect my computer").closest("a"),
-    ).toHaveAttribute(
+      queryAllByRoleFast("button").filter((button) => {
+        return button.textContent?.trim() === "Add connection";
+      }),
+    ).toHaveLength(1);
+    click(getAction("button", "Add connection"));
+    await screen.findByRole("heading", { name: "Add remote connection" });
+    expect(screen.getByText("Computer use").closest("a")).toHaveAttribute(
       "href",
-      "/connectors?scope=remote-control&setup=computer",
-    );
-    expect(screen.getByText("Run commands on the device.")).not.toBeVisible();
-    click(
-      screen.getByText("Manual connection (advanced)", { selector: "summary" }),
+      "/connectors?scope=remote-control&setup=computer-use&computerUseStep=install",
     );
     expect(screen.getByText("Run commands on the device.")).toBeVisible();
     expect(
@@ -246,7 +244,6 @@ test.each([
     click(screen.getByTestId("connectors-scope-remote-control"));
     await screen.findByText("Loading…");
     expect(queryAction("button", "Add connection")).toBeNull();
-    expect(queryAction("button", "Add your first device")).toBeNull();
     expect(screen.queryByText("No devices added yet")).toBeNull();
     release.resolve();
     if (populated) {
@@ -256,27 +253,189 @@ test.each([
     } else {
       await screen.findByRole("heading", { name: "No devices added yet" });
     }
+    expect(getAction("button", "Add connection")).toBeInTheDocument();
     expect(
-      getAction(
-        "button",
-        populated ? "Add connection" : "Add your first device",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      queryAction(
-        "button",
-        populated ? "Add your first device" : "Add connection",
-      ),
-    ).toBeNull();
+      queryAllByRoleFast("button").filter((button) => {
+        return button.textContent?.trim() === "Add connection";
+      }),
+    ).toHaveLength(1);
     expect(screen.queryByText("Loading…")).toBeNull();
   },
 );
 
-test("Connecting my computer starts with a private network and can return from network creation", async () => {
-  await page("/connectors?scope=remote-control");
-  await screen.findByRole("heading", { name: "No devices added yet" });
-  click(getAction("button", "Add your first device"));
-  click(await screen.findByText("Connect my computer"));
+test("Computer use opens its download guide from the parallel connection choices", async () => {
+  await page("/connectors?scope=remote-control&setup=add");
+  await screen.findByRole("heading", { name: "Add remote connection" });
+  click(screen.getByText("Computer use"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Install and sign in",
+  });
+  expect(dialog).toHaveTextContent("Install and sign in");
+  expect(new URLSearchParams(window.location.search).get("setup")).toBe(
+    "computer-use",
+  );
+  const download = await waitFor(() => {
+    return getAction("link", "Download for macOS", dialog);
+  });
+  expect(download).toHaveAttribute(
+    "href",
+    expect.stringContaining("/api/desktop/updates/stable/darwin/arm64/dmg"),
+  );
+  click(getAction("button", "Continue", dialog));
+  await screen.findByRole("heading", { name: "Allow access and stay online" });
+  expect(within(dialog).getByRole("presentation")).toHaveAttribute(
+    "src",
+    expect.stringContaining("computer-use-permissions-online-"),
+  );
+  expect(
+    new URLSearchParams(window.location.search).get("computerUseStep"),
+  ).toBe("permissions");
+  click(getAction("button", "Continue", dialog));
+  await screen.findByRole("heading", { name: "Enable it in chat" });
+  expect(
+    new URLSearchParams(window.location.search).get("computerUseStep"),
+  ).toBe("chat");
+  act(() => {
+    return window.history.back();
+  });
+  await screen.findByRole("heading", { name: "Allow access and stay online" });
+  click(getAction("button", "Previous", dialog));
+  await screen.findByRole("heading", { name: "Install and sign in" });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(new URLSearchParams(window.location.search).get("setup")).toBe("add");
+  click(screen.getByText("Run commands on the device."));
+  await expect(
+    screen.findByLabelText("SSH username"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("A Computer use URL restores the guide without SSH or VNC capabilities", async () => {
+  await page(
+    "/connectors?scope=remote-control&setup=computer-use&computerUseStep=install",
+    true,
+    undefined,
+    { tailscale: false, vnc: false },
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Install and sign in",
+  });
+  expect(
+    within(dialog).getByText(/Requires an Apple silicon Mac/),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByRole("presentation")).toHaveAttribute(
+    "src",
+    expect.stringContaining("computer-use-install-sign-in-"),
+  );
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("Computer use").closest("a")).toHaveAttribute(
+    "href",
+    "/connectors?scope=remote-control&setup=computer-use&computerUseStep=install",
+  );
+  expect(screen.getByText("Run commands on the device.")).toBeInTheDocument();
+});
+
+test.each([
+  ["permissions", "Allow access and stay online"],
+  ["chat", "Enable it in chat"],
+])("A Computer use URL restores the %s step", async (step, title) => {
+  await page(
+    `/connectors?scope=remote-control&setup=computer-use&computerUseStep=${step}`,
+  );
+  const dialog = await screen.findByRole("dialog", { name: title });
+  const illustration = within(dialog).getByRole("figure");
+  expect(illustration).toBeInTheDocument();
+});
+
+test("The Computer use chat guide renders a vector rather than a bitmap", async () => {
+  await page(
+    "/connectors?scope=remote-control&setup=computer-use&computerUseStep=chat",
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enable it in chat",
+  });
+  const illustration = within(dialog).getByRole("img");
+  expect(illustration.tagName).toBe("svg");
+  expect(within(illustration).getByText("Your computer")).toBeInTheDocument();
+  expect(within(illustration).getByText("This Mac")).toBeInTheDocument();
+});
+
+test.each([
+  ["profile", "Choose a VNC login method"],
+  ["connection", "Connect a device"],
+  ["login", "Enter device login information"],
+  ["trust", "Review and save"],
+])("A VNC URL restores the %s step", async (step, title) => {
+  await page(
+    `/connectors?scope=remote-control&setup=vnc&step=${step}&vncProfile=x509_vnc&vncRoute=direct`,
+  );
+  await screen.findByRole("heading", { name: title });
+  expect(new URLSearchParams(window.location.search).get("step")).toBe(step);
+});
+
+test("VNC steps follow browser history", async () => {
+  await page("/connectors?scope=remote-control&setup=vnc&step=profile");
+  click(getAction("button", "Continue"));
+  await screen.findByRole("heading", { name: "Connect a device" });
+  expect(new URLSearchParams(window.location.search).get("step")).toBe(
+    "connection",
+  );
+  act(() => {
+    return window.history.back();
+  });
+  await screen.findByRole("heading", { name: "Choose a VNC login method" });
+});
+
+test("An SSH URL restores the connection form", async () => {
+  await page("/connectors?scope=remote-control&setup=ssh&step=login");
+  await screen.findByLabelText("SSH username");
+  await fill(screen.getByLabelText("Password"), "not-for-the-url");
+  expect(window.location.search).toBe(
+    "?scope=remote-control&setup=ssh&step=login",
+  );
+});
+
+test.each(["ssh", "vnc"])(
+  "A saved %s URL restores the persisted connection rather than an empty success screen",
+  async (protocol) => {
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [sshHost] });
+    });
+    context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [vncHost] });
+    });
+    const connection = protocol === "ssh" ? sshHost : vncHost;
+    await page(
+      `/connectors?scope=remote-control&setup=${protocol}&step=saved&savedConnection=${connection.id}`,
+    );
+    await screen.findByRole("heading", { name: "Connection added" });
+    expect(screen.getByText(connection.displayName)).toBeInTheDocument();
+    expect(getAction("link", "View connection")).toHaveAttribute(
+      "href",
+      `/connectors?scope=remote-control&remoteResource=${protocol}%3A${connection.id}`,
+    );
+  },
+);
+
+test("An unavailable saved connection cannot show a success screen", async () => {
+  await page(
+    "/connectors?scope=remote-control&setup=ssh&step=saved&savedConnection=missing",
+  );
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "This configuration is unavailable or you no longer have access.",
+  );
+  expect(
+    screen.queryByRole("heading", { name: "Connection added" }),
+  ).toBeNull();
+});
+
+test("A saved computer-setup link can return from network creation", async () => {
+  await page("/connectors?scope=remote-control&setup=computer");
   await screen.findByRole("heading", {
     name: "Step 1 · Prepare the connection",
   });
@@ -444,7 +603,7 @@ test("Computer setup is unavailable without Tailscale or VNC capability", async 
   expect(
     screen.queryByRole("heading", { name: "Connect my computer" }),
   ).toBeNull();
-  click(getAction("button", "Add your first device"));
+  click(getAction("button", "Add connection"));
   expect(screen.queryByText("Connect my computer")).toBeNull();
   expect(screen.getByText("Run commands on the device.")).toBeVisible();
 });
@@ -688,7 +847,7 @@ test("The UI switch does not expose disabled VNC or Tailscale setup", async () =
     tailscale: false,
   });
   await screen.findByRole("heading", { name: "No devices added yet" });
-  click(getAction("button", "Add your first device"));
+  click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Add remote connection" });
   expect(
     screen.queryByText(
@@ -946,7 +1105,7 @@ test("Manual setup respects disabled VNC and clears the chosen network when leav
   await screen.findByRole("region", { name: "Private networks" });
   click(screen.getByTestId("connectors-scope-remote-control"));
   await screen.findByRole("heading", { name: "No devices added yet" });
-  click(getAction("button", "Add your first device"));
+  click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Add remote connection" });
   expect(screen.queryByText("Using network: Office network")).toBeNull();
   expect(queryAction("button", "Back")).toBeNull();
@@ -2488,6 +2647,259 @@ function mockNetworkUsageChangedInAnotherWindow() {
   };
 }
 
+test("An SSH deletion stays pending while its details refresh", async () => {
+  mockSavedConnections();
+  const refreshRequested = context.mocks.deferred<void>();
+  const refreshRelease = context.mocks.deferred<void>();
+  const deleteRequested = context.mocks.deferred<void>();
+  const deleteRelease = context.mocks.deferred<void>();
+  let refreshing = false;
+  let deleted = false;
+  context.mocks.api(
+    sshConnectionsContract.list,
+    async ({ respond, withSignal }) => {
+      if (refreshing) {
+        refreshRequested.resolve();
+        await withSignal(refreshRelease.promise);
+      }
+      return respond(200, { connections: deleted ? [] : [sshHost] });
+    },
+  );
+  context.mocks.api(
+    sshConnectionsContract.delete,
+    async ({ respond, withSignal }) => {
+      deleteRequested.resolve();
+      await withSignal(deleteRelease.promise);
+      deleted = true;
+      return respond(204);
+    },
+  );
+  await page(
+    `/connectors?scope=remote-control&remoteResource=ssh:${sshHost.id}`,
+    true,
+    "member",
+  );
+  await screen.findByRole("heading", { name: sshHost.displayName });
+  click(getAction("button", "Delete connection"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete connection",
+  });
+  click(getAction("button", "Delete connection", dialog));
+  await deleteRequested.promise;
+
+  refreshing = true;
+  await act(async () => {
+    context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
+    await refreshRequested.promise;
+  });
+  expect(dialog).toBeVisible();
+  expect(getAction("button", "Cancel", dialog)).toBeDisabled();
+
+  refreshing = false;
+  refreshRelease.resolve();
+  deleteRelease.resolve();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Delete connection" }),
+    ).not.toBeInTheDocument();
+  });
+  await screen.findByText(
+    "This configuration is unavailable or you no longer have access.",
+  );
+});
+
+test.each(["tailscale", "cloudflare"] as const)(
+  "The %s deletion dialog survives a pending and failed detail refresh",
+  async (provider) => {
+    const requested = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    let refreshing = false;
+    const config = provider === "tailscale" ? network : cloudflareNetwork;
+    const contract =
+      provider === "tailscale" ? tailscaleContract : cloudflareAccessContract;
+    const title =
+      provider === "tailscale"
+        ? "Delete Tailscale"
+        : "Delete Cloudflare Access";
+    context.mocks.api(contract.list, async ({ respond, withSignal }) => {
+      if (refreshing) {
+        requested.resolve();
+        await withSignal(release.promise);
+        return respond(503, { error: { message: "Network unavailable" } });
+      }
+      return respond(200, { configs: [config] });
+    });
+    await page(
+      `/connectors?scope=private-network&remoteResource=${provider}:${config.id}`,
+      true,
+      "member",
+    );
+    await screen.findByRole("heading", { name: config.name });
+    click(getAction("button", title));
+    const dialog = await screen.findByRole("dialog", { name: title });
+
+    refreshing = true;
+    await act(async () => {
+      context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
+      await requested.promise;
+    });
+    expect(dialog).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: config.name, hidden: true }),
+    ).toBeInTheDocument();
+
+    release.resolve();
+    await screen.findByText(
+      `Could not load ${provider === "tailscale" ? "Tailscale" : "Cloudflare Access"}. Try again.`,
+    );
+    expect(dialog).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: config.name, hidden: true }),
+    ).not.toBeInTheDocument();
+    click(getAction("button", "Cancel", dialog));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: title }),
+      ).not.toBeInTheDocument();
+    });
+    refreshing = false;
+    click(getAction("button", "Try again"));
+    await screen.findByRole("heading", { name: config.name });
+  },
+);
+
+test.each(["ssh", "vnc"] as const)(
+  "The guided %s edit entry shows pending credentials and retries a failed load",
+  async (protocol) => {
+    mockSavedConnections();
+    const release = context.mocks.deferred<void>();
+    let failed = true;
+    if (protocol === "ssh") {
+      context.mocks.api(
+        sshCredentialsContract.list,
+        async ({ respond, withSignal }) => {
+          await withSignal(release.promise);
+          return failed
+            ? respond(503, { error: { message: "Credentials unavailable" } })
+            : respond(200, { credentials: [sshLogin] });
+        },
+      );
+    } else {
+      context.mocks.api(
+        vncCredentialsContract.list,
+        async ({ respond, withSignal }) => {
+          await withSignal(release.promise);
+          return failed
+            ? respond(503, { error: { message: "Credentials unavailable" } })
+            : respond(200, { credentials: [vncLogin] });
+        },
+      );
+    }
+    const host = protocol === "ssh" ? sshHost : vncHost;
+    await page(
+      `/connectors?scope=remote-control&remoteResource=${protocol}:${host.id}`,
+    );
+    await screen.findByRole("heading", { name: host.displayName });
+    const edit = getAction("button", "Edit connection");
+    click(edit);
+    await waitFor(() => {
+      expect(edit).toBeDisabled();
+      expect(edit).toHaveAttribute("aria-busy", "true");
+    });
+    release.resolve();
+    await screen.findByText(
+      protocol === "ssh"
+        ? "Could not load SSH settings. Try again."
+        : "Could not load VNC configuration.",
+    );
+    failed = false;
+    click(getAction("button", "Try again"));
+    await screen.findByRole("heading", { name: "Edit connection", level: 2 });
+    await expect(
+      screen.findByDisplayValue(host.host),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each(["ssh", "vnc"] as const)(
+  "The guided %s credentials list stays visible while a saved rename reloads",
+  async (protocol) => {
+    mockSavedConnections();
+    const requested = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    let renamed = false;
+    const name = protocol === "ssh" ? sshLogin.name : vncLogin.name;
+    if (protocol === "ssh") {
+      context.mocks.api(
+        sshCredentialsContract.list,
+        async ({ respond, withSignal }) => {
+          if (renamed) {
+            requested.resolve();
+            await withSignal(release.promise);
+          }
+          return respond(200, {
+            credentials: [
+              { ...sshLogin, name: renamed ? "Updated login" : name },
+            ],
+          });
+        },
+      );
+      context.mocks.api(sshCredentialsContract.update, ({ respond }) => {
+        renamed = true;
+        return respond(200, {
+          ...sshLogin,
+          name: "Updated login",
+          revision: 4,
+        });
+      });
+    } else {
+      context.mocks.api(
+        vncCredentialsContract.list,
+        async ({ respond, withSignal }) => {
+          if (renamed) {
+            requested.resolve();
+            await withSignal(release.promise);
+          }
+          return respond(200, {
+            credentials: [
+              { ...vncLogin, name: renamed ? "Updated login" : name },
+            ],
+          });
+        },
+      );
+      context.mocks.api(vncCredentialsContract.update, ({ respond }) => {
+        renamed = true;
+        return respond(200, {
+          ...vncLogin,
+          name: "Updated login",
+          revision: 5,
+        });
+      });
+    }
+    await page(
+      `/connectors?scope=remote-control&remoteView=credentials&type=${protocol}`,
+    );
+    await screen.findByRole("heading", { name });
+    click(getAction("button", "Edit credential"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit credential",
+    });
+    await fill(
+      within(dialog).getByLabelText("Credential name"),
+      "Updated login",
+    );
+    await act(async () => {
+      click(getAction("button", "Save", dialog));
+      await requested.promise;
+    });
+    expect(
+      screen.getByRole("heading", { name, hidden: true }),
+    ).toBeInTheDocument();
+    release.resolve();
+    await screen.findByRole("heading", { name: "Updated login" });
+  },
+);
+
 test("Guided private network directory refreshes SSH usage changed in another window", async () => {
   const changeUsage = mockNetworkUsageChangedInAnotherWindow();
   await page("/connectors?scope=private-network", true, "member");
@@ -2504,6 +2916,153 @@ test("Guided private network directory refreshes SSH usage changed in another wi
     ).toBeInTheDocument();
   });
 });
+
+test.each(["Tailscale", "Cloudflare Access"] as const)(
+  "The %s network list and connections dialog stay visible during a background refresh",
+  async (provider) => {
+    const requested = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    let refreshing = false;
+    const config = provider === "Tailscale" ? network : cloudflareNetwork;
+    const contract =
+      provider === "Tailscale" ? tailscaleContract : cloudflareAccessContract;
+    context.mocks.api(contract.list, async ({ respond, withSignal }) => {
+      if (refreshing) {
+        requested.resolve();
+        await withSignal(release.promise);
+      }
+      return respond(200, {
+        configs: [
+          {
+            ...config,
+            sshHosts: [
+              {
+                id: sshHost.id,
+                displayName: refreshing
+                  ? "Updated server"
+                  : sshHost.displayName,
+              },
+            ],
+          },
+        ],
+      });
+    });
+    await page("/connectors?scope=private-network", true, "member");
+    await screen.findByText(network.name);
+    click(getAction("button", "Office network · Your 1 connection"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Connections using this network",
+    });
+    await within(dialog).findByText(sshHost.displayName);
+
+    refreshing = true;
+    context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
+    await requested.promise;
+
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByText(sshHost.displayName)).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("region", { name: "Personal networks", hidden: true }),
+      ).getByText(network.name),
+    ).toBeInTheDocument();
+
+    release.resolve();
+    await within(dialog).findByText("Updated server");
+  },
+);
+
+test.each(["Tailscale", "Cloudflare Access"] as const)(
+  "A failed %s network refresh removes stale data and can recover",
+  async (provider) => {
+    let failed = false;
+    const config = provider === "Tailscale" ? network : cloudflareNetwork;
+    const contract =
+      provider === "Tailscale" ? tailscaleContract : cloudflareAccessContract;
+    context.mocks.api(contract.list, ({ respond }) => {
+      return failed
+        ? respond(503, { error: { message: "Network unavailable" } })
+        : respond(200, { configs: [config] });
+    });
+    await page("/connectors?scope=private-network", true, "member");
+    await screen.findByText(network.name);
+
+    failed = true;
+    context.mocks.ably.trigger("ssh:changed", { orgId: "org_network_scope" });
+    await screen.findByText(`Could not load ${provider}. Try again.`);
+    expect(screen.queryByText(network.name)).not.toBeInTheDocument();
+
+    failed = false;
+    click(getAction("button", "Try again"));
+    await screen.findByText(network.name);
+  },
+);
+
+test.each(["account", "workspace"] as const)(
+  "Switching %s immediately removes the previous owner's network data",
+  async (owner) => {
+    const release = context.mocks.deferred<void>();
+    let changed = false;
+    context.mocks.api(
+      tailscaleContract.list,
+      async ({ respond, withSignal }) => {
+        if (changed) {
+          await withSignal(release.promise);
+        }
+        return respond(200, {
+          configs: [
+            { ...network, name: changed ? "New Tailscale" : "Old Tailscale" },
+          ],
+        });
+      },
+    );
+    context.mocks.api(
+      cloudflareAccessContract.list,
+      async ({ respond, withSignal }) => {
+        if (changed) {
+          await withSignal(release.promise);
+        }
+        return respond(200, {
+          configs: [
+            {
+              ...cloudflareNetwork,
+              name: changed ? "New Cloudflare" : "Old Cloudflare",
+            },
+          ],
+        });
+      },
+    );
+    await page("/connectors?scope=private-network", true, "member");
+    await screen.findByText("Old Tailscale");
+    await screen.findByText("Old Cloudflare");
+
+    changed = true;
+    const clerk = context.mocks.clerk();
+    act(() => {
+      if (owner === "account") {
+        clerk.user(
+          { id: "other-network-owner", fullName: "Other Owner" },
+          {
+            id: "other-network-session",
+            token: "other-token",
+          },
+        );
+      } else {
+        clerk.organization({
+          activeOrg: { id: "org_other_networks", name: "Other Workspace" },
+          memberships: [{ id: "org_other_networks" }],
+        });
+      }
+      clerk.stateChanged();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Old Tailscale")).not.toBeInTheDocument();
+      expect(screen.queryByText("Old Cloudflare")).not.toBeInTheDocument();
+    });
+
+    release.resolve();
+  },
+);
 
 test("Guided private network details refresh SSH usage changed in another window", async () => {
   const changeUsage = mockNetworkUsageChangedInAnotherWindow();
@@ -3320,6 +3879,118 @@ async function openNetworkForm(provider: "Tailscale" | "Cloudflare Access") {
   click(getAction("button", "Enter existing credentials"));
   return await screen.findByRole("textbox", { name: "Network name" });
 }
+test.each([
+  ["tailscale", 1, "Download Tailscale"],
+  ["tailscale", 2, "Create an OAuth credential"],
+  ["tailscale", 3, "Set permissions and tags"],
+  ["tailscale", 4, "Generate and copy the credential"],
+  ["cloudflare", 1, "Create a Service Token"],
+  ["cloudflare", 2, "Allow access to the target application"],
+  ["cloudflare", 3, "Enter connection credentials"],
+] as const)(
+  "Private network URL restores %s guide step %s",
+  async (provider, step, title) => {
+    await page(
+      `/connectors?scope=private-network&network=${provider}&networkGuide=${provider}&networkStep=${step}`,
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading")).toHaveTextContent(title);
+    expect(
+      within(dialog).getByText(`${step} / ${provider === "tailscale" ? 4 : 3}`),
+    ).toBeInTheDocument();
+  },
+);
+
+test.each(["tailscale", "cloudflare"] as const)(
+  "Private network URL restores the %s editor without returning credentials",
+  async (provider) => {
+    context.mocks.api(tailscaleContract.list, ({ respond }) => {
+      return respond(200, { configs: [network] });
+    });
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, { configs: [cloudflareNetwork] });
+    });
+    await page(
+      `/connectors?scope=private-network&network=${provider}&networkEdit=${network.id}`,
+    );
+    await expect(
+      screen.findByRole("textbox", { name: "Network name" }),
+    ).resolves.toHaveValue(network.name);
+    expect(screen.queryByLabelText("Client Secret")).toBeNull();
+  },
+);
+
+test("Private network history restores the provider picker and guide step", async () => {
+  await page("/connectors?scope=private-network&network=add");
+  click(await screen.findByText("Cloudflare Access", { exact: true }));
+  await screen.findByRole("dialog", { name: "Create a Service Token" });
+  click(getAction("button", "Continue"));
+  expect(new URLSearchParams(window.location.search).get("networkStep")).toBe(
+    "2",
+  );
+  act(() => {
+    window.history.back();
+  });
+  await screen.findByRole("dialog", { name: "Create a Service Token" });
+  expect(new URLSearchParams(window.location.search).get("networkStep")).toBe(
+    "1",
+  );
+});
+
+test("A missing private network URL stays unavailable and can return to creation", async () => {
+  await page(
+    `/connectors?scope=private-network&network=tailscale&networkEdit=${network.id}`,
+  );
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Unable to load",
+  );
+  expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
+  click(getAction("button", "Back"));
+  await waitFor(() => {
+    expect(getAction("button", "Add network")).toBeInTheDocument();
+  });
+  click(getAction("button", "Add network"));
+  await screen.findByRole("heading", { name: "Add a private network" });
+});
+
+test.each(["tailscale", "cloudflare"] as const)(
+  "A member cannot open an organization %s editor through a URL",
+  async (provider) => {
+    context.mocks.api(tailscaleContract.list, ({ respond }) => {
+      return respond(200, {
+        configs: [{ ...network, scope: "organization" }],
+      });
+    });
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, {
+        configs: [{ ...cloudflareNetwork, scope: "organization" }],
+      });
+    });
+    await page(
+      `/connectors?scope=private-network&network=${provider}&networkEdit=${network.id}`,
+      true,
+      "member",
+    );
+    await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+      "Unable to load",
+    );
+    expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
+  },
+);
+
+test("A Tailscale editor URL does not bypass disabled remote capabilities", async () => {
+  await page(
+    "/connectors?scope=private-network&network=tailscale",
+    true,
+    undefined,
+    { tailscale: false, vnc: false },
+  );
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Unable to load",
+  );
+  expect(screen.queryByRole("textbox", { name: "Network name" })).toBeNull();
+});
+
 test("Cloudflare three-step guide preserves the draft and resumes after returning", async () => {
   const name = await openNetworkForm("Cloudflare Access");
   await fill(name, "Cloudflare draft");
@@ -3830,7 +4501,6 @@ test("SSH and VNC share one ungrouped connection list regardless of network scop
   expect(
     screen.queryByRole("heading", { name: "No devices added yet" }),
   ).toBeNull();
-  expect(queryAction("button", "Add your first device")).toBeNull();
   expect(getAction("button", "Add connection")).toBeInTheDocument();
   expect(
     within(connections).getByText(sshHost.displayName),

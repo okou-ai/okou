@@ -17,6 +17,7 @@ import {
   type AvailablePaidToolId,
 } from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
+import { createComputerUseGuideSignals } from "../computer-use-setup.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef, settle } from "../utils.ts";
 import {
@@ -450,25 +451,6 @@ function composerTemplateSignals(
   };
 }
 
-function createComputerUseUiSignals(): Pick<
-  ComposerComputerSignals,
-  "computerUseDownloadDialogOpen$" | "setComputerUseDownloadDialogOpen$"
-> {
-  const internalDownloadDialogOpen$ = state(false);
-  const computerUseDownloadDialogOpen$ = computed((get): boolean => {
-    return get(internalDownloadDialogOpen$);
-  });
-  const setComputerUseDownloadDialogOpen$ = command(
-    ({ set }, open: boolean): void => {
-      set(internalDownloadDialogOpen$, open);
-    },
-  );
-  return {
-    computerUseDownloadDialogOpen$,
-    setComputerUseDownloadDialogOpen$,
-  };
-}
-
 function createRemoveQueuedMessage(
   removeQueuedMessage$: CreateComposerSignalsOptions["removeQueuedMessage$"],
   workflowComposer: WorkflowComposerSignals,
@@ -656,7 +638,9 @@ export function createComposerSignals(
       configureSelectedModel$: options.configureSelectedModel$,
     },
     computer: {
-      ...createComputerUseUiSignals(),
+      ...createComputerUseGuideSignals(
+        `${options.forwardComposer ? "forward" : "composer"}:${options.threadId ?? options.agentId}`,
+      ),
       computerUseHostId$: options.computerUseHostId$,
       cloudBrowserEnabled$: options.cloudBrowserEnabled$,
       setComputerUseHostId$: options.setComputerUseHostId$,
