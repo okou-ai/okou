@@ -42,6 +42,7 @@ function safeFailure(error) {
     status: "FAIL",
     error: error?.name ?? "UnknownError",
     httpStatus: error?.$metadata?.httpStatusCode ?? error?.httpStatus ?? null,
+    ...(error?.diagnostics ? { diagnostics: error.diagnostics } : {}),
   };
 }
 async function cf(account, suffix, method = "GET", body) {
@@ -69,7 +70,18 @@ async function cf(account, suffix, method = "GET", body) {
     throw Object.assign(new Error("Cloudflare request failed"), {
       name: "CloudflareError",
       httpStatus: response.status,
-      codes: data.errors?.map((error) => error.code),
+      diagnostics: data.errors?.map((error) => ({
+        code: error.code,
+        runtimeType: error.message?.match(/Uncaught (\w+Error)/)?.[1] ?? null,
+        locations: error.message?.match(/worker\.js:\d+:\d+/g) ?? [],
+        invalidRequirePath: /filename|absolute path|file URL/.test(
+          error.message ?? "",
+        ),
+        missingModule:
+          error.message?.match(
+            /(?:No such module|Cannot find module|Dynamic require of) ["']([a-zA-Z0-9_@:/.-]+)["']/,
+          )?.[1] ?? null,
+      })),
     });
   }
   return data.result;
