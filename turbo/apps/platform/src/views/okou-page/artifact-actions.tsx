@@ -212,7 +212,8 @@ export function ArtifactShareButton({
     return null;
   }
   if (
-    switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
+    (switches[FeatureSwitchKey.HostedSiteUrlEditing] ||
+      switches[FeatureSwitchKey.HostedSiteVisibility]) &&
     isHostedSiteUrl(shareUrl)
   ) {
     return (
