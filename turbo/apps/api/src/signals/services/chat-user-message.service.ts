@@ -13,6 +13,7 @@ import {
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
+import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import {
   isRetiredGenerationTemplate,
   type LiveGenerationTemplate,
@@ -331,7 +332,13 @@ function inlineGenerationTemplatePrompt(
   },
   referenceNumber: number,
 ): string {
-  return `[Template #${referenceNumber}: ${part.titleSnapshot} (${generationTemplateKind(part.template)})]`;
+  const runbook =
+    part.template.type === "presentation"
+      ? findPresentationRunbookPackage(part.template.selection.templateId)
+      : undefined;
+  // Match the execution context's package name, not the picker's display name.
+  const title = runbook?.name ?? part.titleSnapshot;
+  return `[Template #${referenceNumber}: ${title} (${generationTemplateKind(part.template)})]`;
 }
 
 function formatFeedbackParts(
@@ -453,13 +460,26 @@ export function projectUserMessage(
     if (feedbackParts.length === 0) {
       return;
     }
+    let displayReferenceNumber = templates.length;
     const formatted = formatFeedbackParts(
       feedbackParts,
       registerInlineTemplate,
       agentRunSourceTitle,
     );
     promptBlocks.push(formatted);
-    displayBlocks.push(formatted);
+    displayBlocks.push(
+      formatFeedbackParts(
+        feedbackParts,
+        (part) => {
+          if (isRetiredGenerationTemplate(part.template)) {
+            return "";
+          }
+          displayReferenceNumber += 1;
+          return `[Template #${displayReferenceNumber}: ${part.titleSnapshot} (${generationTemplateKind(part.template)})]`;
+        },
+        agentRunSourceTitle,
+      ),
+    );
     feedbackParts = [];
   };
 

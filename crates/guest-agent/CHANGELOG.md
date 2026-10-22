@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.32](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.31...guest-agent-v0.107.32) (2026-10-22)
+
+
+### Performance Improvements
+
+* **guest-agent:** amortize streaming secret masking ([#42321](https://github.com/okou-ai/okou/issues/42321)) ([c4443b4](https://github.com/okou-ai/okou/commit/c4443b43ad09b52c982da6c07a21e23c4834d7c4))
+
 ## [0.107.31](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.30...guest-agent-v0.107.31) (2026-10-22)
 
 

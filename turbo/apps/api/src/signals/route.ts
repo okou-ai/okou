@@ -65,11 +65,8 @@ import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events
 import { cronComputerUseScreenshotCleanupRoutes } from "./routes/cron-computer-use-screenshot-cleanup";
 import { cronConnectorCatalogRoutes } from "./routes/cron-connector-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
-import { cronConsolidatePiMemoryPhase2Routes } from "./routes/cron-consolidate-pi-memory-phase2";
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
-import { cronExtractPiMemoryStage1Routes } from "./routes/cron-extract-pi-memory-stage1";
-import { cronMaterializeMemorySummariesRoutes } from "./routes/cron-materialize-memory-summaries";
 import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
@@ -157,7 +154,10 @@ import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-provi
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
-import { proactiveSuggestionsRoutes } from "./routes/proactive-suggestions";
+import {
+  proactiveSuggestionsRoutes,
+  proactiveActionRoutes,
+} from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
@@ -298,10 +298,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronReconcileSocialKitDownloadRoutes,
   ...cronReconcileBillingEntitlementsRoutes,
   ...cronPruneStoragePresignedUrlsRoutes,
-  ...cronMaterializeMemorySummariesRoutes,
   ...cronMaterializePiResourceIndexesRoutes,
-  ...cronExtractPiMemoryStage1Routes,
-  ...cronConsolidatePiMemoryPhase2Routes,
   ...cronComputerUseScreenshotCleanupRoutes,
   ...cronBrowserReconcileRoutes,
   ...cronSteerRunTimeBudgetRoutes,
@@ -420,6 +417,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
+  ...proactiveActionRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,

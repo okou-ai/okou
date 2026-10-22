@@ -1127,19 +1127,10 @@
     "invoices": {
       "amount": "मात्रा",
       "date": "तारीख",
-      "downloadDescription": "लगातार 3 महीने तक चुनें. उस श्रेणी की रसीद पीडीएफ़ को एक ZIP फ़ाइल में बंडल किया जाएगा।",
       "downloadInvoice": "{{month}} चालान डाउनलोड करें",
-      "downloadReceipts": "रसीदें डाउनलोड करें",
-      "downloadZip": "ZIP डाउनलोड करें",
       "empty": "अभी तक कोई चालान नहीं.",
-      "from": "से",
       "invoice": "चालान",
-      "loading": "चालान लोड हो रहे हैं",
-      "monthAria": "{{label}} महीना",
-      "preparingReceipts": "रसीदें तैयार की जा रही हैं...",
-      "rangeError": "लगातार 3 महीने से अधिक की सीमा का चयन करें।",
-      "selectMonth": "महीना चुनिए",
-      "to": "को"
+      "loading": "चालान लोड हो रहे हैं"
     },
     "paymentMethods": {
       "description": "Stripe में बिलिंग के लिए उपयोग की जाने वाली भुगतान विधियों को प्रबंधित करें।",
@@ -1294,7 +1285,6 @@
       "downgradeScheduledDate": "डाउनग्रेड शेड्यूल किया गया. आपकी वर्तमान योजना {{date}} तक सक्रिय रहती है।",
       "downgradeScheduledPeriod": "डाउनग्रेड शेड्यूल किया गया. आपकी वर्तमान योजना बिलिंग अवधि समाप्त होने तक सक्रिय रहती है।",
       "planRestored": "योजना बहाल। आपकी सदस्यता सामान्य रूप से नवीनीकृत हो जाएगी।",
-      "receiptsDownloaded": "रसीदें डाउनलोड की गईं।",
       "subscriptionChangeConfirmed": "सदस्यता में बदलाव की पुष्टि हो गई है।"
     },
     "usage": {
@@ -1377,8 +1367,12 @@
       "copy": "कॉपी करें",
       "copyMessage": "संदेश कॉपी करें",
       "delete": "हटाएँ",
+      "downloadPdf": "PDF डाउनलोड करें",
       "edit": "संपादित करें",
+      "generatePdf": "PDF बनाएँ",
+      "generatingPdf": "PDF बनाया जा रहा है…",
       "more": "अधिक क्रियाएं",
+      "pdfGenerationFailed": "PDF नहीं बनाया जा सका। फिर से कोशिश करें।",
       "remove": "हटाएँ",
       "rename": "नाम बदलें",
       "saving": "सहेजा जा रहा है...",
@@ -1829,13 +1823,22 @@
       "checkingCompatibility": "अनुकूलता की जाँच हो रही है",
       "cloudBrowser": "क्लाउड ब्राउज़र",
       "connectMyComputer": "मेरा कंप्यूटर कनेक्ट करें",
-      "dialogDescription": "तो {{desktopProductName}} आपके ब्राउज़र और ऐप्स में आपके लिए काम कर सकता है, यहां तक ​​कि LinkedIn या Reddit जैसे बिना कनेक्टर वाले ऐप्स में भी।",
-      "dialogTitle": "{{desktopProductName}} को अपने कंप्यूटर का उपयोग करने दें",
       "downloadMacos": "macOS के लिए डाउनलोड करें",
       "hosts": "कंप्यूटर उपयोग होस्ट",
       "macosRequirement": "macOS 14 या नए संस्करण वाला Apple सिलिकॉन Mac आवश्यक है। Intel Mac समर्थित नहीं हैं.",
       "noOnlineComputers": "कोई ऑनलाइन कंप्यूटर नहीं",
       "offline": "ऑफलाइन",
+      "setupSteps": {
+        "chatDescription": "चैट के संदेश बॉक्स में कनेक्टर्स खोलें और आपका कंप्यूटर के अंतर्गत अपने डिवाइस का स्विच चालू करें।",
+        "chatTitle": "चैट में सक्षम करें",
+        "done": "हो गया",
+        "installDescription": "{{desktopProductName}} इंस्टॉल करके खोलें। वेब ऐप वाला खाता और वर्कस्पेस इस्तेमाल करें।",
+        "installTitle": "इंस्टॉल करें और साइन इन करें",
+        "permissionsDescription": "Accessibility और Screen Recording की अनुमति दें और डेस्कटॉप ऐप ऑनलाइन रखें।",
+        "permissionsTitle": "अनुमतियाँ दें और ऑनलाइन रहें",
+        "previous": "पिछला",
+        "thisMac": "यह Mac"
+      },
       "unsupportedIntelMac": "Apple सिलिकॉन Mac की आवश्यकता है",
       "yourComputer": "आपका कंप्यूटर"
     },
@@ -4669,11 +4672,8 @@
   },
   "remoteComputerSetup": {
     "addNetwork": "Tailscale सेट अप करें",
-    "advanced": "मैन्युअल कनेक्शन (उन्नत)",
-    "advancedDescription": "मौजूदा SSH या VNC कॉन्फ़िगरेशन इस्तेमाल करें। सीधे कनेक्शन और सहेजे गए Tailscale या Cloudflare नेटवर्क समर्थित हैं।",
     "commands": "कमांड चलाएँ (SSH)",
     "continue": "इस नेटवर्क के साथ जारी रखें",
-    "description": "Okou को अपने घर या कार्यालय के कंप्यूटर पर काम करने दें।",
     "macScreenReady": "Mac पर स्क्रीन शेयरिंग चालू करें और उपयोग किए जाने वाले खाते को अनुमति दें। संगतता सेवा के लॉगिन प्रोटोकॉल पर निर्भर करती है।",
     "networkDescription": "अपने कंप्यूटर का Tailscale नेटवर्क चुनें या नया सेट अप करें।",
     "networkEmptyDescription": "Tailscale सेट अप करें ताकि Okou आपके कंप्यूटर से जुड़ सके।",
@@ -4742,7 +4742,6 @@
   },
   "remoteControlSetup": {
     "add": "कनेक्शन जोड़ें",
-    "addFirstDevice": "अपना पहला डिवाइस जोड़ें",
     "addNetwork": "नेटवर्क जोड़ें",
     "addNetworkInline": "निजी नेटवर्क जोड़ें",
     "address": "डिवाइस का पता",
@@ -4766,6 +4765,8 @@
     "cfAddressMissing": "अगर ऐप्लिकेशन नहीं मिलता या आपके लिए उपलब्ध नहीं है, तो नेटवर्क व्यवस्थापक से उसका hostname देने या ऐप्लिकेशन बनाने को कहें।",
     "companyGroup": "QEMU या एंटरप्राइज़ प्रमाणीकरण",
     "compatibleLoginOnly": "किसी मौजूदा कनेक्शन की लॉगिन जानकारी चुनें। सुनिश्चित करें कि यह इस डिवाइस पर भी काम करती है।",
+    "computerUse": "Computer use",
+    "computerUseDescription": "अपने ब्राउज़र और ऐप्स में काम करने के लिए डेस्कटॉप ऐप का उपयोग करें।",
     "connectionDetails": "कनेक्शन विवरण",
     "connectionMethod": "कनेक्शन का तरीका",
     "connectionSettings": "कनेक्शन सेटिंग",
@@ -5465,9 +5466,19 @@
         "retryMessage": "Morning Brief सेटिंग लोड या अपडेट नहीं हो सकीं। जारी रखने के लिए फिर से कोशिश करें।",
         "title": "सुबह की संक्षिप्त जानकारी"
       },
+      "proactiveAction": {
+        "description": "Okou को हर घंटे अगला कदम उठाने दें और Chat में उसका काम देखें। यह चालू रहने पर सक्रिय सुझाव रोक दिए जाते हैं।",
+        "missingDefaultAgent": "सक्रिय कार्रवाइयाँ चालू करने के लिए उपलब्ध डिफ़ॉल्ट एजेंट चुनें।",
+        "preparationFailed": "अभी उपलब्ध नहीं है। Okou अपने आप फिर से कोशिश करेगा।",
+        "preparing": "हर घंटे की कार्रवाइयाँ तैयार की जा रही हैं। आप इन्हें कभी भी बंद कर सकते हैं।",
+        "retry": "फिर कोशिश करें",
+        "retryMessage": "सक्रिय कार्रवाई की सेटिंग लोड या अपडेट नहीं हो सकीं। फिर कोशिश करें।",
+        "title": "सक्रिय कार्रवाई"
+      },
       "proactiveSuggestions": {
         "description": "Okou हर घंटे आपके जुड़े स्रोतों की जाँच करता है और होम पेज पर उपयोगी अगले कदम सुझाता है।",
         "missingDefaultAgent": "सक्रिय सुझाव पाने के लिए उपलब्ध डिफ़ॉल्ट Agent चुनें।",
+        "pausedForAction": "सक्रिय कार्रवाई चालू होने पर सुझाव रुके हुए हैं। आपकी पसंद सुरक्षित है।",
         "preparationFailed": "अभी उपलब्ध नहीं है। Okou अपने आप फिर से कोशिश करेगा।",
         "preparing": "हर घंटे के सुझाव तैयार किए जा रहे हैं। आप इन्हें कभी भी बंद कर सकते हैं।",
         "retry": "फिर कोशिश करें",

@@ -61,6 +61,10 @@ function payloads(target: ConnectorAccountTarget, setup: object) {
 describe.each(targets)("$kind account setup", (target) => {
   it.each([
     {
+      missingRequiredFields: [],
+      configuredFieldKeys: ["token"],
+    },
+    {
       setupStatus: "complete",
       missingRequiredFields: [],
       configuredFieldKeys: ["token"],
@@ -111,5 +115,36 @@ describe.each(targets)("$kind account setup", (target) => {
         connectors: [admitted],
       }),
     ).toStrictEqual({ connectors: [admitted] });
+  });
+
+  it.each([
+    "configuration_incomplete",
+    "configuration_invalid",
+    "account_unavailable",
+  ])("reads the upcoming %s account reason without legacy setup", (reason) => {
+    const { account, inspection } = payloads(target, {
+      missingRequiredFields: [],
+      configuredFieldKeys: [],
+    });
+    const canonicalAccount = {
+      ...account,
+      connectionStatus: "reconnect-required",
+      reconnectReason: reason,
+    };
+    expect(
+      connectorAccountsContract.connection.responses[200].parse(
+        canonicalAccount,
+      ),
+    ).toStrictEqual(canonicalAccount);
+    const canonicalInspection = {
+      ...inspection,
+      connectionStatus: "reconnect-required",
+      reconnectReason: reason,
+    };
+    expect(
+      connectorAccountsContract.inspect.responses[200].parse({
+        results: [canonicalInspection],
+      }),
+    ).toStrictEqual({ results: [canonicalInspection] });
   });
 });

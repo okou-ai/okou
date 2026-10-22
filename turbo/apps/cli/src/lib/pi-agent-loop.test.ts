@@ -26,10 +26,8 @@ import {
   MemoryPiSession,
   PiMemoryPhase2EngineError,
 } from "@okouai/pi-agent-runtime/node";
-
 import {
   piSandboxAgentConfigFromEnv,
-  recordPiMemoryToolSourceUse,
   recordPiPreparationTiming,
   runPiSandboxAgentLoop,
   reportPiSandboxAgentLoopFailure,
@@ -851,55 +849,6 @@ describe("sandbox Pi agent loop", () => {
     ).rejects.toThrow("Pi memory Phase 2 input was invalid");
     await expect(readFile(validationFile)).rejects.toMatchObject({
       code: "ENOENT",
-    });
-  });
-
-  it("records content-free memory source use with run and session correlation", () => {
-    const writes: string[] = [];
-    const write = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation((chunk) => {
-        writes.push(String(chunk));
-        return true;
-      });
-    try {
-      recordPiMemoryToolSourceUse(RUN_ID, SESSION_ID, {
-        operation: "read",
-        outcome: "success",
-        memoryStorageId: "memory-storage-a",
-        storageVersionId: "memory-version-a",
-        pathHash: "a".repeat(64),
-        visitedEntries: 0,
-        scannedFiles: 1,
-        scannedBytes: 42,
-        returnedEntries: 0,
-        returnedLines: 2,
-        returnedMatches: 0,
-        truncated: false,
-        durationMs: 3,
-      });
-    } finally {
-      write.mockRestore();
-    }
-
-    expect(writes).toHaveLength(1);
-    expect(JSON.parse(writes[0] ?? "{}") as unknown).toStrictEqual({
-      type: "pi_memory_tool_source_use",
-      runId: RUN_ID,
-      sessionId: SESSION_ID,
-      operation: "read",
-      outcome: "success",
-      memoryStorageId: "memory-storage-a",
-      storageVersionId: "memory-version-a",
-      pathHash: "a".repeat(64),
-      visitedEntries: 0,
-      scannedFiles: 1,
-      scannedBytes: 42,
-      returnedEntries: 0,
-      returnedLines: 2,
-      returnedMatches: 0,
-      truncated: false,
-      durationMs: 3,
     });
   });
 

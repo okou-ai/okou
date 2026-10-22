@@ -14,18 +14,7 @@ import {
   type CreateAgentSessionFromServicesOptions,
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
-
-import type {
-  PiMemoryRecallOutcome,
-  PiMemoryRecallSelection,
-  PiMemoryToolSourceUse,
-  PiPreheatedResourceSnapshot,
-} from "./api-types";
-import {
-  loadPiSandboxMemoryRecall,
-  resolvePiPreheatedMemoryRecall,
-} from "./memory-recall-node";
-import { createPiMemoryTools } from "./memory-tools-node";
+import type { PiPreheatedResourceSnapshot } from "./api-types";
 import { resolvePiAgentModel } from "./model";
 import {
   buildOkouHarnessSystemPrompt,
@@ -126,10 +115,6 @@ interface PiAgentSessionRuntimeArgs {
   readonly model: PiAgentModelConfig;
   readonly appendSystemPrompt: string | null;
   readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
-  readonly memoryRecall?: PiMemoryRecallSelection;
-  readonly memoryRoot?: string;
-  readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
-  readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
   readonly onPreparationTiming?: PiPreparationObserver;
   readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
   readonly sessionRole?: "parent" | "child";
@@ -147,20 +132,14 @@ export async function createPiAgentSessionForRuntime(
   let resourcesOutcome: "success" | "error" = "error";
   // Resolve frozen inputs before constructing the model and tool registry.
   let prepared: ReturnType<typeof prepareModelAndPrompt>;
-  let memoryRecall: Awaited<ReturnType<typeof loadPiSandboxMemoryRecall>>;
   try {
     initializePiSessionResourceRegistry();
-    memoryRecall = args.resourceSnapshot
-      ? resolvePiPreheatedMemoryRecall(args.resourceSnapshot)
-      : await loadPiSandboxMemoryRecall(args.memoryRecall, args.memoryRoot);
-    args.onMemoryRecallOutcome?.(memoryRecall.outcome);
-    prepared = prepareModelAndPrompt(args, memoryRecall);
+    prepared = prepareModelAndPrompt(args);
     resourcesOutcome = "success";
   } finally {
     finishResources(resourcesOutcome);
   }
   const {
-    memoryTools,
     appendSystemPrompt,
     systemPrompt,
     sandboxResourceLoaderOptions,
@@ -260,7 +239,7 @@ export async function createPiAgentSessionForRuntime(
           args.sessionManager,
           args.model.thinkingLevel,
         ),
-        customTools: [createBashTool(args.cwd, bashOptions), ...memoryTools],
+        customTools: [createBashTool(args.cwd, bashOptions)],
       });
     },
     signal,
@@ -283,33 +262,9 @@ export async function createPiAgentSessionForRuntime(
   return { ...created, services, model };
 }
 
-function prepareModelAndPrompt(
-  args: PiAgentSessionRuntimeArgs,
-  memoryRecall: Awaited<ReturnType<typeof loadPiSandboxMemoryRecall>>,
-) {
-  const memorySelection = args.resourceSnapshot
-    ? args.resourceSnapshot.schemaVersion === 2
-      ? args.resourceSnapshot.memoryRecall
-      : undefined
-    : args.memoryRecall;
-  const memoryTools =
-    memorySelection !== undefined &&
-    (memoryRecall.outcome.parity === "frozen-match" ||
-      memoryRecall.outcome.parity === "frozen-no-content")
-      ? createPiMemoryTools({
-          selection: memorySelection,
-          ...(args.memoryRoot === undefined
-            ? {}
-            : { memoryRoot: args.memoryRoot }),
-          ...(args.onMemoryToolSourceUse === undefined
-            ? {}
-            : { onSourceUse: args.onMemoryToolSourceUse }),
-        })
-      : [];
-  const appendSystemPrompt = [
-    ...(args.appendSystemPrompt === null ? [] : [args.appendSystemPrompt]),
-    ...(memoryRecall.block === null ? [] : [memoryRecall.block]),
-  ];
+function prepareModelAndPrompt(args: PiAgentSessionRuntimeArgs) {
+  const appendSystemPrompt =
+    args.appendSystemPrompt === null ? [] : [args.appendSystemPrompt];
   const systemPrompt = buildOkouHarnessSystemPrompt(
     okouHarnessToolPrompts(args.cwd),
     args.sessionRole,
@@ -329,7 +284,6 @@ function prepareModelAndPrompt(
   }
 
   return {
-    memoryTools,
     appendSystemPrompt,
     systemPrompt,
     sandboxResourceLoaderOptions,

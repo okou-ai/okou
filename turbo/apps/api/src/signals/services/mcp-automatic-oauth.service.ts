@@ -28,7 +28,7 @@ import { settle } from "../utils";
 import {
   McpOAuthUnsafeUrlError,
   mcpOAuthSafeFetch,
-  validateMcpOAuthPublicUrl,
+  validateMcpOAuthUrl,
 } from "./mcp-oauth-safe-fetch.service";
 import {
   discoverMcpAutomaticOAuthUserInfo,
@@ -469,12 +469,13 @@ async function discoverAutomaticOAuthAuthority(
     "authorization endpoint validation",
     signal,
     async () => {
-      return await validateMcpOAuthPublicUrl(
-        requiredHttpsUrl(
-          authorizationServerMetadata.authorization_endpoint,
-          "authorization endpoint",
+      return await Promise.resolve(
+        validateMcpOAuthUrl(
+          requiredHttpsUrl(
+            authorizationServerMetadata.authorization_endpoint,
+            "authorization endpoint",
+          ),
         ),
-        signal,
       );
     },
   );

@@ -1,6 +1,6 @@
 import { isTransientOAuthRefreshFailure } from "./oauth-refresh-failure.service";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { ConnectorCredentialReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
 import { refreshConnectorAuthProviderAccessTokenWithMethod } from "@okouai/connectors/auth-providers";
 import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
 import { resolveConnectorAuthClient } from "@okouai/connectors/connector-auth-method";
@@ -125,7 +125,7 @@ type BuiltinConnectorRefreshTokenAccess = Extract<
 >;
 
 interface TerminalOAuthRefreshFailure {
-  readonly reconnectReason: ConnectorReconnectReason | null;
+  readonly reconnectReason: ConnectorCredentialReconnectReason | null;
 }
 
 function parseOauthScopes(value: string | null): readonly string[] | null {
@@ -722,7 +722,7 @@ const markConnectorCredentialNeedsReconnectAfterRefreshFailure$ = command(
     args: {
       readonly connection: BuiltinConnectorCredentialConnection;
       readonly orgId: string;
-      readonly reconnectReason: ConnectorReconnectReason | null;
+      readonly reconnectReason: ConnectorCredentialReconnectReason | null;
       readonly userId: string;
     },
     signal: AbortSignal,

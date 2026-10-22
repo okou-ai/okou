@@ -14301,8 +14301,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(matchingDuplicateRows).toHaveLength(1);
         expect(matchingDuplicateRows[0]?.content).toBe("Hello from BDD events");
 
-        // Threadless assistant text is covered by the Pi maintenance run in
-        // pi-memory-phase2-worker.service.test.ts, the only threadless producer.
         await api.requestCancelRun(actor, runId, [200]);
         const cancelled = await api.readRun(actor, runId);
         expect(cancelled.status).toBe("cancelled");

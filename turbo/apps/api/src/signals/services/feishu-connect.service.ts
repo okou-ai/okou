@@ -387,6 +387,8 @@ export const disconnectFeishuConnection$ = command(
     if (installations.length === 0) {
       return false;
     }
+    // Post-lock reads must see newly committed member credentials; cleanup
+    // and member unlinking also need one deferred-constraint rollback boundary.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0161; new non-billing transactions are prohibited.
     const rows = await db.transaction(async (tx) => {
       const scope = args;

@@ -29,9 +29,20 @@ public actor NativeProcess {
   private var standardError = NativeHelperStandardError()
   private var timeouts: [Int: Task<Void, Never>] = [:]
   private var buffer = Data()
+  private var nextReadSequence = 1
+  private var queuedReads: [Int: Data] = [:]
+  private var queuedReadBytes = 0
+  private var readFragments: [NativeHelperReadFragment] = []
+  private var receivedBytes = 0
+  private var responseStart = 0
+  private var omittedReadsThrough = 0
+  private var diagnosticWindowStart = ContinuousClock.now
+  private var diagnosticsInWindow = 0
   private var sequence = 0
   private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
   private var generation = 0
+  private var outputClosed = false
+  private var exitStatus: Int32?
 
   public init(executable: URL, environment: [String: String] = [:]) {
     self.executable = executable
@@ -39,6 +50,10 @@ public actor NativeProcess {
   }
   private func start() throws {
     if process?.isRunning == true { return }
+    if let process {
+      reportFailure(.unexpectedExit, exitStatus: process.terminationStatus)
+      stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
+    }
     generation += 1
     let current = generation
     let child = Process()
@@ -46,6 +61,7 @@ public actor NativeProcess {
     let stdout = Pipe()
     let stderr = Pipe()
     let standardError = NativeHelperStandardError()
+    let reader = NativeHelperOutputReader()
     child.executableURL = executable
     child.arguments = ["serve"]
     child.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value
@@ -54,15 +70,19 @@ public actor NativeProcess {
     child.standardOutput = stdout
     child.standardError = stderr
     stdout.fileHandleForReading.readabilityHandler = { handle in
-      let data = handle.availableData
-      Task { await self.receive(data, generation: current) }
+      let read = reader.read(handle)
+      if read.data.isEmpty { handle.readabilityHandler = nil }
+      Task { await self.receive(read.data, sequence: read.sequence, generation: current) }
     }
     stderr.fileHandleForReading.readabilityHandler = { handle in
       let data = handle.availableData
       standardError.record(data.count)
       if data.isEmpty { handle.readabilityHandler = nil }
     }
-    child.terminationHandler = { _ in Task { await self.exited(generation: current) } }
+    child.terminationHandler = { child in
+      let status = child.terminationStatus
+      Task { await self.exited(generation: current, status: status) }
+    }
     do { try child.run() } catch {
       reportFailure(.launch)
       throw error
@@ -90,8 +110,9 @@ public actor NativeProcess {
           stop(error: DesktopFailure("accessibility_unavailable", "Native helper write failed"))
           return
         }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
         timeouts[id] = Task {
-          do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+          do { try await Task.sleep(until: deadline) } catch { return }
           self.expire(id)
         }
       }
@@ -99,40 +120,98 @@ public actor NativeProcess {
       Task { await self.cancel(id) }
     }
   }
-  private func receive(_ data: Data, generation current: Int) {
+  private func receive(_ data: Data, sequence: Int, generation current: Int) {
     guard current == generation else { return }
-    if data.isEmpty {
-      output?.readabilityHandler = nil
+    // Tasks created by readability callbacks can reach the actor out of read order.
+    queuedReads[sequence] = data
+    queuedReadBytes += data.count
+    if queuedReadBytes + buffer.count > 32 * 1024 * 1024 {
+      reportFailure(.responseLimit, responseBytes: queuedReadBytes + buffer.count)
+      stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
       return
     }
-    buffer.append(data)
-    while let newline = buffer.firstIndex(of: 10) {
-      let line = buffer.prefix(upTo: newline)
-      buffer.removeSubrange(...newline)
+    while let next = queuedReads.removeValue(forKey: nextReadSequence) {
+      let readSequence = nextReadSequence
+      nextReadSequence += 1
+      queuedReadBytes -= next.count
+      consume(next, sequence: readSequence, generation: current)
+      guard current == generation else { return }
+    }
+  }
+  private func consume(_ data: Data, sequence: Int, generation current: Int) {
+    if data.isEmpty {
+      outputClosed = true
+      if let exitStatus { exited(generation: current, status: exitStatus) }
+      return
+    }
+    readFragments.append(
+      NativeHelperReadFragment(sequence: sequence, streamOffset: receivedBytes, byteCount: data.count))
+    receivedBytes += data.count
+    if readFragments.count > NativeHelperDiagnostics.maximumReadFragments {
+      omittedReadsThrough = readFragments.removeFirst().endOffset
+    }
+    var start = data.startIndex
+    while let newline = data[start...].firstIndex(of: 10) {
+      buffer.append(data[start..<newline])
+      let line = buffer
+      buffer = Data()
+      start = data.index(after: newline)
+      let frameStart = responseStart
+      responseStart += line.count + 1
       let response: JSONValue
+      let decodeStarted = ContinuousClock.now
       do { response = try JSONDecoder().decode(JSONValue.self, from: line) } catch {
-        protocolFailure(.invalidJSON, reason: "invalid JSON", responseBytes: line.count)
+        protocolFailure(
+          .invalidJSON, reason: "invalid JSON", response: line, responseStart: frameStart,
+          decoderError: error, decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
         return
       }
       guard let number = response["id"].number, let responseId = Int(exactly: number) else {
         protocolFailure(
-          .missingRequestID, reason: "missing or invalid request ID", responseBytes: line.count)
+          .missingRequestID, reason: "missing or invalid request ID", response: line,
+          responseStart: frameStart, decoderError: nil,
+          decodeDurationMs: decodeStarted.duration(to: .now).seconds * 1000)
         return
       }
+      if response["status"].string == "failed",
+        response["error"]["code"].string == "target_app_unresponsive"
+      {
+        // The helper's watchdog cannot cancel an in-flight native operation.
+        // Reap it before exposing failure or admitting another command.
+        stop(
+          error: DesktopFailure(
+            "target_app_unresponsive",
+            "Native command became unresponsive. An action may have been delivered; do not replay automatically."
+          ))
+        return
+      }
+      readFragments.removeAll { $0.endOffset <= responseStart }
       timeouts.removeValue(forKey: responseId)?.cancel()
       pending.removeValue(forKey: responseId)?.resume(returning: response)
     }
-    if buffer.count > 32 * 1024 * 1024 {
-      reportFailure(.responseLimit, responseBytes: buffer.count)
-      stop(error: DesktopFailure("result_too_large", "Native helper exceeded the response limit"))
-    }
+    buffer.append(data[start...])
   }
-  private func protocolFailure(_ failure: NativeHelperFailure, reason: String, responseBytes: Int) {
-    // Never include helper output or decoder descriptions: either can contain private app data.
-    let diagnostics = "responseBytes=\(responseBytes), \(standardError.summary)"
+  private func protocolFailure(
+    _ failure: NativeHelperFailure, reason: String, response: Data, responseStart: Int,
+    decoderError: Error?, decodeDurationMs: Double
+  ) {
+    // Raw app data belongs only in the bounded, event-local Sentry attachments.
+    let diagnostics = "responseBytes=\(response.count), \(standardError.summary)"
     let message = "Native helper protocol failure: \(reason) (\(diagnostics))."
     logger.error("\(message, privacy: .public)")
-    reportFailure(failure, responseBytes: responseBytes)
+    if diagnosticWindowStart.duration(to: .now) >= .seconds(3600) {
+      diagnosticWindowStart = .now
+      diagnosticsInWindow = 0
+    }
+    var attachments: NativeHelperDiagnostics?
+    if diagnosticsInWindow < 3 {
+      diagnosticsInWindow += 1
+      attachments = NativeHelperDiagnostics(
+        response: response, reason: failure, generation: generation, pendingIDs: pending.keys.sorted(),
+        responseStart: responseStart, reads: readFragments, omittedThrough: omittedReadsThrough,
+        decoderError: decoderError, decodeDurationMs: decodeDurationMs)
+    }
+    reportFailure(failure, responseBytes: response.count, attachments: attachments)
     stop(
       error: DesktopFailure(
         "accessibility_unavailable",
@@ -148,17 +227,21 @@ public actor NativeProcess {
       ))
   }
   private func cancel(_ id: Int) { if pending[id] != nil { stop(error: CancellationError()) } }
-  private func exited(generation current: Int) {
+  private func exited(generation current: Int, status: Int32) {
     guard current == generation else { return }
-    reportFailure(.unexpectedExit, exitStatus: process?.terminationStatus)
+    exitStatus = status
+    // A process can exit before its final stdout callbacks reach the actor.
+    guard outputClosed else { return }
+    reportFailure(.unexpectedExit, exitStatus: status)
     stop(error: DesktopFailure("accessibility_unavailable", "Native helper exited"))
   }
   private func reportFailure(
-    _ reason: NativeHelperFailure, responseBytes: Int? = nil, exitStatus: Int32? = nil
+    _ reason: NativeHelperFailure, responseBytes: Int? = nil, exitStatus: Int32? = nil,
+    attachments: NativeHelperDiagnostics? = nil
   ) {
     DesktopTelemetry.captureHelperFailure(
       reason, pendingRequests: pending.count, stderrBytes: standardError.count,
-      responseBytes: responseBytes, exitStatus: exitStatus)
+      responseBytes: responseBytes, exitStatus: exitStatus, attachments: attachments)
   }
   public func stop() { stop(error: CancellationError()) }
   private func stop(error: Error) {
@@ -177,6 +260,15 @@ public actor NativeProcess {
     errors = nil
     standardError = NativeHelperStandardError()
     buffer.removeAll()
+    queuedReads.removeAll()
+    queuedReadBytes = 0
+    nextReadSequence = 1
+    readFragments.removeAll()
+    receivedBytes = 0
+    responseStart = 0
+    omittedReadsThrough = 0
+    outputClosed = false
+    exitStatus = nil
     for timeout in timeouts.values { timeout.cancel() }
     timeouts.removeAll()
     let requests = pending

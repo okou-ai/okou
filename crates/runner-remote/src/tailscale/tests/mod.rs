@@ -8,6 +8,7 @@ mod map_reader;
 mod peers;
 pub(super) mod provisioning;
 mod registration;
+pub(super) mod relay_projection;
 pub(super) mod startup;
 
 use super::{Control, Failure, Key, Work};

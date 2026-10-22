@@ -23,6 +23,7 @@ export function readImageDimensions(
   img.addEventListener("load", onLoad, { once: true, signal });
   img.addEventListener("error", onError, { once: true, signal });
   img.src = url;
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return withCleanup(dimensions.promise, () => {
     img.removeEventListener("load", onLoad);
     img.removeEventListener("error", onError);

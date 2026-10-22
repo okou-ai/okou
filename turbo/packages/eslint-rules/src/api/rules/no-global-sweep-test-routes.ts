@@ -95,8 +95,6 @@ const STRIPE_DUE_OPERATOR_TITLE =
 const CONTRACT_HARNESS_SUFFIX =
   "/src/signals/routes/__tests__/global-sweep-contracts.test.ts";
 const PRODUCTION_ROUTE_SUFFIX = "/src/signals/route.ts";
-const PI_LIFECYCLE_SUFFIX =
-  "/turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts";
 const COMPUTER_USE_RETENTION_SUFFIX =
   "/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
 const CONTRACT_HELPER_SUFFIX =
@@ -1068,14 +1066,10 @@ export const noGlobalSweepTestRoutes = createRule({
           // Approved operator boundaries use isolated databases and construct
           // business state through the normal public lifecycle.
           if (
-            ((filename.endsWith(PI_LIFECYCLE_SUFFIX) &&
-              node.source.value === "../cron-cleanup-sandboxes" &&
-              boundary.exportName === "cronCleanupSandboxesRoutes") ||
-              (filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
-                node.source.value ===
-                  "../cron-computer-use-screenshot-cleanup" &&
-                boundary.exportName ===
-                  "cronComputerUseScreenshotCleanupRoutes") ||
+            ((filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
+              node.source.value === "../cron-computer-use-screenshot-cleanup" &&
+              boundary.exportName ===
+                "cronComputerUseScreenshotCleanupRoutes") ||
               (filename.endsWith(STRIPE_DUE_OPERATOR_SUFFIX) &&
                 node.importKind !== "type" &&
                 specifier.importKind !== "type" &&

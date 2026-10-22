@@ -1,6 +1,5 @@
 import {
   applyRemoteNetworkScope$,
-  remoteNetworkScopeStatus$,
   resetRemoteNetworkScope$,
 } from "./remote-network-scope.ts";
 import type {
@@ -30,6 +29,10 @@ import { isOrgAdmin$ } from "./org.ts";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
 import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal } from "./utils.ts";
+import {
+  openRemoteNetworkEditor$,
+  closeRemoteNetworkEditor$,
+} from "./remote-network-location.ts";
 
 const cloudflareAccessChangedPayloadSchema = z
   .object({ orgId: z.string().min(1) })
@@ -271,17 +274,25 @@ export const openCloudflareAccessDialog$ = command(
       config,
       scope: config?.scope ?? "personal",
     });
+    if (kind === "create" || kind === "edit") {
+      set(openRemoteNetworkEditor$, "cloudflare", config?.id ?? null);
+    }
   },
 );
 
-export const closeCloudflareAccessDialog$ = command(({ set }) => {
-  set(resetRemoteNetworkScope$);
-  set(abandonCloudflareAccessSave$);
-  set(conflict$, null);
-  set(replaceToken$, false);
-  set(reviewedRevision$, null);
-  set(dialog$, null);
-});
+export const closeCloudflareAccessDialog$ = command(
+  ({ set }, preserveLocation = false) => {
+    if (!preserveLocation) {
+      set(closeRemoteNetworkEditor$, "cloudflare");
+    }
+    set(resetRemoteNetworkScope$);
+    set(abandonCloudflareAccessSave$);
+    set(conflict$, null);
+    set(replaceToken$, false);
+    set(reviewedRevision$, null);
+    set(dialog$, null);
+  },
+);
 
 function textField(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
@@ -390,9 +401,6 @@ const finishCloudflareAccessCreate$ = command(
 
 export const saveCloudflareAccess$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
-    if (get(remoteNetworkScopeStatus$).busy) {
-      return;
-    }
     const signal = set(resetFormSave$, parentSignal);
     let dialog = await get(cloudflareAccessDialog$);
     signal.throwIfAborted();

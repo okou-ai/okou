@@ -1,9 +1,11 @@
 //! Two actual map-derived regions; only controlled external SDK peers are pumped.
 //! The production configured Root runs independently on its owned OS thread.
 
+mod admission;
 mod capacity;
 mod common;
 mod kdc;
+mod liveness;
 mod vnc;
 mod vnc_shared;
 
@@ -68,7 +70,9 @@ impl Service {
         let Some(frames) = self.frames.as_mut() else {
             return;
         };
-        loop {
+        // The independently driven native root can outpace this peer's queue.
+        // Leave excess frames buffered until Peers::pump consumes the batch.
+        while side.can_receive() {
             match Pin::new(&mut *frames).poll_next(cx) {
                 Poll::Pending => break,
                 Poll::Ready(Some(Ok(packet))) => {

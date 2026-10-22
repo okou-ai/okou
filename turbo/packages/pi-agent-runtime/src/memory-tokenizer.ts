@@ -12,13 +12,6 @@ function memoryEncoding(): GptEncoding {
   return encoding;
 }
 
-export function encode(
-  text: string,
-  options?: Parameters<GptEncoding["encode"]>[1],
-): number[] {
-  return memoryEncoding().encode(text, options);
-}
-
-export function decode(tokens: Iterable<number>): string {
-  return memoryEncoding().decode(tokens);
+export function piMemorySummaryTokenCount(content: string): number {
+  return memoryEncoding().encode(content).length;
 }

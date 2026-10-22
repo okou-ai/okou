@@ -856,40 +856,21 @@ async fn collect_command_output(
     ),
     CommandRunError,
 > {
-    match child_exit {
-        CommandChildExit::PreReap => {
-            match pipe_tasks.collect_with_deadline(deadline, timeout).await {
-                Ok((stdout, stderr)) => {
-                    let status = match child.wait().await {
-                        Ok(status) => status,
-                        Err(error) => {
-                            return Err(cleanup_command_failure(
-                                child,
-                                pipe_tasks,
-                                CommandRunError::Wait(error),
-                            )
-                            .await);
-                        }
-                    };
-                    Ok((status, stdout, stderr))
-                }
-                Err(error) => Err(cleanup_command_failure(child, pipe_tasks, error).await),
+    let result = async {
+        let (stdout, stderr) = pipe_tasks.collect_with_deadline(deadline, timeout).await?;
+        let status = match child_exit {
+            CommandChildExit::PreReap => child.wait().await.map_err(CommandRunError::Wait)?,
+            CommandChildExit::NoPreReapNotifier => {
+                wait_child_with_deadline(child, deadline, timeout).await?
             }
-        }
-        CommandChildExit::NoPreReapNotifier => {
-            match pipe_tasks.collect_with_deadline(deadline, timeout).await {
-                Ok((stdout, stderr)) => {
-                    let status = match wait_child_with_deadline(child, deadline, timeout).await {
-                        Ok(status) => status,
-                        Err(error) => {
-                            return Err(cleanup_command_failure(child, pipe_tasks, error).await);
-                        }
-                    };
-                    Ok((status, stdout, stderr))
-                }
-                Err(error) => Err(cleanup_command_failure(child, pipe_tasks, error).await),
-            }
-        }
+        };
+        Ok((status, stdout, stderr))
+    }
+    .await;
+
+    match result {
+        Ok(output) => Ok(output),
+        Err(error) => Err(cleanup_command_failure(child, pipe_tasks, error).await),
     }
 }
 

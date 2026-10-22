@@ -1,46 +1,18 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
-import {
-  fetchHostHasBlockedAddress,
-  resolveFetchHostAddresses,
-  type ResolvedFetchAddress,
-} from "../../lib/blocked-fetch-host";
 import { SLACK_PREVIEW_IMAGE_MAX_BYTES } from "../../lib/slack-preview-image";
-import {
-  awaitWithSignal,
-  createDeferredPromise,
-  settleIncludingAbort,
-} from "../utils";
-
-async function publicAddress(url: URL, signal: AbortSignal) {
-  const hostname = url.hostname.replace(/^\[|\]$/gu, "").replace(/\.$/u, "");
-  const family = isIP(hostname);
-  if (
-    !["https:", "http:"].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.port ||
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    (!family && !hostname.includes("."))
-  ) {
-    return null;
-  }
-  const addresses: ResolvedFetchAddress[] = family
-    ? [{ address: hostname, family: family === 6 ? 6 : 4 }]
-    : await awaitWithSignal(resolveFetchHostAddresses(hostname), signal);
-  signal.throwIfAborted();
-  return fetchHostHasBlockedAddress(addresses) ? null : (addresses[0] ?? null);
-}
+import { createDeferredPromise, settleIncludingAbort } from "../utils";
 
 async function readImage(
   url: URL,
   signal: AbortSignal,
 ): Promise<Buffer | null> {
-  const address = await publicAddress(url, signal);
-  if (!address) {
+  if (
+    !["https:", "http:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.port
+  ) {
     return null;
   }
   signal.throwIfAborted();
@@ -55,16 +27,12 @@ async function readImage(
     finish(null);
   };
   signal.addEventListener("abort", onAbort, { once: true });
-  return (async () => {
+  return await (async () => {
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
       url,
       {
         method: "GET",
         agent: false,
-        family: address.family,
-        lookup: (_hostname, _options, callback) => {
-          callback(null, address.address, address.family);
-        },
         headers: { Accept: "image/*", "Accept-Encoding": "identity" },
         maxHeaderSize: 16 * 1024,
         signal,
@@ -121,7 +89,7 @@ async function readImage(
   });
 }
 
-/** Anonymous reads pin public DNS results and never follow redirects. */
+/** Anonymous image reads never follow redirects. */
 export async function fetchSlackPreviewImage(url: URL, signal: AbortSignal) {
   const owner = new AbortController();
   const result = await settleIncludingAbort(

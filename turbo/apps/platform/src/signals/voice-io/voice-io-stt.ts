@@ -211,6 +211,7 @@ export async function startAudioActivityMonitor(
     audioContextClosePromise ??= closeAudioContextQuietly(audioContext);
   };
   signal.addEventListener("abort", stopOnAbort, { once: true });
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   return await withCleanup(
     (async () => {
       signal.throwIfAborted();

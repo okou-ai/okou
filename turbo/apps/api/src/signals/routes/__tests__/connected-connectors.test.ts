@@ -87,10 +87,7 @@ test.each(["PAT", "Run"] as const)(
   async (credentialType) => {
     const actor = bdd.user();
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const app =
-      credentialType === "Run"
-        ? await setupApp({ context, routes, isolatePg: true })
-        : setupApp({ context, routes });
+    const app = setupApp({ context, routes });
     const client = app(connectedConnectorsContract);
     expect((await accept(client.list({ headers }), [200])).body).toStrictEqual({
       builtinConnectors: [],

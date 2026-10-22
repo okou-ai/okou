@@ -47,7 +47,13 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   private let loadingTask = Mutex<Task<Void, Never>?>(nil)
 
   override class func canInit(with request: URLRequest) -> Bool {
-    handlers.withLock { $0[request.url?.host ?? ""] != nil }
+    // Attachment integration tests serve real files from fixture-owned loopback servers.
+    if request.url?.scheme == "http",
+      ["localhost", "127.0.0.1", "::1"].contains(request.url?.host ?? "")
+    {
+      return false
+    }
+    return request.url?.scheme == "https" || request.url?.scheme == "http"
   }
 
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -64,7 +70,13 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
       guard let url = request.url,
         let handler = Self.handlers.withLock({ $0[url.host ?? ""] })
       else {
-        throw URLError(.unsupportedURL)
+        throw URLError(
+          .unsupportedURL,
+          userInfo: [
+            NSLocalizedDescriptionKey:
+              "Unhandled fixture HTTP request: \(request.httpMethod ?? "GET") "
+              + "\(request.url?.absoluteString ?? "<missing URL>")"
+          ])
       }
       let result = try await handler(request)
       try Task.checkCancellation()

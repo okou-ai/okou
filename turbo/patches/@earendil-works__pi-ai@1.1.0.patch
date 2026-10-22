@@ -2,9 +2,7 @@ diff --git a/dist/api/openai-codex-responses.d.ts b/dist/api/openai-codex-respon
 index 704476da084be53d6aa194a5f774fa3ad47f5e9a..87a8eea1330f3a7bf98f063045d28d099deaaeb6 100644
 --- a/dist/api/openai-codex-responses.d.ts
 +++ b/dist/api/openai-codex-responses.d.ts
-@@ -1,6 +1,9 @@
-+import type { Model } from "../types.ts";
-+import type { TranscriptContext } from "../utils/transcript.ts";
+@@ -1,6 +1,7 @@
  import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
  import type { SimpleStreamOptions, StreamFunction, StreamOptions } from "../types.ts";
  export interface OpenAICodexResponsesOptions extends StreamOptions {
@@ -12,14 +10,6 @@ index 704476da084be53d6aa194a5f774fa3ad47f5e9a..87a8eea1330f3a7bf98f063045d28d09
      reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
      reasoningSummary?: "auto" | "concise" | "detailed" | "off" | "on" | null;
      serviceTier?: ResponseCreateParamsStreaming["service_tier"];
-@@ -28,4 +31,6 @@ export interface OpenAICodexWebSocketDebugStats {
- export declare function getOpenAICodexWebSocketDebugStats(sessionId: string): OpenAICodexWebSocketDebugStats | undefined;
- export declare function resetOpenAICodexWebSocketDebugStats(sessionId?: string): void;
- export declare function closeOpenAICodexWebSocketSessions(sessionId?: string): void;
-+/** Pure request-body projection using the same builder as the stream. */
-+export declare function preparePayload(model: Model<"openai-codex-responses">, context: TranscriptContext, options?: OpenAICodexResponsesOptions): unknown;
- //# sourceMappingURL=openai-codex-responses.d.ts.map
-\ No newline at end of file
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
 index 6ee63ec3201e788c1843bb077ae263f91fc671ca..37f3a85837e9825ff405288424ebc871d613c3ae 100644
 --- a/dist/api/openai-codex-responses.js
@@ -70,30 +60,6 @@ index 6ee63ec3201e788c1843bb077ae263f91fc671ca..37f3a85837e9825ff405288424ebc871
              output.errorMessage = formatProviderError(normalizeProviderError(error));
              stream.push({ type: "error", reason: output.stopReason, error: output });
              stream.end();
-@@ -1318,4 +1341,10 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
-     headers.set("session-id", requestId);
-     return headers;
- }
-+/** Pure request-body projection using the same builder as the stream. */
-+export function preparePayload(model, context, options) {
-+    const normalizedContext = resolveTranscript(context, model.compat?.supportsMidConvoSystemMessages);
-+    const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
-+    return buildRequestBody(model, normalizedContext, options, clampOpenAIPromptCacheKey(cacheSessionId));
-+}
- //# sourceMappingURL=openai-codex-responses.js.map
-\ No newline at end of file
-diff --git a/dist/api/openai-completions.d.ts b/dist/api/openai-completions.d.ts
-index 7f146126800d7446fd7e2493fd9b05d455d7ad95..3aa7449674a47c888b6de15fee96def8b7d61e21 100644
---- a/dist/api/openai-completions.d.ts
-+++ b/dist/api/openai-completions.d.ts
-@@ -23,4 +23,6 @@ export declare const stream: StreamFunction<"openai-completions", OpenAICompleti
- export declare const streamSimple: StreamFunction<"openai-completions", SimpleStreamOptions>;
- export declare function convertMessages(model: Model<"openai-completions">, context: TranscriptContext, compat: ResolvedOpenAICompletionsCompat, options?: ConvertCompletionsMessagesOptions): ChatCompletionMessageParam[];
- export {};
-+/** Pure request-body projection using the same builder as the stream. */
-+export declare function preparePayload(model: Model<"openai-completions">, context: TranscriptContext, options?: OpenAICompletionsOptions): unknown;
- //# sourceMappingURL=openai-completions.d.ts.map
-\ No newline at end of file
 diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
 index a60f39352b776d71497e55b33b3334bacfbeb2f5..50b0ad6f6844e640f4586cef9e8cd88c01cad301 100644
 --- a/dist/api/openai-completions.js
@@ -174,49 +140,6 @@ index a60f39352b776d71497e55b33b3334bacfbeb2f5..50b0ad6f6844e640f4586cef9e8cd88c
              if (rawMetadata && !output.errorMessage.includes(String(rawMetadata))) {
                  output.errorMessage += `\n${rawMetadata}`;
              }
-@@ -1342,4 +1383,9 @@ function getCompat(model) {
-         vllmPriority: model.compat.vllmPriority,
-     };
- }
-+/** Pure request-body projection using the same builder as the stream. */
-+export function preparePayload(model, context, options) {
-+    const normalizedContext = resolveTranscript(context, getCompat(model).supportsMidConvoSystemMessages);
-+    return buildParams(model, normalizedContext, options);
-+}
- //# sourceMappingURL=openai-completions.js.map
-diff --git a/dist/api/openai-responses.d.ts b/dist/api/openai-responses.d.ts
-index 41267bd50904069aa0879cc8634ea94bc1045236..3d7e30ebc76cf507b88a2a1a2926c38c8ff6d58d 100644
---- a/dist/api/openai-responses.d.ts
-+++ b/dist/api/openai-responses.d.ts
-@@ -1,3 +1,5 @@
-+import type { Model } from "../types.ts";
-+import type { TranscriptContext } from "../utils/transcript.ts";
- import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
- import type { SimpleStreamOptions, StreamFunction, StreamOptions } from "../types.ts";
- export interface OpenAIResponsesOptions extends StreamOptions {
-@@ -11,4 +13,6 @@ export interface OpenAIResponsesOptions extends StreamOptions {
-  */
- export declare const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions>;
- export declare const streamSimple: StreamFunction<"openai-responses", SimpleStreamOptions>;
-+/** Pure request-body projection using the same builder as the stream. */
-+export declare function preparePayload(model: Model<"openai-responses">, context: TranscriptContext, options?: OpenAIResponsesOptions): unknown;
- //# sourceMappingURL=openai-responses.d.ts.map
-\ No newline at end of file
-diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
-index 2a6b4e408498e33fd7685471559fbd4696755f0a..403a78fcd0e06c6d1c689ef04b98bd92f8e5f028 100644
---- a/dist/api/openai-responses.js
-+++ b/dist/api/openai-responses.js
-@@ -311,4 +311,9 @@ function applyServiceTierPricing(usage, serviceTier, model) {
-     usage.cost.cacheWrite *= multiplier;
-     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
- }
-+/** Pure request-body projection using the same builder as the stream. */
-+export function preparePayload(model, context, options) {
-+    const normalizedContext = resolveTranscript(context, getCompat(model).supportsMidConvoSystemMessages);
-+    return buildParams(model, normalizedContext, options);
-+}
- //# sourceMappingURL=openai-responses.js.map
-\ No newline at end of file
 diff --git a/dist/utils/provider-queue-timeout.d.ts b/dist/utils/provider-queue-timeout.d.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..af6bdff0e88e49509f6c57fbc9814408ec07efce

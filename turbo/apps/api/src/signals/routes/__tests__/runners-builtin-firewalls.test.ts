@@ -227,6 +227,18 @@ describe("runner builtin firewall resolver", () => {
         });
       }),
     );
+    const subsequent = await accept(
+      client().resolve({
+        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+        body: {},
+      }),
+      [200],
+    );
+    expect(subsequent.body).toStrictEqual({
+      catalogDigest: EXPECTED_RUNNER_FIREWALL_CATALOG.catalogDigest,
+      catalogVersion: EXPECTED_RUNNER_FIREWALL_CATALOG.catalogVersion,
+      firewalls: EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls,
+    });
   });
 
   it("keeps the complete serialized builtin firewall catalog within the Runner byte budget", async () => {

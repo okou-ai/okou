@@ -331,6 +331,7 @@ function createBankingSignals(
         return running;
       }
       // Duplicate cards share one execution; the Promise also owns their UI state.
+      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
       const operation = withCleanup(set(performAction$, action, signal), () => {
         set(running$, null);
       });

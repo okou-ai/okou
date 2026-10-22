@@ -1,6 +1,5 @@
 import {
   applyRemoteNetworkScope$,
-  remoteNetworkScopeStatus$,
   resetRemoteNetworkScope$,
 } from "./remote-network-scope.ts";
 import { command, computed, state } from "ccstate";
@@ -27,6 +26,10 @@ import { isOrgAdmin$ } from "./org.ts";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
 import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal, settle } from "./utils.ts";
+import {
+  openRemoteNetworkEditor$,
+  closeRemoteNetworkEditor$,
+} from "./remote-network-location.ts";
 
 export const tailscaleEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.TailscaleAccess];
@@ -226,16 +229,21 @@ export const acknowledgeTailscale$ = command(
   },
 );
 
-export const closeTailscaleDialog$ = command(({ set }) => {
-  set(resetRemoteNetworkScope$);
-  set(resetSave$);
-  set(dialog$, null);
-  set(error$, null);
-  set(attempt$, null);
-  set(replace$, false);
-  set(reviewedRevision$, null);
-  set(acknowledged$, null);
-});
+export const closeTailscaleDialog$ = command(
+  ({ set }, preserveLocation = false) => {
+    if (!preserveLocation) {
+      set(closeRemoteNetworkEditor$, "tailscale");
+    }
+    set(resetRemoteNetworkScope$);
+    set(resetSave$);
+    set(dialog$, null);
+    set(error$, null);
+    set(attempt$, null);
+    set(replace$, false);
+    set(reviewedRevision$, null);
+    set(acknowledged$, null);
+  },
+);
 export const mountTailscaleForm$ = onRef(
   command(({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
     const mounted = get(dialog$);
@@ -307,7 +315,7 @@ export const openTailscaleDialog$ = command(
     ) {
       return;
     }
-    set(closeTailscaleDialog$);
+    set(closeTailscaleDialog$, true);
     set(scope$, "personal");
     set(dialog$, {
       identity,
@@ -315,6 +323,9 @@ export const openTailscaleDialog$ = command(
       kind,
       config,
     });
+    if (kind === "create" || kind === "edit") {
+      set(openRemoteNetworkEditor$, "tailscale", config?.id ?? null);
+    }
   },
 );
 
@@ -704,9 +715,6 @@ function tailscaleSaveNeedsAdmin(
 
 export const saveTailscale$ = command(
   async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
-    if (get(remoteNetworkScopeStatus$).busy) {
-      return;
-    }
     const signal = set(resetSave$, parentSignal);
     let dialog = await get(tailscaleDialog$);
     signal.throwIfAborted();

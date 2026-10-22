@@ -14,13 +14,6 @@ assert_contains() {
   grep -qxF "$expected" <<<"$output" || fail "expected line '${expected}' in output: ${output}"
 }
 
-assert_not_prefix() {
-  local output=$1 prefix=$2
-  if grep -q "^${prefix}" <<<"$output"; then
-    fail "unexpected output prefix '${prefix}' in output: ${output}"
-  fi
-}
-
 run_clean() {
   env -i PATH="$PATH" HOME="${HOME:-/tmp}" "$@"
 }
@@ -33,13 +26,6 @@ assert_fails() {
   fi
 }
 
-assert_no_legacy_needed_outputs() {
-  local out=$1
-  assert_not_prefix "$out" "turbo-runner-needed="
-  assert_not_prefix "$out" "crates-runner-needed="
-  assert_not_prefix "$out" "runner-image-needed="
-}
-
 assert_needed_case() {
   local name=$1
   shift
@@ -47,7 +33,6 @@ assert_needed_case() {
   if ! out=$(run_clean "$@" "$CONTEXT" needed); then
     fail "needed case failed: ${name}"
   fi
-  assert_no_legacy_needed_outputs "$out"
   printf '%s\n' "$out"
 }
 

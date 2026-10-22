@@ -58,7 +58,7 @@ function printTable(connections: readonly ConnectorAccountConnection[]): void {
       }),
       connection.isDefault ? "yes" : "-",
       connection.connectionStatus,
-      connection.setupStatus,
+      connection.setupStatus ?? "-",
       connection.missingRequiredFields.join(", ") || "-",
       connection.authMethod,
       connection.id,

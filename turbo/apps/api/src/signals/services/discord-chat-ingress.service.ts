@@ -434,61 +434,86 @@ export function discordMessageReceiptDigest(
     .digest("hex");
 }
 
+interface DiscordIngressAdmissionArgs {
+  readonly applicationId: string;
+  readonly connectionId: string;
+  readonly messageId: string;
+  readonly eventId: string;
+  readonly payload: string;
+  readonly currentTime: Date;
+}
+
+const discordIngressInsertResultSchema = z.discriminatedUnion("inserted", [
+  z.object({
+    inserted: z.literal(true),
+    id: z.string().uuid(),
+    connectionId: z.string().uuid(),
+    status: z.enum([
+      "pending",
+      "processing",
+      "retryable",
+      "processed",
+      "terminal",
+    ]),
+  }),
+  z.object({
+    inserted: z.literal(false),
+    id: z.null(),
+    connectionId: z.null(),
+    status: z.null(),
+  }),
+]);
+
+function discordIngressAdmissionSql(args: DiscordIngressAdmissionArgs) {
+  const digest = discordMessageReceiptDigest(
+    args.applicationId,
+    args.messageId,
+  );
+  const currentTime = args.currentTime.toISOString();
+  // Drizzle insert-select requires every table column. This partial-column
+  // publication preserves database defaults and gates ingress on the receipt.
+  return sql`WITH receipt AS (
+    INSERT INTO ${discordGatewayReceipts} (event_digest, created_at)
+    VALUES (${digest}, ${currentTime}::timestamp)
+    ON CONFLICT DO NOTHING
+    RETURNING event_digest
+  ), inserted AS (
+    INSERT INTO ${discordChatIngress}
+      (connection_id, message_id, event_id, payload, status, created_at, updated_at)
+    SELECT ${args.connectionId}::uuid, ${args.messageId}, ${args.eventId},
+      ${args.payload}, 'pending', ${currentTime}::timestamp, ${currentTime}::timestamp
+    FROM receipt
+    ON CONFLICT (message_id) DO NOTHING
+    RETURNING id, connection_id, status
+  )
+  SELECT inserted.id IS NOT NULL AS inserted,
+    inserted.id AS id, inserted.connection_id AS "connectionId", inserted.status AS status
+  FROM receipt LEFT JOIN inserted ON TRUE`;
+}
+
 export const admitCanonicalDiscordChatEvent$ = command(
   async (
     { set },
-    args: {
-      readonly applicationId: string;
-      readonly connectionId: string;
-      readonly messageId: string;
-      readonly eventId: string;
-      readonly payload: string;
-      readonly currentTime: Date;
-    },
+    args: DiscordIngressAdmissionArgs,
     signal: AbortSignal,
   ): Promise<DiscordChatIngressAdmission | undefined> => {
     const db = set(writeDb$);
-    const eventDigest = discordMessageReceiptDigest(
-      args.applicationId,
-      args.messageId,
-    );
+    // The existing fresh-winner read and ownership check must roll back the
+    // permanent receipt if a message is missing or bound to another connection.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0150; new non-billing transactions are prohibited.
     return await db.transaction(async (tx) => {
-      // This identity-only digest survives connection/chat deletion. Raw payloads
-      // still cascade, while a lost ACK cannot launch the same message again
-      // after reconnecting or deleting its canonical chat.
-      const [receipt] = await tx
-        .insert(discordGatewayReceipts)
-        .values({
-          eventDigest,
-          createdAt: args.currentTime,
-        })
-        .onConflictDoNothing()
-        .returning({ eventDigest: discordGatewayReceipts.eventDigest });
+      // Identity-only receipts survive connection/chat deletion. A duplicate
+      // receipt cannot publish another ingress, including after reconnection.
+      const [result] = parseRawRows(
+        discordIngressInsertResultSchema,
+        await tx.execute(discordIngressAdmissionSql(args)),
+      );
       signal.throwIfAborted();
-      if (!receipt) {
+      if (!result) {
         return undefined;
       }
-      const [inserted] = await tx
-        .insert(discordChatIngress)
-        .values({
-          connectionId: args.connectionId,
-          messageId: args.messageId,
-          eventId: args.eventId,
-          payload: args.payload,
-          status: "pending",
-          createdAt: args.currentTime,
-          updatedAt: args.currentTime,
-        })
-        .onConflictDoNothing({ target: discordChatIngress.messageId })
-        .returning({
-          id: discordChatIngress.id,
-          connectionId: discordChatIngress.connectionId,
-          status: discordChatIngress.status,
-        });
-      signal.throwIfAborted();
-      if (inserted) {
-        return { ...inserted, inserted: true };
+      if (result.inserted) {
+        return result;
       }
 
       const [existing] = await tx

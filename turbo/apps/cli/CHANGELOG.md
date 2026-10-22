@@ -1,5 +1,42 @@
 # Changelog
 
+## [9.408.4](https://github.com/okou-ai/okou/compare/cli-v9.408.3...cli-v9.408.4) (2026-10-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.779.0
+    * @okouai/pi-agent-runtime bumped to 1.50.52
+
+## [9.408.3](https://github.com/okou-ai/okou/compare/cli-v9.408.2...cli-v9.408.3) (2026-10-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.588.0
+    * @okouai/core bumped to 8.778.0
+    * @okouai/pi-agent-runtime bumped to 1.50.51
+
+## [9.408.2](https://github.com/okou-ai/okou/compare/cli-v9.408.1...cli-v9.408.2) (2026-10-22)
+
+
+### Refactoring
+
+* retire pi memory producers before storage contraction ([#42316](https://github.com/okou-ai/okou/issues/42316)) ([d7b32fb](https://github.com/okou-ai/okou/commit/d7b32fb46d53ee8648e1a825d1533d887b16dbec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.587.2
+    * @okouai/core bumped to 8.777.7
+    * @okouai/pi-agent-runtime bumped to 1.50.50
+
 ## [9.408.1](https://github.com/okou-ai/okou/compare/cli-v9.408.0...cli-v9.408.1) (2026-10-22)
 
 

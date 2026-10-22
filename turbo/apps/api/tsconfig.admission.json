@@ -107,7 +107,6 @@
     "src/signals/services/internal-slack-chat-run-callback.service.ts",
     "src/signals/services/internal-teams-chat-run-callback.service.ts",
     "src/signals/services/internal-telegram-chat-run-callback.service.ts",
-    "src/signals/services/memory-summary-projection.service.ts",
     "src/signals/services/model-provider.service.ts",
     "src/signals/services/workflow-schedule-settlement.ts",
     "src/signals/services/workflow-schedule-failure-policy.ts",

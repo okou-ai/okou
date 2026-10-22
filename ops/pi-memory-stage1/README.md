@@ -1,11 +1,13 @@
 # Stage 1 cost attribution and budget guardrail
 
-Issue [#34267](https://github.com/vm0-ai/vm0/issues/34267), with query repair
-[#34433](https://github.com/vm0-ai/vm0/issues/34433), child D of
-[#33892](https://github.com/vm0-ai/vm0/issues/33892). **Definitions only, not an
-active alert.** PiMemory remains off for everyone, including staff, and
-`PI_MEMORY_BACKGROUND_WORKERS_ENABLED=false`. This change authorizes no release,
-production SQL, purge, override, model probe, monitor mutation or notification.
+Pi Memory's admission, extraction, consolidation and recall producers are retired.
+The ledger and alert-definition fixtures below remain for historical accounting
+and incident analysis. They do not enable workers or publish active alerts.
+Dedicated storage remains until the separate contraction release.
+
+Historical scope: issue [#34267](https://github.com/okou-ai/okou/issues/34267),
+query repair [#34433](https://github.com/okou-ai/okou/issues/34433), child D of
+[#33892](https://github.com/okou-ai/okou/issues/33892).
 
 ## Accounting and source contract
 
@@ -35,7 +37,7 @@ historical backfill or new retention obligation in D.
 
 ## Observation contract
 
-`pi-memory-stage1-worker.service.ts` records canonical usage before pricing and
+The retired Stage 1 worker recorded canonical usage before pricing and
 before output parsing/commit. A usage-bearing incomplete terminal provider
 response also reaches that boundary. Parse/no-output, later cancellation, stale
 commit or deletion cannot erase already consumed usage. No-provider admission

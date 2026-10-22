@@ -456,10 +456,8 @@ test("Guide users to the compatible Computer Use app", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH, host: "app.okou.ai" });
 
   await readyChat();
-  const dialog = await openComputerDownloadDialog("Let Okou use your computer");
-  expect(dialog).toHaveTextContent(
-    "So Okou can work in your browser and apps for you",
-  );
+  const dialog = await openComputerDownloadDialog("Install and sign in");
+  expect(dialog).toHaveTextContent("Install and sign in");
   expect(dialog).toHaveTextContent(
     "Requires an Apple silicon Mac with macOS 14 or newer",
   );
@@ -469,6 +467,21 @@ test("Guide users to the compatible Computer Use app", async () => {
     "href",
     expect.stringContaining("/api/desktop/updates/stable/darwin/arm64/dmg"),
   );
+  expect(download).toHaveAttribute("target", "_blank");
+  click(fastControl("button", "Continue", dialog));
+  await screen.findByRole("heading", { name: "Allow access and stay online" });
+  expect(
+    new URLSearchParams(window.location.search).get("computerUseStep"),
+  ).toBe("permissions");
+  click(fastControl("button", "Continue", dialog));
+  await screen.findByRole("heading", { name: "Enable it in chat" });
+  click(fastControl("button", "Done", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(
+    new URLSearchParams(window.location.search).has("computerUseGuide"),
+  ).toBeFalsy();
 });
 
 test("Explain Computer Use incompatibility on an Intel Mac", async () => {
@@ -478,7 +491,7 @@ test("Explain Computer Use incompatibility on an Intel Mac", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH, host: "app.okou.ai" });
 
   await readyChat();
-  const dialog = await openComputerDownloadDialog("Let Okou use your computer");
+  const dialog = await openComputerDownloadDialog("Install and sign in");
   const incompatibility = fastControl(
     "button",
     "Requires an Apple silicon Mac",

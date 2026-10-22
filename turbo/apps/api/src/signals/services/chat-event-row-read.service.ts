@@ -1,5 +1,3 @@
-import { promisify } from "node:util";
-import { gunzip } from "node:zlib";
 import {
   chatEventRowSchema,
   type ChatEventRow,
@@ -8,22 +6,15 @@ import {
   CURRENT_CHAT_EVENT_SCHEMA_VERSION,
   type ChatEventCursor,
 } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { command, computed, type Computed } from "ccstate";
-import { and, asc, eq, exists, gt, sql } from "drizzle-orm";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { env } from "../../lib/env";
+import { command, computed, type Computed } from "ccstate";
+import { and, asc, eq, exists, gt, sql } from "drizzle-orm";
 import { db$ } from "../external/db";
-import { downloadS3BufferWithMaxBytes } from "../external/s3";
-import {
-  decodeChatEventSnapshotBody,
-  validateChatEventSnapshotRows,
-} from "./chat-event-snapshot-body.service";
 
 const THREAD_START_SEQ_ID = 0;
-const gunzipAsync = promisify(gunzip);
 
 const chatEventRowSelection = {
   id: chatEvents.id,
@@ -316,106 +307,3 @@ export function chatThreadEventRows(
     } as const;
   });
 }
-
-/** Bounded canonical input for idle Memory extraction, never Run recovery. */
-export const readMemoryChatEventRows$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly threadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly lastSeqId: number;
-    },
-    signal: AbortSignal,
-  ): Promise<readonly ChatEventRow[]> => {
-    const db = get(db$);
-    const [owned] = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(ownedThread(args.threadId, args.userId, args.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!owned) {
-      throw new Error("Memory Chat source owner is unavailable");
-    }
-    const pointer = await set(currentSnapshotPointer$, args.threadId);
-    signal.throwIfAborted();
-    let rows: ChatEventRow[] = [];
-    let lastSeqId = 0;
-    let lastEventId: string | null = null;
-    let bytes = 0;
-    const maxBytes = 8 * 1024 * 1024;
-    if (pointer) {
-      if (
-        !isCurrentChatEventSnapshotObjectKey(pointer.objectKey) ||
-        pointer.lastSeqId > args.lastSeqId
-      ) {
-        throw new Error("Memory Chat snapshot changed or is unavailable");
-      }
-      const body = await get(
-        downloadS3BufferWithMaxBytes(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
-          pointer.objectKey,
-          maxBytes,
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-      const decoded = await gunzipAsync(body, { maxOutputLength: maxBytes });
-      signal.throwIfAborted();
-      rows = [...decodeChatEventSnapshotBody(decoded)];
-      validateChatEventSnapshotRows(rows);
-      lastSeqId = pointer.lastSeqId;
-      lastEventId = pointer.lastEventId;
-      bytes = decoded.length;
-    }
-    while (lastSeqId < args.lastSeqId) {
-      signal.throwIfAborted();
-      const cursor =
-        lastSeqId === 0
-          ? { sinceSeqId: 0 as const }
-          : lastEventId === null
-            ? null
-            : { sinceSeqId: lastSeqId, sinceEventId: lastEventId };
-      if (cursor === null) {
-        throw new Error("Memory Chat cursor is unavailable");
-      }
-      const page = await get(
-        chatThreadEventRows({
-          threadId: args.threadId,
-          userId: args.userId,
-          orgId: args.orgId,
-          ...cursor,
-          limit: 1000,
-        }),
-      );
-      signal.throwIfAborted();
-      if (page.kind !== "ok") {
-        throw new Error("Memory Chat source range is unavailable");
-      }
-      if (page.rows.length === 0) {
-        break;
-      }
-      for (const row of page.rows) {
-        if (row.seqId > args.lastSeqId) {
-          break;
-        }
-        bytes += Buffer.byteLength(JSON.stringify(row));
-        if (bytes > maxBytes) {
-          throw new Error("Memory Chat source exceeds its byte budget");
-        }
-        rows.push(row);
-      }
-      lastSeqId = page.cursor.lastSeqId;
-      lastEventId = page.cursor.lastEventId;
-      if (!page.hasMore) {
-        break;
-      }
-    }
-    if ((rows.at(-1)?.seqId ?? 0) > args.lastSeqId) {
-      throw new Error("Memory Chat source cursor mismatch");
-    }
-    return rows;
-  },
-);

@@ -1156,12 +1156,8 @@ const recordIngressFailure$ = command(function recordIngressFailure(
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0088; new non-billing transactions are prohibited.
   return db.transaction(async (tx) => {
     const [claimed] = await tx
-      .select({
-        connectionId: discordChatIngress.connectionId,
-        routeId: discordChatIngress.routeId,
-        payload: discordChatIngress.payload,
-      })
-      .from(discordChatIngress)
+      .update(discordChatIngress)
+      .set(plan.values)
       .where(
         and(
           eq(discordChatIngress.id, args.ingressId),
@@ -1169,16 +1165,15 @@ const recordIngressFailure$ = command(function recordIngressFailure(
           eq(discordChatIngress.claimToken, args.claimToken),
         ),
       )
-      .for("update");
+      .returning({
+        connectionId: discordChatIngress.connectionId,
+        routeId: discordChatIngress.routeId,
+        payload: discordChatIngress.payload,
+      });
     signal.throwIfAborted();
     if (!claimed) {
       return null;
     }
-    await tx
-      .update(discordChatIngress)
-      .set(plan.values)
-      .where(eq(discordChatIngress.id, args.ingressId));
-    signal.throwIfAborted();
     if (!plan.notify) {
       return null;
     }

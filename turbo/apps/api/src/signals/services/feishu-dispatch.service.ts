@@ -550,6 +550,8 @@ const handleDisconnectCommand$ = command(async function handleDisconnectCommand(
   signal: AbortSignal,
 ): Promise<void> {
   const db = set(writeDb$);
+  // Post-lock reads must see newly committed member credentials; cleanup
+  // and member unlinking also need one deferred-constraint rollback boundary.
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0164; new non-billing transactions are prohibited.
   await db.transaction(async (tx) => {
     const scope = {

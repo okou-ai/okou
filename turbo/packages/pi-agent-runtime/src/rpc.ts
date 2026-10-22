@@ -12,12 +12,7 @@ import {
   validatePiSessionEntries,
 } from "./session-validation";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
-import type {
-  PiPreheatedResourceSnapshot,
-  PiMemoryRecallOutcome,
-  PiMemoryRecallSelection,
-  PiMemoryToolSourceUse,
-} from "./api-types";
+import type { PiPreheatedResourceSnapshot } from "./api-types";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -58,10 +53,7 @@ function createRuntimeFactory(args: {
   readonly sessionRole?: "parent" | "child";
   readonly model: PiAgentModelConfig;
   readonly appendSystemPrompt: string | null;
-  readonly memoryRecall?: PiMemoryRecallSelection;
   readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
-  readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
-  readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
   readonly onPreparationTiming?: PiPreparationObserver;
 }): CreateAgentSessionRuntimeFactory {
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
@@ -72,10 +64,7 @@ function createRuntimeFactory(args: {
       model: args.model,
       sessionRole: args.sessionRole,
       appendSystemPrompt: args.appendSystemPrompt,
-      memoryRecall: args.memoryRecall,
       resourceSnapshot: args.resourceSnapshot,
-      onMemoryRecallOutcome: args.onMemoryRecallOutcome,
-      onMemoryToolSourceUse: args.onMemoryToolSourceUse,
       onPreparationTiming: args.onPreparationTiming,
       sessionStartEvent,
     });
@@ -92,10 +81,7 @@ export async function runPiOfficialRpcMode(args: {
   readonly agentDir: string;
   readonly model: PiAgentModelConfig;
   readonly appendSystemPrompt: string | null;
-  readonly memoryRecall?: PiMemoryRecallSelection;
   readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
-  readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
-  readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
   /** Sandbox-side session preparation phases. */
   readonly onPreparationTiming?: PiPreparationObserver;
   readonly onFirstTool?: () => void;

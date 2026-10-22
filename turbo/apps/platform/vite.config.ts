@@ -10,6 +10,7 @@ import platformPackage from "./package.json";
 import { applicationResourcePriorityHtmlPlugin } from "./scripts/app-resource-priority-html.ts";
 import { clerkCoreHtmlPlugin } from "./scripts/clerk-html.ts";
 import { clerkUiAssetPlugin } from "./scripts/clerk-ui.ts";
+import { MESSAGE_PDF_WORKER_FILE_PATTERN } from "./scripts/message-pdf-worker.ts";
 import {
   SHARED_DATABASE_WORKER_FILE_PATTERN,
   sharedDatabaseWorkerHtmlPlugin,
@@ -63,7 +64,8 @@ export default defineConfig(({ command }) => ({
       if (
         hostType === "js" &&
         type === "asset" &&
-        SHARED_DATABASE_WORKER_FILE_PATTERN.test(filename)
+        (SHARED_DATABASE_WORKER_FILE_PATTERN.test(filename) ||
+          MESSAGE_PDF_WORKER_FILE_PATTERN.test(filename))
       ) {
         const workerPath = sharedDatabaseWorkerPath(filename, APP_ASSET_BASE);
         return { runtime: `location.origin + ${JSON.stringify(workerPath)}` };

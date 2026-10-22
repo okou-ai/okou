@@ -55,7 +55,7 @@ const log = logger("EmailCommon");
 const USER_CACHE_TTL_MS = 900_000;
 const MAX_ATTEMPTS = 3;
 const BACKOFF_BASE_MS = 1000;
-const MAX_OUTBOX_BATCH_SIZE = 120;
+const MAX_OUTBOX_BATCH_SIZE = 10;
 const OUTBOX_DRAIN_DELAY_MS = 500;
 // Namespaced so the provider key cannot collide with another Okou producer's
 // idempotency key. Resend accepts 1-256 characters.

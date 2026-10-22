@@ -5,8 +5,6 @@ import {
 } from "./helpers/google-text";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
-import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -15,13 +13,9 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { commitMemoryVersion } from "./helpers/memory";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
-  requireOrgId,
   claimEnvironment,
   eventBackedContents,
 } from "./helpers/chat-events-fixture";
@@ -93,27 +87,17 @@ async function expectPiActivitySummary(
     ],
   });
   expect(activityInput).toContain("okou --help");
-  expect(activityInput).toContain("add_ad_hoc_note");
+  expect(activityInput).toContain("README.md");
   mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 }
 
 describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
     const model = "gpt-6-luna";
     await configureSubscriptionPiModel(actor, {}, model);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiMemory]: true,
-      },
-    );
     mockPiResourceArchiveDownloads();
     const okouCliCommand = "okou --help";
-    const adHocNoteFilename = "2026-09-05T16-15-00-sandbox-note.md";
-    const adHocNote = "# Sandbox note\n\nPersist this staged sandbox note.\n";
     const prompt = "use the Okou CLI in the Sandbox";
     const run = await sendChatRunAfterPick(actor, {
       agentId,
@@ -144,19 +128,6 @@ describe("CHAT-02: model-first routing", () => {
     expect(lunaInstructions).toContain("You are currently running inside: Web");
     expect(lunaInstructions).toContain("okou web download-file -h");
     expect(lunaInstructions).toContain("Run commands with: `okou <command>`");
-    const lunaStorageManifest = expectCanonicalStorageManifest(
-      claimed.claim.storageManifest,
-    );
-    if (!lunaStorageManifest) {
-      throw new Error("Expected Luna storage manifest");
-    }
-    const lunaMounts = lunaStorageManifest.storageMounts;
-    const lunaMemoryMount = lunaMounts.find((mount) => {
-      return mount.name === "memory" && mount.mountPath === PI_MEMORY_ROOT;
-    });
-    if (!lunaMemoryMount) {
-      throw new Error("Expected the Pi memory mount");
-    }
     expect(claimed.claim.prompt).toBe(prompt);
     await webhooks.requestAgentEvents(
       {
@@ -199,10 +170,9 @@ describe("CHAT-02: model-first routing", () => {
                 {
                   type: "tool_use",
                   id: "call_pi_write",
-                  name: "add_ad_hoc_note",
+                  name: "read",
                   input: {
-                    filename: adHocNoteFilename,
-                    note: adHocNote,
+                    path: "README.md",
                   },
                 },
               ],
@@ -237,33 +207,7 @@ describe("CHAT-02: model-first routing", () => {
     ]);
     await expectPiActivitySummary(actor, run);
 
-    const publishedMemory = await commitMemoryVersion(
-      context,
-      {
-        runId: run.runId,
-        sandboxHeaders: claimed.sandboxHeaders,
-        storageManifest: claimed.claim.storageManifest,
-      },
-      [
-        {
-          path: `extensions/ad_hoc/notes/${adHocNoteFilename}`,
-          content: adHocNote,
-        },
-      ],
-    );
-    expect(publishedMemory.storageId).toBe(lunaMemoryMount.storageId);
-    const memoryStorageOutputs = [
-      {
-        name: lunaMemoryMount.name,
-        version: publishedMemory.versionId,
-        mountPath: lunaMemoryMount.mountPath,
-        ...(lunaMemoryMount.missingRootPolicy === undefined
-          ? {}
-          : {
-              missingRootPolicy: lunaMemoryMount.missingRootPolicy,
-            }),
-      },
-    ];
+    const storageOutputs: [] = [];
     const combinedCompletion = await webhooks.requestAgentComplete(
       {
         runId: run.runId,
@@ -272,7 +216,7 @@ describe("CHAT-02: model-first routing", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryDisposition: "native_only",
-          storageOutputs: memoryStorageOutputs,
+          storageOutputs: storageOutputs,
         },
       },
       claimed.sandboxHeaders,
@@ -287,7 +231,7 @@ describe("CHAT-02: model-first routing", () => {
     await flushWaitUntilForTest();
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       result: {
-        storageOutputs: memoryStorageOutputs,
+        storageOutputs: storageOutputs,
       },
     });
     const committedOutputs = await webhooks.requestAgentRunOutputs(
@@ -296,7 +240,7 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryDisposition: "native_only",
-        storageOutputs: memoryStorageOutputs,
+        storageOutputs: storageOutputs,
       },
       claimed.sandboxHeaders,
       [200],
@@ -312,7 +256,7 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryDisposition: "native_only",
-        storageOutputs: memoryStorageOutputs,
+        storageOutputs: storageOutputs,
       },
       claimed.sandboxHeaders,
       [200],
@@ -455,7 +399,7 @@ describe("CHAT-02: model-first routing", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryDisposition: "native_only",
-          storageOutputs: memoryStorageOutputs,
+          storageOutputs: storageOutputs,
         },
       },
       claimed.sandboxHeaders,
@@ -502,7 +446,7 @@ describe("CHAT-02: model-first routing", () => {
   }
 
   it(
-    "launches personal Codex in the Sandbox, captures guest tool activity, and publishes Pi memory notes",
+    "launches personal Codex in the Sandbox and captures guest tool activity",
     piActivityScenario,
     150_000,
   );

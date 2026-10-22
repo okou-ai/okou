@@ -1,5 +1,40 @@
 # Changelog
 
+## [8.779.0](https://github.com/okou-ai/okou/compare/core-v8.778.0...core-v8.779.0) (2026-10-22)
+
+
+### Features
+
+* **platform:** add assistant message pdf export ([#42319](https://github.com/okou-ai/okou/issues/42319)) ([776b0ea](https://github.com/okou-ai/okou/commit/776b0ea3aef54676ed0a918bb6e5db1b79cf3e5e))
+
+## [8.778.0](https://github.com/okou-ai/okou/compare/core-v8.777.7...core-v8.778.0) (2026-10-22)
+
+
+### Features
+
+* add hourly proactive action workflow ([#42325](https://github.com/okou-ai/okou/issues/42325)) ([584988e](https://github.com/okou-ai/okou/commit/584988edb99d1d6cff61b67ee7fb67cbff1282e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.0
+
+## [8.777.7](https://github.com/okou-ai/okou/compare/core-v8.777.6...core-v8.777.7) (2026-10-22)
+
+
+### Refactoring
+
+* retire pi memory producers before storage contraction ([#42316](https://github.com/okou-ai/okou/issues/42316)) ([d7b32fb](https://github.com/okou-ai/okou/commit/d7b32fb46d53ee8648e1a825d1533d887b16dbec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.2
+
 ## [8.777.6](https://github.com/okou-ai/okou/compare/core-v8.777.5...core-v8.777.6) (2026-10-22)
 
 

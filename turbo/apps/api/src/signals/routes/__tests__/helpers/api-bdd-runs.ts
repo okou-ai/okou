@@ -55,7 +55,6 @@ import type { z } from "zod";
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
@@ -584,8 +583,6 @@ export function createRunsApi(context: TestContext) {
     async grantProEntitlement(
       actor: ApiTestUser,
       options: {
-        /** Select the case database for a later cross-tenant operator. */
-        readonly isolatePg?: true;
         readonly customerId?: string;
         readonly subscriptionId?: string;
         readonly tier?: "pro" | "team";
@@ -732,12 +729,8 @@ export function createRunsApi(context: TestContext) {
       }
       // Retain the exact provider boundary if accepted setup outlives mock reset.
       options.onExternalStateReady?.(restoreWebhook);
-      await run(async () => {
-        const client = options.isolatePg
-          ? (await setupApp({ context, routes: runRoutes, isolatePg: true }))(
-              webhookStripeContract,
-            )
-          : runApp(context)(webhookStripeContract);
+      await run(() => {
+        const client = runApp(context)(webhookStripeContract);
         return accept(
           client.post({
             body: payload,

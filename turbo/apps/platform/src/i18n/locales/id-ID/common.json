@@ -1126,19 +1126,10 @@
     "invoices": {
       "amount": "Jumlah",
       "date": "Tanggal",
-      "downloadDescription": "Pilih hingga 3 bulan berturut-turut. PDF tanda terima dalam rentang itu akan digabung menjadi satu file ZIP.",
       "downloadInvoice": "Unduh faktur {{month}}",
-      "downloadReceipts": "Unduh tanda terima",
-      "downloadZip": "Unduh ZIP",
       "empty": "Belum ada faktur.",
-      "from": "Dari",
       "invoice": "Faktur",
-      "loading": "Memuat faktur",
-      "monthAria": "Bulan {{label}}",
-      "preparingReceipts": "Menyiapkan tanda terima...",
-      "rangeError": "Pilih rentang yang tidak lebih dari 3 bulan berturut-turut.",
-      "selectMonth": "Pilih bulan",
-      "to": "Ke"
+      "loading": "Memuat faktur"
     },
     "paymentMethods": {
       "description": "Kelola metode pembayaran yang digunakan untuk penagihan di Stripe.",
@@ -1293,7 +1284,6 @@
       "downgradeScheduledDate": "Penurunan paket dijadwalkan. Paket Anda saat ini tetap aktif hingga {{date}}.",
       "downgradeScheduledPeriod": "Penurunan paket dijadwalkan. Paket Anda saat ini tetap aktif hingga periode tagihan berakhir.",
       "planRestored": "Paket dipulihkan. Langganan Anda akan diperbarui seperti biasa.",
-      "receiptsDownloaded": "Struk diunduh",
       "subscriptionChangeConfirmed": "Perubahan langganan dikonfirmasi."
     },
     "usage": {
@@ -1376,8 +1366,12 @@
       "copy": "Salin",
       "copyMessage": "Salin pesan",
       "delete": "Hapus",
+      "downloadPdf": "Unduh PDF",
       "edit": "Edit",
+      "generatePdf": "Buat PDF",
+      "generatingPdf": "Membuat PDF…",
       "more": "Tindakan lainnya",
+      "pdfGenerationFailed": "Tidak dapat membuat PDF. Coba lagi.",
       "remove": "Hapus",
       "rename": "Ubah nama",
       "saving": "Menyimpan...",
@@ -1826,13 +1820,22 @@
       "checkingCompatibility": "Memeriksa kompatibilitas",
       "cloudBrowser": "Browser cloud",
       "connectMyComputer": "Hubungkan komputer saya",
-      "dialogDescription": "Agar {{desktopProductName}} bisa bekerja di browser dan aplikasi Anda, bahkan yang tidak punya konektor seperti LinkedIn atau Reddit.",
-      "dialogTitle": "Izinkan {{desktopProductName}} menggunakan komputer Anda",
       "downloadMacos": "Unduh untuk macOS",
       "hosts": "Host Computer Use",
       "macosRequirement": "Memerlukan Mac Apple silicon dengan macOS 14 atau lebih baru. Mac Intel tidak didukung.",
       "noOnlineComputers": "Tidak ada komputer online",
       "offline": "Offline",
+      "setupSteps": {
+        "chatDescription": "Buka Konektor di kotak pesan chat dan aktifkan perangkat Anda di Komputer Anda.",
+        "chatTitle": "Aktifkan di chat",
+        "done": "Selesai",
+        "installDescription": "Instal dan buka {{desktopProductName}}. Gunakan akun dan ruang kerja yang sama dengan web.",
+        "installTitle": "Instal dan masuk",
+        "permissionsDescription": "Izinkan Accessibility dan Screen Recording, lalu biarkan aplikasi desktop tetap online.",
+        "permissionsTitle": "Izinkan akses dan tetap online",
+        "previous": "Sebelumnya",
+        "thisMac": "Mac ini"
+      },
       "unsupportedIntelMac": "Memerlukan Mac Apple silicon",
       "yourComputer": "Komputer Anda"
     },
@@ -4654,11 +4657,8 @@
   },
   "remoteComputerSetup": {
     "addNetwork": "Siapkan Tailscale",
-    "advanced": "Koneksi manual (lanjutan)",
-    "advancedDescription": "Gunakan konfigurasi SSH atau VNC yang sudah ada. Mendukung koneksi langsung serta jaringan Tailscale atau Cloudflare tersimpan.",
     "commands": "Jalankan perintah (SSH)",
     "continue": "Lanjutkan dengan jaringan ini",
-    "description": "Biarkan Okou bekerja di komputer rumah atau kantor Anda.",
     "macScreenReady": "Aktifkan Berbagi Layar di Mac dan izinkan akses untuk akun yang digunakan. Kompatibilitas bergantung pada protokol login layanan.",
     "networkDescription": "Pilih jaringan Tailscale komputer Anda atau siapkan yang baru.",
     "networkEmptyDescription": "Siapkan Tailscale agar Okou dapat terhubung ke komputer Anda.",
@@ -4727,7 +4727,6 @@
   },
   "remoteControlSetup": {
     "add": "Tambahkan koneksi",
-    "addFirstDevice": "Tambahkan perangkat pertama Anda",
     "addNetwork": "Tambah jaringan",
     "addNetworkInline": "Tambahkan jaringan privat",
     "address": "Alamat perangkat",
@@ -4751,6 +4750,8 @@
     "cfAddressMissing": "Jika aplikasinya tidak ada atau Anda tidak dapat mengaksesnya, minta hostname aplikasi kepada administrator jaringan atau minta mereka membuat aplikasinya.",
     "companyGroup": "QEMU atau autentikasi perusahaan",
     "compatibleLoginOnly": "Pilih data login dari koneksi yang sudah ada. Pastikan data tersebut juga dapat digunakan di perangkat ini.",
+    "computerUse": "Computer use",
+    "computerUseDescription": "Gunakan aplikasi desktop untuk bekerja di browser dan aplikasi Anda.",
     "connectionDetails": "Detail koneksi",
     "connectionMethod": "Metode koneksi",
     "connectionSettings": "Pengaturan koneksi",
@@ -5449,9 +5450,19 @@
         "retryMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui. Coba lagi untuk melanjutkan.",
         "title": "Brief Pagi"
       },
+      "proactiveAction": {
+        "description": "Biarkan Okou melanjutkan langkah berikutnya setiap jam dan menampilkan hasilnya di Chat. Saran proaktif dijeda selama fitur ini aktif.",
+        "missingDefaultAgent": "Pilih agen default yang tersedia untuk mengaktifkan tindakan proaktif.",
+        "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
+        "preparing": "Menyiapkan tindakan setiap jam. Anda dapat menonaktifkannya kapan saja.",
+        "retry": "Coba lagi",
+        "retryMessage": "Pengaturan tindakan proaktif tidak dapat dimuat atau diperbarui. Coba lagi.",
+        "title": "Tindakan proaktif"
+      },
       "proactiveSuggestions": {
         "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
         "missingDefaultAgent": "Pilih Agent default yang tersedia untuk menerima saran proaktif.",
+        "pausedForAction": "Dijeda selama tindakan proaktif aktif. Preferensi Anda tersimpan.",
         "preparationFailed": "Untuk sementara tidak tersedia. Okou akan mencoba lagi secara otomatis.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",

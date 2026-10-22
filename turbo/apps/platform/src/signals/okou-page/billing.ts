@@ -385,6 +385,7 @@ interface TrackedAsyncResource<T> {
 
 function trackAsyncResource<T>(promise: Promise<T>): TrackedAsyncResource<T> {
   let pending = true;
+  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
   const trackedPromise = withCleanup(promise, () => {
     pending = false;
   });
@@ -1814,96 +1815,6 @@ export const invoicesAsync$ = computed(async (get) => {
   const result = await accept(client.get(), [200]);
   return result.body;
 });
-
-interface ReceiptDownloadRange {
-  readonly startMonth: string;
-  readonly endMonth: string;
-}
-
-const internalReceiptDownloadRange$ = state<ReceiptDownloadRange>({
-  startMonth: "",
-  endMonth: "",
-});
-
-export const receiptDownloadRange$ = computed((get) => {
-  return get(internalReceiptDownloadRange$);
-});
-
-export const receiptDownloadRangeExceedsLimit$ = computed((get) => {
-  const range = get(internalReceiptDownloadRange$);
-  if (range.startMonth === "" || range.endMonth === "") {
-    return false;
-  }
-  const monthIndex = (month: string) => {
-    return Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1;
-  };
-  return (
-    Math.abs(monthIndex(range.endMonth) - monthIndex(range.startMonth)) >= 3
-  );
-});
-
-export const initializeReceiptDownloadRange$ = command(
-  ({ set }, month: string) => {
-    set(internalReceiptDownloadRange$, {
-      startMonth: month,
-      endMonth: month,
-    });
-  },
-);
-
-export const setReceiptDownloadStartMonth$ = command(
-  ({ get, set }, startMonth: string) => {
-    const range = get(internalReceiptDownloadRange$);
-    set(internalReceiptDownloadRange$, { ...range, startMonth });
-  },
-);
-
-export const setReceiptDownloadEndMonth$ = command(
-  ({ get, set }, endMonth: string) => {
-    const range = get(internalReceiptDownloadRange$);
-    set(internalReceiptDownloadRange$, { ...range, endMonth });
-  },
-);
-
-export const downloadMonthlyReceipts$ = command(
-  async ({ get }, range: ReceiptDownloadRange, signal: AbortSignal) => {
-    let downloadUrl: string | undefined;
-    await withCleanup(
-      (async () => {
-        const createClient = get(apiClient$);
-        const client = createClient(billingInvoicesContract);
-        const response = await accept(
-          client.downloadReceipts({
-            query: range,
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-
-        downloadUrl = URL.createObjectURL(response.body);
-        const anchor = document.createElement("a");
-        anchor.href = downloadUrl;
-        anchor.download =
-          range.startMonth === range.endMonth
-            ? `receipts-${range.startMonth}.zip`
-            : `receipts-${range.startMonth}-to-${range.endMonth}.zip`;
-        anchor.click();
-      })(),
-      () => {
-        if (downloadUrl) {
-          URL.revokeObjectURL(downloadUrl);
-        }
-      },
-    );
-    signal.throwIfAborted();
-    toast.success(
-      i18n.t(($) => {
-        return $.billing.toasts.receiptsDownloaded;
-      }),
-    );
-  },
-);
 
 // ---------------------------------------------------------------------------
 // Buy credits form state (Billing page > Buy credits section)

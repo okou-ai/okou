@@ -211,13 +211,27 @@ describe("Lark integration", () => {
       }),
       [404],
     );
-    await accept(
-      larkClient.removeInstallation({
-        headers,
-        params: { installationId: lark.id },
+    const removals = await Promise.all(
+      [0, 1].map(() => {
+        return accept(
+          larkClient.removeInstallation({
+            headers,
+            params: { installationId: lark.id },
+          }),
+          [200, 404],
+        );
       }),
-      [200],
     );
+    expect(
+      removals
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 404]);
+    expect(
+      (await accept(larkClient.getStatus({ headers }), [200])).body,
+    ).toMatchObject({ isInstalled: false, installations: [] });
     expect(
       (await accept(client.getStatus({ headers }), [200])).body.installationId,
     ).toBe(feishu.id);

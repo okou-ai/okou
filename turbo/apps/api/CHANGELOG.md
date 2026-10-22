@@ -9,6 +9,72 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.765.1](https://github.com/okou-ai/okou/compare/api-v1.765.0...api-v1.765.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **api:** align presentation template markers with runbook names ([#42336](https://github.com/okou-ai/okou/issues/42336)) ([02c0283](https://github.com/okou-ai/okou/commit/02c0283feadfa035b2f5ead515751d3ac4e58da0))
+* **api:** limit email outbox drains to ten items ([#42338](https://github.com/okou-ai/okou/issues/42338)) ([4e12091](https://github.com/okou-ai/okou/commit/4e12091cee5abf3966d24548dd0c7ebac8cc8922))
+
+
+### Refactoring
+
+* **api:** compact discord ingress persistence ([#42354](https://github.com/okou-ai/okou/issues/42354)) ([1295fa9](https://github.com/okou-ai/okou/commit/1295fa969d7d8a870cb4ee735034edabb2f47844))
+* **api:** make catalog cold loads request-owned ([#42343](https://github.com/okou-ai/okou/issues/42343)) ([0fbd2fb](https://github.com/okou-ai/okou/commit/0fbd2fb8a3d0140aa1048e0ad6dffa8fb9bfd303))
+* **api:** own builtin connector token revocation input reads ([#42341](https://github.com/okou-ai/okou/issues/42341)) ([6eff341](https://github.com/okou-ai/okou/commit/6eff3418b9eda9a52291467d0b88031701bf4b15))
+* **api:** remove custom dns rebinding and address guards ([#42349](https://github.com/okou-ai/okou/issues/42349)) ([d0991ca](https://github.com/okou-ai/okou/commit/d0991cac0df78193fa4f2c40562fa4e69bd2c818))
+* **api:** shorten feishu installation cleanup transaction ([#42340](https://github.com/okou-ai/okou/issues/42340)) ([48abe2f](https://github.com/okou-ai/okou/commit/48abe2f0a4845c1f5ed5538fa75335307ccfeef8))
+* narrow the pi phase2 digest import boundary ([#42348](https://github.com/okou-ai/okou/issues/42348)) ([3c43403](https://github.com/okou-ai/okou/commit/3c4340373b0b5042be45b95d0b01996b1acbb9c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.779.0
+    * @okouai/db bumped to 1.357.1
+    * @okouai/pi-agent-runtime bumped to 1.50.52
+
+## [1.765.0](https://github.com/okou-ai/okou/compare/api-v1.764.2...api-v1.765.0) (2026-10-22)
+
+
+### Features
+
+* add hourly proactive action workflow ([#42325](https://github.com/okou-ai/okou/issues/42325)) ([584988e](https://github.com/okou-ai/okou/commit/584988edb99d1d6cff61b67ee7fb67cbff1282e9))
+
+
+### Refactoring
+
+* remove bulk invoice receipt zip downloads ([#42329](https://github.com/okou-ai/okou/issues/42329)) ([7ca4cc0](https://github.com/okou-ai/okou/commit/7ca4cc036f4d99b14d7a742293bb715f7e42a875))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.0
+    * @okouai/core bumped to 8.778.0
+    * @okouai/db bumped to 1.357.0
+    * @okouai/pi-agent-runtime bumped to 1.50.51
+
+## [1.764.2](https://github.com/okou-ai/okou/compare/api-v1.764.1...api-v1.764.2) (2026-10-22)
+
+
+### Refactoring
+
+* retire pi memory producers before storage contraction ([#42316](https://github.com/okou-ai/okou/issues/42316)) ([d7b32fb](https://github.com/okou-ai/okou/commit/d7b32fb46d53ee8648e1a825d1533d887b16dbec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.2
+    * @okouai/core bumped to 8.777.7
+    * @okouai/db bumped to 1.356.2
+    * @okouai/pi-agent-runtime bumped to 1.50.50
+
 ## [1.764.1](https://github.com/okou-ai/okou/compare/api-v1.764.0...api-v1.764.1) (2026-10-22)
 
 

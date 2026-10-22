@@ -19,8 +19,6 @@ import {
   runPiOfficialRpcMode,
   runPiMemoryPhase2MountedConsolidation,
   type PiAgentModelConfig,
-  type PiMemoryRecallOutcome,
-  type PiMemoryToolSourceUse,
   type PiPreparationObservation,
 } from "@okouai/pi-agent-runtime/node";
 import {
@@ -36,30 +34,6 @@ const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
 const PI_MEMORY_PHASE2_VALIDATION_FILENAME = "maintenance-validation.json";
-
-function recordPiMemoryRecallOutcome(
-  runId: string,
-  outcome: PiMemoryRecallOutcome,
-): void {
-  process.stderr.write(
-    `${JSON.stringify({ type: "pi_memory_recall_outcome", runId, ...outcome })}\n`,
-  );
-}
-
-export function recordPiMemoryToolSourceUse(
-  runId: string,
-  sessionId: string,
-  sourceUse: PiMemoryToolSourceUse,
-): void {
-  process.stderr.write(
-    `${JSON.stringify({
-      type: "pi_memory_tool_source_use",
-      runId,
-      sessionId,
-      ...sourceUse,
-    })}\n`,
-  );
-}
 
 /**
  * Report one sandbox session-preparation phase to guest-agent.
@@ -343,17 +317,6 @@ export async function runPiSandboxAgentLoop(args: {
     agentDir: args.agentDir ?? PI_AGENT_DIR,
     model: args.config.model,
     appendSystemPrompt: args.config.launchPayload.appendSystemPrompt,
-    memoryRecall: args.config.launchPayload.launchConfig.memoryRecall,
-    onMemoryRecallOutcome(outcome) {
-      recordPiMemoryRecallOutcome(args.config.runId, outcome);
-    },
-    onMemoryToolSourceUse(sourceUse) {
-      recordPiMemoryToolSourceUse(
-        args.config.runId,
-        args.config.sessionId,
-        sourceUse,
-      );
-    },
     ...(args.config.reportPreparationTiming
       ? {
           onPreparationTiming(observation: PiPreparationObservation) {

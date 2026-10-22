@@ -262,6 +262,7 @@ function createFitWindowSignals(
     if (aspectRatio === null) {
       return Promise.resolve();
     }
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const operation: Promise<void> = withCleanup(
       set(resize$, aspectRatio, signal),
       () => {
@@ -300,6 +301,7 @@ function createStartBrowserSignals({
   const operation$ = state<Promise<void> | null>(null);
   const running$ = state<Promise<void> | null>(null);
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const started = await withCleanup(
       accept(
         get(apiClient$)(browserContract).open({
@@ -323,6 +325,7 @@ function createStartBrowserSignals({
     if (active) {
       return active;
     }
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     const operation: Promise<void> = withCleanup(
       set(openBrowser$, signal),
       () => {
@@ -348,6 +351,7 @@ function createCloseBrowserSignals({
   reload$,
 }: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "close$"> {
   const close$ = command(async ({ get, set }, signal: AbortSignal) => {
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
       accept(
         get(apiClient$)(browserContract).close({

@@ -1234,7 +1234,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       const initial = await accept(quota.get({ headers }), [200]);
       expect(initial.body).toMatchObject({ allowed: true, count: 0 });
 
-      for (let index = 0; index < 10; index += 1) {
+      for (let index = 0; index < 40; index += 1) {
         await accept(
           client().segment({
             headers,
@@ -1246,13 +1246,13 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       const exhausted = await accept(quota.get({ headers }), [200]);
       expect(exhausted.body).toStrictEqual({
         allowed: false,
-        count: 10,
-        limit: 10,
+        count: 40,
+        limit: 40,
       });
       const rejected = await accept(
         client().segment({
           headers,
-          body: segmentForm([audioFile(11)], "", 1),
+          body: segmentForm([audioFile(41)], "", 1),
         }),
         [429],
       );

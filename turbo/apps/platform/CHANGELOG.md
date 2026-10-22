@@ -12,6 +12,66 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1055.0](https://github.com/okou-ai/okou/compare/app-v0.1054.0...app-v0.1055.0) (2026-10-22)
+
+
+### Features
+
+* **platform:** add assistant message pdf export ([#42319](https://github.com/okou-ai/okou/issues/42319)) ([776b0ea](https://github.com/okou-ai/okou/commit/776b0ea3aef54676ed0a918bb6e5db1b79cf3e5e))
+
+
+### Bug Fixes
+
+* **app:** keep suggestion task chips on one row ([#42342](https://github.com/okou-ai/okou/issues/42342)) ([d330618](https://github.com/okou-ai/okou/commit/d330618222f6ccbe3d829f565ef6fd670379ce86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.779.0
+
+## [0.1054.0](https://github.com/okou-ai/okou/compare/app-v0.1053.0...app-v0.1054.0) (2026-10-22)
+
+
+### Features
+
+* add hourly proactive action workflow ([#42325](https://github.com/okou-ai/okou/issues/42325)) ([584988e](https://github.com/okou-ai/okou/commit/584988edb99d1d6cff61b67ee7fb67cbff1282e9))
+
+
+### Refactoring
+
+* remove bulk invoice receipt zip downloads ([#42329](https://github.com/okou-ai/okou/issues/42329)) ([7ca4cc0](https://github.com/okou-ai/okou/commit/7ca4cc036f4d99b14d7a742293bb715f7e42a875))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.588.0
+    * @okouai/core bumped to 8.778.0
+
+## [0.1053.0](https://github.com/okou-ai/okou/compare/app-v0.1052.2...app-v0.1053.0) (2026-10-22)
+
+
+### Features
+
+* add computer use setup and refine remote connection flows ([#42299](https://github.com/okou-ai/okou/issues/42299)) ([ba30186](https://github.com/okou-ai/okou/commit/ba30186e8be26a4ac297b9f32f5b4382bc7cde23))
+
+
+### Refactoring
+
+* retire pi memory producers before storage contraction ([#42316](https://github.com/okou-ai/okou/issues/42316)) ([d7b32fb](https://github.com/okou-ai/okou/commit/d7b32fb46d53ee8648e1a825d1533d887b16dbec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.587.2
+    * @okouai/core bumped to 8.777.7
+    * @okouai/ui bumped to 1.17.0
+
 ## [0.1052.2](https://github.com/okou-ai/okou/compare/app-v0.1052.1...app-v0.1052.2) (2026-10-22)
 
 

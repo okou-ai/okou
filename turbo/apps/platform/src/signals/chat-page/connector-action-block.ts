@@ -1,6 +1,7 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { z } from "zod";
 import {
+  connectorAccountSetupIsComplete,
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -318,7 +319,7 @@ export const refreshCustomConnectorChatAccount$ = command(
     }
     const connected = accountPage
       ? accountPage.defaultConnection?.connectionStatus === "connected" &&
-        accountPage.defaultConnection.setupStatus === "complete"
+        connectorAccountSetupIsComplete(accountPage.defaultConnection)
       : customConnectorManagedStatusSchema.parse(connector).connected;
     set(active.recordConnection$, connector, connected);
     return connected;
@@ -735,7 +736,7 @@ function createCustomConnectorSignals(
     signal.throwIfAborted();
     const connected = accountPage
       ? accountPage.defaultConnection?.connectionStatus === "connected" &&
-        accountPage.defaultConnection.setupStatus === "complete"
+        connectorAccountSetupIsComplete(accountPage.defaultConnection)
       : await get(connected$);
     signal.throwIfAborted();
     if (accountPage) {

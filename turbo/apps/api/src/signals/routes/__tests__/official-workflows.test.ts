@@ -72,7 +72,11 @@ import {
 import { logsRoutes } from "../logs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { proactiveSuggestionsRoutes } from "../proactive-suggestions";
+import { proactiveActionContract } from "@okouai/api-contracts/contracts/proactive-action";
+import {
+  proactiveSuggestionsRoutes,
+  proactiveActionRoutes,
+} from "../proactive-preferences";
 import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
 import { suggestionsRoutes } from "../suggestions";
 import {
@@ -153,20 +157,24 @@ function catalog(
 ): OfficialWorkflowSourceCatalog {
   return {
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
-    definitions:
-      catalogPublication.hasProactiveDefinition() &&
-      !definitions.some((definition) => {
-        return definition.name === "agent-suggestions";
-      })
-        ? [
-            ...definitions,
-            {
-              name: "agent-suggestions",
-              lifecycle: "retired",
-              presentation: { category: "productivity" },
-            },
-          ]
-        : definitions,
+    definitions: [
+      ...definitions,
+      ...(catalogPublication.hasProactiveDefinition()
+        ? ["agent-suggestions", "proactive-action"]
+            .filter((name) => {
+              return !definitions.some((definition) => {
+                return definition.name === name;
+              });
+            })
+            .map((name) => {
+              return {
+                name,
+                lifecycle: "retired" as const,
+                presentation: { category: "productivity" },
+              };
+            })
+        : []),
+    ],
   };
 }
 
@@ -471,6 +479,442 @@ async function ordinaryDelegationScenario() {
 beforeEach(() => {
   catalogPublication.reset();
   mockEnv("CRON_SECRET", CRON_SECRET);
+});
+
+describe("Proactive Action preference", () => {
+  function client() {
+    return setupApp({ context, routes: proactiveActionRoutes })(
+      proactiveActionContract,
+    );
+  }
+
+  async function installation(actor: ApiTestUser, name: string) {
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    const workflow = listed.body.find((item) => {
+      return item.official?.definitionName === name;
+    });
+    if (!workflow) {
+      throw new Error(`Expected ${name} installation`);
+    }
+    return (
+      await accept(
+        workflowClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      )
+    ).body;
+  }
+
+  it("requires its feature switch and explicit user opt-in independently of Suggestions", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const owner = { ...actor, orgId: actor.orgId };
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.ProactiveAction]: false,
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
+    await accept(client().get({ headers: authHeaders(actor) }), [403]);
+    await accept(
+      client().update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [403],
+    );
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.ProactiveAction]: true,
+    });
+    const initial = await accept(
+      client().get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({ enabled: false, status: "paused" });
+    const before = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    expect(
+      before.body.some((item) => {
+        return item.official?.definitionName === "proactive-action";
+      }),
+    ).toBeFalsy();
+    const enabled = await accept(
+      client().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    expect((await readBriefPreference(actor)).body.enabled).toBeFalsy();
+    const first = await installation(actor, "proactive-action");
+    await accept(
+      client().update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const repeated = await installation(actor, "proactive-action");
+    expect(repeated.id).toBe(first.id);
+    expect(
+      repeated.automations.map((item) => {
+        return item.id;
+      }),
+    ).toStrictEqual(
+      first.automations.map((item) => {
+        return item.id;
+      }),
+    );
+  });
+
+  it("runs hourly with Official provenance in one visible owner-only thread", async () => {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.ProactiveAction]: true,
+        [FeatureSwitchKey.AgentSuggestion]: false,
+      },
+    );
+    await accept(
+      client().update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const workflow = await installation(actor, "proactive-action");
+    expect(workflow.visibility).toBe("private");
+    const schedule = workflow.automations[0];
+    if (!schedule?.nextRunAt) {
+      throw new Error("Expected hourly Action schedule");
+    }
+    expect(schedule).toMatchObject({
+      enabled: true,
+      kind: "schedule",
+      schedule: { type: "cron", timezone: "UTC" },
+    });
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const firstAt = new Date(schedule.nextRunAt).getTime();
+    mockNow(firstAt);
+    await runs.heartbeatRunner(runnerGroup);
+    const first = await fireOfficialSchedule(actor, schedule);
+    const claim = await runs.claimRunnerJob(first.runId);
+    expect(claim.prompt).toMatch(/^\/proactive-action\n/u);
+    expect(
+      capturedOfficialSkill(claim.storageManifest, "proactive-action"),
+    ).toContain("complete a useful next step");
+    const threads = setupApp({ context, routes: chatThreadGetRoutes })(
+      chatThreadMetadataContract,
+    );
+    const visible = await accept(
+      threads.get({
+        headers: authHeaders(actor),
+        params: { id: first.chatThreadId },
+      }),
+      [200],
+    );
+    expect(visible.body).toMatchObject({
+      hidden: false,
+      selectedModel: "auto",
+    });
+    const outsider = bdd.user();
+    await accept(
+      threads.get({
+        headers: authHeaders(outsider),
+        params: { id: first.chatThreadId },
+      }),
+      [404],
+    );
+    mockNow(firstAt + 1000);
+    await webhooks.requestAgentComplete(
+      { runId: first.runId, exitCode: 0 },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const advanced = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: schedule.id },
+      }),
+      [200],
+    );
+    expect(advanced.body.nextRunAt).toBe(
+      new Date(firstAt + 3_600_000).toISOString(),
+    );
+    mockNow(firstAt + 3_600_000);
+    await runs.heartbeatRunner(runnerGroup);
+    const second = await fireOfficialSchedule(actor, advanced.body);
+    expect(second.chatThreadId).toBe(first.chatThreadId);
+    expect(second.runId).not.toBe(first.runId);
+    const secondClaim = await runs.claimRunnerJob(second.runId);
+    onTestFinished(async () => {
+      await webhooks.requestAgentComplete(
+        {
+          runId: second.runId,
+          exitCode: 1,
+          error: "Proactive Action fixture cleanup",
+        },
+        { authorization: `Bearer ${secondClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    const retained = await accept(
+      threads.get({
+        headers: authHeaders(actor),
+        params: { id: second.chatThreadId },
+      }),
+      [200],
+    );
+    expect(retained.body.hidden).toBeFalsy();
+  });
+
+  it.each(["preference", "feature-switch"] as const)(
+    "pauses Suggestions without losing its preference and restores it after Action %s opt-out",
+    async (optOut) => {
+      const { actor } = await prepareBriefMember();
+      await bdd.completeOnboarding(actor);
+      if (!actor.orgId) {
+        throw new Error("Expected organization");
+      }
+      const owner = { ...actor, orgId: actor.orgId };
+      await updateFeatureSwitchesForUser(context, owner, {
+        [FeatureSwitchKey.ProactiveAction]: true,
+        [FeatureSwitchKey.AgentSuggestion]: true,
+      });
+      const suggestions = setupApp({
+        context,
+        routes: proactiveSuggestionsRoutes,
+      })(proactiveSuggestionsContract);
+      await accept(
+        suggestions.update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const original = await installation(actor, "agent-suggestions");
+      await accept(
+        client().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const paused = await accept(
+        suggestions.get({ headers: authHeaders(actor) }),
+        [200],
+      );
+      expect(paused.body).toMatchObject({
+        enabled: true,
+        status: "paused",
+        unavailableReason: "proactive-action-enabled",
+      });
+      expect(
+        (await installation(actor, "agent-suggestions")).automations[0],
+      ).toMatchObject({ enabled: false, nextRunAt: null });
+      const action = await installation(actor, "proactive-action");
+      if (optOut === "preference") {
+        await accept(
+          client().update({
+            headers: authHeaders(actor),
+            body: { enabled: false },
+          }),
+          [200],
+        );
+      } else {
+        await updateFeatureSwitchesForUser(context, owner, {
+          [FeatureSwitchKey.ProactiveAction]: false,
+        });
+        const schedule = action.automations[0];
+        if (!schedule?.nextRunAt) {
+          throw new Error("Expected Action schedule");
+        }
+        await withMockNowForTest(
+          new Date(schedule.nextRunAt).getTime(),
+          executeAutomationCron,
+        );
+        await accept(client().get({ headers: authHeaders(actor) }), [403]);
+      }
+      const restored = await accept(
+        suggestions.get({ headers: authHeaders(actor) }),
+        [200],
+      );
+      expect(restored.body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+        unavailableReason: null,
+      });
+      const same = await installation(actor, "agent-suggestions");
+      expect(same.id).toBe(original.id);
+      expect(same.automations[0]).toMatchObject({ enabled: true });
+      expect(
+        (await installation(actor, "proactive-action")).automations[0],
+      ).toMatchObject({ enabled: false, nextRunAt: null });
+    },
+  );
+
+  it("waits for an admitted Suggestions run before starting Action", async () => {
+    mockNow(new Date("2030-01-01T00:00:00.000Z"));
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.ProactiveAction]: true,
+        [FeatureSwitchKey.AgentSuggestion]: true,
+      },
+    );
+    const suggestions = setupApp({
+      context,
+      routes: proactiveSuggestionsRoutes,
+    })(proactiveSuggestionsContract);
+    await accept(
+      suggestions.update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const previous = (await installation(actor, "agent-suggestions"))
+      .automations[0];
+    if (!previous?.nextRunAt) {
+      throw new Error("Expected Suggestions schedule");
+    }
+    mockNow(new Date(previous.nextRunAt));
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
+    const first = await fireOfficialSchedule(actor, previous);
+    const firstClaim = await runs.claimRunnerJob(first.runId);
+    await accept(
+      client().update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    await accept(
+      setupApp({ context, routes: suggestionsRoutes })(
+        suggestionsContract,
+      ).list({
+        headers: { authorization: `Bearer ${okouTokenFromClaim(firstClaim)}` },
+      }),
+      [403],
+    );
+    const action = (await installation(actor, "proactive-action"))
+      .automations[0];
+    if (!action?.nextRunAt) {
+      throw new Error("Expected Action schedule");
+    }
+    mockNow(new Date(action.nextRunAt));
+    await executeAutomationCron();
+    const waiting = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: action.id },
+      }),
+      [200],
+    );
+    expect(waiting.body).toMatchObject({
+      enabled: true,
+      lastRunAt: null,
+      chatThreadId: null,
+    });
+    await webhooks.requestAgentComplete(
+      { runId: first.runId, exitCode: 0 },
+      { authorization: `Bearer ${firstClaim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await runs.heartbeatRunner(runnerGroup);
+    await executeAutomationCron();
+    await flushWaitUntilForTest();
+    const started = await accept(
+      automationClient().get({
+        headers: authHeaders(actor),
+        params: { id: action.id },
+      }),
+      [200],
+    );
+    if (!started.body.chatThreadId) {
+      throw new Error("Expected Action thread after Suggestions completed");
+    }
+    const actionRunId = await launchedAutomationRunId(
+      actor,
+      started.body.chatThreadId,
+    );
+    if (!actionRunId) {
+      throw new Error("Expected admitted Action Run");
+    }
+    const actionClaim = await runs.claimRunnerJob(actionRunId);
+    onTestFinished(async () => {
+      await webhooks.requestAgentComplete(
+        {
+          runId: actionRunId,
+          exitCode: 1,
+          error: "Proactive Action fixture cleanup",
+        },
+        { authorization: `Bearer ${actionClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    expect(actionClaim.prompt).toMatch(/^\/proactive-action\n/u);
+  });
+
+  it("leaves Suggestions opted out when Action is disabled", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.ProactiveAction]: true,
+        [FeatureSwitchKey.AgentSuggestion]: true,
+      },
+    );
+    await accept(
+      client().update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    await accept(
+      client().update({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    const suggestions = await accept(
+      setupApp({ context, routes: proactiveSuggestionsRoutes })(
+        proactiveSuggestionsContract,
+      ).get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(suggestions.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+  });
 });
 
 describe("Proactive Suggestions preference", () => {
@@ -2622,11 +3066,12 @@ describe("Morning Brief catalog reconciliation", () => {
 
 describe("Morning Brief suggestion instruction rollout", () => {
   it.each([
-    { enabled: false, expected: false },
-    { enabled: true, expected: true },
+    { enabled: false, action: false, expected: false },
+    { enabled: true, action: false, expected: true },
+    { enabled: true, action: true, expected: false },
   ])(
-    "scopes suggestion guidance to enabled=$enabled scheduled runs",
-    async ({ enabled, expected }) => {
+    "scopes suggestion guidance to enabled=$enabled action=$action scheduled runs",
+    async ({ enabled, action, expected }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture(context);
         await syncDeployedCatalog();
@@ -2641,13 +3086,27 @@ describe("Morning Brief suggestion instruction rollout", () => {
         await updateFeatureSwitchesForUser(
           context,
           { ...actor, orgId: actor.orgId },
-          { [FeatureSwitchKey.AgentSuggestion]: enabled },
+          {
+            [FeatureSwitchKey.AgentSuggestion]: enabled,
+            [FeatureSwitchKey.ProactiveAction]: action,
+          },
         );
         if (enabled) {
           await accept(
             setupApp({ context, routes: proactiveSuggestionsRoutes })(
               proactiveSuggestionsContract,
             ).update({ headers: authHeaders(actor), body: { enabled: true } }),
+            [200],
+          );
+        }
+        if (action) {
+          await accept(
+            setupApp({ context, routes: proactiveActionRoutes })(
+              proactiveActionContract,
+            ).update({
+              headers: authHeaders(actor),
+              body: { enabled: true },
+            }),
             [200],
           );
         }
