@@ -6,7 +6,10 @@ import {
   withHostedSiteAccess,
   type SiteAuthEnv,
 } from "./site-access";
-import { hostedSiteDownloadAuthorizationSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
+import {
+  hostedSiteDownloadAuthorizationSchema,
+  hostedSitePreviewGrantSchema,
+} from "@okouai/api-contracts/contracts/hosted-site-access";
 import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
@@ -1126,7 +1129,7 @@ interface PrivatePreviewGrant {
   // Legacy credentials stay uncached until #35240 seals old content and old
   // writers/grants leave serving. Uploadable manifests cannot assert this.
   readonly immutableContent?: true;
-  readonly version: 1;
+  readonly version: 1 | 2;
   /** Stored layout segment; must match the layout the grant was read from. */
   readonly publicBrand: LayoutSegment;
   readonly deploymentId: string;
@@ -1188,6 +1191,44 @@ function privatePreviewPrefix(
   return `shared-artifacts/${LAYOUT_SEGMENT[layout]}/${snapshotId}/${deploymentId}`;
 }
 
+async function servePreviewCapability(
+  request: Request,
+  env: Env,
+  pathname: string,
+  grant: unknown,
+  layout: StorageLayout,
+  shared: boolean,
+): Promise<Response> {
+  const parsed = hostedSitePreviewGrantSchema.safeParse(grant);
+  if (!parsed.success || shared || layout !== "current")
+    return privateResponse(notFoundResponse());
+  const preview = parsed.data;
+  const expiresAt = Date.parse(preview.expiresAt);
+  if (expiresAt <= Date.now()) return privateResponse(notFoundResponse());
+  const manifest = await readJson<HostedSiteManifest>(
+    env.HOSTED_SITES_BUCKET,
+    `${preview.prefix}/manifest.json`,
+  );
+  if (
+    !manifest ||
+    manifest.siteId !== preview.siteId ||
+    manifest.deploymentId !== preview.deploymentId ||
+    manifest.publicBrand !== preview.publicBrand
+  )
+    return privateResponse(notFoundResponse());
+  // This resource capability follows private-artifact expiry semantics. It
+  // never conveys a primary session or depends on third-party cookies.
+  const response = await serveManifestFile(
+    request,
+    env,
+    pathname,
+    { prefix: preview.prefix, spaFallback: manifest.spaFallback },
+    manifest,
+  );
+  if (expiresAt <= Date.now()) return privateResponse(notFoundResponse());
+  return privateResponse(response, preview.immutableContent === true);
+}
+
 async function servePrivatePreview(
   request: Request,
   env: Env,
@@ -1238,6 +1279,15 @@ async function servePrivatePreview(
   ) {
     return privateResponse(notFoundResponse());
   }
+  if (grant.version === 2)
+    return servePreviewCapability(
+      request,
+      env,
+      pathname,
+      grant,
+      layout,
+      shared,
+    );
   const expiresAt = Date.parse(grant.expiresAt);
   if (
     grant.version !== 1 ||

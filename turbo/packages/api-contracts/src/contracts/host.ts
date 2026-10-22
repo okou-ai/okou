@@ -423,6 +423,21 @@ export const hostContract = c.router({
     },
     summary: "Exchange a single-use code using the Worker-held proof",
   },
+  sitePreview: {
+    method: "GET",
+    path: "/api/host/sites/:publicSlug/preview",
+    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
+    query: z.object({ hostname: z.string().max(253) }),
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({ url: z.url(), expiresAt: z.iso.datetime().nullable() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Resolve a website preview to an anonymous or expiring resource address",
+  },
   siteVisibility: {
     method: "GET",
     path: "/api/host/sites/:siteId/visibility",

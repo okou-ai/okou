@@ -27,7 +27,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite(enabled = true) {
+async function openSite(enabled = true, previewEnabled = false) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -53,7 +53,10 @@ async function openSite(enabled = true) {
     context,
     path: "/artifacts",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.HostedSiteUrlEditing]: enabled },
+    featureSwitches: {
+      [FeatureSwitchKey.HostedSiteUrlEditing]: enabled,
+      [FeatureSwitchKey.HostedSiteVisibility]: previewEnabled,
+    },
   });
   click(await findArtifactAction("Weekly report"));
   await screen.findByTestId("artifact-dialog-site-frame");
@@ -362,4 +365,46 @@ test("the disabled switch retains the existing share link", async () => {
   });
   expect(share).toHaveAttribute("href", site.url);
   expect(queryButtonByName("Customize URL")).toBeUndefined();
+});
+
+test("restricted Site previews render a temporary resource while sharing the stable Site address", async () => {
+  const temporary = `https://pv-${"a".repeat(48)}.okou.app/`;
+  context.mocks.api(hostContract.sitePreview, ({ params, query, respond }) => {
+    expect(params.publicSlug).toBe(site.publicSlug);
+    expect(query.hostname).toBe("weekly-report.okou.app");
+    return respond(200, { url: temporary, expiresAt: "2099-01-01T00:00:00Z" });
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await openSite(true, true);
+  await waitFor(() => {
+    expect(
+      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+    ).toHaveAttribute("src", temporary);
+  });
+  await openShare();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    return expect(clipboard.writes).toStrictEqual([site.url]);
+  });
+  expect(
+    screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+  ).toHaveAttribute("src", temporary);
+});
+
+test("Public Site previews continue rendering the anonymous URL when preview resolution is enabled", async () => {
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, { url: `${site.url}/`, expiresAt: null });
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  await openSite(true, true);
+  await waitFor(() => {
+    expect(
+      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+    ).toHaveAttribute("src", site.url);
+  });
 });

@@ -355,7 +355,18 @@ test("organization access follows current membership in the site's organization"
       )
     ).body.allowed,
   ).toBeTruthy();
+  const previewRequest = {
+    headers,
+    params: { publicSlug: prepared.publicSlug },
+    query: { hostname: `${prepared.publicSlug}.okou.app` },
+  };
+  const preview = await accept(
+    client(viewer).sitePreview(previewRequest),
+    [200],
+  );
+  expect(preview.body.expiresAt).not.toBeNull();
   member = false;
+  await accept(client(viewer).sitePreview(previewRequest), [404]);
   expect(
     (
       await accept(
@@ -864,3 +875,95 @@ test.each([
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   },
 );
+
+test("restricted previews reuse private-artifact credentials only after current access checks", async () => {
+  mockNow(Date.parse("2026-10-22T00:00:00Z"));
+  const { owner, prepared } = await publish();
+  await enable(owner);
+  await accept(
+    client(owner).updateSiteVisibility({
+      headers,
+      params: { siteId: prepared.siteId },
+      body: { visibility: "private", expectedRevision: null },
+    }),
+    [200],
+  );
+  const request = {
+    headers,
+    params: { publicSlug: prepared.publicSlug },
+    query: { hostname: `${prepared.publicSlug}.okou.app` },
+  };
+  const issuedAt = now();
+  const first = await accept(client(owner).sitePreview(request), [200]);
+  expect(first.body.url).toMatch(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u);
+  expect(Date.parse(first.body.expiresAt!) - issuedAt).toBe(
+    48 * 60 * 60 * 1000,
+  );
+  const repeated = await accept(client(owner).sitePreview(request), [200]);
+  expect(repeated.body).toStrictEqual(first.body);
+  const outsider = createBddApi(context).user();
+  await accept(client(outsider).sitePreview(request), [404]);
+  await accept(
+    client(owner).sitePreview({
+      ...request,
+      query: { hostname: "unrelated.okou.app" },
+    }),
+    [404],
+  );
+  const invalidDeployment = `dpl-${"-".repeat(35)}a`;
+  await accept(
+    client(owner).sitePreview({
+      ...request,
+      params: { publicSlug: invalidDeployment },
+      query: { hostname: `${invalidDeployment}.okou.app` },
+    }),
+    [404],
+  );
+  const immutable = await accept(
+    client(owner).sitePreview({
+      ...request,
+      params: { publicSlug: `dpl-${prepared.deploymentId}` },
+      query: { hostname: `dpl-${prepared.deploymentId}.okou.app` },
+    }),
+    [200],
+  );
+  expect(immutable.body).toStrictEqual(first.body);
+
+  mockNow(issuedAt + 47 * 60 * 60 * 1000 - 1);
+  expect(
+    (await accept(client(owner).sitePreview(request), [200])).body,
+  ).toStrictEqual(first.body);
+  mockNow(issuedAt + 47 * 60 * 60 * 1000);
+  const renewed = await accept(client(owner).sitePreview(request), [200]);
+  expect(renewed.body.url).not.toBe(first.body.url);
+  expect(Date.parse(renewed.body.expiresAt!) - now()).toBe(48 * 60 * 60 * 1000);
+});
+
+test("public previews keep anonymous addresses without a temporary capability", async () => {
+  const { owner, prepared } = await publish();
+  const result = await accept(
+    client(owner).sitePreview({
+      headers,
+      params: { publicSlug: prepared.publicSlug },
+      query: { hostname: `${prepared.publicSlug}.okou.app` },
+    }),
+    [200],
+  );
+  expect(result.body).toStrictEqual({
+    url: `https://${prepared.publicSlug}.okou.app/`,
+    expiresAt: null,
+  });
+  const stranger = createBddApi(context).user();
+  expect(
+    (
+      await accept(
+        client(stranger).sitePreview({
+          headers,
+          params: { publicSlug: prepared.publicSlug },
+          query: { hostname: `${prepared.publicSlug}.okou.app` },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual(result.body);
+});

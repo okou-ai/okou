@@ -1,5 +1,8 @@
 import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
-import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
+import {
+  PRESIGNED_URL_TTL_SECONDS,
+  PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS,
+} from "@okouai/api-contracts/contracts/presigned-urls";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql, type SQL } from "drizzle-orm";
@@ -68,8 +71,6 @@ export const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
 const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
   "private-artifact-preview-url-v1";
 export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
-// Leave time for clients and asynchronous providers to fetch a returned URL.
-const PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS = 60 * 60 * 1000;
 // Leave enough time for Runner launch and archive downloads after cache selection.
 const STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS = 4 * 60 * 60 * 1000;
 const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
@@ -1378,7 +1379,7 @@ export const pruneStoragePresignedUrls$ = command(
   async (
     { set },
     input: {
-      readonly scope: StoragePresignedUrlCacheScope;
+      readonly scope: StoragePresignedUrlCacheScope | "hosted_site_preview";
       readonly limit: number;
       readonly objectKeyPrefix?: string;
     },
