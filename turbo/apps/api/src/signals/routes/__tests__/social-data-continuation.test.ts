@@ -645,4 +645,86 @@ describe("Social data explicit page continuation", () => {
       });
     },
   );
+
+  it("reserves the available wallet once across overlapping requests and replays the accepted job", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      douyinPages([
+        { cursor: 0, count: 3, ids: [], state: "RUNNING", settled: false },
+      ]);
+      const before = await setup.credits();
+      const submissions = await Promise.all(
+        [randomUUID(), randomUUID()].map(async (requestId) => {
+          const body = { ...REQUEST, requestId, maxCredits: before };
+          const response = await accept(
+            setup.social.create({ headers: authenticate(setup.actor), body }),
+            [202, 402],
+          );
+          return { body, response };
+        }),
+      );
+      expect(
+        submissions
+          .map(({ response }) => {
+            return response.status;
+          })
+          .sort(),
+      ).toStrictEqual([202, 402]);
+      for (const { body, response } of submissions) {
+        if (response.status === 402) {
+          expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+          continue;
+        }
+        expect(response.body.billing).toMatchObject({
+          state: "pending",
+          reservedCredits: before,
+        });
+        const replay = await accept(
+          setup.social.create({ headers: authenticate(setup.actor), body }),
+          [202],
+        );
+        expect(replay.body.jobId).toBe(response.body.jobId);
+        expect(replay.body.billing.reservedCredits).toBe(before);
+      }
+      const listed = await accept(
+        setup.social.list({
+          headers: authenticate(setup.actor),
+          query: { includeExpanded: "true" },
+        }),
+        [200],
+      );
+      expect(listed.body.jobs).toHaveLength(1);
+      await expect(setup.credits()).resolves.toBe(before);
+    });
+  });
+
+  it("keeps budget rejection distinct from insufficient funds without reserving a job", async () => {
+    const setup = await scenario();
+    await setup.run(async () => {
+      douyinPages([]);
+      const before = await setup.credits();
+      for (const [maxCredits, code] of [
+        [1, "BUDGET_EXCEEDED"],
+        [before + 1, "INSUFFICIENT_CREDITS"],
+      ] as const) {
+        const rejected = await accept(
+          setup.social.create({
+            headers: authenticate(setup.actor),
+            body: { ...REQUEST, requestId: randomUUID(), maxCredits },
+          }),
+          [402],
+        );
+        expect(rejected.body.error.code).toBe(code);
+      }
+      const listed = await accept(
+        setup.social.list({
+          headers: authenticate(setup.actor),
+          query: { includeExpanded: "true" },
+        }),
+        [200],
+      );
+      expect(listed.body.jobs).toStrictEqual([]);
+      await expect(setup.credits()).resolves.toBe(before);
+    });
+  });
 });
