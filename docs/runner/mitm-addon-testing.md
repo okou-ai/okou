@@ -143,6 +143,7 @@ uv run --no-sync python -m pytest \
   tests/test_mitmproxy_allowed_upload_streaming.py \
   tests/test_public_destination_body_admission.py \
   tests/test_mitmproxy_header_auth_failure_framing.py \
+  tests/test_header_auth_response_tcp.py \
   tests/test_mitmproxy_request_body_admission_framing.py
 ```
 
@@ -150,6 +151,14 @@ These cases drive genuine addon hooks and mitmproxy HTTP streams, observe
 forwarded bytes before EOF and terminal network/usage records, and verify
 bounded retention and admission with capture on/off. They do not measure live
 production proxy RSS.
+
+Header-auth failures must deliver their existing status/body before upload EOF
+without forwarding credentials or retaining the rejected body. Exercise native
+H1 write-half closure and incomplete/blocked socket writers, plus H2 zero and
+partial response credit, sibling progress, reset and disconnect. Verify response
+bytes and terminal cleanup rather than only the presence of a local response
+object; a premature full close or stream reset can still hide that error from
+the caller.
 
 When removing managed upload admissions, isolate count, individual size and
 aggregate bytes in separate native cases. Generate bounded input and hash
@@ -186,6 +195,13 @@ uv run --no-sync basedpyright -p .
 ```
 
 ### Private control and packaged runtime
+
+The packaged suite also exercises early auth errors through direct-origin TLS
+with a caller-trusted fixture CA and incomplete or large uploads. A fixed
+reverse listener supplies the destination for the same native TLS/HTTP path
+without requiring host-wide transparent redirection in CI. This verifies the
+pinned standalone runtime and addon together, rather than OS proxy setup or a
+live provider.
 
 `test_runner_control.py` exercises real Unix sockets: strict framing, correlation,
 bounded admission, partial peers, exclusive bind, long paths, shutdown, and

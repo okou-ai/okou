@@ -1,6 +1,7 @@
 """Stream-safe requestheaders firewall-auth and fallback tests."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -351,7 +352,7 @@ def test_capture_enabled_firewall_allow_small_bounded_body_does_not_install_requ
         ),
     ],
 )
-async def test_firewall_allow_header_auth_failure_terminates_upload(
+async def test_firewall_allow_header_auth_failure_retains_local_error(
     tmp_path, real_flow, mitm_ctx, headers, auth_error, expected_error, expected_action
 ):
     reg_path = _write_github_firewall_registry(
@@ -379,15 +380,15 @@ async def test_firewall_allow_header_auth_failure_terminates_upload(
         await await_requestheaders_result(requestheaders_result)
 
         _assert_no_request_stream(flow)
-        assert flow.response is None
-        assert flow.error is not None
-        assert flow.live is False
+        assert flow.response is not None
+        assert flow.error is None
+        assert json.loads(flow.response.content)["error"] == expected_error
         assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
 
         await mitm_addon.request(flow)
 
     assert get_headers.await_count == 1
-    assert flow.response is None
+    assert flow.response is not None
     assert flow.metadata[metadata_keys.FIREWALL_ERROR] == expected_error
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == expected_action
     assert flow.server_conn.id in upstream_destination_binding.binding_snapshot_for_tests()

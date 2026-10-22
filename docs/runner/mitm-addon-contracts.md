@@ -772,26 +772,42 @@ transparent retry, replay or body worker pool is provided.
 ## Header-phase credential-resolution failures
 
 If credential resolution fails while preparing a request for authenticated
-streaming, the addon terminates that upload from `requestheaders()`. The pinned
-mitmproxy runtime closes an HTTP/1 connection or resets the affected HTTP/2
-stream before sending `100 Continue` or consuming the request body. It makes no
-upstream request and does not retry credential resolution for that flow.
+streaming, the addon preserves the existing local HTTP status and JSON error.
+The exact-version compatibility owner completes that response from the native
+request-header hook before `100 Continue`, body buffering or upstream forwarding.
+It invokes the normal response hooks and serialization, records the actual local
+status and releases the HTTP flow and its parser/inspection state once. No
+credential resolution retry or unauthorized upstream request is introduced.
 
-These uploads receive a transport termination instead of a JSON error after
-body completion. The existing firewall action, error classification, and proxy
-diagnostic remain available; the error hook records a connection failure with
-status `0` and releases terminal resources. The unsent local error response is
-discarded so it cannot appear as a captured response. Auth failures first
-resolved in the normal buffered request hook keep their structured responses.
+HTTP/1 sends `Connection: close` and a write-side FIN after the final response.
+A full close while a fetch caller is still uploading can turn a delivered error
+into `EPIPE`. Native HTTP/1 discards later body data for the completed flow and
+owns receive-side retirement through framing completion, peer disconnect or the
+existing TCP idle timeout. The error response does not wait for upload EOF, and
+the detector adds no body queue, grace delay or timer.
+
+HTTP/2 keeps response DATA and END_STREAM under native peer-window credit. A
+connection-owned completion set retires only the rejected upload with NO_ERROR
+after its response has actually ended; resetting earlier would discard buffered
+error bytes. Peer reset and connection close release pending completion state.
+Sibling streams retain native progress and the connection stays usable.
+
+The existing firewall action, error classification and proxy diagnostic remain
+available. Auth failures first resolved in the normal buffered request hook keep
+their structured responses.
 Successful authenticated streaming retains its bounded capture behavior when
 capture is enabled; capture off retains byte counters and only billing-required
 inspection bytes as described above. The same
-early credential-failure termination applies with either capture setting.
+early credential-failure response applies with either capture setting.
 
 This changes only the addon lifecycle. Runner/API and network-log schemas stay
 unchanged, and old Runner instances keep their previous behavior until replaced.
 `test_mitmproxy_header_auth_failure_framing.py` covers incomplete Content-Length,
-chunked, and HTTP/2 uploads, including body data queued during the headers hook.
+chunked and HTTP/2 uploads, managed model dialects, queued body data, response
+credit, sibling progress, reset and disconnect. `test_header_auth_response_tcp.py`
+checks actual incomplete and blocked TCP uploads with ordinary and eager task
+scheduling. These are synthetic native transport checks, not live-provider or
+production-recovery evidence.
 
 ## Model usage provider and long-context tier
 
