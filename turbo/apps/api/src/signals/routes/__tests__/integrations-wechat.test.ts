@@ -1836,47 +1836,73 @@ test("receives an owner DM once, resumes its native session and delivers the can
   );
   expect(inspected.body).toStrictEqual(ambiguous.body);
   expect(sends).toHaveLength(afterAmbiguousSend);
-  // Image-only inputs must retain both their real MIME and canonical file part.
-  const imageBytes = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afo8AAAAASUVORK5CYII=",
-    "base64",
-  );
-  let imageDownloads = 0;
-  server.use(
-    http.get("https://novac2c.cdn.weixin.qq.com/c2c/download", () => {
-      imageDownloads++;
-      return new HttpResponse(new Uint8Array(imageBytes));
-    }),
-  );
-  extraItems = [
-    { type: 2, image_item: { media: { encrypt_query_param: "image-query" } } },
-  ];
-  messageId = "18446744073709551611";
-  messageText = "";
-  await receive();
-  await receive();
-  expect(imageDownloads).toBe(1);
-  const imageEvents = await readProjectedChatEvents(context, {
-    threadId,
-    headers,
-  });
-  const imageInputs = imageEvents.filter((event) => {
-    return (
-      event.eventType === "input.prompt" &&
-      event.userMessage.parts.some((part) => {
-        return part.type === "file" && part.contentType === "image/png";
-      })
+  // Image-only inputs have no filename or MIME; preserve the detected encoding.
+  for (const image of [
+    {
+      messageId: "18446744073709551611",
+      contentType: "image/png",
+      base64:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afo8AAAAASUVORK5CYII=",
+    },
+    {
+      messageId: "18446744073709551607",
+      contentType: "image/gif",
+      base64: "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+    },
+  ]) {
+    const imageBytes = Buffer.from(image.base64, "base64");
+    let imageDownloads = 0;
+    server.use(
+      http.get("https://novac2c.cdn.weixin.qq.com/c2c/download", () => {
+        imageDownloads++;
+        return new HttpResponse(new Uint8Array(imageBytes));
+      }),
     );
-  });
-  expect(imageInputs).toHaveLength(1);
-  const { input: imageInput } = await runs.nextSteerableInput(
-    second.sandboxToken,
-    second.runId,
-  );
-  expect(imageInput?.prompt).toContain("[Web file] image (image/png)");
-  expect(objectStore.puts).toContainEqual(
-    expect.objectContaining({ contentType: "image/png" }),
-  );
+    extraItems = [
+      {
+        type: 2,
+        image_item: {
+          media: { encrypt_query_param: `image-query-${image.messageId}` },
+        },
+      },
+    ];
+    messageId = image.messageId;
+    messageText = "";
+    await receive();
+    await receive();
+    expect(imageDownloads).toBe(1);
+    const imageEvents = await readProjectedChatEvents(context, {
+      threadId,
+      headers,
+    });
+    const imageInputs = imageEvents.filter((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.userMessage.parts.some((part) => {
+          return part.type === "file" && part.contentType === image.contentType;
+        })
+      );
+    });
+    expect(imageInputs).toHaveLength(1);
+    const { input: imageInput } = await runs.nextSteerableInput(
+      second.sandboxToken,
+      second.runId,
+    );
+    if (!imageInput) {
+      throw new Error("Expected a WeChat image input");
+    }
+    expect(imageInput.prompt).toContain(
+      `[Web file] image (${image.contentType})`,
+    );
+    await runs.declareSteeredInput(
+      second.sandboxToken,
+      second.runId,
+      imageInput.eventId,
+    );
+    expect(objectStore.puts).toContainEqual(
+      expect.objectContaining({ contentType: image.contentType }),
+    );
+  }
   for (const unavailable of [
     { messageId: "18446744073709551609", status: 404 },
     { messageId: "18446744073709551608", status: 200 },

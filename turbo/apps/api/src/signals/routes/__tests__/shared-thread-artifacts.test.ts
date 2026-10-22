@@ -12,7 +12,6 @@ import {
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 import { http, HttpResponse } from "msw";
 import { z } from "zod";
-import sharp from "sharp";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
@@ -110,7 +109,7 @@ async function fixture() {
   const copies: { source: string; destination: string }[] = [];
 
   context.mocks.s3.getSignedUrl.mockImplementation(
-    (client: unknown, command: unknown) => {
+    (client: unknown, command: unknown, options: unknown) => {
       if (!(
         command instanceof PutObjectCommand ||
         command instanceof GetObjectCommand
@@ -131,14 +130,15 @@ async function fixture() {
         "X-Amz-Credential",
         configured.config.credentials.accessKeyId,
       );
-      if (
-        command instanceof GetObjectCommand &&
-        command.input.ResponseContentDisposition
-      ) {
-        url.searchParams.set(
-          "response-content-disposition",
-          command.input.ResponseContentDisposition,
-        );
+      const { expiresIn } = z.object({ expiresIn: z.number() }).parse(options);
+      url.searchParams.set("X-Amz-Expires", String(expiresIn));
+      if (command instanceof GetObjectCommand) {
+        if (command.input.ResponseContentDisposition) {
+          url.searchParams.set(
+            "response-content-disposition",
+            command.input.ResponseContentDisposition,
+          );
+        }
         if (command.input.ResponseCacheControl) {
           url.searchParams.set(
             "response-cache-control",
@@ -1269,11 +1269,10 @@ test("shares distinct files and reuses a reference for repeated links", async ()
 
 test("oG uses the published thread snapshot and revokes its old image URL with the parent share", async () => {
   const f = await fixture();
-  const bytes = await sharp({
-    create: { width: 64, height: 40, channels: 3, background: "#226688" },
-  })
-    .png()
-    .toBuffer();
+  const bytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    "base64",
+  );
   const file = await f.upload(f.actor, bytes, {
     filename: "published.png",
     contentType: "image/png",
@@ -1297,25 +1296,34 @@ test("oG uses the published thread snapshot and revokes its old image URL with t
   if (!metadata.body.available) {
     throw new Error("Expected published metadata");
   }
+  expect(metadata.body.imageUrl).toContain("/cdn-cgi/image/fit=scale-down,");
+  const sourceUrl = new URL(metadata.body.imageUrl.split("metadata=none/")[1]!);
+  expect(sourceUrl.pathname).toBe("/api/artifact-og/image");
+  expect(sourceUrl.searchParams.get("id")).toBe(target.id);
   const query = {
     ...target,
-    version: new URL(metadata.body.imageUrl).searchParams.get("version")!,
+    version: sourceUrl.searchParams.get("version")!,
   };
   // The snapshot remains public independently of the private source's lifetime.
   f.objects.delete(file.key);
-  const image = await accept(og.image({ query }), [200]);
-  const publishedBytes = Buffer.from(await image.body.arrayBuffer());
-  await expect(sharp(publishedBytes).metadata()).resolves.toMatchObject({
-    width: 64,
-    height: 40,
-  });
+  const image = await accept(og.image({ query }), [302]);
+  const original = new URL(image.headers.get("location")!);
+  expect(original.searchParams.get("response-cache-control")).toBe(
+    "private, no-store, must-revalidate",
+  );
+  expect(original.searchParams.has("X-Amz-Signature")).toBeTruthy();
+  expect(original.searchParams.get("X-Amz-Expires")).toBe("60");
+  expect(decodeURIComponent(original.pathname)).toContain(
+    `/thread-shares/${created.body.id}/`,
+  );
+  expect(decodeURIComponent(original.pathname)).toContain("/published.png");
   const compact = await accept(
     og.image({ query: { ...query, variant: "slack" } }),
-    [200],
+    [302],
   );
-  await expect(
-    sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
-  ).resolves.toMatchObject({ width: 64, height: 40 });
+  expect(new URL(compact.headers.get("location")!).pathname).toBe(
+    original.pathname,
+  );
   expect(
     (
       await accept(

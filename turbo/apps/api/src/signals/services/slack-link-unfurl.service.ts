@@ -182,7 +182,7 @@ const slackArtifactOgTarget$ = command(
 
 interface SlackPageMetadata {
   readonly title: string;
-  readonly imageUrl: string;
+  readonly imageUrl: string | null;
   readonly description?: string;
 }
 
@@ -197,7 +197,7 @@ const defaultSlackMetadata$ = command(
       return null;
     }
     const metadata = target
-      ? await set(artifactOgMetadata$, target, signal)
+      ? await set(artifactOgMetadata$, target, "slack", signal)
       : { available: true as const, ...ARTIFACT_OG_BRAND };
     signal.throwIfAborted();
     if (!metadata.available) {
@@ -210,9 +210,6 @@ const defaultSlackMetadata$ = command(
             height: SLACK_PREVIEW_IMAGE_HEIGHT,
           }),
     );
-    if (target) {
-      imageUrl.searchParams.set("variant", "slack");
-    }
     return { title: metadata.title, imageUrl: imageUrl.href };
   },
 );
@@ -243,7 +240,9 @@ const publicSlackMetadata$ = command(
     if (page.title || page.description || page.imageUrl) {
       return {
         title: page.title ?? ARTIFACT_OG_BRAND.title,
-        imageUrl: page.imageUrl ?? ARTIFACT_OG_BRAND.imageUrl,
+        imageUrl: slackPreviewImageUrl(
+          page.imageUrl ?? ARTIFACT_OG_BRAND.imageUrl,
+        ),
         description: page.description,
       };
     }
@@ -269,7 +268,10 @@ const slackArtifactUnfurl$ = command(
     const title = metadata.title.trim().slice(0, 150) || "Okou artifact";
     // A pipe in the URL must not become Slack's link-label separator.
     const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
-    const imageUrl = slackPreviewImageUrl(metadata.imageUrl);
+    const imageUrl =
+      metadata.imageUrl && metadata.imageUrl.length <= 3000
+        ? metadata.imageUrl
+        : null;
     return {
       blocks: [
         { type: "divider" },

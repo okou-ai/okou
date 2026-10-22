@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import { fileTypeFromBuffer } from "file-type/core";
 import { inferMimetype } from "../../lib/mimetype";
 import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { downloadWechatMedia, WechatMediaDownloadError } from "./wechat-media";
@@ -13,15 +13,15 @@ export async function downloadWechatInputMedia(
   signal.throwIfAborted();
   let contentType = inferMimetype(item.file_item?.file_name ?? "");
   if (item.type === 2) {
-    const metadata = await settle(sharp(bytes).metadata(), signal);
+    const detected = await settle(fileTypeFromBuffer(bytes), signal);
     signal.throwIfAborted();
-    if (!metadata.ok) {
+    if (!detected.ok || !detected.value?.mime.startsWith("image/")) {
       throw new WechatMediaDownloadError(
         "invalid-media",
         "WeChat image format is not supported",
       );
     }
-    contentType = inferMimetype(`image.${metadata.value.format}`);
+    contentType = detected.value.mime;
   } else if (item.type === 5) {
     contentType = "video/mp4";
   }
