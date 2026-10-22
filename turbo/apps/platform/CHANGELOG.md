@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1051.0](https://github.com/okou-ai/okou/compare/app-v0.1050.0...app-v0.1051.0) (2026-10-22)
+
+
+### Features
+
+* **platform:** add a thread email manager behind a feature switch ([#42100](https://github.com/okou-ai/okou/issues/42100)) ([e566491](https://github.com/okou-ai/okou/commit/e566491c5b8dd39d16cd1b5a69f344b658b8082b))
+
+
+### Refactoring
+
+* **platform:** read skill imports by session and invalidate over ably ([#42115](https://github.com/okou-ai/okou/issues/42115)) ([6d1488a](https://github.com/okou-ai/okou/commit/6d1488abf92ef2ae0def91226e3002f185f2eca4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.0
+    * @okouai/core bumped to 8.777.0
+
 ## [0.1050.0](https://github.com/okou-ai/okou/compare/app-v0.1049.1...app-v0.1050.0) (2026-10-22)
 
 

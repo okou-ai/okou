@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.777.0](https://github.com/okou-ai/okou/compare/core-v8.776.0...core-v8.777.0) (2026-10-22)
+
+
+### Features
+
+* **platform:** add a thread email manager behind a feature switch ([#42100](https://github.com/okou-ai/okou/issues/42100)) ([e566491](https://github.com/okou-ai/okou/commit/e566491c5b8dd39d16cd1b5a69f344b658b8082b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.0
+
 ## [8.776.0](https://github.com/okou-ai/okou/compare/core-v8.775.1...core-v8.776.0) (2026-10-22)
 
 
