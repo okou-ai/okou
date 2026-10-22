@@ -1,0 +1,74 @@
+name: Cloudflare Auth Preview Spike
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "ops/cloudflare-auth-spike/**"
+      - ".github/workflows/cloudflare-auth-spike.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-auth-spike-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  preview:
+    # Disposable maintainer-owned fixture, never a production/release job.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'e7h4n' &&
+      startsWith(github.head_ref, 'spike/gcp-kms-preview')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: turbo/package.json
+      - name: Install locked spike consumers
+        working-directory: turbo
+        run: pnpm install --frozen-lockfile --filter api... --filter @okouai/app-worker... --include-workspace-root
+      - name: Verify in an isolated Cloudflare preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CF_SPIKE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CF_SPIKE_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.CF_SPIKE_AWS_REGION }}
+          SECRETS_KMS_KEY_ID: ${{ secrets.CF_SPIKE_KMS_KEY_ID }}
+          EXPECTED_KMS_KEY_ARN: ${{ vars.CF_SPIKE_KMS_KEY_ARN }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.CF_SPIKE_GCP_SERVICE_ACCOUNT_JSON }}
+          GCP_PROJECT: ${{ vars.CF_SPIKE_GCP_PROJECT }}
+          GCP_SERVICE_ACCOUNT_EMAIL: ${{ vars.CF_SPIKE_GCP_SERVICE_ACCOUNT_EMAIL }}
+        run: node ops/cloudflare-auth-spike/run.mjs
+      - name: Clean up only the owned preview Worker
+        if: always()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+        run: node ops/cloudflare-auth-spike/run.mjs --cleanup
+      - name: Preserve sanitized verification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cloudflare-auth-spike-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/cloudflare-auth-spike/result.json
+            ${{ runner.temp }}/cloudflare-auth-spike/result.md
+          retention-days: 7
