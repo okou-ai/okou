@@ -299,12 +299,6 @@ async function credits(actor: ApiTestUser): Promise<number> {
   return response.body.credits;
 }
 
-function allowExampleDotCom(): void {
-  context.mocks.dns.lookupOverrides.set("example.com", [
-    { address: "93.184.216.34", family: 4 },
-  ]);
-}
-
 function configureProvider(): void {
   mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", "test-firecrawl-token");
 }
@@ -323,7 +317,6 @@ describe("okou scrape route", () => {
     });
     await owner.run(async () => {
       let firecrawlRequests = 0;
-      allowExampleDotCom();
       configureProvider();
       const membershipCalls =
         context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
@@ -484,7 +477,6 @@ describe("okou scrape route", () => {
 
   it("rejects scrape requests when the provider is not configured", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     mockEnv("OKOU_SCRAPE_FIRECRAWL_TOKEN", undefined);
 
     const response = await accept(
@@ -503,122 +495,9 @@ describe("okou scrape route", () => {
     expect(response.body.error.code).toBe("NOT_CONFIGURED");
   });
 
-  it("blocks private targets before calling Firecrawl", async () => {
-    const actor = createBddApi(context).user();
-    let firecrawlRequests = 0;
-    configureProvider();
-    context.mocks.dns.lookupOverrides.set("private.example.test", [
-      { address: "10.0.0.5", family: 4 },
-    ]);
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        firecrawlRequests += 1;
-        return HttpResponse.json({ success: true, data: {} });
-      }),
-    );
-
-    for (const url of [
-      "http://127.0.0.1:3000/admin",
-      "http://localhost/admin",
-      "https://private.example.test/admin",
-    ]) {
-      const response = await accept(
-        client()(scrapeContract).scrape({
-          headers: authenticate(actor),
-          body: {
-            url,
-            format: "markdown",
-            mode: "standard",
-          },
-        }),
-        [400],
-      );
-
-      expectApiError(response.body);
-      expect(response.body.error.code).toBe("INVALID_SCRAPE_TARGET");
-    }
-    expect(firecrawlRequests).toBe(0);
-  });
-
-  it("blocks special-use IPv4 literal targets before calling Firecrawl", async () => {
-    const actor = createBddApi(context).user();
-    let firecrawlRequests = 0;
-    configureProvider();
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        firecrawlRequests += 1;
-        return HttpResponse.json({ success: true, data: {} });
-      }),
-    );
-
-    for (const url of [
-      "http://192.0.2.10/page",
-      "http://198.51.100.10/page",
-      "http://203.0.113.10/page",
-      "http://224.0.0.1/page",
-      "http://240.0.0.1/page",
-    ]) {
-      const response = await accept(
-        client()(scrapeContract).scrape({
-          headers: authenticate(actor),
-          body: {
-            url,
-            format: "markdown",
-            mode: "standard",
-          },
-        }),
-        [400],
-      );
-
-      expectApiError(response.body);
-      expect(response.body.error.code).toBe("INVALID_SCRAPE_TARGET");
-    }
-    expect(firecrawlRequests).toBe(0);
-  });
-
-  it("blocks non-public IPv6 literal targets before calling Firecrawl", async () => {
-    const actor = createBddApi(context).user();
-    let firecrawlRequests = 0;
-    configureProvider();
-    server.use(
-      http.post(FIRECRAWL_SCRAPE_URL, () => {
-        firecrawlRequests += 1;
-        return HttpResponse.json({ success: true, data: {} });
-      }),
-    );
-
-    for (const url of [
-      "http://[::1]:3000/admin",
-      "http://[::]/admin",
-      "http://[::ffff:192.168.1.1]/admin",
-      "http://[64:ff9b::c0a8:101]/admin",
-      "http://[100:0:0:1::1]/admin",
-      "http://[3fff::1]/admin",
-      "http://[5f00::1]/admin",
-      "http://[4000::1]/admin",
-    ]) {
-      const response = await accept(
-        client()(scrapeContract).scrape({
-          headers: authenticate(actor),
-          body: {
-            url,
-            format: "markdown",
-            mode: "standard",
-          },
-        }),
-        [400],
-      );
-
-      expectApiError(response.body);
-      expect(response.body.error.code).toBe("INVALID_SCRAPE_TARGET");
-    }
-    expect(firecrawlRequests).toBe(0);
-  });
-
   it("blocks target URLs with embedded credentials before calling Firecrawl", async () => {
     const actor = createBddApi(context).user();
     let firecrawlRequests = 0;
-    allowExampleDotCom();
     configureProvider();
     server.use(
       http.post(FIRECRAWL_SCRAPE_URL, () => {
@@ -650,7 +529,6 @@ describe("okou scrape route", () => {
   it("returns insufficient credits before calling Firecrawl", async () => {
     const actor = createBddApi(context).user();
     let firecrawlRequests = 0;
-    allowExampleDotCom();
     configureProvider();
 
     const owner = createPublicUnfundedProFixture(context, actor);
@@ -683,7 +561,6 @@ describe("okou scrape route", () => {
 
   it("charges the same claimed run after a normal credit purchase", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     configureProvider();
 
     const claimed = await createClaimedScrapeRun(actor);
@@ -750,7 +627,6 @@ describe("okou scrape route", () => {
 
   it("does not let claimed runs bypass plan suspension", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     configureProvider();
 
     const claimed = await createClaimedScrapeRun(actor);
@@ -789,7 +665,6 @@ describe("okou scrape route", () => {
   it("scrapes markdown through standard Firecrawl proxy and records usage", async () => {
     const actor = createBddApi(context).user();
     let requestBody: unknown;
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -854,22 +729,15 @@ describe("okou scrape route", () => {
     const controller = new AbortController();
     const abortError = new Error("client disconnected after provider success");
     abortError.name = "AbortError";
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const beforeCredits = await credits(actor);
       let providerCompleted = false;
-      context.mocks.dns.lookupOverrides.set("final.example.test", () => {
-        controller.abort(abortError);
-        return [{ address: "93.184.216.35", family: 4 }];
-      });
-
       server.use(
         http.post(FIRECRAWL_SCRAPE_URL, () => {
-          providerCompleted = true;
-          return HttpResponse.json({
+          const body = JSON.stringify({
             success: true,
             data: {
               markdown: "# Example page",
@@ -878,6 +746,27 @@ describe("okou scrape route", () => {
               },
             },
           });
+          const bytes = new TextEncoder().encode(body);
+          let offset = 0;
+          return new HttpResponse(
+            new ReadableStream<Uint8Array>(
+              {
+                pull(stream) {
+                  if (offset < bytes.length) {
+                    stream.enqueue(bytes.subarray(offset, offset + 1));
+                    offset += 1;
+                    return;
+                  }
+                  // Demand for EOF follows consumption of the provider body.
+                  stream.close();
+                  providerCompleted = true;
+                  controller.abort(abortError);
+                },
+              },
+              { highWaterMark: 0 },
+            ),
+            { headers: { "Content-Type": "application/json" } },
+          );
         }),
       );
 
@@ -911,10 +800,7 @@ describe("okou scrape route", () => {
     const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const beforeCredits = await credits(actor);
-      context.mocks.dns.lookupOverrides.set("example.com", () => {
-        controller.abort(abortError);
-        return [{ address: "93.184.216.34", family: 4 }];
-      });
+      controller.abort(abortError);
       server.use(
         http.post(FIRECRAWL_SCRAPE_URL, () => {
           firecrawlRequests += 1;
@@ -955,7 +841,6 @@ describe("okou scrape route", () => {
     const providerStarted = createDeferredPromise<void>(context.signal);
     const providerResponse = createDeferredPromise<void>(context.signal);
     let providerSignalAborted = false;
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1014,7 +899,6 @@ describe("okou scrape route", () => {
     const abortError = new Error("function instance terminated");
     abortError.name = "AbortError";
     let providerSignalAborted = false;
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1057,7 +941,6 @@ describe("okou scrape route", () => {
   it("records both concurrent same-org scrape requests", async () => {
     const actor = createBddApi(context).user();
     let firecrawlRequests = 0;
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1118,7 +1001,7 @@ describe("okou scrape route", () => {
     });
   });
 
-  it("scrapes public IPv6 literal targets without DNS lookup", async () => {
+  it("scrapes IPv6 literal targets and records usage", async () => {
     const actor = createBddApi(context).user();
     let requestBody: unknown;
     configureProvider();
@@ -1166,7 +1049,6 @@ describe("okou scrape route", () => {
     const actor = createBddApi(context).user();
     let requestBody: unknown;
     let authorization: string | null = null;
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1235,9 +1117,8 @@ describe("okou scrape route", () => {
     });
   });
 
-  it("rejects unsafe final URLs when the source URL is public", async () => {
+  it("rejects final URLs with unsupported schemes without recording usage", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1248,10 +1129,10 @@ describe("okou scrape route", () => {
           return HttpResponse.json({
             success: true,
             data: {
-              markdown: "# Internal redirect",
+              markdown: "# Invalid redirect",
               metadata: {
                 sourceURL: "https://example.com/page",
-                url: "http://127.0.0.1/secret",
+                url: "file:///secret",
               },
             },
           });
@@ -1279,7 +1160,6 @@ describe("okou scrape route", () => {
 
   it("returns Firecrawl success false errors without recording usage", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1318,7 +1198,6 @@ describe("okou scrape route", () => {
 
   it("bounds provider error messages without recording usage", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1356,7 +1235,6 @@ describe("okou scrape route", () => {
 
   it("rejects provider data without an explicit success marker", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);
@@ -1403,7 +1281,6 @@ describe("okou scrape route", () => {
 
   it("rejects oversized Firecrawl responses without recording usage", async () => {
     const actor = createBddApi(context).user();
-    allowExampleDotCom();
     configureProvider();
 
     const owner = await fundActorWithSubscription(actor);

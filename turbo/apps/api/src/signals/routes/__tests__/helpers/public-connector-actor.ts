@@ -63,7 +63,6 @@ export function captureConnectorExternalState(
     return [name, env(name)] as const;
   });
   const campaign = env("OKOU_ONE_TIME_CAMPAIGN");
-  const dns = new Map(context.mocks.dns.lookupOverrides);
   const kms = getSecretKmsClient();
   const storage = captureSessionStorageMocks(context);
   const handlers = server.listHandlers();
@@ -106,10 +105,6 @@ export function captureConnectorExternalState(
       mockEnv(name, value?.join(","));
     }
     mockEnv("OKOU_ONE_TIME_CAMPAIGN", JSON.stringify(campaign));
-    context.mocks.dns.lookupOverrides.clear();
-    for (const [name, value] of dns) {
-      context.mocks.dns.lookupOverrides.set(name, value);
-    }
     setSecretKmsClientForTests(kms);
     mockStripeClient(context.mocks.stripe);
     for (const restore of restoreProviders) {

@@ -276,12 +276,9 @@ interface CustomConnectorOAuth2ProviderOptions {
 }
 
 export function mockCustomConnectorOAuth2Provider(
-  context: TestContext,
+  _context: TestContext,
   options: CustomConnectorOAuth2ProviderOptions = {},
 ): CustomConnectorOAuth2ProviderRecorder {
-  context.mocks.dns.lookupOverrides.set("custom-oauth.example.test", [
-    { address: "93.184.216.34", family: 4 },
-  ]);
   const tokenBodies: URLSearchParams[] = [];
   const authorizationHeaders: (string | null)[] = [];
   const initialRefreshToken =
@@ -510,7 +507,7 @@ function automaticOAuthGrantTypes(
 }
 
 export function mockAutomaticMcpOAuthProvider(
-  context: TestContext,
+  _context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
 ): AutomaticMcpOAuthProviderRecorder {
   const endpoint =
@@ -557,11 +554,6 @@ export function mockAutomaticMcpOAuthProvider(
       ? { registration_endpoint: registrationUrl }
       : {}),
   };
-  for (const hostname of [endpointUrl.hostname, new URL(issuer).hostname]) {
-    context.mocks.dns.lookupOverrides.set(hostname, [
-      { address: "93.184.216.34", family: 4 },
-    ]);
-  }
   const registrationBodies: Record<string, unknown>[] = [];
   const endpointRequests: string[] = [];
   const tokenBodies: URLSearchParams[] = [];

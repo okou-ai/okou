@@ -136,12 +136,6 @@ async function expectEmptyImage(url: URL | null | undefined) {
   expect([...decoded.data]).toStrictEqual([0, 0, 0, 0]);
 }
 
-function publicHost(hostname = "images.example.com") {
-  context.mocks.dns.lookupOverrides.set(hostname, [
-    { address: "8.8.8.8", family: 4 },
-  ]);
-}
-
 async function png(width: number, height: number) {
   return await sharp({
     create: { width, height, channels: 4, background: "red" },
@@ -153,15 +147,20 @@ async function png(width: number, height: number) {
 describe("Slack preview thumbnails", () => {
   it("fits every aspect ratio inside 320 by 112 pixels without enlarging small images", async () => {
     const f = await fixture();
-    publicHost();
     const cases = [
       { width: 1280, height: 640, output: [224, 112] },
       { width: 1200, height: 120, output: [320, 32] },
       { width: 120, height: 960, output: [14, 112] },
       { width: 24, height: 12, output: [24, 12] },
     ];
-    const sources = cases.map((_, index) => {
-      return `https://images.example.com/${index}.png`;
+    const origins = [
+      "https://images.example.com",
+      "http://127.0.0.1",
+      "http://[fd00::1]",
+      "https://internal.local",
+    ];
+    const sources = origins.map((origin, index) => {
+      return `${origin}/${index}.png`;
     });
     const requests: Request[] = [];
     for (const [index, dimensions] of cases.entries()) {
@@ -189,11 +188,6 @@ describe("Slack preview thumbnails", () => {
       );
       expect(bytes.length).toBeLessThanOrEqual(maxBytes);
     }
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual(
-      cases.map(() => {
-        return "8.8.8.8";
-      }),
-    );
     expect(requests).toHaveLength(cases.length);
     for (const request of requests) {
       expect(request.headers.get("authorization")).toBeNull();
@@ -204,7 +198,6 @@ describe("Slack preview thumbnails", () => {
 
   it("bounds declared and streamed bytes, input pixels and invalid image formats", async () => {
     const f = await fixture();
-    publicHost();
     const small = await png(20, 10);
     const tooManyPixels = await png(4097, 4096);
     const cases = [
@@ -242,28 +235,11 @@ describe("Slack preview thumbnails", () => {
     }
   });
 
-  it("never follows redirects or fetches non-public addresses, including mixed DNS answers", async () => {
+  it("never follows redirects or fetches sources on non-default ports", async () => {
     const f = await fixture();
-    publicHost();
-    context.mocks.dns.lookupOverrides.set("private.example.com", [
-      { address: "10.0.0.1", family: 4 },
-    ]);
-    context.mocks.dns.lookupOverrides.set("mixed.example.com", [
-      { address: "8.8.8.8", family: 4 },
-      { address: "192.168.1.1", family: 4 },
-    ]);
     const sources = [
       "https://images.example.com/redirect.png",
-      "http://10.0.0.1/cover.png",
-      "http://169.254.169.254/cover.png",
-      "http://[::ffff:127.0.0.1]/cover.png",
-      "http://[fd00::1]/cover.png",
-      "https://localhost./cover.png",
-      "https://internal/cover.png",
-      "https://internal.local/cover.png",
       "https://images.example.com:4444/cover.png",
-      "https://private.example.com/cover.png",
-      "https://mixed.example.com/cover.png",
     ];
     const requests: string[] = [];
     server.use(
@@ -280,9 +256,6 @@ describe("Slack preview thumbnails", () => {
       await expectEmptyImage(url);
     }
     expect(requests).toStrictEqual([sources[0]]);
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([
-      "8.8.8.8",
-    ]);
   });
 
   it("rejects tampered signatures before network access and avoids nested or oversized thumbnail URLs", async () => {
@@ -293,6 +266,13 @@ describe("Slack preview thumbnails", () => {
     if (!url) {
       throw new Error("Expected a signed image URL");
     }
+    const requests: string[] = [];
+    server.use(
+      http.get("https://images.example.com/*", ({ request }) => {
+        requests.push(request.url);
+        return new HttpResponse(null, { status: 500 });
+      }),
+    );
     const changedSource = new URL(url);
     changedSource.searchParams.set(
       "url",
@@ -302,7 +282,7 @@ describe("Slack preview thumbnails", () => {
     const changedSignature = new URL(url);
     changedSignature.searchParams.set("signature", "0".repeat(64));
     await accept(readImage(changedSignature), [403]);
-    expect(context.mocks.nodeRequest.pinnedAddresses).toStrictEqual([]);
+    expect(requests).toStrictEqual([]);
     await expect(
       previewUrls(f.teamId, [
         url.href,

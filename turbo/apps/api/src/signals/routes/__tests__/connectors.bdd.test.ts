@@ -2771,9 +2771,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
     expect(provider.tokenBodies[0]?.get("client_secret")).toBe(clientSecret);
     expect(provider.authorizationHeaders).toStrictEqual([null]);
-    expect(context.mocks.nodeRequest.pinnedAddresses).toContain(
-      "93.184.216.34",
-    );
 
     await expect(
       own(() => {

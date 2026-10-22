@@ -8,7 +8,6 @@ import type {
 import { computed } from "ccstate";
 import { ws } from "msw";
 import { Buffer } from "node:buffer";
-import type { LookupFunction } from "node:net";
 import type StripeSDK from "stripe";
 import { vi, type Mock } from "vitest";
 import { z } from "zod";
@@ -78,15 +77,13 @@ type BrowserUseCdpCommandMock = Mock<
   (command: BrowserUseCdpCommand) => unknown
 >;
 interface RequestOptionsLike {
-  readonly family?: number;
   readonly headers?: RequestInit["headers"];
   readonly maxHeaderSize?: number;
   readonly method?: string;
-  readonly lookup?: LookupFunction;
   readonly signal?: AbortSignal;
 }
 
-type PinnedRequestCallback = (
+type BoundedRequestCallback = (
   response: NodeJS.ReadableStream & {
     readonly headers: Record<string, string>;
     readonly statusCode: number;
@@ -171,24 +168,6 @@ export interface ApiTestMocks {
     readonly send: AsyncMock;
     readonly getSignedUrl: AsyncMock;
     readonly clientConfig: SyncMock;
-  };
-  readonly dns: {
-    /**
-     * Per-test overrides for `dns.lookup(host, { all: true })`. Hosts not
-     * present here fall through to the real resolver, so DB/other connections
-     * keep working. Used to exercise the import SSRF guard against hosts that
-     * resolve to private addresses.
-     */
-    readonly lookupOverrides: Map<
-      string,
-      | readonly { readonly address: string; readonly family: number }[]
-      | ((
-          hostname: string,
-        ) => readonly { readonly address: string; readonly family: number }[])
-    >;
-  };
-  readonly nodeRequest: {
-    readonly pinnedAddresses: string[];
   };
   readonly resend: {
     readonly send: AsyncMock;
@@ -606,12 +585,6 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       getSignedUrl: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       clientConfig: vi.fn<(...args: unknown[]) => void>(),
     },
-    dns: {
-      lookupOverrides: new Map(),
-    },
-    nodeRequest: {
-      pinnedAddresses: [],
-    },
     resend: {
       send: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
@@ -855,40 +828,20 @@ vi.mock("@aws-sdk/s3-request-presigner", () => {
   };
 });
 
-vi.mock("node:dns/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:dns/promises")>();
-  return {
-    ...actual,
-    lookup: (hostname: string, options?: unknown): Promise<unknown> => {
-      const override = apiTestMocks.dns.lookupOverrides.get(hostname);
-      if (!override) {
-        return actual.lookup(hostname, options as never);
-      }
-      const resolved =
-        typeof override === "function" ? override(hostname) : override;
-      const wantsAll =
-        typeof options === "object" &&
-        options !== null &&
-        (options as { all?: boolean }).all === true;
-      return Promise.resolve(wantsAll ? resolved : resolved[0]);
-    },
-  };
-});
-
-function isPinnedRequest(
+function isBoundedRequest(
   args: readonly unknown[],
-): args is readonly [URL, RequestOptionsLike, PinnedRequestCallback] {
+): args is readonly [URL, RequestOptionsLike, BoundedRequestCallback] {
   const [url, options, callback] = args;
   return (
     url instanceof URL &&
     typeof options === "object" &&
     options !== null &&
-    typeof (options as RequestOptionsLike).lookup === "function" &&
+    typeof (options as RequestOptionsLike).maxHeaderSize === "number" &&
     typeof callback === "function"
   );
 }
 
-async function mockPinnedRequestModule<TModule extends object>(
+async function mockBoundedRequestModule<TModule extends object>(
   importOriginal: () => Promise<TModule>,
 ) {
   const actual = await importOriginal();
@@ -897,7 +850,7 @@ async function mockPinnedRequestModule<TModule extends object>(
   const { EventEmitter } = await import("node:events");
   const { Readable } = await import("node:stream");
   const request = (...args: unknown[]) => {
-    if (!isPinnedRequest(args)) {
+    if (!isBoundedRequest(args)) {
       return actualRequest(...args);
     }
     const [url, options, callback] = args;
@@ -907,41 +860,6 @@ async function mockPinnedRequestModule<TModule extends object>(
     req.end = (requestBody?: string | Uint8Array) => {
       queueMicrotask(() => {
         void (async () => {
-          if (options.family === 4 || options.family === 6) {
-            options.lookup?.(
-              url.hostname,
-              { family: options.family },
-              (error, address) => {
-                if (error) {
-                  throw error;
-                }
-                if (typeof address !== "string") {
-                  throw new TypeError("Expected a single pinned IP address");
-                }
-                apiTestMocks.nodeRequest.pinnedAddresses.push(address);
-              },
-            );
-          } else {
-            options.lookup?.(
-              url.hostname,
-              { all: true },
-              (error, addresses) => {
-                if (error) {
-                  throw error;
-                }
-                if (!Array.isArray(addresses)) {
-                  throw new TypeError(
-                    "Expected an array of pinned IP addresses",
-                  );
-                }
-                for (const address of addresses) {
-                  apiTestMocks.nodeRequest.pinnedAddresses.push(
-                    address.address,
-                  );
-                }
-              },
-            );
-          }
           const fetched = await fetch(url, {
             method: options.method,
             headers: options.headers,
@@ -989,13 +907,13 @@ async function mockPinnedRequestModule<TModule extends object>(
 }
 
 vi.mock("node:https", async (importOriginal) => {
-  return await mockPinnedRequestModule(
+  return await mockBoundedRequestModule(
     importOriginal as () => Promise<typeof import("node:https")>,
   );
 });
 
 vi.mock("node:http", async (importOriginal) => {
-  return await mockPinnedRequestModule(
+  return await mockBoundedRequestModule(
     importOriginal as () => Promise<typeof import("node:http")>,
   );
 });
@@ -1559,8 +1477,6 @@ export function resetApiTestMocks(): void {
     },
   );
   apiTestMocks.s3.clientConfig.mockReset();
-  apiTestMocks.dns.lookupOverrides.clear();
-  apiTestMocks.nodeRequest.pinnedAddresses.length = 0;
   apiTestMocks.resend.send.mockReset();
   apiTestMocks.signalTimers.delay.mockReset();
   apiTestMocks.slack.apiCall.mockReset();
