@@ -275,6 +275,58 @@ describe("Chat Completions upstream stream failures", () => {
     expect(requests).toBe(2);
   });
 
+  it.each([
+    "GoUsageLimitError",
+    "FreeUsageLimitError",
+    "subscription_sharing_usage_limit_exceeded",
+  ])("keeps the existing terminal veto for %s", async (type) => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return response({ error: { type, message: "Rate limit exceeded" } });
+      }),
+    );
+    const current = await session();
+    await current.prompt("hello");
+    const final = current.messages.at(-1);
+    if (!final || final.role !== "assistant")
+      throw new Error("Missing assistant result");
+    expect(final.stopReason).toBe("error");
+    expect(JSON.parse(final.errorMessage ?? "")).toMatchObject({
+      error: { type, message: "Rate limit exceeded" },
+    });
+    expect(requests).toBe(1);
+  });
+
+  it("keeps a specific rate-limit code ahead of queue-like prose", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return requests === 1
+          ? response({
+              error: {
+                code: "rate_limit_exceeded",
+                message:
+                  "We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+              },
+            })
+          : response({ finishReason: "stop", text: "Recovered answer" });
+      }),
+    );
+    const current = await session();
+    await current.prompt("hello");
+    const final = current.messages.at(-1);
+    if (!final || final.role !== "assistant")
+      throw new Error("Missing assistant result");
+    expect(final.stopReason).toBe("stop");
+    expect(final.content).toMatchObject([
+      { type: "text", text: "Recovered answer" },
+    ]);
+    expect(requests).toBe(2);
+  });
+
   it("keeps successful output containing provider error text", async () => {
     const text = "Provider finish_reason: error is an example.";
     server.use(

@@ -95,7 +95,7 @@ index 7f146126800d7446fd7e2493fd9b05d455d7ad95..3aa7449674a47c888b6de15fee96def8
  //# sourceMappingURL=openai-completions.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
-index a60f39352b776d71497e55b33b3334bacfbeb2f5..3b83ac6ab3fd0697401fbd6316666baaf89dc794 100644
+index a60f39352b776d71497e55b33b3334bacfbeb2f5..5d262eca9de148052b1e3f2074ffb02b31323f1b 100644
 --- a/dist/api/openai-completions.js
 +++ b/dist/api/openai-completions.js
 @@ -16,6 +16,30 @@ import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copi
@@ -180,6 +180,7 @@ index a60f39352b776d71497e55b33b3334bacfbeb2f5..3b83ac6ab3fd0697401fbd6316666baa
 +    return buildParams(model, normalizedContext, options);
 +}
  //# sourceMappingURL=openai-completions.js.map
+\ No newline at end of file
 diff --git a/dist/api/openai-responses.d.ts b/dist/api/openai-responses.d.ts
 index 41267bd50904069aa0879cc8634ea94bc1045236..3d7e30ebc76cf507b88a2a1a2926c38c8ff6d58d 100644
 --- a/dist/api/openai-responses.d.ts
@@ -280,7 +281,7 @@ index 5960cf7f5e992eef7d1b96530cea66c6f616a6d2..a2f2c47b1cb76f1faac44f80b0e08715
      if (shouldRetry === "true")
          return true;
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..c8bdbb3add07bba9e047ea16a4c050e2db18fc45 100644
+index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..0f0d114f7fb215097c901c17f9b02614c5d9838e 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,4 @@
@@ -362,21 +363,22 @@ index 738a6f0db0ed42d257eefa7a7eb2d355ae784f65..c8bdbb3add07bba9e047ea16a4c050e2
  /**
   * Classifies whether a failed assistant message looks like a transient provider
   * or transport error, so callers can decide if the last assistant turn should be
-@@ -188,9 +256,16 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
- export function isRetryableAssistantError(message) {
+@@ -189,8 +257,17 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
--    const errorMessage = message.errorMessage;
-+    const errorMessage = okouProviderRetryText(message);
+     const errorMessage = message.errorMessage;
 +    if (isProviderQueueTimeout(errorMessage))
 +        return false;
      if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))
          return false;
+-    return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
 +    // After both terminal guards, so a known-terminal body stays terminal, and
 +    // before the text patterns, which the structured verdict supersedes.
 +    const requestRetryDecision = okouModelRequestRetryDecision(message);
 +    if (requestRetryDecision !== undefined)
 +        return requestRetryDecision;
-     return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
++    // Preserve the existing terminal guards' code/type evidence. Only positive
++    // retry prose matching excludes native details and unknown provider codes.
++    return RETRYABLE_PROVIDER_ERROR_PATTERN.test(okouProviderRetryText(message));
  }
  //# sourceMappingURL=retry.js.map
