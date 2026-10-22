@@ -126,7 +126,6 @@ final class ConversationSendTransition {
     let y = max(
       -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
     if let target, abs(target - y) <= 0.5 { return }
-    prepareForSnapshot()
     target = y
     animationOrigin = offset
     alphaOrigin = arrivingView?.alpha ?? 1
@@ -137,6 +136,9 @@ final class ConversationSendTransition {
       finish()
       return
     }
+    // Composer/keyboard geometry can change on every frame. Retarget the
+    // current clock; only an actual snapshot pauses it.
+    guard displayLink == nil else { return }
     // Starting the clock on its first display callback excludes snapshot work
     // before any frame can be presented. UIKit animation completions cannot
     // finish the viewport ahead of this clock.
@@ -170,17 +172,18 @@ final class ConversationSendTransition {
     presentFrame(
       fraction: CGFloat(min(1, max(0, value))),
       in: collection, target: target)
-    guard displayLink === link else { return }
-    if progress >= 1 { finish() }
+    guard displayLink === link, self.target == target else { return }
+    if progress >= 1, elapsed >= duration { finish() }
   }
 
   private func presentFrame(fraction: CGFloat, in collection: UICollectionView, target: CGFloat) {
     let y = animationOrigin.y + (target - animationOrigin.y) * fraction
+    let alpha = alphaOrigin + (1 - alphaOrigin) * fraction
     // Move the native viewport every frame so collection reuse keeps the visible rows mounted.
     offset = CGPoint(x: animationOrigin.x, y: y)
     UIView.performWithoutAnimation {
+      arrivingView?.alpha = alpha
       collection.setContentOffset(offset, animated: false)
-      arrivingView?.alpha = alphaOrigin + (1 - alphaOrigin) * fraction
     }
   }
 
