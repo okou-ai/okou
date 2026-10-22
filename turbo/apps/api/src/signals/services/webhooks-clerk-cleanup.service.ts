@@ -39,7 +39,7 @@ import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.se
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import { removeUsagePackMemberAllocation$ } from "./usage-pack-allocation-change.service";
-import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
+import { refundUsagePackMemberCredits$ } from "./usage-pack-credit-refund.service";
 
 const L = logger("WebhookClerkCleanup");
 type SlotsReleased = (slots: readonly ReleasedRunSlot[]) => void;
@@ -378,7 +378,6 @@ const commitClerkDeletedOrgMembershipCleanup$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const db = set(writeDb$);
     const emptyCancellation = await set(
       removeUsagePackMemberAllocation$,
       args,
@@ -389,7 +388,7 @@ const commitClerkDeletedOrgMembershipCleanup$ = command(
       await set(cancelEmptyUsagePackSubscription$, emptyCancellation, signal);
       signal.throwIfAborted();
     }
-    await refundUsagePackMemberCredits(db, args, signal);
+    await set(refundUsagePackMemberCredits$, args, signal);
     signal.throwIfAborted();
     await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);
     signal.throwIfAborted();

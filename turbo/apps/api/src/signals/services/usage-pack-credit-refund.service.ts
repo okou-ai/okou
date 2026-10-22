@@ -3,11 +3,12 @@ import {
   usagePackCreditRefunds,
   type UsagePackCreditRefundSourceType,
 } from "@okouai/db/schema/usage-pack-credit-refund";
+import { command } from "ccstate";
 import { and, asc, eq, gt, inArray, like, lt, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   stripeErrorInfo,
@@ -180,13 +181,14 @@ function creditNoteRefundId(creditNote: StripeCreditNote): string | null {
   return typeof refund === "string" ? refund : (refund?.id ?? null);
 }
 
-async function markRefundSucceeded(
-  db: Pick<Db, "update">,
+const markRefundSucceeded$ = command(async function markRefundSucceeded(
+  { set },
   row: UsagePackCreditRefundRow,
   stripeRefundId: string,
   refundedAmountCents: number,
-  stripeCreditNoteId = row.stripeCreditNoteId,
+  stripeCreditNoteId: string | null = row.stripeCreditNoteId,
 ): Promise<void> {
+  const db = set(writeDb$);
   const at = nowDate();
   await db
     .update(usagePackCreditRefunds)
@@ -200,12 +202,13 @@ async function markRefundSucceeded(
       updatedAt: at,
     })
     .where(eq(usagePackCreditRefunds.creditGrantId, row.creditGrantId));
-}
+});
 
-async function markRefundNotRequired(
-  db: Pick<Db, "update">,
+const markRefundNotRequired$ = command(async function markRefundNotRequired(
+  { set },
   row: UsagePackCreditRefundRow,
 ): Promise<void> {
+  const db = set(writeDb$);
   const at = nowDate();
   await db
     .update(usagePackCreditRefunds)
@@ -219,7 +222,7 @@ async function markRefundNotRequired(
       updatedAt: at,
     })
     .where(eq(usagePackCreditRefunds.creditGrantId, row.creditGrantId));
-}
+});
 
 function stripeRefundFailureReason(refund: StripeRefund): string {
   const status = refund.status ?? "unknown";
@@ -249,11 +252,12 @@ function logTerminalRefundFailure(
   });
 }
 
-async function markRefundFailed(
-  db: Pick<Db, "update">,
+const markRefundFailed$ = command(async function markRefundFailed(
+  { set },
   row: UsagePackCreditRefundRow,
   failureReason: string,
 ): Promise<void> {
+  const db = set(writeDb$);
   await db
     .update(usagePackCreditRefunds)
     .set({
@@ -265,16 +269,17 @@ async function markRefundFailed(
   logTerminalRefundFailure(row, {
     failureReason,
   });
-}
+});
 
 type StripeRefundState = "succeeded" | "waiting" | "failed";
 
-async function applyStripeRefundState(
-  db: Pick<Db, "update">,
+const applyStripeRefundState$ = command(async function applyStripeRefundState(
+  { set },
   row: UsagePackCreditRefundRow,
   refund: StripeRefund,
   refundedAmountCents?: number,
 ): Promise<StripeRefundState> {
+  const db = set(writeDb$);
   if (refund.status === "succeeded") {
     await db
       .update(usagePackCreditRefunds)
@@ -322,33 +327,35 @@ async function applyStripeRefundState(
     })
     .where(eq(usagePackCreditRefunds.creditGrantId, row.creditGrantId));
   return "waiting";
-}
+});
 
-async function processPaymentIntentRefund(
-  db: Db,
-  row: UsagePackCreditRefundRow,
-): Promise<void> {
-  if (!row.stripePaymentIntentId || !row.requestedAmountCents) {
-    throw new Error(
-      `Usage pack refund ${row.creditGrantId} has an invalid PaymentIntent source`,
-    );
-  }
-  const stripe = getStripeClient();
-  const refund = row.stripeRefundId
-    ? await stripe.refunds.retrieve(row.stripeRefundId)
-    : await createOrReconcileRefund(db, stripe, row, {
-        paymentIntentId: row.stripePaymentIntentId,
-        amountCents: row.requestedAmountCents,
-        idempotencyKey: `usage-pack-credit-refund:${row.creditGrantId}:${row.attempt}`,
-      });
-  if (!refund) {
-    return;
-  }
-  const state = await applyStripeRefundState(db, row, refund);
-  if (state === "succeeded") {
-    await markRefundSucceeded(db, row, refund.id, row.requestedAmountCents);
-  }
-}
+const processPaymentIntentRefund$ = command(
+  async function processPaymentIntentRefund(
+    { set },
+    row: UsagePackCreditRefundRow,
+  ): Promise<void> {
+    if (!row.stripePaymentIntentId || !row.requestedAmountCents) {
+      throw new Error(
+        `Usage pack refund ${row.creditGrantId} has an invalid PaymentIntent source`,
+      );
+    }
+    const stripe = getStripeClient();
+    const refund = row.stripeRefundId
+      ? await stripe.refunds.retrieve(row.stripeRefundId)
+      : await set(createOrReconcileRefund$, stripe, row, {
+          paymentIntentId: row.stripePaymentIntentId,
+          amountCents: row.requestedAmountCents,
+          idempotencyKey: `usage-pack-credit-refund:${row.creditGrantId}:${row.attempt}`,
+        });
+    if (!refund) {
+      return;
+    }
+    const state = await set(applyStripeRefundState$, row, refund);
+    if (state === "succeeded") {
+      await set(markRefundSucceeded$, row, refund.id, row.requestedAmountCents);
+    }
+  },
+);
 
 function creditNoteParams(
   row: UsagePackCreditRefundRow,
@@ -372,20 +379,21 @@ function creditNoteParams(
   };
 }
 
-async function loadInvoiceRefundAmount(
-  db: Pick<Db, "update">,
+const loadInvoiceRefundAmount$ = command(async function loadInvoiceRefundAmount(
+  { set },
   stripe: StripeClient,
   row: UsagePackCreditRefundRow,
 ): Promise<number | null> {
+  const db = set(writeDb$);
   let refundAmountCents = row.refundedAmountCents;
   if (refundAmountCents === 0) {
-    await markRefundNotRequired(db, row);
+    await set(markRefundNotRequired$, row);
     return null;
   }
   if (refundAmountCents === null) {
     const preview = await stripe.creditNotes.preview(creditNoteParams(row));
     if (preview.pre_payment_amount === 0 && preview.post_payment_amount === 0) {
-      await markRefundNotRequired(db, row);
+      await set(markRefundNotRequired$, row);
       return null;
     }
     if (preview.pre_payment_amount !== 0 || preview.post_payment_amount <= 0) {
@@ -400,7 +408,7 @@ async function loadInvoiceRefundAmount(
       .where(eq(usagePackCreditRefunds.creditGrantId, row.creditGrantId));
   }
   return refundAmountCents;
-}
+});
 
 function stripeRefId(ref: StripeRef | undefined): string | null {
   if (!ref) {
@@ -409,124 +417,134 @@ function stripeRefId(ref: StripeRef | undefined): string | null {
   return typeof ref === "string" ? ref : ref.id;
 }
 
-async function loadRefundableInvoicePaymentIntentId(
-  db: Pick<Db, "update">,
-  stripe: StripeClient,
-  row: UsagePackCreditRefundRow,
-  refundAmountCents: number,
-): Promise<string | null> {
-  if (!row.stripeInvoiceId) {
-    throw new Error(
-      `Usage pack refund ${row.creditGrantId} has no Stripe invoice`,
-    );
-  }
-  const invoice = await stripe.invoices.retrieve(row.stripeInvoiceId, {
-    expand: ["payments.data.payment.payment_intent"],
-  });
-  const refundablePaymentIntentIds = new Set(
-    (invoice.payments?.data ?? []).flatMap((payment) => {
-      const paymentIntentId = stripeRefId(payment.payment.payment_intent);
-      return payment.status === "paid" &&
-        payment.payment.type === "payment_intent" &&
-        paymentIntentId &&
-        (payment.amount_paid ?? 0) >= refundAmountCents
-        ? [paymentIntentId]
-        : [];
-    }),
-  );
-  if (refundablePaymentIntentIds.size === 1) {
-    return [...refundablePaymentIntentIds][0] ?? null;
-  }
-  await markRefundFailed(
-    db,
-    row,
-    `invoice_refund_payment_intent_count_${refundablePaymentIntentIds.size}`,
-  );
-  return null;
-}
-
-async function loadOrCreateInvoiceRefund(
-  db: Pick<Db, "update">,
-  stripe: StripeClient,
-  row: UsagePackCreditRefundRow,
-  refundAmountCents: number,
-  fallbackRefundId?: string | null,
-): Promise<StripeRefund | null> {
-  const stripeRefundId = row.stripeRefundId ?? fallbackRefundId;
-  if (stripeRefundId) {
-    return await stripe.refunds.retrieve(stripeRefundId);
-  }
-  const paymentIntentId = await loadRefundableInvoicePaymentIntentId(
-    db,
-    stripe,
-    row,
-    refundAmountCents,
-  );
-  if (!paymentIntentId) {
-    return null;
-  }
-  return await createOrReconcileRefund(db, stripe, row, {
-    paymentIntentId,
-    amountCents: refundAmountCents,
-    idempotencyKey: `usage-pack-credit-refund:${row.creditGrantId}:${row.attempt}:refund`,
-  });
-}
-
-async function reconcileAlreadyRefundedCharge(
-  db: Pick<Db, "update">,
-  stripe: StripeClient,
-  row: UsagePackCreditRefundRow,
-  paymentIntentId: string,
-  amountCents: number,
-): Promise<StripeRefund | null> {
-  let startingAfter: string | undefined;
-  let matchingRefund: StripeRefund | null = null;
-  do {
-    const page = await stripe.refunds.list({
-      payment_intent: paymentIntentId,
-      limit: 100,
-      ...(startingAfter ? { starting_after: startingAfter } : {}),
+const loadRefundableInvoicePaymentIntentId$ = command(
+  async function loadRefundableInvoicePaymentIntentId(
+    { set },
+    stripe: StripeClient,
+    row: UsagePackCreditRefundRow,
+    refundAmountCents: number,
+  ): Promise<string | null> {
+    if (!row.stripeInvoiceId) {
+      throw new Error(
+        `Usage pack refund ${row.creditGrantId} has no Stripe invoice`,
+      );
+    }
+    const invoice = await stripe.invoices.retrieve(row.stripeInvoiceId, {
+      expand: ["payments.data.payment.payment_intent"],
     });
-    for (const refund of page.data) {
-      if (
-        refund.status !== "succeeded" ||
-        refund.amount !== amountCents ||
-        stripeRefId(refund.payment_intent) !== paymentIntentId ||
-        refund.metadata?.purpose !== "usage_pack_member_credit_refund" ||
-        refund.metadata.creditGrantId !== row.creditGrantId ||
-        refund.metadata.orgId !== row.orgId ||
-        refund.metadata.userId !== row.userId
-      ) {
-        continue;
-      }
-      if (matchingRefund) {
-        await markRefundFailed(
-          db,
-          row,
-          "stripe_charge_already_refunded_ambiguous",
-        );
-        return null;
-      }
-      matchingRefund = refund;
+    const refundablePaymentIntentIds = new Set(
+      (invoice.payments?.data ?? []).flatMap((payment) => {
+        const paymentIntentId = stripeRefId(payment.payment.payment_intent);
+        return payment.status === "paid" &&
+          payment.payment.type === "payment_intent" &&
+          paymentIntentId &&
+          (payment.amount_paid ?? 0) >= refundAmountCents
+          ? [paymentIntentId]
+          : [];
+      }),
+    );
+    if (refundablePaymentIntentIds.size === 1) {
+      return [...refundablePaymentIntentIds][0] ?? null;
     }
-    if (!page.has_more) {
-      break;
-    }
-    const lastRefundId = page.data.at(-1)?.id;
-    if (!lastRefundId || lastRefundId === startingAfter) {
-      throw new Error("Stripe refund pagination did not advance");
-    }
-    startingAfter = lastRefundId;
-  } while (startingAfter);
+    await set(
+      markRefundFailed$,
+      row,
+      `invoice_refund_payment_intent_count_${refundablePaymentIntentIds.size}`,
+    );
+    return null;
+  },
+);
 
-  if (!matchingRefund) {
-    await markRefundFailed(db, row, "stripe_charge_already_refunded_unmatched");
-  }
-  return matchingRefund;
-}
+const loadOrCreateInvoiceRefund$ = command(
+  async function loadOrCreateInvoiceRefund(
+    { set },
+    stripe: StripeClient,
+    row: UsagePackCreditRefundRow,
+    refundAmountCents: number,
+    fallbackRefundId?: string | null,
+  ): Promise<StripeRefund | null> {
+    const stripeRefundId = row.stripeRefundId ?? fallbackRefundId;
+    if (stripeRefundId) {
+      return await stripe.refunds.retrieve(stripeRefundId);
+    }
+    const paymentIntentId = await set(
+      loadRefundableInvoicePaymentIntentId$,
+      stripe,
+      row,
+      refundAmountCents,
+    );
+    if (!paymentIntentId) {
+      return null;
+    }
+    return await set(createOrReconcileRefund$, stripe, row, {
+      paymentIntentId,
+      amountCents: refundAmountCents,
+      idempotencyKey: `usage-pack-credit-refund:${row.creditGrantId}:${row.attempt}:refund`,
+    });
+  },
+);
 
-async function createOrReconcileRefund(
-  db: Pick<Db, "update">,
+const reconcileAlreadyRefundedCharge$ = command(
+  async function reconcileAlreadyRefundedCharge(
+    { set },
+    stripe: StripeClient,
+    row: UsagePackCreditRefundRow,
+    paymentIntentId: string,
+    amountCents: number,
+  ): Promise<StripeRefund | null> {
+    let startingAfter: string | undefined;
+    let matchingRefund: StripeRefund | null = null;
+    do {
+      const page = await stripe.refunds.list({
+        payment_intent: paymentIntentId,
+        limit: 100,
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+      for (const refund of page.data) {
+        if (
+          refund.status !== "succeeded" ||
+          refund.amount !== amountCents ||
+          stripeRefId(refund.payment_intent) !== paymentIntentId ||
+          refund.metadata?.purpose !== "usage_pack_member_credit_refund" ||
+          refund.metadata.creditGrantId !== row.creditGrantId ||
+          refund.metadata.orgId !== row.orgId ||
+          refund.metadata.userId !== row.userId
+        ) {
+          continue;
+        }
+        if (matchingRefund) {
+          await set(
+            markRefundFailed$,
+            row,
+            "stripe_charge_already_refunded_ambiguous",
+          );
+          return null;
+        }
+        matchingRefund = refund;
+      }
+      if (!page.has_more) {
+        break;
+      }
+      const lastRefundId = page.data.at(-1)?.id;
+      if (!lastRefundId || lastRefundId === startingAfter) {
+        throw new Error("Stripe refund pagination did not advance");
+      }
+      startingAfter = lastRefundId;
+    } while (startingAfter);
+
+    if (!matchingRefund) {
+      await set(
+        markRefundFailed$,
+        row,
+        "stripe_charge_already_refunded_unmatched",
+      );
+    }
+    return matchingRefund;
+  },
+);
+
+const createOrReconcileRefund$ = command(async function createOrReconcileRefund(
+  { set },
   stripe: StripeClient,
   row: UsagePackCreditRefundRow,
   args: {
@@ -556,14 +574,14 @@ async function createOrReconcileRefund(
   if (stripeErrorInfo(result.error)?.code !== "charge_already_refunded") {
     throw result.error;
   }
-  return await reconcileAlreadyRefundedCharge(
-    db,
+  return await set(
+    reconcileAlreadyRefundedCharge$,
     stripe,
     row,
     args.paymentIntentId,
     args.amountCents,
   );
-}
+});
 
 function requireIssuedRefundCreditNote(
   row: UsagePackCreditRefundRow,
@@ -604,8 +622,8 @@ async function createLinkedCreditNote(
   return creditNote;
 }
 
-async function processInvoiceRefund(
-  db: Db,
+const processInvoiceRefund$ = command(async function processInvoiceRefund(
+  { set },
   row: UsagePackCreditRefundRow,
 ): Promise<void> {
   const stripe = getStripeClient();
@@ -618,7 +636,7 @@ async function processInvoiceRefund(
     : null;
   const refundAmountCents = existingCreditNote
     ? requireIssuedRefundCreditNote(row, existingCreditNote)
-    : await loadInvoiceRefundAmount(db, stripe, row);
+    : await set(loadInvoiceRefundAmount$, stripe, row);
   if (refundAmountCents === null) {
     return;
   }
@@ -626,8 +644,8 @@ async function processInvoiceRefund(
     existingCreditNote && row.attempt === 1
       ? creditNoteRefundId(existingCreditNote)
       : null;
-  const stripeRefund = await loadOrCreateInvoiceRefund(
-    db,
+  const stripeRefund = await set(
+    loadOrCreateInvoiceRefund$,
     stripe,
     row,
     refundAmountCents,
@@ -636,8 +654,8 @@ async function processInvoiceRefund(
   if (!stripeRefund) {
     return;
   }
-  const state = await applyStripeRefundState(
-    db,
+  const state = await set(
+    applyStripeRefundState$,
     row,
     stripeRefund,
     refundAmountCents,
@@ -646,8 +664,8 @@ async function processInvoiceRefund(
     return;
   }
   if (existingCreditNote) {
-    await markRefundSucceeded(
-      db,
+    await set(
+      markRefundSucceeded$,
       row,
       stripeRefund.id,
       refundAmountCents,
@@ -661,19 +679,20 @@ async function processInvoiceRefund(
     stripeRefund,
     refundAmountCents,
   );
-  await markRefundSucceeded(
-    db,
+  await set(
+    markRefundSucceeded$,
     row,
     stripeRefund.id,
     refundAmountCents,
     creditNote.id,
   );
-}
+});
 
-async function processCreditRefund(
-  db: Db,
+const processCreditRefund$ = command(async function processCreditRefund(
+  { set },
   row: UsagePackCreditRefundRow,
 ): Promise<void> {
+  const db = set(writeDb$);
   await db
     .update(usagePackCreditRefunds)
     .set({ status: "processing", updatedAt: nowDate() })
@@ -687,11 +706,11 @@ async function processCreditRefund(
       ),
     );
   if (row.sourceType === "payment_intent") {
-    await processPaymentIntentRefund(db, row);
+    await set(processPaymentIntentRefund$, row);
     return;
   }
-  await processInvoiceRefund(db, row);
-}
+  await set(processInvoiceRefund$, row);
+});
 
 function retryableFailedInvoiceRefundCondition() {
   // Keep the legacy failed rows described in processInvoiceRefund eligible
@@ -707,63 +726,69 @@ function retryableFailedInvoiceRefundCondition() {
   );
 }
 
-export async function refundUsagePackMemberCredits(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-  signal: AbortSignal,
-): Promise<number> {
-  signal.throwIfAborted();
-  const refunds = await db
-    .select()
-    .from(usagePackCreditRefunds)
-    .where(
-      and(
-        eq(usagePackCreditRefunds.orgId, args.orgId),
-        eq(usagePackCreditRefunds.userId, args.userId),
-        inArray(usagePackCreditRefunds.status, ["pending", "processing"]),
-      ),
-    )
-    .orderBy(asc(usagePackCreditRefunds.createdAt));
-  signal.throwIfAborted();
-  for (const refund of refunds) {
-    await processCreditRefund(db, refund);
+export const refundUsagePackMemberCredits$ = command(
+  async function refundUsagePackMemberCredits(
+    { get, set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<number> {
+    const db = get(db$);
     signal.throwIfAborted();
-  }
-  return refunds.length;
-}
-
-export async function reconcileUsagePackCreditRefunds(
-  db: Db,
-  signal: AbortSignal,
-): Promise<number> {
-  signal.throwIfAborted();
-  const refunds = await db
-    .select()
-    .from(usagePackCreditRefunds)
-    .where(
-      and(
-        or(
+    const refunds = await db
+      .select()
+      .from(usagePackCreditRefunds)
+      .where(
+        and(
+          eq(usagePackCreditRefunds.orgId, args.orgId),
+          eq(usagePackCreditRefunds.userId, args.userId),
           inArray(usagePackCreditRefunds.status, ["pending", "processing"]),
-          retryableFailedInvoiceRefundCondition(),
         ),
-      ),
-    )
-    .orderBy(asc(usagePackCreditRefunds.updatedAt))
-    .limit(RECONCILIATION_LIMIT);
-  signal.throwIfAborted();
-  for (const refund of refunds) {
-    const result = await settle(processCreditRefund(db, refund), signal);
-    if (!result.ok) {
-      L.error("usage pack credit refund reconciliation failed", {
-        creditGrantId: refund.creditGrantId,
-        orgId: refund.orgId,
-        userId: refund.userId,
-        stripeInvoiceId: refund.stripeInvoiceId,
-        stripeCreditNoteId: refund.stripeCreditNoteId,
-        stripeRefundId: refund.stripeRefundId,
-        error: result.error,
-      });
+      )
+      .orderBy(asc(usagePackCreditRefunds.createdAt));
+    signal.throwIfAborted();
+    for (const refund of refunds) {
+      await set(processCreditRefund$, refund);
+      signal.throwIfAborted();
     }
-  }
-  return refunds.length;
-}
+    return refunds.length;
+  },
+);
+
+export const reconcileUsagePackCreditRefunds$ = command(
+  async function reconcileUsagePackCreditRefunds(
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<number> {
+    const db = get(db$);
+    signal.throwIfAborted();
+    const refunds = await db
+      .select()
+      .from(usagePackCreditRefunds)
+      .where(
+        and(
+          or(
+            inArray(usagePackCreditRefunds.status, ["pending", "processing"]),
+            retryableFailedInvoiceRefundCondition(),
+          ),
+        ),
+      )
+      .orderBy(asc(usagePackCreditRefunds.updatedAt))
+      .limit(RECONCILIATION_LIMIT);
+    signal.throwIfAborted();
+    for (const refund of refunds) {
+      const result = await settle(set(processCreditRefund$, refund), signal);
+      if (!result.ok) {
+        L.error("usage pack credit refund reconciliation failed", {
+          creditGrantId: refund.creditGrantId,
+          orgId: refund.orgId,
+          userId: refund.userId,
+          stripeInvoiceId: refund.stripeInvoiceId,
+          stripeCreditNoteId: refund.stripeCreditNoteId,
+          stripeRefundId: refund.stripeRefundId,
+          error: result.error,
+        });
+      }
+    }
+    return refunds.length;
+  },
+);

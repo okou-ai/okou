@@ -61,7 +61,7 @@ import {
   confirmUsagePackAllocationChange$,
   prepareUsagePackChangeConfirmation$,
   repairUsagePackConfigurationBeforeConfirmation$,
-  getUsagePackManagement,
+  getUsagePackManagement$,
   usagePackManagement,
   previewUsagePackAllocationChange$,
 } from "../services/usage-pack-allocation-change.service";
@@ -1414,7 +1414,7 @@ const usagePackSubscriptionChangePreviewAuthed$ = command(
       );
     }
     const db = set(writeDb$);
-    const management = await getUsagePackManagement(db, access.auth.orgId);
+    const management = await set(getUsagePackManagement$, access.auth.orgId);
     signal.throwIfAborted();
     if (!management) {
       return notFound("Usage pack subscription not found");
