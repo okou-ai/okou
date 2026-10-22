@@ -48,6 +48,9 @@ const ASSETS: [(&str, &str); 3] = [
     ),
 ];
 
+#[path = "native_permission_support/preparation.rs"]
+mod preparation;
+
 async fn bounded<F: Future>(future: F) -> TestResult<F::Output> {
     Ok(tokio::time::timeout(DEADLINE, future).await?)
 }

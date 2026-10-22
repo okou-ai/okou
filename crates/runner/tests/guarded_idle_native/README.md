@@ -24,6 +24,12 @@ dedicated test vsock owner and an opt-in canonical-helper allow/deny fixture.
 It qualifies actual Guest capability and joined wire/controller completion;
 the broader Runner capsule, saving, lease and matrix gates remain required.
 
+The same guide's [preparation component](GUEST_PERMISSION_CONTROL.md#same-operation-preparation-component)
+uses a controller parent and canonical helper child within one supervised exec
+operation, retaining the helper's real containment check. Its native allow/deny
+fixture and strict original-record reader qualify that component separately
+from Runner's composed final-exec/fence/quiesce and cancellation custody.
+
 ## Running fixed restore inside the original Runner capsule
 
 `running_restore::native_running_restore_loss_retains_original_uncertainty`

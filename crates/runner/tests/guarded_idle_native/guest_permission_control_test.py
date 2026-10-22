@@ -19,6 +19,29 @@ serve(socket.socket(fileno=int(sys.argv[1])), sys.argv[2], sys.argv[3], sys.exec
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_owned_server_retires_its_descriptor_on_setup_or_nonce_failure(self):
+        class Owner:
+            def __init__(self, fd):
+                self.fd = fd
+
+            def close(self):
+                os.close(self.fd)
+
+        for failure in ("closed stream", "invalid nonce"):
+            with self.subTest(failure=failure):
+                fd, writer = os.pipe()
+                left, right = socket.socketpair()
+                with left, right:
+                    if failure == "closed stream":
+                        right.close()
+                    try:
+                        with self.assertRaises((OSError, ValueError)):
+                            control.serve_owned(right, "invalid", Owner(fd))
+                        with self.assertRaises(OSError):
+                            os.fstat(fd)
+                    finally:
+                        os.close(writer)
+
     def test_rejects_invalid_and_ambiguous_frames(self):
         values = [b"", b"x", b"[]", b'{"id":1,"id":1}', b"null", b"\xff"]
         for value in values:

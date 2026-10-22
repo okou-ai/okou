@@ -91,3 +91,55 @@ VM kill/wait is explicit containment after component verification or on failure.
 It is not positive Runner retirement, required saving, private-runtime removal,
 full lease release, snapshot coverage, physical relief or production protection.
 No production RPC, helper, tracker, policy/P1, schema or dependency is changed.
+
+## Same-operation preparation component
+
+`guest_preparation_control.py` owns the unchanged canonical
+`/usr/local/bin/guest-agent prepare-for-reuse` as its direct child inside the
+controller's existing supervised workload operation. The helper's real
+sole-operation cgroup checks remain enabled. Its original runtime-parent
+directory permission event must identify the live child, canonical executable,
+exact argv and same workload cgroup. A second ordinary controller exec would
+violate this helper's containment requirement.
+
+The six strict commands are `start`, `observe`, `status`, `decide`, `join` and
+`retire`. Before the one explicit decision, the owner removes its original mark
+while retaining the held event. Later helper opens can then proceed without
+being mistaken for the selected boundary. The gate closes before child wait;
+original descriptors close after the child is positively joined. EOF/error
+disposes the gate before attempting that same join and exits unsuccessfully.
+Uncertain cleanup or a failed wait cannot produce a successful retirement.
+
+The component owns synthetic current, retained and stale payloads below an
+exclusively created private parent. Allow requires the actual cleanup report,
+preserved current/retained bytes and removed stale child. Deny requires the
+helper's cleanup-failure exit4 before deletion and all original payloads intact.
+The Host also joins the original accepted controller exec, selected wire exchange
+and connection. It retains original control/exec frames and helper stdin/output;
+VM kill/wait remains containment only.
+
+Build the `native_guest_permission` target above at the committed source and run
+its `preparation::native_same_operation_preparation_allow_and_deny` ignored test,
+setting a nonexistent short absolute `OKOU_TEST_GUEST_PREPARATION_DIR` in addition
+to the three packaged-input variables. Run the existing restore test at that
+same source when shared control/permission code changes. Install and read back
+all current packaged Guest binaries before claiming current-source execution.
+
+For each successful case, retain `capture.json` containing exactly
+`source_commit` and `files`, the latter mapping every name in
+`guest_preparation_control_report.FILES` to its original SHA256. Pin the capture
+hash separately from the capture itself and replay:
+
+```bash
+python3 -B crates/runner/tests/guarded_idle_native/guest_preparation_control_report.py \
+  <case-directory> --expected-source <commit> --expected-capture-sha256 <capture-hash>
+python3 -B -m unittest discover -s crates/runner/tests/guarded_idle_native \
+  -p 'guest_preparation_control_report_test.py'
+```
+
+The reader checks complete original files, strict typed identities, actual raw
+kernel event/decision, cgroup/argv, phase clocks, helper bytes/outcomes, accepted
+exec request/terminal and all joins. Synthetic reader tests do not qualify a
+Guest. This component command is not Runner's composed final-exec/fence/quiesce;
+it establishes no observer-cancellation reconciliation, Fresh/Snapshot capsule,
+full lease, saving, cleanup IO, physical relief or parent combined-source gate.

@@ -147,9 +147,14 @@ class Controller:
 
 def serve(stream, nonce, original, executable):
     require(re.fullmatch(r"[0-9a-f]{32}", nonce) is not None, "invalid invocation nonce")
-    stream.settimeout(30)
-    owner = Controller(original, executable)
+    serve_owned(stream, nonce, Controller(original, executable))
+
+
+def serve_owned(stream, nonce, owner):
+    """Serve one already-owned controller; every exit retains its cleanup duty."""
     try:
+        stream.settimeout(30)
+        require(re.fullmatch(r"[0-9a-f]{32}", nonce) is not None, "invalid invocation nonce")
         send(stream, {"nonce": nonce, "id": 0, "ready": True, "uid": os.geteuid(),
                       "original": owner.identity, "executable": owner.executable_identity,
                       "kernel": os.uname().release})
