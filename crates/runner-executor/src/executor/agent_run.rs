@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
@@ -17,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::codex_model_catalog_prefetch::{
-    CodexModelCatalogPrefetchStart, StartedCodexModelCatalogPrefetch,
+    CodexModelCatalogPrefetch, CodexModelCatalogPrefetchStart, StartedCodexModelCatalogPrefetch,
     is_eligible as is_codex_model_catalog_prefetch_eligible,
 };
 use super::diagnostics::{
@@ -32,7 +33,8 @@ use super::diagnostics::{
     should_log_agent_bootstrap_abnormal_exit_diagnostics,
 };
 use super::env::{
-    PreparedRunPayload, build_env_json_for_run, build_user_env_json, write_required_agent_files,
+    PreparedRunPayload, RequiredAgentFiles, build_env_json_for_run, build_user_env_json,
+    write_required_agent_files,
 };
 use super::guest_state::{restore_guest_state, sync_guest_timezone};
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
@@ -1054,6 +1056,116 @@ struct PreparedAgentProcess {
     env_pairs: Vec<(String, String)>,
 }
 
+struct AgentBootstrapInputs {
+    user_env_map: HashMap<String, String>,
+    env_map: HashMap<String, String>,
+    run_payload: guest_contracts::env::RunPayload,
+}
+
+struct BootstrapFileFailure {
+    error: RunnerError,
+    resource_diagnostics: Option<Box<ResourceFailureDiagnostics>>,
+}
+
+impl AgentBootstrapInputs {
+    async fn publish_files<'a>(
+        &mut self,
+        sandbox: &'a dyn Sandbox,
+        context: &ExecutionContext,
+        reuse_result: SandboxReuseResult,
+        cancel: &CancellationToken,
+        telemetry: &mut JobTelemetry,
+        prefetch: &mut CodexModelCatalogPrefetch<'a>,
+    ) -> Result<RequiredAgentFiles, BootstrapFileFailure> {
+        let owner = OperationCancellationContext::new(
+            &context.run_id.to_string(),
+            sandbox.id(),
+            "guest_agent_bootstrap_files",
+        );
+        let mut recovery_attempted = false;
+        let mut resource_diagnostics = None;
+        loop {
+            let started = Instant::now();
+            let result = prefetch
+                .race(run_pre_spawn_phase(cancel, &owner, async {
+                    // Storage reconciliation already finished. Both operations
+                    // replace fixed inputs and have no agent execution effects.
+                    super::storage::apply_agent_instructions(sandbox, context).await?;
+                    write_required_agent_files(
+                        sandbox,
+                        context,
+                        &mut self.user_env_map,
+                        &self.run_payload,
+                    )
+                    .await
+                }))
+                .await;
+            let error = match result {
+                Some(Ok(files)) => {
+                    telemetry.record(
+                        "runner_required_private_files_write",
+                        started.elapsed(),
+                        true,
+                        None,
+                    );
+                    return Ok(files);
+                }
+                Some(Err(error)) => error,
+                None => {
+                    return Err(BootstrapFileFailure {
+                        error: RunnerError::Cancelled,
+                        resource_diagnostics,
+                    });
+                }
+            };
+            telemetry.record_with_outcome(
+                "runner_required_private_files_write",
+                started.elapsed(),
+                false,
+                None,
+                private_write_timeout_stage(&error),
+            );
+            if recovery_attempted || !super::disk_cleanup::is_disk_write_error(&error) {
+                return Err(BootstrapFileFailure {
+                    error,
+                    resource_diagnostics,
+                });
+            }
+            recovery_attempted = true;
+
+            // Cleanup must be the sole supervised workload. Finish ownership of
+            // optional prefetch before asking the guest to prove containment.
+            let old_prefetch = std::mem::replace(
+                prefetch,
+                StartedCodexModelCatalogPrefetch::disabled().supervise(sandbox),
+            );
+            old_prefetch.finish(telemetry).await;
+            let recovered = run_pre_spawn_phase(
+                cancel,
+                &owner,
+                super::disk_cleanup::recover(sandbox, context, reuse_result, telemetry),
+            )
+            .await;
+            let recovered = match recovered {
+                Some(recovered) if !cancel.is_cancelled() => recovered,
+                _ => {
+                    return Err(BootstrapFileFailure {
+                        error: RunnerError::Cancelled,
+                        resource_diagnostics,
+                    });
+                }
+            };
+            resource_diagnostics = recovered.diagnostics.map(Box::new);
+            if !recovered.retry {
+                return Err(BootstrapFileFailure {
+                    error,
+                    resource_diagnostics,
+                });
+            }
+        }
+    }
+}
+
 async fn run_pre_spawn_phase<T>(
     cancel: &CancellationToken,
     owner: &OperationCancellationContext,
@@ -1508,240 +1620,298 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         sandbox.id(),
         "guest_agent_preparation",
     );
-    let prepared_agent = model_catalog_prefetch
+    let bootstrap = model_catalog_prefetch
         .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
             let cancel = pre_spawn_cancel;
             let start = pre_spawn_start;
             let telemetry = pre_spawn_telemetry;
-            let deferred_background_fill = deferred_background_fill;
 
-    // Check the selected home image before crossing the process-spawn boundary.
-    let native_home_proof_failed = if let Some(binding) = home_history_proof {
-        let started = Instant::now();
-        let verified = super::home_history::verify_home_candidate(sandbox, context, binding, &cancel).await?;
-        telemetry.record("session_history_home_cache_verify", started.elapsed(), verified, None);
-        telemetry.record(if verified { "session_history_home_cache_hit" } else { "session_history_home_cache_miss" }, Duration::ZERO, true, None);
-        !verified && context.native_continuation.is_some()
-    } else {
-        false
-    };
-
-    // Finalize the prepared private run payload and build the environment used
-    // to bootstrap guest-agent. User-provided env is passed through a private
-    // guest file and injected into the CLI child after guest-agent has started.
-    let mut user_env_map = build_user_env_json(context);
-    let env_build_started = Instant::now();
-    let mut run_payload = match prepared_run_payload.into_run_payload(context) {
-        Ok(run_payload) => run_payload,
-        Err(error) => {
-            telemetry.record(
-                "runner_agent_env_build",
-                env_build_started.elapsed(),
-                false,
-                None,
-            );
-            return Err(error);
-        }
-    };
-    if native_home_proof_failed {
-        let mut native = context.native_continuation.clone().ok_or_else(|| RunnerError::Internal("native home proof lost its intent".into()))?;
-        native.session_id = None;
-        native.generation_run_id = None;
-        run_payload.native_continuation = serde_json::to_string(&native).map_err(|error| RunnerError::Internal(format!("serialize fresh native intent: {error}")))?;
-    }
-    info!(
-        run_id = %context.run_id,
-        prompt_bytes = run_payload.prompt.len(),
-        append_system_prompt_bytes = run_payload.append_system_prompt.len(),
-        secret_values_present = !run_payload.secret_values.is_empty(),
-        disallowed_tools_bytes = run_payload.disallowed_tools.len(),
-        tools_bytes = run_payload.tools.len(),
-        settings_bytes = run_payload.settings.len(),
-        artifacts_bytes = run_payload.artifacts.len(),
-        feature_flags_bytes = run_payload.feature_flags.len(),
-        "guest-agent run payload prepared"
-    );
-    let mut env_map = match build_env_json_for_run(
-        context,
-        &config.api_url,
-        sandbox.id(),
-    ) {
-        Ok(env_map) => env_map,
-        Err(error) => {
-            telemetry.record(
-                "runner_agent_env_build",
-                env_build_started.elapsed(),
-                false,
-                None,
-            );
-            return Err(error);
-        }
-    };
-    env_map.insert(
-        guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
-        guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
-    );
-    telemetry.record(
-        "runner_agent_env_build",
-        env_build_started.elapsed(),
-        true,
-        None,
-    );
-
-    let required_private_files_started = Instant::now();
-    // Storage cleanup must finish before inline instructions replace managed files.
-    super::storage::apply_agent_instructions(sandbox, context).await?;
-    let required_files =
-        match write_required_agent_files(sandbox, context, &mut user_env_map, &run_payload).await {
-            Ok(required_files) => {
+            // Check the selected home image before crossing the process-spawn boundary.
+            let native_home_proof_failed = if let Some(binding) = home_history_proof {
+                let started = Instant::now();
+                let verified =
+                    super::home_history::verify_home_candidate(sandbox, context, binding, &cancel)
+                        .await?;
                 telemetry.record(
-                    "runner_required_private_files_write",
-                    required_private_files_started.elapsed(),
+                    "session_history_home_cache_verify",
+                    started.elapsed(),
+                    verified,
+                    None,
+                );
+                telemetry.record(
+                    if verified {
+                        "session_history_home_cache_hit"
+                    } else {
+                        "session_history_home_cache_miss"
+                    },
+                    Duration::ZERO,
                     true,
                     None,
                 );
-                required_files
-            }
-            Err(error) => {
-                telemetry.record_with_outcome(
-                    "runner_required_private_files_write",
-                    required_private_files_started.elapsed(),
-                    false,
-                    None,
-                    private_write_timeout_stage(&error),
-                );
-                return Err(error);
-            }
-        };
-    let user_env_file = required_files.user_env_file;
-    let run_payload_file = required_files.run_payload_file;
-    env_map.insert(
-        guest_contracts::env::CANONICAL_USER_ENV_FILE_ENV.into(),
-        user_env_file,
-    );
-    env_map.insert(
-        guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV.into(),
-        run_payload_file,
-    );
-    let env_diagnostics = build_agent_env_diagnostics(&env_map, &user_env_map);
-    let env_pairs: Vec<(String, String)> = env_map.into_iter().collect();
-    let env_refs: Vec<(&str, &str)> = env_pairs
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-    info!(run_id = %context.run_id, count = env_refs.len(), "passing env vars via vsock");
+                !verified && context.native_continuation.is_some()
+            } else {
+                false
+            };
 
-    // Spawn the fixed guest-agent executable with combined stdout/stderr
-    // streamed to the host. A small terminal capture remains available for
-    // bounded pre-start diagnostics.
-    validate_agent_bootstrap_exec_boundary(&env_pairs)?;
-    info!(run_id = %context.run_id, "spawning agent");
-
-    // Guest-agent receives JOB_TIMEOUT as the user execution budget. The
-    // sandbox supervisor remains a later hard fallback so guest-agent can
-    // terminate the CLI and persist recovery outputs first.
-    let host_oom_evidence_since = host_oom_evidence_since_now();
-    let t = Instant::now();
-    let handle = sandbox
-        .start_agent_process(&StartAgentProcessRequest {
-            timeout: job_supervisor_timeout(),
-            env: &env_refs,
-            output: ProcessOutputMode::stream_with_stderr_capture(
-                AGENT_START_STDERR_CAPTURE_LIMIT_BYTES,
-            ),
-        })
-        .await;
-
-    let agent_handle = match handle {
-        Ok(h) => {
-            let timing = h.start_timing();
-            telemetry.record(
-                "runner_agent_start_process",
-                timing.shell_started_at.saturating_duration_since(t),
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_agent_start_to_ready",
-                timing.ready_at.saturating_duration_since(t),
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_agent_containment_create",
-                timing.containment_create,
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_agent_placement_broker_setup",
-                timing.placement_broker_setup,
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_agent_shell_spawn",
-                timing.shell_spawn,
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_agent_bootstrap_ready_wait",
-                timing.bootstrap_ready_wait,
-                true,
-                None,
-            );
-            if let Some(spawn_timing) = spawn_timing {
-                spawn_timing.record_agent_ready_success_at(
-                    telemetry,
-                    timing.shell_started_at,
-                    timing.ready_at,
-                );
+            // Finalize the prepared private run payload and build the environment used
+            // to bootstrap guest-agent. User-provided env is passed through a private
+            // guest file and injected into the CLI child after guest-agent has started.
+            let user_env_map = build_user_env_json(context);
+            let env_build_started = Instant::now();
+            let mut run_payload = match prepared_run_payload.into_run_payload(context) {
+                Ok(run_payload) => run_payload,
+                Err(error) => {
+                    telemetry.record(
+                        "runner_agent_env_build",
+                        env_build_started.elapsed(),
+                        false,
+                        None,
+                    );
+                    return Err(error);
+                }
+            };
+            if native_home_proof_failed {
+                let mut native = context.native_continuation.clone().ok_or_else(|| {
+                    RunnerError::Internal("native home proof lost its intent".into())
+                })?;
+                native.session_id = None;
+                native.generation_run_id = None;
+                run_payload.native_continuation =
+                    serde_json::to_string(&native).map_err(|error| {
+                        RunnerError::Internal(format!("serialize fresh native intent: {error}"))
+                    })?;
             }
-            record_api_startup_boundaries(
-                context,
-                telemetry,
-                start.reuse_result,
-                start.sandbox_startup_path,
-                timing.shell_started_at,
-                timing.ready_at,
-            );
-            telemetry.record_sandbox_startup(
-                start.sandbox_startup_path,
-                start.reuse_result,
-                start.home_reuse_result,
-                context.reuse_key(),
-            );
             info!(
                 run_id = %context.run_id,
-                sandbox_reuse = ?start.reuse_result,
-                home_reuse = ?start.home_reuse_result,
-                sandbox_startup_path = guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path),
-                shell_spawn_ms = timing.shell_started_at.saturating_duration_since(t).as_millis(),
-                agent_ready_ms = timing.ready_at.saturating_duration_since(t).as_millis(),
-                containment_create_us = timing.containment_create.as_micros(),
-                placement_broker_setup_us = timing.placement_broker_setup.as_micros(),
-                shell_spawn_component_us = timing.shell_spawn.as_micros(),
-                bootstrap_ready_wait_us = timing.bootstrap_ready_wait.as_micros(),
-                "agent startup timing"
+                prompt_bytes = run_payload.prompt.len(),
+                append_system_prompt_bytes = run_payload.append_system_prompt.len(),
+                secret_values_present = !run_payload.secret_values.is_empty(),
+                disallowed_tools_bytes = run_payload.disallowed_tools.len(),
+                tools_bytes = run_payload.tools.len(),
+                settings_bytes = run_payload.settings.len(),
+                artifacts_bytes = run_payload.artifacts.len(),
+                feature_flags_bytes = run_payload.feature_flags.len(),
+                "guest-agent run payload prepared"
             );
-            // Keep the burst gate through the authenticated Agent-ready boundary.
-            // Every pre-ready return continues to release through RAII.
-            drop(pre_spawn_admission_lease.take());
-            h
-        }
-        Err(e) => {
+            let mut env_map = match build_env_json_for_run(context, &config.api_url, sandbox.id()) {
+                Ok(env_map) => env_map,
+                Err(error) => {
+                    telemetry.record(
+                        "runner_agent_env_build",
+                        env_build_started.elapsed(),
+                        false,
+                        None,
+                    );
+                    return Err(error);
+                }
+            };
+            env_map.insert(
+                guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
+                guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
+            );
             telemetry.record(
-                "runner_agent_start_process",
-                t.elapsed(),
-                false,
-                Some(&e.to_string()),
+                "runner_agent_env_build",
+                env_build_started.elapsed(),
+                true,
+                None,
             );
-            telemetry.record("agent_execute", t.elapsed(), false, Some(&e.to_string()));
-            return Err(e.into());
+
+            RunnerResult::Ok(AgentBootstrapInputs {
+                user_env_map,
+                env_map,
+                run_payload,
+            })
+        }))
+        .await;
+    model_catalog_prefetch.record_outcome(telemetry);
+    let mut bootstrap = 'bootstrap: {
+        let error = match bootstrap {
+            Some(Ok(bootstrap)) => break 'bootstrap bootstrap,
+            Some(Err(error)) => Some(error),
+            None => None,
+        };
+        model_catalog_prefetch.finish(telemetry).await;
+        return match error {
+            Some(RunnerError::Cancelled) | None => Ok(pre_spawn_cancelled(
+                context.run_id,
+                pre_spawn_started,
+                telemetry,
+            )),
+            Some(error) => Err(error),
+        };
+    };
+    let files = bootstrap
+        .publish_files(
+            sandbox,
+            context,
+            start.reuse_result,
+            &cancel,
+            telemetry,
+            &mut model_catalog_prefetch,
+        )
+        .await;
+    let required_files = match files {
+        Ok(files) => files,
+        Err(BootstrapFileFailure {
+            error,
+            resource_diagnostics,
+        }) => {
+            model_catalog_prefetch.finish(telemetry).await;
+            let resource_diagnostics = resource_diagnostics.map(|diagnostics| *diagnostics);
+            return match error {
+                RunnerError::Cancelled => Ok(pre_spawn_cancelled(
+                    context.run_id,
+                    pre_spawn_started,
+                    telemetry,
+                )),
+                error if resource_diagnostics.is_some() => {
+                    Ok(AgentExecutionResult::failure_from_error(error.to_string())
+                        .with_resource_diagnostics(resource_diagnostics))
+                }
+                error => Err(error),
+            };
         }
     };
-    let (handle, process_control) = agent_handle.into_parts();
+    let AgentBootstrapInputs {
+        user_env_map,
+        mut env_map,
+        ..
+    } = bootstrap;
+    let pre_spawn_start = &start;
+    let pre_spawn_telemetry = &mut *telemetry;
+    let prepared_agent = model_catalog_prefetch
+        .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
+            let start = pre_spawn_start;
+            let telemetry = pre_spawn_telemetry;
+            let user_env_file = required_files.user_env_file;
+            let run_payload_file = required_files.run_payload_file;
+            env_map.insert(
+                guest_contracts::env::CANONICAL_USER_ENV_FILE_ENV.into(),
+                user_env_file,
+            );
+            env_map.insert(
+                guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV.into(),
+                run_payload_file,
+            );
+            let env_diagnostics = build_agent_env_diagnostics(&env_map, &user_env_map);
+            let env_pairs: Vec<(String, String)> = env_map.into_iter().collect();
+            let env_refs: Vec<(&str, &str)> = env_pairs
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            info!(run_id = %context.run_id, count = env_refs.len(), "passing env vars via vsock");
+
+            // Spawn the fixed guest-agent executable with combined stdout/stderr
+            // streamed to the host. A small terminal capture remains available for
+            // bounded pre-start diagnostics.
+            validate_agent_bootstrap_exec_boundary(&env_pairs)?;
+            info!(run_id = %context.run_id, "spawning agent");
+
+            // Guest-agent receives JOB_TIMEOUT as the user execution budget. The
+            // sandbox supervisor remains a later hard fallback so guest-agent can
+            // terminate the CLI and persist recovery outputs first.
+            let host_oom_evidence_since = host_oom_evidence_since_now();
+            let t = Instant::now();
+            let handle = sandbox
+                .start_agent_process(&StartAgentProcessRequest {
+                    timeout: job_supervisor_timeout(),
+                    env: &env_refs,
+                    output: ProcessOutputMode::stream_with_stderr_capture(
+                        AGENT_START_STDERR_CAPTURE_LIMIT_BYTES,
+                    ),
+                })
+                .await;
+
+            let agent_handle = match handle {
+                Ok(h) => {
+                    let timing = h.start_timing();
+                    telemetry.record(
+                        "runner_agent_start_process",
+                        timing.shell_started_at.saturating_duration_since(t),
+                        true,
+                        None,
+                    );
+                    telemetry.record(
+                        "runner_agent_start_to_ready",
+                        timing.ready_at.saturating_duration_since(t),
+                        true,
+                        None,
+                    );
+                    telemetry.record(
+                        "runner_agent_containment_create",
+                        timing.containment_create,
+                        true,
+                        None,
+                    );
+                    telemetry.record(
+                        "runner_agent_placement_broker_setup",
+                        timing.placement_broker_setup,
+                        true,
+                        None,
+                    );
+                    telemetry.record(
+                        "runner_agent_shell_spawn",
+                        timing.shell_spawn,
+                        true,
+                        None,
+                    );
+                    telemetry.record(
+                        "runner_agent_bootstrap_ready_wait",
+                        timing.bootstrap_ready_wait,
+                        true,
+                        None,
+                    );
+                    if let Some(spawn_timing) = spawn_timing {
+                        spawn_timing.record_agent_ready_success_at(
+                            telemetry,
+                            timing.shell_started_at,
+                            timing.ready_at,
+                        );
+                    }
+                    record_api_startup_boundaries(
+                        context,
+                        telemetry,
+                        start.reuse_result,
+                        start.sandbox_startup_path,
+                        timing.shell_started_at,
+                        timing.ready_at,
+                    );
+                    telemetry.record_sandbox_startup(
+                        start.sandbox_startup_path,
+                        start.reuse_result,
+                        start.home_reuse_result,
+                        context.reuse_key(),
+                    );
+                    info!(
+                        run_id = %context.run_id,
+                        sandbox_reuse = ?start.reuse_result,
+                        home_reuse = ?start.home_reuse_result,
+                        sandbox_startup_path = guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path),
+                        shell_spawn_ms = timing.shell_started_at.saturating_duration_since(t).as_millis(),
+                        agent_ready_ms = timing.ready_at.saturating_duration_since(t).as_millis(),
+                        containment_create_us = timing.containment_create.as_micros(),
+                        placement_broker_setup_us = timing.placement_broker_setup.as_micros(),
+                        shell_spawn_component_us = timing.shell_spawn.as_micros(),
+                        bootstrap_ready_wait_us = timing.bootstrap_ready_wait.as_micros(),
+                        "agent startup timing"
+                    );
+                    // Keep the burst gate through the authenticated Agent-ready boundary.
+                    // Every pre-ready return continues to release through RAII.
+                    drop(pre_spawn_admission_lease.take());
+                    h
+                }
+                Err(e) => {
+                    telemetry.record(
+                        "runner_agent_start_process",
+                        t.elapsed(),
+                        false,
+                        Some(&e.to_string()),
+                    );
+                    telemetry.record("agent_execute", t.elapsed(), false, Some(&e.to_string()));
+                    return Err(e.into());
+                }
+            };
+            let (handle, process_control) = agent_handle.into_parts();
 
             RunnerResult::Ok(PreparedAgentProcess {
                 handle,

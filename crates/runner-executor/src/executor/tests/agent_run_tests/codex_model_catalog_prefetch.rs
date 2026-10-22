@@ -950,6 +950,167 @@ async fn codex_catalog_prefetch_guest_timeout_preserves_successful_agent_run() {
 }
 
 #[tokio::test]
+async fn disk_recovery_retires_prefetch_before_cleanup_and_agent_start() {
+    use guest_contracts::disk_cleanup::{DiskCleanupFilesystem, DiskCleanupReport};
+
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let wait_gate = MockLifecycleGate::new();
+    let write_gate = MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
+    overrides.set_process_cancel_releases_wait_gate(false);
+    overrides.set_private_write_file_lifecycle_gate(write_gate.clone());
+    overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+        "No space left on device (os error 28)",
+    )));
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "guest-agent-binary".into(),
+        exit_code: 0,
+        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 6000000 6000000 50% /\n/dev/vdb 24000000 24000000 0 100% /home/user\n".to_vec(),
+        stderr: Vec::new(),
+    });
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "recover-disk-space home".into(),
+        exit_code: 0,
+        stdout: serde_json::to_vec(&DiskCleanupReport {
+            filesystem: DiskCleanupFilesystem::Home,
+            available_bytes_before: 0,
+            available_bytes_after: 256 * 1024 * 1024,
+            available_inodes_before: 1000,
+            available_inodes_after: 1010,
+            removed_entries: 10,
+        })
+        .unwrap(),
+        stderr: Vec::new(),
+    });
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let task = spawn_run_in_sandbox_test(
+        sandbox,
+        codex_oauth_context(),
+        config,
+        tokio_util::sync::CancellationToken::new(),
+    );
+
+    wait_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .unwrap();
+    write_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .unwrap();
+    write_gate.release_one();
+    assert!(
+        overrides
+            .wait_for_process_cancel_calls(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+            .await
+    );
+    assert!(
+        !task.is_finished(),
+        "recovery must retain prefetch terminal custody"
+    );
+    assert!(
+        !overrides
+            .exec_calls()
+            .iter()
+            .any(|call| call.cmd.contains("recover-disk-space"))
+    );
+    assert!(overrides.start_agent_process_calls().is_empty());
+
+    wait_gate.release_one();
+    write_gate.release_one();
+    wait_gate.release_one();
+    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(result.failure.is_none(), "{:?}", result.failure);
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    assert_eq!(overrides.private_write_files_calls().len(), 2);
+    assert_eq!(overrides.process_cancel_calls().len(), 1);
+    assert_eq!(
+        overrides
+            .exec_calls()
+            .iter()
+            .filter(|call| call.cmd.contains("recover-disk-space"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn cancellation_during_disk_recovery_prevents_retry_and_agent_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let write_gate = MockLifecycleGate::new();
+    let exec_gate = MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_private_write_file_lifecycle_gate(write_gate.clone());
+    overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+        "No space left on device (os error 28)",
+    )));
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "guest-agent-binary".into(),
+        exit_code: 0,
+        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 6000000 6000000 50% /\n/dev/vdb 24000000 24000000 0 100% /home/user\n".to_vec(),
+        stderr: Vec::new(),
+    });
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "recover-disk-space home".into(),
+        exit_code: 0,
+        stdout: serde_json::to_vec(&guest_contracts::disk_cleanup::DiskCleanupReport {
+            filesystem: guest_contracts::disk_cleanup::DiskCleanupFilesystem::Home,
+            available_bytes_before: 0,
+            available_bytes_after: 256 * 1024 * 1024,
+            available_inodes_before: 1000,
+            available_inodes_after: 1010,
+            removed_entries: 10,
+        })
+        .unwrap(),
+        stderr: Vec::new(),
+    });
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let task = spawn_run_in_sandbox_test(sandbox, minimal_context(), config, cancel.clone());
+    write_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .unwrap();
+    overrides.set_exec_lifecycle_gate(exec_gate.clone());
+    write_gate.release_one();
+    exec_gate
+        .wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .unwrap();
+    exec_gate.release_one();
+    exec_gate
+        .wait_entered(2, RUN_IN_SANDBOX_TEST_TIMEOUT)
+        .await
+        .unwrap();
+    assert!(
+        overrides
+            .exec_calls()
+            .last()
+            .unwrap()
+            .cmd
+            .contains("recover-disk-space")
+    );
+    cancel.cancel();
+    exec_gate.release_one();
+
+    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.failure.unwrap().exit_code, EXIT_SIGKILL);
+    assert_eq!(overrides.private_write_files_calls().len(), 1);
+    assert!(overrides.start_agent_process_calls().is_empty());
+}
+
+#[tokio::test]
 async fn fresh_codex_oauth_run_prefetches_catalog_while_agent_prepares() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;

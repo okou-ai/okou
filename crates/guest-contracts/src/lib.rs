@@ -14,6 +14,7 @@ pub mod codex_session_path;
 pub mod codex_thread_id;
 pub mod connector_account_context;
 pub mod diagnostics;
+pub mod disk_cleanup;
 pub mod dns_readiness;
 pub mod env;
 pub mod epoch_milliseconds;

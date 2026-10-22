@@ -765,14 +765,14 @@ async fn prepare_for_reuse_rejects_helper_in_control_leaf() -> TestResult {
     Ok(())
 }
 
-struct ContainmentFixture {
+pub(super) struct ContainmentFixture {
     _directory: tempfile::TempDir,
-    root: PathBuf,
-    base: PathBuf,
+    pub(super) root: PathBuf,
+    pub(super) base: PathBuf,
 }
 
 impl ContainmentFixture {
-    fn new() -> TestResult<Self> {
+    pub(super) fn new() -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
         let root = directory.path().join("cgroup");
         let base = root.join("vm0-exec");

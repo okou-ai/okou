@@ -32,6 +32,7 @@ mod agent_run;
 mod cli_framework;
 mod codex_model_catalog_prefetch;
 mod diagnostics;
+mod disk_cleanup;
 mod env;
 mod guest_state;
 mod home_history;
