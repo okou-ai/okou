@@ -31,7 +31,7 @@
     "@eslint/css": "^2.0.0",
     "@eslint/css-tree": "^4.1.1",
     "@vitest/coverage-v8": "^5.0.3",
-    "@vitest/ui": "^5.0.3",
+    "@vitest/ui": "^5.0.5",
     "dotenv-cli": "^11.0.0",
     "esbuild": "0.28.2",
     "eslint": "^9.39.4",
