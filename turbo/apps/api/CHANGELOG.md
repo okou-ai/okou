@@ -9,6 +9,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.763.1](https://github.com/okou-ai/okou/compare/api-v1.763.0...api-v1.763.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **api:** retain axiom sdk request diagnostics ([#42199](https://github.com/okou-ai/okou/issues/42199)) ([bc738bd](https://github.com/okou-ai/okou/commit/bc738bd58ec8f9ba45e999b1d0d87400bec10ac7))
+* **api:** retain bounded axiom ingest error details ([#42202](https://github.com/okou-ai/okou/issues/42202)) ([79befdb](https://github.com/okou-ai/okou/commit/79befdb07d6296180ab63596d2bee78380b4af67))
+
+
+### Refactoring
+
+* **api:** localize subscription entitlement and grant ownership ([#42224](https://github.com/okou-ai/okou/issues/42224)) ([59b1bd3](https://github.com/okou-ai/okou/commit/59b1bd3291b54c948357074c42bae0b8bbfc891b))
+* **api:** localize usage pack invoice fulfillment ownership ([#42197](https://github.com/okou-ai/okou/issues/42197)) ([a25ce7a](https://github.com/okou-ai/okou/commit/a25ce7a742f97f4b57cf8b6f7a3671a3ec09f5bd))
+* **api:** localize usage pack removal and refund ownership ([#42213](https://github.com/okou-ai/okou/issues/42213)) ([a013054](https://github.com/okou-ai/okou/commit/a013054c72f8963b64a94479969eaeb03a6fc668))
+* **api:** own custom oauth refresh reconnect writes ([#42223](https://github.com/okou-ai/okou/issues/42223)) ([3193169](https://github.com/okou-ai/okou/commit/319316902857ac9f03af5a10927e815a647de567))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.586.1
+    * @okouai/core bumped to 8.777.1
+    * @okouai/db bumped to 1.355.2
+    * @okouai/pi-agent-runtime bumped to 1.50.44
+
 ## [1.763.0](https://github.com/okou-ai/okou/compare/api-v1.762.0...api-v1.763.0) (2026-10-22)
 
 

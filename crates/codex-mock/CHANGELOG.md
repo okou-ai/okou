@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.17](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.16...codex-mock-v0.12.17) (2026-10-22)
+
+
+### Bug Fixes
+
+* **runner:** retain codex unsupported-model reason ([#42205](https://github.com/okou-ai/okou/issues/42205)) ([31e9926](https://github.com/okou-ai/okou/commit/31e9926e700a6e96a2f6f50839f8ab9fe3fd4fff))
+
 ## [0.12.16](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.15...codex-mock-v0.12.16) (2026-10-21)
 
 ## [0.12.15](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.14...codex-mock-v0.12.15) (2026-10-21)
