@@ -294,6 +294,10 @@ test("Computer use opens its download guide from the parallel connection choices
   );
   click(getAction("button", "Continue", dialog));
   await screen.findByRole("heading", { name: "Allow access and stay online" });
+  expect(within(dialog).getByRole("presentation")).toHaveAttribute(
+    "src",
+    expect.stringContaining("computer-use-permissions-online-"),
+  );
   expect(
     new URLSearchParams(window.location.search).get("computerUseStep"),
   ).toBe("permissions");
@@ -332,7 +336,10 @@ test("A Computer use URL restores the guide without SSH or VNC capabilities", as
   expect(
     within(dialog).getByText(/Requires an Apple silicon Mac/),
   ).toBeInTheDocument();
-  expect(within(dialog).queryByRole("figure")).not.toBeInTheDocument();
+  expect(within(dialog).getByRole("presentation")).toHaveAttribute(
+    "src",
+    expect.stringContaining("computer-use-install-sign-in-"),
+  );
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -352,9 +359,8 @@ test.each([
     `/connectors?scope=remote-control&setup=computer-use&computerUseStep=${step}`,
   );
   const dialog = await screen.findByRole("dialog", { name: title });
-  expect(within(dialog).queryAllByRole("figure")).toHaveLength(
-    step === "chat" ? 1 : 0,
-  );
+  const illustration = within(dialog).getByRole("figure");
+  expect(illustration).toBeInTheDocument();
 });
 
 test("The Computer use chat guide renders a vector rather than a bitmap", async () => {
