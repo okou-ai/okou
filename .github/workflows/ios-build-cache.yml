@@ -1,15 +1,22 @@
 name: iOS Build Cache
 
-# Seed shared native caches from a trusted main dispatch.
+# Refill shared caches from main; completed native CI also heals evicted entries.
 on:
+  push:
+    branches: [main]
+    paths:
+      - ios/**
+      - .github/workflows/ios.yml
+      - .github/workflows/ios-build-cache.yml
+      - .github/actions/setup-ios-build-cache/**
+  workflow_run:
+    workflows: [iOS]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ios-build-cache-main
-  cancel-in-progress: true
+  actions: read
 
 env:
   npm_config_audit: "false"
@@ -21,46 +28,72 @@ env:
   GIT_CONFIG_VALUE_0: HTTP/1.1
 
 jobs:
-  dependencies:
+  detect:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.decision.outputs.needed }}
+    steps:
+      - name: Select completed native builds
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          needed=true
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
+            needed=false
+            if [[ "$SOURCE_REPOSITORY" == "$GITHUB_REPOSITORY" ]]; then
+              needed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100" \
+                --jq 'any(.jobs[]; .name == "build-test" and .conclusion != "skipped" and .runner_id > 0)')
+            fi
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+
+  warm:
+    needs: detect
+    if: github.ref == 'refs/heads/main' && needs.detect.outputs.needed == 'true'
     runs-on: xcode-27
     timeout-minutes: 15
+    # Let an active writer finish. Only selected warmers enter this queue.
+    concurrency:
+      group: ios-build-cache-main
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # workflow_run uses the trusted main revision, never its PR head/artifacts.
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Restore native cache
         id: cache
         uses: ./.github/actions/setup-ios-build-cache
-        with:
-          restore-compilation: "false"
       - name: Prepare locked dependencies
-        if: steps.cache.outputs.dependencies-hit != 'true'
+        id: prepare
+        if: steps.cache.outputs.dependencies-hit != 'true' || steps.cache.outputs.compilation-hit != 'true'
         run: bash ios/scripts/ci-test.sh prepare
       - name: Save main SwiftPM cache
+        id: save-dependencies
         if: steps.cache.outputs.dependencies-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/okou-ios-ci/SourcePackages
           key: ${{ steps.cache.outputs.dependencies-key }}
-
-  compilation:
-    needs: dependencies
-    if: github.ref == 'refs/heads/main'
-    runs-on: xcode-27
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Restore native cache
-        id: cache
-        uses: ./.github/actions/setup-ios-build-cache
       - name: Prepare simulator and compiler cache
+        id: compile
         if: steps.cache.outputs.compilation-hit != 'true'
         run: |
           sysctl hw.ncpu hw.memsize
           vm_stat
           python3 ios/scripts/preboot-simulator.py
-          bash ios/scripts/ci-test.sh build
+          bash ios/scripts/ci-test.sh compile
           vm_stat
       - name: Save main Xcode compilation cache
+        id: save-compilation
         if: steps.cache.outputs.compilation-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -293,6 +293,15 @@ Standalone package tests run on a separate macOS runner from the App build and
 simulator suite, so package compilation does not consume the simulator job's
 30-minute budget. Both jobs are required by the gate.
 
+`ios-build-cache.yml` refreshes shared caches after iOS changes reach main and
+after a same-repository iOS workflow actually starts its native `build-test`
+job, including failed or cancelled builds. A Linux check filters out workflows
+whose native job was skipped. Cache writers always check out the trusted main
+revision; they do not use PR code or artifacts. One Mac restores both caches,
+prepares dependencies before starting the simulator, and saves only missing
+entries. Exact hits skip rebuilding. Active writers finish before a newer
+request starts. Manual dispatch on main remains available for recovery.
+
 The `ci-gate-ios` check succeeds only after the required build/tests pass, or
 after change detection confirms they are unnecessary. Detection failures,
 cancelled jobs, and unexpectedly skipped jobs fail the gate. Register this
