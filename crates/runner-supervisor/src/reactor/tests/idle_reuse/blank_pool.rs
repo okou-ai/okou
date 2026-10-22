@@ -1,3 +1,7 @@
+use std::panic::AssertUnwindSafe;
+
+use futures_util::FutureExt;
+
 use super::super::super::*;
 use super::super::support::{
     TestParkedIdleCandidateSpec, context_with_session, minimal_context, mock_run_config,
@@ -408,46 +412,76 @@ async fn foreground_admission_drains_cancelled_blank_start_before_destroy() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let calls = Arc::clone(&overrides);
     let start_gate = sandbox_mock::MockLifecycleGate::new();
+    let stop_gate = sandbox_mock::MockLifecycleGate::new();
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
     overrides.set_start_lifecycle_gate(start_gate.clone());
+    overrides.set_stop_lifecycle_gate(stop_gate.clone());
+    overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
     let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
     let run_handle = tokio::spawn(run(config));
 
-    start_gate
-        .wait_entered(1, Duration::from_secs(5))
-        .await
-        .expect("blank sandbox start should enter the lifecycle gate");
+    let assertions = AssertUnwindSafe(async {
+        start_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("blank sandbox start should enter the lifecycle gate");
 
-    let run_id = RunId::new_v4();
-    push_job(
-        &env,
-        run_id,
-        "vm0/default",
-        Some(context_with_session(
+        let run_id = RunId::new_v4();
+        push_job(
+            &env,
             run_id,
-            "session-cancelled-blank-start",
-        )),
-    );
-    start_gate
-        .wait_entered(2, Duration::from_secs(5))
-        .await
-        .expect("foreground start should acquire admission while blank start drains");
-    assert_eq!(
-        calls.destroy_call_count(),
-        0,
-        "blank sandbox must remain owned until its in-flight start completes"
-    );
+            "vm0/default",
+            Some(context_with_session(
+                run_id,
+                "session-cancelled-blank-start",
+            )),
+        );
+        start_gate
+            .wait_entered(2, Duration::from_secs(5))
+            .await
+            .expect("foreground start should acquire admission while blank start drains");
+        assert_eq!(
+            calls.destroy_call_count(),
+            0,
+            "blank sandbox must remain owned until its in-flight start completes"
+        );
 
+        start_gate.release_many(2);
+        stop_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("cancelled blank sandbox should enter stop after start completes");
+        let completion = env
+            .handle
+            .wait_completion(run_id, Duration::from_secs(5))
+            .await
+            .expect("foreground job should complete while cancelled blank stop is blocked");
+
+        assert_eq!(completion.exit_code, 0);
+        assert_eq!(
+            calls.destroy_call_count(),
+            0,
+            "cancelled blank must not be destroyed while its stop is blocked"
+        );
+
+        stop_gate.release_one();
+        destroy_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("cancelled blank sandbox should enter destroy after stop completes");
+        assert_eq!(calls.destroy_call_count(), 1);
+    })
+    .catch_unwind()
+    .await;
+
+    // Release both sandbox owners before joining, including on assertion failure.
     start_gate.release_many(2);
-    let completion = env
-        .handle
-        .wait_completion(run_id, Duration::from_secs(5))
-        .await
-        .expect("foreground job should complete");
-
-    assert_eq!(completion.exit_code, 0);
-    assert_eq!(calls.destroy_call_count(), 1);
-
+    stop_gate.release_many(2);
+    destroy_gate.release_many(2);
     shutdown(&env, run_handle).await;
+    if let Err(panic) = assertions {
+        std::panic::resume_unwind(panic);
+    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -455,50 +489,80 @@ async fn foreground_admission_drains_cancelled_blank_mount_before_destroy() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let calls = Arc::clone(&overrides);
     let mount_gate = sandbox_mock::MockLifecycleGate::new();
+    let stop_gate = sandbox_mock::MockLifecycleGate::new();
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
     overrides.set_home_drive_mount_lifecycle_gate(mount_gate.clone());
+    overrides.set_stop_lifecycle_gate(stop_gate.clone());
+    overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
     let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
     let run_handle = tokio::spawn(run(config));
 
-    assert!(
-        calls
-            .wait_home_drive_mount_call_count(1, Duration::from_secs(5))
-            .await,
-        "blank sandbox mount should enter the lifecycle gate"
-    );
+    let assertions = AssertUnwindSafe(async {
+        assert!(
+            calls
+                .wait_home_drive_mount_call_count(1, Duration::from_secs(5))
+                .await,
+            "blank sandbox mount should enter the lifecycle gate"
+        );
 
-    let run_id = RunId::new_v4();
-    push_job(
-        &env,
-        run_id,
-        "vm0/default",
-        Some(context_with_session(
+        let run_id = RunId::new_v4();
+        push_job(
+            &env,
             run_id,
-            "session-cancelled-blank-mount",
-        )),
-    );
-    assert!(
-        calls
-            .wait_home_drive_mount_call_count(2, Duration::from_secs(5))
-            .await,
-        "foreground mount should acquire admission while blank mount drains"
-    );
-    assert_eq!(
-        calls.destroy_call_count(),
-        0,
-        "blank sandbox must remain owned until its in-flight mount completes"
-    );
+            "vm0/default",
+            Some(context_with_session(
+                run_id,
+                "session-cancelled-blank-mount",
+            )),
+        );
+        assert!(
+            calls
+                .wait_home_drive_mount_call_count(2, Duration::from_secs(5))
+                .await,
+            "foreground mount should acquire admission while blank mount drains"
+        );
+        assert_eq!(
+            calls.destroy_call_count(),
+            0,
+            "blank sandbox must remain owned until its in-flight mount completes"
+        );
 
+        mount_gate.release_many(2);
+        stop_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("cancelled blank sandbox should enter stop after mount completes");
+        let completion = env
+            .handle
+            .wait_completion(run_id, Duration::from_secs(5))
+            .await
+            .expect("foreground job should complete while cancelled blank stop is blocked");
+
+        assert_eq!(completion.exit_code, 0);
+        assert_eq!(
+            calls.destroy_call_count(),
+            0,
+            "cancelled blank must not be destroyed while its stop is blocked"
+        );
+
+        stop_gate.release_one();
+        destroy_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("cancelled blank sandbox should enter destroy after stop completes");
+        assert_eq!(calls.destroy_call_count(), 1);
+    })
+    .catch_unwind()
+    .await;
+
+    // Release both sandbox owners before joining, including on assertion failure.
     mount_gate.release_many(2);
-    let completion = env
-        .handle
-        .wait_completion(run_id, Duration::from_secs(5))
-        .await
-        .expect("foreground job should complete");
-
-    assert_eq!(completion.exit_code, 0);
-    assert_eq!(calls.destroy_call_count(), 1);
-
+    stop_gate.release_many(2);
+    destroy_gate.release_many(2);
     shutdown(&env, run_handle).await;
+    if let Err(panic) = assertions {
+        std::panic::resume_unwind(panic);
+    }
 }
 
 #[tokio::test(start_paused = true)]
