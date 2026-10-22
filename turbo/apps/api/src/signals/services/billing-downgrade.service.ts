@@ -8,7 +8,6 @@ import {
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
 import {
-  pgBooleanDecoder,
   pgIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
@@ -768,10 +767,10 @@ const publishDowngrade$ = command(
         : db
             .with(...publications)
             .select({
-              complete: gte(
+              complete: sql`CASE WHEN ${gte(
                 db.select({ count: count() }).from(preceding),
                 0,
-              ).mapWith(pgBooleanDecoder),
+              )} THEN 1 ELSE 0 END`.mapWith(pgIntegerDecoder),
             })
             .from(carrier),
       signal,
