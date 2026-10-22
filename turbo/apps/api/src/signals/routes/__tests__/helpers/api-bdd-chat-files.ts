@@ -64,6 +64,7 @@ import {
   type UploadPrepareResponse,
 } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import type { AppRouter } from "@okouai/api-contracts/contracts/trpc-contract";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -241,7 +242,16 @@ const chatFilesRoutes = [
 ] as const;
 
 function chatFilesApp(context: TestContext, signal?: AbortSignal) {
-  return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
+  return <TContract extends AppRouter>(contract: TContract) => {
+    const selectedRoutes = new Set(Object.values(contract));
+    return setupAppWithRoutes({
+      context,
+      routes: chatFilesRoutes.filter(({ route }) => {
+        return selectedRoutes.has(route);
+      }),
+      signal,
+    })(contract);
+  };
 }
 
 /**
