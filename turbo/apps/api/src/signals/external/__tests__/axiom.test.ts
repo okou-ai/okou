@@ -639,7 +639,12 @@ describe("shared SDK ingestion", () => {
           client: "telemetry",
           dataset: requestDataset,
           failureKind: "timeout",
-          error: requestError,
+          api_commit_sha: "a".repeat(40),
+          error: expect.objectContaining({
+            name: "TimeoutError",
+            message: requestError.message,
+            stack: expect.any(String),
+          }),
         }),
       ],
       [
@@ -648,7 +653,12 @@ describe("shared SDK ingestion", () => {
           client: "telemetry",
           dataset: contextDataset,
           failureKind: "transport_error",
-          error: contextError,
+          api_commit_sha: "a".repeat(40),
+          error: expect.objectContaining({
+            name: "Error",
+            message: contextError.message,
+            stack: expect.any(String),
+          }),
         }),
       ],
     ]);
@@ -714,7 +724,12 @@ describe("shared SDK ingestion", () => {
       expect.objectContaining({
         client: "telemetry",
         dataset: requestDataset,
-        error: flushError,
+        api_commit_sha: "a".repeat(40),
+        error: expect.objectContaining({
+          name: "Error",
+          message: flushError.message,
+          stack: expect.any(String),
+        }),
       }),
     );
   });

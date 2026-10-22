@@ -5,8 +5,13 @@ import {
 } from "@axiomhq/logging";
 import { Axiom } from "@axiomhq/js";
 
-import { formatMessage, extractFields } from "@okouai/core/log-utils";
+import {
+  formatMessage,
+  extractFields,
+  serializeError,
+} from "@okouai/core/log-utils";
 
+import { axiomFetch } from "./axiom-fetch";
 import { env } from "./env";
 import { singleton } from "./singleton";
 
@@ -128,7 +133,8 @@ function reportAxiomLogDeliveryError(dataset: string, error: Error): void {
       client: "telemetry",
       dataset,
       failureKind: "timeout",
-      error,
+      api_commit_sha: env("GIT_COMMIT_SHA"),
+      error: serializeError(error),
     });
     return;
   }
@@ -137,7 +143,8 @@ function reportAxiomLogDeliveryError(dataset: string, error: Error): void {
     client: "telemetry",
     dataset,
     failureKind: "transport_error",
-    error,
+    api_commit_sha: env("GIT_COMMIT_SHA"),
+    error: serializeError(error),
   });
 }
 
@@ -150,6 +157,7 @@ const getAxiomLogger = singleton((): AxiomLogger | null => {
   const dataset = `vm0-web-logs-${env("AXIOM_DATASET_SUFFIX")}`;
   const axiom = new Axiom({
     token,
+    fetch: axiomFetch,
     onError: (error) => {
       reportAxiomLogDeliveryError(dataset, error);
     },

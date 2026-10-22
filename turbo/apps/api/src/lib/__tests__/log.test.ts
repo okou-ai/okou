@@ -502,6 +502,7 @@ describe("flushLogs", () => {
   it("reports Axiom transport timeouts as contextual warnings", async () => {
     const restoreConsole = consoleOutput.capture();
     onTestFinished(restoreConsole);
+    mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
     await flushLogs();
     const error = new Error("The operation was aborted due to timeout");
     error.name = "TimeoutError";
@@ -516,7 +517,12 @@ describe("flushLogs", () => {
         client: "telemetry",
         dataset: "vm0-web-logs-dev",
         failureKind: "timeout",
-        error,
+        api_commit_sha: "a".repeat(40),
+        error: expect.objectContaining({
+          name: "TimeoutError",
+          message: "The operation was aborted due to timeout",
+          stack: expect.any(String),
+        }),
       },
     );
     expect(consoleOutput.error).not.toHaveBeenCalled();
@@ -527,8 +533,13 @@ describe("flushLogs", () => {
   it("reports other Axiom transport failures as contextual errors", async () => {
     const restoreConsole = consoleOutput.capture();
     onTestFinished(restoreConsole);
+    mockEnv("GIT_COMMIT_SHA", "b".repeat(40));
     await flushLogs();
-    const error = new Error("connection refused");
+    const cause = Object.assign(new Error("connection refused"), {
+      code: "ECONNREFUSED",
+      syscall: "connect",
+    });
+    const error = new TypeError("fetch failed", { cause });
 
     expect(() => {
       axiom.clientError(error);
@@ -540,7 +551,16 @@ describe("flushLogs", () => {
         client: "telemetry",
         dataset: "vm0-web-logs-dev",
         failureKind: "transport_error",
-        error,
+        api_commit_sha: "b".repeat(40),
+        error: expect.objectContaining({
+          name: "TypeError",
+          message: "fetch failed",
+          cause: expect.objectContaining({
+            message: "connection refused",
+            code: "ECONNREFUSED",
+            syscall: "connect",
+          }),
+        }),
       },
     );
     expect(consoleOutput.warn).not.toHaveBeenCalled();

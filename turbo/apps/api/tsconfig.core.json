@@ -25,6 +25,7 @@
     "src/**/*.json"
   ],
   "exclude": [
+    "src/lib/axiom-fetch.ts",
     "src/lib/integration-conversation-context.ts",
     "src/lib/desktop-compatibility.json",
     "src/lib/desktop-version.ts",

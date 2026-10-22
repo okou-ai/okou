@@ -125,6 +125,103 @@ describe("selected eager Axiom operation payload", () => {
 });
 
 describe("Axiom logging transport", () => {
+  it("retains failed request details and resumes logging after a transport failure", async () => {
+    const restoreConsole = context.mocks.console.capture();
+    onTestFinished(restoreConsole);
+    let unavailable = true;
+    let failedRequestBytes = 0;
+    const delivered: unknown[] = [];
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
+        async ({ request }) => {
+          const bytes = Buffer.from(await request.arrayBuffer());
+          if (unavailable) {
+            failedRequestBytes = bytes.byteLength;
+            return HttpResponse.error();
+          }
+          const body = gunzipSync(bytes).toString("utf8");
+          const events = body.split("\n").map((line): unknown => {
+            return JSON.parse(line);
+          });
+          delivered.push(...events);
+          return HttpResponse.json({
+            ingested: events.length,
+            failed: 0,
+            processedBytes: body.length,
+          });
+        },
+      ),
+    );
+
+    await withRealAxiomLoggingForTest(async () => {
+      const {
+        logger,
+        flushLogs,
+        __resetForTest: resetLogs,
+      } = await import("../log");
+      const { mockEnv, clearMockedEnv } = await import("../env");
+      mockEnv("AXIOM_TOKEN_TELEMETRY", "xaat-private-transport-test-token");
+      mockEnv("AXIOM_DATASET_SUFFIX", "dev");
+      mockEnv("GIT_COMMIT_SHA", "c".repeat(40));
+      resetLogs();
+      await Promise.resolve()
+        .then(async () => {
+          const log = logger("AxiomTransportTest");
+          log.info("private-failed-log-payload");
+          await expect(flushLogs()).resolves.toBeUndefined();
+
+          expect(context.mocks.console.error).toHaveBeenCalledWith(
+            "Axiom application log delivery failed",
+            expect.objectContaining({
+              client: "telemetry",
+              dataset: "vm0-web-logs-dev",
+              failureKind: "transport_error",
+              api_commit_sha: "c".repeat(40),
+              error: expect.objectContaining({
+                name: "TypeError",
+                message: "Failed to fetch",
+                stack: expect.any(String),
+                cause: expect.objectContaining({
+                  name: "TypeError",
+                  message: "Failed to fetch",
+                }),
+                request: {
+                  origin: "https://api.axiom.co",
+                  endpoint: "/v1/datasets/vm0-web-logs-dev/ingest",
+                  method: "POST",
+                  elapsedMs: expect.any(Number),
+                  requestBytes: failedRequestBytes,
+                  aborted: false,
+                },
+              }),
+            }),
+          );
+          const diagnostics = JSON.stringify(
+            context.mocks.console.error.mock.calls,
+          );
+          expect(diagnostics).not.toContain(
+            "xaat-private-transport-test-token",
+          );
+          expect(diagnostics).not.toContain("private-failed-log-payload");
+
+          unavailable = false;
+          log.info("logging resumed");
+          await flushLogs();
+          expect(delivered).toContainEqual(
+            expect.objectContaining({
+              message: "logging resumed",
+              level: "info",
+            }),
+          );
+        })
+        .finally(() => {
+          resetLogs();
+          clearMockedEnv();
+        });
+    });
+  });
+
   it("sends Fal info/warn diagnostics with the default SDK transport and restores mocks", async () => {
     const sentEvents: unknown[] = [];
     server.use(
