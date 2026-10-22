@@ -201,6 +201,7 @@ export const hostedSitePrepareRequestSchema = z
   .object({
     /** Fail before creating bytes when private artifact creation is unavailable. */
     requirePrivateArtifact: z.boolean().optional(),
+    visibility: hostedSiteVisibilitySchema.optional(),
     site: hostedSiteSlugSchema,
     /** Initial display name; optional for retained CLI clients. */
     title: hostedSiteTitleSchema.optional(),
@@ -236,6 +237,8 @@ export const hostedSiteUploadSchema = z.object({
 
 export const hostedSitePrepareResponseSchema = z.object({
   siteId: z.string().uuid(),
+  /** Acknowledges the site policy before uploads or publication can start. */
+  visibility: hostedSiteVisibilitySchema.optional(),
   /** Acknowledges explicit titles; absent on APIs predating site titles. */
   title: hostedSiteTitleSchema.optional(),
   deploymentId: z.string().uuid(),

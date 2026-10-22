@@ -20,6 +20,8 @@ export const hostedSiteVisibilitySchema = z.enum([
   "public",
 ]);
 
+export type HostedSiteVisibility = z.infer<typeof hostedSiteVisibilitySchema>;
+
 export const hostedSiteVisibilityStatusSchema = z.object({
   siteId: z.uuid(),
   visibility: hostedSiteVisibilitySchema,

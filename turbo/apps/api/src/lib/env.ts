@@ -101,7 +101,7 @@ const SCHEMA = {
   R2_HOSTED_SITES_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   // Activate only after the matching Worker and rollback floor pass #41704.
   HOSTED_SITE_ACCESS_ENABLED: z.enum(["true", "false"]).default("false"),
-  // Server-owned cohort; a user's Lab override cannot admit another Site.
+  // Existing public sites require this server-owned cohort before policy changes.
   HOSTED_SITE_VISIBILITY_SITE_IDS: z
     .string()
     .default("")

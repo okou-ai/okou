@@ -2,7 +2,7 @@ import { check, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { hostedSites } from "./hosted-site";
 
-/** Only explicit owner changes create a policy; publication creation stays public. */
+/** Explicit policies persist independently of the visibility-management gate. */
 export const hostedSiteVisibility = pgTable(
   "hosted_site_visibility",
   {
