@@ -25,7 +25,7 @@
 //!
 //! ## Shared runtime-path rules
 //!
-//! Commands resolve the canonical
+//! Helpers that use runtime paths resolve the canonical
 //! [`OKOU_GUEST_RUNTIME_DIR`](guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV)
 //! override through one shared contract. An empty value is absent and a
 //! non-empty absolute value is selected. Without an override,
@@ -157,6 +157,24 @@
 //! forensic block-erasure guarantee. Runner invokes it from
 //! `crates/runner-lifecycle/src/home_promotion.rs` before freeze and stop.
 //!
+//! ## `recover-disk-space`
+//!
+//! `guest-agent recover-disk-space home|rootfs` runs before ordinary environment
+//! initialization and emits one [`DiskCleanupReport`](guest_contracts::disk_cleanup::DiskCleanupReport)
+//! JSON line. It needs no API credentials, protocol stdin or writable bootstrap
+//! file. Exit 0 means the fixed cache cleanup completed; exit 1 means inspection,
+//! containment or cleanup failed; exit 2 means the fixed selector is invalid.
+//! A successful helper does not itself establish enough space for startup.
+//!
+//! [`disk_cleanup`] owns the fixed package-cache allowlists and preserves their
+//! roots, installed tools, session state and ordinary work. The helper reuses the
+//! sole-supervised-workload proof and fd-relative mount/symlink protections.
+//! Deletion may be partial on error. Runner retires prefetch before cleanup and
+//! retries only acknowledged ENOSPC failures from deterministic bootstrap-file
+//! replacement, once, after measured improvement leaves the retry reserve. It
+//! never replays process start or user execution. This is guest filesystem
+//! recovery; host/cache-image GC has separate ownership.
+//!
 //! ## `cleanup-codex-session`
 //!
 //! ### Invocation
@@ -206,6 +224,7 @@ pub mod complete;
 mod constants;
 mod content_hash;
 pub mod control;
+pub mod disk_cleanup;
 pub mod env;
 pub mod error;
 pub mod events;

@@ -119,6 +119,21 @@ impl Dir {
         file_identity(&self.0)
     }
 
+    pub(crate) fn available_capacity(&self) -> io::Result<(u64, u64)> {
+        let mut stats = MaybeUninit::<libc::statvfs>::uninit();
+        // SAFETY: the live directory descriptor is valid and stats is writable.
+        let result = unsafe { libc::fstatvfs(self.0.as_raw_fd(), stats.as_mut_ptr()) };
+        if result != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: successful fstatvfs initialized the complete structure.
+        let stats = unsafe { stats.assume_init() };
+        Ok((
+            stats.f_bavail.saturating_mul(stats.f_frsize),
+            stats.f_favail,
+        ))
+    }
+
     pub(crate) fn open_child_dir(&self, name: &OsStr) -> io::Result<Self> {
         open_child(
             &self.0,

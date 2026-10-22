@@ -96,6 +96,32 @@ fn helper_exit_code_from_args() -> Option<i32> {
     let _program = args.next()?;
     let command = args.next()?;
     match command.to_str()? {
+        "recover-disk-space" => {
+            let filesystem = match args.next().as_deref().and_then(std::ffi::OsStr::to_str) {
+                Some("home") => guest_contracts::disk_cleanup::DiskCleanupFilesystem::Home,
+                Some("rootfs") => guest_contracts::disk_cleanup::DiskCleanupFilesystem::Rootfs,
+                _ => return Some(2),
+            };
+            if args.next().is_some() {
+                return Some(2);
+            }
+            Some(match guest_agent::disk_cleanup::recover(filesystem) {
+                Ok(report) => match serde_json::to_string(&report) {
+                    Ok(json) => {
+                        println!("{json}");
+                        0
+                    }
+                    Err(error) => {
+                        eprintln!("serialize disk cleanup report: {error}");
+                        1
+                    }
+                },
+                Err(error) => {
+                    eprintln!("disk cleanup failed: {error}");
+                    1
+                }
+            })
+        }
         "verify-session-history-identity" => {
             let metadata_path = args
                 .next()
