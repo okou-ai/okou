@@ -317,34 +317,21 @@ async fn drain_or_abort_forwarder(
         return true;
     };
 
-    let join_result = tokio::select! {
-        result = &mut *join_handle => Some(result),
-        () = tokio::time::sleep(timeout) => None,
+    let (join_result, failure_context) = tokio::select! {
+        result = &mut *join_handle => (result, "during cleanup"),
+        () = tokio::time::sleep(timeout) => {
+            join_handle.abort();
+            (join_handle.await, "after abort")
+        },
     };
+    handle.take();
 
     match join_result {
-        Some(result) => {
-            handle.take();
-            match result {
-                Ok(()) => true,
-                Err(e) if e.is_cancelled() => true,
-                Err(e) => {
-                    tracing::warn!(pipe, error = %e, "snapshot pipe forwarder failed during cleanup");
-                    false
-                }
-            }
-        }
-        None => {
-            join_handle.abort();
-            let result = join_handle.await;
-            handle.take();
-            if let Err(e) = result
-                && !e.is_cancelled()
-            {
-                tracing::warn!(pipe, error = %e, "snapshot pipe forwarder failed after abort");
-                return false;
-            }
-            true
+        Ok(()) => true,
+        Err(e) if e.is_cancelled() => true,
+        Err(e) => {
+            tracing::warn!(pipe, error = %e, "snapshot pipe forwarder failed {failure_context}");
+            false
         }
     }
 }

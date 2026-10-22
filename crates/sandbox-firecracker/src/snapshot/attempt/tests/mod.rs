@@ -543,6 +543,51 @@ async fn snapshot_attempt_cancelled_finish_hands_complete_process_to_finalizer()
 }
 
 #[tokio::test]
+async fn snapshot_attempt_finalizer_keeps_cleaning_after_forwarder_panic() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (mut attempt, sock_dir) = snapshot_attempt_for_test(&dir);
+    let home_image = snapshot_attempt_home_image_file(attempt.paths().workspace(), "default-test");
+    let (cleanup_tx, cleanup_rx) = tokio::sync::oneshot::channel();
+    let (panic_tx, panic_rx) = tokio::sync::oneshot::channel::<()>();
+    let (retired_tx, retired_rx) = tokio::sync::oneshot::channel::<()>();
+
+    let panicked = tokio::spawn(async move {
+        let _panic_tx = panic_tx;
+        panic!("snapshot forwarder fixture failed");
+    });
+    assert!(panic_rx.await.is_err());
+    attempt.track_stdout_handle_for_test(panicked);
+    attempt.track_stderr_handle_for_test(tokio::spawn(async move {
+        let _retired_tx = retired_tx;
+        std::future::pending::<()>().await;
+    }));
+    tokio::fs::create_dir_all(home_image.parent().expect("home image parent"))
+        .await
+        .expect("create home image parent");
+    tokio::fs::write(&home_image, b"home")
+        .await
+        .expect("write home image");
+    attempt.track_home_image_for_test(home_image.clone());
+    attempt.notify_cleanup_complete_for_test(cleanup_tx);
+    tokio::fs::create_dir_all(&sock_dir)
+        .await
+        .expect("create sock dir");
+
+    drop(attempt);
+    let report = wait_for_snapshot_cleanup(cleanup_rx).await;
+
+    assert!(!report.stdout_forwarder_finished);
+    assert!(report.stderr_forwarder_finished);
+    assert!(retired_rx.await.is_err());
+    assert!(report.home_image_cleaned);
+    assert!(!tokio::fs::try_exists(&home_image).await.unwrap());
+    assert!(
+        tokio::fs::try_exists(&sock_dir).await.unwrap(),
+        "detached cleanup must preserve the stable socket directory without the outer snapshot lock"
+    );
+}
+
+#[tokio::test]
 async fn snapshot_attempt_drop_handoff_aborts_unfinished_forwarders() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (mut attempt, sock_dir) = snapshot_attempt_for_test(&dir);
