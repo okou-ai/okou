@@ -958,10 +958,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "Impossibile continuare. Riprova.",
+      "allow": "Consenti",
+      "allowed": "Consentito",
+      "callbackPrompt": "Il browser cloud è attivo. Continua l’attività precedente.",
+      "cardDescription": "Attiva il browser cloud per questa chat e continua automaticamente. Il controllo del computer verrà disconnesso.",
       "description": "{{assistantName}} utilizzerà un profilo browser cloud isolato per questo thread di chat. Abilitandolo, Computer Use verrà disconnesso dal thread.",
       "enable": "Abilita per questo thread",
       "enabled": "Browser cloud abilitato",
       "linkExpires": "Il collegamento scade {{date}}.",
+      "retry": "Riprova",
       "title": "Abilita il browser cloud",
       "unavailableDescription": "Questo collegamento di autorizzazione del browser cloud non è valido, è scaduto o non è disponibile per questa area di lavoro.",
       "unavailableTitle": "Collegamento di autorizzazione non disponibile"

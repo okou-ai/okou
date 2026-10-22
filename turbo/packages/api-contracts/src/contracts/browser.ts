@@ -111,6 +111,8 @@ const browserAuthorizationRequestCreateResponseSchema = z.object({
 });
 
 const browserAuthorizationRequestResponseSchema = z.object({
+  id: z.uuid(),
+  chatThreadId: z.uuid(),
   expiresAt: z.iso.datetime(),
   completedAt: z.iso.datetime().nullable(),
   cloudBrowserEnabled: z.boolean(),

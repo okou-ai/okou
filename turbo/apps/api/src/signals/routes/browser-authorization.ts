@@ -105,6 +105,8 @@ const getAuthorizationRequestInner$ = command(
     return {
       status: 200 as const,
       body: {
+        id: result.id,
+        chatThreadId: result.chatThreadId,
         expiresAt: result.expiresAt,
         completedAt: result.completedAt,
         cloudBrowserEnabled: result.cloudBrowserEnabled,

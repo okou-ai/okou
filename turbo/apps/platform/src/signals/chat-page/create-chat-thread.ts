@@ -200,6 +200,7 @@ import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
+import { createBrowserAuthorizationCardSignalsRegistry } from "./browser-authorization-block.ts";
 import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
@@ -1476,6 +1477,9 @@ interface EventTreeRegistries {
   readonly computerUseAuthorizationCardSignals: ReturnType<
     typeof createComputerUseAuthorizationCardSignalsRegistry
   >;
+  readonly browserAuthorizationCardSignals: ReturnType<
+    typeof createBrowserAuthorizationCardSignalsRegistry
+  >;
   readonly desktopShellAuthorizationCardSignals: ReturnType<
     typeof createDesktopShellAuthorizationCardSignalsRegistry
   >;
@@ -1499,6 +1503,7 @@ function createCardRefRegistrar({
   walletCardSignals,
   browserUserActionCardSignals,
   computerUseAuthorizationCardSignals,
+  browserAuthorizationCardSignals,
   desktopShellAuthorizationCardSignals,
   planUpgradeCardSignals,
   mailDraftCardSignals,
@@ -1569,6 +1574,15 @@ function createCardRefRegistrar({
             kind: descriptor.type,
             signals: set(
               computerUseAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "browser-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              browserAuthorizationCardSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -1863,6 +1877,8 @@ function createPagedEventResources({
     createBrowserUserActionCardSignalsRegistry();
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
+  const browserAuthorizationCardSignals =
+    createBrowserAuthorizationCardSignalsRegistry(chatActionContext);
   const desktopShellAuthorizationCardSignals =
     createDesktopShellAuthorizationCardSignalsRegistry(threadId);
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
@@ -1881,6 +1897,7 @@ function createPagedEventResources({
       walletCardSignals,
       browserUserActionCardSignals,
       computerUseAuthorizationCardSignals,
+      browserAuthorizationCardSignals,
       desktopShellAuthorizationCardSignals,
       planUpgradeCardSignals,
       mailDraftCardSignals,

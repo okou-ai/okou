@@ -940,10 +940,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "無法繼續，請重試。",
+      "allow": "允許",
+      "allowed": "已允許",
+      "callbackPrompt": "瀏覽器已啟用，請繼續完成剛才的任務。",
+      "cardDescription": "為目前聊天啟用雲端瀏覽器並自動繼續任務。這會中斷電腦操作。",
       "description": "{{assistantName}} 會在這個聊天會話中使用獨立的雲端瀏覽器環境。啟用後，該會話的 Computer Use 會斷開。",
       "enable": "為這個會話啟用",
       "enabled": "雲端瀏覽器已啟用",
       "linkExpires": "連結將於{{date}}過期。",
+      "retry": "重試",
       "title": "啟用雲端瀏覽器",
       "unavailableDescription": "這個雲端瀏覽器授權連結無效、已過期，或不適用於當前工作區。",
       "unavailableTitle": "授權連結不可用"

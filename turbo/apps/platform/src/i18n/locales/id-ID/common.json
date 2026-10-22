@@ -940,10 +940,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "Tidak dapat melanjutkan. Coba lagi.",
+      "allow": "Izinkan",
+      "allowed": "Diizinkan",
+      "callbackPrompt": "Browser cloud telah diaktifkan. Silakan lanjutkan tugas sebelumnya.",
+      "cardDescription": "Aktifkan browser cloud untuk chat ini dan lanjutkan secara otomatis. Ini memutus akses komputer.",
       "description": "{{assistantName}} akan menggunakan profil browser cloud terisolasi untuk thread chat ini. Mengaktifkannya akan memutus Computer Use untuk thread ini.",
       "enable": "Aktifkan untuk thread ini",
       "enabled": "Browser cloud diaktifkan",
       "linkExpires": "Tautan kedaluwarsa pada {{date}}.",
+      "retry": "Coba lagi",
       "title": "Aktifkan browser cloud",
       "unavailableDescription": "Tautan otorisasi browser cloud ini tidak valid, kedaluwarsa, atau tidak tersedia untuk ruang kerja ini.",
       "unavailableTitle": "Tautan otorisasi tidak tersedia"

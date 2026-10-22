@@ -31,6 +31,10 @@ import {
   type ComputerUseAuthorizationDescriptor,
 } from "./computer-use-authorization-block.ts";
 import {
+  parseBrowserAuthorizationUrl,
+  type BrowserAuthorizationDescriptor,
+} from "./browser-authorization-block.ts";
+import {
   parseDesktopShellAuthorizationUrl,
   type DesktopShellAuthorizationDescriptor,
 } from "./desktop-shell-authorization-block.ts";
@@ -112,6 +116,11 @@ export type ParsedBodyBlock =
       descriptor: { readonly originalUrl: string };
     }
   | {
+      type: "browser-authorization";
+      resourceKey: string;
+      descriptor: BrowserAuthorizationDescriptor;
+    }
+  | {
       type: "computer-use-authorization";
       resourceKey: string;
       descriptor: ComputerUseAuthorizationDescriptor;
@@ -182,7 +191,7 @@ const PLATFORM_FILE_CDN_HOSTS = [
   "cdn.vm7.io",
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers|computer-use)\/|\/browser\/actions\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
+const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers|computer-use)\/|\/browser\/(?:actions|authorize)\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
 const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;
@@ -764,6 +773,15 @@ class WalletActionTokenizer extends Tokenizer {
 function createComputerAuthorizationBlock(
   url: string,
 ): CardDescriptorBlock | null {
+  const browserAuthorization = parseBrowserAuthorizationUrl(url);
+  if (browserAuthorization) {
+    return {
+      type: "browser-authorization",
+      resourceKey: browserAuthorization.requestToken,
+      descriptor: browserAuthorization,
+    };
+  }
+
   const desktopShellAuthorization = parseDesktopShellAuthorizationUrl(url);
   if (desktopShellAuthorization) {
     return {
@@ -1491,6 +1509,7 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
     case "unavailable-action": {
       return block.descriptor.originalUrl;
     }
+    case "browser-authorization":
     case "computer-use-authorization": {
       return block.descriptor.originalUrl;
     }

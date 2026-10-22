@@ -1,5 +1,6 @@
 import type { ArtifactSignals } from "./artifact-card-signals.ts";
 import type { BrowserSessionSignals } from "./browser-session-block.ts";
+import type { BrowserAuthorizationSignals } from "./browser-authorization-block.ts";
 import type { BrowserUserActionSignals } from "./browser-user-action-block.ts";
 import type { BankingSignals } from "./banking-action-block.ts";
 import type { ConnectorSignals } from "./connector-action-block.ts";
@@ -42,6 +43,10 @@ export type MarkdownCardRef =
       readonly signals: WalletActionSignals;
     }
   | { readonly kind: "unavailable-action" }
+  | {
+      readonly kind: "browser-authorization";
+      readonly signals: BrowserAuthorizationSignals;
+    }
   | {
       readonly kind: "computer-use-authorization";
       readonly signals: ComputerUseAuthorizationSignals;

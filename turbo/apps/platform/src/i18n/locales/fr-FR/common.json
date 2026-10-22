@@ -958,10 +958,16 @@
   },
   "authorization": {
     "browser": {
+      "actionFailed": "Impossible de continuer. Réessayez.",
+      "allow": "Autoriser",
+      "allowed": "Autorisé",
+      "callbackPrompt": "Le navigateur cloud est activé. Veuillez poursuivre la tâche précédente.",
+      "cardDescription": "Activez le navigateur cloud pour cette conversation et continuez automatiquement. Cela déconnecte le contrôle de l’ordinateur.",
       "description": "{{assistantName}} utilisera un profil de navigateur cloud isolé pour ce fil de discussion. L'activer déconnecte l'utilisation de l'ordinateur pour ce fil.",
       "enable": "Activer pour ce fil",
       "enabled": "Navigateur cloud activé",
       "linkExpires": "Le lien expirera le {{date}}.",
+      "retry": "Réessayer",
       "title": "Activer le navigateur cloud",
       "unavailableDescription": "Ce lien d'autorisation du navigateur cloud est invalide, expiré ou non disponible pour cet espace de travail.",
       "unavailableTitle": "Lien d'autorisation indisponible"
