@@ -97,6 +97,12 @@ const wbPost = z
     attitudes_count: count.optional(),
     comments_count: count.optional(),
     reposts_count: count.optional(),
+    pic_infos: z
+      .record(
+        z.string(),
+        z.object({ large: z.object({ url: z.string() }).optional() }),
+      )
+      .optional(),
     pics: z
       .array(
         z.object({
@@ -132,17 +138,28 @@ const pageFields = Object.freeze({
     .string()
     .regex(/^\d{1,128}$/u)
     .optional(),
-  max_id: z.union([id, z.literal("")]).optional(),
+  max_id: z.union([upstreamId, z.literal("")]).optional(),
 });
-const dyData = z.object({
-  ...pageFields,
-  status_code: z.literal(0).optional(),
-  user: dyUser.optional(),
-  aweme_list: z.array(dyPost).optional(),
-  comments: z.array(dyComment).optional(),
-  followers: z.array(dyUser).optional(),
-  followings: z.array(dyUser).optional(),
-});
+const dyData = z
+  .object({
+    ...pageFields,
+    status_code: z.literal(0).optional(),
+    user: dyUser.optional(),
+    aweme_list: z.array(dyPost).optional(),
+    comments: z.array(dyComment).nullable().optional(),
+    total: count.optional(),
+    followers: z.array(dyUser).optional(),
+    followings: z.array(dyUser).optional(),
+  })
+  .refine((data) => {
+    return (
+      data.comments !== null ||
+      (data.status_code === 0 && data.total === 0 && data.has_more === false)
+    );
+  })
+  .transform((data) => {
+    return { ...data, comments: data.comments === null ? [] : data.comments };
+  });
 const wbData = z.object({
   ...pageFields,
   ok: z.literal(1).optional(),
@@ -150,6 +167,7 @@ const wbData = z.object({
   user: wbUser.optional(),
   statuses: z.array(wbPost).optional(),
   data: z.array(wbComment).optional(),
+  next_page: integer.positive().optional(),
 });
 
 // These search endpoints do not return the profile/post endpoint envelopes.
@@ -206,18 +224,110 @@ function invalid(): never {
   );
 }
 
-/** Explicit compatible envelopes, not a recursive search for arbitrary data arrays. */
-function douyinData(output: unknown) {
-  const parsed = z
-    .object({ code: z.literal(200).optional(), data: dyData })
+const wbTimelineFeed = z.object({ category: z.literal("feed"), data: wbPost });
+const wbTimelineCard = z.object({ category: z.literal("card") });
+const wbTimelineItem = z.discriminatedUnion("category", [
+  wbTimelineFeed,
+  wbTimelineCard,
+]);
+const wbTimeline = z.object({
+  items: z.array(
+    z.discriminatedUnion("category", [
+      wbTimelineFeed,
+      wbTimelineCard,
+      z.object({
+        category: z.literal("group"),
+        items: z.array(wbTimelineItem),
+      }),
+    ]),
+  ),
+  moreInfo: z
+    .object({
+      pagingType: z.string().optional(),
+      params: z.object({ page: integer.positive().optional() }).optional(),
+    })
+    .optional(),
+});
+
+/** Only the observed endpoint envelopes are accepted; never search arbitrary nested arrays. */
+function douyinData(plan: SocialDataProviderPlan, output: unknown) {
+  const wrapped = z
+    .object({ code: z.literal(200).optional(), data: z.unknown() })
     .safeParse(output);
-  return parsed.success ? parsed.data.data : invalid();
+  const body = wrapped.success ? wrapped.data.data : output;
+  const status = z.object({ status_code: z.number().int() }).safeParse(body);
+  if (status.success && status.data.status_code !== 0) {
+    if (
+      plan.format === "douyin-following" &&
+      status.data.status_code === 2096
+    ) {
+      throw new SocialDataProviderError(
+        "SOCIAL_DATA_SOURCE_UNAVAILABLE",
+        "The source account's privacy settings prevent access to this list.",
+      );
+    }
+    throw new SocialDataProviderError(
+      "SOCIAL_DATA_SOURCE_ERROR",
+      "The source platform could not complete this operation.",
+    );
+  }
+  const rootSupported =
+    plan.endpoint === "/api/v1/douyin/web/handler_user_profile" ||
+    plan.endpoint === "/api/v1/douyin/app/v3/fetch_user_post_videos" ||
+    plan.endpoint === "/api/v1/douyin/app/v3/fetch_video_comments" ||
+    plan.endpoint === "/api/v1/douyin/app/v3/fetch_video_comment_replies";
+  if (!wrapped.success && (!rootSupported || !status.success)) {
+    return invalid();
+  }
+  const parsed = dyData.safeParse(body);
+  return parsed.success ? parsed.data : invalid();
 }
-function weiboData(output: unknown) {
-  const parsed = z
+
+function weiboData(
+  plan: SocialDataProviderPlan,
+  output: unknown,
+): z.infer<typeof wbData> {
+  const wrapped = z
     .object({ code: z.literal(200).optional(), data: wbData })
     .safeParse(output);
-  return parsed.success ? parsed.data.data : invalid();
+  if (wrapped.success) {
+    return wrapped.data.data;
+  }
+  if (plan.endpoint === "/api/v1/weibo/web_v2/fetch_user_info") {
+    const parsed = z.object({ user: wbUser }).safeParse(output);
+    return parsed.success ? parsed.data : invalid();
+  }
+  if (plan.endpoint === "/api/v1/weibo/app/fetch_user_timeline") {
+    const parsed = wbTimeline.safeParse(output);
+    if (!parsed.success) {
+      return invalid();
+    }
+    const statuses = parsed.data.items.flatMap((item) => {
+      const entries = item.category === "group" ? item.items : [item];
+      return entries.flatMap((entry) => {
+        return entry.category === "feed" ? [entry.data] : [];
+      });
+    });
+    // noMore is UI metadata: live responses set it even when the next page has feeds.
+    // Retain a bounded page hint, without claiming source continuation or exhaustion.
+    return {
+      statuses,
+      next_page:
+        statuses.length > 0 && parsed.data.moreInfo?.pagingType === "cursor"
+          ? parsed.data.moreInfo.params?.page
+          : undefined,
+    };
+  }
+  if (
+    plan.endpoint === "/api/v1/weibo/web_v2/fetch_post_comments" ||
+    plan.endpoint === "/api/v1/weibo/web_v2/fetch_post_sub_comments"
+  ) {
+    const parsed = wbData
+      .extend({ ok: z.literal(1), data: z.array(wbComment) })
+      .safeParse(output);
+    return parsed.success ? parsed.data : invalid();
+  }
+  return invalid();
 }
 
 function douyinSearchData(output: unknown) {
@@ -368,7 +478,7 @@ function douyinRows(
       };
     });
   }
-  const data = douyinData(output);
+  const data = douyinData(plan, output);
   switch (plan.format) {
     case "douyin-user": {
       return data.user ? [projectDyUser(data.user)] : invalid();
@@ -439,7 +549,7 @@ function weiboRows(
   if (plan.format === "weibo-search") {
     return weiboSearchRows(output);
   }
-  const data = weiboData(output);
+  const data = weiboData(plan, output);
   if (plan.format === "weibo-user") {
     const user = data.userInfo ?? data.user;
     return user ? [projectWbUser(user)] : invalid();
@@ -479,11 +589,14 @@ function weiboRows(
         likes: post.attitudes_count,
         comments: post.comments_count,
         shares: post.reposts_count,
-        mediaUrls: media(
-          post.pics?.map((pic) => {
+        mediaUrls: media([
+          ...(post.pics?.map((pic) => {
             return pic.large?.url ?? pic.url;
-          }) ?? [],
-        ),
+          }) ?? []),
+          ...Object.values(post.pic_infos ?? {}).map((pic) => {
+            return pic.large?.url;
+          }),
+        ]),
       };
     }) ?? invalid()
   );
@@ -526,7 +639,7 @@ export function extractChinaContinuation(
     plan.format === "weibo-comment" &&
     (data.max_id === "" || data.max_id === "0")
   ) {
-    return plan.request.operation === "comments" ? { hasMore: false } : {};
+    return { hasMore: false };
   }
   const nextCursor = chinaNextCursor(plan, data);
   if (
@@ -552,8 +665,8 @@ function chinaPageData(plan: SocialDataProviderPlan, output: unknown) {
     return douyinSearchData(output);
   }
   return plan.request.platform === "douyin"
-    ? douyinData(output)
-    : weiboData(output);
+    ? douyinData(plan, output)
+    : weiboData(plan, output);
 }
 
 function chinaNextCursor(
@@ -599,7 +712,11 @@ function chinaNextCursor(
     }
     case "weibo-post":
     case "weibo-search": {
-      nextCursor = weiboNextPage(plan, data.has_more);
+      nextCursor = weiboNextPage(
+        plan,
+        data.has_more,
+        "next_page" in data ? data.next_page : undefined,
+      );
       break;
     }
   }
@@ -609,9 +726,15 @@ function chinaNextCursor(
 function weiboNextPage(
   plan: SocialDataProviderPlan,
   hasMore: boolean | undefined,
+  nextPage?: number,
 ): SocialDataProviderCursor | undefined {
-  // Page input alone does not prove there is another page. Require an explicit source flag.
   const page = plan.cursor?.kind === "weibo-page" ? plan.cursor.value : 1;
+  if (nextPage !== undefined) {
+    return nextPage > page
+      ? { kind: "weibo-page", value: nextPage }
+      : undefined;
+  }
+  // Page input alone is not a continuation; retain the existing explicit-flag protocol.
   return hasMore === true && page < Number.MAX_SAFE_INTEGER
     ? { kind: "weibo-page", value: page + 1 }
     : undefined;

@@ -560,7 +560,8 @@ const saveClaimOutcome$ = command(
             ? "unknown"
             : "failed",
         outcome.errorCode ?? "SOCIAL_DATA_FAILED",
-        "The Social data operation did not produce a billable result.",
+        outcome.errorMessage ??
+          "The Social data operation did not produce a billable result.",
       );
       return null;
     }

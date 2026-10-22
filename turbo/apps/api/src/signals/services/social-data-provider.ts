@@ -409,6 +409,20 @@ export async function inspectSocialDataProviderPlan(
   };
 }
 
+function projectionFailure(error: unknown) {
+  if (
+    error instanceof SocialDataProviderError &&
+    (error.code === "SOCIAL_DATA_SOURCE_UNAVAILABLE" ||
+      error.code === "SOCIAL_DATA_SOURCE_ERROR")
+  ) {
+    return { errorCode: error.code, errorMessage: error.message };
+  }
+  return {
+    errorCode: "SOCIAL_DATA_INVALID_RESULT",
+    errorMessage: "The Social data service could not deliver a valid result.",
+  };
+}
+
 async function normalizeRun(
   plan: SocialDataProviderPlan,
   value: unknown,
@@ -483,9 +497,7 @@ async function normalizeRun(
           ...base,
           state: "failed",
           actualCostUsdMicros,
-          errorCode: "SOCIAL_DATA_INVALID_RESULT",
-          errorMessage:
-            "The Social data service could not deliver a valid result.",
+          ...projectionFailure(output.error),
         };
       }
       return {
