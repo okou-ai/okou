@@ -4,12 +4,10 @@ import {
 } from "@okouai/core/temporary-auth-diagnostics";
 import {
   authTokenDiagnostics,
-  clientTelemetryOutcomeForError,
   recordClientTelemetry,
   type ClientTelemetryOutcome,
 } from "./client-telemetry.ts";
 import { getClientSessionId } from "../signals/client-headers.ts";
-import { onRejection } from "../signals/utils.ts";
 import { now } from "./time.ts";
 
 /** Invocation-local metadata only; never store a token or SDK identity here. */
@@ -41,10 +39,6 @@ interface AuthDiagnosticMeasurement {
 
 interface AuthDiagnosticEvent {
   readonly stage:
-    | "token_read_started"
-    | "token_read_finished"
-    | "clerk_sdk_started"
-    | "clerk_sdk_finished"
     | "clerk_no_session"
     | "tab_token_requested"
     | "tab_token_received"
@@ -52,8 +46,6 @@ interface AuthDiagnosticEvent {
     | "tab_token_reply"
     | "worker_token_received"
     | "worker_token_selected"
-    | "http_send_invoked"
-    | "http_finished"
     | "page_visibility"
     | "ably_auth_started"
     | "ably_auth_api_finished"
@@ -68,11 +60,8 @@ interface AuthDiagnosticEvent {
   readonly outcome?: ClientTelemetryOutcome;
   readonly ownerAborted?: boolean;
   readonly accepted?: boolean;
-  readonly skipCache?: boolean;
   readonly requestId?: string;
   readonly exchangeAttemptId?: string;
-  readonly method?: string;
-  readonly route?: string;
   readonly status?: number;
   readonly source?: "initial" | "visibilitychange" | "pageshow" | "pagehide";
   readonly previousState?: string;
@@ -218,8 +207,6 @@ export function recordAuthDiagnostic(event: AuthDiagnosticEvent): void {
       provider_phase: context?.phase,
       http_request_id: event.requestId,
       exchange_attempt_id: event.exchangeAttemptId,
-      method: event.method,
-      route: event.route,
       status: event.status,
       source: event.source,
       previous_state: event.previousState,
@@ -238,7 +225,6 @@ export function recordAuthDiagnostic(event: AuthDiagnosticEvent): void {
     for (const [key, value] of Object.entries({
       owner_aborted: event.ownerAborted,
       accepted: event.accepted,
-      skip_cache: event.skipCache,
       resumed: event.resumed,
     })) {
       if (value !== undefined) {
@@ -261,117 +247,4 @@ export function recordAuthDiagnostic(event: AuthDiagnosticEvent): void {
       event.outcome ?? "success",
     );
   });
-}
-
-export async function observeAuthTokenRead(
-  execute: () => Promise<string | null>,
-  context: AuthDiagnosticContext,
-  request: { readonly method: string; readonly route: string },
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const measurement = startAuthDiagnosticMeasurement();
-  recordAuthDiagnostic({
-    stage: "token_read_started",
-    context,
-    ...request,
-    outcome: "started",
-  });
-  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: temporary 401 token-read diagnostics.
-  const token = await onRejection(execute, (error) => {
-    recordAuthDiagnostic({
-      stage: "token_read_finished",
-      context,
-      ...request,
-      measurement,
-      outcome: clientTelemetryOutcomeForError(error),
-      ownerAborted: signal?.aborted,
-    });
-  });
-  recordAuthDiagnostic({
-    stage: "token_read_finished",
-    context,
-    ...request,
-    measurement,
-    token,
-    ownerAborted: signal?.aborted,
-  });
-  return token;
-}
-
-export async function observeAuthHttpRequest<
-  T extends { readonly status: number },
->(
-  execute: () => Promise<T>,
-  context: AuthDiagnosticContext,
-  request: {
-    readonly requestId?: string;
-    readonly method: string;
-    readonly route: string;
-    readonly token: string | null;
-  },
-): Promise<T> {
-  const measurement = startAuthDiagnosticMeasurement();
-  recordAuthDiagnostic({
-    stage: "http_send_invoked",
-    context,
-    ...request,
-    outcome: "started",
-  });
-  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: temporary 401 HTTP diagnostics.
-  const response = await onRejection(execute, (error) => {
-    recordAuthDiagnostic({
-      stage: "http_finished",
-      context,
-      ...request,
-      measurement,
-      outcome: clientTelemetryOutcomeForError(error),
-    });
-  });
-  recordAuthDiagnostic({
-    stage: "http_finished",
-    context,
-    ...request,
-    measurement,
-    status: response.status,
-    outcome: response.status >= 400 ? "error" : "success",
-  });
-  return response;
-}
-
-/** Observe the SDK promise itself, including completion after the owner aborts.
- * The returned promise stays consumed by the existing cancellation race.
- */
-export async function observeClerkToken(
-  execute: () => Promise<string | null>,
-  context: AuthDiagnosticContext | undefined,
-  skipCache: boolean,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const measurement = startAuthDiagnosticMeasurement();
-  recordAuthDiagnostic({
-    stage: "clerk_sdk_started",
-    context,
-    skipCache,
-    outcome: "started",
-  });
-  // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: temporary 401 Clerk SDK diagnostics.
-  const token = await onRejection(execute, (error) => {
-    recordAuthDiagnostic({
-      stage: "clerk_sdk_finished",
-      context,
-      skipCache,
-      measurement,
-      ownerAborted: signal?.aborted,
-      outcome: clientTelemetryOutcomeForError(error),
-    });
-  });
-  recordAuthDiagnostic({
-    stage: "clerk_sdk_finished",
-    context,
-    skipCache,
-    measurement,
-    token,
-    ownerAborted: signal?.aborted,
-  });
-  return token;
 }

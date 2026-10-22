@@ -1,5 +1,4 @@
 import { waitFor } from "@testing-library/react";
-import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { expect, test, vi } from "vitest";
 
@@ -158,48 +157,6 @@ test.each([false, true])(
       return attributes(event)["okou.auth.ably_auth_id"];
     });
     expect(new Set(ids).size).toBe(2);
-    const requestIds: unknown[] = [];
-    for (const id of ids) {
-      expect(id).toStrictEqual(expect.any(String));
-      const sends = events.filter((event) => {
-        const attrs = attributes(event);
-        return (
-          attrs["okou.auth.stage"] === "http_send_invoked" &&
-          attrs["okou.auth.ably_auth_id"] === id
-        );
-      });
-      expect(sends).toHaveLength(1);
-      const send = sends[0];
-      if (!send) {
-        throw new Error("Missing Ably auth HTTP send");
-      }
-      const attrs = attributes(send);
-      expect(attrs).toMatchObject({
-        "okou.auth.http_request_id": expect.any(String),
-        "okou.auth.operation_id": expect.any(String),
-      });
-      // Worker HTTP selects a tab token attempt; the MessagePort request ID
-      // joins it to the actual browser Clerk SDK read, without counting other
-      // legitimate startup/resync requests caused by reconnecting.
-      const attemptId = attrs["okou.auth.token_attempt_id"];
-      expect(attemptId).toStrictEqual(expect.any(String));
-      const sdkReads = events.filter((event) => {
-        const sdkAttrs = attributes(event);
-        return (
-          sdkAttrs["okou.auth.stage"] === "clerk_sdk_started" &&
-          sdkAttrs["okou.auth.token_attempt_id"] === attemptId
-        );
-      });
-      expect(sdkReads).toHaveLength(1);
-      requestIds.push(attrs["okou.auth.http_request_id"]);
-    }
-    expect(new Set(requestIds).size).toBe(2);
-    expect(requestIds).toStrictEqual(
-      requests.map((headers) => {
-        expect(headers.get("Authorization")).toBe("Bearer test-token");
-        return headers.get(CLIENT_REQUEST_ID_HEADER);
-      }),
-    );
     const payload = JSON.stringify(events);
     for (const secret of [
       "test-token",

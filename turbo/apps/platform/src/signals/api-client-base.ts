@@ -8,12 +8,9 @@ import {
   type InitClientReturn,
 } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { IN_VITEST } from "../env.ts";
 import {
   createAuthDiagnosticId,
-  observeAuthHttpRequest,
-  observeAuthTokenRead,
   type AuthDiagnosticContext,
   type AuthTokenProvider,
 } from "../lib/auth-diagnostics.ts";
@@ -123,10 +120,7 @@ export function createAuthedContractClient<T extends AppRouter>(
         : args.path;
       signal?.throwIfAborted();
 
-      const requestWithToken = async (
-        token: string | null,
-        diagnostic: AuthDiagnosticContext,
-      ) => {
+      const requestWithToken = async (token: string | null) => {
         const headers = new Headers(args.headers);
         if (token) {
           headers.set("Authorization", `Bearer ${token}`);
@@ -137,26 +131,15 @@ export function createAuthedContractClient<T extends AppRouter>(
           headers.set("X-Vercel-Protection-Bypass", vercelProtectionBypass);
         }
         const startedAt = now();
-        const response = await observeAuthHttpRequest(
-          () => {
-            return trpcRestFetchApi({
-              ...args,
-              fetchOptions: {
-                ...args.fetchOptions,
-                credentials: "include",
-              },
-              headers,
-              path,
-            });
+        const response = await trpcRestFetchApi({
+          ...args,
+          fetchOptions: {
+            ...args.fetchOptions,
+            credentials: "include",
           },
-          diagnostic,
-          {
-            requestId: headers.get(CLIENT_REQUEST_ID_HEADER) ?? undefined,
-            method: args.route.method,
-            route: args.route.path,
-            token,
-          },
-        );
+          headers,
+          path,
+        });
         if (response.status === 401) {
           recordClientAuthFailure({
             headers,
@@ -184,14 +167,7 @@ export function createAuthedContractClient<T extends AppRouter>(
               ...options.authDiagnosticContext,
               operationId: createAuthDiagnosticId(),
             };
-            const token = await observeAuthTokenRead(
-              () => {
-                return options.getToken(diagnostic, signal);
-              },
-              diagnostic,
-              { method: args.route.method, route: args.route.path },
-              signal,
-            );
+            const token = await options.getToken(diagnostic, signal);
             signal?.throwIfAborted();
             validateToken?.();
             const measurement = startClientTelemetryMeasurement();
@@ -202,7 +178,7 @@ export function createAuthedContractClient<T extends AppRouter>(
             } satisfies ClientTelemetryOperation;
             // eslint-disable-next-line ccstate/no-on-rejection -- 存量 2026/10/21: shared network-failure telemetry.
             const networkResponse = await onRejection(
-              requestWithToken(token, diagnostic),
+              requestWithToken(token),
               (error) => {
                 recordClientTelemetry(
                   measurement,

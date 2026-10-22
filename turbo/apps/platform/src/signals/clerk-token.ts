@@ -1,5 +1,4 @@
 import {
-  observeClerkToken,
   recordAuthDiagnostic,
   type AuthDiagnosticContext,
 } from "../lib/auth-diagnostics.ts";
@@ -86,14 +85,8 @@ export async function readClerkToken(
       });
       return null;
     }
-    return await observeClerkToken(
-      () => {
-        return session.getToken(
-          options.skipCache ? { skipCache: true } : undefined,
-        );
-      },
-      diagnostic,
-      options.skipCache === true,
+    return await session.getToken(
+      options.skipCache ? { skipCache: true } : undefined,
     );
   }
 
@@ -107,16 +100,7 @@ export async function readClerkToken(
     return null;
   }
   return await waitForToken(
-    observeClerkToken(
-      () => {
-        return session.getToken(
-          options.skipCache ? { skipCache: true } : undefined,
-        );
-      },
-      diagnostic,
-      options.skipCache === true,
-      signal,
-    ),
+    session.getToken(options.skipCache ? { skipCache: true } : undefined),
     signal,
   );
 }

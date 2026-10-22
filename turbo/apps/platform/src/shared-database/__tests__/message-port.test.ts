@@ -350,22 +350,6 @@ test("Report a pending token request before its response and correlate success w
       }),
     );
   }
-  const sent = milestones.find((event) => {
-    const attrs = event["attributes.custom"];
-    return (
-      typeof attrs === "object" &&
-      attrs !== null &&
-      "okou.auth.stage" in attrs &&
-      attrs["okou.auth.stage"] === "http_send_invoked"
-    );
-  });
-  expect(sent).toMatchObject({
-    "attributes.custom": {
-      "okou.auth.operation_id": expect.any(String),
-      "okou.auth.token_attempt_id": requestId,
-      "okou.auth.http_request_id": expect.any(String),
-    },
-  });
   const payload = JSON.stringify([...events, ...milestones]);
   expect(payload).not.toContain(credential);
   expect(payload).not.toContain(identity().userId);
