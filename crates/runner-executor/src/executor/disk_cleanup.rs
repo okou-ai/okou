@@ -1,4 +1,7 @@
-//! One bounded cache-reclamation attempt before the agent process boundary.
+//! One bounded cache-reclamation cycle before the agent process boundary.
+//!
+//! Each full filesystem is cleaned at most once, sequentially. The single
+//! bootstrap retry requires adequate measured capacity on every selected target.
 
 use std::time::{Duration, Instant};
 
@@ -8,12 +11,14 @@ use sandbox::{
     EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox, SandboxError, SandboxOperation,
     SandboxOperationReason,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::diagnostics::{
     collect_agent_abnormal_exit_diagnostics, explicit_enospc_evidence, home_is_clearly_full,
+    rootfs_is_clearly_full,
 };
-use super::{ResourceFailureDiagnostics, ResourceFailureKind, RunnerError, SandboxReuseResult};
+use super::{ResourceFailureDiagnostics, RunnerError, SandboxReuseResult};
 use crate::helper_exec::helper_exec_succeeded;
 use crate::telemetry::JobTelemetry;
 use runner_types::types::ExecutionContext;
@@ -38,6 +43,7 @@ pub(super) async fn recover(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     reuse_result: SandboxReuseResult,
+    cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
 ) -> DiskCleanupOutcome {
     let diagnostics = collect_agent_abnormal_exit_diagnostics(
@@ -48,21 +54,42 @@ pub(super) async fn recover(
         1,
     )
     .await;
-    // Bootstrap inputs live under /home/user. Generic failure attribution
-    // prioritizes rootfs, which must not divert this recovery when both are full.
-    let filesystem = match diagnostics.as_ref() {
-        Some(value) if home_is_clearly_full(value) => DiskCleanupFilesystem::Home,
-        Some(ResourceFailureDiagnostics {
-            failure_kind: Some(ResourceFailureKind::GuestRootFilesystemFull),
-            ..
-        }) => DiskCleanupFilesystem::Rootfs,
-        _ => {
+    let Some(usage) = diagnostics.as_ref() else {
+        return DiskCleanupOutcome {
+            retry: false,
+            diagnostics,
+        };
+    };
+    let filesystems = [
+        home_is_clearly_full(usage).then_some(DiskCleanupFilesystem::Home),
+        rootfs_is_clearly_full(usage).then_some(DiskCleanupFilesystem::Rootfs),
+    ];
+    let mut retry = filesystems.iter().any(Option::is_some);
+    for filesystem in filesystems.into_iter().flatten() {
+        if cancel.is_cancelled() {
             return DiskCleanupOutcome {
                 retry: false,
                 diagnostics,
             };
         }
-    };
+        let Some(report) = cleanup_filesystem(sandbox, context, filesystem, telemetry).await else {
+            return DiskCleanupOutcome {
+                retry: false,
+                diagnostics,
+            };
+        };
+        // Insufficient space must not skip another selected filesystem.
+        retry &= report.permits_retry();
+    }
+    DiskCleanupOutcome { retry, diagnostics }
+}
+
+async fn cleanup_filesystem(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    filesystem: DiskCleanupFilesystem,
+    telemetry: &mut JobTelemetry,
+) -> Option<DiskCleanupReport> {
     let command = format!("{AGENT_PATH} recover-disk-space {}", filesystem.as_str());
     let started = Instant::now();
     let result = sandbox
@@ -102,7 +129,7 @@ pub(super) async fn recover(
         (!retry).then_some("cleanup_unavailable_or_insufficient"),
         Some(filesystem.as_str()),
     );
-    if let Some(report) = report {
+    if let Some(report) = report.as_ref() {
         info!(
             run_id = %context.run_id,
             filesystem = filesystem.as_str(),
@@ -115,5 +142,5 @@ pub(super) async fn recover(
             "guest bootstrap disk cleanup completed"
         );
     }
-    DiskCleanupOutcome { retry, diagnostics }
+    report
 }

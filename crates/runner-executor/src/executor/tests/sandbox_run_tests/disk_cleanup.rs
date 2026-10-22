@@ -17,6 +17,15 @@ fn full_filesystem(
     });
 }
 
+fn both_filesystems_full(overrides: &sandbox_mock::MockSandboxOverrides) {
+    overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "guest-agent-binary".into(),
+        exit_code: 0,
+        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 12000000 0 100% /\n/dev/vdb 24000000 24000000 0 100% /home/user\nVM0_DF_INODES_V1\n/dev/root 800000 100000 700000 13% /\n/dev/vdb 1500000 300000 1200000 20% /home/user\n".to_vec(),
+        stderr: Vec::new(),
+    });
+}
+
 fn cleanup_report(
     overrides: &sandbox_mock::MockSandboxOverrides,
     filesystem: DiskCleanupFilesystem,
@@ -78,20 +87,15 @@ async fn bootstrap_recovers_home_and_rootfs_before_starting_one_agent() {
 }
 
 #[tokio::test]
-async fn bootstrap_recovers_home_when_both_filesystems_are_full() {
+async fn bootstrap_recovers_both_full_filesystems_before_starting_one_agent() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.push_private_write_files_result(Err(sandbox_write_file_error(
         "No space left on device (os error 28)",
     )));
-    overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
-        pattern: "guest-agent-binary".into(),
-        exit_code: 0,
-        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 12000000 0 100% /\n/dev/vdb 24000000 24000000 0 100% /home/user\nVM0_DF_INODES_V1\n/dev/root 800000 100000 700000 13% /\n/dev/vdb 1500000 300000 1200000 20% /home/user\n".to_vec(),
-        stderr: Vec::new(),
-    });
-    cleanup_report(&overrides, DiskCleanupFilesystem::Rootfs, 1024);
+    both_filesystems_full(&overrides);
+    cleanup_report(&overrides, DiskCleanupFilesystem::Rootfs, 256 * 1024 * 1024);
     cleanup_report(&overrides, DiskCleanupFilesystem::Home, 256 * 1024 * 1024);
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
 
@@ -105,8 +109,49 @@ async fn bootstrap_recovers_home_when_both_filesystems_are_full() {
     assert_eq!(writes[0].files, writes[1].files);
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
     let calls = cleanup_calls(&overrides);
-    assert_eq!(calls.len(), 1);
+    assert_eq!(calls.len(), 2);
     assert!(calls[0].cmd.ends_with(" home"));
+    assert!(calls[1].cmd.ends_with(" rootfs"));
+}
+
+#[tokio::test]
+async fn insufficient_capacity_on_either_full_filesystem_still_cleans_both() {
+    for insufficient in [DiskCleanupFilesystem::Home, DiskCleanupFilesystem::Rootfs] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+            "No space left on device (os error 28)",
+        )));
+        both_filesystems_full(&overrides);
+        for filesystem in [DiskCleanupFilesystem::Home, DiskCleanupFilesystem::Rootfs] {
+            let available = if filesystem == insufficient {
+                1024
+            } else {
+                256 * 1024 * 1024
+            };
+            cleanup_report(&overrides, filesystem, available);
+        }
+        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+
+        let outcome =
+            run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
+                .await
+                .unwrap();
+
+        assert_eq!(outcome.exit_code(), 1, "{insufficient:?}");
+        let failure = outcome.failure.unwrap();
+        assert!(failure.error.contains("No space left on device"));
+        let diagnostics = failure.resource_diagnostics.unwrap();
+        assert_eq!(diagnostics.guest_home_fs_used_percent, Some(100));
+        assert_eq!(diagnostics.guest_root_fs_used_percent, Some(100));
+        assert_eq!(overrides.private_write_files_calls().len(), 1);
+        assert!(overrides.start_agent_process_calls().is_empty());
+        let calls = cleanup_calls(&overrides);
+        assert_eq!(calls.len(), 2, "{insufficient:?}");
+        assert!(calls[0].cmd.ends_with(" home"));
+        assert!(calls[1].cmd.ends_with(" rootfs"));
+    }
 }
 
 #[tokio::test]

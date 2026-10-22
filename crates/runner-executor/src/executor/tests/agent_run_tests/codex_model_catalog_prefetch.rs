@@ -1041,7 +1041,7 @@ async fn disk_recovery_retires_prefetch_before_cleanup_and_agent_start() {
 }
 
 #[tokio::test]
-async fn cancellation_during_disk_recovery_prevents_retry_and_agent_start() {
+async fn cancellation_between_disk_cleanups_prevents_second_helper_and_agent_start() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let write_gate = MockLifecycleGate::new();
@@ -1054,7 +1054,7 @@ async fn cancellation_during_disk_recovery_prevents_retry_and_agent_start() {
     overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
         pattern: "guest-agent-binary".into(),
         exit_code: 0,
-        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 6000000 6000000 50% /\n/dev/vdb 24000000 24000000 0 100% /home/user\n".to_vec(),
+        stdout: b"VM0_DF_BLOCKS_V1\n/dev/root 12000000 12000000 0 100% /\n/dev/vdb 24000000 24000000 0 100% /home/user\n".to_vec(),
         stderr: Vec::new(),
     });
     overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
@@ -1108,6 +1108,13 @@ async fn cancellation_during_disk_recovery_prevents_retry_and_agent_start() {
     assert_eq!(result.failure.unwrap().exit_code, EXIT_SIGKILL);
     assert_eq!(overrides.private_write_files_calls().len(), 1);
     assert!(overrides.start_agent_process_calls().is_empty());
+    let cleanup_calls = overrides
+        .exec_calls()
+        .into_iter()
+        .filter(|call| call.cmd.contains("recover-disk-space"))
+        .collect::<Vec<_>>();
+    assert_eq!(cleanup_calls.len(), 1);
+    assert!(cleanup_calls[0].cmd.ends_with(" home"));
 }
 
 #[tokio::test]

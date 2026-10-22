@@ -140,7 +140,9 @@ fn parse_memory_available_mb(line: &str) -> Option<u64> {
     }
 }
 
-fn rootfs_is_clearly_full(diagnostics: &ResourceFailureDiagnostics) -> bool {
+pub(in crate::executor) fn rootfs_is_clearly_full(
+    diagnostics: &ResourceFailureDiagnostics,
+) -> bool {
     diagnostics
         .guest_root_fs_used_percent
         .is_some_and(|percent| percent >= 100)

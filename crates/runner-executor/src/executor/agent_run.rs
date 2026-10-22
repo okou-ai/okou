@@ -1143,7 +1143,7 @@ impl AgentBootstrapInputs {
             let recovered = run_pre_spawn_phase(
                 cancel,
                 &owner,
-                super::disk_cleanup::recover(sandbox, context, reuse_result, telemetry),
+                super::disk_cleanup::recover(sandbox, context, reuse_result, cancel, telemetry),
             )
             .await;
             let recovered = match recovered {
