@@ -9,6 +9,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.763.2](https://github.com/okou-ai/okou/compare/api-v1.763.1...api-v1.763.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **api:** parse actual douyin and weibo search results ([#42231](https://github.com/okou-ai/okou/issues/42231)) ([b7822bf](https://github.com/okou-ai/okou/commit/b7822bfcc5bd0dfad3536efcefd240f10fcb7d83))
+* **api:** return validation errors for rejected invitation emails ([#42227](https://github.com/okou-ai/okou/issues/42227)) ([58742c6](https://github.com/okou-ai/okou/commit/58742c6e410ece4e76dc6261826ddbb2a886c6d1))
+
+
+### Refactoring
+
+* remove social data expansion and commerce feature switches ([#42229](https://github.com/okou-ai/okou/issues/42229)) ([84b93c3](https://github.com/okou-ai/okou/commit/84b93c3e918dcaa700dc21d8b97f15317a499c0b))
+
+
+### Performance Improvements
+
+* **api:** consolidate dispatch preparation reads ([#42217](https://github.com/okou-ai/okou/issues/42217)) ([96be893](https://github.com/okou-ai/okou/commit/96be893b4ac31ef8bc0bc54baf19cb14efd24cdd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.777.2
+    * @okouai/db bumped to 1.355.3
+    * @okouai/pi-agent-runtime bumped to 1.50.45
+
 ## [1.763.1](https://github.com/okou-ai/okou/compare/api-v1.763.0...api-v1.763.1) (2026-10-22)
 
 
