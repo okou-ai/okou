@@ -79,7 +79,6 @@ function account(
   connectionStatus: AvailableAccount["connectionStatus"] = "connected",
 ): AvailableAccount {
   return {
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     kind: "available",
@@ -291,7 +290,6 @@ describe("custom connector URL diagnostics", () => {
     expect(output()).toContain("Current account status: connected.");
     expect(output()).toContain("Current default account: Current default");
     expect(output()).toContain(`Default connection ID: ${DEFAULT_ACCOUNT_ID}`);
-    expect(output()).toContain("Setup status: complete");
     expect(output()).not.toContain(ACCOUNT_ID);
 
     log.mockClear();
@@ -303,7 +301,7 @@ describe("custom connector URL diagnostics", () => {
       authorization: null,
       accountSummary: {
         accountCount: 1,
-        defaultConnection: { id: DEFAULT_ACCOUNT_ID, setupStatus: "complete" },
+        defaultConnection: { id: DEFAULT_ACCOUNT_ID },
       },
       memberStatus: "connected",
       managedStatus: null,
@@ -331,13 +329,13 @@ describe("custom connector URL diagnostics", () => {
     },
     {
       scenario: "incomplete",
-      status: "setup-required",
+      status: "reconnect-required",
       text: "missing apiKey",
     },
     {
       scenario: "invalid",
       status: "reconnect-required",
-      text: "reconnect needed",
+      text: "configuration invalid",
     },
   ] as const)(
     "explains $scenario current-member accounts in text and JSON",
@@ -350,15 +348,17 @@ describe("custom connector URL diagnostics", () => {
         configuredFieldKeys: scenario === "incomplete" ? [] : ["apiKey"],
         isDefault: scenario !== "missing-default",
         connectionStatus:
-          scenario === "reconnect" || scenario === "invalid"
+          scenario === "reconnect" ||
+          scenario === "invalid" ||
+          scenario === "incomplete"
             ? "reconnect-required"
             : "connected",
-        setupStatus:
+        reconnectReason:
           scenario === "invalid"
-            ? "invalid"
+            ? "configuration_invalid"
             : scenario === "incomplete"
-              ? "incomplete"
-              : "complete",
+              ? "configuration_incomplete"
+              : null,
         missingRequiredFields: scenario === "incomplete" ? ["apiKey"] : [],
       });
       server.use(
@@ -385,9 +385,11 @@ describe("custom connector URL diagnostics", () => {
         expect(output()).toContain(
           `Default connection ID: ${DEFAULT_ACCOUNT_ID}`,
         );
-        expect(output()).toContain(
-          `Setup status: ${currentAccount.setupStatus}`,
-        );
+        if (currentAccount.reconnectReason) {
+          expect(output()).toContain(
+            `Reconnect reason: ${currentAccount.reconnectReason}`,
+          );
+        }
       }
       if (scenario === "incomplete") {
         expect(output()).toContain("Missing required configuration: apiKey");
@@ -407,7 +409,8 @@ describe("custom connector URL diagnostics", () => {
                 defaultConnection: hasDefault
                   ? {
                       id: DEFAULT_ACCOUNT_ID,
-                      setupStatus: currentAccount.setupStatus,
+                      connectionStatus: currentAccount.connectionStatus,
+                      reconnectReason: currentAccount.reconnectReason,
                     }
                   : null,
               },
@@ -644,11 +647,10 @@ describe("custom connector URL diagnostics", () => {
     );
   });
 
-  it.each(["incomplete", "invalid"] as const)(
-    "explains %s setup on the admitted custom account in text and JSON",
-    async (setupStatus) => {
-      const connectionStatus =
-        setupStatus === "invalid" ? "reconnect-required" : "connected";
+  it.each(["configuration_incomplete", "configuration_invalid"] as const)(
+    "explains %s on the admitted custom account in text and JSON",
+    async (reconnectReason) => {
+      const connectionStatus = "reconnect-required";
       server.use(
         stubAgentCustomConnectors([
           { customConnectorId: CUSTOM_ID, permissionNames: ["items:write"] },
@@ -664,8 +666,7 @@ describe("custom connector URL diagnostics", () => {
         stubRunConnectorAccountInspection([
           {
             ...account(connectionStatus),
-            setupStatus,
-            reconnectReason: null,
+            reconnectReason,
             missingRequiredFields: ["apiKey"],
           },
           {
@@ -677,7 +678,7 @@ describe("custom connector URL diagnostics", () => {
       );
       await check("--connector", `custom:${CUSTOM_ID}`);
       expect(output()).toContain(`Connection ID: ${ACCOUNT_ID}`);
-      expect(output()).toContain(`Setup status: ${setupStatus}`);
+      expect(output()).toContain(`Reconnect reason: ${reconnectReason}`);
       expect(output()).toContain("Missing required configuration: apiKey");
       expect(output()).toContain(
         "[Connectors](http://localhost:3000/connectors)",
@@ -692,7 +693,7 @@ describe("custom connector URL diagnostics", () => {
       expect(json).toMatchObject({
         account: {
           connectionId: ACCOUNT_ID,
-          metadata: { connectionStatus, setupStatus },
+          metadata: { connectionStatus, reconnectReason },
         },
         authorization: { authorized: true },
         actions: expect.arrayContaining([
@@ -712,7 +713,8 @@ describe("custom connector URL diagnostics", () => {
       stubRunConnectorAccountInspection([
         {
           ...account("reconnect-required"),
-          setupStatus: "incomplete",
+          connectionStatus: "reconnect-required",
+          reconnectReason: "configuration_incomplete",
           missingRequiredFields: ["apiKey"],
         },
       ]),

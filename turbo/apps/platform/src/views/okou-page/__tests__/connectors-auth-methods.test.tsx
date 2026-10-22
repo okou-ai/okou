@@ -82,7 +82,6 @@ function delayAccountDetails(
         externalEmail: null,
         oauthScopes: [],
         connectionStatus: "connected",
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: [],
         reconnectReason: null,
@@ -843,11 +842,11 @@ test("Connect through device authorization", async () => {
 });
 
 test.each([
-  ["device-auth", "invalid"],
-  ["external-code", "invalid"],
+  ["device-auth", "configuration_invalid"],
+  ["external-code", "configuration_invalid"],
 ] as const)(
   "Reject %s completion when account setup is %s",
-  async (grantKind, setupStatus) => {
+  async (grantKind, reconnectReason) => {
     const slug = grantKind === "device-auth" ? "base44" : "aws";
     const label = grantKind === "device-auth" ? "Base44" : "AWS";
     let saved: BuiltinConnectorResponse | null = null;
@@ -893,7 +892,8 @@ test.each([
           target: { kind: "builtin", connectorSlug },
           isDefault: true,
           displayName: null,
-          setupStatus,
+          connectionStatus: "reconnect-required",
+          reconnectReason,
           missingRequiredFields: [],
           configuredFieldKeys: [],
         });
@@ -1211,7 +1211,6 @@ async function addManualAccountForNaming() {
     ({ params, body, respond }) => {
       renamed = { id: params.connectionId, name: body.displayName };
       return respond(200, {
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: [],
         id: connectionId,

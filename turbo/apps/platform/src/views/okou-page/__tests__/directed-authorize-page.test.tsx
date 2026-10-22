@@ -248,7 +248,6 @@ test("Retry an unavailable account read before authorizing the connected default
     isDefault: true,
     displayName: null,
     scopeMismatch: false,
-    setupStatus: "complete",
     configuredFieldKeys: [],
     missingRequiredFields: [],
   };

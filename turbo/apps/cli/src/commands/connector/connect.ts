@@ -1,4 +1,3 @@
-import { connectorAccountSetupIsComplete } from "@okouai/api-contracts/contracts/connector-accounts";
 import { z } from "zod";
 import { Command, Option } from "commander";
 import chalk from "chalk";
@@ -110,10 +109,7 @@ async function connectCustom(
     target: { kind: "custom", customConnectorId: id },
     connectionId,
   });
-  if (
-    connectedAccount.connectionStatus !== "connected" ||
-    !connectorAccountSetupIsComplete(connectedAccount)
-  )
+  if (connectedAccount.connectionStatus !== "connected")
     throw new Error(
       "Connector account setup is incomplete or unavailable; inspect connector account show.",
     );
@@ -200,10 +196,7 @@ Examples:
         target: { kind: "builtin", connectorSlug: metadata.slug },
         connectionId: connector.connectionId,
       });
-      if (
-        connectedAccount.connectionStatus !== "connected" ||
-        !connectorAccountSetupIsComplete(connectedAccount)
-      )
+      if (connectedAccount.connectionStatus !== "connected")
         throw new Error(
           "Connector account setup is incomplete or unavailable; inspect connector account show.",
         );

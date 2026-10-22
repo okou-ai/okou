@@ -194,7 +194,6 @@ function mockAccountForConnector(
     externalEmail: connector.externalEmail,
     oauthScopes: connector.oauthScopes,
     connectionStatus: connector.connectionStatus,
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: connector.reconnectReason,

@@ -8144,7 +8144,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "connected",
-            setupStatus: "complete",
           }),
         );
 
@@ -8169,7 +8168,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "complete",
             reconnectReason: "credential_expired",
           }),
         );
@@ -8395,7 +8393,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "complete",
           }),
         );
         expect(provider.tokenBodies).toHaveLength(2);
@@ -8470,7 +8467,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "connected",
-            setupStatus: "complete",
             missingRequiredFields: [],
             oauthScopes: ["read", "refreshed"],
           }),
@@ -8685,7 +8681,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "complete",
           }),
         );
 
@@ -9312,7 +9307,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             id: sourceId,
             connectionStatus: "connected",
-            setupStatus: "complete",
           }),
         );
         await own(() => {
@@ -9903,7 +9897,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.objectContaining({
             isDefault: true,
             connectionStatus: "reconnect-required",
-            setupStatus: "invalid",
+            reconnectReason: "configuration_invalid",
             configuredFieldKeys: [],
             missingRequiredFields: ["replacement_key"],
           }),
@@ -9983,7 +9977,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             id: connectionId,
             isDefault: true,
             connectionStatus: "connected",
-            setupStatus: "complete",
             configuredFieldKeys: ["replacement_key"],
             missingRequiredFields: [],
           }),

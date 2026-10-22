@@ -65,11 +65,16 @@ struct ConnectorActionCard: View {
   private func reason(_ status: ChatConnectorStatus) -> LocalizedStringKey {
     switch action.kind {
     case .select: return "Confirm this account for the conversation and continue."
-    case .reconnect: return "Sign in again to continue with this exact account."
+    case .reconnect: return "Reconnect this exact account to continue."
     default:
       if status.complete { return "Connected and authorized for this Agent." }
       if status.connected { return "Allow this Agent to use the connected account." }
-      if status.account?.reconnectReason != nil {
+      if let reconnectReason = status.account?.reconnectReason {
+        if reconnectReason == "configuration_incomplete"
+          || reconnectReason == "configuration_invalid"
+        {
+          return "This account's connection details need attention. Reconnect to review them."
+        }
         return "Your service authorization expired or was revoked. Sign in again."
       }
       if let description = status.builtin?.description { return LocalizedStringKey(description) }

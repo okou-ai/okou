@@ -115,7 +115,6 @@ function stubRunConnectorsWithCatalogSlugs(
     stubRunConnectorAccountInspection(
       connectors.map((item) => {
         return {
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: [],
           kind: "available" as const,

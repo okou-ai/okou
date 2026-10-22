@@ -22,10 +22,6 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  connectorAccountSetupIsComplete,
-  type ConnectorAccountConnection,
-} from "@okouai/api-contracts/contracts/connector-accounts";
 import type { FormEvent, ReactElement } from "react";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
@@ -91,14 +87,22 @@ import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 // Connected status text helper
 // ---------------------------------------------------------------------------
 
-function connectedStatusText(
-  item: PlatformConnectorCatalogStatusItem,
-  account: ConnectorAccountConnection | null | undefined,
-): string {
+function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
   const connectionStatus = builtinConnectorCurrentConnectionStatus(item);
   if (connectionStatus === "unavailable") {
     return i18n.t(($) => {
       return $.connectors.accounts.setupUnavailable;
+    });
+  }
+  const reconnectReason = item.connection?.reconnectReason;
+  if (reconnectReason === "configuration_invalid") {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupUnavailable;
+    });
+  }
+  if (reconnectReason === "configuration_incomplete") {
+    return i18n.t(($) => {
+      return $.connectors.accounts.setupIncomplete;
     });
   }
   if (
@@ -112,17 +116,6 @@ function connectedStatusText(
   if (connectionStatus === "scope-mismatch") {
     return i18n.t(($) => {
       return $.connectors.card.updatePermissions;
-    });
-  }
-  const setupStatus = account ? account.setupStatus : item.setupStatus;
-  if (setupStatus === null) {
-    return i18n.t(($) => {
-      return $.connectors.accounts.setupUnavailable;
-    });
-  }
-  if (!connectorAccountSetupIsComplete({ setupStatus })) {
-    return i18n.t(($) => {
-      return $.connectors.accounts.setupIncomplete;
     });
   }
   const expiryText = builtinConnectorExpiryCountdownText(item);
@@ -1630,8 +1623,6 @@ export function ConnectModal({
   const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
   const cancelConnection = useSet(cancelConnectorConnection$);
   const connectionAttempt = useGet(connectorConnectionAttempt$);
-  const account =
-    accountMode?.kind === "reconnect" ? accountMode.account : undefined;
 
   const selectedConnectorSlug = item.slug;
 
@@ -1688,7 +1679,7 @@ export function ConnectModal({
 
         {item.connection && !accountMode && (
           <p className="wrap-anywhere text-sm text-muted-foreground">
-            {connectedStatusText(item, account)}
+            {connectedStatusText(item)}
           </p>
         )}
 

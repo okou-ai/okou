@@ -1,4 +1,3 @@
-import { connectorAccountSetupIsComplete } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
@@ -50,9 +49,7 @@ export function runConnectorSearchAction(
   switch (lookup.state) {
     case "available":
       if (lookup.metadata.connectionStatus !== "reconnect-required") {
-        return connectorAccountSetupIsComplete(lookup.metadata)
-          ? null
-          : accountSettingsAction(connector);
+        return null;
       }
       return connector.kind === "custom"
         ? accountSettingsAction(connector)

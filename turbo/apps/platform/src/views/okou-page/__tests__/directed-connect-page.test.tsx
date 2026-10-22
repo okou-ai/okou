@@ -481,90 +481,85 @@ function getButtonByText(text: string, container?: ParentNode): HTMLElement {
   return button;
 }
 
-test.each([true, false])(
-  "Connect and authorize a manual MCP connector with legacy setup %s",
-  async (legacySetup) => {
-    const connectionId = crypto.randomUUID();
-    let connected = false;
-    let grants: AgentCustomConnectorGrant[] = [];
-    let submittedValues: readonly {
-      readonly key: string;
-      readonly kind: "secret" | "variable";
-      readonly value: string;
-    }[] = [];
-    const connector = mcpCustomConnector();
-    mockAccounts(() => {
-      return connected
-        ? [
-            customConnectorAccount(connector.id, {
+test("Connect and authorize a manual MCP connector", async () => {
+  const connectionId = crypto.randomUUID();
+  let connected = false;
+  let grants: AgentCustomConnectorGrant[] = [];
+  let submittedValues: readonly {
+    readonly key: string;
+    readonly kind: "secret" | "variable";
+    readonly value: string;
+  }[] = [];
+  const connector = mcpCustomConnector();
+  mockAccounts(() => {
+    return connected
+      ? [
+          customConnectorAccount(connector.id, {
+            id: connectionId,
+            configuredFieldKeys: ["secret"],
+          }),
+        ]
+      : [];
+  });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, {
+      connectors: [connector],
+    });
+  });
+  context.mocks.api(
+    customConnectorValuesContract.set,
+    ({ body, params, respond }) => {
+      expect(params.id).toBe(connector.id);
+      submittedValues = body.values;
+      connected = true;
+      return respond(
+        200,
+        customConnectorCompletionFixture(
+          mcpConnectorFixture({
+            ...connector,
+            account: {
               id: connectionId,
+              missingRequiredFields: [],
               configuredFieldKeys: ["secret"],
-              setupStatus: legacySetup ? "complete" : undefined,
-            }),
-          ]
-        : [];
-    });
-    context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-      return respond(200, {
-        connectors: [connector],
-      });
-    });
-    context.mocks.api(
-      customConnectorValuesContract.set,
-      ({ body, params, respond }) => {
-        expect(params.id).toBe(connector.id);
-        submittedValues = body.values;
-        connected = true;
-        return respond(
-          200,
-          customConnectorCompletionFixture(
-            mcpConnectorFixture({
-              ...connector,
-              account: {
-                id: connectionId,
-                missingRequiredFields: [],
-                configuredFieldKeys: ["secret"],
-                setupStatus: "complete",
-              },
-            }),
-          ),
-        );
-      },
-    );
-    context.mocks.api(
-      agentCustomConnectorsContract.update,
-      ({ body, params, respond }) => {
-        expect(params.id).toBe(AGENT_ID);
-        grants = body.grants;
-        return respond(200, { grants });
-      },
-    );
+            },
+          }),
+        ),
+      );
+    },
+  );
+  context.mocks.api(
+    agentCustomConnectorsContract.update,
+    ({ body, params, respond }) => {
+      expect(params.id).toBe(AGENT_ID);
+      grants = body.grants;
+      return respond(200, { grants });
+    },
+  );
 
-    await setupPage({
-      context,
-      path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
-    });
+  await setupPage({
+    context,
+    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+  });
 
-    const heading = await screen.findByText("Okou needs DeepWiki to proceed");
-    expect(heading).toBeInTheDocument();
-    click(getButtonByText("Connect"));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Connect DeepWiki",
-    });
-    await fill(within(dialog).getByLabelText("Secret"), "acme-secret");
-    click(getButtonByText("Save"));
+  const heading = await screen.findByText("Okou needs DeepWiki to proceed");
+  expect(heading).toBeInTheDocument();
+  click(getButtonByText("Connect"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Connect DeepWiki",
+  });
+  await fill(within(dialog).getByLabelText("Secret"), "acme-secret");
+  click(getButtonByText("Save"));
 
-    await waitFor(() => {
-      expect(submittedValues).toStrictEqual([
-        { key: "secret", kind: "secret", value: "acme-secret" },
-      ]);
-      expect(grants).toStrictEqual([
-        { customConnectorId: connector.id, permissionNames: [] },
-      ]);
-      expect(screen.getByText("DeepWiki connected")).toBeInTheDocument();
-    });
-  },
-);
+  await waitFor(() => {
+    expect(submittedValues).toStrictEqual([
+      { key: "secret", kind: "secret", value: "acme-secret" },
+    ]);
+    expect(grants).toStrictEqual([
+      { customConnectorId: connector.id, permissionNames: [] },
+    ]);
+    expect(screen.getByText("DeepWiki connected")).toBeInTheDocument();
+  });
+});
 
 test("Let an MCP server discover authentication from a directed connection", async () => {
   const completedAttempts = mockOAuthCompletions(context);
@@ -662,7 +657,6 @@ test("Reconnect the exact manual custom-connector account", async () => {
       id: connectionId,
       missingRequiredFields: [],
       configuredFieldKeys: ["secret"],
-      setupStatus: "complete",
     },
   });
   const account = customConnectorAccount(connector.id, {
@@ -871,7 +865,6 @@ test("Reconnect the exact custom OAuth account", async () => {
     account: {
       id: connectionId,
       missingRequiredFields: [],
-      setupStatus: "complete",
     },
   });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
@@ -1289,9 +1282,9 @@ test("Complete OpenID and continue the originating chat", async () => {
   });
 });
 
-test.each(["incomplete", "invalid"] as const)(
-  "Show the saved builtin account's %s setup in the connect dialog",
-  async (setupStatus) => {
+test.each(["configuration_incomplete", "configuration_invalid"] as const)(
+  "Show the saved builtin account's %s reason in the connect dialog",
+  async (reconnectReason) => {
     const account: ConnectorAccountConnection = {
       id: crypto.randomUUID(),
       target: { kind: "builtin", connectorSlug: "github" },
@@ -1302,10 +1295,9 @@ test.each(["incomplete", "invalid"] as const)(
       externalUsername: null,
       externalEmail: null,
       oauthScopes: null,
-      connectionStatus: "connected",
+      connectionStatus: "reconnect-required",
       scopeMismatch: false,
-      reconnectReason: null,
-      setupStatus,
+      reconnectReason,
       missingRequiredFields: ["apiToken"],
       configuredFieldKeys: [],
       tokenExpiresAt: null,
@@ -1340,9 +1332,8 @@ test.each(["incomplete", "invalid"] as const)(
           authMethod: account.authMethod,
           externalUsername: null,
           externalEmail: null,
-          reconnectReason: null,
-          connectionStatus: "connected",
-          setupStatus: setupStatus,
+          reconnectReason,
+          connectionStatus: "reconnect-required",
         },
       }),
     );
@@ -1356,7 +1347,13 @@ test.each(["incomplete", "invalid"] as const)(
     ).resolves.toBeInTheDocument();
     click(getButtonByText("Connect"));
     const dialog = await screen.findByRole("dialog", { name: "Public GitHub" });
-    expect(within(dialog).getByText("Setup incomplete")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        reconnectReason === "configuration_invalid"
+          ? "Account status unavailable"
+          : "Setup incomplete",
+      ),
+    ).toBeInTheDocument();
     expect(within(dialog).queryByText("Connected")).not.toBeInTheDocument();
     expect(
       within(dialog).getByPlaceholderText("github-token"),
@@ -1413,7 +1410,6 @@ test("Reconnect the expired public OAuth account", async () => {
         externalEmail: null,
         reconnectReason: "authorization_expired_or_revoked",
         connectionStatus: "reconnect-required",
-        setupStatus: "complete",
       },
     }),
   );
@@ -1529,7 +1525,6 @@ test("Reconnect the exact account and continue the originating chat only after s
         oauthScopes: [],
         connectionStatus:
           submittedAccount === null ? "reconnect-required" : "connected",
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: ["apiToken"],
         reconnectReason:

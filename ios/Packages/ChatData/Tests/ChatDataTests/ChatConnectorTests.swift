@@ -101,30 +101,21 @@ final class ChatConnectorTests: XCTestCase {
       } catch APIClientError.invalidResponse {}
     }
   }
-  func testPreparedAccountReaderPreservesLegacySetupAndAcceptsCanonicalStatus() async throws {
-    for (body, expectedReady) in [
-      (F.account(), true), (F.account(setup: false), true),
-      (F.account().replacingOccurrences(of: "\"complete\"", with: "\"incomplete\""), false),
-      (F.account().replacingOccurrences(of: "\"complete\"", with: "\"invalid\""), false),
-      (F.account().replacingOccurrences(of: "\"complete\"", with: "\"unknown\""), false),
-      (F.account(connected: false, setup: false), false),
-    ] {
-      let fixture = ChatHTTPFixture { _ in ChatHTTPResponse(body: body) }
-      let account = try await ChatConnectorService(client: fixture.client).account(
-        id: F.accountID, target: .builtin("slack"))
-      XCTAssertEqual(account.ready, expectedReady)
-    }
-    let fixture = ChatHTTPFixture { request in
-      if request.url?.path == "/api/connector-accounts/connections" {
-        return ChatHTTPResponse(
-          body:
-            "{\"connections\":[],\"nextCursor\":null,\"defaultConnection\":\(F.account(setup: false))}"
-        )
+  func testConfigurationAttentionPreservesTheExactAccountAndReason() async throws {
+    for reason in ["configuration_incomplete", "configuration_invalid"] {
+      let fixture = ChatHTTPFixture { request in
+        if request.url?.path == "/api/connector-accounts/\(F.accountID)" {
+          return ChatHTTPResponse(body: F.account(connected: false, reconnectReason: reason))
+        }
+        return try XCTUnwrap(F.response(request))
       }
-      return try XCTUnwrap(F.response(request))
+      let loaded = try await ChatConnectorService(client: fixture.client).status(
+        action("/connectors/slack/reconnect/\(F.accountID)"))
+      let status = try XCTUnwrap(loaded)
+      XCTAssertEqual(status.account?.id, F.accountID)
+      XCTAssertEqual(status.account?.reconnectReason, reason)
+      XCTAssertFalse(status.connected)
     }
-    let status = try await ChatConnectorService(client: fixture.client).status(action())
-    XCTAssertTrue(try XCTUnwrap(status).connected)
   }
   func testTargetAccountPagePreservesAnOffPageDefault() async throws {
     for custom in [false, true] {

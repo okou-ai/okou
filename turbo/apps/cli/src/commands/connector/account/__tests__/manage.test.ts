@@ -30,7 +30,6 @@ function account(target: object) {
     externalEmail: null,
     oauthScopes: null,
     connectionStatus: "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: null,

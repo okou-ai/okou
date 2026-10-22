@@ -521,7 +521,6 @@ export function connectorAccount(args: {
     oauthScopes: [],
     ...(args.target.kind === "builtin" ? { scopeMismatch: false } : {}),
     connectionStatus: "connected",
-    setupStatus: "complete",
     missingRequiredFields: [],
     configuredFieldKeys: [],
     reconnectReason: null,
@@ -575,7 +574,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
         authMethod,
         connectionStatus: "connected",
         reconnectReason: null,
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: [
           ...new Set([

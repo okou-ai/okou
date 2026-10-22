@@ -2,15 +2,18 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
-  connectorAccountSetupSchema,
+  connectorAccountFieldMetadataSchema,
   connectorAccountTargetSchema,
 } from "./connector-accounts";
-import { connectorResponseConnectionStatusSchema } from "./connector-schemas";
+import {
+  connectorReconnectReasonSchema,
+  connectorResponseConnectionStatusSchema,
+} from "./connector-schemas";
 
 const c = initContract();
 
 export const mcpConnectorSchema = z.object({
-  ...connectorAccountSetupSchema.shape,
+  ...connectorAccountFieldMetadataSchema.shape,
   target: connectorAccountTargetSchema,
   connectionId: z.uuid(),
   slug: z.string().min(1),
@@ -19,6 +22,7 @@ export const mcpConnectorSchema = z.object({
   endpoint: z.string().min(1),
   runtimeAvailable: z.boolean(),
   connectionStatus: connectorResponseConnectionStatusSchema,
+  reconnectReason: connectorReconnectReasonSchema.nullable(),
 });
 export type McpConnector = z.infer<typeof mcpConnectorSchema>;
 

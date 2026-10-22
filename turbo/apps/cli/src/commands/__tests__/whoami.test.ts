@@ -164,7 +164,6 @@ describe("okou whoami command", () => {
       const connectionStatus = fixture.connectionStatus ?? "connected";
       return [
         {
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: [],
           kind: "available" as const,
@@ -1319,7 +1318,6 @@ describe("okou whoami command", () => {
     ): void {
       const accounts: AvailableConnectorAccount[] = [
         {
-          setupStatus: "complete",
           missingRequiredFields: [],
           configuredFieldKeys: [],
           kind: "available",
@@ -1335,7 +1333,6 @@ describe("okou whoami command", () => {
         },
         ...definitions.map((definition, index): AvailableConnectorAccount => {
           return {
-            setupStatus: "complete",
             missingRequiredFields: [],
             configuredFieldKeys: [],
             kind: "available",

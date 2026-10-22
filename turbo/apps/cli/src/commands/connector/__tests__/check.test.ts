@@ -322,7 +322,7 @@ describe("okou connector check command", () => {
       readonly connectionId?: string;
       readonly label?: string;
       readonly origin?: string;
-      readonly setupStatus?: ConnectorAccountConnection["setupStatus"];
+      readonly configurationReason?: ConnectorAccountConnection["reconnectReason"];
       readonly missingRequiredFields?: string[];
       readonly authMethod?: string;
     } = {},
@@ -341,7 +341,6 @@ describe("okou connector check command", () => {
           ? []
           : [
               {
-                setupStatus: options.setupStatus ?? "complete",
                 missingRequiredFields: options.missingRequiredFields ?? [],
                 configuredFieldKeys: [],
                 kind: "available",
@@ -354,10 +353,10 @@ describe("okou connector check command", () => {
                 externalEmail: "run@example.com",
                 connectionStatus,
                 reconnectReason:
-                  connectionStatus === "reconnect-required" &&
-                  options.setupStatus !== "invalid"
+                  options.configurationReason ??
+                  (connectionStatus === "reconnect-required"
                     ? "authorization_expired_or_revoked"
-                    : null,
+                    : null),
               },
             ],
         options.origin ?? API_BASE_URL,
@@ -434,18 +433,25 @@ describe("okou connector check command", () => {
         accounts: [
           {
             ...account,
-            setupStatus: "incomplete" as const,
+            connectionStatus: "reconnect-required" as const,
+            reconnectReason: "configuration_incomplete" as const,
             missingRequiredFields: ["apiKey"],
           },
         ],
         message: "Current account status: missing apiKey.",
-        action: "[Manage GitHub accounts]",
+        action: "[Reconnect GitHub]",
       },
       {
         name: "invalid setup",
-        accounts: [{ ...account, setupStatus: "invalid" as const }],
-        message: "Current account status: setup invalid.",
-        action: "[Manage GitHub accounts]",
+        accounts: [
+          {
+            ...account,
+            connectionStatus: "reconnect-required" as const,
+            reconnectReason: "configuration_invalid" as const,
+          },
+        ],
+        message: "Current account status: configuration invalid.",
+        action: "[Reconnect GitHub]",
       },
       {
         name: "unavailable scope review",
@@ -770,8 +776,7 @@ describe("okou connector check command", () => {
       const account = connectorAccount(target, {
         id: "00000000-0000-4000-8000-000000000003",
         connectionStatus: "reconnect-required",
-        reconnectReason: "authorization_expired_or_revoked",
-        setupStatus: "invalid",
+        reconnectReason: "configuration_invalid",
       });
       const sibling = connectorAccount(target, { isDefault: false });
       server.use(
@@ -813,7 +818,11 @@ describe("okou connector check command", () => {
         accountSummary: {
           accountCount: 2,
           attentionCount: 1,
-          defaultConnection: { id: account.id, setupStatus: "invalid" },
+          defaultConnection: {
+            id: account.id,
+            connectionStatus: "reconnect-required",
+            reconnectReason: "configuration_invalid",
+          },
         },
         memberStatus: "reconnect-required",
         diagnostic: {
@@ -1397,7 +1406,7 @@ describe("okou connector check command", () => {
       setRunAccount("github", "reconnect-required", {
         connectionId: SELECTED_CONNECTION_ID,
         label: "Run account B",
-        setupStatus: "invalid",
+        configurationReason: "configuration_invalid",
       });
       stubDiagnostic(resolvedEnvironment());
       stubConnector("github", connectorResponse("github"), () => {
@@ -1419,25 +1428,20 @@ describe("okou connector check command", () => {
         `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}?agentId=${AGENT_ID}`,
       );
       expect(text).toContain("After reconnecting, start a new run.");
-      expect(text).toContain("Setup status: invalid");
+      expect(text).toContain("Reconnect reason: configuration_invalid");
       expect(text).toContain("The GitHub connector needs to be reconnected.");
       expect(defaultAccountRequests).toBe(0);
     });
 
-    it.each(["incomplete", "invalid"] as const)(
-      "diagnoses %s setup on the exact run account despite a healthy default",
-      async (setupStatus) => {
-        const needsReconnect = setupStatus === "invalid";
-        setRunAccount(
-          "openai",
-          needsReconnect ? "reconnect-required" : "connected",
-          {
-            label: "Run account B",
-            authMethod: "api-token",
-            setupStatus,
-            missingRequiredFields: ["apiKey"],
-          },
-        );
+    it.each(["configuration_incomplete", "configuration_invalid"] as const)(
+      "diagnoses %s on the exact run account despite a healthy default",
+      async (reconnectReason) => {
+        setRunAccount("openai", "reconnect-required", {
+          label: "Run account B",
+          authMethod: "api-token",
+          configurationReason: reconnectReason,
+          missingRequiredFields: ["apiKey"],
+        });
         stubDiagnostic(
           resolvedEnvironment({
             connector: connectorIdentity({
@@ -1475,16 +1479,12 @@ describe("okou connector check command", () => {
         const text = getOutput();
         expect(text).toContain(`Connection ID: ${SELECTED_CONNECTION_ID}`);
         expect(text).toContain("Account used by this run: Run account B");
-        expect(text).toContain(`Setup status: ${setupStatus}`);
+        expect(text).toContain(`Reconnect reason: ${reconnectReason}`);
         expect(text).toContain("Missing required configuration: apiKey");
-        const actionPath = needsReconnect
-          ? `/connectors/openai/reconnect/${SELECTED_CONNECTION_ID}?agentId=`
-          : "/connectors?agentId=";
+        const actionPath = `/connectors/openai/reconnect/${SELECTED_CONNECTION_ID}?agentId=`;
         expect(text).toContain(actionPath);
         expect(text).toContain(
-          needsReconnect
-            ? "Skipped — agent authorization can only be checked once"
-            : "authorized for this agent.",
+          "Skipped — agent authorization can only be checked once",
         );
         expect(text).not.toMatch(
           /connected and active|connected, active, and authorized/,
@@ -1504,10 +1504,8 @@ describe("okou connector check command", () => {
           account: {
             connectionId: SELECTED_CONNECTION_ID,
             metadata: {
-              connectionStatus: needsReconnect
-                ? "reconnect-required"
-                : "connected",
-              setupStatus,
+              connectionStatus: "reconnect-required",
+              reconnectReason,
             },
           },
           authorization: { authorized: true },
@@ -1515,7 +1513,7 @@ describe("okou connector check command", () => {
             expect.objectContaining({
               kind: "link",
               url: expect.stringContaining(actionPath),
-              supportsCallback: needsReconnect,
+              supportsCallback: true,
             }),
           ]),
         });
@@ -1633,7 +1631,7 @@ describe("okou connector check command", () => {
         {
           id: "00000000-0000-4000-8000-000000000003",
           connectionStatus: "reconnect-required",
-          setupStatus: "invalid",
+          reconnectReason: "configuration_invalid",
         },
       );
       server.use(

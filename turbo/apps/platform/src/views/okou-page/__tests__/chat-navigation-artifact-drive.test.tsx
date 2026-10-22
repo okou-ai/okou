@@ -317,7 +317,6 @@ function installDriveMocks(
           connectionState === "reconnect-required"
             ? "reconnect-required"
             : "connected",
-        setupStatus: "complete",
         missingRequiredFields: [],
         configuredFieldKeys: [],
         reconnectReason:

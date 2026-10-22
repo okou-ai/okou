@@ -82,7 +82,7 @@ teardown() {
     assert_success
     run jq -e '
         .connectionStatus == "connected" and
-        .setupStatus == "complete" and
+        .reconnectReason == null and
         .missingRequiredFields == [] and
         .configuredFieldKeys == ["probe_secret"]
     ' <<<"$output"
@@ -277,7 +277,7 @@ EOF
                 .displayName == "Default account" and
                 .isDefault == true and
                 .connectionStatus == "connected" and
-                .setupStatus == "complete" and
+                .reconnectReason == null and
                 .missingRequiredFields == [] and
                 (.configuredFieldKeys | sort) == ["host", "probe_secret"]
             ) and
@@ -290,7 +290,7 @@ EOF
                 .displayName == "Selected account" and
                 .isDefault == false and
                 .connectionStatus == "connected" and
-                .setupStatus == "complete" and
+                .reconnectReason == null and
                 .missingRequiredFields == [] and
                 (.configuredFieldKeys | sort) == ["host", "probe_secret"]
             )

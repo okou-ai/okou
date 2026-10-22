@@ -107,7 +107,6 @@ describe("okou mail", () => {
           return HttpResponse.json({
             results: body.selections.map((selection) => {
               return {
-                setupStatus: "complete",
                 missingRequiredFields: [],
                 configuredFieldKeys: [],
                 kind: "available" as const,
@@ -188,7 +187,6 @@ describe("okou mail", () => {
           return HttpResponse.json({
             results: body.selections.map((selection) => {
               return {
-                setupStatus: "complete",
                 missingRequiredFields: [],
                 configuredFieldKeys: [],
                 kind: "available" as const,

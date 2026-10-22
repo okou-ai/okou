@@ -138,7 +138,7 @@ describe("okou connector custom readers", () => {
           memberStatus: "connected",
           accountSummary: {
             accountCount: 1,
-            defaultConnection: { id: accountId, setupStatus: "complete" },
+            defaultConnection: { id: accountId },
           },
         },
       });
