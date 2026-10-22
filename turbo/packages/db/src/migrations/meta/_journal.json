@@ -2549,6 +2549,13 @@
       "when": 1792657329490,
       "tag": "1441_proactive_action_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 1442,
+      "version": "7",
+      "when": 1792663848071,
+      "tag": "1442_free_voice_daily_requests",
+      "breakpoints": true
     }
   ]
 }
