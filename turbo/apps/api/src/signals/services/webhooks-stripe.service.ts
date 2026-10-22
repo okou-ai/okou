@@ -4025,9 +4025,8 @@ const handleSubscriptionScheduleReleased$ = command(
   ): Promise<readonly string[]> {
     const db = set(writeDb$);
     const updatedAt = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0330; new non-billing transactions are prohibited.
-    const { rows, usagePackOrgIds } = await db.transaction(async (tx) => {
-      const usagePackRows = await tx
+    const usagePackChanges = db.$with("released_usage_pack_changes").as(
+      db
         .update(usagePackAllocationChanges)
         .set({
           status: "failed",
@@ -4045,15 +4044,10 @@ const handleSubscriptionScheduleReleased$ = command(
             ),
           ),
         )
-        .returning({ orgId: usagePackAllocationChanges.orgId });
-      const usagePackOrgIds = [
-        ...new Set(
-          usagePackRows.map((row) => {
-            return row.orgId;
-          }),
-        ),
-      ];
-      const rows = await tx
+        .returning({ orgId: usagePackAllocationChanges.orgId }),
+    );
+    const organizations = db.$with("released_billing_organizations").as(
+      db
         .update(orgMetadata)
         .set({
           cancelAtPeriodEnd: false,
@@ -4063,17 +4057,24 @@ const handleSubscriptionScheduleReleased$ = command(
           updatedAt,
         })
         .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
-        .returning({ orgId: orgMetadata.orgId });
-      return { rows, usagePackOrgIds };
-    });
-
+        .returning({ orgId: orgMetadata.orgId }),
+    );
+    const changedOrganizations = db
+      .select({ orgId: usagePackChanges.orgId })
+      .from(usagePackChanges)
+      .unionAll(db.select({ orgId: organizations.orgId }).from(organizations))
+      .as("released_organizations");
+    // Keep writable CTEs at the statement's top level, outside UNION branches.
+    const rows = await db
+      .with(usagePackChanges, organizations)
+      .select({ orgId: changedOrganizations.orgId })
+      .from(changedOrganizations);
     const orgIds = [
-      ...new Set([
-        ...usagePackOrgIds,
-        ...rows.map((row) => {
+      ...new Set(
+        rows.map((row) => {
           return row.orgId;
         }),
-      ]),
+      ),
     ];
 
     if (orgIds.length > 0) {

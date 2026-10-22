@@ -582,11 +582,6 @@
       "owner": "publishLegacyPlanSubscription$"
     },
     {
-      "id": "TX-0330",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "handleSubscriptionScheduleReleased"
-    },
-    {
       "id": "TX-0332",
       "file": "turbo/apps/api/src/signals/services/workflow-automation-run-callback.service.ts",
       "owner": "attemptUnjournaledWorkflowAutomationCallbackSettlement$"
