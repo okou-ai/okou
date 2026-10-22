@@ -202,9 +202,10 @@ jobs:
                 ;;
             esac
           done < "$changed_files"
-          echo "native-kerberos-needed=$native_kerberos_needed" >> "$GITHUB_OUTPUT"
-          echo "native-gssapi-peer-needed=$native_gssapi_peer_needed" >> "$GITHUB_OUTPUT"
-          echo "guest-home-cleanup-needed=$guest_home_cleanup_needed" >> "$GITHUB_OUTPUT"
+          printf '%s\n' \
+            "native-kerberos-needed=$native_kerberos_needed" \
+            "native-gssapi-peer-needed=$native_gssapi_peer_needed" \
+            "guest-home-cleanup-needed=$guest_home_cleanup_needed" >> "$GITHUB_OUTPUT"
           rm -f "$changed_files"
 
           # Shared contract fixtures are stored under turbo but are read by
