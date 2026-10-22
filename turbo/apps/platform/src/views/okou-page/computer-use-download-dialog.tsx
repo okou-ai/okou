@@ -26,7 +26,7 @@ import {
 
 function ChatSetupVisual() {
   return (
-    <figure className="flex h-44 items-center justify-center rounded-xl bg-gray-50 p-2">
+    <figure className="flex h-44 items-center justify-center rounded-xl bg-gray-50 p-3">
       <ComputerUseChatIllustration />
     </figure>
   );
@@ -36,7 +36,7 @@ function DesktopDownload({ downloadUrl }: { readonly downloadUrl: string }) {
   const { t } = useTranslation();
   const support = useLoadable(desktopDownloadSupportStatus$);
   return (
-    <div className="grid justify-items-start gap-3">
+    <div className="grid w-full min-w-0 flex-1 justify-items-start gap-3">
       {support.state !== "hasData" ? (
         <Button disabled>
           {t(($) => {
@@ -68,6 +68,52 @@ function DesktopDownload({ downloadUrl }: { readonly downloadUrl: string }) {
           return $.chat.computerUse.macosRequirement;
         })}
       </p>
+    </div>
+  );
+}
+
+function DesktopSetupVisual({
+  step,
+  downloadUrl,
+}: {
+  readonly step: "install" | "permissions";
+  readonly downloadUrl: string;
+}) {
+  return (
+    <div className="flex min-h-44 flex-col items-center justify-center gap-5 rounded-xl bg-gray-50 p-4 sm:flex-row sm:gap-6">
+      <figure className="flex shrink-0 justify-center">
+        <img
+          src={
+            step === "install"
+              ? computerUseInstallIllustrationImg
+              : computerUsePermissionsIllustrationImg
+          }
+          alt=""
+          width={144}
+          height={144}
+          className="size-36 object-contain"
+        />
+      </figure>
+      {step === "install" && <DesktopDownload downloadUrl={downloadUrl} />}
+    </div>
+  );
+}
+
+function SetupProgress({ currentStep }: { readonly currentStep: number }) {
+  return (
+    <div className="flex gap-2" aria-hidden="true">
+      {[1, 2, 3].map((number) => {
+        return (
+          <div
+            key={number}
+            className={
+              number <= currentStep
+                ? "h-1 flex-1 rounded-full bg-primary"
+                : "h-1 flex-1 rounded-full bg-muted"
+            }
+          />
+        );
+      })}
     </div>
   );
 }
@@ -128,37 +174,28 @@ export function ComputerUseDownloadDialog({
         scrollable={false}
         contentClassName="flex flex-col gap-0 p-0"
       >
-        <DialogHeader className="flex shrink-0 flex-row items-center gap-3 space-y-0 px-6 pt-5 pb-4 pr-16 text-left">
-          <DialogTitle className="min-w-0 text-xl leading-7">
-            {copy.title}
-          </DialogTitle>
-          <span
-            aria-live="polite"
-            className="shrink-0 text-sm leading-7 tabular-nums text-muted-foreground"
-          >
-            {copy.number} / 3
-          </span>
+        <DialogHeader className="shrink-0 space-y-4 px-6 pt-6 pb-5 text-left">
+          <div className="flex items-center justify-between gap-4 pr-10">
+            <DialogTitle className="min-w-0 text-xl leading-7">
+              {copy.title}
+            </DialogTitle>
+            <span
+              aria-live="polite"
+              className="shrink-0 text-sm leading-7 tabular-nums text-muted-foreground"
+            >
+              {copy.number} / 3
+            </span>
+          </div>
+          <SetupProgress currentStep={copy.number} />
         </DialogHeader>
-        <DialogBody className="grid content-start gap-5 px-6 pb-6">
-          <DialogDescription className="leading-6">
+        <DialogBody className="grid content-start gap-4 px-6 pb-6">
+          <DialogDescription className="min-h-12 leading-6">
             {copy.description}
           </DialogDescription>
-          {step === "chat" && <ChatSetupVisual />}
-          {step === "install" && <DesktopDownload downloadUrl={downloadUrl} />}
-          {step !== "chat" && (
-            <figure className="flex justify-center">
-              <img
-                src={
-                  step === "install"
-                    ? computerUseInstallIllustrationImg
-                    : computerUsePermissionsIllustrationImg
-                }
-                alt=""
-                width={144}
-                height={144}
-                className="h-36 w-36 object-contain"
-              />
-            </figure>
+          {step === "chat" ? (
+            <ChatSetupVisual />
+          ) : (
+            <DesktopSetupVisual step={step} downloadUrl={downloadUrl} />
           )}
         </DialogBody>
         <div className="flex shrink-0 items-center justify-end gap-3 border-t border-divider px-6 py-4">
@@ -177,14 +214,14 @@ export function ComputerUseDownloadDialog({
             </Button>
           )}
           {step === "chat" ? (
-            <DialogClose render={<Button className="min-w-24" />}>
+            <DialogClose render={<Button className="min-w-28" />}>
               {t(($) => {
                 return $.chat.computerUse.setupSteps.done;
               })}
             </DialogClose>
           ) : (
             <Button
-              className="min-w-24"
+              className="min-w-28"
               onClick={() => {
                 return setStep(step === "install" ? "permissions" : "chat");
               }}
