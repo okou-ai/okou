@@ -13,7 +13,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { runAfterSameProcessRefresh } from "./same-process-refresh";
 import { command } from "ccstate";
-import { and, eq, exists } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   mcpOAuthScopeListSchema,
@@ -112,8 +112,11 @@ import {
 } from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import {
+  customConnectorOAuthConnectionReadPlan,
+  customConnectorOAuthConnectionTokenReadPlan,
   customConnectorRefreshReconnectCondition,
   storedRefreshTokenCondition,
+  type CustomConnectorOAuthConnectionReadIdentity,
 } from "./custom-connector-oauth-write.service";
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
@@ -1306,16 +1309,51 @@ function automaticOAuthReauthorizationUnavailable(
   );
 }
 
+interface AutomaticOAuthReauthorizationArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly connectionId: string;
+  readonly scopes: readonly string[];
+}
+
+function automaticOAuthReauthorizationStartValues(
+  args: AutomaticOAuthReauthorizationArgs,
+  connector: CustomConnectorRow,
+  prepared: Awaited<
+    ReturnType<typeof prepareCustomConnectorAutomaticOAuthReauthorization>
+  >,
+  redirectUri: string,
+  state: string,
+): Omit<Parameters<typeof persistCustomConnectorOAuthStart>[0], "db"> {
+  return {
+    connector,
+    args: {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorId: args.connectorId,
+      redirectUri,
+      account: {
+        intent: "reconnect",
+        connectionId: args.connectionId,
+      },
+    },
+    prepared: {
+      authMode: "automatic",
+      redirectUri,
+      state,
+      authorizationUrl: prepared.authorizationUrl,
+      codeVerifier: prepared.codeVerifier,
+      oauthRequestedScopes: prepared.requestedScope,
+      context: prepared.context,
+    },
+  };
+}
+
 export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
   async (
     { get, set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly connectionId: string;
-      readonly scopes: readonly string[];
-    },
+    args: AutomaticOAuthReauthorizationArgs,
     signal: AbortSignal,
   ) => {
     const connector = await get(
@@ -1333,15 +1371,39 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
     );
     signal.throwIfAborted();
     const db = set(writeDb$);
-    const connection = await loadConnection({
-      db,
+    const connectionIdentity: CustomConnectorOAuthConnectionReadIdentity = {
       orgId: args.orgId,
       userId: args.userId,
       customConnectorId: connector.id,
       memberConnectorId: args.connectionId,
       storageVersion: connector.storageVersion,
       definitionAuthMode: "automatic",
-    });
+    };
+    const connection = await (async (): Promise<StoredConnection | null> => {
+      const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
+      const query = db
+        .select(plan.columns)
+        .from(connectors)
+        .where(plan.condition);
+      const rows = await query.limit(1);
+      const connection = rows[0];
+      if (!connection) {
+        return null;
+      }
+      // Re-check the complete identity at the secret read boundary because the
+      // organization definition can change after the parent lookup.
+      const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
+        connectionIdentity,
+        connection.id,
+      );
+      const tokenRows = await db
+        .select(tokenPlan.columns)
+        .from(secrets)
+        .innerJoin(connectors, tokenPlan.accountJoin)
+        .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
+        .where(tokenPlan.condition);
+      return storedConnectionFromRows(connection, tokenRows);
+    })();
     signal.throwIfAborted();
     if (
       !connection ||
@@ -1401,26 +1463,13 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
     const persisted = await persistCustomConnectorOAuthStart(
       {
         db,
-        connector,
-        args: {
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorId: args.connectorId,
-          redirectUri,
-          account: {
-            intent: "reconnect",
-            connectionId: args.connectionId,
-          },
-        },
-        prepared: {
-          authMode: "automatic",
+        ...automaticOAuthReauthorizationStartValues(
+          args,
+          connector,
+          prepared,
           redirectUri,
           state,
-          authorizationUrl: prepared.authorizationUrl,
-          codeVerifier: prepared.codeVerifier,
-          oauthRequestedScopes: prepared.requestedScope,
-          context: prepared.context,
-        },
+        ),
       },
       signal,
     );
@@ -1848,82 +1897,16 @@ interface StoredConnection {
   readonly encryptedIdToken: string | null;
 }
 
-async function loadConnection(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly customConnectorId: string;
-  readonly memberConnectorId: string;
-  readonly storageVersion: number;
-  readonly definitionAuthMode: "oauth" | "automatic";
-}): Promise<StoredConnection | null> {
-  const query = args.db
-    .select({
-      id: connectors.id,
-      tokenExpiresAt: connectors.tokenExpiresAt,
-      needsReconnect: connectors.needsReconnect,
-      oauthScopes: connectors.oauthScopes,
-      externalId: connectors.externalId,
-      externalUsername: connectors.externalUsername,
-      externalEmail: connectors.externalEmail,
-    })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.memberConnectorId),
-        eq(connectors.customConnectorId, args.customConnectorId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.authMethod, "oauth"),
-        eq(connectors.storageVersion, args.storageVersion),
-        exists(
-          args.db
-            .select({ id: orgCustomConnectors.id })
-            .from(orgCustomConnectors)
-            .where(
-              and(
-                eq(orgCustomConnectors.id, args.customConnectorId),
-                eq(orgCustomConnectors.orgId, args.orgId),
-                eq(orgCustomConnectors.authMode, args.definitionAuthMode),
-                eq(orgCustomConnectors.storageVersion, args.storageVersion),
-              ),
-            ),
-        ),
-      ),
-    );
-  const rows = await query.limit(1);
-  const connection = rows[0];
-  if (!connection) {
-    return null;
-  }
-  // Re-check the complete identity at the secret read boundary because the
-  // organization definition can change after the parent lookup.
-  const tokenRows = await args.db
-    .select({
-      secretName: secrets.name,
-      encryptedValue: secrets.encryptedValue,
-    })
-    .from(secrets)
-    .innerJoin(connectors, eq(connectors.id, secrets.connectorId))
-    .innerJoin(
-      orgCustomConnectors,
-      and(
-        eq(orgCustomConnectors.id, connectors.customConnectorId),
-        eq(orgCustomConnectors.orgId, connectors.orgId),
-        eq(orgCustomConnectors.authMode, args.definitionAuthMode),
-        eq(orgCustomConnectors.storageVersion, args.storageVersion),
-      ),
-    )
-    .where(
-      and(
-        eq(connectors.id, connection.id),
-        eq(connectors.customConnectorId, args.customConnectorId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.authMethod, "oauth"),
-        eq(connectors.storageVersion, args.storageVersion),
-      ),
-    );
+function storedConnectionFromRows(
+  connection: Omit<
+    StoredConnection,
+    "encryptedAccessToken" | "encryptedRefreshToken" | "encryptedIdToken"
+  >,
+  tokenRows: readonly {
+    readonly secretName: string;
+    readonly encryptedValue: (typeof secrets.$inferSelect)["encryptedValue"];
+  }[],
+): StoredConnection {
   return {
     id: connection.id,
     tokenExpiresAt: connection.tokenExpiresAt,
@@ -2063,15 +2046,40 @@ function currentAfterLostPublication(
 async function loadCustomOAuthConnection(
   args: ResolveCustomConnectorOAuth2AccessTokenArgs,
 ): Promise<StoredConnection | null> {
-  return await loadConnection({
-    db: args.db,
+  const connectionDb = args.db;
+  const connectionIdentity: CustomConnectorOAuthConnectionReadIdentity = {
     orgId: args.orgId,
     userId: args.userId,
     customConnectorId: args.connector.id,
     memberConnectorId: args.memberConnectorId,
     storageVersion: args.connector.storageVersion,
     definitionAuthMode: "oauth",
-  });
+  };
+  return await (async (): Promise<StoredConnection | null> => {
+    const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
+    const query = connectionDb
+      .select(plan.columns)
+      .from(connectors)
+      .where(plan.condition);
+    const rows = await query.limit(1);
+    const connection = rows[0];
+    if (!connection) {
+      return null;
+    }
+    // Re-check the complete identity at the secret read boundary because the
+    // organization definition can change after the parent lookup.
+    const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
+      connectionIdentity,
+      connection.id,
+    );
+    const tokenRows = await connectionDb
+      .select(tokenPlan.columns)
+      .from(secrets)
+      .innerJoin(connectors, tokenPlan.accountJoin)
+      .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
+      .where(tokenPlan.condition);
+    return storedConnectionFromRows(connection, tokenRows);
+  })();
 }
 
 async function resolveCustomConnectorOAuth2AccessToken(
@@ -2380,15 +2388,40 @@ async function resolveAutomaticCustomConnectorOAuth2AccessToken(
     return { kind: "unavailable" };
   }
   const connector = args.connector;
-  const connection = await loadConnection({
-    db: args.db,
+  const connectionDb = args.db;
+  const connectionIdentity: CustomConnectorOAuthConnectionReadIdentity = {
     orgId: args.orgId,
     userId: args.userId,
     customConnectorId: connector.id,
     memberConnectorId: args.memberConnectorId,
     storageVersion: connector.storageVersion,
     definitionAuthMode: "automatic",
-  });
+  };
+  const connection = await (async (): Promise<StoredConnection | null> => {
+    const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
+    const query = connectionDb
+      .select(plan.columns)
+      .from(connectors)
+      .where(plan.condition);
+    const rows = await query.limit(1);
+    const connection = rows[0];
+    if (!connection) {
+      return null;
+    }
+    // Re-check the complete identity at the secret read boundary because the
+    // organization definition can change after the parent lookup.
+    const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
+      connectionIdentity,
+      connection.id,
+    );
+    const tokenRows = await connectionDb
+      .select(tokenPlan.columns)
+      .from(secrets)
+      .innerJoin(connectors, tokenPlan.accountJoin)
+      .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
+      .where(tokenPlan.condition);
+    return storedConnectionFromRows(connection, tokenRows);
+  })();
   signal.throwIfAborted();
   if (!connection) {
     return { kind: "unavailable" };
@@ -2409,15 +2442,43 @@ async function resolveAutomaticCustomConnectorOAuth2AccessToken(
   if (refreshed.kind !== "publication-lost") {
     return refreshed;
   }
-  const current = await loadConnection({
-    db: args.db,
-    orgId: args.orgId,
-    userId: args.userId,
-    customConnectorId: connector.id,
-    memberConnectorId: args.memberConnectorId,
-    storageVersion: connector.storageVersion,
-    definitionAuthMode: "automatic",
-  });
+  const currentConnectionDb = args.db;
+  const currentConnectionIdentity: CustomConnectorOAuthConnectionReadIdentity =
+    {
+      orgId: args.orgId,
+      userId: args.userId,
+      customConnectorId: connector.id,
+      memberConnectorId: args.memberConnectorId,
+      storageVersion: connector.storageVersion,
+      definitionAuthMode: "automatic",
+    };
+  const current = await (async (): Promise<StoredConnection | null> => {
+    const plan = customConnectorOAuthConnectionReadPlan(
+      currentConnectionIdentity,
+    );
+    const query = currentConnectionDb
+      .select(plan.columns)
+      .from(connectors)
+      .where(plan.condition);
+    const rows = await query.limit(1);
+    const connection = rows[0];
+    if (!connection) {
+      return null;
+    }
+    // Re-check the complete identity at the secret read boundary because the
+    // organization definition can change after the parent lookup.
+    const tokenPlan = customConnectorOAuthConnectionTokenReadPlan(
+      currentConnectionIdentity,
+      connection.id,
+    );
+    const tokenRows = await currentConnectionDb
+      .select(tokenPlan.columns)
+      .from(secrets)
+      .innerJoin(connectors, tokenPlan.accountJoin)
+      .innerJoin(orgCustomConnectors, tokenPlan.definitionJoin)
+      .where(tokenPlan.condition);
+    return storedConnectionFromRows(connection, tokenRows);
+  })();
   signal.throwIfAborted();
   return currentAfterLostPublication(current);
 }
