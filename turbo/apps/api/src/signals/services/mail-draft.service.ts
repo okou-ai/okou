@@ -1,4 +1,5 @@
 import {
+  threadMailSummarySchema,
   mailDraftSchema,
   mailDraftStatusSchema,
   type MailAttachment,
@@ -479,23 +480,11 @@ export const listThreadMail$ = command(
       )
       .orderBy(desc(mailDrafts.createdAt), desc(mailDrafts.id));
     signal.throwIfAborted();
-    return rows.flatMap((row): ThreadMailSummary[] => {
-      if (
-        (row.status !== "draft" && row.status !== "sent") ||
-        row.subject === null ||
-        row.from === null
-      ) {
-        return [];
-      }
-      return [
-        {
-          ...row,
-          status: row.status,
-          subject: row.subject,
-          from: row.from,
-          createdAt: row.createdAt.toISOString(),
-        },
-      ];
+    return rows.map((row) => {
+      return threadMailSummarySchema.parse({
+        ...row,
+        createdAt: row.createdAt.toISOString(),
+      });
     });
   },
 );
@@ -1977,10 +1966,21 @@ export const deleteMailDraft$ = command(
     if (deletion.kind === "error") {
       throw deletion.error;
     }
-    const deletedRow = await set(markDeleted$, { row });
+    const updatedAt = nowDate();
+    const [deleted] = await set(writeDb$)
+      .update(mailDrafts)
+      .set({ status: "deleted", updatedAt })
+      .where(and(eq(mailDrafts.id, row.id), eq(mailDrafts.status, "draft")))
+      .returning({ id: mailDrafts.id });
     signal.throwIfAborted();
+    if (!deleted) {
+      return {
+        kind: "conflict",
+        message: "Only an active draft can be deleted",
+      };
+    }
     const deletedDraft = responseDraft({
-      row: deletedRow,
+      row: { ...row, status: "deleted", updatedAt },
       details: null,
       detailAvailable: false,
     });

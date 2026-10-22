@@ -1,9 +1,11 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   mailContract,
   type MailDraft,
 } from "@okouai/api-contracts/contracts/mail";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,13 +13,12 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  completedConversation,
-  context,
-  installCapabilityChat,
-  readyChat,
-  RUN_PATH,
-} from "./chat-capability-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+const context = testContext();
+const THREAD_ID = "b0000000-0000-4000-a000-000000000801";
+const RUN_ID = "d0000000-0000-4000-a000-000000000811";
 
 function draft(index: number, status: "draft" | "sent" = "draft"): MailDraft {
   return {
@@ -132,20 +133,49 @@ async function button(name: string, container: ParentNode = document.body) {
 }
 
 async function openChat(enabled = true, withCard = true) {
-  installCapabilityChat({
-    events: completedConversation(
-      withCard
-        ? `[Review proposal](https://app.okou.ai/mail/drafts/${id(1)})`
-        : "Prepare the proposals",
-    ),
+  context.mocks.data.agents([
+    {
+      agentId: "c0000000-0000-4000-a000-000000000001",
+      displayName: "Email review",
+    },
+  ]);
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "BROWSER_NOT_FOUND", message: "No managed browser" },
+    });
+  });
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Email review",
+    selectedModel: "claude-sonnet-5",
+    chatEvents: [
+      {
+        id: "mail-user-message",
+        role: "user",
+        content: "Prepare the proposals",
+        runId: RUN_ID,
+        seqId: 1,
+        createdAt: "2026-10-20T10:00:00.000Z",
+      },
+      {
+        id: "mail-assistant-message",
+        role: "assistant",
+        content: withCard
+          ? `[Review proposal](https://app.okou.ai/mail/drafts/${id(1)})`
+          : "Prepare the proposals",
+        runId: RUN_ID,
+        seqId: 2,
+        createdAt: "2026-10-20T10:00:01.000Z",
+      },
+    ],
   });
   await setupPage({
     context,
-    path: RUN_PATH,
+    path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.ThreadEmailManager]: enabled },
   });
-  await readyChat();
+  await screen.findByRole("textbox", { name: "Message" });
 }
 
 async function openList() {
@@ -173,6 +203,41 @@ describe("thread email manager", () => {
         return element.getAttribute("aria-label") === "Manage emails";
       }),
     ).toBeFalsy();
+  });
+
+  it("navigates filters with arrow keys, selects with Enter or Space, and restores focus on Escape", async () => {
+    installMails();
+    await openChat();
+    const entry = await button("Manage emails");
+    const list = await openList();
+    const user = userEvent.setup({ delay: null });
+    await user.click(await button("All", list));
+    await user.keyboard("{ArrowRight}");
+    await expect(button("Drafts", list)).resolves.toHaveFocus();
+    await expect(button("All", list)).resolves.toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.keyboard("{Enter}");
+    await expect(button("Drafts", list)).resolves.toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.keyboard("{ArrowRight}");
+    await expect(button("Sent", list)).resolves.toHaveFocus();
+    await user.keyboard(" ");
+    await expect(button("Sent", list)).resolves.toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await within(list).findByLabelText("Select email: Proposal 12");
+    expect(
+      within(list).queryByLabelText("Select email: Proposal 1"),
+    ).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(entry).toHaveFocus();
+    });
   });
 
   it("selects every filtered email including sent mail and disables draft actions for sent-only selection", async () => {

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createDeferredPromise, onRejection } from "../../utils";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createBddApi } from "./helpers/api-bdd";
@@ -91,6 +92,60 @@ describe("thread email list", () => {
         [409],
       );
       expect((await accept(list(), [200])).body).toStrictEqual(sent.body);
+    });
+  });
+
+  it("keeps sent mail when an earlier deletion finishes after sending", async () => {
+    const fixture = await createPublicGmailMailCardFixture();
+    await fixture.run(async () => {
+      fixture.ownsFeatureSwitches();
+      await connectors.updateFeatureSwitches(fixture.actor, {
+        threadEmailManager: true,
+      });
+      mockGmailDraftApi();
+      const linked = await linkDraft(fixture);
+      const deleteReached = createDeferredPromise<void>(context.signal);
+      const releaseDelete = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.delete(`${GMAIL_API_BASE}/drafts/:draftId`, async () => {
+          deleteReached.resolve();
+          await releaseDelete.promise;
+          return new HttpResponse(null, { status: 404 });
+        }),
+      );
+      const deleting = client().deleteDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: linked.body.mailDraftId },
+      });
+      await deleteReached.promise;
+      const sent = await onRejection(
+        accept(
+          client().sendDraft({
+            headers: authHeaders(),
+            params: { mailDraftId: linked.body.mailDraftId },
+          }),
+          [200],
+        ),
+        () => {
+          releaseDelete.resolve();
+        },
+      );
+      releaseDelete.resolve();
+      expect(sent.body.mailDraft.status).toBe("sent");
+      await accept(deleting, [409]);
+      const listed = await accept(
+        client().listThreadMail({
+          headers: authHeaders(),
+          params: { threadId: fixture.thread.id },
+        }),
+        [200],
+      );
+      expect(listed.body.mails).toStrictEqual([
+        expect.objectContaining({
+          mailDraftId: linked.body.mailDraftId,
+          status: "sent",
+        }),
+      ]);
     });
   });
 

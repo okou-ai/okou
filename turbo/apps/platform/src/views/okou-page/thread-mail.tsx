@@ -14,6 +14,8 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Toggle,
+  ToggleGroup,
 } from "@okouai/ui";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import {
@@ -229,32 +231,37 @@ function ThreadMailFilters({ thread }: { readonly thread: ChatPanelSignals }) {
     },
   ];
   return (
-    <div className="flex gap-1">
+    <ToggleGroup<ThreadMailFilter>
+      aria-label={t(($) => {
+        return $.chat.mail.manager.title;
+      })}
+      value={[filter]}
+      onValueChange={(value) => {
+        const next = value[0];
+        if (next !== undefined) {
+          setFilter(next);
+        }
+      }}
+      className="gap-1"
+    >
       {filters.map((item) => {
         const count = allMails.filter((mail) => {
           return item.value === "all" || mail.status === item.value;
         }).length;
         return (
-          <Button
+          <Toggle
             key={item.value}
-            type="button"
+            value={item.value}
             variant="quiet"
             size="sm"
             aria-label={item.label}
-            aria-pressed={filter === item.value}
-            className={cn(
-              filter === item.value && "bg-state-selected text-foreground",
-            )}
-            onClick={() => {
-              setFilter(item.value);
-            }}
           >
             {item.label}
             <span className="text-xs text-muted-foreground">{count}</span>
-          </Button>
+          </Toggle>
         );
       })}
-    </div>
+    </ToggleGroup>
   );
 }
 
