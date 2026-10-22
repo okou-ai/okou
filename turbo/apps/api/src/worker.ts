@@ -46,18 +46,17 @@ function ownResponse(
       finish();
     }
   };
-  const cancel = (reason: unknown) => {
+  const cancel = (reason: unknown): void => {
     if (!cancellation) {
       // A second reader.cancel() need not join the original source cleanup.
       // Both downstream cancellation and abort must own this same operation.
       cancellation = reader.cancel(reason).finally(complete);
       waitUntil(cancellation);
     }
-    return cancellation;
   };
   const abort = () => {
     if (!finished) {
-      return cancel(signal.reason);
+      cancel(signal.reason);
     }
   };
   if (signal.aborted) {
@@ -80,7 +79,10 @@ function ownResponse(
         }
       },
       cancel(reason) {
-        return finished ? cancellation : cancel(reason);
+        if (!finished) {
+          cancel(reason);
+        }
+        return cancellation;
       },
     }),
     {
