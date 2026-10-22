@@ -1,0 +1,1 @@
+CREATE INDEX "idx_built_in_generation_jobs_image_usage_keys" ON "built_in_generation_jobs" USING gin (("request"->'__openAiImageSettlement'->'usageKeys'));

@@ -38,7 +38,10 @@ import { resolveProviderReferenceUrls$ } from "./provider-reference-url.service"
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { processUsageEventKeys$ } from "./credit-usage.service";
 import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
-import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usage-idempotency";
+import {
+  builtInGenerationImageUsageKeys,
+  builtInGenerationUsageIdempotencyKey,
+} from "./built-in-generation-usage-idempotency";
 
 const L = logger("OpenAiImageJobs");
 const MAINLINE_PRICING_PROVIDER = `openai/${MAINLINE_MODEL}`;
@@ -76,6 +79,7 @@ export const openAiImageOrchestrationPricing$ = computed(async (get) => {
 });
 
 const settlementSchema = z.object({
+  usageKeys: z.array(z.uuid()).length(6),
   billing: z.array(
     z.object({
       category: z.enum([
@@ -239,6 +243,14 @@ const settleStoredOpenAiImageJob$ = command(
     const settlement = settlementSchema.parse(
       job.request.__openAiImageSettlement,
     );
+    const expectedKeys = builtInGenerationImageUsageKeys(job.id);
+    if (
+      !settlement.usageKeys.every((key, index) => {
+        return key === expectedKeys[index];
+      })
+    ) {
+      throw new Error("Invalid persisted OpenAI image usage identities");
+    }
     const usage = settlement.mainModelUsage;
     if (usage.inputTokens < usage.cachedInputTokens) {
       throw new Error("Invalid OpenAI cached token usage");
@@ -424,9 +436,11 @@ const advanceOpenAiImageJob$ = command(
       },
       signal,
     );
-    // The image and exact usage become one durable checkpoint. The next invocation
-    // settles it without downloading the response or allocating a new artifact.
+    // Publish every possible usage identity with the image, BEFORE any charge.
+    // Compaction retains these exact keys while recoverable and through terminal
+    // grace, including categories whose quantity is zero in this response.
     const settlement = {
+      usageKeys: builtInGenerationImageUsageKeys(job.id),
       billing: generation.billing,
       mainModelUsage: response.mainModelUsage,
     };

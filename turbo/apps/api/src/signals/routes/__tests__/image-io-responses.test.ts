@@ -1,17 +1,11 @@
 import { Buffer } from "node:buffer";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts/built-in-generation";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { userModelPreferenceRoutes } from "../user-model-preference";
-import { cronReconcileImageGenerationsRoutes } from "../cron-reconcile-image-generations";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   completedImageResponseWithUsage,
   completedImageResponseWithoutUsage,
@@ -26,12 +20,10 @@ import {
   tokenRequest,
 } from "./helpers/public-image-run";
 import { createRouteMocks } from "./helpers/route-test";
+import { createDurableImageFixture } from "./helpers/durable-image-run";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const cronHeaders = Object.freeze({
-  authorization: "Bearer image-reconciliation-secret",
-});
 const model = "gpt-image-2.5-flare";
 
 beforeEach(() => {
@@ -42,79 +34,8 @@ beforeEach(() => {
   context.mocks.s3.send.mockResolvedValue({});
 });
 
-async function createFixture() {
-  // The cron scans a global queue, so each scenario owns an isolated database.
-  await setupApp({
-    context,
-    routes: cronReconcileImageGenerationsRoutes,
-    isolatePg: true,
-  });
-  const actor = await createPublicImageMember(context, {
-    credits: 10_000,
-    ownsFeatures: true,
-  });
-  await actor.run(async () => {
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.DurableOpenAiImageGeneration]: true,
-    });
-    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-    await accept(
-      setupApp({ context, routes: userModelPreferenceRoutes })(
-        userModelPreferenceContract,
-      ).update({
-        headers,
-        body: {
-          selectedModel: null,
-          serviceTier: null,
-          selectedImageModel: model,
-        },
-      }),
-      [200],
-    );
-  });
-  context.mocks.s3.send.mockClear();
-  actor.captureExternalState();
-  const app = createImageIoTestApp(context, actor);
-  return {
-    actor,
-    app,
-    async generate(body: Record<string, unknown> = {}) {
-      return await app.request("/api/image-io/generate", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          prompt: "A private product illustration",
-          size: "1024x1024",
-          quality: "medium",
-          outputFormat: "png",
-          ...body,
-        }),
-      });
-    },
-    async status(generationId: string) {
-      const response = await app.request(
-        `/api/built-in-generations/${generationId}`,
-        { headers },
-      );
-      expect(response.status).toBe(200);
-      return builtInGenerationResponseSchema.parse(await response.json());
-    },
-    async refresh(generationId: string) {
-      const response = await app.request(
-        `/api/built-in-generations/${generationId}/reconcile`,
-        { method: "POST", headers, body: JSON.stringify({}) },
-      );
-      expect(response.status).toBe(200);
-      return builtInGenerationResponseSchema.parse(await response.json());
-    },
-    async reconcile() {
-      const response = await app.request(
-        "/api/cron/reconcile-image-generations",
-        { headers: cronHeaders },
-      );
-      expect(response.status).toBe(200);
-    },
-  };
+function createFixture() {
+  return createDurableImageFixture(context);
 }
 
 describe("durable OpenAI Responses image generation", () => {
