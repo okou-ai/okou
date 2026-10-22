@@ -67,6 +67,7 @@ jobs:
       - name: Record comparison inputs and hardware
         run: |-
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
           printf 'Source: %s\n' "$(git rev-parse HEAD)"
           printf 'Logical CPUs: %s\n' "$(nproc)"
@@ -137,6 +138,7 @@ jobs:
       - name: Record comparison inputs and hardware
         run: |-
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
           printf 'Source: %s\n' "$(git rev-parse HEAD)"
           printf 'Logical CPUs: %s\n' "$(nproc)"
@@ -254,6 +256,7 @@ jobs:
       - name: Record comparison inputs and hardware
         run: |-
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
           printf 'Source: %s\n' "$(git rev-parse HEAD)"
           printf 'Logical CPUs: %s\n' "$(nproc)"
@@ -361,6 +364,7 @@ jobs:
       - name: Record comparison inputs and hardware
         run: |-
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "a013054c72f8963b64a94479969eaeb03a6fc668"
           printf 'Source: %s\n' "$(git rev-parse HEAD)"
           printf 'Logical CPUs: %s\n' "$(nproc)"
