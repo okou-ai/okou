@@ -79,10 +79,10 @@ import {
 } from "./builtin-connector-credential-access.service";
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import {
-  connectorAccountResolutionReadPlan,
-  connectorAccountResolutionsFromRows,
-  connectorAccountTargetKey,
-  type ConnectorAccountResolutionRequest,
+  builtinDeletionReadPlan,
+  builtinDeletionFromRows,
+  builtinDeletionResult,
+  type BuiltinDeletionAccount,
 } from "./connector-account-resolution.service";
 import {
   connectorAccountEmailWhere,
@@ -973,58 +973,6 @@ const reconcileAccountBoundAutomationWatches$ = command(
     }
   },
 );
-type BuiltinConnectorAccountForDeletion =
-  | {
-      readonly kind: "missing";
-    }
-  | {
-      readonly kind: "resolved";
-      readonly connectionId: string;
-    };
-
-async function loadBuiltinConnectorAccountForDeletion(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: string;
-    readonly sourceId: string;
-  },
-  signal: AbortSignal,
-): Promise<BuiltinConnectorAccountForDeletion> {
-  const scope = { orgId: args.orgId, userId: args.userId };
-  const request: ConnectorAccountResolutionRequest = {
-    target: { kind: "builtin", connectorSlug: args.connectorSlug },
-    selection: { kind: "exact", sourceId: args.sourceId },
-  };
-  const targetKey = connectorAccountTargetKey(request.target);
-  const plan = connectorAccountResolutionReadPlan({
-    ...scope,
-    requests: [request],
-  });
-  const [exactRows, defaultRows] = await Promise.all([
-    plan.exactWhere
-      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
-      : [],
-    plan.defaultWhere
-      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
-      : [],
-  ]);
-  const resolution = connectorAccountResolutionsFromRows({
-    requests: plan.requests,
-    exactRows,
-    defaultRows,
-  }).get(targetKey);
-  if (!resolution) {
-    throw new Error("Expected one connector account resolution");
-  }
-  signal.throwIfAborted();
-  if (resolution.kind !== "resolved") {
-    return { kind: "missing" };
-  }
-  return { kind: "resolved", connectionId: resolution.account.connectorId };
-}
-
 async function prepareBuiltinConnectorAccountDeletion(
   db: Tx,
   args: {
@@ -1446,11 +1394,20 @@ export const deleteBuiltinConnectorLocalState$ = command(
       // Plain resolution read: prepareBuiltinConnectorAccountDeletion's
       // exact-identity write claims the row (missing if a concurrent delete won)
       // and holds it until commit, so the details read afterwards are current.
-      const account = await loadBuiltinConnectorAccountForDeletion(
-        tx,
-        args,
-        signal,
-      );
+      const account = await (async (): Promise<BuiltinDeletionAccount> => {
+        const read = builtinDeletionReadPlan(args);
+        const rows = await Promise.all([
+          read.exactWhere
+            ? tx.select(read.columns).from(connectors).where(read.exactWhere)
+            : [],
+          read.defaultWhere
+            ? tx.select(read.columns).from(connectors).where(read.defaultWhere)
+            : [],
+        ]);
+        const resolution = builtinDeletionFromRows(read, rows);
+        signal.throwIfAborted();
+        return builtinDeletionResult(resolution);
+      })();
       if (account.kind !== "resolved") {
         return {
           kind: account.kind,
