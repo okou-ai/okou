@@ -72,12 +72,11 @@ import {
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
 import { ElapsedTime, getShortcutLabel, ScrollBar } from "@okouai/ui";
-import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { Button } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
@@ -168,7 +167,6 @@ import {
 import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../../signals/agent.ts";
-import { computerUseProductName$ } from "../../signals/branding.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
   connectorCatalogStatus$,
@@ -190,7 +188,6 @@ import type {
 } from "../../signals/okou-page/composer-signals.ts";
 import {
   OKOU_DESKTOP_DOWNLOAD_URL,
-  desktopDownloadSupportStatus$,
   selectedComputerUseHostId,
   visibleComputerUseHosts,
 } from "../../signals/okou-page/computer-use-hosts.ts";
@@ -291,7 +288,7 @@ import {
   ComposerPaidToolNotice,
   TemplatePaidToolNotice,
 } from "./paid-tool-notice.tsx";
-import { computerUseIllustrationImg } from "./platform-assets.ts";
+import { ComputerUseDownloadDialog } from "./computer-use-download-dialog.tsx";
 import {
   contrastRatio,
   previewTextColorOn,
@@ -6876,92 +6873,6 @@ function ComposerConnectorPermissionDialogSlot({
         });
       }}
     />
-  );
-}
-
-function ComputerUseDownloadDialog({
-  open,
-  onOpenChange,
-  downloadUrl,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  downloadUrl: string;
-}) {
-  const { t } = useTranslation();
-  const computerUseProductName = useGet(computerUseProductName$);
-  const downloadSupportLoadable = useLoadable(desktopDownloadSupportStatus$);
-  const downloadSupportStatus =
-    downloadSupportLoadable.state === "hasData"
-      ? downloadSupportLoadable.data
-      : "checking";
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent maxWidth="md" contentClassName="gap-0 overflow-hidden p-0">
-        <div className="flex h-44 items-center justify-center border-b border-border bg-gray-50">
-          <img
-            src={computerUseIllustrationImg}
-            alt=""
-            className="h-40 w-40 object-contain"
-          />
-        </div>
-        <DialogHeader className="space-y-2 px-6 pt-5 text-left">
-          <DialogTitle className="text-xl leading-7">
-            {t(
-              ($) => {
-                return $.chat.computerUse.dialogTitle;
-              },
-              { desktopProductName: computerUseProductName },
-            )}
-          </DialogTitle>
-          <DialogDescription className="leading-6">
-            {t(
-              ($) => {
-                return $.chat.computerUse.dialogDescription;
-              },
-              { desktopProductName: computerUseProductName },
-            )}
-          </DialogDescription>
-          <p className="text-sm leading-5 text-muted-foreground">
-            {t(($) => {
-              return $.chat.computerUse.macosRequirement;
-            })}
-          </p>
-        </DialogHeader>
-        <div className="px-6 pb-6 pt-4">
-          {downloadSupportStatus === "unsupported-intel-mac" ? (
-            <Button type="button" size="lg" className="w-full" disabled>
-              <AlertTriangle size={16} />
-              {t(($) => {
-                return $.chat.computerUse.unsupportedIntelMac;
-              })}
-            </Button>
-          ) : downloadSupportStatus === "checking" ? (
-            <Button type="button" size="lg" className="w-full" disabled>
-              {t(($) => {
-                return $.chat.computerUse.checkingCompatibility;
-              })}
-            </Button>
-          ) : (
-            <a
-              href={downloadUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => {
-                onOpenChange(false);
-              }}
-              className={cn(buttonVariants({ size: "lg" }), "w-full")}
-            >
-              <Download size={16} />
-              {t(($) => {
-                return $.chat.computerUse.downloadMacos;
-              })}
-            </a>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 

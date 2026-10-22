@@ -1,7 +1,10 @@
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
 import { RemoteCredentialCard } from "./remote-credential-card.tsx";
 import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import { RemoteConnectionEditButton } from "./remote-connection-edit-button.tsx";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { Button, surfaceVariants } from "@okouai/ui";
@@ -519,16 +522,20 @@ export function VncHostCard({
         createdAt={connection.createdAt}
       />
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant={detail ? "quiet" : "outline"}
-          onClick={() => {
-            detach(open("edit", connection, signal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return detail ? $.remoteControlSetup.editConnection : $.vnc.edit;
-          })}
-        </Button>
+        {detail ? (
+          <RemoteConnectionEditButton resource={{ kind: "vnc", connection }} />
+        ) : (
+          <Button
+            variant={detail ? "quiet" : "outline"}
+            onClick={() => {
+              detach(open("edit", connection, signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return detail ? $.remoteControlSetup.editConnection : $.vnc.edit;
+            })}
+          </Button>
+        )}
         <Button
           variant={detail ? "quiet" : "outline"}
           onClick={() => {
@@ -636,8 +643,20 @@ function VncCredentialCard({
 }
 
 export function VncCredentials() {
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const sessionKey = useGet(authenticatedSessionKey$);
+  if (!guided) {
+    return <OwnerVncCredentials />;
+  }
+  return sessionKey ? <OwnerVncCredentials key={sessionKey} /> : null;
+}
+
+function OwnerVncCredentials() {
   const { t } = useTranslation();
-  const credentials = useLoadable(vncCredentials$);
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const current = useLoadable(vncCredentials$);
+  const retained = useLastLoadable(vncCredentials$);
+  const credentials = guided ? retained : current;
   const open = useSet(openVncDialog$);
   const signal = useGet(pageSignal$);
   if (credentials.state === "loading") {

@@ -12,12 +12,12 @@ import { remoteNetworkScopeStatus$ } from "../../signals/remote-network-scope.ts
 import {
   RemoteEditorFrame,
   useRemoteNetworkEditorVisible,
-  REMOTE_PAGE_ACTION,
 } from "./remote-editor-frame.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { RemoteFormFooter } from "./remote-form-footer.tsx";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import {
@@ -219,10 +219,8 @@ function TailscaleImpact({
 
 function TailscaleReview({
   dialog,
-  isSaving,
 }: {
   readonly dialog: TailscaleDialogState;
-  readonly isSaving: boolean;
 }) {
   const { t } = useTranslation();
   const error = useGet(tailscaleError$);
@@ -231,7 +229,7 @@ function TailscaleReview({
   const review = useSet(reviewTailscale$);
   const refresh = useSet(refreshTailscaleReview$);
   const signal = useGet(pageSignal$);
-  if (isSaving || (!error && !uncertain)) {
+  if (!error && !uncertain) {
     return null;
   }
   const shared =
@@ -487,92 +485,47 @@ function TailscaleFormFields({
   );
 }
 
-function TailscaleSubmitLabel({
-  busy,
-  uncertain,
-  edit,
-  title,
-  destructive,
-}: {
-  readonly busy: boolean;
-  readonly uncertain: boolean;
-  readonly edit: boolean;
-  readonly title: string;
-  readonly destructive: boolean;
-}) {
+function useTailscaleFormSubmission(saveAction: typeof saveTailscale$) {
   const { t } = useTranslation();
   const guided = useGet(remoteControlGuidedEnabled$);
   const saveLabel = useRemoteNetworkSaveLabel();
-  if (busy) {
-    return t(($) => {
-      return $.connectors.actions.saving;
-    });
-  }
-  if (uncertain) {
-    return t(($) => {
-      return $.cloudflareAccess.retry;
-    });
-  }
-  if (guided && !destructive) {
-    return saveLabel;
-  }
-  return edit
-    ? t(($) => {
-        return $.cloudflareAccess.save;
-      })
-    : title;
-}
-
-function TailscaleFormActions({
-  inline,
-  busy,
-  uncertain,
-  blocked,
-  destructive,
-  edit,
-  title,
-}: {
-  readonly inline: boolean;
-  readonly busy: boolean;
-  readonly uncertain: boolean;
-  readonly blocked: boolean;
-  readonly destructive: boolean;
-  readonly edit: boolean;
-  readonly title: string;
-}) {
-  const { t } = useTranslation();
-  const close = useSet(closeTailscaleDialog$);
-  return (
-    <div
-      className={
-        inline
-          ? "mt-2 flex shrink-0 flex-wrap justify-end gap-3 border-t border-divider pt-5"
-          : "flex shrink-0 justify-end gap-2"
+  const dialog = useLastResolved(tailscaleDialog$);
+  const uncertain = useGet(tailscaleSaveUncertain$);
+  const [saving, save] = useLoadableSet(saveAction);
+  const signal = useGet(pageSignal$);
+  const { title, description } = useOperationCopy(dialog?.kind);
+  const blocked = useOperationBlocked(dialog?.kind, dialog?.config ?? null);
+  const scopeStatus = useGet(remoteNetworkScopeStatus$);
+  const busy = saving.state === "loading";
+  const edit = dialog?.kind === "create" || dialog?.kind === "edit";
+  return {
+    dialog,
+    title,
+    description,
+    busy,
+    uncertain,
+    submitDisabled: busy || (!uncertain && (blocked || !!scopeStatus.error)),
+    submitLabel: busy
+      ? t(($) => {
+          return $.connectors.actions.saving;
+        })
+      : uncertain
+        ? t(($) => {
+            return $.cloudflareAccess.retry;
+          })
+        : guided && dialog?.kind !== "delete"
+          ? saveLabel
+          : edit
+            ? t(($) => {
+                return $.cloudflareAccess.save;
+              })
+            : title,
+    submit(form: HTMLFormElement) {
+      if (!busy && !scopeStatus.error && (uncertain || !blocked)) {
+        detach(save(form, signal), Reason.DomCallback);
       }
-    >
-      {!inline && (
-        <Button type="button" variant="outline" disabled={busy} onClick={close}>
-          {t(($) => {
-            return $.cloudflareAccess.cancel;
-          })}
-        </Button>
-      )}
-      <Button
-        type="submit"
-        className={inline ? REMOTE_PAGE_ACTION : undefined}
-        disabled={busy || (!uncertain && blocked)}
-        variant={destructive ? "destructive" : "default"}
-      >
-        <TailscaleSubmitLabel
-          destructive={destructive}
-          busy={busy}
-          uncertain={uncertain}
-          edit={edit}
-          title={title}
-        />
-      </Button>
-    </div>
-  );
+    },
+  };
 }
 
 export function TailscaleDialog({
@@ -582,21 +535,23 @@ export function TailscaleDialog({
   readonly inline?: boolean;
   readonly saveAction?: typeof saveTailscale$;
 } = {}) {
-  const dialog = useLastResolved(tailscaleDialog$);
-  const uncertain = useGet(tailscaleSaveUncertain$);
+  const { t } = useTranslation();
+  const {
+    dialog,
+    title,
+    description,
+    busy,
+    uncertain,
+    submitDisabled,
+    submitLabel,
+    submit,
+  } = useTailscaleFormSubmission(saveAction);
   const close = useSet(closeTailscaleDialog$);
   const mount = useSet(mountTailscaleForm$);
-  const [saving, save] = useLoadableSet(saveAction);
-  const signal = useGet(pageSignal$);
-  const { title, description } = useOperationCopy(dialog?.kind);
-  const blocked = useOperationBlocked(dialog?.kind, dialog?.config ?? null);
-  const scopeStatus = useGet(remoteNetworkScopeStatus$);
   const visible = useRemoteNetworkEditorVisible(inline, dialog);
   if (!dialog || !visible) {
     return null;
   }
-  const busy = saving.state === "loading";
-  const edit = dialog.kind === "create" || dialog.kind === "edit";
   return (
     <RemoteEditorFrame
       key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
@@ -614,27 +569,27 @@ export function TailscaleDialog({
         aria-busy={busy}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!busy && !scopeStatus.error && (uncertain || !blocked)) {
-            detach(save(event.currentTarget, signal), Reason.DomCallback);
-          }
+          submit(event.currentTarget);
         }}
       >
         <DialogBody className="grid gap-4">
           <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
-          <TailscaleReview dialog={dialog} isSaving={busy} />
+          {!busy && <TailscaleReview dialog={dialog} />}
           <RemoteNetworkScopeConfirmation
             provider="tailscale"
             configId={dialog.config?.id}
           />
         </DialogBody>
-        <TailscaleFormActions
-          inline={inline}
-          busy={busy}
-          uncertain={uncertain}
-          blocked={blocked || !!scopeStatus.error}
+        <RemoteFormFooter
+          separated={inline}
+          onCancel={inline ? undefined : close}
+          cancelLabel={t(($) => {
+            return $.cloudflareAccess.cancel;
+          })}
+          cancelDisabled={busy}
+          submitDisabled={submitDisabled}
           destructive={dialog.kind === "delete"}
-          edit={edit}
-          title={title}
+          submitLabel={submitLabel}
         />
       </form>
     </RemoteEditorFrame>

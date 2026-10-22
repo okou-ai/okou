@@ -14,6 +14,20 @@ import { IconButton } from "../icon-button";
 import { Button } from "../button";
 
 describe("Dialog", () => {
+  it("keeps a compact fixed-height dialog within the safe viewport", () => {
+    render(
+      <Dialog open>
+        <DialogContent height={440}>
+          <DialogTitle>Compact guide</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+    expect(screen.getByRole("dialog", { name: "Compact guide" })).toHaveClass(
+      "h-[440px]",
+      "max-h-full",
+    );
+  });
+
   it.each(["pointer", "Enter", "Space"])(
     "opens and closes a rendered native button once through %s",
     async (activation) => {

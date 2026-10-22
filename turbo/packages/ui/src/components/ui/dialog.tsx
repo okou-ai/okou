@@ -95,6 +95,7 @@ const dialogPositionClasses = {
 const dialogHeightClasses = {
   content: "h-auto",
   fill: "h-full",
+  440: "h-[440px]",
   600: "h-[600px]",
   688: "h-[688px]",
   720: "h-[720px]",
